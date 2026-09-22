@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, CheckCircle2, Loader2, TerminalSquare, User, XCircle } from "lucide-react";
+import { Bot, CheckCircle2, TerminalSquare, User, XCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,7 @@ export function RunWatcherModal({
           <span className="flex items-center gap-2">
             <TerminalSquare size={13} className="text-[var(--accent)]" />
             <span className="truncate">Watching: {automation.name}</span>
-            {isLive && <Loader2 size={11} className="animate-spin text-[var(--accent)]" />}
+            {isLive && <Spinner size={11} tone="accent" />}
           </span>
         ) : ""
       }
@@ -120,7 +121,7 @@ export function RunWatcherModal({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="font-mono text-[0.714rem] text-[var(--text-secondary)]">{t.label}</span>
-                {t.status === "running" && <Loader2 size={10} className="animate-spin text-[var(--accent)]" />}
+                {t.status === "running" && <Spinner size={10} tone="accent" />}
                 {t.status === "done" && <CheckCircle2 size={10} className="text-[var(--ok)]" />}
                 {t.status === "error" && <XCircle size={10} className="text-[var(--danger)]" />}
               </div>
@@ -149,7 +150,7 @@ export function RunWatcherModal({
               )}
               <div className={cn("whitespace-pre-wrap min-w-0", assistant ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]")}>
                 {assistant || (isLive ? "…" : "")}
-                {isLive && assistant && <span className="inline-block w-1.5 h-3.5 bg-[var(--accent)] align-middle animate-pulse ml-0.5" />}
+                {isLive && assistant && <span aria-hidden="true" className="inline-block w-1.5 h-3.5 bg-[var(--accent)] align-middle animate-pulse ml-0.5" />}
               </div>
             </div>
           </div>
@@ -178,7 +179,7 @@ export function RunWatcherModal({
         )}
 
         {!recipe && !assistant && tools.length === 0 && (
-          <p className="text-xs text-[var(--text-tertiary)]">{isLive ? "Waiting for activity…" : "No live activity."}</p>
+          <p role="status" className="text-xs text-[var(--text-tertiary)]">{isLive ? "Waiting for activity…" : "No live activity."}</p>
         )}
       </div>
     </ModalShell>

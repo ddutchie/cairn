@@ -23,7 +23,7 @@ export function DialogContent({
 }: DialogContentProps) {
   return (
     <RadixDialog.Portal>
-      <RadixDialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 animate-fade-in" />
+      <RadixDialog.Overlay className="fixed inset-0 bg-[color-mix(in_srgb,black_60%,transparent)] backdrop-blur-sm z-50 animate-fade-in" />
       <RadixDialog.Content
         aria-describedby={ariaDescribedBy ?? undefined}
         onInteractOutside={(e) => {

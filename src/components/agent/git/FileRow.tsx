@@ -1,6 +1,7 @@
 "use client";
 
-import { RefreshCw, File, RotateCcw } from "lucide-react";
+import { File, RotateCcw } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { statusLabel, statusColor } from "./git-helpers";
 import { InlineDiff } from "./InlineDiff";
@@ -8,7 +9,7 @@ import { InlineDiff } from "./InlineDiff";
 /** One changed file: hover stage/unstage + discard actions, name, +/- stat, status chip, and an expandable inline diff. */
 export function FileRow({
   path, status, onAction, actionLabel, actionColor,
-  stat, rawDiff, expanded, loading, onToggle, onDiscard,
+  stat, rawDiff, expanded, loading, onToggle, onDiscard, discardArmed,
 }: {
   path: string;
   status: string;
@@ -21,6 +22,8 @@ export function FileRow({
   loading: boolean;
   onToggle: () => void;
   onDiscard: () => void;
+  /** Two-step discard confirm: first click arms (highlighted), second fires. */
+  discardArmed?: boolean;
 }) {
   const hasDiffStats = stat && (stat.added > 0 || stat.deleted > 0);
   return (
@@ -44,11 +47,13 @@ export function FileRow({
               {actionLabel}
             </button>
           </Tooltip>
-          <Tooltip content="Discard all changes in this file">
+          <Tooltip content={discardArmed ? "Click again to discard all changes in this file" : "Discard all changes in this file"}>
             <button
               onClick={onDiscard}
               className="w-4 h-4 rounded flex items-center justify-center text-[var(--danger)] hover:scale-110 transition-transform cursor-pointer"
-              style={{ backgroundColor: `color-mix(in srgb, var(--danger) 15%, transparent)` }}
+              style={{ backgroundColor: discardArmed
+                ? `color-mix(in srgb, var(--danger) 35%, transparent)`
+                : `color-mix(in srgb, var(--danger) 15%, transparent)` }}
             >
               <RotateCcw size={10} />
             </button>
@@ -63,7 +68,7 @@ export function FileRow({
           </span>
         )}
         {loading && (
-          <RefreshCw size={10} className="animate-spin text-[var(--text-tertiary)]" />
+          <RefreshSpin size={10} className="text-[var(--text-tertiary)]" />
         )}
         <span
           className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded flex-shrink-0"

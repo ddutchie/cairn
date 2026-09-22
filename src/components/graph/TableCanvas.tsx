@@ -3,9 +3,8 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCairnStore } from "@/store";
-import { useShallow } from "zustand/react/shallow";
 import type { GraphNode, GraphNodeType } from "@/types";
+import { useScopedData } from "./analyticsHooks";
 import { NodeTypeChip } from "./NodeTypeChip";
 import { PRIORITY_COLOR, PRIORITY_SORT_ORDER } from "./analyticsUtils";
 
@@ -24,7 +23,7 @@ type SortDir = "asc" | "desc";
 const TYPE_ORDER: GraphNodeType[] = ["project", "note", "card", "tag"];
 
 export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFilter }: Props) {
-  const { projects, notes, cards, tags } = useCairnStore(useShallow((s) => ({ projects: s.projects, notes: s.notes, cards: s.cards, tags: s.tags })));
+  const { projects, notes, cards, tags } = useScopedData(nodes);
   const [sortKey, setSortKey] = useState<SortKey>("type");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 

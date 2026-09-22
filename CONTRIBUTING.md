@@ -359,7 +359,7 @@ InsightsView
         └── D3 / SVG rendering
 ```
 
-Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, `PRIORITY_COLOR`, `resolveCssVar`, `truncateName`, `CANVAS_PAD`), `analyticsHooks.ts` (`useContainerDims`, `useScopedData`, `useFontScale`, `useRelativePointer`, `useNow`), `AnalyticsShared.tsx` (`<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>`).
+Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, `PRIORITY_COLOR`, `resolveCssVar`, `truncateName`, `CANVAS_PAD`), `analyticsHooks.ts` (`useContainerDims`, `useScopeSets`, `useScopedData`, `useFontScale`, `useRelativePointer`, `useNow`), `AnalyticsShared.tsx` (`<CanvasEmptyState>`, `<CanvasCallout>`, `<SvgTimeAxis>`).
 
 ### Key files
 
@@ -394,7 +394,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/cordis/chat-executor.ts` | `executeTool` — canonical tool implementations (incl. `get_cairn_context`) |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
 | `electron/db/queries.ts` | Single source of truth for all SQL query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`). Imported by both the Electron main process and the MCP server (`electron/mcp/tools/*`) — the only ABI-sensitive operation is `new Database(...)` which happens once in `mcp-server.ts` |
-| `electron/shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
+| `electron/host-shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
 | `electron/db/schema.ts` | SQLite DDL + versioned migration runner (`PRAGMA user_version`) |
 | `electron/db/utils.ts` | `newId()` (nanoid), `ts()` — shared ID and timestamp helpers |
 | `electron/db/defaults.ts` | `DEFAULT_COLUMNS` — canonical 5-column board layout |
@@ -441,10 +441,10 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `src/components/agent/SpawnAgentModal.tsx` | Spawn dialog — optional card, ad-hoc sessions, prompt editor |
 | `src/lib/editor-theme.ts` | Shared CM6 `buildTheme(fontScale)` + `buildHighlightStyle(isDark)` + `buildSearchTheme()` — search panel CSS overrides used by both the note editor and agent file editor |
 | `src/components/agent/ImageViewer.tsx` | Image renderer via base64 IPC (avoids `file://` CSP restriction) |
-| `src/components/insights/InsightsView.tsx` | Insights view — hosts all analytics canvases with shared toolbar |
+| `src/components/graph/InsightsView.tsx` | Insights view — hosts all analytics canvases with shared toolbar |
 | `src/components/graph/analyticsUtils.ts` | Shared constants + pure helpers for analytics canvases |
-| `src/components/graph/analyticsHooks.ts` | `useContainerDims`, `useScopedData`, `useFontScale`, `useRelativePointer`, `useNow` |
-| `src/components/graph/AnalyticsShared.tsx` | `<CanvasEmptyState>`, `<CanvasTooltip>`, `<SvgTimeAxis>` |
+| `src/components/graph/analyticsHooks.ts` | `useContainerDims`, `useScopeSets`, `useScopedData`, `useFontScale`, `useRelativePointer`, `useNow` |
+| `src/components/graph/AnalyticsShared.tsx` | `<CanvasEmptyState>`, `<CanvasCallout>`, `<SvgTimeAxis>` |
 | `src/components/graph/RidgelineCanvas.tsx` | Ridgeline (joy plot) activity canvas |
 | `src/components/graph/BeeswarmCanvas.tsx` | Beeswarm time-axis canvas |
 | `src/components/graph/BulletCanvas.tsx` | Bullet chart project health canvas |
@@ -527,7 +527,7 @@ export function XxxCanvas({ nodes, onNodeClick }: Props) {
 }
 ```
 
-Use `CanvasEmptyState`, `CanvasTooltip`, and `SvgTimeAxis` from `AnalyticsShared.tsx` rather than reinventing them.
+Use `CanvasEmptyState`, `CanvasCallout`, and `SvgTimeAxis` from `AnalyticsShared.tsx` rather than reinventing them.
 
 ---
 
@@ -749,7 +749,7 @@ If you're new to the codebase, these are good places to start. Each one is self-
   const { cards, columns } = useCairnStore(useShallow((s) => ({ cards: s.cards, columns: s.columns })));
   ```
 - **`React.memo` on `ProjectItem`** — `KanbanCard` and `NoteListItem` are already wrapped; `ProjectItem` (`src/components/layout/sidebar.tsx`) is the remaining high-value candidate. Wrap it after narrowing its store subscriptions.
-- **Test coverage for a utility function** — `electron/shared/text-utils.ts` (`toSlug`, `stripMarkdown`) and `electron/db/utils.ts` (`newId`, `ts`) have no dedicated tests. Add them to the nearest test file.
+- **Test coverage for a utility function** — `electron/host-shared/text-utils.ts` (`toSlug`, `stripMarkdown`) and `electron/db/utils.ts` (`newId`, `ts`) have no dedicated tests. Add them to the nearest test file.
 
 ### 🔴 Electron / SQLite
 

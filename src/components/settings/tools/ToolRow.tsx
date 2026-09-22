@@ -46,7 +46,7 @@ export function ToolRow({
         </button>
         <div className="flex items-center gap-1 flex-shrink-0">
           <Button variant="ghost" size="xs" onClick={onEdit}>Edit</Button>
-          <Button variant="ghost" size="xs" onClick={onDelete} className="text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]">
+          <Button variant="danger" size="xs" onClick={onDelete}>
             <Trash2 size={11} />
           </Button>
         </div>

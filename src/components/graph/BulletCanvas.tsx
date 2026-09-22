@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale, useNow } from "./analyticsHooks";
+import { useContainerDims, useScopeSets, useFontScale, useNow } from "./analyticsHooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
@@ -26,7 +26,7 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fs = useFontScale();
   const dims = useContainerDims(containerRef);
-  const { activeProjects, scopedCardIds, cards, columns } = useScopedData(nodes);
+  const { activeProjects, scopedCardIds, cards, columns } = useScopeSets(nodes);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const now = useNow();
 

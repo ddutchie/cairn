@@ -4,6 +4,7 @@ import React from "react";
 import { FolderInput, FolderOpen } from "lucide-react";
 import type { Project } from "@/types";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon } from "@/lib/workspace-icons";
 
 interface MoveNoteModalProps {
@@ -22,10 +23,11 @@ export function MoveNoteModal({ workspaceProjects, activeProjectId, onMove, onCl
       title={<><FolderInput size={14} className="text-[var(--accent)]" /> Move to project</>}
     >
       {targets.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-4 text-center">
-          <FolderOpen size={18} className="text-[var(--text-tertiary)] opacity-40" />
-          <p className="text-xs text-[var(--text-tertiary)]">No other projects in this workspace</p>
-        </div>
+        <EmptyState
+          icon={FolderOpen}
+          title="No other projects in this workspace"
+          className="py-4"
+        />
       ) : (
         <div className="space-y-1">
           {targets.map((p) => (

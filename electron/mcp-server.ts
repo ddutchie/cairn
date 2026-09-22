@@ -27,6 +27,7 @@ import {
   toProject,
   getSnapshot
 } from "./mcp/db";
+import type { DbRow } from "./host-shared/db-mappers";
 import { executeTool } from "./mcp/tools";
 
 export { executeTool };
@@ -146,13 +147,13 @@ function buildMcpServer(binding: WorkspaceBinding): McpServer {
   server.resource("workspaces", "cairn://workspaces", { mimeType: "application/json" }, async () => ({
     contents: [{
       uri: "cairn://workspaces", mimeType: "application/json",
-      text: JSON.stringify(binding.getDb().prepare("SELECT * FROM workspaces").all().map(toWorkspace))
+      text: JSON.stringify(binding.getDb().prepare("SELECT * FROM workspaces").all().map((row) => toWorkspace(row as DbRow)))
     }],
   }));
   server.resource("projects", "cairn://projects", { mimeType: "application/json" }, async () => ({
     contents: [{
       uri: "cairn://projects", mimeType: "application/json",
-      text: JSON.stringify(binding.getDb().prepare("SELECT * FROM projects WHERE archived_at IS NULL").all().map(toProject))
+      text: JSON.stringify(binding.getDb().prepare("SELECT * FROM projects WHERE archived_at IS NULL").all().map((row) => toProject(row as DbRow)))
     }],
   }));
 

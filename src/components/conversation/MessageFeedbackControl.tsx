@@ -14,6 +14,7 @@
 import React, { useState } from "react";
 import { ThumbsUp, ThumbsDown, MessageSquareText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface MessageFeedbackControlProps {
   sessionId?: string;
@@ -183,14 +184,15 @@ export function MessageFeedbackControl({ sessionId, messageId, disabled }: Messa
             >
               Cancel
             </button>
-            <button
+            <Button
               type="button"
+              variant="accent"
+              size="xs"
               onClick={() => void saveNote()}
               disabled={saving}
-              className="px-2 py-0.5 rounded text-[0.714rem] font-medium bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </span>
         </span>
       )}

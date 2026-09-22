@@ -11,7 +11,7 @@
 import React from "react";
 import { LayoutDashboard, BarChart2, Users, CheckSquare, Globe, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -250,25 +250,13 @@ interface Props {
 
 export function DashboardTemplateModal({ onSelect, onClose }: Props) {
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent
-        size="md"
-        aria-describedby="template-desc"
-        className="max-w-xl overflow-hidden p-0 gap-0 border-[var(--border)] bg-[var(--surface)]"
-      >
-        {/* Header */}
-        <DialogHeader className="flex flex-row items-center justify-start gap-2 px-5 py-4 border-b border-[var(--border)]">
-          <LayoutDashboard size={14} className="text-[var(--text-tertiary)]" />
-          <DialogTitle className="text-sm font-semibold text-[var(--text-primary)]">
-            New Dashboard
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* Accessibility description */}
-        <div id="template-desc" className="sr-only">
-          Select a template to build a new custom dashboard or start with a blank screen.
-        </div>
-
+    <ModalShell
+      onClose={onClose}
+      size="md"
+      title={<><LayoutDashboard size={14} className="text-[var(--text-tertiary)]" /> New Dashboard</>}
+      description="Select a template to build a new custom dashboard or start with a blank screen."
+      contentClassName="max-w-xl overflow-hidden p-0 gap-0 border-[var(--border)] bg-[var(--surface)]"
+    >
         {/* Template grid */}
         <div className="p-4 grid grid-cols-2 gap-3">
           {DASHBOARD_TEMPLATES.map((t) => (
@@ -294,7 +282,6 @@ export function DashboardTemplateModal({ onSelect, onClose }: Props) {
             </button>
           ))}
         </div>
-      </DialogContent>
-    </Dialog>
+    </ModalShell>
   );
 }

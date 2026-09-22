@@ -1,7 +1,7 @@
 "use client";
 
 import { FolderOpen } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Shell } from "./shared";
 
 interface Props {
@@ -33,20 +33,17 @@ export function StepChooseFolder({ chosenFolder, submitting, onChoose }: Props) 
           </div>
         )}
 
-        <button
+        <Button
           type="button"
+          variant="accent"
+          size="md"
+          className="w-full"
           disabled={submitting}
           onClick={onChoose}
-          className={cn(
-            "w-full py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2",
-            !submitting
-              ? "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
-              : "bg-[var(--surface-2)] text-[var(--text-tertiary)] cursor-not-allowed"
-          )}
         >
           <FolderOpen size={14} />
           {submitting ? "Opening…" : "Choose folder"}
-        </button>
+        </Button>
       </div>
     </Shell>
   );

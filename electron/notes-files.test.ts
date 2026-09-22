@@ -27,7 +27,7 @@ import {
   adoptExternalNoteFile,
   syncNotesFromDisk,
 } from "./notes-files";
-import { pruneEmptyDirsUpTo } from "./shared/notes-io";
+import { pruneEmptyDirsUpTo } from "./host-shared/notes-io";
 import type { NoteData } from "./notes-files";
 
 // ── Temp dir helpers ──────────────────────────────────────────────────────

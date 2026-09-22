@@ -11,6 +11,7 @@ import { renderCellWithCheckboxes } from "@/components/notes/note-markdown-compo
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { revealNote, revealCard } from "@/lib/events";
+import { isView } from "@/lib/views";
 import { parseWikilinks } from "@/lib/wikilink-parser";
 import type { Note, TaskCard } from "@/types";
 
@@ -189,7 +190,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
               <button
                 type="button"
                 onClick={() => {
-                  if (activeView === "chat") {
+                  if (isView(activeView, "chat")) {
                     setActivePreviewItem({ type: "note", id: noteId });
                   } else {
                     revealNote(setView, noteId);
@@ -207,7 +208,7 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
               <button
                 type="button"
                 onClick={() => {
-                  if (activeView === "chat") {
+                  if (isView(activeView, "chat")) {
                     setActivePreviewItem({ type: "task", id: cardId });
                   } else {
                     revealCard(setView, cardId);

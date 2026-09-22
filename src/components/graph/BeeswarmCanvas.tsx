@@ -5,8 +5,8 @@ import * as d3 from "d3";
 import type { SimulationNodeDatum } from "d3";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName, CANVAS_PAD, DAY_MS } from "./analyticsUtils";
-import { useContainerDims, useScopedData, useFontScale, useRelativePointer } from "./analyticsHooks";
-import { CanvasEmptyState, CanvasTooltip, SvgTimeAxis } from "./AnalyticsShared";
+import { useContainerDims, useScopeSets, useFontScale, useRelativePointer } from "./analyticsHooks";
+import { CanvasEmptyState, CanvasCallout, SvgTimeAxis } from "./AnalyticsShared";
 
 interface Props {
   nodes: GraphNode[];
@@ -23,7 +23,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
   const fs = useFontScale();
   const dims = useContainerDims(containerRef);
   const relativePointer = useRelativePointer(containerRef);
-  const { activeProjects, scopedCardIds, cards } = useScopedData(nodes);
+  const { activeProjects, scopedCardIds, cards } = useScopeSets(nodes);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -142,7 +142,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
 
       {/* Tooltip */}
       {tooltip && (
-        <CanvasTooltip x={tooltip.x} y={tooltip.y} containerW={dims.width}>
+        <CanvasCallout x={tooltip.x} y={tooltip.y} containerW={dims.width}>
           <p className="font-medium text-[var(--text-primary)] truncate mb-1">{tooltip.card.title}</p>
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: PRIORITY_COLOR[tooltip.card.priority] }} />
@@ -152,7 +152,7 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
               {tooltip.card.isDue ? "due" : "created"} {d3.timeFormat("%b %d")(tooltip.card.date)}
             </span>
           </div>
-        </CanvasTooltip>
+        </CanvasCallout>
       )}
 
       {/* Priority legend */}

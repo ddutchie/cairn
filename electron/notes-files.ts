@@ -5,7 +5,7 @@ import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import * as q from "./db/queries";
 import { newId } from "./db/utils";
-import { toSlug, stripMarkdown } from "./shared/text-utils";
+import { toSlug, stripMarkdown } from "./host-shared/text-utils";
 import { DEFAULT_COLUMNS } from "./db/defaults";
 import {
   readExistingFrontmatter,
@@ -24,7 +24,7 @@ import {
   pruneEmptyDirsUpTo,
   setPathRemover,
   CAIRN_FRONTMATTER_KEYS
-} from "./shared/notes-io";
+} from "./host-shared/notes-io";
 
 export {
   toSlug,

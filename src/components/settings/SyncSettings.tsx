@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FolderSync, RefreshCw, FolderOpen, AlertCircle, CheckCircle2 } from "lucide-react";
+import { FolderSync, FolderOpen, AlertCircle, CheckCircle2 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow } from "./shared";
-import { cn } from "@/lib/utils";
 import { openConflictModal } from "@/lib/sync-client";
 import { SyncActivityPanel } from "./SyncActivityPanel";
 
@@ -113,7 +113,7 @@ export function SyncSettings() {
               </p>
             </div>
             <Button variant="default" size="sm" onClick={onSyncNow} disabled={busy}>
-              <RefreshCw size={12} className={cn("mr-1.5", busy && "animate-spin")} />
+              <RefreshSpin size={12} spinning={busy} className="mr-1.5" />
               Sync now
             </Button>
           </div>

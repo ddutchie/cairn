@@ -47,9 +47,6 @@ export const ownWriteGuard = {
   },
 };
 
-/** @deprecated use ownWriteGuard */
-export const flowWriteGuard = ownWriteGuard;
-
 export const flowHandlers: {
   addNode:    ((node: Node) => void) | null;
   removeNode: ((id: string) => void) | null;

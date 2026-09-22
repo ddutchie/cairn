@@ -2,6 +2,11 @@
  * Cairn — Root Zustand store.
  * Combines workspace, project, notes, board, chat, and UI slices.
  * Persisted to localStorage via the storage abstraction.
+ *
+ * Barrel policy: this module exports the store hook (`useCairnStore`),
+ * shared types, and the two AI-config defaults — nothing else. Slice
+ * internals (creators, helpers, keys) live in `./slices/*` and are imported
+ * directly from there. Do not add value re-exports here.
  */
 
 import { create } from "zustand";
@@ -64,16 +69,9 @@ import type { TerminalSessionsSlice } from "./slices/terminal-sessions";
 export type { AIConfig, AgentConfig, Theme, FontScale, FontFamilyId };
 export { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG } from "@/lib/constants";
 
-// ── SearchResult (used by SelectorsSlice and components) ─────────────────────
+// ── SearchResult (defined in the selectors slice, re-exported here) ──────────
 
-export interface SearchResult {
-  type: "note" | "card";
-  id: string;
-  title: string;
-  snippet: string;
-  projectId: string;
-  projectName: string;
-}
+export type { SearchResult } from "./slices/selectors";
 
 // ── Persisted shape ───────────────────────────────────────────────────────────
 

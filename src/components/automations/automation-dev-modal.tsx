@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { FileText, FolderOpen, Play, RefreshCw, Sparkles } from "lucide-react";
+import { FileText, FolderOpen, Play, Sparkles } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,7 @@ export function AutomationDevModal({
           )}
           {onSyncFromManifest && (
             <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
-              <RefreshCw size={12} className={cn("mr-1", syncing && "animate-spin")} /> {syncing ? "Syncing…" : "Sync from manifest"}
+              <RefreshSpin size={12} spinning={syncing} className="mr-1" /> {syncing ? "Syncing…" : "Sync from manifest"}
             </Button>
           )}
           {onRunNow && (
@@ -165,7 +166,8 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
               <Tooltip content={f.path}>
                 <span className="truncate flex-1 font-mono">{f.path}</span>
               </Tooltip>
-              {changed[f.path] && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0 animate-pulse" />}
+              {changed[f.path] && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0 animate-pulse" aria-hidden="true" />}
+              {changed[f.path] && <span className="sr-only">changed</span>}
             </div>
           ))
         )}

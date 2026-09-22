@@ -52,7 +52,7 @@ Success is a user staying in a single, calm environment from thought → plan �
 **Constraints (must preserve)**
 - **Local-first only:** No cloud sync, no backend — `.md` + SQLite is source of truth; renderer never touches DB directly — all writes via IPC (`ipc`/`ipcAwait`).
 - **Obsidian vault compatibility** is a commitment, not a perk.
-- **DB bootstrap sites:** Only `electron/db/client.ts` (Electron) and `mcp-server.ts` / packaged `cairn-mcp` may construct `Database` (with `nativeBinding` per arch). No other `new Database()`.
+- **DB bootstrap sites:** Only `electron/db/client.ts` (Electron), `mcp-server.ts` / packaged `cairn-mcp`, and the readonly workspace-detection probe in `electron/mcp/db.ts` (`findDbPath`, readonly + immediately closed) may construct `Database` (with `nativeBinding` per arch). No other `new Database()`.
 - **Styling:** Tailwind v4 via CSS vars (`var(--background)`, `var(--accent)`, …); alpha via `color-mix()`; font sizes `rem`-based, SVG `fontSize` multiplied by `useFontScale()`.
 - **Build:** `npm run compile` (esbuild, stricter than tsc — backticks in template literals must be unescaped) + `type-check:all`; version bump only via `scripts/release.sh` / `releasemobile.sh`.
 - **Changelog / What's New:** Every user-facing change gets an entry in `changelogs/vX.Y.Z.md` ahead of current `package.json` version; headline features also appended to `scripts/features.config.js` → `src/generated/new-features.json` via `node scripts/generate-features.js`.

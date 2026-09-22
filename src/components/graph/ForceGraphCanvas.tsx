@@ -5,7 +5,7 @@ import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { resolveCssVar, withAlpha, tokenToCssVar } from "./analyticsUtils";
-import { useFontScale, useThemeRepaint } from "./analyticsHooks";
+import { useFontScale, useThemeRepaint, useContainerDims } from "./analyticsHooks";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   nodeTypeToken,
@@ -84,7 +84,7 @@ const ZOOM_BTN_CLASS =
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fs = useFontScale();
 
-  const [dims, setDims] = useState({ width: 800, height: 600 });
+  const dims = useContainerDims(containerRef);
   const dimsRef = useRef(dims);
   // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
   dimsRef.current = dims;
@@ -166,19 +166,6 @@ const ZOOM_BTN_CLASS =
   const edgeFingerprint = visibleEdges
     .map((e) => `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}`)
     .join(",");
-
-  // ── resize observer ──
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const e = entries[0];
-      if (e) setDims({ width: e.contentRect.width, height: e.contentRect.height });
-    });
-    ro.observe(el);
-    setDims({ width: el.clientWidth, height: el.clientHeight });
-    return () => ro.disconnect();
-  }, []);
 
   // ── build / rebuild simulation when topology changes ──
   useEffect(() => {

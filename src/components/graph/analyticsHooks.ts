@@ -1,5 +1,21 @@
 /**
  * Shared React hooks for analytics canvas components.
+ *
+ * Canvas contract (cleanup Phase 6) — scope-filtered canvases derive their
+ * inputs from these hooks, never ad hoc:
+ * - useScopeSets — the single source for scope (project/card/node id sets)
+ *   plus projects/cards/columns. Prefer it unless the canvas joins notes/tags.
+ * - useScopedData — useScopeSets plus the notes/tags arrays (Matrix, Table).
+ * - useFontScale — multiply ALL SVG `fontSize` attributes by its return.
+ *   HTML/rem-styled canvases don't need it (root font-size scales them).
+ * - useContainerDims — ResizeObserver dims for measured layouts (SVG viewBox,
+ *   canvas 2D + DPR sizing). HTML-flow canvases don't need it.
+ * Other helpers in this file: useRelativePointer (SVG tooltip positioning),
+ * useNow (render-time snapshot + optional refresh), useThemeRepaint (canvas
+ * repaint after theme flips). ForceGraphCanvas / RadialTreeCanvas render the
+ * full graph (legitimately unscoped) and additionally keep a dimsRef mirror
+ * for their render loops — the observer itself still comes from
+ * useContainerDims.
  */
 import { useEffect, useState, useMemo, useCallback } from "react";
 import type { RefObject } from "react";
@@ -45,11 +61,18 @@ export function useContainerDims(ref: React.RefObject<HTMLElement | null>) {
 // ── useScopedData ─────────────────────────────────────────────────────────────
 
 /**
- * Derives the sets of project/card IDs that are in scope for the current
- * graph node selection, plus the sorted active project list.
+ * Derives the sets of project/card/node IDs that are in scope for the current
+ * graph node selection, plus the sorted active project list and the
+ * project/card/column arrays. Notes/tags are NOT subscribed here — canvases
+ * that join against them (Matrix, Table) use useScopedData instead — so
+ * note/tag saves don't re-render canvases that never read them.
  */
-export function useScopedData(nodes: GraphNode[]) {
+export function useScopeSets(nodes: GraphNode[]) {
   const { projects, cards, columns } = useCairnStore(useShallow((s) => ({ projects: s.projects, cards: s.cards, columns: s.columns })));
+
+  const scopedNodeIds = useMemo(
+    () => new Set(nodes.map((n) => n.id)),
+    [nodes]);
 
   const scopedProjectIds = useMemo(
     () => new Set(nodes.filter((n) => n.type === "project").map((n) => n.id)),
@@ -69,7 +92,18 @@ export function useScopedData(nodes: GraphNode[]) {
     () => cards.filter((c) => scopedCardIds.has(c.id)),
     [cards, scopedCardIds]);
 
-  return { scopedProjectIds, scopedCardIds, activeProjects, scopedCards, projects, cards, columns };
+  return { scopedNodeIds, scopedProjectIds, scopedCardIds, activeProjects, scopedCards, projects, cards, columns };
+}
+
+/**
+ * Full-scope variant: useScopeSets plus the notes/tags arrays for canvases
+ * that join node rows against them (Matrix, Table). Prefer useScopeSets
+ * elsewhere to avoid re-rendering on note/tag saves.
+ */
+export function useScopedData(nodes: GraphNode[]) {
+  const sets = useScopeSets(nodes);
+  const { notes, tags } = useCairnStore(useShallow((s) => ({ notes: s.notes, tags: s.tags })));
+  return { ...sets, notes, tags };
 }
 
 // ── useRelativePointer ────────────────────────────────────────────────────────

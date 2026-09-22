@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import { Trash2, Download, CheckCircle, FolderOpen, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { DialogClose } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { storage } from "@/lib/storage";
@@ -138,11 +139,20 @@ export function DataSettings({
         </SettingsRow>
       )}
 
-      <Dialog open={resetOpen} onOpenChange={(v) => { setResetOpen(v); if (!v) setResetConfirm(""); }}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Reset all data?</DialogTitle>
-          </DialogHeader>
+      <ModalShell
+        open={resetOpen}
+        onClose={() => { setResetOpen(false); setResetConfirm(""); }}
+        size="sm"
+        title="Reset all data?"
+        footer={<>
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm">Cancel</Button>
+          </DialogClose>
+          <Button variant="danger" size="sm" onClick={handleReset} disabled={resetConfirm !== "DELETE"}>
+            <Trash2 size={12} /> Wipe all data
+          </Button>
+        </>}
+      >
           <div className="px-5 py-4 space-y-4">
             <p className="text-sm text-[var(--text-secondary)]">
               This will wipe all local data including notes, tasks, and projects. This cannot be undone.
@@ -158,17 +168,8 @@ export function DataSettings({
               aria-label="Type DELETE to confirm deletion"
               className="w-full text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:border-[var(--danger)]"
             />
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost" size="sm">Cancel</Button>
-              </DialogClose>
-              <Button variant="danger" size="sm" onClick={handleReset} disabled={resetConfirm !== "DELETE"}>
-                <Trash2 size={12} /> Wipe all data
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ModalShell>
     </SettingsGroup>
   );
 }

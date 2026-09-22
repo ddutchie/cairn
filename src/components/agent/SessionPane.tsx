@@ -16,6 +16,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximize2, Minimize2, MoreHorizontal, ChevronRight } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
+import { isView } from "@/lib/views";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
 import {
@@ -196,7 +197,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     // NOT reset the session when merely navigating AWAY from the agent view —
     // that would yank the user off a live agent conversation every time they hop
     // into Settings or another view; the agent tab is restored on return.
-    const chatOpenedOutsideAgent = !prevChatOpenRef.current && chatOpen && activeView !== "agent";
+    const chatOpenedOutsideAgent = !prevChatOpenRef.current && chatOpen && !isView(activeView, "agent");
 
     if (chatOpenedOutsideAgent) {
       setActiveSession("chat");
@@ -281,7 +282,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     <>
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Tab bar — instrument header, matches rail grammar */}
-      <div ref={headerRef} className="flex items-center h-11 px-1.5 gap-1.5 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,.04)] min-w-0 flex-nowrap">
+      <div ref={headerRef} className="flex items-center h-11 px-1.5 gap-1.5 border-b border-[var(--border)] overflow-visible relative z-20 flex-shrink-0 bg-[var(--surface)] shadow-[inset_0_1px_0_color-mix(in_srgb,white_4%,transparent)] min-w-0 flex-nowrap">
         {/* Session switcher — flexes so + never gets pushed off (outer must be overflow-visible so dropdown isn't clipped) */}
         <div className="flex-1 min-w-0 max-w-[220px] overflow-visible">
           <SessionBrowser activeSessionId={activeSessionId} variant="dropdown" />

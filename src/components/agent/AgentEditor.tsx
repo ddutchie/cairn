@@ -18,7 +18,9 @@ import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
 import { useShallow } from "zustand/react/shallow";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Tooltip } from "@/components/ui/tooltip";
+import { StatusDot } from "@/components/ui/status-dot";
 import { FileEditorInner } from "./FileEditorInner";
 import { ImageViewer } from "./ImageViewer";
 import { modKey } from "@/components/layout/sidebar-utils";
@@ -119,11 +121,12 @@ export function AgentEditor() {
   // ── Empty state ──────────────────────────────────────────────────────────
   if (openEditorFiles.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center p-8">
-        <FileCode size={28} className="text-[var(--text-tertiary)]" />
-        <p className="text-sm text-[var(--text-tertiary)]">Select a file to edit</p>
-        <p className="text-xs text-[var(--text-tertiary)]">Click a file in the tree on the left</p>
-      </div>
+      <EmptyState
+        icon={FileCode}
+        title="Select a file to edit"
+        description="Click a file in the tree on the left"
+        className="p-8"
+      />
     );
   }
 
@@ -167,7 +170,10 @@ export function AgentEditor() {
               {isImage(filePath) && <ImageIcon size={10} className="flex-shrink-0 text-[var(--text-tertiary)]" />}
               <span className="max-w-[120px] truncate">{name}</span>
               {!isImage(filePath) && (isDirty || isSaving) && (
-                <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", isSaving ? "bg-[var(--text-tertiary)]" : "bg-[var(--accent)]")} />
+                <>
+                  <StatusDot color={isSaving ? "var(--text-tertiary)" : "var(--accent)"} />
+                  <span className="sr-only">{isSaving ? "Saving…" : "Unsaved changes"}</span>
+                </>
               )}
               {/* Preview toggle for md files */}
               {isActive && isMarkdown(filePath) && (

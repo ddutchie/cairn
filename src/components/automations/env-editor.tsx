@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff, KeyRound, Plus, Trash2, RefreshCw, X } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Plus, Trash2, X } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -160,7 +161,7 @@ export function EnvEditor({
         <div className="flex items-center gap-1">
           <Tooltip content="Reload">
             <Button variant="ghost" size="xs" onClick={() => void load()} disabled={loading || saving}>
-              <RefreshCw size={11} className={cn(loading && "animate-spin")} />
+              <RefreshSpin size={11} spinning={loading} />
             </Button>
           </Tooltip>
           <Button variant="ghost" size="xs" onClick={addRow} disabled={saving}>

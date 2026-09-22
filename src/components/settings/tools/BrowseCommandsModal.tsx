@@ -1,25 +1,18 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
-  RefreshCw,
-  Loader2,
   Check,
   Download,
   ArrowUpCircle,
-  WifiOff,
-  Search,
   SlashSquare,
 } from "lucide-react";
-import { ModalShell } from "@/components/ui/modal-shell";
+import { Spinner } from "@/components/ui/spinner";
+import { CatalogBrowserShell } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
 import type { RegistryFetchResult, RegistryCommandEntry, CustomSlashCommand } from "@/types";
-
-const inputCls =
-  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
 
 const SCOPE_LABEL: Record<string, string> = {
   chat: "Chat",
@@ -63,6 +56,14 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
+  // Two-step confirm when updating an already-installed command: the update
+  // overwrites local values with the registry's, so the first click arms
+  // ("Confirm update") and the second fires. Auto-disarms after 4s.
+  const [armedUpdateId, setArmedUpdateId] = useState<string | null>(null);
+  const armedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+  }, []);
 
   const load = useCallback(async (force: boolean) => {
     const reg = window.electron?.registry;
@@ -128,18 +129,9 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
 
   const runInstall = useCallback(
     async (entry: RegistryCommandEntry) => {
-      // Updating an already-installed command overwrites its local values with
-      // the registry's. Warn first so a user who tweaked the command locally
-      // isn't surprised — new installs and declined confirmations are unaffected.
-      const installed = installedRow(entry);
-      if (installed && isOutdated(installed, entry)) {
-        const ok =
-          typeof window === "undefined" ||
-          window.confirm(
-            `Updating /${entry.definition.name} will replace your local copy with the community version. Any changes you made to it will be lost. Continue?`
-          );
-        if (!ok) return;
-      }
+      if (armedTimer.current) clearTimeout(armedTimer.current);
+      armedTimer.current = null;
+      setArmedUpdateId(null);
       setInstalling(entry.id);
       setInstallError(null);
       try {
@@ -150,90 +142,42 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
         setInstalling(null);
       }
     },
-    [installCommunityCommand, installedRow]
+    [installCommunityCommand]
   );
 
   return (
-    <ModalShell
+    <CatalogBrowserShell
       onClose={onClose}
-      size="lg"
-      scrollable
       title={
         <span className="flex items-center gap-2">
           <SlashSquare size={16} /> Browse Community Commands
         </span>
       }
       description="Install community-contributed slash commands into this workspace."
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search commands…"
+      refreshing={refreshing}
+      onRefresh={() => void load(true)}
+      categories={categories}
+      activeCategory={activeCategory}
+      onCategoryChange={setActiveCategory}
+      registryError={result?.error}
+      fromCache={result?.fromCache}
+      installError={installError}
+      loading={loading}
+      hasEntries={commands.length > 0}
+      hasResults={filtered.length > 0}
+      emptyText="No community commands available."
+      belowList={
+        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+          Installed commands are added to this workspace and appear when you type{" "}
+          <span className="font-mono">/</span> in a chat or agent input. Manage them under{" "}
+          <strong>Your commands</strong>.
+        </p>
+      }
     >
-      {/* Toolbar: search + categories + refresh */}
-      <div className="flex flex-col gap-3 pb-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
-            />
-            <input
-              className={inputCls}
-              placeholder="Search commands…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            title="Refresh from the registry"
-          >
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            Refresh
-          </Button>
-        </div>
-
-        {categories.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            <TagChip label="All" active={activeCategory === null} onClick={() => setActiveCategory(null)} />
-            {categories.map((cat) => (
-              <TagChip
-                key={cat}
-                label={cat}
-                active={activeCategory === cat}
-                onClick={() => setActiveCategory(cat)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Provenance / error banner */}
-      {result?.error && (
-        <div className="mt-3 flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
-          <WifiOff size={12} />
-          {result.fromCache
-            ? "Showing the cached catalog — couldn't reach the registry."
-            : `Couldn't load the registry: ${result.error}`}
-        </div>
-      )}
-      {installError && (
-        <div className="mt-3 text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
-          {installError}
-        </div>
-      )}
-
-      {/* List */}
-      <div className="mt-3 flex flex-col gap-2 min-h-[8rem]">
-        {loading ? (
-          <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
-            {commands.length === 0 ? "No community commands available." : "No matches."}
-          </p>
-        ) : (
-          filtered.map((entry) => {
+      {filtered.map((entry) => {
             const installed = installedRow(entry);
             const updatable = installed !== undefined && isOutdated(installed, entry);
             const busy = installing === entry.id;
@@ -282,46 +226,34 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
                       size="sm"
                       variant={updatable ? "outline" : "default"}
                       disabled={busy || !activeWorkspaceId}
-                      onClick={() => void runInstall(entry)}
+                      title={updatable && armedUpdateId === entry.id ? "Click again — your local edits will be replaced by the community version" : undefined}
+                      onClick={() => {
+                        if (updatable && armedUpdateId !== entry.id) {
+                          if (armedTimer.current) clearTimeout(armedTimer.current);
+                          setArmedUpdateId(entry.id);
+                          armedTimer.current = setTimeout(() => {
+                            armedTimer.current = null;
+                            setArmedUpdateId(null);
+                          }, 4000);
+                          return;
+                        }
+                        void runInstall(entry);
+                      }}
                     >
                       {busy ? (
-                        <Loader2 size={12} className="animate-spin" />
+                        <Spinner size={12} />
                       ) : updatable ? (
                         <ArrowUpCircle size={12} />
                       ) : (
                         <Download size={12} />
                       )}
-                      {updatable ? "Update" : "Install"}
+                      {updatable ? (armedUpdateId === entry.id ? "Confirm update" : "Update") : "Install"}
                     </Button>
                   )}
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
-
-      <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
-        Installed commands are added to this workspace and appear when you type{" "}
-        <span className="font-mono">/</span> in a chat or agent input. Manage them under{" "}
-        <strong>Your commands</strong>.
-      </p>
-    </ModalShell>
-  );
-}
-
-function TagChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "text-[0.65rem] rounded-full px-2 py-0.5 border transition-colors",
-        active
-          ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--text-primary)]"
-          : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-      )}
-    >
-      {label}
-    </button>
+          })}
+    </CatalogBrowserShell>
   );
 }

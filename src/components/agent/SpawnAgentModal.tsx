@@ -14,7 +14,8 @@
 
 import { useState, useEffect } from "react";
 import { Terminal, MessageSquare, AlertTriangle } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { DialogClose } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select } from "@/components/ui/select";
@@ -170,17 +171,30 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent size="md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {sessionType === "coding"
-              ? <MessageSquare size={15} />
-              : <Terminal size={15} />}
-            {card ? "Spawn Agent" : "New Session"}
-          </DialogTitle>
-        </DialogHeader>
-
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      size="md"
+      title={<>
+        {sessionType === "coding"
+          ? <MessageSquare size={15} />
+          : <Terminal size={15} />}
+        {card ? "Spawn Agent" : "New Session"}
+      </>}
+      footer={<>
+        <DialogClose asChild>
+          <Button variant="ghost" size="sm">Cancel</Button>
+        </DialogClose>
+        <Button
+          size="sm"
+          onClick={handleSpawn}
+          disabled={!canSpawn || spawning}
+        >
+          {sessionType === "coding" ? <MessageSquare size={13} /> : <Terminal size={13} />}
+          {spawning ? "Starting…" : card ? "Spawn" : "Start"}
+        </Button>
+      </>}
+    >
         <div className="px-5 py-4 space-y-4">
 
           {/* Session type toggle */}
@@ -286,23 +300,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               {spawnError}
             </div>
           )}
-
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-1">
-            <DialogClose asChild>
-              <Button variant="ghost" size="sm">Cancel</Button>
-            </DialogClose>
-            <Button
-              size="sm"
-              onClick={handleSpawn}
-              disabled={!canSpawn || spawning}
-            >
-              {sessionType === "coding" ? <MessageSquare size={13} /> : <Terminal size={13} />}
-              {spawning ? "Starting…" : card ? "Spawn" : "Start"}
-            </Button>
-          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+    </ModalShell>
   );
 }

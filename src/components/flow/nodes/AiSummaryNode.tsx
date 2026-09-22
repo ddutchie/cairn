@@ -2,7 +2,9 @@
 
 import { memo, useState, useCallback } from "react";
 import { Handle, Position, type NodeProps, useReactFlow } from "@xyflow/react";
-import { Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { Sparkles, RefreshCw } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { FlowNodeShell, FLOW_HANDLE_CLASS } from "./flow-node-shell";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -49,19 +51,12 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
   const hasContent = !!d.content;
 
   return (
-    <div
-      className={cn(
-        "min-w-[200px] max-w-[320px] rounded-xl border bg-[var(--surface)] shadow-sm transition-shadow",
-        selected
-          ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-dim)]"
-          : "border-[var(--accent)]/30 hover:border-[var(--accent)]/60"
-      )}
-    >
+    <FlowNodeShell selected={selected} tone="accent" minWidth="min-w-[200px]" maxWidth="max-w-[320px]">
       <Handle
         type="target"
         position={Position.Left}
         isConnectable={isConnectable}
-        className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5"
+        className={FLOW_HANDLE_CLASS}
       />
 
       <div className="px-3 pt-2.5 pb-2.5">
@@ -85,7 +80,7 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
             title={!aiEnabled ? "AI features are disabled — enable in Settings → AI" : hasContent ? "Re-generate summary from connected nodes" : "Generate summary from connected nodes"}
           >
             {status === "loading" ? (
-              <Loader2 size={10} className="animate-spin" />
+              <Spinner size={10} />
             ) : (
               <RefreshCw size={10} />
             )}
@@ -113,8 +108,8 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
         type="source"
         position={Position.Right}
         isConnectable={isConnectable}
-        className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5"
+        className={FLOW_HANDLE_CLASS}
       />
-    </div>
+    </FlowNodeShell>
   );
 });

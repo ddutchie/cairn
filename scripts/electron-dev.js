@@ -26,9 +26,14 @@ function start() {
     child.kill();
   }
   console.log("[electron-dev] starting Electron…");
+  // Spawn the Electron binary directly rather than via `npx electron` — on
+  // Windows, spawning the "npx.cmd" shim without shell:true can throw
+  // "spawn EINVAL" depending on the Node version manager's PATH shim (e.g.
+  // fnm's per-shell temp dir), and require("electron") already resolves to
+  // the real electron.exe/electron binary path.
   child = spawn(
-    process.platform === "win32" ? "npx.cmd" : "npx",
-    ["electron", path.join(root, "dist-electron", "main.js")],
+    require("electron"),
+    [path.join(root, "dist-electron", "main.js")],
     {
       stdio: "inherit",
       env: { ...process.env, NODE_ENV: "development" },

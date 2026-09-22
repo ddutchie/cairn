@@ -12,16 +12,13 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { RefreshCw, Loader2, Check, Download, WifiOff, Search, ExternalLink } from "lucide-react";
-import { ModalShell } from "@/components/ui/modal-shell";
+import { Check, Download, ExternalLink } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { CatalogBrowserShell, isSafeExternalUrl } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
 import type { PersonalitiesFetchResult, RegistryPersonalityEntry } from "@/types";
-
-const inputCls =
-  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
 
 const emptyResult: PersonalitiesFetchResult = {
   manifest: { version: 1, updatedAt: "", personalities: [] },
@@ -114,81 +111,37 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <ModalShell
+    <CatalogBrowserShell
       onClose={onClose}
-      size="lg"
-      scrollable
       title={
         <span className="flex items-center gap-2">
           <Download size={16} /> Browse Community Personalities
         </span>
       }
       description="Install ready-made tone & style rules for chat. The full prompt is shown — it's appended to the system prompt verbatim."
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search personalities…"
+      refreshing={refreshing}
+      onRefresh={() => void load(true)}
+      categories={categories}
+      activeCategory={activeCategory}
+      onCategoryChange={setActiveCategory}
+      registryError={result?.error}
+      fromCache={result?.fromCache}
+      installError={installError}
+      loading={loading}
+      hasEntries={personalities.length > 0}
+      hasResults={filtered.length > 0}
+      emptyText="No community personalities available."
+      belowList={
+        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+          Added personalities join your installed list. Select one in the personality
+          picker next to the model selector in chat — &quot;None&quot; means no personality.
+        </p>
+      }
     >
-      {/* Toolbar: search + refresh */}
-      <div className="flex flex-col gap-3 pb-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
-            />
-            <input
-              className={inputCls}
-              placeholder="Search personalities…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            title="Refresh from the registry"
-          >
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            Refresh
-          </Button>
-        </div>
-
-        {categories.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            <TagChip label="All" active={activeCategory === null} onClick={() => setActiveCategory(null)} />
-            {categories.map((cat) => (
-              <TagChip key={cat} label={cat} active={activeCategory === cat} onClick={() => setActiveCategory(cat)} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Provenance / error banner */}
-      {result?.error && (
-        <div className="mt-3 flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
-          <WifiOff size={12} />
-          {result.fromCache
-            ? "Showing the cached catalog — couldn't reach the registry."
-            : `Couldn't load the registry: ${result.error}`}
-        </div>
-      )}
-      {installError && (
-        <div className="mt-3 text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
-          {installError}
-        </div>
-      )}
-
-      {/* List */}
-      <div className="mt-3 flex flex-col gap-2 min-h-[8rem]">
-        {loading ? (
-          <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
-            {personalities.length === 0 ? "No community personalities available." : "No matches."}
-          </p>
-        ) : (
-          filtered.map((entry) => {
+      {filtered.map((entry) => {
             const def = entry.definition;
             const installed = isInstalled(entry);
             const busy = installing === entry.id;
@@ -214,7 +167,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
                         </span>
                       )}
                       <span className="text-[0.65rem] text-[var(--text-tertiary)]">by {entry.author}</span>
-                      {entry.homepage && (
+                      {entry.homepage && isSafeExternalUrl(entry.homepage) && (
                         <a
                           href={entry.homepage}
                           target="_blank"
@@ -252,7 +205,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
                         disabled={busy}
                         onClick={() => void runInstall(entry)}
                       >
-                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                        {busy ? <Spinner size={12} /> : <Download size={12} />}
                         Add
                       </Button>
                     )}
@@ -260,30 +213,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
-
-      <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
-        Added personalities join your installed list. Select one in the personality
-        picker next to the model selector in chat — &quot;None&quot; means no personality.
-      </p>
-    </ModalShell>
-  );
-}
-
-function TagChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "text-[0.65rem] rounded-full px-2 py-0.5 border transition-colors",
-        active
-          ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--text-primary)]"
-          : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-      )}
-    >
-      {label}
-    </button>
+          })}
+    </CatalogBrowserShell>
   );
 }

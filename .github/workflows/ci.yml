@@ -77,6 +77,52 @@ jobs:
       - name: Lint
         run: npm run lint -- --max-warnings 0
 
+  # ── Mobile (Expo companion) ─────────────────────────────────────────────────
+  # Root type-check/lint ignore mobile/** (separate RN-aware toolchain), so the
+  # companion app gets its own gate here instead of only at release time
+  # (scripts/releasemobile.sh). No package-lock in mobile/ — plain install.
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # --legacy-peer-deps: Expo 58 is a prerelease (58.0.0-preview.x) and
+      # prereleases don't satisfy plain peer ranges, so strict installs fail
+      # resolving e.g. datetimepicker's peerOptional expo@>=52.0.0. Revisit
+      # when SDK 58 goes stable.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+
+      - name: Cache root node_modules (type walk-up)
+        id: cache-root
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: node_modules
+          key: npm-deps-${{ runner.os }}-node-24-${{ hashFiles('package-lock.json') }}
+
+      - name: Install root dependencies (types only, no natives)
+        if: steps.cache-root.outputs.cache-hit != 'true'
+        working-directory: ${{ github.workspace }}
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Link shared package
+        run: node scripts/link-shared.js
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint -- --max-warnings 0
+
   # ── Unit / integration tests ─────────────────────────────────────────────────
   test:
     name: Unit tests

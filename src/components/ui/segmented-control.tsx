@@ -33,7 +33,7 @@ export function SegmentedControl<T extends string | number>({
             onClick={() => onChange(opt.value)}
             className={cn(
               "flex-1 flex items-center justify-center gap-1 py-1.5 px-1.5 border-0 outline-none transition-colors cursor-pointer select-none font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
-              active && "bg-[var(--accent)] text-white hover:bg-[var(--accent)] hover:text-white",
+              active && "bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[var(--accent)] hover:text-[var(--accent-fg)]",
               idx > 0 && "border-l border-[var(--border)]"
             )}
           >

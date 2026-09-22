@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { ArrowLeft, FolderCheck, FileText, Undo2 } from "lucide-react";
 import { Shell } from "./shared";
+import { useConfirmAction } from "@/components/ui/confirm-button";
 import { cn } from "@/lib/utils";
 
 export interface ImportedProject {
@@ -27,7 +27,7 @@ interface Props {
 export function StepImportedProjects({ projects, busy = false, error = null, onBack, onContinue, onUndo }: Props) {
   const totalNotes = projects.reduce((sum, p) => sum + p.noteCount, 0);
   // Two-step destructive confirm: first click arms it, second click fires it.
-  const [confirming, setConfirming] = useState(false);
+  const undoConfirm = useConfirmAction();
 
   return (
     <Shell step="imported-projects">
@@ -91,22 +91,23 @@ export function StepImportedProjects({ projects, busy = false, error = null, onB
           type="button"
           disabled={busy}
           onClick={() => {
-            if (confirming) {
+            if (undoConfirm.armed) {
+              undoConfirm.fire();
               onUndo();
             } else {
-              setConfirming(true);
+              undoConfirm.arm();
             }
           }}
           className={cn(
             "w-full py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed",
-            confirming
+            undoConfirm.armed
               ? "border border-[var(--danger)] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
               : "border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
           )}
         >
           {busy
             ? "Removing imported projects…"
-            : confirming
+            : undoConfirm.armed
               ? `Confirm — undo removes ${projects.length === 1 ? "this project" : `${projects.length} projects`} and strips Cairn frontmatter`
               : (
                 <span className="inline-flex items-center justify-center gap-1.5">

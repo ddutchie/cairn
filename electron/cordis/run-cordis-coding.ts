@@ -31,7 +31,7 @@ import {
 } from "./cairn-plugins";
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
-import { TOOL_SCHEMAS, dlog, startPhaseTimer, createHostStore } from "./host-store";
+import { TOOL_SCHEMAS, dlog, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { runCordisSession } from "./session-runner";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
@@ -40,7 +40,6 @@ import type { LLMConfig } from "../lib/llm";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
-import { setCurrentOpencodeSessionId } from "../lib/cairn-identity";
 
 export interface RunCordisCodingOptions {
   db: Database;

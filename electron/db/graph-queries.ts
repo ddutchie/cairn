@@ -17,7 +17,7 @@ import type Database from "better-sqlite3";
 import { getAllEmbeddingsForWorkspace, getAllTaskEmbeddingsForWorkspace } from "./queries";
 import type { NoteEmbeddingRecord, TaskEmbeddingRecord } from "./queries";
 import { cosine, toFloat32 } from "../embeddings/cosine";
-import { stripMarkdown } from "../shared/text-utils";
+import { stripMarkdown } from "../host-shared/text-utils";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 

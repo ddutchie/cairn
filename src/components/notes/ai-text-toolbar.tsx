@@ -2,10 +2,12 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Loader2, Wand2, RefreshCw, AlignLeft, Expand, SpellCheck, MessageSquare, X,
+  Wand2, RefreshCw, AlignLeft, Expand, SpellCheck, MessageSquare, X,
   Bold, Italic, Strikethrough, Code, Code2, Link, Link2, Quote, List, ListOrdered,
   Heading1, Heading2, Heading3, Highlighter, CheckSquare, Minus,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { modKey } from "@/components/layout/sidebar-utils";
@@ -128,7 +130,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
       {aiEnabled && <><div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)]">
         {loading ? (
           <div className="flex items-center gap-2 px-2 py-1 text-xs text-[var(--text-tertiary)]">
-            <Loader2 size={11} className="animate-spin" />
+            <Spinner size={11} />
             <span>Writing…</span>
           </div>
         ) : (
@@ -179,13 +181,14 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
             placeholder="Describe what to do with the text…"
             className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
           />
-          <button
+          <Button
             type="submit"
+            variant="accent"
+            size="xs"
             disabled={!customPrompt.trim()}
-            className="px-2 py-0.5 rounded text-[0.786rem] bg-[var(--accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
           >
             Apply
-          </button>
+          </Button>
         </form>
       )}
       </>}

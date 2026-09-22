@@ -2,6 +2,7 @@
 
 import React, { useMemo, useRef, useState, useCallback } from "react";
 import { useContainerDims, useFontScale } from "@/components/graph/analyticsHooks";
+import { EmptyState } from "@/components/ui/empty-state";
 import { fmtFull, fmtCompact, fmtDay } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
 import type { UsageDayBucket } from "@/types/usage";
@@ -93,9 +94,7 @@ export function UsageChart({ series, metric }: Props) {
       onMouseLeave={() => setHover(null)}
     >
       {series.length === 0 ? (
-        <div className="absolute inset-0 flex items-center justify-center text-xs text-[var(--text-tertiary)]">
-          No usage in this range yet.
-        </div>
+        <EmptyState overlay title="No usage in this range yet." />
       ) : (
         <svg width={w} height={HEIGHT} className="block">
           {yTicks.map((t) => (

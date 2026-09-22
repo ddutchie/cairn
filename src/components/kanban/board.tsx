@@ -27,7 +27,10 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { PRIORITY_OPTIONS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { CountBadge } from "@/components/ui/count-badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { DialogClose } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { ArchiveView } from "./archive-view";
 import { KanbanColumn } from "./column";
 import { KanbanCard } from "./card";
@@ -542,12 +545,12 @@ export function KanbanBoard() {
             >
               <Kanban size={11} />
               Board
-              {activeProjectId && (() => {
-                const count = columns.reduce((n, col) => n + getColumnCards(col.id).length, 0);
-                return count > 0 ? (
-                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[0.643rem] bg-[var(--surface-3)] text-[var(--text-tertiary)]">{count}</span>
-                ) : null;
-              })()}
+              {activeProjectId && (
+                <CountBadge
+                  count={columns.reduce((n, col) => n + getColumnCards(col.id).length, 0)}
+                  className="ml-0.5 px-1.5 py-0.5 text-[0.643rem]"
+                />
+              )}
             </button>
             <button
               onClick={() => setArchiveViewOpen(true)}
@@ -560,12 +563,12 @@ export function KanbanBoard() {
             >
               <Archive size={11} />
               Archive
-              {activeProjectId && (() => {
-                const count = getArchivedProjectCards(activeProjectId).length;
-                return count > 0 ? (
-                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[0.643rem] bg-[var(--surface-3)] text-[var(--text-tertiary)]">{count}</span>
-                ) : null;
-              })()}
+              {activeProjectId && (
+                <CountBadge
+                  count={getArchivedProjectCards(activeProjectId).length}
+                  className="ml-0.5 px-1.5 py-0.5 text-[0.643rem]"
+                />
+              )}
             </button>
 
             {/* Drop zones — shown alongside toggle buttons during card drag */}
@@ -690,10 +693,7 @@ export function KanbanBoard() {
 
               {columns.length === 0 && (
                 <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center">
-                    <Kanban size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
-                    <p className="text-sm text-[var(--text-tertiary)]">No columns yet</p>
-                  </div>
+                  <EmptyState icon={Kanban} title="No columns yet" />
                 </div>
               )}
             </div>
@@ -733,11 +733,7 @@ export function KanbanBoard() {
         <CardDetailModal cardId={detailCardId} onClose={() => setDetailCardId(null)} />
       )}
 
-      <Dialog open={addColumnOpen} onOpenChange={setAddColumnOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Add column</DialogTitle>
-          </DialogHeader>
+      <ModalShell open={addColumnOpen} onClose={() => setAddColumnOpen(false)} size="sm" title="Add column">
           <form
             onSubmit={(e) => { e.preventDefault(); handleAddColumnConfirm(); }}
             className="px-5 py-4 space-y-4"
@@ -759,8 +755,7 @@ export function KanbanBoard() {
               </Button>
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+      </ModalShell>
     </>
   );
 }

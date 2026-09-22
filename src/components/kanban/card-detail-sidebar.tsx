@@ -11,6 +11,7 @@ import {
   ArrowRight, FolderInput, Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Select } from "@/components/ui/select";
 import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
@@ -51,7 +52,6 @@ export function CardDetailSidebar({
   onDelete: () => void;
   onSpawnAgent: () => void;
 }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [moveToProjectOpen, setMoveToProjectOpen] = useState(false);
   const [blockerError, setBlockerError] = useState<string | null>(null);
 
@@ -243,24 +243,17 @@ export function CardDetailSidebar({
             )}
           </div>
         )}
-        <div className="border-t border-[var(--border)] pt-1.5">
-          {confirmDelete ? (
-            <div className="space-y-1">
-              <p className="text-[0.714rem] text-[var(--text-tertiary)]">Are you sure?</p>
-              <div className="flex gap-1">
-                <Button variant="danger" size="xs" onClick={onDelete}>Delete</Button>
-                <Button variant="ghost" size="xs" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              variant="ghost" size="xs"
-              className="w-full justify-start text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 size={10} /> Delete
-            </Button>
-          )}
+        <div className="border-t border-[var(--border)] pt-1.5 flex gap-1">
+          <ConfirmButton
+            variant="ghost" size="xs"
+            className="w-full justify-start text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+            armedClassName="justify-start text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]"
+            confirmLabel={<><Trash2 size={10} /> Confirm delete</>}
+            showCancel
+            onConfirm={onDelete}
+          >
+            <Trash2 size={10} /> Delete
+          </ConfirmButton>
         </div>
       </div>
     </div>

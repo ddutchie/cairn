@@ -139,7 +139,7 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
       // Use workspacePath from caller? The handler doesn't have workspace context;
       // fall back to sessionRoot parent. For rename, cwd doesn't matter.
       const { getSessionRoot } = await import("../cordis/cordis-context");
-      const cwd = getSessionRoot().replace(/\/sessions\/?$/, "") || process.cwd();
+      const cwd = getSessionRoot().replace(/[/\\]sessions[/\\]?$/, "") || process.cwd();
       try {
         const { getCachedConfig } = await import("../lib/config-cache");
         const cached = getCachedConfig();

@@ -2,24 +2,21 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  RefreshCw,
-  Loader2,
   Check,
   Download,
   ArrowUpCircle,
   KeyRound,
   ShieldCheck,
   WifiOff,
-  Search,
   LogIn,
   CheckCircle,
   X,
 } from "lucide-react";
-import { ModalShell } from "@/components/ui/modal-shell";
+import { Spinner } from "@/components/ui/spinner";
+import { CatalogBrowserShell, isSafeExternalUrl } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
 import type {
   RegistryFetchResult,
   RegistryMcpEntry,
@@ -27,9 +24,6 @@ import type {
 } from "@/types";
 import { headerNeedsSecret } from "@/store/slices/tools";
 import { ConnectorLogo } from "./ConnectorLogo";
-
-const inputCls =
-  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm pl-8 pr-3 py-2 focus:outline-none";
 
 type Kind = "mcp" | "service";
 interface CardEntry {
@@ -261,128 +255,143 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
     [runInstall]
   );
 
+  // Post-install prompt: ask for the required key (OAuth connect) or confirm.
+  // Rendered via the shell's `notice` slot (between banners and the list).
+  const justInstalledNotice = justInstalled && (
+    <div className="mt-3 rounded-lg border border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] px-3 py-2 text-[0.714rem]">
+      <div className="flex items-center gap-2">
+        <Check size={13} className="text-[var(--ok)] shrink-0" />
+        <span className="text-[var(--text-primary)] font-medium">
+          {entryName(justInstalled.entry)} installed
+          {justInstalled.secretCount > 0 ? " — API key saved to your keychain" : ""}.
+        </span>
+        {justInstalled.oauth && !justInstalled.connected && !connecting && (
+          <Button variant="outline" size="sm" className="ml-auto" onClick={() => void connectInstalled()}>
+            <LogIn size={11} /> Connect now
+          </Button>
+        )}
+        {justInstalled.oauth && justInstalled.connected && (
+          <span className="flex items-center gap-1 text-[var(--ok)] ml-auto">
+            <CheckCircle size={11} /> Connected
+          </span>
+        )}
+        {justInstalled.oauth && !justInstalled.connected && connecting && (
+          <span className="flex items-center gap-1 text-[var(--text-tertiary)] ml-auto">
+            <Spinner size={11} /> Waiting for browser…
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => { setJustInstalled(null); setConnecting(false); setConnectError(null); }}
+          className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+          aria-label="Dismiss"
+        >
+          <X size={12} />
+        </button>
+      </div>
+      {justInstalled.oauth && !justInstalled.connected && (
+        <p className="text-[var(--text-tertiary)] mt-1">
+          Connect your account so this connector can call external tools. After connecting, enable it and attach it to a project under MCP Servers / Custom HTTP Services.
+        </p>
+      )}
+      {connectError && (
+        <p className="text-[var(--danger)] mt-1 flex items-center gap-1">
+          <WifiOff size={11} /> {connectError}
+        </p>
+      )}
+    </div>
+  );
+
+  // Secret prompt (when the entry has <API_KEY> placeholders). Rendered via
+  // the shell's `belowList` slot, after the result list.
+  const secretPromptPanel = secretPrompt && (
+    <div className="mt-4 rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <KeyRound size={13} className="text-[var(--accent)]" />
+        <span className="text-sm font-semibold text-[var(--text-primary)]">
+          {entryName(secretPrompt.entry)} needs an API key
+        </span>
+      </div>
+      <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-3">
+        Stored securely in your OS keychain — never written to the app database or sent to the model.
+        {entryMeta(secretPrompt.entry).homepage && isSafeExternalUrl(entryMeta(secretPrompt.entry).homepage) && (
+          <>
+            {" "}
+            <a
+              href={entryMeta(secretPrompt.entry).homepage}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[var(--accent)] underline"
+            >
+              Get a key
+            </a>
+          </>
+        )}
+      </p>
+      {secretPrompt.names.map((n) => (
+        <div key={n} className="mb-2">
+          <label className="text-[0.643rem] uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
+            {n}
+          </label>
+          <input
+            type="password"
+            className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
+            value={secretValues[n] ?? ""}
+            onChange={(ev) => setSecretValues((s) => ({ ...s, [n]: ev.target.value }))}
+            autoComplete="off"
+          />
+        </div>
+      ))}
+      <div className="flex justify-end gap-2 mt-2">
+        <Button variant="ghost" size="sm" onClick={() => { setSecretPrompt(null); setSecretValues({}); }}>
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          disabled={installing !== null || secretPrompt.names.some((n) => !secretValues[n]?.trim())}
+          onClick={() => void runInstall(secretPrompt.entry, secretValues)}
+        >
+          {installing ? <Spinner size={12} /> : <Download size={12} />}
+          Install
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
-    <ModalShell
+    <CatalogBrowserShell
       onClose={onClose}
-      size="lg"
-      scrollable
       title={
         <span className="flex items-center gap-2">
           <Download size={16} /> Browse Community Tools
         </span>
       }
       description="Install community-contributed MCP servers and HTTP services."
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search connectors and services…"
+      refreshing={refreshing}
+      onRefresh={() => void load(true)}
+      categories={categories}
+      activeCategory={activeCategory}
+      onCategoryChange={setActiveCategory}
+      registryError={result?.error}
+      fromCache={result?.fromCache}
+      installError={installError}
+      notice={justInstalledNotice}
+      loading={loading}
+      hasEntries={entries.length > 0}
+      hasResults={filtered.length > 0}
+      emptyText="No community tools available."
+      belowList={<>
+        {secretPromptPanel}
+        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+          Installed tools are added <strong>disabled</strong> — review them under MCP Servers / Custom
+          HTTP Services, then enable (and, for OAuth, connect) and attach per-project.
+        </p>
+      </>}
     >
-      {/* Toolbar: search + tags + refresh */}
-      <div className="flex flex-col gap-3 pb-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
-            />
-            <input
-              className={inputCls}
-              placeholder="Search connectors and services…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            title="Refresh from the registry"
-          >
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            Refresh
-          </Button>
-        </div>
-
-        {categories.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            <TagChip label="All" active={activeCategory === null} onClick={() => setActiveCategory(null)} />
-            {categories.map((cat) => (
-              <TagChip key={cat} label={cat} active={activeCategory === cat} onClick={() => setActiveCategory(cat)} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Provenance / error banner */}
-      {result?.error && (
-        <div className="mt-3 flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
-          <WifiOff size={12} />
-          {result.fromCache
-            ? "Showing the cached catalog — couldn't reach the registry."
-            : `Couldn't load the registry: ${result.error}`}
-        </div>
-      )}
-      {installError && (
-        <div className="mt-3 text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
-          {installError}
-        </div>
-      )}
-
-      {/* Post-install prompt: ask for the required key (OAuth connect) or confirm. */}
-      {justInstalled && (
-        <div className="mt-3 rounded-lg border border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] px-3 py-2 text-[0.714rem]">
-          <div className="flex items-center gap-2">
-            <Check size={13} className="text-[var(--ok)] shrink-0" />
-            <span className="text-[var(--text-primary)] font-medium">
-              {entryName(justInstalled.entry)} installed
-              {justInstalled.secretCount > 0 ? " — API key saved to your keychain" : ""}.
-            </span>
-            {justInstalled.oauth && !justInstalled.connected && !connecting && (
-              <Button variant="outline" size="sm" className="ml-auto" onClick={() => void connectInstalled()}>
-                <LogIn size={11} /> Connect now
-              </Button>
-            )}
-            {justInstalled.oauth && justInstalled.connected && (
-              <span className="flex items-center gap-1 text-[var(--ok)] ml-auto">
-                <CheckCircle size={11} /> Connected
-              </span>
-            )}
-            {justInstalled.oauth && !justInstalled.connected && connecting && (
-              <span className="flex items-center gap-1 text-[var(--text-tertiary)] ml-auto">
-                <Loader2 size={11} className="animate-spin" /> Waiting for browser…
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => { setJustInstalled(null); setConnecting(false); setConnectError(null); }}
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-              aria-label="Dismiss"
-            >
-              <X size={12} />
-            </button>
-          </div>
-          {justInstalled.oauth && !justInstalled.connected && (
-            <p className="text-[var(--text-tertiary)] mt-1">
-              Connect your account so this connector can call external tools. After connecting, enable it and attach it to a project under MCP Servers / Custom HTTP Services.
-            </p>
-          )}
-          {connectError && (
-            <p className="text-[var(--danger)] mt-1 flex items-center gap-1">
-              <WifiOff size={11} /> {connectError}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* List */}
-      <div className="mt-3 flex flex-col gap-2 min-h-[8rem]">
-        {loading ? (
-          <div className="flex items-center justify-center py-10 text-[var(--text-tertiary)]">
-            <Loader2 size={18} className="animate-spin" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-xs text-[var(--text-tertiary)] py-10 text-center border border-dashed border-[var(--border)] rounded-lg">
-            {entries.length === 0 ? "No community tools available." : "No matches."}
-          </p>
-        ) : (
-          filtered.map((e) => {
+      {filtered.map((e) => {
             const meta = entryMeta(e);
             const name = entryName(e);
             const installed = installedVersion(e);
@@ -433,7 +442,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
                       onClick={() => onInstallClick(e)}
                     >
                       {busy ? (
-                        <Loader2 size={12} className="animate-spin" />
+                        <Spinner size={12} />
                       ) : updatable ? (
                         <ArrowUpCircle size={12} />
                       ) : (
@@ -445,85 +454,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
-
-      {/* Secret prompt (when the entry has <API_KEY> placeholders) */}
-      {secretPrompt && (
-        <div className="mt-4 rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <KeyRound size={13} className="text-[var(--accent)]" />
-            <span className="text-sm font-semibold text-[var(--text-primary)]">
-              {entryName(secretPrompt.entry)} needs an API key
-            </span>
-          </div>
-          <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-3">
-            Stored securely in your OS keychain — never written to the app database or sent to the model.
-            {entryMeta(secretPrompt.entry).homepage && (
-              <>
-                {" "}
-                <a
-                  href={entryMeta(secretPrompt.entry).homepage}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[var(--accent)] underline"
-                >
-                  Get a key
-                </a>
-              </>
-            )}
-          </p>
-          {secretPrompt.names.map((n) => (
-            <div key={n} className="mb-2">
-              <label className="text-[0.643rem] uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-                {n}
-              </label>
-              <input
-                type="password"
-                className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none"
-                value={secretValues[n] ?? ""}
-                onChange={(ev) => setSecretValues((s) => ({ ...s, [n]: ev.target.value }))}
-                autoComplete="off"
-              />
-            </div>
-          ))}
-          <div className="flex justify-end gap-2 mt-2">
-            <Button variant="ghost" size="sm" onClick={() => { setSecretPrompt(null); setSecretValues({}); }}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={installing !== null || secretPrompt.names.some((n) => !secretValues[n]?.trim())}
-              onClick={() => void runInstall(secretPrompt.entry, secretValues)}
-            >
-              {installing ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-              Install
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
-        Installed tools are added <strong>disabled</strong> — review them under MCP Servers / Custom
-        HTTP Services, then enable (and, for OAuth, connect) and attach per-project.
-      </p>
-    </ModalShell>
-  );
-}
-
-function TagChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "text-[0.65rem] rounded-full px-2 py-0.5 border transition-colors",
-        active
-          ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--text-primary)]"
-          : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-      )}
-    >
-      {label}
-    </button>
+          })}
+    </CatalogBrowserShell>
   );
 }

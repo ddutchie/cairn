@@ -1,7 +1,10 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { Puzzle, FolderOpen, RefreshCw, Bot, Download, Trash2, Loader2 } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Puzzle, FolderOpen, RefreshCw, Bot, Download, Trash2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Toggle } from "@/components/ui/toggle";
 
 interface PluginRow {
@@ -43,6 +46,14 @@ export function PluginsSettings() {
   const [spec, setSpec] = useState("");
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Two-step uninstall confirm (per-row; uninstall rm-rfs the plugin folder).
+  // Uninstall runs fs.rmSync(pluginDir, {recursive:true}); if the user was
+  // editing a local plugin in-place, that folder can hold unpushed work.
+  const [armedUninstallId, setArmedUninstallId] = useState<string | null>(null);
+  const armedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (armedTimer.current) clearTimeout(armedTimer.current);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!el?.plugins) { setData({ devEnabled: false, root: "", plugins: [] }); return; }
@@ -91,15 +102,6 @@ export function PluginsSettings() {
 
   const uninstall = async (row: PluginRow) => {
     if (!el?.plugins) return;
-    // Confirm destructive action. Uninstall runs fs.rmSync(pluginDir,
-    // {recursive:true}) on the installed plugin folder; if the user was
-    // editing a local plugin in-place, that folder can hold unpushed work.
-    // The prompt says exactly what will happen so a misclick doesn't
-    // silently trash files.
-    const label = row.name || row.id;
-    if (!window.confirm(
-      `Uninstall "${label}"?\n\nThis removes the plugin's files from your plugins folder and takes it off the enabled list. Any local edits inside that folder will be lost.`,
-    )) return;
     setBusy(row.id);
     setError(null);
     try { await el.plugins.uninstall(row.id); }
@@ -170,14 +172,16 @@ export function PluginsSettings() {
               spellCheck={false}
               className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-mono rounded-lg border border-[var(--border)] bg-[var(--surface-1)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
-            <button
+            <Button
+              variant="accent"
+              size="sm"
               onClick={() => void install()}
               disabled={installing || !spec.trim()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-[var(--accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity shrink-0"
+              className="shrink-0"
             >
-              {installing ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              {installing ? <Spinner size={13} /> : <Download size={13} />}
               {installing ? "Installing…" : "Install"}
-            </button>
+            </Button>
           </div>
           <p className="text-[0.7rem] text-[var(--text-tertiary)] leading-relaxed">
             Installs a dsh-compatible plugin. Runs third-party code — install from{" "}
@@ -192,13 +196,12 @@ export function PluginsSettings() {
       )}
 
       {data && data.plugins.length === 0 ? (
-        <div className="p-6 rounded-xl border border-dashed border-[var(--border)] text-center">
-          <Puzzle size={20} className="mx-auto text-[var(--text-tertiary)] mb-2" />
-          <div className="text-sm text-[var(--text-secondary)]">No plugins yet</div>
-          <div className="text-xs text-[var(--text-tertiary)] mt-1">
-            Add an entry to <code className="font-mono">plugins.yml</code> in your plugins folder.
-          </div>
-        </div>
+        <EmptyState
+          icon={Puzzle}
+          title="No plugins yet"
+          description={<>Add an entry to <code className="font-mono">plugins.yml</code> in your plugins folder.</>}
+          className="p-6"
+        />
       ) : (
         <div className="space-y-2">
           {data?.plugins.map((row) => (
@@ -230,16 +233,32 @@ export function PluginsSettings() {
                   className="p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] disabled:opacity-40 transition-colors shrink-0"
                 >
                   {busy === row.id
-                    ? <Loader2 size={13} className="animate-spin" />
+                    ? <Spinner size={13} />
                     : <RefreshCw size={13} />}
                 </button>
               )}
               {isManaged(row) && (
                 <button
-                  onClick={() => void uninstall(row)}
+                  onClick={() => {
+                    if (armedUninstallId === row.id) {
+                      if (armedTimer.current) clearTimeout(armedTimer.current);
+                      armedTimer.current = null;
+                      setArmedUninstallId(null);
+                      void uninstall(row);
+                    } else {
+                      if (armedTimer.current) clearTimeout(armedTimer.current);
+                      setArmedUninstallId(row.id);
+                      armedTimer.current = setTimeout(() => {
+                        armedTimer.current = null;
+                        setArmedUninstallId(null);
+                      }, 4000);
+                    }
+                  }}
                   disabled={busy === row.id}
-                  title="Uninstall (removes files)"
-                  className="p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] disabled:opacity-40 transition-colors shrink-0"
+                  title={armedUninstallId === row.id ? `Click again to uninstall "${row.name || row.id}" (removes files)` : "Uninstall (removes files)"}
+                  className={armedUninstallId === row.id
+                    ? "p-1.5 rounded-lg text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] disabled:opacity-40 transition-colors shrink-0"
+                    : "p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] disabled:opacity-40 transition-colors shrink-0"}
                 >
                   <Trash2 size={13} />
                 </button>

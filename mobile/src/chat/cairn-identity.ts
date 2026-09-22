@@ -1,10 +1,16 @@
 /**
- * Cairn — mobile app identity for provider attribution (mirrors
- * `electron/lib/cairn-identity.ts` on desktop). Kept in `src/chat` so
- * providers can import without pulling in Node-only `fs`/`electron` code.
+ * Cairn — mobile app identity for provider attribution.
+ *
+ * Portable core (UA construction, endpoint predicate) delegates to
+ * `@cairn/shared` (`shared/agent/app-identity.ts`, shared with desktop);
+ * version resolution stays here (expo-constants). Kept in `src/chat` so
+ * providers can import without pulling in Node-only code.
  */
 
 import Constants from "expo-constants";
+import { createAppIdentity, isOpencodeEndpoint } from "@cairn/shared/agent/app-identity";
+
+export { isOpencodeEndpoint };
 
 function getCairnVersion(): string {
   // expo-constants is the runtime source of truth for the installed binary's
@@ -21,16 +27,6 @@ function getCairnVersion(): string {
   return "0.1.7";
 }
 
-const version = getCairnVersion();
+const { userAgent: CAIRN_USER_AGENT, identity: CAIRN_APP_IDENTITY } = createAppIdentity(getCairnVersion());
 
-export const CAIRN_USER_AGENT = `cairn/${version}`;
-
-export const CAIRN_APP_IDENTITY = {
-  product: "cairn",
-  version,
-  url: "https://github.com/ddutchie/cairn",
-} as const;
-
-export function isOpencodeEndpoint(baseUrl: string): boolean {
-  return baseUrl.toLowerCase().includes("opencode.ai");
-}
+export { CAIRN_USER_AGENT, CAIRN_APP_IDENTITY };

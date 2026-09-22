@@ -5,6 +5,7 @@ import { ArrowLeft, Check, FolderOpen, ShieldAlert, Sparkles } from "lucide-reac
 import { cn } from "@/lib/utils";
 import { WORKSPACE_ICONS, WorkspaceIcon } from "@/lib/workspace-icons";
 import { Shell } from "./shared";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   chosenFolder: string | null;
@@ -168,18 +169,15 @@ export function StepWorkspaceDetails({
           />
         </div>
 
-        <button
+        <Button
           type="submit"
+          variant="accent"
+          size="md"
+          className="w-full"
           disabled={!name.trim() || submitting || !previewReady}
-          className={cn(
-            "w-full py-2 rounded-lg text-sm font-medium transition-all",
-            name.trim() && !submitting && previewReady
-              ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
-              : "bg-[var(--surface-2)] text-[var(--text-tertiary)] cursor-not-allowed"
-          )}
         >
           {submitting ? "Creating…" : !previewReady ? "Waiting for preview…" : "Create workspace"}
-        </button>
+        </Button>
       </form>
     </Shell>
   );

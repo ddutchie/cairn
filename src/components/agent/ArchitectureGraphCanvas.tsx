@@ -15,6 +15,7 @@ import { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import * as d3 from "d3";
 import { useContainerDims, useFontScale, useThemeRepaint } from "../graph/analyticsHooks";
 import { resolveCssVar, withAlpha } from "../graph/analyticsUtils";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 
 export interface ArchGraphNode {
@@ -377,9 +378,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
       </div>
 
       {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-xs text-[var(--text-tertiary)] pointer-events-none">
-          No symbol relationships to graph yet.
-        </div>
+        <EmptyState overlay title="No symbol relationships to graph yet." />
       )}
 
       {/* Zoom controls */}

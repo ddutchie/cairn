@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState, useMemo } from "react";
 import { Send, Square, Sparkles, FileText, CheckSquare, FileCode, Image, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { CountBadge } from "@/components/ui/count-badge";
 
 export interface SlashCommand {
   name: string;
@@ -494,9 +495,11 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     >
                       <Send size={isOverview ? 13 : 12} />
                       {queuedCount > 0 && (
-                        <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--surface-3)] border border-[var(--border)] text-[0.571rem] font-semibold text-[var(--text-secondary)] flex items-center justify-center leading-none">
-                          {queuedCount}
-                        </span>
+                        <CountBadge
+                          count={queuedCount}
+                          tone="surface"
+                          className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 text-[0.571rem] flex items-center justify-center leading-none"
+                        />
                       )}
                     </button>
                   </Tooltip>
@@ -506,7 +509,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     onClick={onStop}
                     type="button"
                     className={cn(
-                      "flex-shrink-0 rounded-lg bg-[var(--danger)] text-white hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--danger)]/10",
+                      "flex-shrink-0 rounded-lg bg-[var(--danger)] text-[var(--danger-fg)] hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--danger)]/10",
                       isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                     )}
                   >

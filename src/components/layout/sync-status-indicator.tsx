@@ -14,6 +14,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CloudCheck, CloudOff, RefreshCw, CloudAlert, AlertTriangle } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { useSyncStatus, triggerSyncNow, openConflictModal, type SyncState } from "@/lib/sync-client";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -136,15 +138,17 @@ export function SyncStatusIndicator() {
             </button>
           )}
 
-          <button
+          <Button
             type="button"
+            variant="accent"
+            size="md"
+            className="w-full"
             onClick={onSyncNow}
             disabled={busy || status.state === "syncing" || !status.connected}
-            className="mt-2 w-full flex items-center justify-center gap-1.5 h-7 rounded-md text-xs font-medium text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            <RefreshCw size={12} className={cn((busy || status.state === "syncing") && "animate-spin")} />
+            <RefreshSpin size={12} spinning={busy || status.state === "syncing"} />
             Sync now
-          </button>
+          </Button>
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
+import { ipcData } from "../ipc";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,19 +40,18 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
   agents: [],
 
   async fetchAgents() {
-    if (typeof window === "undefined" || !window.electron) return;
     try {
-      const agents = await window.electron.agent.getCodingAgents() as CodingAgent[];
-      set({ agents });
+      const agents = await ipcData((e) => e.agent.getCodingAgents() as Promise<CodingAgent[]>);
+      if (agents) set({ agents });
     } catch (err) {
       console.error("[coding-agents] fetchAgents error", err);
     }
   },
 
   async saveAgent(agent) {
-    if (typeof window === "undefined" || !window.electron) return;
     try {
-      const saved = await window.electron.agent.saveCodingAgent(agent) as CodingAgent;
+      const saved = await ipcData((e) => e.agent.saveCodingAgent(agent) as Promise<CodingAgent>);
+      if (!saved) return;
       set((s) => ({
         agents: s.agents.some((a) => a.id === saved.id)
           ? s.agents.map((a) => (a.id === saved.id ? saved : a))
@@ -63,11 +63,10 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
   },
 
   async deleteAgent(agentId) {
-    if (typeof window === "undefined" || !window.electron) return;
     // Optimistic — roll back by re-fetching if the IPC call fails
     set((s) => ({ agents: s.agents.filter((a) => a.id !== agentId) }));
     try {
-      await window.electron.agent.deleteCodingAgent(agentId);
+      await ipcData((e) => e.agent.deleteCodingAgent(agentId));
     } catch (err) {
       console.error("[coding-agents] deleteAgent error", err);
       get().fetchAgents();
@@ -75,13 +74,12 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
   },
 
   async setDefaultAgent(agentId) {
-    if (typeof window === "undefined" || !window.electron) return;
     // Optimistic: flip flags locally — roll back by re-fetching if IPC fails
     set((s) => ({
       agents: s.agents.map((a) => ({ ...a, isDefault: a.id === agentId })),
     }));
     try {
-      await window.electron.agent.setDefaultAgent(agentId);
+      await ipcData((e) => e.agent.setDefaultAgent(agentId));
     } catch (err) {
       console.error("[coding-agents] setDefaultAgent error", err);
       get().fetchAgents();

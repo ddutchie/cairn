@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, RefreshCw, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon,
+  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -15,6 +15,8 @@ import { NodeTypeChip } from "./NodeTypeChip";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
+import { RefreshSpin } from "@/components/ui/spinner";
+import { EmptyState as EmptyStateView } from "@/components/ui/empty-state";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 
 // Edge-type legend. Mirrors the tokens in shared/ui/graph.ts `edgeStyle()`:
@@ -445,7 +447,7 @@ export function KnowledgeGraphView() {
               disabled={recomputing}
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
             >
-              <RefreshCw size={11} className={recomputing ? "animate-spin" : ""} />
+              <RefreshSpin size={11} spinning={recomputing} />
               {recomputing && <span className="text-[0.714rem] tabular-nums">{recomputeSeconds}s</span>}
             </button>
           </Tooltip>
@@ -553,32 +555,22 @@ export function KnowledgeGraphView() {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-8">
-      <div className="w-16 h-16 rounded-full bg-[var(--surface-2)] flex items-center justify-center">
-        <GitBranch size={28} className="text-[var(--text-tertiary)]" />
-      </div>
-      <div className="space-y-1">
-        <h3 className="text-sm font-medium text-[var(--text-primary)]">No connections yet</h3>
-        <p className="text-xs text-[var(--text-tertiary)] max-w-xs">
-          Link notes to tasks, tag your content, or draw connections in the Idea Flow canvas to see them here.
-        </p>
-      </div>
-    </div>
+    <EmptyStateView
+      icon={GitBranch}
+      title="No connections yet"
+      description="Link notes to tasks, tag your content, or draw connections in the Idea Flow canvas to see them here."
+      className="p-8"
+    />
   );
 }
 
 function FilteredEmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-8">
-      <div className="w-16 h-16 rounded-full bg-[var(--surface-2)] flex items-center justify-center">
-        <Search size={28} className="text-[var(--text-tertiary)]" />
-      </div>
-      <div className="space-y-1">
-        <h3 className="text-sm font-medium text-[var(--text-primary)]">No nodes match your filters</h3>
-        <p className="text-xs text-[var(--text-tertiary)] max-w-xs">
-          Try adjusting your search query, project filter, or node type toggles.
-        </p>
-      </div>
-    </div>
+    <EmptyStateView
+      icon={Search}
+      title="No nodes match your filters"
+      description="Try adjusting your search query, project filter, or node type toggles."
+      className="p-8"
+    />
   );
 }

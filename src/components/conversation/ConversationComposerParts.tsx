@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, Clock, Loader2 } from "lucide-react";
+import { ChevronDown, Clock } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 export interface ConversationQueuedItem {
@@ -17,7 +18,7 @@ interface ConversationWorkingStatusProps {
 export function ConversationWorkingStatus({ label }: ConversationWorkingStatusProps) {
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
-      <Loader2 size={11} className="text-[var(--accent)] animate-spin shrink-0" />
+      <Spinner size={11} tone="accent" />
       <span className="text-[0.714rem] text-[var(--text-secondary)]">{label}</span>
     </div>
   );

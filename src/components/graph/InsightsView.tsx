@@ -3,8 +3,9 @@
 import React, { useCallback, useState, useMemo } from "react";
 import {
   Clock, Grid3x3, Table2, Activity, Workflow, Crosshair, BarChart2,
-  Search, RefreshCw, Sparkles,
+  Search, Sparkles,
 } from "lucide-react";
+import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 import { useCairnStore } from "@/store";
@@ -229,7 +230,7 @@ export function InsightsView() {
                 : () => { if (activeWorkspaceId) loadGraph(activeWorkspaceId); }}
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors"
             >
-              <RefreshCw size={11} className={graphLoading ? "animate-spin" : ""} />
+              <RefreshSpin size={11} spinning={graphLoading} />
             </button>
           </Tooltip>
         </span>

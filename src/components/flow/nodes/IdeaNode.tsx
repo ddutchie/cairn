@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Lightbulb, CheckSquare } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FlowNodeShell, FLOW_HANDLE_CLASS } from "./flow-node-shell";
 
 export interface IdeaNodeData {
   title: string;
@@ -15,15 +15,8 @@ export interface IdeaNodeData {
 export const IdeaNode = memo(function IdeaNode({ id, data, selected, isConnectable }: NodeProps) {
   const d = data as unknown as IdeaNodeData;
   return (
-    <div
-      className={cn(
-        "min-w-[180px] max-w-[280px] rounded-xl border bg-[var(--surface)] shadow-sm transition-shadow",
-        selected
-          ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-dim)]"
-          : "border-[var(--border)] hover:border-[var(--border-hover)]"
-      )}
-    >
-      <Handle type="target" position={Position.Left} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />
+    <FlowNodeShell selected={selected} maxWidth="max-w-[280px]">
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} className={FLOW_HANDLE_CLASS} />
       <div className="px-3 pt-2.5 pb-2.5">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-2 min-w-0">
@@ -49,7 +42,7 @@ export const IdeaNode = memo(function IdeaNode({ id, data, selected, isConnectab
           </p>
         )}
       </div>
-      <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />
-    </div>
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} className={FLOW_HANDLE_CLASS} />
+    </FlowNodeShell>
   );
 });

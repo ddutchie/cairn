@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CornerDownRight, GitBranch, Loader2, SendHorizonal, Square } from "lucide-react";
+import { CornerDownRight, GitBranch, SendHorizonal, Square } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { Tabs } from "@/components/ui/tabs";
+import { CountBadge } from "@/components/ui/count-badge";
+import { StatusDot } from "@/components/ui/status-dot";
 import * as Popover from "@radix-ui/react-popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { SessionProjection } from "@/../shared/agent/session-projection";
@@ -168,13 +172,15 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
         <Popover.Trigger asChild>
           <button
             className="relative p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
-            aria-label="Subagent conversations"
+            aria-label={liveCount > 0 ? `Subagent conversations, ${liveCount} running` : "Subagent conversations"}
           >
             <GitBranch size={11} />
             {liveCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-3 h-3 px-0.5 rounded-full bg-[var(--accent)] text-[var(--accent-fg)] text-[0.5625rem] leading-3 text-center font-semibold">
-                {liveCount}
-              </span>
+              <CountBadge
+                count={liveCount}
+                tone="accent"
+                className="absolute -top-0.5 -right-0.5 min-w-3 h-3 px-0.5 text-[0.5625rem] leading-3"
+              />
             )}
           </button>
         </Popover.Trigger>
@@ -184,23 +190,21 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
           <div className="flex items-center justify-between px-1">
             <p className="text-[0.714rem] font-medium text-[var(--text-secondary)]">Subagents</p>
             <button onClick={() => void load()} className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
-              {loading ? <Loader2 size={10} className="animate-spin" /> : "Refresh"}
+              {loading ? <Spinner size={10} /> : "Refresh"}
             </button>
           </div>
-          <div className="flex items-center gap-1.5 px-1" role="group" aria-label="Subagent scope">
-            <div className="flex items-center gap-0.5 p-0.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)]">
-              {(["children", "descendants"] as const).map((option) => (
-                <button
-                  key={option}
-                  onClick={() => { if (option !== scope) setScope(option); }}
-                  aria-pressed={scope === option}
-                  title={option === "children" ? "Direct children only" : "Full descendant tree"}
-                  className={`px-2 py-0.5 rounded text-[0.643rem] font-medium transition-colors ${scope === option ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"}`}
-                >
-                  {option === "children" ? "Direct" : "Tree"}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-1.5 px-1">
+            <Tabs
+              size="xs"
+              ariaLabel="Subagent scope"
+              value={scope}
+              onChange={setScope}
+              className="border border-[var(--border)] p-0.5"
+              options={[
+                { value: "children", label: "Direct", title: "Direct children only" },
+                { value: "descendants", label: "Tree", title: "Full descendant tree" },
+              ]}
+            />
             {scope === "descendants" && (
               <span className="text-[0.5625rem] text-[var(--text-tertiary)]">full tree</span>
             )}
@@ -228,7 +232,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 {nested && <CornerDownRight size={10} className="text-[var(--text-tertiary)] shrink-0" />}
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.activity === "running" ? "bg-[var(--success,#22c55e)] animate-pulse" : "bg-[var(--text-tertiary)]"}`} />
+                <StatusDot color={entry.activity === "running" ? "var(--success,#22c55e)" : "var(--text-tertiary)"} pulse={entry.activity === "running"} />
                 <span className="text-[0.714rem] font-medium text-[var(--text-primary)] truncate flex-1">{entry.label || `${entry.id.slice(0, 8)}…`}</span>
                 {nested && entry.parentId && (
                   <span title={`Child of ${entry.parentId}`} className="text-[0.5625rem] text-[var(--text-tertiary)] shrink-0">↳ {entry.parentId.slice(0, 8)}…</span>
@@ -251,7 +255,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                     className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] disabled:opacity-40 transition-colors"
                     aria-label="Send message to subagent"
                   >
-                    {busy[entry.id] === "send" ? <Loader2 size={11} className="animate-spin" /> : <SendHorizonal size={11} />}
+                    {busy[entry.id] === "send" ? <Spinner size={11} /> : <SendHorizonal size={11} />}
                   </button>
                   {(entry.activity === "running" || entry.live) && (
                     <button
@@ -260,7 +264,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                       className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] disabled:opacity-40 transition-colors"
                       aria-label="Stop subagent turn"
                     >
-                      {busy[entry.id] === "stop" ? <Loader2 size={11} className="animate-spin" /> : <Square size={11} />}
+                      {busy[entry.id] === "stop" ? <Spinner size={11} /> : <Square size={11} />}
                     </button>
                   )}
                 </div>

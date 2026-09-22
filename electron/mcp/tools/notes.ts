@@ -3,8 +3,8 @@ import Database from "better-sqlite3";
 import path from "path";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
-import { normalizeNoteTitle } from "../../shared/text-utils";
-import { executeSearchNotes } from "../../shared/read-tools-pure";
+import { normalizeNoteTitle } from "../../host-shared/text-utils";
+import { executeSearchNotes } from "../../host-shared/read-tools-pure";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "../../../shared/notes/folder-tree";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import {

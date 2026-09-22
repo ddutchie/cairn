@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 
 export type TestState = { status: "idle" | "testing" | "ok" | "error"; detail?: string };
@@ -24,7 +25,7 @@ export function TestButton({ onTest }: { onTest: () => Promise<TestState> }) {
           }
         }}
       >
-        {state.status === "testing" ? <Loader2 size={12} className="animate-spin" /> : null}
+        {state.status === "testing" ? <Spinner size={12} /> : null}
         Test connection
       </Button>
       {state.status === "ok" && (

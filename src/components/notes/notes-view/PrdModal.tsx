@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Wand2, Loader2, Send, Wrench, CheckCircle2 } from "lucide-react";
+import { Wand2, Send, Wrench, CheckCircle2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
 import { effectiveTemperatureForModel } from "@/lib/models-dev";
@@ -52,6 +53,15 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, streamingContent, toolCalls, pendingQuestions]);
+
+  // Stop the run if the modal unmounts mid-stream (e.g. project switch) —
+  // otherwise the main-process run continues with no UI subscriber.
+  // stopStream is re-created per render, so mirror it into a ref (updated in
+  // an effect, never during render) that the once-registered unmount cleanup
+  // reads.
+  const stopStreamRef = useRef(() => {});
+  useEffect(() => { stopStreamRef.current = stopStream; });
+  useEffect(() => () => { stopStreamRef.current(); }, []);
 
   // Focus input on mount
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80); }, []);
@@ -142,14 +152,12 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
   const waitingForUser = !isLoading && !done && messages.some((m) => m.role === "assistant");
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o && !isLoading) { stopStream(); onClose(); } }}>
-      <DialogContent size="md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Wand2 size={14} className="text-[var(--accent)]" />
-            Generate PRD
-          </DialogTitle>
-        </DialogHeader>
+    <ModalShell
+      onClose={() => { stopStream(); onClose(); }}
+      dismissGuard={() => !isLoading}
+      size="md"
+      title={<><Wand2 size={14} className="text-[var(--accent)]" /> Generate PRD</>}
+    >
 
         {/* ── Conversation area ── */}
         <div
@@ -168,7 +176,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
           {messages.map((msg, i) => (
             msg.role === "user" ? (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[88%] px-3 py-2 rounded-xl rounded-tr-sm text-sm bg-[var(--accent)] text-white">
+                <div className="max-w-[88%] px-3 py-2 rounded-xl rounded-tr-sm text-sm bg-[var(--accent)] text-[var(--accent-fg)]">
                   <MarkdownContent content={msg.content} />
                 </div>
               </div>
@@ -209,7 +217,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                   <div className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
                     {toolCalls.length > 0
                       ? <Wrench size={10} className="animate-pulse flex-shrink-0" />
-                      : <Loader2 size={10} className="animate-spin flex-shrink-0" />}
+                      : <Spinner size={10} />}
                     <span>{toolCalls.length > 0 ? "Working…" : "Thinking…"}</span>
                   </div>
                 )}
@@ -260,14 +268,13 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                   disabled={isLoading || !input.trim()}
                   className="flex-shrink-0"
                 >
-                  {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                  {isLoading ? <Spinner size={13} /> : <Send size={13} />}
                 </Button>
               </div>
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+    </ModalShell>
   );
 }
 

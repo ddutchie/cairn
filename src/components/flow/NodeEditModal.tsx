@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Search, FileText, CheckSquare, Layers, Loader2, DownloadCloud } from "lucide-react";
+import { Search, FileText, CheckSquare, Layers, DownloadCloud } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import type { IdeaNodeType } from "@/types";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { PRIORITY_COLORS } from "@/lib/utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ModalShell } from "@/components/ui/modal-shell";
+import { Button } from "@/components/ui/button";
 
 interface NodeEditModalProps {
   nodeId: string;
@@ -45,15 +47,20 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
   }[type];
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent size="sm" aria-describedby="node-edit-desc">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-        <div id="node-edit-desc" className="sr-only">
-          Form to edit the properties of the selected idea flow node.
-        </div>
-
+    <ModalShell
+      onClose={onClose}
+      size="sm"
+      title={title}
+      description="Form to edit the properties of the selected idea flow node."
+      footer={<>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="accent" size="sm" onClick={handleSave}>
+          Save
+        </Button>
+      </>}
+    >
         <div className="px-5 py-4 space-y-4">
           <div className="flex flex-col gap-3">
             {type === "idea" && (
@@ -101,24 +108,8 @@ export function NodeEditModal({ nodeId, type, data, onSave, onClose }: NodeEditM
               />
             )}
           </div>
-
-          <div className="flex gap-2 mt-5 justify-end">
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] transition-colors"
-            >
-              Save
-            </button>
-          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+    </ModalShell>
   );
 }
 
@@ -304,7 +295,7 @@ function UrlEditor({
             title="Fetch title & description from URL"
             className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] disabled:opacity-40 transition-colors shrink-0"
           >
-            {fetching ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />}
+            {fetching ? <Spinner size={12} /> : <DownloadCloud size={12} />}
             {fetching ? "" : "Fetch"}
           </button>
         </div>

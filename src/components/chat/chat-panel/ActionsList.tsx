@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Loader2, Link2, FileText, Kanban, Tag, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { X, Link2, FileText, Kanban, Tag, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -74,7 +75,7 @@ function ActionCard({ action, state, onApply, onDismiss }: ActionCardProps) {
             disabled={state === "applying"}
             className="shrink-0 px-2 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] transition-colors disabled:opacity-50 text-[0.643rem] font-medium"
           >
-            {state === "applying" ? <Loader2 size={9} className="animate-spin" /> : "Apply"}
+            {state === "applying" ? <Spinner size={9} /> : "Apply"}
           </button>
         )}
 

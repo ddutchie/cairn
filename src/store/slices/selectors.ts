@@ -4,9 +4,47 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { Note, BoardColumn, TaskCard, Project, ID } from "@/types";
-import type { SearchResult } from "../index";
+import type { Note, BoardColumn, TaskCard, Project, Workspace, ID } from "@/types";
 import { matchesQuery } from "../../../shared/notes/text";
+
+// ── SearchResult (returned by searchAll; re-exported from the store root) ────
+
+export interface SearchResult {
+  type: "note" | "card";
+  id: string;
+  title: string;
+  snippet: string;
+  projectId: string;
+  projectName: string;
+}
+
+// ── Memo helper ───────────────────────────────────────────────────────────────
+// Selectors sort/filter on every call; several run per-column per-render
+// (e.g. board columns). Cache per selector key on the source-array
+// references — Zustand replaces arrays on every write, so reference equality
+// is a correct and cheap change detector. Module-level (not in state) so it
+// never triggers subscriptions; fresh arrays always recompute.
+
+const memoCache = new Map<string, { deps: readonly unknown[]; result: unknown }>();
+
+function memo<T>(key: string, deps: readonly unknown[], compute: () => T): T {
+  const hit = memoCache.get(key);
+  if (
+    hit &&
+    hit.deps.length === deps.length &&
+    hit.deps.every((d, i) => d === deps[i])
+  ) {
+    return hit.result as T;
+  }
+  const result = compute();
+  memoCache.set(key, { deps, result });
+  // Bound the cache: params are part of the key, so churny ids could grow it.
+  if (memoCache.size > 500) {
+    const oldest = memoCache.keys().next();
+    if (!oldest.done) memoCache.delete(oldest.value);
+  }
+  return result;
+}
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -20,6 +58,11 @@ export interface SelectorsSlice {
   getProjectCards: (projectId: ID) => TaskCard[];
   getArchivedProjectCards: (projectId: ID) => TaskCard[];
   getWorkspaceProjects: (workspaceId: ID) => Project[];
+  /** Cards in any of the given projects (graph/insights scope filtering). */
+  getScopedCards: (projectIds: readonly ID[]) => TaskCard[];
+  /** The active project / workspace, or null/undefined when none selected. */
+  getActiveProject: () => Project | undefined;
+  getActiveWorkspace: () => Workspace | undefined;
   searchAll: (query: string) => SearchResult[];
 }
 
@@ -32,74 +75,116 @@ export const createSelectorsSlice: StateCreator<
   SelectorsSlice
 > = (_set, get) => ({
   getProjectNotes(projectId) {
-    return get()
-      .notes.filter((n) => n.projectId === projectId && !n.archivedAt && n.type !== "template")
-      .sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        return (
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
-      });
+    const notes = get().notes;
+    return memo(`notes:${projectId}`, [notes], () =>
+      notes.filter((n) => n.projectId === projectId && !n.archivedAt && n.type !== "template")
+        .sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          return (
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          );
+        })
+    );
   },
 
   getProjectTemplates(projectId) {
-    return get()
-      .notes.filter((n) => n.projectId === projectId && !n.archivedAt && n.type === "template")
-      .sort((a, b) => a.title.localeCompare(b.title));
+    const notes = get().notes;
+    return memo(`templates:${projectId}`, [notes], () =>
+      notes.filter((n) => n.projectId === projectId && !n.archivedAt && n.type === "template")
+        .sort((a, b) => a.title.localeCompare(b.title))
+    );
   },
 
   getArchivedProjectNotes(projectId) {
-    return get()
-      .notes.filter((n) => n.projectId === projectId && !!n.archivedAt)
-      .sort(
-        (a, b) =>
-          new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime()
-      );
+    const notes = get().notes;
+    return memo(`archNotes:${projectId}`, [notes], () =>
+      notes.filter((n) => n.projectId === projectId && !!n.archivedAt)
+        .sort(
+          (a, b) =>
+            new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime()
+        )
+    );
   },
 
   getProjectColumns(projectId) {
-    return get()
-      .columns.filter((c) => c.projectId === projectId)
-      .sort((a, b) => a.order - b.order);
+    const columns = get().columns;
+    return memo(`columns:${projectId}`, [columns], () =>
+      columns.filter((c) => c.projectId === projectId)
+        .sort((a, b) => a.order - b.order)
+    );
   },
 
   getColumnCards(columnId) {
-    return get()
-      .cards.filter((c) => c.columnId === columnId && !c.archivedAt)
-      .sort((a, b) => a.order - b.order);
+    const cards = get().cards;
+    return memo(`colCards:${columnId}`, [cards], () =>
+      cards.filter((c) => c.columnId === columnId && !c.archivedAt)
+        .sort((a, b) => a.order - b.order)
+    );
   },
 
   getArchivedColumnCards(columnId) {
-    return get()
-      .cards.filter((c) => c.columnId === columnId && !!c.archivedAt)
-      .sort(
-        (a, b) =>
-          new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime()
-      );
+    const cards = get().cards;
+    return memo(`archColCards:${columnId}`, [cards], () =>
+      cards.filter((c) => c.columnId === columnId && !!c.archivedAt)
+        .sort(
+          (a, b) =>
+            new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime()
+        )
+    );
   },
 
   getProjectCards(projectId) {
-    return get().cards.filter(
-      (c) => c.projectId === projectId && !c.archivedAt
+    const cards = get().cards;
+    return memo(`cards:${projectId}`, [cards], () =>
+      cards.filter(
+        (c) => c.projectId === projectId && !c.archivedAt
+      )
     );
   },
 
   getArchivedProjectCards(projectId) {
-    return get()
-      .cards.filter((c) => c.projectId === projectId && !!c.archivedAt)
-      .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime());
+    const cards = get().cards;
+    return memo(`archCards:${projectId}`, [cards], () =>
+      cards.filter((c) => c.projectId === projectId && !!c.archivedAt)
+        .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime())
+    );
   },
 
   getWorkspaceProjects(workspaceId) {
-    return get()
-      .projects.filter(
+    const projects = get().projects;
+    return memo(`wsProjects:${workspaceId}`, [projects], () =>
+      projects.filter(
         (p) => p.workspaceId === workspaceId && !p.archivedAt
       )
-      .sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        )
+    );
+  },
+
+  getScopedCards(projectIds) {
+    const cards = get().cards;
+    const key = `scoped:${[...projectIds].sort().join(",")}`;
+    return memo(key, [cards, key], () => {
+      const scope = new Set(projectIds);
+      return cards.filter((c) => scope.has(c.projectId) && !c.archivedAt);
+    });
+  },
+
+  getActiveProject() {
+    const s = get();
+    return memo("activeProject", [s.projects, s.activeProjectId], () =>
+      s.projects.find((p) => p.id === s.activeProjectId)
+    );
+  },
+
+  getActiveWorkspace() {
+    const s = get();
+    return memo("activeWorkspace", [s.workspaces, s.activeWorkspaceId], () =>
+      s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    );
   },
 
   searchAll(query) {

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle, Copy, ChevronDown, ChevronUp, FileCode, Wrench } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { StatusDot } from "@/components/ui/status-dot";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import type { InventoryToolView } from "./useAgentPreviews";
 
@@ -164,10 +164,10 @@ export function categoryDot(category: string): string {
 export function ToolsLegend() {
   return (
     <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-2">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] mr-1" />read &nbsp;
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning)] mr-1" />write &nbsp;
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--danger)] mr-1" />delete &nbsp;
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--success)] mr-1" />exec
+      <StatusDot color="var(--accent)" className="inline-block mr-1" />read &nbsp;
+      <StatusDot color="var(--warning)" className="inline-block mr-1" />write &nbsp;
+      <StatusDot color="var(--danger)" className="inline-block mr-1" />delete &nbsp;
+      <StatusDot color="var(--success)" className="inline-block mr-1" />exec
     </p>
   );
 }
@@ -189,7 +189,7 @@ export function SurfaceToolsPanel({
         {tools.map((t) => (
           <div key={`${t.source}:${t.name}`} className="px-2 py-1.5 rounded hover:bg-[var(--surface-2)]">
             <div className="flex items-center gap-1.5">
-              <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", categoryDot(t.category))} />
+              <StatusDot className={categoryDot(t.category)} />
               <span className="text-[0.714rem] font-mono text-[var(--accent)]">{t.name}</span>
               {t.source !== "cairn" && (
                 <span className="text-[0.65rem] px-1 py-px rounded bg-[var(--surface-3)] text-[var(--text-tertiary)]">

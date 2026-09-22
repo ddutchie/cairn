@@ -4,7 +4,7 @@ import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { DEFAULT_COLUMNS } from "../../db/defaults";
 import { Snapshot, insertNotification } from "../db";
-import { renameProjectNotesDir, deleteProjectNotesDir } from "../../shared/notes-io";
+import { renameProjectNotesDir, deleteProjectNotesDir } from "../../host-shared/notes-io";
 
 export function upsert_project(db: Database.Database, snap: Snapshot, workspacePath: string, args: Record<string, any>) {
   if (args.projectId) {

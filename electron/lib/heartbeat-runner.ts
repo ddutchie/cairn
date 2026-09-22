@@ -70,7 +70,7 @@ import {
 import type { RunCordisCodingOptions } from "../cordis/run-cordis-coding";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
-import { toSlug } from "../shared/text-utils";
+import { toSlug } from "../host-shared/text-utils";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 
 export interface AutomationRunContext {

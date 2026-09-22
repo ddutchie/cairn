@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { FileText, ExternalLink } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FlowNodeShell, FLOW_HANDLE_CLASS } from "./flow-node-shell";
 import { useCairnStore } from "@/store";
 import { revealNote } from "@/lib/events";
 
@@ -28,15 +28,8 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
   }
 
   return (
-    <div
-      className={cn(
-        "min-w-[180px] max-w-[260px] rounded-xl border bg-[var(--surface)] shadow-sm transition-shadow",
-        selected
-          ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-dim)]"
-          : "border-[var(--border)] hover:border-[var(--border-hover)]"
-      )}
-    >
-      <Handle type="target" position={Position.Left} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />
+    <FlowNodeShell selected={selected}>
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} className={FLOW_HANDLE_CLASS} />
       <div className="px-3 pt-2.5 pb-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -71,7 +64,7 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
           <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] italic">No note linked</p>
         )}
       </div>
-      <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-[var(--accent)] !border-[var(--surface)] !w-2.5 !h-2.5" />
-    </div>
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} className={FLOW_HANDLE_CLASS} />
+    </FlowNodeShell>
   );
 });

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { X, Tag } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
@@ -50,11 +51,12 @@ export function TagsSettings() {
   return (
     <SettingsGroup title="Tags" description="Manage workspace tags used on notes and tasks">
       {workspaceTags.length === 0 && (
-        <div className="flex flex-col items-center gap-2 py-6 text-center">
-          <Tag size={20} className="text-[var(--text-tertiary)] opacity-40" />
-          <p className="text-sm text-[var(--text-tertiary)]">No tags yet.</p>
-          <p className="text-xs text-[var(--text-tertiary)]">Create tags from the note editor or card detail.</p>
-        </div>
+        <EmptyState
+          icon={Tag}
+          title="No tags yet."
+          description="Create tags from the note editor or card detail."
+          className="py-6"
+        />
       )}
       <div className="space-y-1">
         {workspaceTags.map((tag) => {
