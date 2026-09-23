@@ -552,25 +552,29 @@ function createLocalAgentHost(): AgentHost {
       const ctx = await context();
       const sessions = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions;
       let live = sessions?.get?.(sessionId as never) as { id: unknown } | undefined;
+      let handle: { agent?: unknown; dispose?: () => Promise<void> } | undefined;
       if (!live) {
         const { openCordisAgent } = await import("./run-cordis-coding");
         const cwd = getSessionRoot().replace(/[/\\]sessions[/\\]?$/, "") || process.cwd();
         const config = getCachedConfig().agentConfig ?? {};
         try {
-          const handle = await openCordisAgent(ctx, { sessionId, cwd, llmConfig: { baseUrl: config.baseUrl ?? "", model: config.model ?? "gpt-5.6-luna", apiKey: config.apiKey ?? "", provider: "openai" } });
+          handle = await openCordisAgent(ctx, { sessionId, cwd, llmConfig: { baseUrl: config.baseUrl ?? "", model: config.model ?? "gpt-5.6-luna", apiKey: config.apiKey ?? "", provider: "openai" } });
           live = (handle.agent as { session?: unknown }).session as { id: unknown } | undefined ?? sessions?.get?.(sessionId as never) as { id: unknown } | undefined;
-          try { await handle.dispose?.(); } catch { }
         } catch { }
       }
       if (!live) throw new Error(`session "${sessionId}" is not live`);
       const service = (ctx as unknown as { sessionTitle?: { rename: (value: unknown, nextTitle: string) => { title: string } } }).sessionTitle;
       if (!service?.rename) throw new Error("sessionTitle service not mounted");
-      return service.rename(live as never, title).title;
+      try {
+        return service.rename(live as never, title).title;
+      } finally {
+        try { await handle?.dispose?.(); } catch { }
+      }
     },
     async releaseSessionAgent(sessionId) {
       try {
         const agents = agentCollection(await context());
-        tryReleaseAgent(agents, { toString: () => sessionId } as unknown as string);
+        tryReleaseAgent(agents, sessionId);
       } catch { }
     },
     async listSessionChildIds(parentSessionId) {

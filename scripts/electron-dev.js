@@ -27,7 +27,9 @@ function start() {
     require("electron"),
     [path.join(root, "dist-electron", "main.js")],
     {
-      stdio: "inherit",
+      // Pipe stdin so requestRestart() can send cairn:quit for graceful
+      // shutdown; keep stdout/stderr inherited for live dev output.
+      stdio: ["pipe", "inherit", "inherit"],
       env: { ...process.env, NODE_ENV: "development" },
       cwd: root,
     }

@@ -37,25 +37,43 @@ function lineAt(source: string, index: number): number {
   return source.slice(0, index).split("\n").length;
 }
 
+function isBlockedBinding(importedModule: string | undefined, bindings: string): boolean {
+  if (!importedModule) return false;
+  if (BLOCKED_MODULES.has(importedModule)) return true;
+  return importedModule === "run-cordis-loop"
+    && ([...BLOCKED_LOOP_BINDINGS].some((name) => new RegExp(`\\b${name}\\b`).test(bindings)) || /(^|\s)\*/.test(bindings));
+}
+
 function scanBoundaryViolations(relativePath: string, source: string): string[] {
   const violations: string[] = [];
   const staticImport = /\bimport\s+([\s\S]*?)\s+from\s*["']([^"']+)["']/g;
-  const dynamicImport = /\bconst\s*\{([^}]*)\}\s*=\s*await\s+import\(\s*["']([^"']+)["']\s*\)/g;
+  const dynamicImport = /\bimport\(\s*["']([^"']+)["']\s*\)/g;
+  const destructuredAwait = /\bconst\s*\{([^}]*)\}\s*=\s*await\s*$/;
+  const reExport = /\bexport\s+(?:type\s+)?(?:\*\s*(?:as\s+\w+\s*)?|\{([^}]*)\})\s+from\s*["']([^"']+)["']/g;
   const requireCall = /\brequire\(\s*["']([^"']+)["']\s*\)/g;
 
   for (const match of source.matchAll(staticImport)) {
     const bindings = match[1] ?? "";
     const importedModule = moduleName(match[2] ?? "");
-    if (!importedModule) continue;
-    const blocked = BLOCKED_MODULES.has(importedModule)
-      || (importedModule === "run-cordis-loop" && ([...BLOCKED_LOOP_BINDINGS].some((name) => new RegExp(`\\b${name}\\b`).test(bindings)) || /(^|\s)\*/.test(bindings)));
-    if (blocked) violations.push(`${relativePath}:${lineAt(source, match.index ?? 0)} imports ${importedModule}`);
+    if (isBlockedBinding(importedModule, bindings)) violations.push(`${relativePath}:${lineAt(source, match.index ?? 0)} imports ${importedModule}`);
   }
 
+  // Every dynamic import form: destructured (`const {a} = await import(x)`)
+  // checks just the bindings; any other form is a namespace import and is
+  // flagged for blocked modules (bindings can't be statically scoped).
   for (const match of source.matchAll(dynamicImport)) {
-    if (moduleName(match[2] ?? "") === "run-cordis-loop" && [...BLOCKED_LOOP_BINDINGS].some((name) => new RegExp(`\\b${name}\\b`).test(match[1] ?? ""))) {
-      violations.push(`${relativePath}:${lineAt(source, match.index ?? 0)} imports ${[...BLOCKED_LOOP_BINDINGS].filter((name) => new RegExp(`\\b${name}\\b`).test(match[1] ?? "")).join("/")} from run-cordis-loop`);
-    }
+    const importedModule = moduleName(match[1] ?? "");
+    const before = source.slice(0, match.index ?? 0);
+    const destructured = before.match(destructuredAwait);
+    const bindings = destructured ? destructured[1] ?? "" : "*";
+    if (isBlockedBinding(importedModule, bindings)) violations.push(`${relativePath}:${lineAt(source, match.index ?? 0)} imports ${importedModule} dynamically`);
+  }
+
+  // Re-exports use the same blocked-module checks as static imports.
+  for (const match of source.matchAll(reExport)) {
+    const bindings = match[1] ?? "*";
+    const importedModule = moduleName(match[2] ?? "");
+    if (isBlockedBinding(importedModule, bindings)) violations.push(`${relativePath}:${lineAt(source, match.index ?? 0)} re-exports ${importedModule}`);
   }
 
   for (const match of source.matchAll(requireCall)) {
@@ -107,5 +125,26 @@ describe("Cordis host boundary", () => {
       expect(scanBoundaryViolations("electron/ipc/example.ts", `import { something } from "../cordis/${mod}";`)).toHaveLength(1);
     }
     expect(scanBoundaryViolations("electron/ipc/example.ts", 'import { normalizeSubagentScope } from "../cordis/subagent-control";')).toEqual([]);
+  });
+
+  it("flags dynamic imports of blocked modules in any form", () => {
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'const { getContext } = await import("../cordis/cordis-context");')).toHaveLength(1);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'const ctx = await import("../cordis/cordis-context");')).toHaveLength(1);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'import("../cordis/turn-runtime").then((m) => m.startTurn("s"));')).toHaveLength(1);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'const { getContext } = await import("../cordis/run-cordis-loop");')).toHaveLength(1);
+    // Destructured imports of allowed helpers stay clean.
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");')).toEqual([]);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'const { withToolCallView } = await import("../cordis/run-cordis-loop");')).toEqual([]);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'const q = await import("../db/queries");')).toEqual([]);
+  });
+
+  it("flags re-exports of blocked modules like static imports", () => {
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'export { startTurn } from "../cordis/turn-runtime";')).toHaveLength(1);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'export * from "../cordis/approval-runtime";')).toHaveLength(1);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'export { getContext } from "../cordis/run-cordis-loop";')).toHaveLength(1);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'export * from "../cordis/run-cordis-loop";')).toHaveLength(1);
+    // Re-exports of allowed helpers stay clean.
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'export { getSessionRoot } from "../cordis/run-cordis-loop";')).toEqual([]);
+    expect(scanBoundaryViolations("electron/ipc/example.ts", 'export { normalizeSubagentScope } from "../cordis/subagent-control";')).toEqual([]);
   });
 });

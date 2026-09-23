@@ -70,6 +70,6 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 - [x] Route synchronous shared runtime state through `AgentHost`: one-shot AI, context-ring reads, subagent controls, pending-question resolution/cleanup/record/list, session grant mutation, trusted approval-arg reads, approval resolver/nonce ownership, confirm-transport bind/unbind, turn controller start/abort ownership, chat-agent drops, and background-job kills.
 - [x] Extend `AgentHost` with plugin install/update/uninstall ownership.
 - [x] Confirm plan state, cold session stats, and `/export` remain behind the existing `AgentHost` methods rather than adding duplicate façade state.
-- [x] Route remaining engine entry points and lifecycle work through the façade: automations, crash restart, quit teardown, and dev watch.
+- [x] Route remaining engine entry points and lifecycle work through the façade: automations, quit teardown, and dev watch. (Crash restart stays scoped to Phase 3 — no crash-restart path crosses the façade today.)
 - [x] Add a boundary guard test preventing direct context, plan-state, session-stats, session-export, approval/question/turn/transport/job state access outside `electron/cordis/`.
 - [ ] Complete the cross-OS installed-build and live agent sweep as the release-matrix gate; this is validation work, not a remaining code migration.

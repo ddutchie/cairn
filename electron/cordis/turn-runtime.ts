@@ -10,7 +10,10 @@ export function startTurn(sessionId: string): AbortController {
 }
 
 export function endTurn(sessionId: string, controller?: AbortController): void {
-  if (!controller || controllers.get(sessionId) === controller) controllers.delete(sessionId);
+  // A stale controller (superseded by a newer turn's startTurn) must not
+  // disturb the live turn: return before touching either entry.
+  if (controller && controllers.get(sessionId) !== controller) return;
+  controllers.delete(sessionId);
   running.delete(sessionId);
 }
 

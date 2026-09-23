@@ -273,8 +273,6 @@ export async function runAutomation(
 
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? "openai") as "openai";
-  const turnController = getAgentHost().startTurn(run.id);
-  const abortCtrl = turnController;
 
   // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
   // Every run gets a working directory under <project>/.automations/<id>/runs/
@@ -553,19 +551,26 @@ export async function runAutomation(
   if (writeRunFileHandler) automationTools.push({ name: WRITE_RUN_FILE_TOOL_NAME, description: writeRunFileToolDefinition.function.description, parameters: writeRunFileToolDefinition.function.parameters, execute: (a) => writeRunFileHandler(a as never) });
   if (deliverFileHandler) automationTools.push({ name: DELIVER_FILE_TOOL_NAME, description: deliverFileToolDefinition.function.description, parameters: deliverFileToolDefinition.function.parameters, execute: (a) => deliverFileHandler(a as never) });
 
-  getAgentHost().bindHeadlessConfirmTransport(run.id, {
-    emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
-    registerPending: (callId, resolve) => {
-      const key = automationKey(run.id, callId);
-      const trusted = getAgentHost().readPendingApprovalArgs(run.id, callId) ?? {};
-      pendingAutomationApprovals.set(key, { tool: "plugin_confirm", args: trusted, db, runId: run.id, resolve: (d) => resolve(d.approved) });
-      return () => { pendingAutomationApprovals.delete(key); };
-    },
-
-  });
+  // Register the turn immediately before the try that owns endTurn cleanup,
+  // so connector-load failures above return without leaking a running turn.
+  // abortCtrl is only read by lazily executed closures (run_script handler,
+  // loop options below), which all run inside the try.
+  const turnController = getAgentHost().startTurn(run.id);
+  const abortCtrl = turnController;
 
   let codingResult: { ok: boolean; error?: string };
   try {
+    getAgentHost().bindHeadlessConfirmTransport(run.id, {
+      emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
+      registerPending: (callId, resolve) => {
+        const key = automationKey(run.id, callId);
+        const trusted = getAgentHost().readPendingApprovalArgs(run.id, callId) ?? {};
+        pendingAutomationApprovals.set(key, { tool: "plugin_confirm", args: trusted, db, runId: run.id, resolve: (d) => resolve(d.approved) });
+        return () => { pendingAutomationApprovals.delete(key); };
+      },
+
+    });
+
     codingResult = await getAgentHost().runAutomation({
       db,
       req,

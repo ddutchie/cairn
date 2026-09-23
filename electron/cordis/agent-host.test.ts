@@ -284,6 +284,17 @@ describe("AgentHost", () => {
     expect(getAgentHost().isTurnRunning("session-1")).toBe(false);
   });
 
+  it("ignores endTurn from a superseded controller", () => {
+    const stale = getAgentHost().startTurn("session-stale");
+    const live = getAgentHost().startTurn("session-stale");
+
+    expect(stale.signal.aborted).toBe(true);
+    getAgentHost().endTurn("session-stale", stale);
+    expect(getAgentHost().isTurnRunning("session-stale")).toBe(true);
+    getAgentHost().endTurn("session-stale", live);
+    expect(getAgentHost().isTurnRunning("session-stale")).toBe(false);
+  });
+
   it("routes approval resolvers and nonces through the host", () => {
     const decisions: unknown[] = [];
     getAgentHost().registerPendingApproval("session-1", "call-1", (decision) => decisions.push(decision));
@@ -337,6 +348,7 @@ describe("AgentHost", () => {
     getAgentHost().configureSessionRoot("/tmp/sessions");
     getAgentHost().configurePluginsRoot("/tmp/plugins");
 
+    expect(mocks.setSessionRoot).toHaveBeenCalledWith("/tmp/sessions");
     expect(mocks.setPluginsRoot).toHaveBeenCalledWith("/tmp/plugins");
     expect(getAgentHost().getSessionRoot()).toBe("/tmp/sessions");
     expect(getAgentHost().getPluginsRoot()).toBe("/tmp/plugins");
@@ -432,6 +444,6 @@ describe("AgentHost", () => {
 
     await getAgentHost().releaseSessionAgent("session-1");
 
-    expect(mocks.deleteAgent).toHaveBeenCalledWith(expect.objectContaining({ toString: expect.any(Function) }));
+    expect(mocks.deleteAgent).toHaveBeenCalledWith("session-1");
   });
 });

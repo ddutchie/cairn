@@ -59,7 +59,7 @@ export function getBashExecutable(): string {
 
   // 2. Try to locate git.exe via PATH and find bash.exe nearby
   try {
-    const gitPath = execSync("where git", { encoding: "utf8" }).split("\r\n")[0]?.trim();
+    const gitPath = execSync("where git", { encoding: "utf8", windowsHide: true }).split("\r\n")[0]?.trim();
     if (gitPath && fs.existsSync(gitPath)) {
       // "where git" typically returns "C:\Program Files\Git\cmd\git.exe"
       const gitDir = path.dirname(gitPath); // e.g. "C:\Program Files\Git\cmd"
