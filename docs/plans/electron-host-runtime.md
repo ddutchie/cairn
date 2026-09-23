@@ -1,6 +1,6 @@
 # Running dsh inside Electron — runtime-lookup fixes and the host-process plan
 
-> **Status (2026-09-23):** Stage 1 fixes landed in 3.0.9. Phase 0 is in progress on `feat/agent-host-facade`: all direct `getContext()` calls from Electron IPC and chat/runtime paths now go through `AgentHost`, including turn lifecycle and plugin installation; the remaining work is plan/session state, automation entry points, lifecycle teardown, the boundary guard, and installed/live verification. Stage 2 host process is not started.
+> **Status (2026-09-23):** Stage 1 fixes landed in 3.0.9. Phase 0 is in progress on `feat/agent-host-facade`: all direct `getContext()` calls from Electron IPC and chat/runtime paths now go through `AgentHost`, including turn lifecycle and plugin installation; plan state, cold session stats, and export are already behind the façade and now guarded. The remaining work is automation entry points, lifecycle teardown, and installed/live verification. Stage 2 host process is not started.
 
 ## Why this keeps happening
 
@@ -50,7 +50,7 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 
 **Why it's tractable:** the engine (`electron/cordis/`, 46 files, ~11k lines) imports `electron` in only 3 files (`shell.*`, `app.getPath`, `getWin` in `chat-executor.ts`). Renderer pushes are already JSON envelopes (`session:event` / `session:projection`). Model PTYs go through the injectable `PtyAdapter` (`terminal-backend.ts`), so an RPC adapter keeps main as the single PTY owner.
 
-**What makes it work:** the direct `getContext()` reach-ins from IPC, chat, runtime, session-read, and chat-cleanup paths are now behind `AgentHost`. Remaining coupling is shared state read synchronously from main: approval grants, pending-question broker, plan mode, secret grants, chat agent cache, plus turn start/abort and other engine entry points such as automations (`heartbeat-runner.ts`), one-shot AI (`ai-handlers.ts`), UI plugin handlers + install, and `electron/mcp/tools/metadata.ts` (the latter is the workspace/dashboard `window.cairn.getContext()` API, not Cordis context). Plus lifecycle (crash restart, quit teardown, dev watch) and packaging dsh unbundled outside ASAR (bigger app; removes all Stage 1 patches).
+**What makes it work:** the direct `getContext()` reach-ins from IPC, chat, runtime, session-read, and chat-cleanup paths are now behind `AgentHost`, including turn lifecycle, plugin lifecycle, and the synchronous shared state used by those operations. Plan mode, cold session stats, and export remain engine-owned and are already reached through `AgentHost`; a boundary guard prevents direct imports of those internals. Remaining coupling is automation entry points (`heartbeat-runner.ts`), lifecycle (crash restart, quit teardown, dev watch), and `electron/mcp/tools/metadata.ts` (the latter is the workspace/dashboard `window.cairn.getContext()` API, not Cordis context). Packaging dsh unbundled outside ASAR remains a later, larger change.
 
 | Phase | Work | Estimate |
 |---|---|---|
@@ -69,7 +69,7 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 - [x] Extend `AgentHost` with one-shot AI, context-ring reads, subagent controls, pending-question resolution/cleanup, session grant mutation, secret-grant cleanup, and approval resolver/nonce ownership.
 - [x] Extend `AgentHost` with one-shot AI, context-ring reads, subagent controls, pending-question resolution/cleanup, session grant mutation, secret-grant cleanup, approval resolver/nonce ownership, and turn controller start/abort ownership.
 - [x] Extend `AgentHost` with plugin install/update/uninstall ownership.
-- [ ] Extend `AgentHost` with plan state and session stats/export.
+- [x] Confirm plan state, cold session stats, and `/export` remain behind the existing `AgentHost` methods rather than adding duplicate façade state.
 - [ ] Route remaining engine entry points and lifecycle work through the façade: automations, crash restart, quit teardown, and dev watch.
-- [ ] Add a lint rule or guard test ensuring nothing outside `electron/cordis/` imports `run-cordis-loop`'s `getContext`; the current IPC scan is clean.
+- [x] Add a boundary guard test preventing direct context, plan-state, session-stats, and session-export access outside `electron/cordis/`.
 - [ ] Verify installed macOS/Linux/Windows builds and run the live agent sweep.

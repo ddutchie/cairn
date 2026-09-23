@@ -45,7 +45,7 @@ import { apply as toolTerminalApply, inject as toolTerminalInject, name as toolT
 import { cairnTerminalBackendPlugin } from "./terminal-backend";
 import type { Database } from "better-sqlite3";
 import { mountCodingLsp } from "./cordis-lsp";
-import { getBashExecutable } from "../lib/coding-tools/bash";
+import { getBashExecutable } from "./host-store";
 
 export interface CodingStackOptions {
   /** Working directory the coding tools are scoped to (the session cwd). */
