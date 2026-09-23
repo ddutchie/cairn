@@ -51,6 +51,41 @@ const patchSubprocessRunnerEnv = {
   },
 };
 
+/**
+ * dsh-win32-process creates Windows children with CreateProcess(AsUser)W and
+ * never sets CREATE_NO_WINDOW. The runners that call it (subprocess runner,
+ * Windows sandbox runner) are spawned with windowsHide, so they own no
+ * console, and each console-subsystem child (rg.exe for glob/grep, git, …)
+ * gets a fresh visible console window that flashes up and closes. OR the flag
+ * (0x08000000) into all three call sites. stdio is always redirected through
+ * pipes, and GUI children ignore the flag. Fails the build if a dsh upgrade
+ * moves the lines.
+ */
+const CREATE_NO_WINDOW = "0x08000000";
+const patchWin32NoWindow = {
+  name: "dsh-win32-process-no-window",
+  setup(build) {
+    build.onLoad({ filter: /dsh-win32-process[\\/]lib[\\/]index\.js$/ }, async (args) => {
+      let src = await fs.promises.readFile(args.path, "utf8");
+      const edits = [
+        // spawnCurrentTokenJobProcess: CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT
+        ["null, null, 1, 1028, environment,", `null, null, 1, 1028 | ${CREATE_NO_WINDOW}, environment,`],
+        // spawnInheritedJobProcess: CREATE_SUSPENDED
+        ["createRestrictedProcess(api, options, commandLine, 4, startupInfo,", `createRestrictedProcess(api, options, commandLine, 4 | ${CREATE_NO_WINDOW}, startupInfo,`],
+        // restricted pipe spawn: no flags
+        ["buildCommandLine(options.command, options.args), 0, startupInfo,", `buildCommandLine(options.command, options.args), ${CREATE_NO_WINDOW}, startupInfo,`],
+      ];
+      for (const [needle, replacement] of edits) {
+        if (src.split(needle).length !== 2) {
+          throw new Error(`patchWin32NoWindow: expected exactly one "${needle}" in ${args.path} — dsh-win32-process changed; update scripts/compile-electron.js`);
+        }
+        src = src.replace(needle, replacement);
+      }
+      return { contents: src, loader: "js" };
+    });
+  },
+};
+
 const mainPreload = {
   entryPoints: ["electron/main.ts", "electron/preload.ts"],
   bundle: true,
@@ -83,7 +118,7 @@ const mainPreload = {
   // bootstrap beside main.js (electron/subprocess-runner.ts) — the package
   // itself is inlined, not shipped on disk. patchSubprocessRunnerEnv supplies
   // the Node-mode half.
-  plugins: [patchSubprocessRunnerEnv],
+  plugins: [patchSubprocessRunnerEnv, patchWin32NoWindow],
   banner: {
     js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(s==='@deepseek-ai/dsh-subprocess-local/runner'?require('path').join(__dirname,'subprocess-runner.cjs'):require.resolve(s)).href;",
   },
@@ -150,6 +185,7 @@ const windowsAclRunner = {
   platform: "node",
   target: "node24",
   external: ["koffi"],
+  plugins: [patchWin32NoWindow],
   banner: { js: "delete process.env.ELECTRON_RUN_AS_NODE;" },
   outfile: "dist-electron/windows-acl-runner.cjs",
   format: "cjs",
@@ -183,6 +219,7 @@ const subprocessRunner = {
   external: ["electron", "koffi"],
   outfile: "dist-electron/subprocess-runner.cjs",
   format: "cjs",
+  plugins: [patchSubprocessRunnerEnv, patchWin32NoWindow],
   banner: mainPreload.banner,
   define: mainPreload.define,
 };

@@ -45,6 +45,7 @@ import { apply as toolTerminalApply, inject as toolTerminalInject, name as toolT
 import { cairnTerminalBackendPlugin } from "./terminal-backend";
 import type { Database } from "better-sqlite3";
 import { mountCodingLsp } from "./cordis-lsp";
+import { getBashExecutable } from "../lib/coding-tools/bash";
 
 export interface CodingStackOptions {
   /** Working directory the coding tools are scoped to (the session cwd). */
@@ -214,6 +215,31 @@ export function runWindowsAclRunnerAsNode(ctx: Context): void {
   shell.__cairnRunnerAsNode = true;
 }
 
+/** Point sandboxed `bash -c` at Git Bash instead of the WSL launcher.
+ *
+ *  dsh-bash-sandbox confines a bare `["bash", "-c", cmd]`, and the Windows ACL
+ *  runner hands that to CreateProcessAsUserW with no application name. The
+ *  default search checks System32 BEFORE PATH, so any machine with WSL gets
+ *  `C:\Windows\System32\bash.exe`. Under the restricted token that fails with
+ *  `Bash/Service/CreateInstance/E_ACCESSDENIED` (printed as UTF-16). Full-access
+ *  spawns resolve through PATH and are unaffected. Instance-level patch on
+ *  `sandbox.confine`: rewrite argv[0] to the absolute Git Bash path (same
+ *  resolver as automations). No-op off win32 / when Git Bash isn't found.
+ *  Idempotent. */
+export function pinWindowsSandboxBash(ctx: Context): void {
+  if (process.platform !== "win32") return;
+  const sandbox = ctx.get("sandbox") as
+    | { confine?: (argv: string[], ...rest: unknown[]) => unknown; __cairnGitBash?: boolean }
+    | undefined;
+  if (!sandbox || typeof sandbox.confine !== "function" || sandbox.__cairnGitBash) return;
+  const bash = getBashExecutable();
+  if (!path.isAbsolute(bash)) return;
+  const origConfine = sandbox.confine.bind(sandbox);
+  sandbox.confine = (argv: string[], ...rest: unknown[]) =>
+    origConfine(argv[0] === "bash" ? [bash, ...argv.slice(1)] : argv, ...rest);
+  sandbox.__cairnGitBash = true;
+}
+
 /** Instance-level patch on the mounted fs service: rewrite the well-known
  *  plugin-artifact prefix `viz(/…)` to `.chat/viz(…)`. Only the chat-mounted
  *  chain is patched (coding mounts its own per-turn and stays stock). Harmless
@@ -279,6 +305,7 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     void bashLocalPlugin;
     await plug(bashSandboxPlugin);
     try { runWindowsAclRunnerAsNode(ctx); } catch { /* best-effort */ }
+    try { pinWindowsSandboxBash(ctx); } catch { /* best-effort */ }
     await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
     await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
     // Persistent model shells over the shared node-pty manager (same login
