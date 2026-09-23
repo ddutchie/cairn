@@ -64,8 +64,8 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 ### Phase 0 checklist
 
 - [x] Define the local async `AgentHost` façade in `electron/cordis/agent-host.ts` and move the direct IPC/runtime/chat `getContext()` callers onto it.
-- [x] Route session reads, permissions, goals, schedules, feedback, command execution, prompt previews, tool inventory, chat compaction, titles, and resident-agent cleanup through `AgentHost`.
-- [ ] Extend `AgentHost` with turn start/abort, approval decisions, question answers, subagent control, plan/secret state, session stats/replay/export, plugin install, and one-shot AI.
-- [ ] Route remaining engine entry points and lifecycle work through the façade: automations, one-shot AI, UI plugin handlers/install, and shared approval/question/plan/secret state.
+- [x] Route session reads, permissions, goals, schedules, feedback, command execution, prompt previews, tool inventory, chat compaction, titles, context-ring reads, one-shot AI, subagent controls, and resident-agent cleanup through `AgentHost`.
+- [ ] Extend `AgentHost` with turn start/abort, approval decisions, question answers, plan/secret state, session stats/export, and plugin install.
+- [ ] Route remaining engine entry points and lifecycle work through the façade: automations, UI plugin handlers/install, and shared approval/question/plan/secret state.
 - [ ] Add a lint rule or guard test ensuring nothing outside `electron/cordis/` imports `run-cordis-loop`'s `getContext`; the current IPC scan is clean.
 - [ ] Verify installed macOS/Linux/Windows builds and run the live agent sweep.
