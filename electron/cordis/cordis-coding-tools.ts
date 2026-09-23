@@ -112,6 +112,8 @@ async function plugFsChain(
   try { remapChatArtifactDirs(ctx); } catch { /* best-effort */ }
   // Pin the Windows sandbox runner (no-op off win32 / when already pinned).
   try { pinWindowsAclRunnerEntry(ctx); } catch { /* best-effort */ }
+  // Pin the Linux Landlock launcher (no-op off Linux / when already pinned).
+  try { pinLandlockLauncher(ctx); } catch { /* best-effort */ }
 }
 
 /** Mount ONLY the fs/sandbox ownership trio — used by the chat loop so plugin
@@ -161,6 +163,55 @@ export function pinWindowsAclRunnerEntry(ctx: Context): void {
     const entry = path.join(path.dirname(__filename), "windows-acl-runner.cjs");
     if (fs.existsSync(entry)) sandbox.internals.windowsAclRunnerEntry = entry;
   } catch { /* best-effort — the resolve() shim remains as fallback */ }
+}
+
+/** Pin the Linux Landlock launcher to the unpacked binary.
+ *
+ *  dsh-sandbox-local finds `landlock-run` in the per-platform
+ *  `@deepseek-ai/node-addon-system-linux-<arch>` package relative to its own
+ *  (bundled) module, and in the packaged app that path is inside app.asar,
+ *  which `spawn` can't execute. The package ships unpacked
+ *  (electron-builder.yml), so resolve it here and rewrite to
+ *  app.asar.unpacked. No-op off Linux, when already pinned, or when the
+ *  package is missing (dsh then reports the sandbox as unavailable). */
+export function pinLandlockLauncher(ctx: Context): void {
+  if (process.platform !== "linux") return;
+  const sandbox = ctx.get("sandbox") as { internals?: { landlockLauncher?: string } } | undefined;
+  if (!sandbox || typeof sandbox.internals !== "object" || sandbox.internals.landlockLauncher) return;
+  try {
+    const manifest = require.resolve(`@deepseek-ai/node-addon-system-${process.platform}-${process.arch}/package.json`);
+    sandbox.internals.landlockLauncher = path
+      .join(path.dirname(manifest), "bin", "landlock-run")
+      .replace(/app\.asar([\\/])/, "app.asar.unpacked$1");
+  } catch { /* package not installed for this arch — leave dsh's default */ }
+}
+
+/** Run the pinned Windows sandbox runner as Node, not as a second Cairn.
+ *
+ *  dsh-sandbox-local spawns the runner as `[process.execPath, runner, …]`. In
+ *  Electron that is Electron.exe, which without ELECTRON_RUN_AS_NODE boots the
+ *  full app (single-instance handoff, GPU cache errors), so the command
+ *  never runs and the tool output is Chromium's stderr. Instance-level patch
+ *  on the `shell` executor's spawnSpec: add the variable only for that exact
+ *  argv, so full-access `bash -c` spawns are untouched. The runner bundle
+ *  removes it again before spawning the sandboxed command (banner in
+ *  scripts/compile-electron.js). No-op off win32 / outside Electron. Idempotent. */
+export function runWindowsAclRunnerAsNode(ctx: Context): void {
+  if (process.platform !== "win32" || !process.versions.electron) return;
+  const sandbox = ctx.get("sandbox") as { internals?: { windowsAclRunnerEntry?: string } } | undefined;
+  const entry = sandbox?.internals?.windowsAclRunnerEntry;
+  type SpawnSpec = { argv: string[]; env?: Record<string, string | undefined> };
+  const shell = ctx.get("shell") as
+    | { spawnSpec?: (...args: unknown[]) => SpawnSpec; __cairnRunnerAsNode?: boolean }
+    | undefined;
+  if (!entry || !shell || typeof shell.spawnSpec !== "function" || shell.__cairnRunnerAsNode) return;
+  const origSpawnSpec = shell.spawnSpec.bind(shell);
+  shell.spawnSpec = (...args: unknown[]) => {
+    const spec = origSpawnSpec(...args);
+    if (spec.argv[0] !== process.execPath || spec.argv[1] !== entry) return spec;
+    return { ...spec, env: { ...spec.env, ELECTRON_RUN_AS_NODE: "1" } };
+  };
+  shell.__cairnRunnerAsNode = true;
 }
 
 /** Instance-level patch on the mounted fs service: rewrite the well-known
@@ -227,6 +278,7 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     // confident the sandbox path is stable across all supported platforms.
     void bashLocalPlugin;
     await plug(bashSandboxPlugin);
+    try { runWindowsAclRunnerAsNode(ctx); } catch { /* best-effort */ }
     await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
     await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
     // Persistent model shells over the shared node-pty manager (same login

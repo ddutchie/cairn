@@ -9,6 +9,7 @@ import { CardDetailPanel } from "@/components/kanban/card-detail-panel";
 import { revealNote, revealCard } from "@/lib/events";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { InlineDiff } from "@/components/agent/git/InlineDiff";
 import type { ContextPanel } from "@/types";
 
 const MIN_PREVIEW_WIDTH = 360;
@@ -46,7 +47,8 @@ function DiffContextContent({ path }: { path?: string }) {
   }, [path, project?.codeDirectory]);
   if (!project?.codeDirectory) return <div className="flex items-center justify-center flex-1 p-6 text-center text-xs text-[var(--text-tertiary)]">No code directory connected.</div>;
   if (!result) return <div className="flex items-center justify-center flex-1 text-xs text-[var(--text-tertiary)]">Loading diff…</div>;
-  return <pre className="flex-1 overflow-auto p-4 text-[0.714rem] leading-5 font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">{result.diff || "No changes."}</pre>;
+  if (!result.diff.startsWith("diff ")) return <pre className="flex-1 overflow-auto p-4 text-[0.714rem] leading-5 font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">{result.diff || "No changes."}</pre>;
+  return <div className="flex-1 overflow-auto"><InlineDiff rawDiff={result.diff} loading={false} /></div>;
 }
 
 export function PreviewPane() {

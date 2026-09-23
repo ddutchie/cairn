@@ -303,6 +303,13 @@ export async function spawnShellPty(
     throw new Error("No allowed shell spawn directory found within project boundaries.");
   }
 
+  // Model shells have no human to press `q`: a pager (`git log`, `man`) would
+  // block the send until timeout and paint full-screen control codes. Same
+  // overrides dsh-bash-local applies to one-shot bash calls.
+  const env = opts.kind === "model"
+    ? { ...process.env, PAGER: "cat", GIT_PAGER: "cat", NO_COLOR: "1" } as Record<string, string>
+    : process.env as Record<string, string>;
+
   let pty: PtyHandle | undefined;
   let lastError: Error | null = null;
   let spawnedCwd = realCwd;
@@ -315,7 +322,7 @@ export async function spawnShellPty(
         cols: 120,
         rows: 30,
         cwd:  resolvedAttemptCwd,
-        env:  process.env as Record<string, string>,
+        env,
       });
       spawnedCwd = resolvedAttemptCwd;
       console.log(`[agent] Successfully spawned ${attempt.label}`);

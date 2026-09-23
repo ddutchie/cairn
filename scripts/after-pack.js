@@ -134,6 +134,11 @@ exports.default = async function afterPack(context) {
     console.warn(`[afterPack] could not strip @koromix archs: ${err.message}`);
   }
 
+  // 5. Runtime-resolved platform packages fetched for every arch by
+  //    scripts/fetch-cross-arch-natives.js — keep only this app's arch.
+  rm(path.join("node_modules", "@vscode", `ripgrep-${platform}-${other}`));
+  rm(path.join("node_modules", "@deepseek-ai", `node-addon-system-${platform}-${other}`));
+
   console.log(
     `[afterPack] ${platform}/${target}: stripped ${other} arch → ` +
     (removed.length ? removed.join(", ") : "(nothing to remove)"),

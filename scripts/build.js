@@ -56,22 +56,12 @@ run("node scripts/generate-features.js");
 // 2. Next.js static export
 run("cross-env ELECTRON_BUILD=true next build");
 
-// 3. Bundle Electron main + preload with esbuild (inlines all deps except native/dynamic ones)
-// The banner + define fix `import.meta.url` AND `import.meta.resolve` for ESM
-// deps bundled into CJS (e.g. @deepseek-ai/dsh-llm does
-// `createRequire(import.meta.url)` at module scope; dsh-sandbox-local calls
-// `import.meta.resolve()` for its Windows runner — esbuild stubs import.meta
-// = {} in CJS, so we redirect both to real file-URL shims).
-run(
-  "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node24 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --external:ajv --external:ajv-formats --external:koffi --outdir=dist-electron --format=cjs " +
-    "\"--banner:js=globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(require.resolve(s)).href;\" " +
-    "--define:import.meta.url=globalThis.__cairnImportMetaUrl " +
-    "--define:import.meta.resolve=globalThis.__cairnImportMetaResolve",
-);
-
-// 3a. Bundle the Windows sandbox runner as a standalone file (see
-// scripts/compile-electron.js for the full rationale).
-run("esbuild node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/runner.js --bundle --platform=node --target=node24 --external:koffi --outfile=dist-electron/windows-acl-runner.cjs --format=cjs");
+// 3. Bundle Electron main + preload and the helpers that run beside it
+// (Windows sandbox runner, subprocess containment runner, workflow worker).
+// Shares scripts/compile-electron.js so release builds get the same
+// import.meta shims, ripgrep alias and dsh runner env patch (an esbuild
+// plugin — not expressible as CLI flags) as `npm run compile`.
+run("node scripts/compile-electron.js --electron-only");
 
 // 3b. Bundle the runtime server (unified embeddings + LLM — runs as ELECTRON_RUN_AS_NODE child)
 run("esbuild electron/runtime/server.ts --bundle --platform=node --target=node24 --external:@huggingface/transformers --external:onnxruntime-node --outfile=dist-electron/runtime-server.bundle.js --format=cjs");
@@ -85,7 +75,11 @@ run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node24 --e
 // 5. Build self-contained cairn-mcp binary (bundles Node 24 + better-sqlite3)
 run(`node scripts/build-mcp-binary.js ${platformFlags}`);
 
-// 6. Package with electron-builder
+// 6. Fetch runtime-resolved native packages (ripgrep, dsh node-addon-system)
+// for every packaged arch — npm only installed the build machine's.
+run(`node scripts/fetch-cross-arch-natives.js ${platformFlags}`);
+
+// 7. Package with electron-builder
 run(`electron-builder ${platformFlags}`);
 
 console.log("\nBuild complete. Output in dist-app/");
