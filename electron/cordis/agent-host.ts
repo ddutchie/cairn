@@ -16,6 +16,7 @@ import {
 import type { SessionStatsSnapshot } from "./session-stats";
 import { buildSystemPrompt, getCachedConfig } from "./host-store";
 import type { OneShotOptions } from "./one-shot";
+import type { ContextRingResult } from "./run-cordis-loop";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -72,6 +73,7 @@ export interface AgentHost {
   listSchedules(sessionId: string): Promise<ScheduleWire[]>;
   readPermissionsSnapshot(sessionId: string): Promise<PermissionsSelect>;
   loadSessionMessages(sessionId: string): Promise<LoadSessionMessagesResult>;
+  readContextRing(sessionId: string): Promise<ContextRingResult>;
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -178,6 +180,10 @@ function createLocalAgentHost(): AgentHost {
         );
       } catch { }
       return loadReplaySessionMessages(persistence, liveSessions, sessionId, statsSnapshot ? { statsSnapshot } : undefined);
+    },
+    async readContextRing(sessionId) {
+      const { readContextRingWithContext } = await import("./run-cordis-loop");
+      return readContextRingWithContext(await context(), sessionId);
     },
     async listCommands() {
       const ctx = await context();

@@ -1,4 +1,5 @@
 /** Public chat loop surface and compatibility exports for Cordis helpers. */
+import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { openCordisSessionAgent } from "./session-agent";
@@ -87,18 +88,29 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
   } catch { return undefined; }
 }
 
-export async function readContextRing(sessionId: string): Promise<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }> {
+export interface ContextRingResult {
+  available: boolean;
+  ring?: {
+    currentModel: string | null;
+    byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }>;
+  };
+}
+
+export async function readContextRingWithContext(ctx: Context, sessionId: string): Promise<ContextRingResult> {
   try {
     const { cachedContextRing } = await import("./plugins/context-ring");
     const cached = cachedContextRing(sessionId);
     if (cached) return { available: true, ring: { currentModel: cached.currentModel, byModel: cached.byModel } };
-    const ctx = await getContext();
     const registry = ctx.sessionProjections;
     const session = ctx.sessions?.get?.(sessionId as never);
     if (!registry || !session) return { available: false };
     const state = registry.stateOf(session, "contextRing" as never) as { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } | undefined;
     return state ? { available: true, ring: state } : { available: false };
   } catch { return { available: false }; }
+}
+
+export async function readContextRing(sessionId: string): Promise<ContextRingResult> {
+  return readContextRingWithContext(await getContext(), sessionId);
 }
 
 import { runChatCordisSession } from "./chat-session-runner";

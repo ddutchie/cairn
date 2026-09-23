@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   deleteAgent: vi.fn(),
   getAgent: vi.fn(),
   runOneShotWithContext: vi.fn(),
+  readContextRingWithContext: vi.fn(),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -33,7 +34,7 @@ vi.mock("./session-runtime", () => ({ ensureAgentAiAdapter: mocks.ensureAgentAiA
 vi.mock("./plan-fold", () => ({ getPlanModeActive: mocks.getPlanModeActive }));
 vi.mock("./permissions-bridge", () => ({ readPermissionsSnapshot: mocks.readPermissionsSnapshot }));
 vi.mock("./session-replay", () => ({ loadSessionMessages: mocks.loadSessionMessages }));
-vi.mock("./run-cordis-loop", () => ({ prepareReplayContext: mocks.prepareReplayContext }));
+vi.mock("./run-cordis-loop", () => ({ prepareReplayContext: mocks.prepareReplayContext, readContextRingWithContext: mocks.readContextRingWithContext }));
 vi.mock("./session-stats", () => ({ readSessionStatsSnapshot: mocks.readSessionStatsSnapshot }));
 vi.mock("./one-shot", () => ({ runOneShotWithContext: mocks.runOneShotWithContext }));
 
@@ -152,6 +153,15 @@ describe("AgentHost", () => {
     expect(execute).toHaveBeenCalledWith(agent, "/plan", [], expect.any(AbortSignal));
     expect(mocks.getPlanModeActive).toHaveBeenCalledWith(contextWithCommands, agent.session);
     expect(mocks.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("reads context-ring state through the host", async () => {
+    const result = { available: true, ring: { currentModel: "model-1", byModel: {} } };
+    mocks.readContextRingWithContext.mockResolvedValue(result);
+
+    await expect(getAgentHost().readContextRing("session-1")).resolves.toBe(result);
+
+    expect(mocks.readContextRingWithContext).toHaveBeenCalledWith(context, "session-1");
   });
 
   it("runs one-shot AI with the host context", async () => {

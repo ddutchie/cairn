@@ -481,8 +481,7 @@ export function registerSessionRuntimeHandlers(
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
   // agent panel's ring badge. Unavailable → renderer hides the pill.
   registerIpcHandle("session:context-ring", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
-    const { readContextRing } = await import("../cordis/run-cordis-loop");
-    return readContextRing(sessionId);
+    return getAgentHost().readContextRing(sessionId);
   }));
 
   // ── subagent:* — human continuable-child controls ───────────────────────
