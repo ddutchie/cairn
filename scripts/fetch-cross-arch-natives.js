@@ -87,7 +87,10 @@ function fetchPackage(name, version) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-native-"));
   try {
     // npm on Windows is a .cmd shim, which execFile can only run via a shell.
-    const out = execFileSync("npm", ["pack", `${name}@${version}`, "--silent", "--pack-destination", tmp], {
+    // With shell:true the args are joined into one command line, so quote the
+    // temp path — it lives under os.tmpdir() and splits when it has spaces.
+    const packDestination = process.platform === "win32" ? `"${tmp}"` : tmp;
+    const out = execFileSync("npm", ["pack", `${name}@${version}`, "--silent", "--pack-destination", packDestination], {
       cwd: root,
       encoding: "utf8",
       shell: process.platform === "win32",

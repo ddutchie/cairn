@@ -83,7 +83,9 @@ function utf8Tail(text: string, maxBytes: number): { text: string; truncated: bo
 // result is plain text for both the model and the transcript.
 const TERMINAL_CONTROL_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-Z\\-_]|[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]/g;
 // An escape sequence split across two PTY chunks — held until the next chunk.
-const PARTIAL_CONTROL_RE = /\x1b(?:\[[0-?]*[ -/]*|\][^\x07\x1b]*)?$/;
+// The OSC branch allows a trailing ESC (first byte of a split ST terminator
+// `ESC \`) so the whole OSC stays pending instead of leaking its prefix.
+const PARTIAL_CONTROL_RE = /\x1b(?:\[[0-?]*[ -/]*|\][^\x07\x1b]*(?:\x1b)?)?$/;
 
 /** Strip terminal control sequences from one PTY chunk. Returns the plain
  *  text plus any trailing incomplete sequence to prepend to the next chunk. */

@@ -32,6 +32,12 @@ describe("stripTerminalControl", () => {
     expect(first).toEqual({ text: "ok", pending: "\x1b[3" });
     expect(stripTerminalControl(first.pending + "3mred").text).toBe("red");
   });
+
+  it("holds an OSC with a split ST terminator (trailing ESC stays pending)", () => {
+    const first = stripTerminalControl("done\x1b]0;title\x1b");
+    expect(first).toEqual({ text: "done", pending: "\x1b]0;title\x1b" });
+    expect(stripTerminalControl(first.pending + "\\rest")).toEqual({ text: "rest", pending: "" });
+  });
 });
 
 interface FakePty {

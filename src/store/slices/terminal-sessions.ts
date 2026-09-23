@@ -673,7 +673,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
           const owner = msgs[ownerIdx];
           if (owner.subagents!.every((sa) => sa.childSessionId !== childSessionId || sa.running)) return t;
           const next = [...msgs];
-          next[ownerIdx] = { ...owner, subagents: owner.subagents!.map((sa) => sa.childSessionId === childSessionId ? { ...sa, running: true } : sa) };
+          next[ownerIdx] = { ...owner, subagents: owner.subagents!.map((sa) => sa.childSessionId === childSessionId ? { ...sa, running: true, result: undefined } : sa) };
           return { ...t, messages: next };
         }
         // Every other subagent helper resolves the child by findIndex and is a
@@ -712,7 +712,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
               subagents: msg.subagents!.map((sa) => {
                 if (sa.childSessionId !== childSessionId) return sa;
                 const last = sa.messages[sa.messages.length - 1];
-                const messages = last?.isStreaming ? [...sa.messages.slice(0, -1), { ...last, isStreaming: false }] : sa.messages;
+                const messages = last?.isStreaming ? [...sa.messages.slice(0, -1), { ...last, isStreaming: false, toolCalls: last.toolCalls?.map((tc) => tc.running ? { ...tc, running: false } : tc) }] : sa.messages;
                 return { ...sa, messages, running: false, result: result || sa.result };
               }),
             };
