@@ -63,7 +63,7 @@ run("cross-env ELECTRON_BUILD=true next build");
 // `import.meta.resolve()` for its Windows runner — esbuild stubs import.meta
 // = {} in CJS, so we redirect both to real file-URL shims).
 run(
-  "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node24 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --external:ajv --external:ajv-formats --external:koffi --outdir=dist-electron --format=cjs " +
+  "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node24 --external:electron --external:better-sqlite3 --external:node-pty --external:@huggingface/transformers --external:onnxruntime-node --external:ajv --external:ajv-formats --external:koffi --alias:@vscode/ripgrep=./electron/lib/ripgrep-path.ts --outdir=dist-electron --format=cjs " +
     "\"--banner:js=globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(require.resolve(s)).href;\" " +
     "--define:import.meta.url=globalThis.__cairnImportMetaUrl " +
     "--define:import.meta.resolve=globalThis.__cairnImportMetaResolve",

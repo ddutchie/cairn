@@ -43,6 +43,9 @@ const mainPreload = {
     // first time a session flush (or any dsh fs/subprocess call) touches it.
     "koffi",
   ],
+  // glob/grep spawn @vscode/ripgrep's rgPath, which points inside app.asar
+  // when packaged — the shim redirects it to the unpacked binary.
+  alias: { "@vscode/ripgrep": "./electron/lib/ripgrep-path.ts" },
   outdir: "dist-electron",
   format: "cjs",
   banner: {

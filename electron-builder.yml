@@ -50,6 +50,10 @@ files:
   # bare require — hence a scope-wide glob; after-pack strips other arches).
   - node_modules/koffi/**/*
   - node_modules/@koromix/**/*
+  # ripgrep binary for the coding agent's glob/grep tools (dsh-tool-fs-search).
+  # Only the per-platform package is needed — @vscode/ripgrep itself is
+  # replaced in the bundle by electron/lib/ripgrep-path.ts.
+  - node_modules/@vscode/ripgrep-*/**/*
   # Runtime server externals — transformers.js + onnxruntime + sharp stub (in-process embeddings)
   - node_modules/@huggingface/transformers/**/*
   - node_modules/onnxruntime-node/**/*
@@ -66,7 +70,7 @@ files:
   - node_modules/json-schema-traverse/**/*
   - node_modules/require-from-string/**/*
   # Exclude everything else in node_modules
-  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater|node-pty|koffi|@koromix|@huggingface|onnxruntime-node|onnxruntime-common|sharp|umap-js|ajv|ajv-formats|fast-deep-equal|fast-uri|json-schema-traverse|require-from-string)/**"
+  - "!node_modules/!(better-sqlite3|bindings|file-uri-to-path|electron-updater|node-pty|koffi|@koromix|@vscode|@huggingface|onnxruntime-node|onnxruntime-common|sharp|umap-js|ajv|ajv-formats|fast-deep-equal|fast-uri|json-schema-traverse|require-from-string)/**"
   # Exclude source code, tests, and build intermediates from native modules to reduce size and signing overhead
   - "!node_modules/{better-sqlite3,node-pty}/{src,deps,docs,test,tests,obj,*.vcxproj,*.sln,*.vcxproj.filters}/**/*"
   - "!node_modules/{better-sqlite3,node-pty}/build/Release/*.{obj,pdb,lib,iobj,ipdb,tlog}"
@@ -91,6 +95,7 @@ asarUnpack:
   - node_modules/node-pty/**/*
   - node_modules/koffi/**/*
   - node_modules/@koromix/**/*
+  - node_modules/@vscode/ripgrep-*/**/*
   - node_modules/onnxruntime-node/**/*
 
 # Native modules are pre-rebuilt by `npm run rebuild` — skip the redundant
