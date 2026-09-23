@@ -34,7 +34,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { getSessionRoot, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
 import { getAgentHost } from "../cordis/agent-host";
-import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
@@ -63,7 +62,6 @@ const clearingSessions = new Set<string>();
 // Extracted to approval-state.ts so the chat loop can share the same maps
 // (previously coding-only — `session:respond-tool`'s global handler found an
 // empty map for `chat-*` sessions).
-import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
 
 /**
  * Outstanding QUESTION asks (ask_questions / exit_plan_mode's plan-review),
@@ -90,16 +88,9 @@ import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-stat
 
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
-  const prefix = `${sessionId}::`;
-  for (const map of [cordisPendingApprovals]) {
-    for (const key of Array.from(map.keys())) {
-      if (key.startsWith(prefix)) map.delete(key);
-    }
-  }
   getAgentHost().clearSessionApprovalState(sessionId);
-  pendingAsks.clearSession(sessionId);
+  getAgentHost().clearApprovalState(sessionId);
   getAgentHost().clearSessionQuestions(sessionId);
-  clearAskNoncesForSession(sessionId);
   forgetSessionApprovalArgs(sessionId);
   setConfirmTransport(sessionId, undefined);
 }
@@ -242,9 +233,9 @@ async function runCordisCodingSession(
     if (projection.kind === "approval") {
       const data = projection.data as unknown as { status?: string; callId?: string; name?: string; label?: string; nonce?: string };
       if (data.status === "required" && typeof data.callId === "string" && !data.nonce) {
-        const nonce = mintAskNonce(sessionId, data.callId);
+        const nonce = getAgentHost().mintApprovalNonce(sessionId, data.callId);
         data.nonce = nonce;
-        pendingAsks.record({
+        getAgentHost().recordPendingApprovalAsk({
           sessionId,
           name: data.name ?? "tool",
           label: data.label ?? data.name ?? "tool",
@@ -252,8 +243,8 @@ async function runCordisCodingSession(
           nonce,
         } as never);
       } else if (data.status === "expired" && typeof data.callId === "string") {
-        pendingAsks.resolve(sessionId, data.callId);
-        dropAskNonce(sessionId, data.callId);
+        getAgentHost().resolvePendingApprovalAsk(sessionId, data.callId);
+        getAgentHost().dropApprovalNonce(sessionId, data.callId);
         forgetPendingApprovalArgs(sessionId, data.callId);
       }
     }
@@ -281,9 +272,7 @@ async function runCordisCodingSession(
     sessionId,
     send: loopSend,
     registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-      const key = pendingKey(sessionId, callId);
-      cordisPendingApprovals.set(key, resolve);
-      return () => cordisPendingApprovals.delete(key);
+      return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
     },
   }));
 
@@ -312,9 +301,9 @@ async function runCordisCodingSession(
           const data = proj.data;
           const sessId = proj.sessionId ?? sessionId;
           if (data && data.status === "required" && typeof data.callId === "string" && !data.nonce) {
-            const nonce = mintAskNonce(sessId, data.callId);
+            const nonce = getAgentHost().mintApprovalNonce(sessId, data.callId);
             data.nonce = nonce;
-            pendingAsks.record({
+            getAgentHost().recordPendingApprovalAsk({
               sessionId: sessId,
               name: data.name ?? "tool",
               label: data.label ?? data.name ?? "tool",
@@ -322,8 +311,8 @@ async function runCordisCodingSession(
               nonce,
             } as never);
           } else if (data && data.status === "expired" && typeof data.callId === "string") {
-            pendingAsks.resolve(sessId, data.callId);
-            dropAskNonce(sessId, data.callId);
+            getAgentHost().resolvePendingApprovalAsk(sessId, data.callId);
+            getAgentHost().dropApprovalNonce(sessId, data.callId);
             forgetPendingApprovalArgs(sessId, data.callId);
           }
         } else if (payload && typeof payload === "object" && typeof (payload as { callId?: unknown }).callId === "string") {
@@ -335,9 +324,9 @@ async function runCordisCodingSession(
               // received the original push for. The nonce is attached to
               // the outgoing event (see the payload mutation below) and
               // consumed / cleared by respond-tool on settle.
-              const nonce = mintAskNonce(p.sessionId, p.callId ?? "");
+              const nonce = getAgentHost().mintApprovalNonce(p.sessionId, p.callId ?? "");
               (payload as { nonce?: string }).nonce = nonce;
-              pendingAsks.record({
+              getAgentHost().recordPendingApprovalAsk({
                 sessionId: p.sessionId,
                 name: p.name ?? "tool",
                 label: p.label ?? p.name ?? "tool",
@@ -345,8 +334,8 @@ async function runCordisCodingSession(
                 nonce,
               } as never);
             } else if (channel === "session:tool-confirm-expired") {
-              pendingAsks.resolve(p.sessionId, p.callId ?? "");
-              dropAskNonce(p.sessionId, p.callId ?? "");
+              getAgentHost().resolvePendingApprovalAsk(p.sessionId, p.callId ?? "");
+              getAgentHost().dropApprovalNonce(p.sessionId, p.callId ?? "");
               forgetPendingApprovalArgs(p.sessionId, p.callId ?? "");
             }
 
@@ -376,7 +365,7 @@ async function runCordisCodingSession(
             const requestId = typeof p.callId === "string" ? p.callId : undefined;
             const qs = Array.isArray(p.questions) ? p.questions : undefined;
             if (requestId && qs) {
-              const nonce = mintAskNonce(sessionId, requestId);
+              const nonce = getAgentHost().mintApprovalNonce(sessionId, requestId);
               (p as { nonce?: string }).nonce = nonce;
               recordPendingQuestion({
                 sessionId,
@@ -408,9 +397,7 @@ async function runCordisCodingSession(
       },
       approvals: {
         registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-          const key = pendingKey(sessionId, callId);
-          cordisPendingApprovals.set(key, resolve);
-          return () => cordisPendingApprovals.delete(key);
+          return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
         },
       },
     });
@@ -422,8 +409,7 @@ async function runCordisCodingSession(
     runningLoops.delete(sessionId);
     // The turn is over — every ask in it was settled (answered, aborted, or
     // timed out). Drop any registry residue so the next turn starts clean.
-    pendingAsks.clearSession(sessionId);
-    clearAskNoncesForSession(sessionId);
+     getAgentHost().clearApprovalState(sessionId);
     setConfirmTransport(sessionId, undefined);
   }
 }
@@ -451,14 +437,14 @@ export function registerSessionRuntimeHandlers(
     const running = runningLoops.has(sessionId) || isChatThreadRunning(sessionId);
     return {
       running,
-      pendingAsks: pendingAsks.listForSession(sessionId),
+       pendingAsks: getAgentHost().listPendingApprovalAsks(sessionId),
       // Outstanding question asks (ask_questions / plan-review). The renderer
       // uses this to re-open a PlanReviewCard after a reload that swallowed
       // the original session:ask-questions push.
       pendingQuestions: listPendingQuestions(sessionId).map((q) => ({
         callId: q.callId,
         questions: q.questions,
-        nonce: getAskNonce(sessionId, q.callId),
+        nonce: getAgentHost().getApprovalNonce(sessionId, q.callId),
       })),
     };
   }));
@@ -1035,20 +1021,15 @@ export function registerSessionRuntimeHandlers(
     // auto-approve every ask. The nonce is minted main-side and returned
     // in the confirm-required event; only a legitimate consumer of that
     // event has it. Fail-closed on absence / mismatch.
-    if (!verifyAskNonce(sessionId, callId, nonce)) {
+    if (!getAgentHost().verifyApprovalNonce(sessionId, callId, nonce)) {
       console.warn(`[session] respond-tool rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
-    const key = pendingKey(sessionId, callId);
-    const cordisPending = cordisPendingApprovals.get(key);
-    if (!cordisPending) return;
-    // Capture the ask's tool name BEFORE the pending-ask registry is cleared,
-    // so a workspace grant can be bound to the exact tool that was asked.
-    const pendingMetaForGrant = pendingAsks.listForSession(sessionId).find((m) => m.callId === callId);
-    cordisPending({ approved, grant: approved ? grant : undefined });
-    cordisPendingApprovals.delete(key);
-    pendingAsks.resolve(sessionId, callId);
-    dropAskNonce(sessionId, callId);
+     const pendingMetaForGrant = getAgentHost().listPendingApprovalAsks(sessionId).find((m) => m.callId === callId);
+     const resolved = getAgentHost().resolvePendingApproval(sessionId, callId, { approved, grant: approved ? grant : undefined });
+     if (!resolved) return;
+     getAgentHost().resolvePendingApprovalAsk(sessionId, callId);
+    getAgentHost().dropApprovalNonce(sessionId, callId);
     if (approved && grant === "command") {
       // Read the trusted command from the pre-execute stash — the renderer's
       // command field is ignored (parameter kept in the type signature only
@@ -1103,7 +1084,7 @@ export function registerSessionRuntimeHandlers(
       console.warn(`[session] respond-questions rejected: invalid id for ${String(sessionId)}/${String(callId)}`);
       return;
     }
-    if (!verifyAskNonce(sessionId, callId, nonce)) {
+    if (!getAgentHost().verifyApprovalNonce(sessionId, callId, nonce)) {
       console.warn(`[session] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
@@ -1114,7 +1095,7 @@ export function registerSessionRuntimeHandlers(
       console.warn(`[session] respond-questions dropped: no pending question for ${sessionId}/${callId}`);
       return;
     }
-    dropAskNonce(sessionId, callId);
+    getAgentHost().dropApprovalNonce(sessionId, callId);
     // Drop the recovery registry entry: whether the user answered normally
     // or dismissed via { __dismissed__: true }, the ask has settled and a
     // subsequent is-running poll must NOT re-surface it.

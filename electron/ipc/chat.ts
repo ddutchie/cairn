@@ -10,8 +10,6 @@
 import { registerIpcHandle, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
-import { mintAskNonce, dropAskNonce, clearAskNoncesForSession } from "./approval-state";
-import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import type { DbContext } from "./result-helpers";
@@ -185,12 +183,12 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
       if (channel === "session:projection" && payload && typeof payload === "object" && (payload as { kind?: unknown }).kind === "approval") {
         const data = (payload as { data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string } }).data;
         if (data?.status === "required" && data.callId && !data.nonce) {
-          const nonce = mintAskNonce(sessionId, data.callId);
-          (data as { nonce?: string }).nonce = nonce;
-          pendingAsks.record({ sessionId, name: data.name ?? "tool", label: data.label ?? data.name ?? "tool", callId: data.callId, nonce });
+           const nonce = getAgentHost().mintApprovalNonce(sessionId, data.callId);
+           (data as { nonce?: string }).nonce = nonce;
+           getAgentHost().recordPendingApprovalAsk({ sessionId, name: data.name ?? "tool", label: data.label ?? data.name ?? "tool", callId: data.callId, nonce });
         } else if (data?.status === "expired" && data.callId) {
-          pendingAsks.resolve(sessionId, data.callId);
-          dropAskNonce(sessionId, data.callId);
+           getAgentHost().resolvePendingApprovalAsk(sessionId, data.callId);
+           getAgentHost().dropApprovalNonce(sessionId, data.callId);
           forgetSessionApprovalArgs(sessionId);
         }
       }
@@ -200,9 +198,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
       sessionId,
       send: chatLoopSend,
       registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-        const key = pendingKey(sessionId, callId);
-        cordisPendingApprovals.set(key, resolve);
-        return () => cordisPendingApprovals.delete(key);
+        return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
       },
     });
     setConfirmTransport(sessionId, chatConfirmTransport);
@@ -258,15 +254,13 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
            approvals: {
              send: chatLoopSend,
              registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-               const key = pendingKey(sessionId, callId);
-               cordisPendingApprovals.set(key, resolve);
-               return () => cordisPendingApprovals.delete(key);
+                return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
              },
            },
            questions: {
               send: (channel, payload) => chatLoopSend(channel, payload),
                emitQuestions: (requestId, questions) => {
-                 const nonce = mintAskNonce(sessionId, requestId);
+                  const nonce = getAgentHost().mintApprovalNonce(sessionId, requestId);
                  recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
                   chatLoopSend("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions, nonce } as never));
                },
@@ -284,11 +278,9 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
       } finally {
          abortControllers.delete(sessionId);
         if (req.threadId) runningThreads.delete(req.threadId);
-        setConfirmTransport(sessionId, undefined);
-        pendingAsks.clearSession(sessionId);
-        clearAskNoncesForSession(sessionId);
-        forgetSessionApprovalArgs(sessionId);
-        for (const k of Array.from(cordisPendingApprovals.keys())) if (k.startsWith(`${sessionId}::`)) cordisPendingApprovals.delete(k);
+         setConfirmTransport(sessionId, undefined);
+         getAgentHost().clearApprovalState(sessionId);
+         forgetSessionApprovalArgs(sessionId);
       }
       return;
     }

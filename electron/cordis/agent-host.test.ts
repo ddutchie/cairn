@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   clearSessionGrants: vi.fn(),
   clearSecretGrants: vi.fn(),
   canonicalBashCommand: vi.fn(),
+  createPendingAskRegistry: vi.fn(() => ({ record: vi.fn(), resolve: vi.fn(), listForSession: vi.fn(() => []), clearSession: vi.fn() })),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -59,6 +60,7 @@ vi.mock("./approval-grants", () => ({
   getSessionGrants: mocks.getSessionGrants,
   clearSessionGrants: mocks.clearSessionGrants,
   canonicalBashCommand: mocks.canonicalBashCommand,
+  createPendingAskRegistry: mocks.createPendingAskRegistry,
 }));
 vi.mock("./secret-grants", () => ({ clearSecretGrants: mocks.clearSecretGrants }));
 
@@ -202,6 +204,20 @@ describe("AgentHost", () => {
     await expect(getAgentHost().readContextRing("session-1")).resolves.toBe(result);
 
     expect(mocks.readContextRingWithContext).toHaveBeenCalledWith(context, "session-1");
+  });
+
+  it("routes approval resolvers and nonces through the host", () => {
+    const decisions: unknown[] = [];
+    getAgentHost().registerPendingApproval("session-1", "call-1", (decision) => decisions.push(decision));
+    const nonce = getAgentHost().mintApprovalNonce("session-1", "call-1");
+
+    expect(getAgentHost().verifyApprovalNonce("session-1", "call-1", nonce)).toBe(true);
+    expect(getAgentHost().verifyApprovalNonce("session-1", "call-1", "wrong")).toBe(false);
+    expect(getAgentHost().resolvePendingApproval("session-1", "call-1", { approved: true, grant: "session" })).toBe(true);
+    expect(decisions).toEqual([{ approved: true, grant: "session" }]);
+    expect(getAgentHost().resolvePendingApproval("session-1", "call-1", { approved: false })).toBe(false);
+    getAgentHost().clearApprovalState("session-1");
+    expect(getAgentHost().verifyApprovalNonce("session-1", "call-1", nonce)).toBe(false);
   });
 
   it("routes pending question state through the host", () => {

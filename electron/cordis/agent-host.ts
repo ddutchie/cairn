@@ -22,7 +22,22 @@ import {
   clearPendingQuestions,
   resolvePendingQuestionAnswer,
 } from "./pending-question-broker";
-import { canonicalBashCommand, clearSessionGrants, getSessionGrants } from "./approval-grants";
+import { canonicalBashCommand, clearSessionGrants, getSessionGrants, type PendingAskMeta } from "./approval-grants";
+import {
+  clearApprovalState,
+  clearAskNoncesForSession,
+  dropAskNonce,
+  getAskNonce,
+  listPendingAsks,
+  mintAskNonce,
+  recordPendingAsk,
+  registerPendingApproval,
+  resolvePendingApproval,
+  resolvePendingAsk,
+  verifyAskNonce,
+  type ApprovalDecision,
+  type ApprovalResolver,
+} from "./approval-runtime";
 import { clearSecretGrants } from "./secret-grants";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
@@ -89,6 +104,17 @@ export interface AgentHost {
   grantSessionBash(sessionId: string, command: string): void;
   grantSessionTool(sessionId: string, toolName: string): void;
   clearSessionApprovalState(sessionId: string): void;
+  registerPendingApproval(sessionId: string, callId: string, resolve: ApprovalResolver): () => void;
+  resolvePendingApproval(sessionId: string, callId: string, decision: ApprovalDecision): boolean;
+  mintApprovalNonce(sessionId: string, callId: string): string;
+  verifyApprovalNonce(sessionId: string, callId: string, presented: unknown): boolean;
+  dropApprovalNonce(sessionId: string, callId: string): void;
+  clearApprovalNonces(sessionId: string): void;
+  getApprovalNonce(sessionId: string, callId: string): string | undefined;
+  recordPendingApprovalAsk(meta: PendingAskMeta): void;
+  resolvePendingApprovalAsk(sessionId: string, callId: string): void;
+  listPendingApprovalAsks(sessionId: string): PendingAskMeta[];
+  clearApprovalState(sessionId: string): void;
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -228,6 +254,39 @@ function createLocalAgentHost(): AgentHost {
     clearSessionApprovalState(sessionId) {
       clearSessionGrants(sessionId);
       clearSecretGrants(sessionId);
+    },
+    registerPendingApproval(sessionId, callId, resolve) {
+      return registerPendingApproval(sessionId, callId, resolve);
+    },
+    resolvePendingApproval(sessionId, callId, decision) {
+      return resolvePendingApproval(sessionId, callId, decision);
+    },
+    mintApprovalNonce(sessionId, callId) {
+      return mintAskNonce(sessionId, callId);
+    },
+    verifyApprovalNonce(sessionId, callId, presented) {
+      return verifyAskNonce(sessionId, callId, presented);
+    },
+    dropApprovalNonce(sessionId, callId) {
+      dropAskNonce(sessionId, callId);
+    },
+    clearApprovalNonces(sessionId) {
+      clearAskNoncesForSession(sessionId);
+    },
+    getApprovalNonce(sessionId, callId) {
+      return getAskNonce(sessionId, callId);
+    },
+    recordPendingApprovalAsk(meta) {
+      recordPendingAsk(meta);
+    },
+    resolvePendingApprovalAsk(sessionId, callId) {
+      resolvePendingAsk(sessionId, callId);
+    },
+    listPendingApprovalAsks(sessionId) {
+      return listPendingAsks(sessionId);
+    },
+    clearApprovalState(sessionId) {
+      clearApprovalState(sessionId);
     },
     async listCommands() {
       const ctx = await context();
