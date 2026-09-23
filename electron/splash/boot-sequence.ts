@@ -16,6 +16,7 @@
  */
 import { autoUpdater } from "electron-updater";
 import type Database from "better-sqlite3";
+import { markUpdaterQuitRequested } from "../lib/updater-quit";
 
 import { BootSplash } from "./bootsplash";
 import { checkMigrations, runAllPendingMigrations } from "../migrations";
@@ -122,7 +123,10 @@ export async function runBootSequence(
               });
               updateInstalled = true;
               // quitAndInstall restarts the app — the boot sequence will
-              // run again on next launch (finding no update).
+              // run again on next launch (finding no update). Flag first so
+              // main.ts's before-quit gate takes the updater fast path
+              // instead of vetoing the staged install.
+              markUpdaterQuitRequested();
               autoUpdater.quitAndInstall();
               // The app quits here, so resolve is technically unreachable.
               resolve();

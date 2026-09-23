@@ -26,50 +26,32 @@ import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
-import { getSessionGrants, clearSessionGrants, canonicalBashCommand, readPendingApprovalArgs, forgetPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
-import { clearSecretGrants } from "../cordis/cairn-plugins";
 import { addWorkspaceApprovalGrant } from "../db/approval-grant-queries";
-import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { getSessionRoot, getContext, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
-import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
-import { getPlanModeActive } from "../cordis/plan-fold";
+import { withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
+import { getAgentHost } from "../cordis/agent-host";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
-import { runChatPrompt, abortChatSession, getRunningChatIds, isChatThreadRunning } from "./chat";
+import { runChatPrompt } from "./chat";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
 const sessions = new Map<string, AgentSession>();
-
-/**
- * Session IDs with a runCordisCodingLoop currently in flight. The renderer
- * polls this via `session:is-running` when a pane (re)mounts so a session
- * that kept working while its UI was closed (e.g. the automation Develop
- * modal) comes
- * back already showing the busy state, instead of briefly looking idle.
- */
-const runningLoops = new Set<string>();
 const clearingSessions = new Set<string>();
 
 // ── Cordis engine wiring ────────────────────────────────────────────────────
-// Per-turn pending resolvers for the dsh loop's HITL seams, keyed by callId (or
-// requestId for questions). The session:respond-* IPC handlers resolve these,
-// exactly like the builtin loop's pendingApprovals/pendingDoomLoop maps. Kept
-// module-level so the (single) respond handlers can reach any session's turn.
-// Extracted to approval-state.ts so the chat loop can share the same maps
-// (previously coding-only — `session:respond-tool`'s global handler found an
-// empty map for `chat-*` sessions).
-import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
+// Per-turn pending resolvers for the dsh loop's HITL seams live in the Cordis
+// engine (approval + question brokers) and are reached through AgentHost, so
+// the (single) respond handlers can reach any session's turn regardless of
+// which profile created the ask.
 
 /**
  * Outstanding QUESTION asks (ask_questions / exit_plan_mode's plan-review),
  * so a reloading renderer can pull the question payload back via
- * session:is-running. The tool-approval registry above (pendingAsks) only
+ * session:is-running. The tool-approval registry (pending asks) only
  * records name/callId — questions need the full payload preserved so the
  * PlanReviewCard can re-render its plan-under-review after reload.
  */
@@ -85,25 +67,18 @@ import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-stat
  * event, and required on the respond-tool payload. Legacy
  * window.electron.piAgent alias is also covered.
  *
- * Store lives in ./ask-nonce.ts so chat.ts can mint/verify the same map
- * without a circular import (session-runtime-handlers ↔ chat).
+ * Store lives in the Cordis engine (approval runtime) behind AgentHost, so
+ * chat.ts and this module mint/verify the same map without a circular import
+ * (session-runtime-handlers ↔ chat).
  */
 
 /** Drop every pending resolver + approval grant belonging to one session. */
 function sweepSessionPendings(sessionId: string): void {
-  const prefix = `${sessionId}::`;
-  for (const map of [cordisPendingApprovals]) {
-    for (const key of Array.from(map.keys())) {
-      if (key.startsWith(prefix)) map.delete(key);
-    }
-  }
-  clearSessionGrants(sessionId);
-  clearSecretGrants(sessionId);
-  pendingAsks.clearSession(sessionId);
-  clearPendingQuestions(sessionId);
-  clearAskNoncesForSession(sessionId);
-  forgetSessionApprovalArgs(sessionId);
-  setConfirmTransport(sessionId, undefined);
+  getAgentHost().clearSessionApprovalState(sessionId);
+  getAgentHost().clearApprovalState(sessionId);
+  getAgentHost().clearSessionQuestions(sessionId);
+  getAgentHost().forgetSessionApprovalArgs(sessionId);
+  getAgentHost().unbindConfirmTransport(sessionId);
 }
 
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
@@ -232,7 +207,8 @@ async function runCordisCodingSession(
   payload: CordisTurnPayload,
 ): Promise<void> {
   const { sessionId } = toolCtx;
-  runningLoops.add(sessionId);
+  const turnController = getAgentHost().startTurn(sessionId);
+  session.abortCtrl = turnController;
 
   const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
 
@@ -244,9 +220,9 @@ async function runCordisCodingSession(
     if (projection.kind === "approval") {
       const data = projection.data as unknown as { status?: string; callId?: string; name?: string; label?: string; nonce?: string };
       if (data.status === "required" && typeof data.callId === "string" && !data.nonce) {
-        const nonce = mintAskNonce(sessionId, data.callId);
+        const nonce = getAgentHost().mintApprovalNonce(sessionId, data.callId);
         data.nonce = nonce;
-        pendingAsks.record({
+        getAgentHost().recordPendingApprovalAsk({
           sessionId,
           name: data.name ?? "tool",
           label: data.label ?? data.name ?? "tool",
@@ -254,9 +230,9 @@ async function runCordisCodingSession(
           nonce,
         } as never);
       } else if (data.status === "expired" && typeof data.callId === "string") {
-        pendingAsks.resolve(sessionId, data.callId);
-        dropAskNonce(sessionId, data.callId);
-        forgetPendingApprovalArgs(sessionId, data.callId);
+        getAgentHost().resolvePendingApprovalAsk(sessionId, data.callId);
+        getAgentHost().dropApprovalNonce(sessionId, data.callId);
+        getAgentHost().forgetPendingApprovalArgs(sessionId, data.callId);
       }
     }
     if (projection.kind === "plan-note" && typeof (projection.data as unknown as { noteId?: unknown }).noteId === "string") {
@@ -279,15 +255,12 @@ async function runCordisCodingSession(
   // Bind the plugin confirmation seam for this session's turn: ctx.cairn.confirm
   // routes through the same interactive pairing (chip + ApprovalCard + respond
   // IPC) the native approval bridge uses. Cleared when the turn ends.
-  setConfirmTransport(sessionId, createInteractiveConfirmTransport({
-    sessionId,
+  getAgentHost().bindInteractiveConfirmTransport(sessionId, {
     send: loopSend,
     registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-      const key = pendingKey(sessionId, callId);
-      cordisPendingApprovals.set(key, resolve);
-      return () => cordisPendingApprovals.delete(key);
+      return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
     },
-  }));
+  });
 
   try {
     await runCordisCodingLoop({
@@ -314,9 +287,9 @@ async function runCordisCodingSession(
           const data = proj.data;
           const sessId = proj.sessionId ?? sessionId;
           if (data && data.status === "required" && typeof data.callId === "string" && !data.nonce) {
-            const nonce = mintAskNonce(sessId, data.callId);
+            const nonce = getAgentHost().mintApprovalNonce(sessId, data.callId);
             data.nonce = nonce;
-            pendingAsks.record({
+            getAgentHost().recordPendingApprovalAsk({
               sessionId: sessId,
               name: data.name ?? "tool",
               label: data.label ?? data.name ?? "tool",
@@ -324,9 +297,9 @@ async function runCordisCodingSession(
               nonce,
             } as never);
           } else if (data && data.status === "expired" && typeof data.callId === "string") {
-            pendingAsks.resolve(sessId, data.callId);
-            dropAskNonce(sessId, data.callId);
-            forgetPendingApprovalArgs(sessId, data.callId);
+            getAgentHost().resolvePendingApprovalAsk(sessId, data.callId);
+            getAgentHost().dropApprovalNonce(sessId, data.callId);
+            getAgentHost().forgetPendingApprovalArgs(sessId, data.callId);
           }
         } else if (payload && typeof payload === "object" && typeof (payload as { callId?: unknown }).callId === "string") {
           const p = payload as { sessionId?: string; name?: string; label?: string; callId?: string };
@@ -337,9 +310,9 @@ async function runCordisCodingSession(
               // received the original push for. The nonce is attached to
               // the outgoing event (see the payload mutation below) and
               // consumed / cleared by respond-tool on settle.
-              const nonce = mintAskNonce(p.sessionId, p.callId ?? "");
+              const nonce = getAgentHost().mintApprovalNonce(p.sessionId, p.callId ?? "");
               (payload as { nonce?: string }).nonce = nonce;
-              pendingAsks.record({
+              getAgentHost().recordPendingApprovalAsk({
                 sessionId: p.sessionId,
                 name: p.name ?? "tool",
                 label: p.label ?? p.name ?? "tool",
@@ -347,9 +320,9 @@ async function runCordisCodingSession(
                 nonce,
               } as never);
             } else if (channel === "session:tool-confirm-expired") {
-              pendingAsks.resolve(p.sessionId, p.callId ?? "");
-              dropAskNonce(p.sessionId, p.callId ?? "");
-              forgetPendingApprovalArgs(p.sessionId, p.callId ?? "");
+              getAgentHost().resolvePendingApprovalAsk(p.sessionId, p.callId ?? "");
+              getAgentHost().dropApprovalNonce(p.sessionId, p.callId ?? "");
+              getAgentHost().forgetPendingApprovalArgs(p.sessionId, p.callId ?? "");
             }
 
           }
@@ -378,9 +351,9 @@ async function runCordisCodingSession(
             const requestId = typeof p.callId === "string" ? p.callId : undefined;
             const qs = Array.isArray(p.questions) ? p.questions : undefined;
             if (requestId && qs) {
-              const nonce = mintAskNonce(sessionId, requestId);
+              const nonce = getAgentHost().mintApprovalNonce(sessionId, requestId);
               (p as { nonce?: string }).nonce = nonce;
-              recordPendingQuestion({
+              getAgentHost().recordPendingQuestion({
                 sessionId,
                 callId: requestId,
                 questions: qs as Array<{ id: string; [k: string]: unknown }>,
@@ -402,17 +375,12 @@ async function runCordisCodingSession(
           send(channel, { sessionId, ...p });
         },
         registerPending: (requestId, resolve) => {
-           const dispose = registerPendingQuestion(sessionId, requestId, resolve);
-           return () => {
-             dispose();
-           };
+           return getAgentHost().registerPendingQuestion(sessionId, requestId, resolve);
         },
       },
       approvals: {
         registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-          const key = pendingKey(sessionId, callId);
-          cordisPendingApprovals.set(key, resolve);
-          return () => cordisPendingApprovals.delete(key);
+          return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
         },
       },
     });
@@ -421,12 +389,11 @@ async function runCordisCodingSession(
       console.error("[session] coding loop failed:", err);
     }
   } finally {
-    runningLoops.delete(sessionId);
+     getAgentHost().endTurn(sessionId, turnController);
     // The turn is over — every ask in it was settled (answered, aborted, or
     // timed out). Drop any registry residue so the next turn starts clean.
-    pendingAsks.clearSession(sessionId);
-    clearAskNoncesForSession(sessionId);
-    setConfirmTransport(sessionId, undefined);
+     getAgentHost().clearApprovalState(sessionId);
+    getAgentHost().unbindConfirmTransport(sessionId);
   }
 }
 
@@ -450,17 +417,17 @@ export function registerSessionRuntimeHandlers(
   // prior push is useless without a valid callId. Nonces are cleared on
   // settle/sweep so this surface is only live while the ask is outstanding.
   registerIpcHandle("session:is-running", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
-    const running = runningLoops.has(sessionId) || isChatThreadRunning(sessionId);
+     const running = getAgentHost().isTurnRunning(sessionId);
     return {
       running,
-      pendingAsks: pendingAsks.listForSession(sessionId),
+       pendingAsks: getAgentHost().listPendingApprovalAsks(sessionId),
       // Outstanding question asks (ask_questions / plan-review). The renderer
       // uses this to re-open a PlanReviewCard after a reload that swallowed
       // the original session:ask-questions push.
-      pendingQuestions: listPendingQuestions(sessionId).map((q) => ({
+      pendingQuestions: getAgentHost().listPendingQuestions(sessionId).map((q) => ({
         callId: q.callId,
         questions: q.questions,
-        nonce: getAskNonce(sessionId, q.callId),
+        nonce: getAgentHost().getApprovalNonce(sessionId, q.callId),
       })),
     };
   }));
@@ -474,15 +441,14 @@ export function registerSessionRuntimeHandlers(
   // renderer's coalesced poller frozen on a stale "running" set (loop stays
   // green forever).
   registerIpcHandle("session:running-ids", () => handle(async () => {
-    return { ids: [...Array.from(runningLoops), ...getRunningChatIds()] };
+     return { ids: getAgentHost().getRunningTurnIds() };
   }));
 
   // ── session:context-ring ─────────────────────────────────────────────────
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
   // agent panel's ring badge. Unavailable → renderer hides the pill.
   registerIpcHandle("session:context-ring", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
-    const { readContextRing } = await import("../cordis/run-cordis-loop");
-    return readContextRing(sessionId);
+    return getAgentHost().readContextRing(sessionId);
   }));
 
   // ── subagent:* — human continuable-child controls ───────────────────────
@@ -500,16 +466,14 @@ export function registerSessionRuntimeHandlers(
     }
   };
   registerIpcHandle("subagent:list", (_event, { parentSessionId, scope }: { parentSessionId: string; scope?: unknown }) => handle(async () => {
-    const { listSubagentChildren, normalizeSubagentScope } = await import("../cordis/subagent-control");
-    return subagentResult(() => listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
+    const { normalizeSubagentScope } = await import("../cordis/subagent-control");
+    return subagentResult(() => getAgentHost().listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
   }));
   registerIpcHandle("subagent:interrupt", (_event, { parentSessionId, childId }: { parentSessionId: string; childId: string }) => handle(async () => {
-    const { interruptSubagentChild } = await import("../cordis/subagent-control");
-    return subagentResult(() => interruptSubagentChild(parentSessionId, childId));
+    return subagentResult(() => getAgentHost().interruptSubagentChild(parentSessionId, childId));
   }));
   registerIpcHandle("subagent:message", (_event, { parentSessionId, childId, text }: { parentSessionId: string; childId: string; text: string }) => handle(async () => {
-    const { messageSubagentChild } = await import("../cordis/subagent-control");
-    return subagentResult(() => messageSubagentChild(parentSessionId, childId, text));
+    return subagentResult(() => getAgentHost().messageSubagentChild(parentSessionId, childId, text));
   }));
 
   // ── session:job-kill ─────────────────────────────────────────────────────
@@ -519,8 +483,7 @@ export function registerSessionRuntimeHandlers(
   // otherwise). The requesting session id is mandatory — the bridge only
   // stops jobs the caller's dock would show (unowned, or its own).
   registerIpcHandle("session:job-kill", (_event, { jobId, sessionId }: { jobId: string; sessionId: string }) => handle(async () => {
-    const { killJob } = await import("../cordis/jobs-bridge");
-    return subagentResult(() => Promise.resolve(killJob(jobId, sessionId)));
+    return subagentResult(() => Promise.resolve(getAgentHost().killJob(jobId, sessionId)));
   }));
 
   // ── session:goal ─────────────────────────────────────────────────────────
@@ -529,12 +492,7 @@ export function registerSessionRuntimeHandlers(
   // Null goal = no current goal (pre-create / cleared) → chip hides. Same
   // {ok:true,value}|{ok:false,code,message} envelope as subagent:*.
   registerIpcHandle("session:goal", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
-    const [{ getContext }, { readGoalSnapshot }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/goal-bridge"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => readGoalSnapshot(ctx as never, sessionId));
+    return subagentResult(() => getAgentHost().readGoalSnapshot(sessionId));
   }));
 
   // ── session:feedback{,-get} ─────────────────────────────────────────────
@@ -543,20 +501,10 @@ export function registerSessionRuntimeHandlers(
   // envelope as subagent:*. The /feedback command needs no handler — it is an
   // ENTRY_LIST-mounted command and surfaces via cordis:listCommands.
   registerIpcHandle("session:feedback", (_event, req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => handle(async () => {
-    const [{ getContext }, { putMessageFeedback }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/message-feedback"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => putMessageFeedback(ctx as never, req));
+    return subagentResult(() => getAgentHost().putMessageFeedback(req));
   }));
   registerIpcHandle("session:feedback-get", (_event, req: { sessionId: string; messageId: string }) => handle(async () => {
-    const [{ getContext }, { getMessageFeedback }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/message-feedback"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => getMessageFeedback(ctx as never, req.sessionId, req.messageId));
+    return subagentResult(() => getAgentHost().getMessageFeedback(req.sessionId, req.messageId));
   }));
 
   // ── session:schedule-list ────────────────────────────────────────────────
@@ -564,25 +512,12 @@ export function registerSessionRuntimeHandlers(
   // header mount + turn end — no standing subscription). Empty list = overlay
   // off or no reminders → pill hides. Same envelope as subagent:*.
   registerIpcHandle("session:schedule-list", (_event, req: { sessionId: string }) => handle(async () => {
-    const [{ getContext }, { listSchedules }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/schedule-read"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => listSchedules(ctx as never, req.sessionId));
+    return subagentResult(() => getAgentHost().listSchedules(req.sessionId));
   }));
 
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
-    const profile = q.getSessionProfile(ctx.db, sessionId)?.profile;
-    if (profile === "chat") {
-      abortChatSession(sessionId);
-      return;
-    }
-    const session = sessions.get(sessionId);
-    if (session) {
-      session.abortCtrl.abort();
-    }
+    getAgentHost().abortTurn(sessionId);
   });
 
   // ── session:prompt ───────────────────────────────────────────────────────
@@ -634,7 +569,7 @@ export function registerSessionRuntimeHandlers(
     // starting a new loop would replace session.abortCtrl mid-flight and leave
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -809,7 +744,7 @@ export function registerSessionRuntimeHandlers(
 
     // Same concurrency guard as session:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -949,7 +884,7 @@ export function registerSessionRuntimeHandlers(
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       send("session:compact-result", { sessionId, messageCount: 0, summary: "Can't compact while the agent is working — try again when it finishes." });
       return;
     }
@@ -966,46 +901,18 @@ export function registerSessionRuntimeHandlers(
     };
     send("session:compact", { sessionId, status: "start" });
     try {
-      const { getContext } = await import("../cordis/run-cordis-loop");
-      const { openCordisAgent } = await import("../cordis/run-cordis-coding");
-      const ctxC = await getContext();
-      // Pin the summariser protocol to the saved provider's apiMode (never
-      // auto-probe): mounting a different `api` than the session was written
-      // under corrupts replay, and a probe can never yield anthropic-messages.
-      const compactApi = llmConfig.apiMode === "responses" ? "openai-responses"
-        : llmConfig.apiMode === "anthropic-messages" ? "anthropic-messages"
-        : "openai-completions";
-      await (await import("../cordis/run-cordis-loop")).ensureAgentAiAdapter(ctxC, {
+      const result = await getAgentHost().compactSession({
+        sessionId,
+        cwd,
         baseUrl: llmConfig.baseUrl,
         model: llmConfig.model,
         apiKey: llmConfig.apiKey,
-        api: compactApi,
+        apiMode: llmConfig.apiMode,
       });
-      const handle = await openCordisAgent(ctxC, { sessionId, cwd, llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" as const, apiMode: llmConfig.apiMode }, signal: new AbortController().signal });
-      try {
-        // Ensure idle before compactNow (P1-5 busy race): session:compact-now
-        // bypasses runningLoops for races outside its own map; check whenIdle.
-        const maybeIdle = (handle.agent as { whenIdle?: () => Promise<void> })?.whenIdle;
-        if (typeof maybeIdle === "function") {
-          try { await maybeIdle.call(handle.agent); } catch { /* compaction will throw busy */ }
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const compaction = (ctxC as any).compaction;
-        if (!compaction?.compactNow) throw new Error("compaction service not mounted");
-        const result = await compaction.compactNow(handle.agent, new AbortController().signal);
-        if (result) {
-          send("session:compact-result", {
-            sessionId,
-            messageCount: (result as { replacedCount?: number; replacedSeqs?: unknown[] })?.replacedCount
-              ?? (result as { replacedSeqs?: unknown[] })?.replacedSeqs?.length
-              ?? 0,
-            summary: (result as { summary?: string })?.summary ?? "",
-          });
-        } else {
-          send("session:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
-        }
-      } finally {
-        await handle.dispose?.();
+      if (result) {
+        send("session:compact-result", { sessionId, ...result });
+      } else {
+        send("session:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
       }
     } catch (e) {
       send("session:compact-result", { sessionId, messageCount: 0, summary: `Compaction unavailable: ${(e as Error).message}` });
@@ -1027,7 +934,7 @@ export function registerSessionRuntimeHandlers(
       broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
       return;
     }
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot toggle plan mode while running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -1035,37 +942,21 @@ export function registerSessionRuntimeHandlers(
     void (async () => {
       try {
         const agentConfig = getCachedConfig().agentConfig;
-        const { openCordisAgent } = await import("../cordis/run-cordis-coding");
-        const { getContext } = await import("../cordis/run-cordis-loop");
-        const cordisCtx = await getContext();
-        const handle = await openCordisAgent(cordisCtx, {
-          sessionId, cwd: ctx.workspacePath || process.cwd(),
-          llmConfig: { baseUrl: agentConfig?.baseUrl ?? "", model: agentConfig?.model ?? "", apiKey: agentConfig?.apiKey ?? "", provider: "openai" },
-          signal: undefined,
+        const committedMode = await getAgentHost().setSessionMode({
+          sessionId,
+          cwd: ctx.workspacePath || process.cwd(),
+          baseUrl: agentConfig?.baseUrl ?? "",
+          model: agentConfig?.model ?? "",
+          apiKey: agentConfig?.apiKey ?? "",
+          mode,
         });
         try {
-          const commands = (cordisCtx as unknown as { commands?: { execute: (a: unknown, line: string, images: unknown[], signal?: AbortSignal) => Promise<unknown> } }).commands;
-          if (!commands) throw new Error("commands runtime unavailable");
-          const result = await commands.execute((handle as { agent: unknown }).agent, mode === "plan" ? "/plan" : "/plan off", [], new AbortController().signal);
-          const commandResult = (result as { result?: { kind?: string; text?: string } } | undefined)?.result;
-          if (commandResult?.kind !== "success") {
-            throw new Error(commandResult?.text ?? "plan mode command was not accepted");
-          }
-          const session = (handle as { agent: { session?: unknown } }).agent.session;
-          const committedMode = getPlanModeActive(cordisCtx, session) ? "plan" : "execute";
-          if (committedMode !== mode) {
-            throw new Error(`plan mode command did not commit ${mode}`);
-          }
-          try {
-            q.updateCodingSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
-          } catch (e) {
-            console.warn("[session] failed to update session mode index:", e);
-          }
-          broadcastEvent("session:mode-change", { sessionId, mode: committedMode });
-          broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode: committedMode }));
-        } finally {
-          try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
+          q.updateCodingSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
+        } catch (e) {
+          console.warn("[session] failed to update session mode index:", e);
         }
+        broadcastEvent("session:mode-change", { sessionId, mode: committedMode });
+        broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode: committedMode }));
       } catch (e) {
         // Do not update or broadcast a requested mode when dsh rejected it.
         // The durable session log remains authoritative and the UI can retry.
@@ -1104,29 +995,23 @@ export function registerSessionRuntimeHandlers(
     // auto-approve every ask. The nonce is minted main-side and returned
     // in the confirm-required event; only a legitimate consumer of that
     // event has it. Fail-closed on absence / mismatch.
-    if (!verifyAskNonce(sessionId, callId, nonce)) {
+    if (!getAgentHost().verifyApprovalNonce(sessionId, callId, nonce)) {
       console.warn(`[session] respond-tool rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
-    const key = pendingKey(sessionId, callId);
-    const cordisPending = cordisPendingApprovals.get(key);
-    if (!cordisPending) return;
-    // Capture the ask's tool name BEFORE the pending-ask registry is cleared,
-    // so a workspace grant can be bound to the exact tool that was asked.
-    const pendingMetaForGrant = pendingAsks.listForSession(sessionId).find((m) => m.callId === callId);
-    cordisPending({ approved, grant: approved ? grant : undefined });
-    cordisPendingApprovals.delete(key);
-    pendingAsks.resolve(sessionId, callId);
-    dropAskNonce(sessionId, callId);
+     const pendingMetaForGrant = getAgentHost().listPendingApprovalAsks(sessionId).find((m) => m.callId === callId);
+     const resolved = getAgentHost().resolvePendingApproval(sessionId, callId, { approved, grant: approved ? grant : undefined });
+     if (!resolved) return;
+     getAgentHost().resolvePendingApprovalAsk(sessionId, callId);
+    getAgentHost().dropApprovalNonce(sessionId, callId);
     if (approved && grant === "command") {
       // Read the trusted command from the pre-execute stash — the renderer's
       // command field is ignored (parameter kept in the type signature only
       // so old renderers don't get a payload-validation error at the IPC
-      // boundary; it's intentionally unused).
-      const trusted = readPendingApprovalArgs(sessionId, callId);
-      const trustedCommand = trusted && typeof trusted.command === "string" ? trusted.command : undefined;
-      const cmd = canonicalBashCommand(trustedCommand);
-      if (cmd) getSessionGrants(sessionId).bashCommands.add(cmd);
+      // boundary; it's intentionally unused). grantSessionBash canonicalizes,
+      // so a cosmetic mismatch still matches the grant.
+      const cmd = getAgentHost().readTrustedBashCommand(sessionId, callId);
+       if (cmd) getAgentHost().grantSessionBash(sessionId, cmd);
     }
     if (approved && grant === "workspace") {
       // Persistent workspace grant — survives across sessions. The tool name is
@@ -1143,14 +1028,13 @@ export function registerSessionRuntimeHandlers(
             ?? (sessionId.startsWith("chat-") ? (ctx.db.prepare("SELECT workspace_id FROM chat_threads WHERE id = ?").get(sessionId.slice(5)) as { workspace_id?: string } | undefined)?.workspace_id : undefined);
           const workspaceId = wsRow ?? undefined;
           if (workspaceId) {
-            const trusted = readPendingApprovalArgs(sessionId, callId);
-            const target = toolName === "bash" && trusted ? canonicalBashCommand(trusted.command) : null;
+            const target = toolName === "bash" ? getAgentHost().readTrustedBashCommand(sessionId, callId) : null;
             const grantRec = addWorkspaceApprovalGrant(ctx.db, workspaceId, toolName, target);
             // Also grant this session immediately so the current turn proceeds
             // without needing to re-read the DB before the next ask.
             if (grantRec) {
-              if (toolName === "bash" && target) getSessionGrants(sessionId).bashCommands.add(target);
-              else getSessionGrants(sessionId).tools.add(toolName);
+               if (toolName === "bash" && target) getAgentHost().grantSessionBash(sessionId, target);
+               else getAgentHost().grantSessionTool(sessionId, toolName);
             }
           }
         } catch (e) {
@@ -1172,18 +1056,18 @@ export function registerSessionRuntimeHandlers(
       console.warn(`[session] respond-questions rejected: invalid id for ${String(sessionId)}/${String(callId)}`);
       return;
     }
-    if (!verifyAskNonce(sessionId, callId, nonce)) {
+    if (!getAgentHost().verifyApprovalNonce(sessionId, callId, nonce)) {
       console.warn(`[session] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
-    if (!resolvePendingQuestionAnswer(sessionId, callId, answers)) {
+    if (!getAgentHost().respondToQuestion(sessionId, callId, answers)) {
       // The tool is no longer waiting (timed out, aborted, or already
       // settled) — the answer has nowhere to go. Warn loudly: a silent drop
       // here strands the user with a submitted form and a hung turn.
       console.warn(`[session] respond-questions dropped: no pending question for ${sessionId}/${callId}`);
       return;
     }
-    dropAskNonce(sessionId, callId);
+    getAgentHost().dropApprovalNonce(sessionId, callId);
     // Drop the recovery registry entry: whether the user answered normally
     // or dismissed via { __dismissed__: true }, the ask has settled and a
     // subsequent is-running poll must NOT re-surface it.
@@ -1207,7 +1091,7 @@ export function registerSessionRuntimeHandlers(
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
     // defensive. Clear is rejected if running or already clearing (atomic gate).
-    if (runningLoops.has(sessionId) || clearingSessions.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId) || clearingSessions.has(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -1217,7 +1101,7 @@ export function registerSessionRuntimeHandlers(
       // TOCTOU re-check: re-validate runningLoops after assertSafeId and immediately
       // before the destructive sweep/file deletion. A concurrent prompt could have
       // started between the first guard and now; clear is rejected if still running.
-      if (runningLoops.has(sessionId)) {
+      if (getAgentHost().isTurnRunning(sessionId)) {
         broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
         broadcastEvent("session:busy", { sessionId, reason: "already-running" });
         return;
@@ -1233,7 +1117,7 @@ export function registerSessionRuntimeHandlers(
       // messages. The transcript lives in <userData>/sessions/<sessionId>.jsonl
       // via dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
       try {
-        const primaryRoot = getSessionRoot();
+        const primaryRoot = getAgentHost().getSessionRoot();
         const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
         const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
         let deleted = false;
@@ -1250,7 +1134,7 @@ export function registerSessionRuntimeHandlers(
               const base = resolveWithinRoot(root, proj, sessionId);
               if (!base) continue;
               for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
-                if (runningLoops.has(sessionId)) {
+                if (getAgentHost().isTurnRunning(sessionId)) {
                   broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
                   broadcastEvent("session:busy", { sessionId, reason: "already-running" });
                   return;
@@ -1270,7 +1154,7 @@ export function registerSessionRuntimeHandlers(
           const flatBase = resolveWithinRoot(root, sessionId);
           if (!flatBase) continue;
           for (const p of [flatBase + ".jsonl", path.join(flatBase, "session.jsonl"), path.join(flatBase, "session.jsonl.zstd"), flatBase]) {
-            if (runningLoops.has(sessionId)) {
+            if (getAgentHost().isTurnRunning(sessionId)) {
               broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
               broadcastEvent("session:busy", { sessionId, reason: "already-running" });
               return;
@@ -1288,25 +1172,7 @@ export function registerSessionRuntimeHandlers(
         if (!deleted) {
           // No dsh file found — not an error, the session may have been in-memory only or already cleared.
         }
-        // Also drop any in-memory dsh agent that still holds the old session.
-        getContext().then((c: unknown) => {
-          const maybeAgents = (c as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
-          const sid = { toString: () => sessionId } as unknown as string;
-          // Try every plausible delete/remove/dispose shape — dsh-agent's API has shifted across rc's.
-          const removed = false;
-          for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
-            try {
-              const fn = (maybeAgents as Record<string, unknown>)?.[k] as ((id: unknown) => unknown) | undefined;
-              if (typeof fn === "function") { fn.call(maybeAgents, sid); break; }
-            } catch { /* ignore */ }
-          }
-          if (!removed) {
-            try {
-              const ag = maybeAgents?.get?.(sid) as { dispose?: () => void } | undefined;
-              ag?.dispose?.();
-            } catch { /* ignore */ }
-          }
-        }).catch(() => {});
+        void getAgentHost().releaseSessionAgent(sessionId);
       } catch { /* best-effort */ }
     } finally {
       clearingSessions.delete(sessionId);
@@ -1330,7 +1196,7 @@ export function registerSessionRuntimeHandlers(
     }
     const session = sessions.get(sessionId);
     if (session) {
-      session.abortCtrl.abort();
+      getAgentHost().abortTurn(sessionId);
       sessions.delete(sessionId);
     }
     // The abort listeners inside the plugins resolve their own pendings on

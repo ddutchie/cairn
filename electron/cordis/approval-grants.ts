@@ -40,6 +40,11 @@ export function clearSessionGrants(sessionId: string): void {
   sessionGrants.delete(sessionId);
 }
 
+export function clearAllSessionGrants(): void {
+  sessionGrants.clear();
+  pendingApprovalArgs.clear();
+}
+
 /**
  * Canonicalize a bash command for standing-grant storage/matching: trim and
  * collapse internal whitespace runs so cosmetic reformatting of the identical
@@ -124,6 +129,7 @@ export interface PendingAskRegistry {
   resolve(sessionId: string, callId: string): void;
   listForSession(sessionId: string): PendingAskMeta[];
   clearSession(sessionId: string): void;
+  clearAll(): void;
 }
 
 /**
@@ -145,5 +151,6 @@ export function createPendingAskRegistry(): PendingAskRegistry {
       const prefix = `${sessionId}::`;
       for (const k of Array.from(byKey.keys())) if (k.startsWith(prefix)) byKey.delete(k);
     },
+    clearAll: () => byKey.clear(),
   };
 }

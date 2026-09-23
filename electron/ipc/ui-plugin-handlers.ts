@@ -21,8 +21,12 @@ import * as fs from "fs";
 import * as path from "path";
 import { ipcMain, shell, type WebContents } from "electron";
 import * as yaml from "js-yaml";
-import { readEnabledManifest, getPluginsRoot, pluginsDevEnabled } from "../cordis/plugin-loader";
-import { installPlugin, uninstallPlugin, updatePlugin } from "../cordis/plugin-installer";
+import { readEnabledManifest, pluginsDevEnabled } from "../cordis/plugin-loader";
+import { getAgentHost } from "../cordis/agent-host";
+// NOTE: readEnabledManifest/pluginsDevEnabled stay direct imports by design —
+// this dev-gated UI surface does main-side file IO (plugins.yml YAML,
+// fs watcher) that stays in main even after a host-process split. Only the
+// configured root round-trips through AgentHost (configure/getPluginsRoot).
 
 export interface UiPluginPayload {
   id: string;
@@ -31,7 +35,7 @@ export interface UiPluginPayload {
 
 function collectUiPlugins(): UiPluginPayload[] {
   if (!pluginsDevEnabled()) return [];
-  const root = getPluginsRoot();
+  const root = getAgentHost().getPluginsRoot();
   if (!root) return [];
   const out: UiPluginPayload[] = [];
   for (const e of readEnabledManifest()) {
@@ -67,10 +71,10 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
   // ── Plugins settings section: list all entries (enabled + disabled), toggle,
   // open the folder. Reads/writes plugins.yml as a plain YAML array.
   const MANIFEST = "plugins.yml";
-  const manifestPath = () => path.join(getPluginsRoot(), MANIFEST);
+  const manifestPath = () => path.join(getAgentHost().getPluginsRoot(), MANIFEST);
 
   function readAllRows(): Array<Record<string, unknown>> {
-    const root = getPluginsRoot();
+    const root = getAgentHost().getPluginsRoot();
     if (!root) return [];
     try {
       const parsed = yaml.load(fs.readFileSync(manifestPath(), "utf8"), { schema: yaml.DEFAULT_SCHEMA });
@@ -99,7 +103,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
           source: typeof r.source === "string" ? r.source : null,
           disabled: r.disabled === true,
         }));
-      return { data: { devEnabled: pluginsDevEnabled(), root: getPluginsRoot(), plugins: list } };
+      return { data: { devEnabled: pluginsDevEnabled(), root: getAgentHost().getPluginsRoot(), plugins: list } };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
@@ -108,7 +112,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
   ipcMain.handle("plugins:setEnabled", (_e, req: { id: string; enabled: boolean }) => {
     try {
       if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to toggle plugins" };
-      const root = getPluginsRoot();
+      const root = getAgentHost().getPluginsRoot();
       if (!root) return { error: "no plugins directory configured" };
       const rows = readAllRows();
       const row = rows.find((r) => r.id === req.id);
@@ -129,7 +133,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
   ipcMain.handle("plugins:openFolder", async () => {
     try {
       if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1" };
-      const root = getPluginsRoot();
+      const root = getAgentHost().getPluginsRoot();
       if (!root) return { error: "no plugins directory configured" };
       fs.mkdirSync(root, { recursive: true });
       await shell.openPath(root);
@@ -150,7 +154,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       if (!req || typeof req.spec !== "string" || !req.spec.trim()) {
         return { error: "provide a plugin spec (github:owner/repo or a local path)" };
       }
-      const result = await installPlugin(req.spec);
+      const result = await getAgentHost().installPlugin(req.spec);
       return { data: result };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -161,7 +165,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
     try {
       if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to uninstall" };
       if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
-      uninstallPlugin(req.id);
+      getAgentHost().uninstallPlugin(req.id);
       return { data: { ok: true } };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -176,7 +180,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
         return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to update." };
       }
       if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
-      const result = await updatePlugin(req.id);
+      const result = await getAgentHost().updatePlugin(req.id);
       return { data: result };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -184,7 +188,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
   });
 
   if (!pluginsDevEnabled()) return;
-  const root = getPluginsRoot();
+  const root = getAgentHost().getPluginsRoot();
   if (!root || watcher) return;
   try {
     fs.mkdirSync(root, { recursive: true });

@@ -4,8 +4,8 @@ import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
-import { getPlanModeActive } from "../cordis/plan-fold";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
+import { getAgentHost } from "../cordis/agent-host";
 
 let progressForwarderSetUp = false;
 
@@ -48,10 +48,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // palettes from the same namespace plugins register into.
   registerIpcHandle("cordis:listCommands", () => handle(async () => {
     try {
-      const { getContext } = await import("../cordis/run-cordis-loop");
-      const cordisCtx = await getContext();
-      const commands = (cordisCtx as unknown as { commands?: { list?: () => Array<{ name: string; description?: string }> } }).commands;
-      const list = commands?.list?.() ?? [];
+      const list = await getAgentHost().listCommands();
       return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -62,36 +59,22 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // on a session's resumed agent. Returns the command result {kind, text}.
   registerIpcHandle("cordis:executeCommand", (_e, req: { sessionId: string; line: string }) => handle(async () => {
     try {
-      const [{ getContext }, { openCordisAgent }] = await Promise.all([
-        import("../cordis/run-cordis-loop"),
-        import("../cordis/run-cordis-coding"),
-      ]);
-      const cordisCtx = await getContext();
       const agentConfig = (await import("../lib/config-cache")).getCachedConfig().agentConfig;
-      const handle = await openCordisAgent(cordisCtx, {
+      const result = await getAgentHost().executeCommand({
         sessionId: req.sessionId,
         cwd: ctx.workspacePath || process.cwd(),
-        llmConfig: { baseUrl: agentConfig?.baseUrl ?? "", model: agentConfig?.model ?? "", apiKey: agentConfig?.apiKey ?? "", provider: "openai" },
-        signal: undefined,
+        baseUrl: agentConfig?.baseUrl ?? "",
+        model: agentConfig?.model ?? "",
+        apiKey: agentConfig?.apiKey ?? "",
+        line: req.line,
       });
-      try {
-        const commands = (cordisCtx as unknown as { commands?: { list?: unknown; execute: (a: unknown, line: string, imgs: unknown[], s: AbortSignal) => Promise<unknown> } }).commands;
-        if (!commands) return { error: "commands runtime unavailable" };
-        const out = await commands.execute((handle as { agent: unknown }).agent, req.line, [], new AbortController().signal) as { result?: { kind?: string; text?: string } } | undefined;
-        const r = out?.result ?? (out as { kind?: string; text?: string } | undefined);
-        const commandName = req.line.trim().replace(/^\//, "").split(/\s+/, 1)[0];
-        if (commandName === "plan" && r?.kind === "success") {
-          const agent = (handle as { agent: { session?: unknown } }).agent;
-          const mode = getPlanModeActive(cordisCtx, agent.session) ? "plan" : "execute";
-          try {
-            q.updateCodingSession(ctx.db, req.sessionId, { mode, updatedAt: ts() });
-          } catch { /* chat sessions do not have a Cairn coding-session row */ }
-          broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "mode-change", { mode }));
-        }
-        return { kind: r?.kind, text: r?.text };
-      } finally {
-        try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
+      if (result.mode) {
+        try {
+          q.updateCodingSession(ctx.db, req.sessionId, { mode: result.mode, updatedAt: ts() });
+        } catch { }
+        broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "mode-change", { mode: result.mode }));
       }
+      return { kind: result.kind, text: result.text };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
@@ -116,69 +99,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // plain string (no dsh sections), returned alongside so Settings shows both.
   registerIpcHandle("runtime:systemPrompt:preview", (_e, req: { cwd?: string; projectName?: string }) => handle(async () => {
     try {
-      const [{ getContext }, { buildSystemPrompt }] = await Promise.all([
-        import("../cordis/run-cordis-loop"),
-        import("../lib/tools"),
-      ]);
-      const ctx = await getContext();
-      const sys = (ctx as unknown as {
-        systemPrompt?: {
-          assemble: (c: { scope?: unknown; signal?: AbortSignal }) => Promise<unknown>;
-          section: (s: { name: string; order: number; text: string }) => () => void;
-        };
-      }).systemPrompt;
-      if (!sys) return { text: "", sections: [], skillCount: 0, error: "systemPrompt service unavailable" };
-      // Mount Cairn's identity section under its REAL turn name/order so the
-      // assembled text is what a real turn sends. Guarded: a concurrent
-      // preview (or live turn holding the global layer) would throw on
-      // duplicate registration — then assemble without and flag it.
-      let disposeSection: (() => void) | undefined;
-      let cairnSystemLive = false;
-      try {
-        disposeSection = sys.section({ name: "cairn:system", order: -100, text: buildSystemPrompt({ message: "", threadId: "preview", projectId: "", workspaceId: "" } as never) });
-      } catch {
-        cairnSystemLive = true;
-      }
-      try {
-        const assembly = (await sys.assemble({ signal: undefined })) as {
-          sections: Array<{ name: string; order: number; text: string | ((c: { scope?: unknown }) => string) }>;
-          contexts: Array<{ name: string; order: number; text: string | ((c: { scope?: unknown }) => string) }>;
-          variables: Record<string, string | undefined>;
-          tools: unknown[];
-        };
-        const { renderPrompt } = await import("@deepseek-ai/dsh-system-prompt");
-        const text = renderPrompt(assembly as unknown as Parameters<typeof renderPrompt>[0]);
-        const textOf = (v: string | ((c: { scope?: unknown }) => string)) =>
-          typeof v === "function" ? v({}) : v;
-        // The assembled sections are {name, text} (order is a registration-only
-        // prop that assemble() strips) — use index as a stable display order.
-        const sections = assembly.sections
-          .map((s, i) => ({ name: s.name, order: i, text: textOf(s.text), index: i }));
-        const contexts = assembly.contexts.map((c) => ({ name: c.name, order: c.order, text: textOf(c.text) }));
-        // Skills: full list (name + description) from the shared registry.
-        let skills: Array<{ name: string; description: string }> = [];
-        try {
-          const skillsSvc = (ctx as unknown as { skills?: { list: (o: { cwd: string }) => Promise<Array<{ name: string; description: string }>> } }).skills;
-          if (skillsSvc) skills = await skillsSvc.list({ cwd: req?.cwd ?? "" });
-        } catch { /* informational */ }
-        // Tools: enumerate the global view (per-turn Cairn tools register inside
-        // a loop, so this reflects globally-registered + plugin tools).
-        const tools: Array<{ name: string; description?: string }> = [];
-        try {
-          const toolsSvc = (ctx as unknown as { tools?: { view: (s?: unknown) => { visible: Map<string, unknown> } } }).tools;
-          const vis = toolsSvc?.view?.()?.visible;
-          if (vis) {
-            for (const name of vis.keys()) {
-              const def = vis.get(name) as { description?: string } | undefined;
-              tools.push({ name, description: def?.description });
-            }
-            tools.sort((a, b) => a.name.localeCompare(b.name));
-          }
-        } catch { /* informational */ }
-        return { text, sections, contexts, skills, tools, variables: assembly.variables ?? {}, cairnSystemLive };
-      } finally {
-        try { disposeSection?.(); } catch { /* already torn down */ }
-      }
+      return await getAgentHost().previewSystemPrompt(req?.cwd ?? "");
     } catch (err) {
       return { text: "", sections: [], skillCount: 0, error: err instanceof Error ? err.message : String(err) };
     }
@@ -216,23 +137,10 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // registry and merged in.
   registerIpcHandle("runtime:tools:inventory", () => handle(async () => {
     try {
-      const [{ getContext }, { buildStaticInventory }] = await Promise.all([
-        import("../cordis/run-cordis-loop"),
+      const [{ buildStaticInventory }] = await Promise.all([
         import("../lib/tool-inventory"),
       ]);
-      const c = await getContext();
-      const globalTools: Array<{ name: string; description: string; category: "read" | "write" | "delete" | "exec"; source: "global" }> = [];
-      try {
-        const toolsSvc = (c as unknown as { tools?: { view: (s?: unknown) => { visible: Map<string, unknown> } } }).tools;
-        const vis = toolsSvc?.view?.()?.visible;
-        if (vis) {
-          for (const [name, def] of vis) {
-            const d = def as { description?: string } | undefined;
-            globalTools.push({ name, description: d?.description ?? "", category: "exec", source: "global" });
-          }
-          globalTools.sort((a, b) => a.name.localeCompare(b.name));
-        }
-      } catch { /* informational — static inventory still answers */ }
+      const globalTools = (await getAgentHost().getGlobalTools()).map((tool) => ({ ...tool, description: tool.description ?? "", category: "exec" as const, source: "global" as const }));
       const surfaces = buildStaticInventory(globalTools);
       return { surfaces };
     } catch (err) {

@@ -10,48 +10,13 @@
 import { registerIpcHandle, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
-import { mintAskNonce, dropAskNonce, clearAskNoncesForSession } from "./approval-state";
-import { cordisPendingApprovals, pendingKey, pendingAsks } from "./approval-state";
-import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
-import { forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import type { DbContext } from "./result-helpers";
 import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
-import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
-
-// One controller and concurrency slot per canonical session, regardless of
-// which renderer issued the prompt.
-const abortControllers = new Map<string, AbortController>();
-
-/**
- * Threads that currently have an in-flight streaming turn. Prevents two
- * concurrent session:prompt requests on the SAME thread from writing to the
- * same session.jsonl.zstd in parallel — dsh's in-process persistence
- * serialises WRITES (so the file doesn't tear), but the two turns' events
- * still interleave into an incoherent transcript. Mirrors the coding session
- * runtime's
- * `runningLoops` guard on the coding side (review finding M13).
- */
-const runningThreads = new Set<string>();
-
-export function getRunningChatIds(): string[] {
-  return Array.from(runningThreads).map((id) => `chat-${id}`);
-}
-
-export function isChatThreadRunning(sessionId: string): boolean {
-  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
-  return runningThreads.has(raw);
-}
-
-export function abortChatSession(sessionId: string): void {
-  abortControllers.get(sessionId)?.abort();
-  abortControllers.delete(sessionId);
-  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
-  runningThreads.delete(raw);
-}
+import { getAgentHost } from "../cordis/agent-host";
 
 function resolveAIConfig(config?: {
   provider?: string;
@@ -124,9 +89,7 @@ export function registerChatHandler(_ctx: DbContext): void {
 
       // Session-as-truth compaction via the SHARED flow (also registered as the
       // dsh `compact` command — one implementation, two entry points).
-      const { compactChatSession } = await import("../cordis/cairn-commands");
-      const { getContext } = await import("../cordis/run-cordis-loop");
-      const res = await compactChatSession(getContext, threadId, { baseUrl, model, apiKey, apiMode: req.config.apiMode });
+       const res = await getAgentHost().compactChatSession(threadId, { baseUrl, model, apiKey, apiMode: req.config.apiMode });
       if (!res.ok) throw new Error(res.error ?? "compact failed");
       console.log("[chat:compactThread] compactNow result", { threadId, compacted: res.compacted });
       return { compacted: res.compacted };
@@ -144,16 +107,14 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // persistence serialises writes, but the two turns would still interleave
     // into a semantically incoherent transcript. Check BEFORE aborting so a
     // concurrent turn is not killed and the new turn does not also start.
-    if (req.threadId && runningThreads.has(req.threadId)) {
+    if (req.threadId && getAgentHost().isTurnRunning(sessionId)) {
        broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "already-running" }));
        broadcastEvent("session:busy", { sessionId, reason: "already-running" });
        return;
     }
     // A new turn supersedes a previous turn from the same session.
-    abortChatSession(sessionId);
-    if (req.threadId) runningThreads.add(req.threadId);
-    const abortCtrl = new AbortController();
-     abortControllers.set(sessionId, abortCtrl);
+     getAgentHost().abortTurn(sessionId);
+     const abortCtrl = getAgentHost().startTurn(sessionId);
     
     const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
     const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
@@ -179,38 +140,34 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
 
     // Chat HITL: interactive approval transport so EXTERNAL/EXEC tools (and
     // deletions) gate through the same approval cards as coding. Mirrors the
-    // coding loop's setConfirmTransport pattern; the pending-ask state is
-    // shared via approval-state.ts so session:respond-tool's global handler
-    // can resolve it regardless of which profile created the ask.
+    // coding loop's transport binding; the pending-ask state is shared through
+    // AgentHost so session:respond-tool's global handler can resolve it
+    // regardless of which profile created the ask.
     const chatLoopSend = (channel: string, payload: Record<string, unknown>) => {
       if (channel === "session:projection" && payload && typeof payload === "object" && (payload as { kind?: unknown }).kind === "approval") {
         const data = (payload as { data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string } }).data;
         if (data?.status === "required" && data.callId && !data.nonce) {
-          const nonce = mintAskNonce(sessionId, data.callId);
-          (data as { nonce?: string }).nonce = nonce;
-          pendingAsks.record({ sessionId, name: data.name ?? "tool", label: data.label ?? data.name ?? "tool", callId: data.callId, nonce });
+           const nonce = getAgentHost().mintApprovalNonce(sessionId, data.callId);
+           (data as { nonce?: string }).nonce = nonce;
+           getAgentHost().recordPendingApprovalAsk({ sessionId, name: data.name ?? "tool", label: data.label ?? data.name ?? "tool", callId: data.callId, nonce });
         } else if (data?.status === "expired" && data.callId) {
-          pendingAsks.resolve(sessionId, data.callId);
-          dropAskNonce(sessionId, data.callId);
-          forgetSessionApprovalArgs(sessionId);
+           getAgentHost().resolvePendingApprovalAsk(sessionId, data.callId);
+           getAgentHost().dropApprovalNonce(sessionId, data.callId);
+          getAgentHost().forgetSessionApprovalArgs(sessionId);
         }
       }
       send(channel, payload);
     };
-    const chatConfirmTransport = createInteractiveConfirmTransport({
-      sessionId,
+    const chatConfirmTransportWiring = {
       send: chatLoopSend,
       registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-        const key = pendingKey(sessionId, callId);
-        cordisPendingApprovals.set(key, resolve);
-        return () => cordisPendingApprovals.delete(key);
+        return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
       },
-    });
-    setConfirmTransport(sessionId, chatConfirmTransport);
+    };
+    getAgentHost().bindInteractiveConfirmTransport(sessionId, chatConfirmTransportWiring);
 
     if (!apiKey && !isLocalEndpointUrl) {
-       abortControllers.delete(sessionId);
-      if (req.threadId) runningThreads.delete(req.threadId);
+       getAgentHost().endTurn(sessionId, abortCtrl);
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Missing API key — configure provider in Settings.", code: "missing-api-key" }));
       broadcastEvent("session:busy", { sessionId, reason: "missing-api-key" });
       return;
@@ -259,20 +216,18 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
            approvals: {
              send: chatLoopSend,
              registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
-               const key = pendingKey(sessionId, callId);
-               cordisPendingApprovals.set(key, resolve);
-               return () => cordisPendingApprovals.delete(key);
+                return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
              },
            },
            questions: {
               send: (channel, payload) => chatLoopSend(channel, payload),
                emitQuestions: (requestId, questions) => {
-                 const nonce = mintAskNonce(sessionId, requestId);
-                 recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
+                  const nonce = getAgentHost().mintApprovalNonce(sessionId, requestId);
+                 getAgentHost().recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
                   chatLoopSend("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions, nonce } as never));
                },
              registerPending: (requestId, resolve) => {
-               return registerPendingQuestion(sessionId, requestId, resolve);
+               return getAgentHost().registerPendingQuestion(sessionId, requestId, resolve);
               },
            },
            onSessionEvent: (sessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolResultView(withToolCallView(sessionEvent)) }),
@@ -283,13 +238,10 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
            console.error("[chat] cordis loop failed:", err);
          }
       } finally {
-         abortControllers.delete(sessionId);
-        if (req.threadId) runningThreads.delete(req.threadId);
-        setConfirmTransport(sessionId, undefined);
-        pendingAsks.clearSession(sessionId);
-        clearAskNoncesForSession(sessionId);
-        forgetSessionApprovalArgs(sessionId);
-        for (const k of Array.from(cordisPendingApprovals.keys())) if (k.startsWith(`${sessionId}::`)) cordisPendingApprovals.delete(k);
+          getAgentHost().endTurn(sessionId, abortCtrl);
+         getAgentHost().unbindConfirmTransport(sessionId);
+         getAgentHost().clearApprovalState(sessionId);
+         getAgentHost().forgetSessionApprovalArgs(sessionId);
       }
       return;
     }

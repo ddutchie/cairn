@@ -14,6 +14,7 @@
  * `run-cordis-loop.ts:188`), not a vendor lock-in.
  */
 
+import type { Context } from "@deepseek-ai/cordis";
 import { getContext, ensureAgentAiAdapter } from "./run-cordis-loop";
 import "./ctx-augment";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -38,14 +39,13 @@ export interface OneShotOptions {
  * Run a single-turn LLM call via the Cordis pi-ai route and return the
  * accumulated text.
  */
-export async function runOneShot(opts: OneShotOptions): Promise<string> {
+export async function runOneShotWithContext(ctx: Context, opts: OneShotOptions): Promise<string> {
   const { systemPrompt, userPrompt, config, source, projectId, workspaceId, sessionId, maxTokens, temperature, signal } = opts;
 
   // All providers (cloud or user-run local servers) go through the Cordis
   // pi-ai route unchanged.
   const effectiveConfig = config;
 
-  const ctx = await getContext();
   // Pin the wire protocol from the saved provider's apiMode — never probe.
   // resolveTransport can only ever return responses/completions (it can't
   // detect anthropic-messages) and probing violates the "protocol is pinned,
@@ -108,4 +108,8 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
   } catch { /* best-effort */ }
 
   return text;
+}
+
+export async function runOneShot(opts: OneShotOptions): Promise<string> {
+  return runOneShotWithContext(await getContext(), opts);
 }

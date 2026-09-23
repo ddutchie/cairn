@@ -105,6 +105,42 @@ function requireId(value: unknown, field: string): string {
   return value;
 }
 
+export async function listSubagentChildren(
+  parentSessionId: string,
+  scope: SubagentScope | AbortSignal = "children",
+  signal?: AbortSignal,
+): Promise<SubagentCatalogView> {
+  requireId(parentSessionId, "parentSessionId");
+  return listSubagentChildrenWithContext(await getContext(), parentSessionId, scope, signal);
+}
+
+export async function interruptSubagentChild(
+  parentSessionId: string,
+  childId: string,
+): Promise<{ accepted: true }> {
+  requireId(parentSessionId, "parentSessionId");
+  requireId(childId, "childId");
+  return interruptSubagentChildWithContext(await getContext(), parentSessionId, childId);
+}
+
+export async function messageSubagentChild(
+  parentSessionId: string,
+  childId: string,
+  text: string,
+  signal?: AbortSignal,
+): Promise<{ messageId: string }> {
+  requireId(parentSessionId, "parentSessionId");
+  requireId(childId, "childId");
+  if (typeof text !== "string" || text.trim().length === 0) {
+    throw new SubagentControlError("bad-request", "message text must be non-empty");
+  }
+  if (text.length > 8000) {
+    throw new SubagentControlError("bad-request", "message text exceeds 8000 characters");
+  }
+  return messageSubagentChildWithContext(await getContext(), parentSessionId, childId, text, signal);
+}
+
+
 function subagentsOf(ctx: Context): SubagentRuntime {
   const subagents = (ctx as unknown as { subagents?: SubagentRuntime }).subagents;
   if (!subagents) throw new SubagentControlError("internal", "subagent service unavailable");
@@ -140,7 +176,8 @@ function controlCodeOf(err: unknown): SubagentControlCode {
  * keeps the same meaning for both scopes: whether the exact parent agent is
  * live in this process (host messaging possible).
  */
-export async function listSubagentChildren(
+export async function listSubagentChildrenWithContext(
+  ctx: Context,
   parentSessionId: string,
   scope: SubagentScope | AbortSignal = "children",
   signal?: AbortSignal,
@@ -149,7 +186,6 @@ export async function listSubagentChildren(
   // Backward-compatible overload: listSubagentChildren(parent, signal).
   const resolvedSignal = (typeof scope === "string" ? signal : scope) as AbortSignal | undefined;
   const parent = SessionId(requireId(parentSessionId, "parentSessionId"));
-  const ctx = await getContext();
   const subagents = subagentsOf(ctx);
   let entries: SubagentCatalogEntry[];
   try {
@@ -195,13 +231,13 @@ export async function listSubagentChildren(
  * may run briefly until it observes the cancel); inbox, descendants, and the
  * child itself are preserved. Absent targets are an accepted no-op.
  */
-export async function interruptSubagentChild(
+export async function interruptSubagentChildWithContext(
+  ctx: Context,
   parentSessionId: string,
   childId: string,
 ): Promise<{ accepted: true }> {
   const parent = SessionId(requireId(parentSessionId, "parentSessionId"));
   const child = SessionId(requireId(childId, "childId"));
-  const ctx = await getContext();
   const subagents = subagentsOf(ctx);
   try {
     subagents.interrupt(child, { kind: "user", parentSessionId: parent });
@@ -220,7 +256,8 @@ export async function interruptSubagentChild(
  * retain theirs; coding sessions only mid-turn) — otherwise fails closed with
  * `parent-unavailable` and the renderer should say so instead of hanging.
  */
-export async function messageSubagentChild(
+export async function messageSubagentChildWithContext(
+  ctx: Context,
   parentSessionId: string,
   childId: string,
   text: string,
@@ -234,7 +271,6 @@ export async function messageSubagentChild(
   if (text.length > 8000) {
     throw new SubagentControlError("bad-request", "message text exceeds 8000 characters");
   }
-  const ctx = await getContext();
   const subagents = subagentsOf(ctx);
   const parent = (ctx as unknown as { get?: (key: string) => AgentRegistry & { } }).get?.("agents")?.get(parentId) as
     | (object & { id?: unknown })

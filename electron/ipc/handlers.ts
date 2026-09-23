@@ -48,6 +48,7 @@ import { registerUserStyleHandlers } from "./user-style-handlers";
 import { registerUsageHandlers } from "./usage-handlers";
 import { initUsageRecorder } from "../lib/usage-recorder";
 import { runStartupHygiene } from "../lib/db-hygiene";
+import { markUpdaterQuitRequested } from "../lib/updater-quit";
 
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
@@ -298,6 +299,9 @@ export function registerAppHandlers(
     // Dynamically require to avoid issues in dev where autoUpdater isn't active.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { autoUpdater } = require("electron-updater");
+    // Flag first so main.ts's before-quit gate takes the updater fast path
+    // instead of vetoing the staged install.
+    markUpdaterQuitRequested();
     autoUpdater.quitAndInstall();
   }));
 

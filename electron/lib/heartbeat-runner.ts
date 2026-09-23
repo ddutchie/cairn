@@ -68,6 +68,7 @@ import {
   type DeliverFileHandler,
 } from "./automation-script";
 import type { RunCordisCodingOptions } from "../cordis/run-cordis-coding";
+import { getAgentHost } from "../cordis/agent-host";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
 import { toSlug } from "../host-shared/text-utils";
@@ -272,7 +273,6 @@ export async function runAutomation(
 
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? "openai") as "openai";
-  const abortCtrl = new AbortController();
 
   // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
   // Every run gets a working directory under <project>/.automations/<id>/runs/
@@ -507,7 +507,6 @@ export async function runAutomation(
   // per-run folder, so an automation can actually make changes (write files,
   // run scripts, call connectors) — not just a data-only chat turn.
   const runDirForAgent = runDir ?? workspacePath;
-  const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
   let finalContent = "";
   // Tool name per pending approval callId, captured from the coding agent's
   // `session:tool-confirm-required` event (the seam doesn't carry the name).
@@ -552,65 +551,63 @@ export async function runAutomation(
   if (writeRunFileHandler) automationTools.push({ name: WRITE_RUN_FILE_TOOL_NAME, description: writeRunFileToolDefinition.function.description, parameters: writeRunFileToolDefinition.function.parameters, execute: (a) => writeRunFileHandler(a as never) });
   if (deliverFileHandler) automationTools.push({ name: DELIVER_FILE_TOOL_NAME, description: deliverFileToolDefinition.function.description, parameters: deliverFileToolDefinition.function.parameters, execute: (a) => deliverFileHandler(a as never) });
 
-  // Plugin confirmation seam for this run (audit §5 C #9): bind the headless
-  // transport so ctx.cairn.confirm during automation turns routes plugin asks
-  // through the SAME pending-approval map + auto-allow classifier that native
-  // asks use. Unbound after the run settles.
-  const { createHeadlessConfirmTransport, setConfirmTransport } = await import("../cordis/approval-transports");
-  const { readPendingApprovalArgs } = await import("../cordis/approval-grants");
-  setConfirmTransport(run.id, createHeadlessConfirmTransport({
-    emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
-    registerPending: (callId, resolve) => {
-      const key = automationKey(run.id, callId);
-      const trusted = readPendingApprovalArgs(run.id, callId) ?? {};
-      pendingAutomationApprovals.set(key, { tool: "plugin_confirm", args: trusted, db, runId: run.id, resolve: (d) => resolve(d.approved) });
-      return () => { pendingAutomationApprovals.delete(key); };
-    },
+  // Register the turn immediately before the try that owns endTurn cleanup,
+  // so connector-load failures above return without leaking a running turn.
+  // abortCtrl is only read by lazily executed closures (run_script handler,
+  // loop options below), which all run inside the try.
+  const turnController = getAgentHost().startTurn(run.id);
+  const abortCtrl = turnController;
 
-  }));
-
-  const codingResult = await runCordisCodingLoop({
-    db,
-    req,
-    workspacePath,
-    sessionId: run.id,
-    cwd: runDirForAgent,
-    systemPrompt: recipe,
-    llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" },
-    mode: "execute",
-    sandboxMode: "workspace-write",
-    // Automation runs on the coding profile but is its own Usage-view source.
-    usageSource: "automation",
-    // Ask mode gates writes through the Cordis approval waterfall (native
-    // asks + shouldAutoAllowAutomationTool below); Auto skips the gate.
-    autoApprove: automation.approvalMode !== "ask",
-    signal: abortCtrl.signal,
-    send: loopSend,
-    extraTools: automationTools,
-    approvals: {
-      // Forward HITL approvals: auto-allow tools the automation's policy
-      // permits (read tools, standing rules, auto-mode built-ins); otherwise
-      // emit an automation:run approval event to the renderer and block until
-      // the user approves/denies via the automation:approve IPC.
+  let codingResult: { ok: boolean; error?: string };
+  try {
+    getAgentHost().bindHeadlessConfirmTransport(run.id, {
+      emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
       registerPending: (callId, resolve) => {
-        const toolName = confirmToolByCallId.get(callId) ?? "tool";
-        confirmToolByCallId.delete(callId);
-        const trusted = readPendingApprovalArgs(run.id, callId) ?? {};
-        if (shouldAutoAllowAutomationTool(db, run, automation, toolName, trusted)) {
-          resolve({ approved: true });
-          return () => {};
-        }
         const key = automationKey(run.id, callId);
-        pendingAutomationApprovals.set(key, { tool: toolName, args: trusted, db, runId: run.id, resolve });
-        emitRun("approval", { tool: toolName, callId });
+        const trusted = getAgentHost().readPendingApprovalArgs(run.id, callId) ?? {};
+        pendingAutomationApprovals.set(key, { tool: "plugin_confirm", args: trusted, db, runId: run.id, resolve: (d) => resolve(d.approved) });
         return () => { pendingAutomationApprovals.delete(key); };
       },
-    },
-    onSessionEvent: fold,
-  });
+
+    });
+
+    codingResult = await getAgentHost().runAutomation({
+      db,
+      req,
+      workspacePath,
+      sessionId: run.id,
+      cwd: runDirForAgent,
+      systemPrompt: recipe,
+      llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" },
+      mode: "execute",
+      sandboxMode: "workspace-write",
+      usageSource: "automation",
+      autoApprove: automation.approvalMode !== "ask",
+      signal: abortCtrl.signal,
+      send: loopSend,
+      extraTools: automationTools,
+      approvals: {
+        registerPending: (callId, resolve) => {
+          const toolName = confirmToolByCallId.get(callId) ?? "tool";
+          confirmToolByCallId.delete(callId);
+          const trusted = getAgentHost().readPendingApprovalArgs(run.id, callId) ?? {};
+          if (shouldAutoAllowAutomationTool(db, run, automation, toolName, trusted)) {
+            resolve({ approved: true });
+            return () => {};
+          }
+          const key = automationKey(run.id, callId);
+          pendingAutomationApprovals.set(key, { tool: toolName, args: trusted, db, runId: run.id, resolve });
+          emitRun("approval", { tool: toolName, callId });
+          return () => { pendingAutomationApprovals.delete(key); };
+        },
+      },
+      onSessionEvent: fold,
+    });
+  } finally {
+    getAgentHost().unbindConfirmTransport(run.id);
+    getAgentHost().endTurn(run.id, turnController);
+  }
   const result = { content: finalContent || recipe, exhausted: !codingResult.ok, error: codingResult.error };
-  // Run settled — unbind the plugin confirm seam (its asks are all resolved).
-  setConfirmTransport(run.id, undefined);
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content, error: result.error });
   log.tokens = result.content;
 

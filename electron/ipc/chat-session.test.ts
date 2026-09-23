@@ -51,6 +51,7 @@ vi.mock("../cordis/run-cordis-coding", () => ({
 }));
 
 vi.mock("../cordis/cordis-context", () => ({
+  getContext: getContextMock,
   getSessionRoot: getSessionRootMock,
 }));
 

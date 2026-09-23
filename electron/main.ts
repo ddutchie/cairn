@@ -27,7 +27,6 @@ import { registerToolBuilderHandlers } from "./ipc/tool-builder";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git";
 import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
-import { setSessionRoot } from "./cordis/run-cordis-loop";
 import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
@@ -42,15 +41,25 @@ import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { readThemeSurface } from "./lib/theme-surface";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";
+import { getAgentHost } from "./cordis/agent-host";
 import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
 import { registerChatPopoutHandlers } from "./chat-popout";
 import { initUsageRecorder } from "./lib/usage-recorder";
+import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 
 const isDev = !app.isPackaged;
+let shutdownStarted = false;
+let shutdownComplete = false;
+
+if (isDev) {
+  process.stdin.on("data", (data) => {
+    if (data.toString().trim() === "cairn:quit") app.quit();
+  });
+}
 
 // ── Deep-link (cairn://) registration + OAuth callback routing ───────────────
 // Used by the remote-MCP OAuth flow: the authorization server redirects to
@@ -261,7 +270,7 @@ app.whenReady().then(async () => {
   // first Cordis context is built.
   const sessionRoot = path.join(userDataPath, "sessions");
   fs.mkdirSync(sessionRoot, { recursive: true });
-  setSessionRoot(sessionRoot);
+  getAgentHost().configureSessionRoot(sessionRoot);
   // Writability probe: chat/coding transcripts only survive restarts if the
   // dsh JSONL backend can write under sessionRoot. A backend failure is
   // silent by design (best-effort flush), so record up front whether the
@@ -320,8 +329,7 @@ app.whenReady().then(async () => {
   // User/agent-authored plugins live here; with CAIRN_PLUGINS_DEV=1 the Cordis
   // context loads <userData>/plugins/plugins.yml and hot-reloads on change.
   try {
-    const { setPluginsRoot } = await import("./cordis/plugin-loader");
-    setPluginsRoot(path.join(userDataPath, "plugins"));
+    getAgentHost().configurePluginsRoot(path.join(userDataPath, "plugins"));
   } catch { /* plugin loader is optional */ }
 
   // ── Resolve workspace path ────────────────────────────────────────────
@@ -768,7 +776,10 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on("before-quit", () => {
+// Synchronous child-process teardown shared by both quit paths: kill
+// processes that would otherwise linger (and block the relaunching
+// version's ports) without waiting on anything async.
+function teardownChildProcesses(): void {
   // Terminate mobile access server if running
   try {
     stopMobileServer();
@@ -780,6 +791,39 @@ app.on("before-quit", () => {
   void disposeEmbeddingsWorker();
   // Terminate the unified runtime process (embeddings + LLM proxy)
   runtime.stopRuntimeSync();
+}
+
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  if (isUpdaterQuitRequested()) {
+    // Explicit update install (boot-sequence / updater:install): the
+    // installer is staged and quitAndInstall already quit — never veto this
+    // quit with preventDefault, just run the sync teardown and exit fast.
+    // (The passive autoInstallOnAppQuit path needs no flag: electron-updater
+    // hooks the later `quit` event, so the async gate below runs first and
+    // the install proceeds on the re-quit.)
+    teardownChildProcesses();
+    shutdownComplete = true;
+    return;
+  }
+  event.preventDefault();
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  void (async () => {
+    try {
+      // Fail-open on a timer so a hung turn can never wedge the quit: the
+      // dev supervisor uses the same 5s force-kill window on restart.
+      await Promise.race([
+        getAgentHost().shutdown(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    } catch (err) {
+      console.error("[main] agent host shutdown failed:", err);
+    }
+    teardownChildProcesses();
+    shutdownComplete = true;
+    app.quit();
+  })();
 });
 
 app.on("window-all-closed", () => {

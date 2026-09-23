@@ -49,3 +49,7 @@ export function clearPendingQuestions(sessionId: string): void {
     if (pendingKey.startsWith(prefix)) pendingQuestions.delete(pendingKey);
   }
 }
+
+export function clearAllPendingQuestions(): void {
+  pendingQuestions.clear();
+}
