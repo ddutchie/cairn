@@ -38,20 +38,11 @@ import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
-import { runChatPrompt, abortChatSession, getRunningChatIds, isChatThreadRunning } from "./chat";
+import { runChatPrompt } from "./chat";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
 const sessions = new Map<string, AgentSession>();
-
-/**
- * Session IDs with a runCordisCodingLoop currently in flight. The renderer
- * polls this via `session:is-running` when a pane (re)mounts so a session
- * that kept working while its UI was closed (e.g. the automation Develop
- * modal) comes
- * back already showing the busy state, instead of briefly looking idle.
- */
-const runningLoops = new Set<string>();
 const clearingSessions = new Set<string>();
 
 // ── Cordis engine wiring ────────────────────────────────────────────────────
@@ -221,7 +212,8 @@ async function runCordisCodingSession(
   payload: CordisTurnPayload,
 ): Promise<void> {
   const { sessionId } = toolCtx;
-  runningLoops.add(sessionId);
+  const turnController = getAgentHost().startTurn(sessionId);
+  session.abortCtrl = turnController;
 
   const { runCordisCodingLoop } = await import("../cordis/run-cordis-coding");
 
@@ -406,7 +398,7 @@ async function runCordisCodingSession(
       console.error("[session] coding loop failed:", err);
     }
   } finally {
-    runningLoops.delete(sessionId);
+     getAgentHost().endTurn(sessionId, turnController);
     // The turn is over — every ask in it was settled (answered, aborted, or
     // timed out). Drop any registry residue so the next turn starts clean.
      getAgentHost().clearApprovalState(sessionId);
@@ -434,7 +426,7 @@ export function registerSessionRuntimeHandlers(
   // prior push is useless without a valid callId. Nonces are cleared on
   // settle/sweep so this surface is only live while the ask is outstanding.
   registerIpcHandle("session:is-running", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
-    const running = runningLoops.has(sessionId) || isChatThreadRunning(sessionId);
+     const running = getAgentHost().isTurnRunning(sessionId);
     return {
       running,
        pendingAsks: getAgentHost().listPendingApprovalAsks(sessionId),
@@ -458,7 +450,7 @@ export function registerSessionRuntimeHandlers(
   // renderer's coalesced poller frozen on a stale "running" set (loop stays
   // green forever).
   registerIpcHandle("session:running-ids", () => handle(async () => {
-    return { ids: [...Array.from(runningLoops), ...getRunningChatIds()] };
+     return { ids: getAgentHost().getRunningTurnIds() };
   }));
 
   // ── session:context-ring ─────────────────────────────────────────────────
@@ -535,15 +527,7 @@ export function registerSessionRuntimeHandlers(
 
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
-    const profile = q.getSessionProfile(ctx.db, sessionId)?.profile;
-    if (profile === "chat") {
-      abortChatSession(sessionId);
-      return;
-    }
-    const session = sessions.get(sessionId);
-    if (session) {
-      session.abortCtrl.abort();
-    }
+    getAgentHost().abortTurn(sessionId);
   });
 
   // ── session:prompt ───────────────────────────────────────────────────────
@@ -595,7 +579,7 @@ export function registerSessionRuntimeHandlers(
     // starting a new loop would replace session.abortCtrl mid-flight and leave
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -770,7 +754,7 @@ export function registerSessionRuntimeHandlers(
 
     // Same concurrency guard as session:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -910,7 +894,7 @@ export function registerSessionRuntimeHandlers(
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       send("session:compact-result", { sessionId, messageCount: 0, summary: "Can't compact while the agent is working — try again when it finishes." });
       return;
     }
@@ -960,7 +944,7 @@ export function registerSessionRuntimeHandlers(
       broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
       return;
     }
-    if (runningLoops.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot toggle plan mode while running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -1119,7 +1103,7 @@ export function registerSessionRuntimeHandlers(
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
     // defensive. Clear is rejected if running or already clearing (atomic gate).
-    if (runningLoops.has(sessionId) || clearingSessions.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId) || clearingSessions.has(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -1129,7 +1113,7 @@ export function registerSessionRuntimeHandlers(
       // TOCTOU re-check: re-validate runningLoops after assertSafeId and immediately
       // before the destructive sweep/file deletion. A concurrent prompt could have
       // started between the first guard and now; clear is rejected if still running.
-      if (runningLoops.has(sessionId)) {
+      if (getAgentHost().isTurnRunning(sessionId)) {
         broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
         broadcastEvent("session:busy", { sessionId, reason: "already-running" });
         return;
@@ -1162,7 +1146,7 @@ export function registerSessionRuntimeHandlers(
               const base = resolveWithinRoot(root, proj, sessionId);
               if (!base) continue;
               for (const p of [path.join(base, "session.jsonl.zstd"), path.join(base, "session.jsonl"), base + ".jsonl", path.join(base, "session.jsonl"), base]) {
-                if (runningLoops.has(sessionId)) {
+                if (getAgentHost().isTurnRunning(sessionId)) {
                   broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
                   broadcastEvent("session:busy", { sessionId, reason: "already-running" });
                   return;
@@ -1182,7 +1166,7 @@ export function registerSessionRuntimeHandlers(
           const flatBase = resolveWithinRoot(root, sessionId);
           if (!flatBase) continue;
           for (const p of [flatBase + ".jsonl", path.join(flatBase, "session.jsonl"), path.join(flatBase, "session.jsonl.zstd"), flatBase]) {
-            if (runningLoops.has(sessionId)) {
+            if (getAgentHost().isTurnRunning(sessionId)) {
               broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
               broadcastEvent("session:busy", { sessionId, reason: "already-running" });
               return;
@@ -1224,7 +1208,7 @@ export function registerSessionRuntimeHandlers(
     }
     const session = sessions.get(sessionId);
     if (session) {
-      session.abortCtrl.abort();
+      getAgentHost().abortTurn(sessionId);
       sessions.delete(sessionId);
     }
     // The abort listeners inside the plugins resolve their own pendings on

@@ -39,6 +39,7 @@ import {
   type ApprovalResolver,
 } from "./approval-runtime";
 import { clearSecretGrants } from "./secret-grants";
+import { abortTurn, endTurn, getRunningTurnIds, isTurnRunning, startTurn } from "./turn-runtime";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -115,6 +116,11 @@ export interface AgentHost {
   resolvePendingApprovalAsk(sessionId: string, callId: string): void;
   listPendingApprovalAsks(sessionId: string): PendingAskMeta[];
   clearApprovalState(sessionId: string): void;
+  startTurn(sessionId: string): AbortController;
+  endTurn(sessionId: string, controller?: AbortController): void;
+  abortTurn(sessionId: string): void;
+  isTurnRunning(sessionId: string): boolean;
+  getRunningTurnIds(): string[];
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -287,6 +293,21 @@ function createLocalAgentHost(): AgentHost {
     },
     clearApprovalState(sessionId) {
       clearApprovalState(sessionId);
+    },
+    startTurn(sessionId) {
+      return startTurn(sessionId);
+    },
+    endTurn(sessionId, controller) {
+      endTurn(sessionId, controller);
+    },
+    abortTurn(sessionId) {
+      abortTurn(sessionId);
+    },
+    isTurnRunning(sessionId) {
+      return isTurnRunning(sessionId);
+    },
+    getRunningTurnIds() {
+      return getRunningTurnIds();
     },
     async listCommands() {
       const ctx = await context();

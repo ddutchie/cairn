@@ -206,6 +206,16 @@ describe("AgentHost", () => {
     expect(mocks.readContextRingWithContext).toHaveBeenCalledWith(context, "session-1");
   });
 
+  it("owns turn abort and running state", () => {
+    const controller = getAgentHost().startTurn("session-1");
+
+    expect(getAgentHost().isTurnRunning("session-1")).toBe(true);
+    expect(getAgentHost().getRunningTurnIds()).toContain("session-1");
+    getAgentHost().abortTurn("session-1");
+    expect(controller.signal.aborted).toBe(true);
+    expect(getAgentHost().isTurnRunning("session-1")).toBe(false);
+  });
+
   it("routes approval resolvers and nonces through the host", () => {
     const decisions: unknown[] = [];
     getAgentHost().registerPendingApproval("session-1", "call-1", (decision) => decisions.push(decision));

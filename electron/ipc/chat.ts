@@ -23,8 +23,6 @@ import { getAgentHost } from "../cordis/agent-host";
 
 // One controller and concurrency slot per canonical session, regardless of
 // which renderer issued the prompt.
-const abortControllers = new Map<string, AbortController>();
-
 /**
  * Threads that currently have an in-flight streaming turn. Prevents two
  * concurrent session:prompt requests on the SAME thread from writing to the
@@ -34,22 +32,16 @@ const abortControllers = new Map<string, AbortController>();
  * runtime's
  * `runningLoops` guard on the coding side (review finding M13).
  */
-const runningThreads = new Set<string>();
-
 export function getRunningChatIds(): string[] {
-  return Array.from(runningThreads).map((id) => `chat-${id}`);
+  return getAgentHost().getRunningTurnIds().filter((id) => id.startsWith("chat-"));
 }
 
 export function isChatThreadRunning(sessionId: string): boolean {
-  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
-  return runningThreads.has(raw);
+  return getAgentHost().isTurnRunning(sessionId);
 }
 
 export function abortChatSession(sessionId: string): void {
-  abortControllers.get(sessionId)?.abort();
-  abortControllers.delete(sessionId);
-  const raw = sessionId.startsWith("chat-") ? sessionId.slice(5) : sessionId;
-  runningThreads.delete(raw);
+  getAgentHost().abortTurn(sessionId);
 }
 
 function resolveAIConfig(config?: {
@@ -141,16 +133,14 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     // persistence serialises writes, but the two turns would still interleave
     // into a semantically incoherent transcript. Check BEFORE aborting so a
     // concurrent turn is not killed and the new turn does not also start.
-    if (req.threadId && runningThreads.has(req.threadId)) {
+    if (req.threadId && getAgentHost().isTurnRunning(sessionId)) {
        broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "already-running" }));
        broadcastEvent("session:busy", { sessionId, reason: "already-running" });
        return;
     }
     // A new turn supersedes a previous turn from the same session.
-    abortChatSession(sessionId);
-    if (req.threadId) runningThreads.add(req.threadId);
-    const abortCtrl = new AbortController();
-     abortControllers.set(sessionId, abortCtrl);
+     abortChatSession(sessionId);
+     const abortCtrl = getAgentHost().startTurn(sessionId);
     
     const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
     const isLocalEndpointUrl = isLocalEndpoint(baseUrl);
@@ -204,8 +194,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
     setConfirmTransport(sessionId, chatConfirmTransport);
 
     if (!apiKey && !isLocalEndpointUrl) {
-       abortControllers.delete(sessionId);
-      if (req.threadId) runningThreads.delete(req.threadId);
+       getAgentHost().endTurn(sessionId, abortCtrl);
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Missing API key — configure provider in Settings.", code: "missing-api-key" }));
       broadcastEvent("session:busy", { sessionId, reason: "missing-api-key" });
       return;
@@ -276,8 +265,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
            console.error("[chat] cordis loop failed:", err);
          }
       } finally {
-         abortControllers.delete(sessionId);
-        if (req.threadId) runningThreads.delete(req.threadId);
+          getAgentHost().endTurn(sessionId, abortCtrl);
          setConfirmTransport(sessionId, undefined);
          getAgentHost().clearApprovalState(sessionId);
          forgetSessionApprovalArgs(sessionId);

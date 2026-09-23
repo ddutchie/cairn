@@ -67,7 +67,8 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 - [x] Route session reads, permissions, goals, schedules, feedback, command execution, prompt previews, tool inventory, chat compaction, titles, context-ring reads, one-shot AI, subagent controls, and resident-agent cleanup through `AgentHost`.
 - [x] Extend `AgentHost` with one-shot AI, context-ring reads, subagent controls, and pending-question resolution/cleanup.
 - [x] Extend `AgentHost` with one-shot AI, context-ring reads, subagent controls, pending-question resolution/cleanup, session grant mutation, secret-grant cleanup, and approval resolver/nonce ownership.
-- [ ] Extend `AgentHost` with turn start/abort, plan state, session stats/export, and plugin install.
+- [x] Extend `AgentHost` with one-shot AI, context-ring reads, subagent controls, pending-question resolution/cleanup, session grant mutation, secret-grant cleanup, approval resolver/nonce ownership, and turn controller start/abort ownership.
+- [ ] Extend `AgentHost` with plan state, session stats/export, and plugin install.
 - [ ] Route remaining engine entry points and lifecycle work through the façade: automations, UI plugin handlers/install, and shared plan state.
 - [ ] Add a lint rule or guard test ensuring nothing outside `electron/cordis/` imports `run-cordis-loop`'s `getContext`; the current IPC scan is clean.
 - [ ] Verify installed macOS/Linux/Windows builds and run the live agent sweep.
