@@ -499,16 +499,14 @@ export function registerSessionRuntimeHandlers(
     }
   };
   registerIpcHandle("subagent:list", (_event, { parentSessionId, scope }: { parentSessionId: string; scope?: unknown }) => handle(async () => {
-    const { listSubagentChildren, normalizeSubagentScope } = await import("../cordis/subagent-control");
-    return subagentResult(() => listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
+    const { normalizeSubagentScope } = await import("../cordis/subagent-control");
+    return subagentResult(() => getAgentHost().listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
   }));
   registerIpcHandle("subagent:interrupt", (_event, { parentSessionId, childId }: { parentSessionId: string; childId: string }) => handle(async () => {
-    const { interruptSubagentChild } = await import("../cordis/subagent-control");
-    return subagentResult(() => interruptSubagentChild(parentSessionId, childId));
+    return subagentResult(() => getAgentHost().interruptSubagentChild(parentSessionId, childId));
   }));
   registerIpcHandle("subagent:message", (_event, { parentSessionId, childId, text }: { parentSessionId: string; childId: string; text: string }) => handle(async () => {
-    const { messageSubagentChild } = await import("../cordis/subagent-control");
-    return subagentResult(() => messageSubagentChild(parentSessionId, childId, text));
+    return subagentResult(() => getAgentHost().messageSubagentChild(parentSessionId, childId, text));
   }));
 
   // ── session:job-kill ─────────────────────────────────────────────────────

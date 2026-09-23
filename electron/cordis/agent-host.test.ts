@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   getAgent: vi.fn(),
   runOneShotWithContext: vi.fn(),
   readContextRingWithContext: vi.fn(),
+  listSubagentChildrenWithContext: vi.fn(),
+  interruptSubagentChildWithContext: vi.fn(),
+  messageSubagentChildWithContext: vi.fn(),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -37,6 +40,11 @@ vi.mock("./session-replay", () => ({ loadSessionMessages: mocks.loadSessionMessa
 vi.mock("./run-cordis-loop", () => ({ prepareReplayContext: mocks.prepareReplayContext, readContextRingWithContext: mocks.readContextRingWithContext }));
 vi.mock("./session-stats", () => ({ readSessionStatsSnapshot: mocks.readSessionStatsSnapshot }));
 vi.mock("./one-shot", () => ({ runOneShotWithContext: mocks.runOneShotWithContext }));
+vi.mock("./subagent-control", () => ({
+  listSubagentChildrenWithContext: mocks.listSubagentChildrenWithContext,
+  interruptSubagentChildWithContext: mocks.interruptSubagentChildWithContext,
+  messageSubagentChildWithContext: mocks.messageSubagentChildWithContext,
+}));
 
 import { getAgentHost } from "./agent-host";
 
@@ -153,6 +161,22 @@ describe("AgentHost", () => {
     expect(execute).toHaveBeenCalledWith(agent, "/plan", [], expect.any(AbortSignal));
     expect(mocks.getPlanModeActive).toHaveBeenCalledWith(contextWithCommands, agent.session);
     expect(mocks.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("routes subagent controls through the host", async () => {
+    const catalog = { entries: [], parentAvailable: true };
+    const signal = new AbortController().signal;
+    mocks.listSubagentChildrenWithContext.mockResolvedValue(catalog);
+    mocks.interruptSubagentChildWithContext.mockResolvedValue({ accepted: true });
+    mocks.messageSubagentChildWithContext.mockResolvedValue({ messageId: "message-1" });
+
+    await expect(getAgentHost().listSubagentChildren("parent-1", "descendants", signal)).resolves.toBe(catalog);
+    await expect(getAgentHost().interruptSubagentChild("parent-1", "child-1")).resolves.toEqual({ accepted: true });
+    await expect(getAgentHost().messageSubagentChild("parent-1", "child-1", "hello", signal)).resolves.toEqual({ messageId: "message-1" });
+
+    expect(mocks.listSubagentChildrenWithContext).toHaveBeenCalledWith(context, "parent-1", "descendants", signal);
+    expect(mocks.interruptSubagentChildWithContext).toHaveBeenCalledWith(context, "parent-1", "child-1");
+    expect(mocks.messageSubagentChildWithContext).toHaveBeenCalledWith(context, "parent-1", "child-1", "hello", signal);
   });
 
   it("reads context-ring state through the host", async () => {

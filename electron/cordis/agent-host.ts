@@ -17,6 +17,7 @@ import type { SessionStatsSnapshot } from "./session-stats";
 import { buildSystemPrompt, getCachedConfig } from "./host-store";
 import type { OneShotOptions } from "./one-shot";
 import type { ContextRingResult } from "./run-cordis-loop";
+import type { SubagentCatalogView, SubagentScope } from "./subagent-control";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -74,6 +75,9 @@ export interface AgentHost {
   readPermissionsSnapshot(sessionId: string): Promise<PermissionsSelect>;
   loadSessionMessages(sessionId: string): Promise<LoadSessionMessagesResult>;
   readContextRing(sessionId: string): Promise<ContextRingResult>;
+  listSubagentChildren(parentSessionId: string, scope?: SubagentScope | AbortSignal, signal?: AbortSignal): Promise<SubagentCatalogView>;
+  interruptSubagentChild(parentSessionId: string, childId: string): Promise<{ accepted: true }>;
+  messageSubagentChild(parentSessionId: string, childId: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>;
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -184,6 +188,18 @@ function createLocalAgentHost(): AgentHost {
     async readContextRing(sessionId) {
       const { readContextRingWithContext } = await import("./run-cordis-loop");
       return readContextRingWithContext(await context(), sessionId);
+    },
+    async listSubagentChildren(parentSessionId, scope = "children", signal) {
+      const { listSubagentChildrenWithContext } = await import("./subagent-control");
+      return listSubagentChildrenWithContext(await context(), parentSessionId, scope, signal);
+    },
+    async interruptSubagentChild(parentSessionId, childId) {
+      const { interruptSubagentChildWithContext } = await import("./subagent-control");
+      return interruptSubagentChildWithContext(await context(), parentSessionId, childId);
+    },
+    async messageSubagentChild(parentSessionId, childId, text, signal) {
+      const { messageSubagentChildWithContext } = await import("./subagent-control");
+      return messageSubagentChildWithContext(await context(), parentSessionId, childId, text, signal);
     },
     async listCommands() {
       const ctx = await context();
