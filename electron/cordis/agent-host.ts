@@ -1,5 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
-import { getContext } from "./cordis-context";
+import { getContext, getSessionRoot } from "./cordis-context";
 import { readGoalSnapshot, type GoalWire } from "./goal-bridge";
 import {
   getMessageFeedback,
@@ -14,6 +14,7 @@ import {
   type LoadSessionMessagesResult,
 } from "./session-replay";
 import type { SessionStatsSnapshot } from "./session-stats";
+import { buildSystemPrompt, getCachedConfig } from "./host-store";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -40,6 +41,29 @@ export interface SetSessionModeInput extends AgentSessionModel {
   mode: "plan" | "execute";
 }
 
+export interface ExecuteCommandInput extends AgentSessionModel {
+  sessionId: string;
+  cwd: string;
+  line: string;
+}
+
+export interface CommandExecutionResult {
+  kind?: string;
+  text?: string;
+  mode?: "plan" | "execute";
+}
+
+export interface SystemPromptPreview {
+  text: string;
+  sections: Array<{ name: string; order: number; text: string; index: number }>;
+  contexts: Array<{ name: string; order: number; text: string }>;
+  skills: Array<{ name: string; description: string }>;
+  tools: Array<{ name: string; description?: string }>;
+  variables: Record<string, string | undefined>;
+  cairnSystemLive?: boolean;
+  error?: string;
+}
+
 export interface AgentHost {
   readGoalSnapshot(sessionId: string): Promise<GoalWire | null>;
   putMessageFeedback(input: PutMessageFeedbackInput): Promise<MessageFeedbackItemWire>;
@@ -47,17 +71,73 @@ export interface AgentHost {
   listSchedules(sessionId: string): Promise<ScheduleWire[]>;
   readPermissionsSnapshot(sessionId: string): Promise<PermissionsSelect>;
   loadSessionMessages(sessionId: string): Promise<LoadSessionMessagesResult>;
+  listCommands(): Promise<Array<{ name: string; description?: string }>>;
+  compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
+  executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
+  previewSystemPrompt(cwd: string): Promise<SystemPromptPreview>;
+  getGlobalTools(): Promise<Array<{ name: string; description?: string }>>;
   compactSession(input: CompactSessionInput): Promise<CompactSessionResult | null>;
   setSessionMode(input: SetSessionModeInput): Promise<"plan" | "execute">;
+  readSessionTitle(sessionId: string): Promise<string | null>;
+  renameSessionTitle(sessionId: string, title: string): Promise<string>;
   releaseSessionAgent(sessionId: string): Promise<void>;
+  listSessionChildIds(parentSessionId: string): Promise<string[]>;
+  clearChatSessionAgents(threadId: string, subagentIds?: string[]): Promise<void>;
 }
 
 interface CommandRuntimeLike {
   execute: (agent: unknown, line: string, images: unknown[], signal?: AbortSignal) => Promise<unknown>;
+  list?: () => Array<{ name: string; description?: string }>;
 }
 
 interface CompactionLike {
   compactNow: (agent: unknown, signal: AbortSignal) => Promise<{ replacedCount?: number; replacedSeqs?: unknown[]; summary?: string } | null>;
+}
+
+interface AgentCollection {
+  get?: (id: unknown) => unknown;
+  delete?: (id: unknown) => unknown;
+  remove?: (id: unknown) => unknown;
+  dispose?: (id: unknown) => unknown;
+  destroy?: (id: unknown) => unknown;
+  list?: () => unknown;
+  entries?: () => Iterable<[unknown, unknown]>;
+  [key: string]: unknown;
+}
+
+function agentCollection(ctx: Context): AgentCollection | undefined {
+  return (ctx as unknown as { agents?: AgentCollection }).agents;
+}
+
+function tryReleaseAgent(agents: AgentCollection | undefined, id: unknown): boolean {
+  if (!agents || typeof agents !== "object") return false;
+  for (const method of ["delete", "remove", "dispose", "destroy"] as const) {
+    try {
+      const fn = agents[method];
+      if (typeof fn === "function") { fn.call(agents, id); return true; }
+    } catch { }
+  }
+  try {
+    const agent = agents.get?.(id) as { dispose?: () => void } | undefined;
+    agent?.dispose?.();
+    return true;
+  } catch { }
+  return false;
+}
+
+function collectAgentIds(agents: AgentCollection): string[] {
+  const ids: string[] = [];
+  if (agents instanceof Map) {
+    for (const key of (agents as Map<unknown, unknown>).keys()) ids.push(String(key));
+    return ids;
+  }
+  if (Array.isArray(agents.keys)) return ids;
+  ids.push(...Object.keys(agents));
+  const listed = agents.list?.();
+  if (Array.isArray(listed)) ids.push(...listed.map(String));
+  const entries = agents.entries?.();
+  if (entries) for (const [key] of entries) ids.push(String(key));
+  return ids;
 }
 
 function createLocalAgentHost(): AgentHost {
@@ -97,6 +177,98 @@ function createLocalAgentHost(): AgentHost {
       } catch { }
       return loadReplaySessionMessages(persistence, liveSessions, sessionId, statsSnapshot ? { statsSnapshot } : undefined);
     },
+    async listCommands() {
+      const ctx = await context();
+      const commands = (ctx as unknown as { commands?: CommandRuntimeLike }).commands;
+      return commands?.list?.() ?? [];
+    },
+    async compactChatSession(threadId, model) {
+      const { compactChatSession } = await import("./cairn-commands");
+      return compactChatSession(context, threadId, model);
+    },
+    async executeCommand({ sessionId, cwd, baseUrl, model, apiKey, line }) {
+      const [{ openCordisAgent }, { getPlanModeActive }] = await Promise.all([
+        import("./run-cordis-coding"),
+        import("./plan-fold"),
+      ]);
+      const ctx = await context();
+      const handle = await openCordisAgent(ctx, {
+        sessionId,
+        cwd,
+        llmConfig: { baseUrl, model, apiKey, provider: "openai" },
+      });
+      try {
+        const commands = (ctx as unknown as { commands?: CommandRuntimeLike }).commands;
+        if (!commands) throw new Error("commands runtime unavailable");
+        const output = await commands.execute(handle.agent, line, [], new AbortController().signal) as { result?: { kind?: string; text?: string } } | undefined;
+        const result = output?.result ?? output as { kind?: string; text?: string } | undefined;
+        const commandName = line.trim().replace(/^\//, "").split(/\s+/, 1)[0];
+        let mode: "plan" | "execute" | undefined;
+        if (commandName === "plan" && result?.kind === "success") {
+          mode = getPlanModeActive(ctx, (handle.agent as { session?: unknown }).session) ? "plan" : "execute";
+        }
+        return { kind: result?.kind, text: result?.text, mode };
+      } finally {
+        try { await handle.dispose?.(); } catch { }
+      }
+    },
+    async previewSystemPrompt(cwd) {
+      const ctx = await context();
+      const sys = (ctx as unknown as {
+        systemPrompt?: {
+          assemble: (c: { scope?: unknown; signal?: AbortSignal }) => Promise<unknown>;
+          section: (s: { name: string; order: number; text: string }) => () => void;
+        };
+      }).systemPrompt;
+      if (!sys) return { text: "", sections: [], contexts: [], skills: [], tools: [], variables: {}, error: "systemPrompt service unavailable" };
+      let disposeSection: (() => void) | undefined;
+      let cairnSystemLive = false;
+      try {
+        disposeSection = sys.section({ name: "cairn:system", order: -100, text: buildSystemPrompt({ message: "", threadId: "preview", projectId: "", workspaceId: "" } as never) });
+      } catch {
+        cairnSystemLive = true;
+      }
+      try {
+        const assembly = (await sys.assemble({ signal: undefined })) as {
+          sections: Array<{ name: string; order: number; text: string | ((c: { scope?: unknown }) => string) }>;
+          contexts: Array<{ name: string; order: number; text: string | ((c: { scope?: unknown }) => string) }>;
+          variables: Record<string, string | undefined>;
+        };
+        const { renderPrompt } = await import("@deepseek-ai/dsh-system-prompt");
+        const textOf = (value: string | ((c: { scope?: unknown }) => string)) => typeof value === "function" ? value({}) : value;
+        const text = renderPrompt(assembly as unknown as Parameters<typeof renderPrompt>[0]);
+        const sections = assembly.sections.map((section, index) => ({ name: section.name, order: index, text: textOf(section.text), index }));
+        const contexts = assembly.contexts.map((contextEntry) => ({ name: contextEntry.name, order: contextEntry.order, text: textOf(contextEntry.text) }));
+        let skills: Array<{ name: string; description: string }> = [];
+        try {
+          const service = (ctx as unknown as { skills?: { list: (options: { cwd: string }) => Promise<Array<{ name: string; description: string }>> } }).skills;
+          if (service) skills = await service.list({ cwd });
+        } catch { }
+        const tools: Array<{ name: string; description?: string }> = [];
+        try {
+          const service = (ctx as unknown as { tools?: { view: (value?: unknown) => { visible: Map<string, unknown> } } }).tools;
+          for (const [name, definition] of service?.view?.()?.visible ?? []) {
+            tools.push({ name, description: (definition as { description?: string } | undefined)?.description });
+          }
+          tools.sort((a, b) => a.name.localeCompare(b.name));
+        } catch { }
+        return { text, sections, contexts, skills, tools, variables: assembly.variables ?? {}, cairnSystemLive };
+      } finally {
+        try { disposeSection?.(); } catch { }
+      }
+    },
+    async getGlobalTools() {
+      const ctx = await context();
+      const tools: Array<{ name: string; description?: string }> = [];
+      try {
+        const service = (ctx as unknown as { tools?: { view: (value?: unknown) => { visible: Map<string, unknown> } } }).tools;
+        for (const [name, definition] of service?.view?.()?.visible ?? []) {
+          tools.push({ name, description: (definition as { description?: string } | undefined)?.description });
+        }
+        tools.sort((a, b) => a.name.localeCompare(b.name));
+      } catch { }
+      return tools;
+    },
     async compactSession({ sessionId, cwd, baseUrl, model, apiKey, apiMode }) {
       const [{ openCordisAgent }, { ensureAgentAiAdapter }] = await Promise.all([
         import("./run-cordis-coding"),
@@ -122,10 +294,7 @@ function createLocalAgentHost(): AgentHost {
         if (!compaction?.compactNow) throw new Error("compaction service not mounted");
         const result = await compaction.compactNow(handle.agent, new AbortController().signal);
         if (!result) return null;
-        return {
-          messageCount: result.replacedCount ?? result.replacedSeqs?.length ?? 0,
-          summary: result.summary ?? "",
-        };
+        return { messageCount: result.replacedCount ?? result.replacedSeqs?.length ?? 0, summary: result.summary ?? "" };
       } finally {
         await handle.dispose?.();
       }
@@ -146,33 +315,89 @@ function createLocalAgentHost(): AgentHost {
         if (!commands) throw new Error("commands runtime unavailable");
         const result = await commands.execute(handle.agent, mode === "plan" ? "/plan" : "/plan off", [], new AbortController().signal);
         const commandResult = (result as { result?: { kind?: string; text?: string } } | undefined)?.result;
-        if (commandResult?.kind !== "success") {
-          throw new Error(commandResult?.text ?? "plan mode command was not accepted");
-        }
-        const session = (handle.agent as { session?: unknown }).session;
-        const committedMode = getPlanModeActive(ctx, session) ? "plan" : "execute";
-        if (committedMode !== mode) {
-          throw new Error(`plan mode command did not commit ${mode}`);
-        }
+        if (commandResult?.kind !== "success") throw new Error(commandResult?.text ?? "plan mode command was not accepted");
+        const committedMode = getPlanModeActive(ctx, (handle.agent as { session?: unknown }).session) ? "plan" : "execute";
+        if (committedMode !== mode) throw new Error(`plan mode command did not commit ${mode}`);
         return committedMode;
       } finally {
         try { await handle.dispose?.(); } catch { }
       }
     },
+    async readSessionTitle(sessionId) {
+      const ctx = await context();
+      const session = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(sessionId as never) as { snapshotEvents?: () => readonly unknown[]; events?: readonly unknown[] } | undefined;
+      const liveEvents = typeof session?.snapshotEvents === "function" ? session.snapshotEvents() : session?.events;
+      if (liveEvents && liveEvents.length > 0) {
+        const { foldSessionTitle } = await import("./plugins/session-title");
+        const snapshot = foldSessionTitle(liveEvents as never);
+        if (snapshot) return snapshot.title as string;
+      }
+      const registry = (ctx as unknown as { sessionProjections?: { stateOf: (value: unknown, key: string) => unknown } }).sessionProjections;
+      if (session && registry) {
+        const value = registry.stateOf(session as never, "title" as never) as string | null | undefined;
+        if (value) return value;
+      }
+      const persistence = (ctx as unknown as { sessionPersistence?: { inspect: (id: unknown) => Promise<{ events: readonly unknown[] }> } }).sessionPersistence;
+      if (persistence) {
+        try {
+          const inspection = await persistence.inspect(sessionId);
+          const { foldSessionTitle } = await import("./plugins/session-title");
+          const snapshot = foldSessionTitle(inspection.events as never);
+          if (snapshot) return snapshot.title as string;
+        } catch { }
+      }
+      return null;
+    },
+    async renameSessionTitle(sessionId, title) {
+      const ctx = await context();
+      const sessions = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions;
+      let live = sessions?.get?.(sessionId as never) as { id: unknown } | undefined;
+      if (!live) {
+        const { openCordisAgent } = await import("./run-cordis-coding");
+        const cwd = getSessionRoot().replace(/[/\\]sessions[/\\]?$/, "") || process.cwd();
+        const config = getCachedConfig().agentConfig ?? {};
+        try {
+          const handle = await openCordisAgent(ctx, { sessionId, cwd, llmConfig: { baseUrl: config.baseUrl ?? "", model: config.model ?? "gpt-5.6-luna", apiKey: config.apiKey ?? "", provider: "openai" } });
+          live = (handle.agent as { session?: unknown }).session as { id: unknown } | undefined ?? sessions?.get?.(sessionId as never) as { id: unknown } | undefined;
+          try { await handle.dispose?.(); } catch { }
+        } catch { }
+      }
+      if (!live) throw new Error(`session "${sessionId}" is not live`);
+      const service = (ctx as unknown as { sessionTitle?: { rename: (value: unknown, nextTitle: string) => { title: string } } }).sessionTitle;
+      if (!service?.rename) throw new Error("sessionTitle service not mounted");
+      return service.rename(live as never, title).title;
+    },
     async releaseSessionAgent(sessionId) {
       try {
-        const ctx = await context();
-        const maybeAgents = (ctx as unknown as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
-        const sid = { toString: () => sessionId } as unknown as string;
-        for (const method of ["delete", "remove", "dispose", "destroy"] as const) {
-          try {
-            const fn = (maybeAgents as Record<string, unknown> | undefined)?.[method] as ((id: unknown) => unknown) | undefined;
-            if (typeof fn === "function") { fn.call(maybeAgents, sid); break; }
-          } catch { }
+        const agents = agentCollection(await context());
+        tryReleaseAgent(agents, { toString: () => sessionId } as unknown as string);
+      } catch { }
+    },
+    async listSessionChildIds(parentSessionId) {
+      try {
+        const persistence = (await context() as unknown as { sessionPersistence?: { list?: () => Promise<Array<{ id: unknown; origin?: string; parentSession?: unknown; meta?: { origin?: string; parentSession?: unknown } }>> } }).sessionPersistence;
+        const list = persistence?.list ? await persistence.list() : [];
+        return list.filter((entry) => {
+          const origin = entry.origin ?? entry.meta?.origin;
+          const parent = entry.parentSession ?? entry.meta?.parentSession;
+          return origin === "subagent" && String(parent) === String(parentSessionId);
+        }).map((entry) => String(entry.id));
+      } catch { }
+      return [];
+    },
+    async clearChatSessionAgents(threadId, subagentIds = []) {
+      try {
+        const agents = agentCollection(await context());
+        if (!agents || typeof agents !== "object") return;
+        const stableId = `chat-${threadId}`;
+        const prefix = `chat-${threadId}-`;
+        for (const id of [stableId, { toString: () => stableId }, threadId, { toString: () => threadId }, ...subagentIds.flatMap((id) => [id, { toString: () => id }])]) {
+          tryReleaseAgent(agents, id);
         }
-        const agent = maybeAgents?.get?.(sid) as { dispose?: () => void } | undefined;
-        agent?.dispose?.();
-        } catch { }
+        for (const id of collectAgentIds(agents)) {
+          if (id === threadId || id === stableId || id.startsWith(prefix) || id.startsWith(threadId) || id.startsWith(stableId) || subagentIds.includes(id)) tryReleaseAgent(agents, id);
+        }
+      } catch { }
     },
   };
 }

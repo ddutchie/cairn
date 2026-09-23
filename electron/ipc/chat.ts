@@ -21,6 +21,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
+import { getAgentHost } from "../cordis/agent-host";
 
 // One controller and concurrency slot per canonical session, regardless of
 // which renderer issued the prompt.
@@ -124,9 +125,7 @@ export function registerChatHandler(_ctx: DbContext): void {
 
       // Session-as-truth compaction via the SHARED flow (also registered as the
       // dsh `compact` command — one implementation, two entry points).
-      const { compactChatSession } = await import("../cordis/cairn-commands");
-      const { getContext } = await import("../cordis/run-cordis-loop");
-      const res = await compactChatSession(getContext, threadId, { baseUrl, model, apiKey, apiMode: req.config.apiMode });
+       const res = await getAgentHost().compactChatSession(threadId, { baseUrl, model, apiKey, apiMode: req.config.apiMode });
       if (!res.ok) throw new Error(res.error ?? "compact failed");
       console.log("[chat:compactThread] compactNow result", { threadId, compacted: res.compacted });
       return { compacted: res.compacted };

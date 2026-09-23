@@ -153,15 +153,11 @@ describe("AgentHost", () => {
   });
 
   it("releases a resident session agent best-effort", async () => {
-    const dispose = vi.fn();
-    const contextWithAgents = { ...context, agents: { delete: mocks.deleteAgent, get: mocks.getAgent } };
+    const contextWithAgents = { ...context, agents: { delete: mocks.deleteAgent } };
     mocks.getContext.mockResolvedValue(contextWithAgents);
-    mocks.getAgent.mockReturnValue({ dispose });
 
     await getAgentHost().releaseSessionAgent("session-1");
 
     expect(mocks.deleteAgent).toHaveBeenCalledWith(expect.objectContaining({ toString: expect.any(Function) }));
-    expect(mocks.getAgent).toHaveBeenCalledWith(expect.objectContaining({ toString: expect.any(Function) }));
-    expect(dispose).toHaveBeenCalledOnce();
   });
 });

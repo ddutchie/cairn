@@ -14,7 +14,8 @@ import * as q from "../db/queries";
 import { assertSafeId, resolveWithinRoot, isSafeId } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { dropChatAgentForThread, getSessionRoot, getContext } from "../cordis/run-cordis-loop";
+import { dropChatAgentForThread, getSessionRoot } from "../cordis/run-cordis-loop";
+import { getAgentHost } from "../cordis/agent-host";
 
 export function registerChatDbHandlers(ctx: DbContext): void {
   // Legacy SQLite transcript tables and pre-Cordis session indexes are reset by
@@ -54,19 +55,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     const stableId = `chat-${threadId}`;
     const prefix = `chat-${threadId}-`;
     // Collect subagent child ids for this thread so the prefix scan below doesn't miss them
-    let subagentIds: string[] = [];
-    try {
-      const ctxInner = await getContext();
-      const pers = (ctxInner as unknown as { sessionPersistence?: { list: () => Promise<Array<{ id: unknown; origin?: string; parentSession?: unknown; meta?: { origin?: string; parentSession?: unknown } }>> } }).sessionPersistence;
-      if (pers?.list) {
-        const list = await pers.list().catch(() => [] as Array<{ id: unknown }>);
-        subagentIds = list.filter((h) => {
-          const origin = (h as { origin?: string }).origin ?? (h as { meta?: { origin?: string } }).meta?.origin;
-          const parent = (h as { parentSession?: unknown }).parentSession ?? (h as { meta?: { parentSession?: unknown } }).meta?.parentSession;
-          return origin === "subagent" && String(parent) === String(stableId);
-        }).map((h) => String((h as { id: unknown }).id));
-      }
-    } catch { /* subagent collect is best-effort */ }
+    const subagentIds = await getAgentHost().listSessionChildIds(stableId);
       for (const root of roots) {
         // Nested layout: <root>/<encoded-cwd>/<sessionId>/session.jsonl.zstd
         // Handles both stable chat-<threadId> and legacy chat-<threadId>-<ts>-<rand>
@@ -137,52 +126,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
           } catch { /* ignore */ }
         }
       }
-      // In-memory: drop any dsh agent whose id matches the thread (stable or legacy prefix).
-      getContext().then((c: unknown) => {
-        const maybeAgents: unknown = (c as { agents?: unknown })?.agents;
-        if (!maybeAgents || typeof maybeAgents !== "object") return;
-        const tryDelete = (id: unknown) => {
-          for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
-            try {
-              const fn = (maybeAgents as Record<string, unknown>)[k] as ((id: unknown) => unknown) | undefined;
-              if (typeof fn === "function") { fn.call(maybeAgents, id); return true; }
-            } catch { /* ignore */ }
-          }
-          try {
-            const ag = (maybeAgents as { get?: (id: unknown) => { dispose?: () => void } })?.get?.(id) as { dispose?: () => void } | undefined;
-            ag?.dispose?.();
-            return true;
-          } catch { /* ignore */ }
-          return false;
-        };
-        // Stable + legacy + exact threadId + subagent children
-        tryDelete(stableId);
-        tryDelete({ toString: () => stableId } as unknown as string);
-        tryDelete(threadId);
-        tryDelete({ toString: () => threadId } as unknown as string);
-        for (const sid of subagentIds) {
-          tryDelete(sid);
-          tryDelete({ toString: () => sid } as unknown as string);
-        }
-        // Enumerate map-like agents (Map, plain object, or dsh's internal store).
-        const ids: string[] = [];
-        try {
-          if (maybeAgents instanceof Map) {
-            for (const k of (maybeAgents as Map<unknown, unknown>).keys()) ids.push(String(k));
-          } else if (Array.isArray((maybeAgents as { keys?: unknown })?.keys)) {
-            // not expected
-          } else {
-            // Try to list via Object.keys if it's a plain record
-            ids.push(...Object.keys(maybeAgents as Record<string, unknown>));
-            // Also try .list/.entries if exposed
-            const maybeList = (maybeAgents as { list?: () => string[]; entries?: () => Iterable<[unknown, unknown]> })?.list?.() ?? [];
-            if (Array.isArray(maybeList)) ids.push(...maybeList.map(String));
-          }
-        } catch { /* ignore */ }
-        for (const id of ids) {
-          if (id === threadId || id === stableId || id.startsWith(prefix) || id.startsWith(threadId) || id.startsWith(stableId) || subagentIds.includes(id)) tryDelete(id);
-        }
-      }).catch(() => {});
+      await getAgentHost().clearChatSessionAgents(threadId, subagentIds);
     } catch { /* best-effort */ }
   }));
 
@@ -230,27 +174,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
           } catch { /* ignore */ }
         }
       }
-      getContext().then((c: unknown) => {
-        const maybeAgents: unknown = (c as { agents?: unknown })?.agents;
-        if (!maybeAgents || typeof maybeAgents !== "object") return;
-        const tryDelete = (id: unknown) => {
-          for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
-            try { const fn = (maybeAgents as Record<string, unknown>)[k] as ((id: unknown) => unknown) | undefined; if (typeof fn === "function") { fn.call(maybeAgents, id); return true; } } catch { /* ignore */ }
-          }
-          try { const ag = (maybeAgents as { get?: (id: unknown) => { dispose?: () => void } })?.get?.(id) as { dispose?: () => void } | undefined; ag?.dispose?.(); return true; } catch { /* ignore */ }
-          return false;
-        };
-        const allIds: string[] = [];
-        try {
-          if (maybeAgents instanceof Map) { for (const k of (maybeAgents as Map<unknown, unknown>).keys()) allIds.push(String(k)); }
-          else { allIds.push(...Object.keys(maybeAgents as Record<string, unknown>)); const maybeList = (maybeAgents as { list?: () => string[] })?.list?.() ?? []; if (Array.isArray(maybeList)) allIds.push(...maybeList.map(String)); }
-        } catch { /* ignore */ }
-        for (const tid of ids) {
-          const pref = `chat-${tid}-`;
-          tryDelete(tid);
-          for (const aid of allIds) if (aid === tid || aid.startsWith(pref) || aid.startsWith(tid)) tryDelete(aid);
-        }
-      }).catch(() => {});
+      for (const threadId of ids) void getAgentHost().clearChatSessionAgents(threadId);
     } catch { /* ignore */ }
     return { deletedThreads: ids.length, deletedMessages: 0 };
   }));
