@@ -11,7 +11,8 @@
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { SessionId } from "@deepseek-ai/dsh-session";
-import { loadSessionMessages, type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
+import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
+import { getAgentHost } from "../cordis/agent-host";
 import type { ChatMessage } from "../../src/types";
 
 function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessage[] {
@@ -36,31 +37,8 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
   registerIpcHandle("db:chat:sessionMessages", (_e, { threadId }: { threadId: string }) => handle(async () => {
     if (!threadId) return { messages: [] as ChatMessage[] };
     try {
-      const { getContext, prepareReplayContext } = await import("../cordis/run-cordis-loop");
-      const ctx = await getContext();
-      const pers = (ctx as unknown as { sessionPersistence?: Parameters<typeof loadSessionMessages>[0] }).sessionPersistence;
-      if (!pers) return { messages: [] as ChatMessage[] };
-
-      // Plugin toolviews register through inject-gated backends that wait for
-      // the fs chain (only mounted by chat turns) — mount + settle so the
-      // tools registry can serve presentationMeta for enrichment below.
       const stableId = String(SessionId(`chat-${threadId}`));
-      await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, stableId);
-      const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
-      // Prefer the mounted `sessionStats` unit's totals for the composer
-      // stats line when the session is resident (stateOf pattern, mirroring
-      // the session:title handler below); the durable-log fold stays the
-      // fallback for cold sessions or an absent registry.
-      let statsSnapshot: import("../cordis/session-stats").SessionStatsSnapshot | undefined;
-      try {
-        const { readSessionStatsSnapshot } = await import("../cordis/session-stats");
-        const live = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(stableId as never);
-        statsSnapshot = readSessionStatsSnapshot(
-          (ctx as unknown as { sessionProjections?: import("../cordis/session-stats").SessionStatsRegistryLike }).sessionProjections,
-          live,
-        );
-      } catch { /* fold fallback */ }
-      const { messages, usage, contextRing, todos, stats, title } = await loadSessionMessages(pers, liveSessions, stableId, statsSnapshot ? { statsSnapshot } : undefined);
+      const { messages, usage, contextRing, todos, stats, title } = await getAgentHost().loadSessionMessages(stableId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
       const chatMessages = toChatMessages(threadId, enrichToolCallsWithMeta(messages));
 

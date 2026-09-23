@@ -8,6 +8,12 @@ import {
   type PutMessageFeedbackInput,
 } from "./message-feedback";
 import { listSchedules, type ScheduleWire } from "./schedule-read";
+import { readPermissionsSnapshot, type PermissionsSelect } from "./permissions-bridge";
+import {
+  loadSessionMessages as loadReplaySessionMessages,
+  type LoadSessionMessagesResult,
+} from "./session-replay";
+import type { SessionStatsSnapshot } from "./session-stats";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -39,6 +45,8 @@ export interface AgentHost {
   putMessageFeedback(input: PutMessageFeedbackInput): Promise<MessageFeedbackItemWire>;
   getMessageFeedback(sessionId: string, messageId: string): Promise<MessageFeedbackItemWire | null>;
   listSchedules(sessionId: string): Promise<ScheduleWire[]>;
+  readPermissionsSnapshot(sessionId: string): Promise<PermissionsSelect>;
+  loadSessionMessages(sessionId: string): Promise<LoadSessionMessagesResult>;
   compactSession(input: CompactSessionInput): Promise<CompactSessionResult | null>;
   setSessionMode(input: SetSessionModeInput): Promise<"plan" | "execute">;
   releaseSessionAgent(sessionId: string): Promise<void>;
@@ -67,6 +75,27 @@ function createLocalAgentHost(): AgentHost {
     },
     async listSchedules(sessionId) {
       return listSchedules(await context(), sessionId);
+    },
+    async readPermissionsSnapshot(sessionId) {
+      return readPermissionsSnapshot(await context(), sessionId);
+    },
+    async loadSessionMessages(sessionId) {
+      const ctx = await context();
+      const persistence = (ctx as unknown as { sessionPersistence?: Parameters<typeof loadReplaySessionMessages>[0] }).sessionPersistence;
+      if (!persistence) return { messages: [], subagents: [] };
+      const { prepareReplayContext } = await import("./run-cordis-loop");
+      await prepareReplayContext(persistence as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
+      const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
+      let statsSnapshot: SessionStatsSnapshot | undefined;
+      try {
+        const { readSessionStatsSnapshot } = await import("./session-stats");
+        const live = (ctx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(sessionId as never);
+        statsSnapshot = readSessionStatsSnapshot(
+          (ctx as unknown as { sessionProjections?: import("./session-stats").SessionStatsRegistryLike }).sessionProjections,
+          live,
+        );
+      } catch { }
+      return loadReplaySessionMessages(persistence, liveSessions, sessionId, statsSnapshot ? { statsSnapshot } : undefined);
     },
     async compactSession({ sessionId, cwd, baseUrl, model, apiKey, apiMode }) {
       const [{ openCordisAgent }, { ensureAgentAiAdapter }] = await Promise.all([

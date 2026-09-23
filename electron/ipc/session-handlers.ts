@@ -13,7 +13,8 @@
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
-import { loadSessionMessages, type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
+import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
+import { getAgentHost } from "../cordis/agent-host";
 
 /** Map shared ReplayMessage[] to the coding-agent message shape the renderer expects. */
 function toAgentMessages(messages: ReplayMessage[]) {
@@ -62,11 +63,8 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // per-turn `shell` (the switcher hides until then). Writes go through the
   // existing cordis:executeCommand path (`/permission <preset>`), not here.
   registerIpcHandle("session:permissions", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
-    const { getContext } = await import("../cordis/run-cordis-loop");
-    const { readPermissionsSnapshot } = await import("../cordis/permissions-bridge");
-    const cordisCtx = await getContext();
     try {
-      return { ok: true as const, value: await readPermissionsSnapshot(cordisCtx as never, sessionId) };
+      return { ok: true as const, value: await getAgentHost().readPermissionsSnapshot(sessionId) };
     } catch (err) {
       const code = (err as { code?: string })?.code ?? "internal";
       return { ok: false as const, code, message: err instanceof Error ? err.message : "permissions snapshot failed" };
@@ -89,25 +87,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
   registerIpcHandle("db:session:messages", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
     if (!sessionId) return { messages: [] as ReturnType<typeof toAgentMessages> };
     try {
-      const { getContext, prepareReplayContext } = await import("../cordis/run-cordis-loop");
-      const cordisCtx = await getContext();
-      const pers = (cordisCtx as unknown as { sessionPersistence?: Parameters<typeof loadSessionMessages>[0] }).sessionPersistence;
-      if (!pers) return { messages: [] as ReturnType<typeof toAgentMessages> };
-      // Mount the fs chain + settle the loader so plugin toolviews are
-      // registered before presentationMeta recomputation (see chat-session).
-      await prepareReplayContext(pers as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
-      const liveSessions = (cordisCtx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((cordisCtx as unknown as { sessions: unknown }).sessions);
-      // Mounted-unit `sessionStats` totals first (see chat-session.ts), fold fallback.
-      let statsSnapshot: import("../cordis/session-stats").SessionStatsSnapshot | undefined;
-      try {
-        const { readSessionStatsSnapshot } = await import("../cordis/session-stats");
-        const live = (cordisCtx as unknown as { sessions?: { get: (id: unknown) => unknown } }).sessions?.get?.(sessionId as never);
-        statsSnapshot = readSessionStatsSnapshot(
-          (cordisCtx as unknown as { sessionProjections?: import("../cordis/session-stats").SessionStatsRegistryLike }).sessionProjections,
-          live,
-        );
-      } catch { /* fold fallback */ }
-      const { messages, usage, contextRing, todos, stats } = await loadSessionMessages(pers, liveSessions, sessionId, statsSnapshot ? { statsSnapshot } : undefined);
+      const { messages, usage, contextRing, todos, stats } = await getAgentHost().loadSessionMessages(sessionId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
       const agentMessages = toAgentMessages(enrichToolCallsWithMeta(messages));
       return { messages: agentMessages, usage, contextRing, todos, stats };
