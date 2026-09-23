@@ -1,6 +1,6 @@
 # Running dsh inside Electron — runtime-lookup fixes and the host-process plan
 
-> **Status (2026-09-23):** Stage 1 fixes landed on `fix/windows-shell-subagents-diff` (3.0.9). Guard test in place. Open items and Phase 0 below.
+> **Status (2026-09-23):** Stage 1 fixes landed in 3.0.9. Phase 0 is in progress on `feat/agent-host-facade`: all direct `getContext()` calls from Electron IPC and chat/runtime paths now go through `AgentHost`; the remaining work is shared-state/lifecycle façades, non-IPC engine entry points, the boundary guard, and installed/live verification. Stage 2 host process is not started.
 
 ## Why this keeps happening
 
@@ -50,20 +50,22 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 
 **Why it's tractable:** the engine (`electron/cordis/`, 46 files, ~11k lines) imports `electron` in only 3 files (`shell.*`, `app.getPath`, `getWin` in `chat-executor.ts`). Renderer pushes are already JSON envelopes (`session:event` / `session:projection`). Model PTYs go through the injectable `PtyAdapter` (`terminal-backend.ts`), so an RPC adapter keeps main as the single PTY owner.
 
-**What makes it work:** ~20 `getContext()` call sites in 6 files hand the live Cordis context to IPC handlers (`session-runtime-handlers.ts` ~1,400 lines). Module-level state is read synchronously from main: approval grants, pending-question broker, plan mode, secret grants, chat agent cache. Other entry points: automations (`heartbeat-runner.ts`), one-shot AI (`ai-handlers.ts`), UI plugin handlers + install, `electron/mcp/tools/metadata.ts`. Plus lifecycle (crash restart, quit teardown, dev watch) and packaging dsh unbundled outside ASAR (bigger app; removes all Stage 1 patches).
+**What makes it work:** the direct `getContext()` reach-ins from IPC, chat, runtime, session-read, and chat-cleanup paths are now behind `AgentHost`. Remaining coupling is shared state read synchronously from main: approval grants, pending-question broker, plan mode, secret grants, chat agent cache, plus turn start/abort and other engine entry points such as automations (`heartbeat-runner.ts`), one-shot AI (`ai-handlers.ts`), UI plugin handlers + install, and `electron/mcp/tools/metadata.ts` (the latter is the workspace/dashboard `window.cairn.getContext()` API, not Cordis context). Plus lifecycle (crash restart, quit teardown, dev watch) and packaging dsh unbundled outside ASAR (bigger app; removes all Stage 1 patches).
 
 | Phase | Work | Estimate |
 |---|---|---|
-| 0. Facade (one process) | Route `getContext()` callers and shared-state reads through one async `AgentHost` interface | 2–3 days |
+| 0. Facade (one process) | Route `getContext()` callers and shared-state reads through one async `AgentHost` interface; direct IPC migration is complete, lifecycle/shared-state work remains | 1–2 days remaining |
 | 1. Host process | Launch/bootstrap (DB, session root, config), request/response + event transport, event forwarding, main-only requests | 3–5 days |
 | 2. Remaining surfaces | RPC `PtyAdapter`, approvals/questions, subagent control, plugins, automations, one-shot, MCP metadata | 3–4 days |
 | 3. Packaging + hardening | Ship dsh unbundled, crash restart, quit teardown, dev watch, live tests, startup timing | 3–4 days |
 
-≈ 2–3 weeks for one engineer. Phase 0 is worth doing on its own: it replaces the `getContext()` reach-ins with a narrow, testable interface. Decide on Phases 1–3 around the next dsh minor bump, weighing it against how often the guard fires.
+≈ 2–3 weeks for one engineer, with Phase 0 partially complete. The direct IPC context migration is done; finish the lifecycle/shared-state façade and guard before deciding on Phases 1–3 around the next dsh minor bump, weighing it against how often the runtime-lookup guard fires.
 
 ### Phase 0 checklist
 
-- [ ] Define `AgentHost` (async) in `electron/cordis/agent-host.ts`: turn start/abort, question answer, approval decision, subagent control, session stats/replay/export, plugin install, one-shot.
-- [ ] Move `getContext()` callers in `electron/ipc/*` and `electron/mcp/tools/metadata.ts` onto it.
-- [ ] Wrap module-level state (approval grants, question broker, plan mode, secret grants) behind it; callers await.
-- [ ] Lint rule / guard: nothing outside `electron/cordis/` imports `run-cordis-loop`'s `getContext`.
+- [x] Define the local async `AgentHost` façade in `electron/cordis/agent-host.ts` and move the direct IPC/runtime/chat `getContext()` callers onto it.
+- [x] Route session reads, permissions, goals, schedules, feedback, command execution, prompt previews, tool inventory, chat compaction, titles, and resident-agent cleanup through `AgentHost`.
+- [ ] Extend `AgentHost` with turn start/abort, approval decisions, question answers, subagent control, plan/secret state, session stats/replay/export, plugin install, and one-shot AI.
+- [ ] Route remaining engine entry points and lifecycle work through the façade: automations, one-shot AI, UI plugin handlers/install, and shared approval/question/plan/secret state.
+- [ ] Add a lint rule or guard test ensuring nothing outside `electron/cordis/` imports `run-cordis-loop`'s `getContext`; the current IPC scan is clean.
+- [ ] Verify installed macOS/Linux/Windows builds and run the live agent sweep.
