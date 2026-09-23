@@ -18,6 +18,10 @@ import { buildSystemPrompt, getCachedConfig } from "./host-store";
 import type { OneShotOptions } from "./one-shot";
 import type { ContextRingResult } from "./run-cordis-loop";
 import type { SubagentCatalogView, SubagentScope } from "./subagent-control";
+import {
+  clearPendingQuestions,
+  resolvePendingQuestionAnswer,
+} from "./pending-question-broker";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -78,6 +82,8 @@ export interface AgentHost {
   listSubagentChildren(parentSessionId: string, scope?: SubagentScope | AbortSignal, signal?: AbortSignal): Promise<SubagentCatalogView>;
   interruptSubagentChild(parentSessionId: string, childId: string): Promise<{ accepted: true }>;
   messageSubagentChild(parentSessionId: string, childId: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>;
+  respondToQuestion(sessionId: string, callId: string, answers: string): boolean;
+  clearSessionQuestions(sessionId: string): void;
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -200,6 +206,12 @@ function createLocalAgentHost(): AgentHost {
     async messageSubagentChild(parentSessionId, childId, text, signal) {
       const { messageSubagentChildWithContext } = await import("./subagent-control");
       return messageSubagentChildWithContext(await context(), parentSessionId, childId, text, signal);
+    },
+    respondToQuestion(sessionId, callId, answers) {
+      return resolvePendingQuestionAnswer(sessionId, callId, answers);
+    },
+    clearSessionQuestions(sessionId) {
+      clearPendingQuestions(sessionId);
     },
     async listCommands() {
       const ctx = await context();

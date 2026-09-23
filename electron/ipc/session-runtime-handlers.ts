@@ -37,7 +37,7 @@ import { getSessionRoot, withToolCallView, withToolResultView } from "../cordis/
 import { getAgentHost } from "../cordis/agent-host";
 import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
+import { registerPendingQuestion, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { runChatPrompt, abortChatSession, getRunningChatIds, isChatThreadRunning } from "./chat";
@@ -100,7 +100,7 @@ function sweepSessionPendings(sessionId: string): void {
   clearSessionGrants(sessionId);
   clearSecretGrants(sessionId);
   pendingAsks.clearSession(sessionId);
-  clearPendingQuestions(sessionId);
+  getAgentHost().clearSessionQuestions(sessionId);
   clearAskNoncesForSession(sessionId);
   forgetSessionApprovalArgs(sessionId);
   setConfirmTransport(sessionId, undefined);
@@ -1109,7 +1109,7 @@ export function registerSessionRuntimeHandlers(
       console.warn(`[session] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
     }
-    if (!resolvePendingQuestionAnswer(sessionId, callId, answers)) {
+    if (!getAgentHost().respondToQuestion(sessionId, callId, answers)) {
       // The tool is no longer waiting (timed out, aborted, or already
       // settled) — the answer has nowhere to go. Warn loudly: a silent drop
       // here strands the user with a submitted form and a hung turn.

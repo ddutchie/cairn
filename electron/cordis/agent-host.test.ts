@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   listSubagentChildrenWithContext: vi.fn(),
   interruptSubagentChildWithContext: vi.fn(),
   messageSubagentChildWithContext: vi.fn(),
+  resolvePendingQuestionAnswer: vi.fn(),
+  clearPendingQuestions: vi.fn(),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -44,6 +46,10 @@ vi.mock("./subagent-control", () => ({
   listSubagentChildrenWithContext: mocks.listSubagentChildrenWithContext,
   interruptSubagentChildWithContext: mocks.interruptSubagentChildWithContext,
   messageSubagentChildWithContext: mocks.messageSubagentChildWithContext,
+}));
+vi.mock("./pending-question-broker", () => ({
+  resolvePendingQuestionAnswer: mocks.resolvePendingQuestionAnswer,
+  clearPendingQuestions: mocks.clearPendingQuestions,
 }));
 
 import { getAgentHost } from "./agent-host";
@@ -186,6 +192,16 @@ describe("AgentHost", () => {
     await expect(getAgentHost().readContextRing("session-1")).resolves.toBe(result);
 
     expect(mocks.readContextRingWithContext).toHaveBeenCalledWith(context, "session-1");
+  });
+
+  it("routes pending question state through the host", () => {
+    mocks.resolvePendingQuestionAnswer.mockReturnValue(true);
+
+    expect(getAgentHost().respondToQuestion("session-1", "call-1", "answer")).toBe(true);
+    getAgentHost().clearSessionQuestions("session-1");
+
+    expect(mocks.resolvePendingQuestionAnswer).toHaveBeenCalledWith("session-1", "call-1", "answer");
+    expect(mocks.clearPendingQuestions).toHaveBeenCalledWith("session-1");
   });
 
   it("runs one-shot AI with the host context", async () => {
