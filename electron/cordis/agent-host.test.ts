@@ -6,6 +6,14 @@ const mocks = vi.hoisted(() => ({
   putMessageFeedback: vi.fn(),
   getMessageFeedback: vi.fn(),
   listSchedules: vi.fn(),
+  openCordisAgent: vi.fn(),
+  ensureAgentAiAdapter: vi.fn(),
+  getPlanModeActive: vi.fn(),
+  compactNow: vi.fn(),
+  whenIdle: vi.fn(),
+  dispose: vi.fn(),
+  deleteAgent: vi.fn(),
+  getAgent: vi.fn(),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -15,10 +23,13 @@ vi.mock("./message-feedback", () => ({
   getMessageFeedback: mocks.getMessageFeedback,
 }));
 vi.mock("./schedule-read", () => ({ listSchedules: mocks.listSchedules }));
+vi.mock("./run-cordis-coding", () => ({ openCordisAgent: mocks.openCordisAgent }));
+vi.mock("./session-runtime", () => ({ ensureAgentAiAdapter: mocks.ensureAgentAiAdapter }));
+vi.mock("./plan-fold", () => ({ getPlanModeActive: mocks.getPlanModeActive }));
 
 import { getAgentHost } from "./agent-host";
 
-const context = { marker: "context" };
+const context = { marker: "context", compaction: undefined as unknown };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -49,5 +60,73 @@ describe("AgentHost", () => {
     expect(mocks.getMessageFeedback).toHaveBeenCalledWith(context, "session-1", "message-1");
     expect(mocks.listSchedules).toHaveBeenCalledWith(context, "session-1");
     expect(mocks.getContext).toHaveBeenCalledTimes(3);
+  });
+
+  it("compacts sessions through the host and disposes the temporary agent", async () => {
+    const agent = { whenIdle: mocks.whenIdle, session: {} };
+    mocks.ensureAgentAiAdapter.mockResolvedValue(undefined);
+    mocks.openCordisAgent.mockResolvedValue({ agent, dispose: mocks.dispose });
+    mocks.whenIdle.mockResolvedValue(undefined);
+    mocks.compactNow.mockResolvedValue({ replacedSeqs: [1, 2], summary: "summary" });
+    context.compaction = { compactNow: mocks.compactNow };
+
+    const result = await getAgentHost().compactSession({
+      sessionId: "session-1",
+      cwd: "/workspace",
+      baseUrl: "https://api.openai.com",
+      model: "model-1",
+      apiKey: "key-1",
+      apiMode: "responses",
+    });
+
+    expect(result).toEqual({ messageCount: 2, summary: "summary" });
+    expect(mocks.ensureAgentAiAdapter).toHaveBeenCalledWith(context, {
+      baseUrl: "https://api.openai.com",
+      model: "model-1",
+      apiKey: "key-1",
+      api: "openai-responses",
+    });
+    expect(mocks.openCordisAgent).toHaveBeenCalledWith(context, expect.objectContaining({
+      sessionId: "session-1",
+      cwd: "/workspace",
+      llmConfig: expect.objectContaining({ apiMode: "responses" }),
+    }));
+    expect(mocks.whenIdle).toHaveBeenCalledOnce();
+    expect(mocks.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("executes plan commands through the host", async () => {
+    const execute = vi.fn().mockResolvedValue({ result: { kind: "success" } });
+    const agent = { session: {} };
+    const contextWithCommands = { ...context, commands: { execute } };
+    mocks.getContext.mockResolvedValue(contextWithCommands);
+    mocks.openCordisAgent.mockResolvedValue({ agent, dispose: mocks.dispose });
+    mocks.getPlanModeActive.mockReturnValue(true);
+
+    await expect(getAgentHost().setSessionMode({
+      sessionId: "session-1",
+      cwd: "/workspace",
+      baseUrl: "https://api.openai.com",
+      model: "model-1",
+      apiKey: "key-1",
+      mode: "plan",
+    })).resolves.toBe("plan");
+
+    expect(execute).toHaveBeenCalledWith(agent, "/plan", [], expect.any(AbortSignal));
+    expect(mocks.getPlanModeActive).toHaveBeenCalledWith(contextWithCommands, agent.session);
+    expect(mocks.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("releases a resident session agent best-effort", async () => {
+    const dispose = vi.fn();
+    const contextWithAgents = { ...context, agents: { delete: mocks.deleteAgent, get: mocks.getAgent } };
+    mocks.getContext.mockResolvedValue(contextWithAgents);
+    mocks.getAgent.mockReturnValue({ dispose });
+
+    await getAgentHost().releaseSessionAgent("session-1");
+
+    expect(mocks.deleteAgent).toHaveBeenCalledWith(expect.objectContaining({ toString: expect.any(Function) }));
+    expect(mocks.getAgent).toHaveBeenCalledWith(expect.objectContaining({ toString: expect.any(Function) }));
+    expect(dispose).toHaveBeenCalledOnce();
   });
 });

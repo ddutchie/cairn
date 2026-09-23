@@ -33,10 +33,9 @@ import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordi
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { getSessionRoot, getContext, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
+import { getSessionRoot, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
 import { getAgentHost } from "../cordis/agent-host";
 import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
-import { getPlanModeActive } from "../cordis/plan-fold";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { registerPendingQuestion, resolvePendingQuestionAnswer, clearPendingQuestions, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
@@ -947,46 +946,18 @@ export function registerSessionRuntimeHandlers(
     };
     send("session:compact", { sessionId, status: "start" });
     try {
-      const { getContext } = await import("../cordis/run-cordis-loop");
-      const { openCordisAgent } = await import("../cordis/run-cordis-coding");
-      const ctxC = await getContext();
-      // Pin the summariser protocol to the saved provider's apiMode (never
-      // auto-probe): mounting a different `api` than the session was written
-      // under corrupts replay, and a probe can never yield anthropic-messages.
-      const compactApi = llmConfig.apiMode === "responses" ? "openai-responses"
-        : llmConfig.apiMode === "anthropic-messages" ? "anthropic-messages"
-        : "openai-completions";
-      await (await import("../cordis/run-cordis-loop")).ensureAgentAiAdapter(ctxC, {
+      const result = await getAgentHost().compactSession({
+        sessionId,
+        cwd,
         baseUrl: llmConfig.baseUrl,
         model: llmConfig.model,
         apiKey: llmConfig.apiKey,
-        api: compactApi,
+        apiMode: llmConfig.apiMode,
       });
-      const handle = await openCordisAgent(ctxC, { sessionId, cwd, llmConfig: { baseUrl: llmConfig.baseUrl, model: llmConfig.model, apiKey: llmConfig.apiKey, provider: "openai" as const, apiMode: llmConfig.apiMode }, signal: new AbortController().signal });
-      try {
-        // Ensure idle before compactNow (P1-5 busy race): session:compact-now
-        // bypasses runningLoops for races outside its own map; check whenIdle.
-        const maybeIdle = (handle.agent as { whenIdle?: () => Promise<void> })?.whenIdle;
-        if (typeof maybeIdle === "function") {
-          try { await maybeIdle.call(handle.agent); } catch { /* compaction will throw busy */ }
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const compaction = (ctxC as any).compaction;
-        if (!compaction?.compactNow) throw new Error("compaction service not mounted");
-        const result = await compaction.compactNow(handle.agent, new AbortController().signal);
-        if (result) {
-          send("session:compact-result", {
-            sessionId,
-            messageCount: (result as { replacedCount?: number; replacedSeqs?: unknown[] })?.replacedCount
-              ?? (result as { replacedSeqs?: unknown[] })?.replacedSeqs?.length
-              ?? 0,
-            summary: (result as { summary?: string })?.summary ?? "",
-          });
-        } else {
-          send("session:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
-        }
-      } finally {
-        await handle.dispose?.();
+      if (result) {
+        send("session:compact-result", { sessionId, ...result });
+      } else {
+        send("session:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
       }
     } catch (e) {
       send("session:compact-result", { sessionId, messageCount: 0, summary: `Compaction unavailable: ${(e as Error).message}` });
@@ -1016,37 +987,21 @@ export function registerSessionRuntimeHandlers(
     void (async () => {
       try {
         const agentConfig = getCachedConfig().agentConfig;
-        const { openCordisAgent } = await import("../cordis/run-cordis-coding");
-        const { getContext } = await import("../cordis/run-cordis-loop");
-        const cordisCtx = await getContext();
-        const handle = await openCordisAgent(cordisCtx, {
-          sessionId, cwd: ctx.workspacePath || process.cwd(),
-          llmConfig: { baseUrl: agentConfig?.baseUrl ?? "", model: agentConfig?.model ?? "", apiKey: agentConfig?.apiKey ?? "", provider: "openai" },
-          signal: undefined,
+        const committedMode = await getAgentHost().setSessionMode({
+          sessionId,
+          cwd: ctx.workspacePath || process.cwd(),
+          baseUrl: agentConfig?.baseUrl ?? "",
+          model: agentConfig?.model ?? "",
+          apiKey: agentConfig?.apiKey ?? "",
+          mode,
         });
         try {
-          const commands = (cordisCtx as unknown as { commands?: { execute: (a: unknown, line: string, images: unknown[], signal?: AbortSignal) => Promise<unknown> } }).commands;
-          if (!commands) throw new Error("commands runtime unavailable");
-          const result = await commands.execute((handle as { agent: unknown }).agent, mode === "plan" ? "/plan" : "/plan off", [], new AbortController().signal);
-          const commandResult = (result as { result?: { kind?: string; text?: string } } | undefined)?.result;
-          if (commandResult?.kind !== "success") {
-            throw new Error(commandResult?.text ?? "plan mode command was not accepted");
-          }
-          const session = (handle as { agent: { session?: unknown } }).agent.session;
-          const committedMode = getPlanModeActive(cordisCtx, session) ? "plan" : "execute";
-          if (committedMode !== mode) {
-            throw new Error(`plan mode command did not commit ${mode}`);
-          }
-          try {
-            q.updateCodingSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
-          } catch (e) {
-            console.warn("[session] failed to update session mode index:", e);
-          }
-          broadcastEvent("session:mode-change", { sessionId, mode: committedMode });
-          broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode: committedMode }));
-        } finally {
-          try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
+          q.updateCodingSession(ctx.db, sessionId, { mode: committedMode, updatedAt: ts() });
+        } catch (e) {
+          console.warn("[session] failed to update session mode index:", e);
         }
+        broadcastEvent("session:mode-change", { sessionId, mode: committedMode });
+        broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode: committedMode }));
       } catch (e) {
         // Do not update or broadcast a requested mode when dsh rejected it.
         // The durable session log remains authoritative and the UI can retry.
@@ -1269,25 +1224,7 @@ export function registerSessionRuntimeHandlers(
         if (!deleted) {
           // No dsh file found — not an error, the session may have been in-memory only or already cleared.
         }
-        // Also drop any in-memory dsh agent that still holds the old session.
-        getContext().then((c: unknown) => {
-          const maybeAgents = (c as { agents?: { get?: (id: unknown) => unknown; delete?: (id: unknown) => void; remove?: (id: unknown) => void; dispose?: (id: unknown) => void } })?.agents;
-          const sid = { toString: () => sessionId } as unknown as string;
-          // Try every plausible delete/remove/dispose shape — dsh-agent's API has shifted across rc's.
-          const removed = false;
-          for (const k of ["delete", "remove", "dispose", "destroy"] as const) {
-            try {
-              const fn = (maybeAgents as Record<string, unknown>)?.[k] as ((id: unknown) => unknown) | undefined;
-              if (typeof fn === "function") { fn.call(maybeAgents, sid); break; }
-            } catch { /* ignore */ }
-          }
-          if (!removed) {
-            try {
-              const ag = maybeAgents?.get?.(sid) as { dispose?: () => void } | undefined;
-              ag?.dispose?.();
-            } catch { /* ignore */ }
-          }
-        }).catch(() => {});
+        void getAgentHost().releaseSessionAgent(sessionId);
       } catch { /* best-effort */ }
     } finally {
       clearingSessions.delete(sessionId);
