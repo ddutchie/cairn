@@ -27,7 +27,6 @@ import { registerToolBuilderHandlers } from "./ipc/tool-builder";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git";
 import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
-import { setSessionRoot } from "./cordis/run-cordis-loop";
 import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
@@ -42,6 +41,7 @@ import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { readThemeSurface } from "./lib/theme-surface";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";
+import { getAgentHost } from "./cordis/agent-host";
 import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
@@ -51,6 +51,14 @@ import { initUsageRecorder } from "./lib/usage-recorder";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 
 const isDev = !app.isPackaged;
+let shutdownStarted = false;
+let shutdownComplete = false;
+
+if (isDev) {
+  process.stdin.on("data", (data) => {
+    if (data.toString().trim() === "cairn:quit") app.quit();
+  });
+}
 
 // ── Deep-link (cairn://) registration + OAuth callback routing ───────────────
 // Used by the remote-MCP OAuth flow: the authorization server redirects to
@@ -261,7 +269,7 @@ app.whenReady().then(async () => {
   // first Cordis context is built.
   const sessionRoot = path.join(userDataPath, "sessions");
   fs.mkdirSync(sessionRoot, { recursive: true });
-  setSessionRoot(sessionRoot);
+  getAgentHost().configureSessionRoot(sessionRoot);
   // Writability probe: chat/coding transcripts only survive restarts if the
   // dsh JSONL backend can write under sessionRoot. A backend failure is
   // silent by design (best-effort flush), so record up front whether the
@@ -320,8 +328,7 @@ app.whenReady().then(async () => {
   // User/agent-authored plugins live here; with CAIRN_PLUGINS_DEV=1 the Cordis
   // context loads <userData>/plugins/plugins.yml and hot-reloads on change.
   try {
-    const { setPluginsRoot } = await import("./cordis/plugin-loader");
-    setPluginsRoot(path.join(userDataPath, "plugins"));
+    getAgentHost().configurePluginsRoot(path.join(userDataPath, "plugins"));
   } catch { /* plugin loader is optional */ }
 
   // ── Resolve workspace path ────────────────────────────────────────────
@@ -768,18 +775,24 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on("before-quit", () => {
-  // Terminate mobile access server if running
-  try {
-    stopMobileServer();
-  } catch { /* ignore */ }
-
-  // Kill any bash child processes that are still running so they don't linger
-  killTrackedBashProcesses();
-  // Terminate the embeddings worker child process (HTTP server) so it doesn't linger
-  void disposeEmbeddingsWorker();
-  // Terminate the unified runtime process (embeddings + LLM proxy)
-  runtime.stopRuntimeSync();
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  void (async () => {
+    try {
+      await getAgentHost().shutdown();
+    } catch (err) {
+      console.error("[main] agent host shutdown failed:", err);
+    }
+    try { stopMobileServer(); } catch { }
+    killTrackedBashProcesses();
+    void disposeEmbeddingsWorker();
+    runtime.stopRuntimeSync();
+    shutdownComplete = true;
+    app.quit();
+  })();
 });
 
 app.on("window-all-closed", () => {

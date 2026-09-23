@@ -248,5 +248,6 @@ export function watchUserPlugins(ctx: Context): void {
 export function stopWatchingUserPlugins(): void {
   if (debounce) { clearTimeout(debounce); debounce = null; }
   if (watcher) { watcher.close(); watcher = null; }
+  activeUserEntryIds.clear();
   failedEntries.clear();
 }

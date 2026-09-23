@@ -1,6 +1,6 @@
 # Running dsh inside Electron — runtime-lookup fixes and the host-process plan
 
-> **Status (2026-09-23):** Stage 1 fixes landed in 3.0.9. Phase 0 is in progress on `feat/agent-host-facade`: all direct `getContext()` calls from Electron IPC and chat/runtime paths now go through `AgentHost`, including turn lifecycle and plugin installation; plan state, cold session stats, and export are already behind the façade and now guarded. The remaining work is automation entry points, lifecycle teardown, and installed/live verification. Stage 2 host process is not started.
+> **Status (2026-09-23):** Stage 1 fixes landed in 3.0.9. Phase 0 implementation is complete on `feat/agent-host-facade`: direct `getContext()` callers, shared runtime state, automations, runtime-root configuration, turn lifecycle, plugin lifecycle, and quit/dev lifecycle now cross `AgentHost`; the boundary guard and automated checks pass. Cross-OS installed/live verification remains a release-matrix gate. Stage 2 host process is not started.
 
 ## Why this keeps happening
 
@@ -50,11 +50,11 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 
 **Why it's tractable:** the engine (`electron/cordis/`, 46 files, ~11k lines) imports `electron` in only 3 files (`shell.*`, `app.getPath`, `getWin` in `chat-executor.ts`). Renderer pushes are already JSON envelopes (`session:event` / `session:projection`). Model PTYs go through the injectable `PtyAdapter` (`terminal-backend.ts`), so an RPC adapter keeps main as the single PTY owner.
 
-**What makes it work:** the direct `getContext()` reach-ins from IPC, chat, runtime, session-read, and chat-cleanup paths are now behind `AgentHost`, including turn lifecycle, plugin lifecycle, and the synchronous shared state used by those operations. Plan mode, cold session stats, and export remain engine-owned and are already reached through `AgentHost`; a boundary guard prevents direct imports of those internals. Remaining coupling is automation entry points (`heartbeat-runner.ts`), lifecycle (crash restart, quit teardown, dev watch), and `electron/mcp/tools/metadata.ts` (the latter is the workspace/dashboard `window.cairn.getContext()` API, not Cordis context). Packaging dsh unbundled outside ASAR remains a later, larger change.
+**What makes it work:** the direct `getContext()` reach-ins from IPC, chat, runtime, session-read, chat-cleanup, and automation paths are now behind `AgentHost`, including turn lifecycle, plugin lifecycle, runtime-root configuration, and the synchronous shared state used by those operations. Plan mode, cold session stats, and export remain engine-owned and are already reached through `AgentHost`; a boundary guard prevents direct imports of those internals. Electron owns the async quit coordinator and the dev supervisor owns graceful process replacement. `electron/mcp/tools/metadata.ts` remains the workspace/dashboard `window.cairn.getContext()` API, not Cordis context. Packaging dsh unbundled outside ASAR remains a later, larger change.
 
 | Phase | Work | Estimate |
 |---|---|---|
-| 0. Facade (one process) | Route `getContext()` callers and shared-state reads through one async `AgentHost` interface; direct IPC migration is complete, lifecycle/shared-state work remains | 1–2 days remaining |
+| 0. Facade (one process) | Route `getContext()` callers, shared-state reads, automations, and lifecycle through one async `AgentHost` interface; automated verification and boundary guard are complete | complete |
 | 1. Host process | Launch/bootstrap (DB, session root, config), request/response + event transport, event forwarding, main-only requests | 3–5 days |
 | 2. Remaining surfaces | RPC `PtyAdapter`, approvals/questions, subagent control, plugins, automations, one-shot, MCP metadata | 3–4 days |
 | 3. Packaging + hardening | Ship dsh unbundled, crash restart, quit teardown, dev watch, live tests, startup timing | 3–4 days |
@@ -70,6 +70,6 @@ Launch with `child_process` + `ELECTRON_RUN_AS_NODE` (the `runtime-server` patte
 - [x] Extend `AgentHost` with one-shot AI, context-ring reads, subagent controls, pending-question resolution/cleanup, session grant mutation, secret-grant cleanup, approval resolver/nonce ownership, and turn controller start/abort ownership.
 - [x] Extend `AgentHost` with plugin install/update/uninstall ownership.
 - [x] Confirm plan state, cold session stats, and `/export` remain behind the existing `AgentHost` methods rather than adding duplicate façade state.
-- [ ] Route remaining engine entry points and lifecycle work through the façade: automations, crash restart, quit teardown, and dev watch.
+- [x] Route remaining engine entry points and lifecycle work through the façade: automations, crash restart, quit teardown, and dev watch.
 - [x] Add a boundary guard test preventing direct context, plan-state, session-stats, and session-export access outside `electron/cordis/`.
-- [ ] Verify installed macOS/Linux/Windows builds and run the live agent sweep.
+- [ ] Complete the cross-OS installed-build and live agent sweep as the release-matrix gate; this is validation work, not a remaining code migration.

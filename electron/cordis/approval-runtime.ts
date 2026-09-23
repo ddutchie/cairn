@@ -79,3 +79,9 @@ export function clearApprovalState(sessionId: string): void {
   pendingAsks.clearSession(sessionId);
   clearAskNoncesForSession(sessionId);
 }
+
+export function clearAllApprovalState(): void {
+  cordisPendingApprovals.clear();
+  pendingAsks.clearAll();
+  pendingAskNonces.clear();
+}

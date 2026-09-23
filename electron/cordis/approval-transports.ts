@@ -54,6 +54,10 @@ export function getConfirmTransport(sessionId: string): ConfirmTransport | undef
   return transports.get(sessionId);
 }
 
+export function clearAllConfirmTransports(): void {
+  transports.clear();
+}
+
 // ── Interactive transport (coding sessions) ──────────────────────────────────
 
 export interface InteractiveConfirmTransportDeps {

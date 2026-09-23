@@ -12,3 +12,7 @@ export function getSecretGrants(sessionId: string): Set<string> {
 export function clearSecretGrants(sessionId: string): void {
   secretGrantsBySession.delete(sessionId);
 }
+
+export function clearAllSecretGrants(): void {
+  secretGrantsBySession.clear();
+}

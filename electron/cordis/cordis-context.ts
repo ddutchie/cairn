@@ -62,6 +62,7 @@ import { apply as sessionExportApply, inject as sessionExportInject, name as ses
 
 let sharedCtx: Context | null = null;
 let contextReady: Promise<Context> | null = null;
+let contextCleanup: Promise<void> | null = null;
 let sessionRoot = process.env.CAIRN_SESSION_ROOT || path.join(process.cwd(), ".cairn-sessions");
 
 export function getSessionRoot(): string { return sessionRoot; }
@@ -71,9 +72,24 @@ export function setSessionRoot(root: string): void {
   }
   sessionRoot = root;
 }
+export async function shutdownContext(): Promise<void> {
+  const ready = contextReady;
+  if (ready) await ready.catch(() => {});
+  if (contextCleanup) await contextCleanup.catch(() => {});
+  const ctx = sharedCtx;
+  if (ctx) {
+    const cache = peekChatAgentCache();
+    if (cache) await Promise.all(Array.from(cache.keys(), (threadId) => dropChatAgentForThread(threadId)));
+    try { await ctx.fiber.dispose(); } catch { }
+  }
+  sharedCtx = null;
+  contextReady = null;
+  contextCleanup = null;
+}
 export function __resetContextForTest(): void {
   sharedCtx = null;
   contextReady = null;
+  contextCleanup = null;
 }
 
 /**
@@ -101,8 +117,10 @@ export function isScheduleEnabled(): boolean {
 export async function getContext(): Promise<Context> {
   if (sharedCtx) return sharedCtx;
   if (contextReady) return contextReady;
-  contextReady = (async () => {
+  let createdContext: Context | null = null;
+  const ready = (async () => {
     const ctx = new Context();
+    createdContext = ctx;
     await ctx.plugin(Loader);
     const loader = ctx.loader as unknown as {
       builtins: Record<string, unknown>;
@@ -423,7 +441,15 @@ export async function getContext(): Promise<Context> {
     sharedCtx = ctx;
     return ctx;
   })();
-  return contextReady;
+  contextReady = ready;
+  contextCleanup = ready.then(() => {}, async () => {
+    if (contextReady !== ready) return;
+    contextReady = null;
+    sharedCtx = null;
+    try { await createdContext?.fiber.dispose(); } catch { }
+  });
+  void contextCleanup;
+  return ready;
 }
 
 export async function dropChatAgentForThread(threadId: string): Promise<void> {

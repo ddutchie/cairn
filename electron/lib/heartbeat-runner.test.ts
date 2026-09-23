@@ -21,18 +21,23 @@ import { automationFolderDir, automationRunDir } from "./automation-folder";
 // mocked config-cache / chat-loop / external-tools modules.
 import { runAutomation, runAutomationNow } from "./heartbeat-runner";
 
-const { runCordisCodingLoopMock, getExternalToolDefsMock } = vi.hoisted(() => ({
+const { runCordisCodingLoopMock, getExternalToolDefsMock, agentHostMock } = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   runCordisCodingLoopMock: vi.fn(async (_opts: any): Promise<any> => ({ ok: true })),
   getExternalToolDefsMock: vi.fn(async () => []),
+  agentHostMock: {
+    startTurn: vi.fn(() => new AbortController()),
+    endTurn: vi.fn(),
+    runAutomation: vi.fn((opts: unknown) => runCordisCodingLoopMock(opts)),
+  },
 }));
 
 vi.mock("./config-cache", () => ({
   getCachedConfig: () => ({ aiConfig: { baseUrl: "https://api.test.invalid", model: "gpt-test" } }),
 }));
 
-vi.mock("../cordis/run-cordis-coding", () => ({
-  runCordisCodingLoop: (opts: unknown) => runCordisCodingLoopMock(opts),
+vi.mock("../cordis/agent-host", () => ({
+  getAgentHost: () => agentHostMock,
 }));
 
 // Keep the REAL checkRequirements (that's the gate under test) but stub the

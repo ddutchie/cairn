@@ -1,5 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
-import { getContext, getSessionRoot } from "./cordis-context";
+import { getContext, getSessionRoot, setSessionRoot, shutdownContext } from "./cordis-context";
 import { readGoalSnapshot, type GoalWire } from "./goal-bridge";
 import {
   getMessageFeedback,
@@ -17,14 +17,17 @@ import type { SessionStatsSnapshot } from "./session-stats";
 import { buildSystemPrompt, getCachedConfig } from "./host-store";
 import type { OneShotOptions } from "./one-shot";
 import type { ContextRingResult } from "./run-cordis-loop";
+import type { RunCordisCodingOptions, RunCordisCodingResult } from "./run-cordis-coding";
 import type { SubagentCatalogView, SubagentScope } from "./subagent-control";
 import {
   clearPendingQuestions,
+  clearAllPendingQuestions,
   resolvePendingQuestionAnswer,
 } from "./pending-question-broker";
-import { canonicalBashCommand, clearSessionGrants, getSessionGrants, type PendingAskMeta } from "./approval-grants";
+import { canonicalBashCommand, clearAllSessionGrants, clearSessionGrants, getSessionGrants, type PendingAskMeta } from "./approval-grants";
 import {
   clearApprovalState,
+  clearAllApprovalState,
   clearAskNoncesForSession,
   dropAskNonce,
   getAskNonce,
@@ -38,7 +41,7 @@ import {
   type ApprovalDecision,
   type ApprovalResolver,
 } from "./approval-runtime";
-import { clearSecretGrants } from "./secret-grants";
+import { clearAllSecretGrants, clearSecretGrants } from "./secret-grants";
 import { abortTurn, endTurn, getRunningTurnIds, isTurnRunning, startTurn } from "./turn-runtime";
 import {
   installPlugin as installPluginImpl,
@@ -46,6 +49,8 @@ import {
   updatePlugin as updatePluginImpl,
   type InstallResult,
 } from "./plugin-installer";
+import { setPluginsRoot, stopWatchingUserPlugins } from "./plugin-loader";
+import { clearAllConfirmTransports } from "./approval-transports";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -142,7 +147,11 @@ export interface AgentHost {
   releaseSessionAgent(sessionId: string): Promise<void>;
   listSessionChildIds(parentSessionId: string): Promise<string[]>;
   clearChatSessionAgents(threadId: string, subagentIds?: string[]): Promise<void>;
+  runAutomation(options: RunCordisCodingOptions): Promise<RunCordisCodingResult>;
+  configureSessionRoot(root: string): void;
+  configurePluginsRoot(root: string): void;
   runOneShot(options: OneShotOptions): Promise<string>;
+  shutdown(): Promise<void>;
 }
 
 interface CommandRuntimeLike {
@@ -202,6 +211,7 @@ function collectAgentIds(agents: AgentCollection): string[] {
 
 function createLocalAgentHost(): AgentHost {
   const context = (): Promise<Context> => getContext();
+  let shutdownPromise: Promise<void> | null = null;
 
   return {
     async readGoalSnapshot(sessionId) {
@@ -549,9 +559,37 @@ function createLocalAgentHost(): AgentHost {
         }
       } catch { }
     },
+    async runAutomation(options) {
+      const { runCordisCodingLoop } = await import("./run-cordis-coding");
+      return runCordisCodingLoop(options);
+    },
+    configureSessionRoot(root) {
+      setSessionRoot(root);
+    },
+    configurePluginsRoot(root) {
+      setPluginsRoot(root);
+    },
     async runOneShot(options) {
       const { runOneShotWithContext } = await import("./one-shot");
       return runOneShotWithContext(await context(), options);
+    },
+    shutdown() {
+      if (!shutdownPromise) {
+        shutdownPromise = (async () => {
+          for (const sessionId of getRunningTurnIds()) abortTurn(sessionId);
+          stopWatchingUserPlugins();
+          clearAllPendingQuestions();
+          clearAllApprovalState();
+          clearAllSessionGrants();
+          clearAllSecretGrants();
+          clearAllConfirmTransports();
+          await shutdownContext();
+        })().catch((err) => {
+          shutdownPromise = null;
+          throw err;
+        });
+      }
+      return shutdownPromise;
     },
   };
 }

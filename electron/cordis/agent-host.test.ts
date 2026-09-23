@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getContext: vi.fn(),
+  setSessionRoot: vi.fn(),
+  shutdownContext: vi.fn(),
   readGoalSnapshot: vi.fn(),
   putMessageFeedback: vi.fn(),
   getMessageFeedback: vi.fn(),
   listSchedules: vi.fn(),
   openCordisAgent: vi.fn(),
+  runCordisCodingLoop: vi.fn(),
   ensureAgentAiAdapter: vi.fn(),
   getPlanModeActive: vi.fn(),
   readPermissionsSnapshot: vi.fn(),
@@ -25,24 +28,30 @@ const mocks = vi.hoisted(() => ({
   messageSubagentChildWithContext: vi.fn(),
   resolvePendingQuestionAnswer: vi.fn(),
   clearPendingQuestions: vi.fn(),
+  clearAllPendingQuestions: vi.fn(),
   getSessionGrants: vi.fn(),
   clearSessionGrants: vi.fn(),
   clearSecretGrants: vi.fn(),
+  clearAllSecretGrants: vi.fn(),
+  clearAllSessionGrants: vi.fn(),
+  clearAllApprovalState: vi.fn(),
   canonicalBashCommand: vi.fn(),
-  createPendingAskRegistry: vi.fn(() => ({ record: vi.fn(), resolve: vi.fn(), listForSession: vi.fn(() => []), clearSession: vi.fn() })),
+  createPendingAskRegistry: vi.fn(() => ({ record: vi.fn(), resolve: vi.fn(), listForSession: vi.fn(() => []), clearSession: vi.fn(), clearAll: vi.fn() })),
+  setPluginsRoot: vi.fn(),
+  stopWatchingUserPlugins: vi.fn(),
   installPlugin: vi.fn(),
   updatePlugin: vi.fn(),
   uninstallPlugin: vi.fn(),
 }));
 
-vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
+vi.mock("./cordis-context", () => ({ getContext: mocks.getContext, setSessionRoot: mocks.setSessionRoot, shutdownContext: mocks.shutdownContext }));
 vi.mock("./goal-bridge", () => ({ readGoalSnapshot: mocks.readGoalSnapshot }));
 vi.mock("./message-feedback", () => ({
   putMessageFeedback: mocks.putMessageFeedback,
   getMessageFeedback: mocks.getMessageFeedback,
 }));
 vi.mock("./schedule-read", () => ({ listSchedules: mocks.listSchedules }));
-vi.mock("./run-cordis-coding", () => ({ openCordisAgent: mocks.openCordisAgent }));
+vi.mock("./run-cordis-coding", () => ({ openCordisAgent: mocks.openCordisAgent, runCordisCodingLoop: mocks.runCordisCodingLoop }));
 vi.mock("./session-runtime", () => ({ ensureAgentAiAdapter: mocks.ensureAgentAiAdapter }));
 vi.mock("./plan-fold", () => ({ getPlanModeActive: mocks.getPlanModeActive }));
 vi.mock("./permissions-bridge", () => ({ readPermissionsSnapshot: mocks.readPermissionsSnapshot }));
@@ -58,14 +67,20 @@ vi.mock("./subagent-control", () => ({
 vi.mock("./pending-question-broker", () => ({
   resolvePendingQuestionAnswer: mocks.resolvePendingQuestionAnswer,
   clearPendingQuestions: mocks.clearPendingQuestions,
+  clearAllPendingQuestions: mocks.clearAllPendingQuestions,
 }));
 vi.mock("./approval-grants", () => ({
   getSessionGrants: mocks.getSessionGrants,
   clearSessionGrants: mocks.clearSessionGrants,
+  clearAllSessionGrants: mocks.clearAllSessionGrants,
   canonicalBashCommand: mocks.canonicalBashCommand,
   createPendingAskRegistry: mocks.createPendingAskRegistry,
 }));
-vi.mock("./secret-grants", () => ({ clearSecretGrants: mocks.clearSecretGrants }));
+vi.mock("./secret-grants", () => ({ clearSecretGrants: mocks.clearSecretGrants, clearAllSecretGrants: mocks.clearAllSecretGrants }));
+vi.mock("./plugin-loader", () => ({
+  setPluginsRoot: mocks.setPluginsRoot,
+  stopWatchingUserPlugins: mocks.stopWatchingUserPlugins,
+}));
 vi.mock("./plugin-installer", () => ({
   installPlugin: mocks.installPlugin,
   updatePlugin: mocks.updatePlugin,
@@ -287,6 +302,37 @@ describe("AgentHost", () => {
 
     expect(mocks.runOneShotWithContext).toHaveBeenCalledWith(context, options);
     expect(mocks.getContext).toHaveBeenCalledOnce();
+  });
+
+  it("configures runtime roots through the host", () => {
+    getAgentHost().configureSessionRoot("/tmp/sessions");
+    getAgentHost().configurePluginsRoot("/tmp/plugins");
+
+    expect(mocks.setPluginsRoot).toHaveBeenCalledWith("/tmp/plugins");
+  });
+
+  it("routes automation turns through the host", async () => {
+    const options = { sessionId: "automation-1" } as never;
+    const result = { ok: true };
+    mocks.runCordisCodingLoop.mockResolvedValue(result);
+
+    await expect(getAgentHost().runAutomation(options)).resolves.toBe(result);
+
+    expect(mocks.runCordisCodingLoop).toHaveBeenCalledWith(options);
+  });
+
+  it("shuts down the Cordis runtime once", async () => {
+    getAgentHost().startTurn("session-shutdown");
+    mocks.shutdownContext.mockResolvedValue(undefined);
+
+    await getAgentHost().shutdown();
+    await getAgentHost().shutdown();
+
+    expect(getAgentHost().isTurnRunning("session-shutdown")).toBe(false);
+    expect(mocks.clearAllPendingQuestions).toHaveBeenCalledOnce();
+    expect(mocks.clearAllSessionGrants).toHaveBeenCalledOnce();
+    expect(mocks.clearAllSecretGrants).toHaveBeenCalledOnce();
+    expect(mocks.shutdownContext).toHaveBeenCalledOnce();
   });
 
   it("releases a resident session agent best-effort", async () => {
