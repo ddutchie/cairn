@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
   clearSecretGrants: vi.fn(),
   canonicalBashCommand: vi.fn(),
   createPendingAskRegistry: vi.fn(() => ({ record: vi.fn(), resolve: vi.fn(), listForSession: vi.fn(() => []), clearSession: vi.fn() })),
+  installPlugin: vi.fn(),
+  updatePlugin: vi.fn(),
+  uninstallPlugin: vi.fn(),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -63,6 +66,11 @@ vi.mock("./approval-grants", () => ({
   createPendingAskRegistry: mocks.createPendingAskRegistry,
 }));
 vi.mock("./secret-grants", () => ({ clearSecretGrants: mocks.clearSecretGrants }));
+vi.mock("./plugin-installer", () => ({
+  installPlugin: mocks.installPlugin,
+  updatePlugin: mocks.updatePlugin,
+  uninstallPlugin: mocks.uninstallPlugin,
+}));
 
 import { getAgentHost } from "./agent-host";
 
@@ -74,6 +82,22 @@ beforeEach(() => {
 });
 
 describe("AgentHost", () => {
+  it("routes plugin lifecycle operations through the host", async () => {
+    const installed = { id: "demo", name: null, ui: null, kind: "backend" as const };
+    mocks.installPlugin.mockResolvedValue(installed);
+    mocks.updatePlugin.mockResolvedValue(installed);
+    mocks.uninstallPlugin.mockReturnValue(undefined);
+
+    const host = getAgentHost();
+    await expect(host.installPlugin("github:owner/demo")).resolves.toEqual(installed);
+    await expect(host.updatePlugin("demo")).resolves.toEqual(installed);
+    expect(() => host.uninstallPlugin("demo")).not.toThrow();
+
+    expect(mocks.installPlugin).toHaveBeenCalledWith("github:owner/demo");
+    expect(mocks.updatePlugin).toHaveBeenCalledWith("demo");
+    expect(mocks.uninstallPlugin).toHaveBeenCalledWith("demo");
+  });
+
   it("resolves the shared context for goal reads", async () => {
     const goal = { id: "goal-1" };
     mocks.readGoalSnapshot.mockResolvedValue(goal);

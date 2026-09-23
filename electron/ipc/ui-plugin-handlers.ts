@@ -22,7 +22,7 @@ import * as path from "path";
 import { ipcMain, shell, type WebContents } from "electron";
 import * as yaml from "js-yaml";
 import { readEnabledManifest, getPluginsRoot, pluginsDevEnabled } from "../cordis/plugin-loader";
-import { installPlugin, uninstallPlugin, updatePlugin } from "../cordis/plugin-installer";
+import { getAgentHost } from "../cordis/agent-host";
 
 export interface UiPluginPayload {
   id: string;
@@ -150,7 +150,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       if (!req || typeof req.spec !== "string" || !req.spec.trim()) {
         return { error: "provide a plugin spec (github:owner/repo or a local path)" };
       }
-      const result = await installPlugin(req.spec);
+      const result = await getAgentHost().installPlugin(req.spec);
       return { data: result };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -161,7 +161,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
     try {
       if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to uninstall" };
       if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
-      uninstallPlugin(req.id);
+      getAgentHost().uninstallPlugin(req.id);
       return { data: { ok: true } };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -176,7 +176,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
         return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to update." };
       }
       if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
-      const result = await updatePlugin(req.id);
+      const result = await getAgentHost().updatePlugin(req.id);
       return { data: result };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };

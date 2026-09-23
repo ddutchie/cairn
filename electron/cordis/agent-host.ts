@@ -40,6 +40,12 @@ import {
 } from "./approval-runtime";
 import { clearSecretGrants } from "./secret-grants";
 import { abortTurn, endTurn, getRunningTurnIds, isTurnRunning, startTurn } from "./turn-runtime";
+import {
+  installPlugin as installPluginImpl,
+  uninstallPlugin as uninstallPluginImpl,
+  updatePlugin as updatePluginImpl,
+  type InstallResult,
+} from "./plugin-installer";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -121,6 +127,9 @@ export interface AgentHost {
   abortTurn(sessionId: string): void;
   isTurnRunning(sessionId: string): boolean;
   getRunningTurnIds(): string[];
+  installPlugin(spec: string): Promise<InstallResult>;
+  updatePlugin(id: string): Promise<InstallResult>;
+  uninstallPlugin(id: string): void;
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -308,6 +317,15 @@ function createLocalAgentHost(): AgentHost {
     },
     getRunningTurnIds() {
       return getRunningTurnIds();
+    },
+    installPlugin(spec) {
+      return installPluginImpl(spec);
+    },
+    updatePlugin(id) {
+      return updatePluginImpl(id);
+    },
+    uninstallPlugin(id) {
+      uninstallPluginImpl(id);
     },
     async listCommands() {
       const ctx = await context();
