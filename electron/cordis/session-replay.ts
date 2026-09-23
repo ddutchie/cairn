@@ -25,6 +25,10 @@ import {
   type SessionTodoItem,
 } from "./plugins/context-ring";
 import { foldSessionStats, sessionStatsFromSnapshot, type SessionStats, type SessionStatsSnapshot, type TurnStats } from "./session-stats";
+import { inspectSession, type InspectablePersistence } from "./session-inspect";
+
+/** One `SessionPersistence.list()` row — legacy flat shape or dsh 0.1.5 `{ header }` snapshot. */
+type StoredSessionListing = { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number }; header?: { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number } };
 
 
 /** A generic derived message block (post foldSurface + deriveEventMessage). */
@@ -346,9 +350,8 @@ export interface LoadSessionMessagesResult {
 }
 
 export async function loadSessionMessages(
-  pers: {
-    inspect: (id: unknown) => Promise<{ header: unknown; events: readonly unknown[] }>;
-    list?: () => Promise<Array<{ id: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number } }>>;
+  pers: InspectablePersistence & {
+    list?: () => Promise<readonly StoredSessionListing[]>;
   },
   liveSessions: (() => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }>) | undefined,
   sessionId: string,
@@ -363,7 +366,7 @@ export async function loadSessionMessages(
     statsSnapshot?: SessionStatsSnapshot;
   },
 ): Promise<LoadSessionMessagesResult> {
-  const inspection = await pers.inspect(sessionId);
+  const inspection = await inspectSession(pers, sessionId);
   const events = (inspection?.events ?? []) as readonly SessionEvent[];
   if (!events || events.length === 0) return { messages: [], subagents: [] };
   const messages = collapseDerivedToMessages(deriveMessagesFromEvents(events), metaByCallIdFromEvents(events));
@@ -402,7 +405,8 @@ export async function loadSessionMessages(
 
   // Collect subagent children (durable list + live in-memory not yet flushed)
   let list: Array<{ id: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number } }> = [];
-  try { list = pers.list ? await pers.list() : []; } catch { /* ignore */ }
+  // dsh 0.1.5 list() snapshots nest id/origin/parentSession/createdAt under `header`.
+  try { list = pers.list ? (await pers.list()).map((s) => (s.header ? { ...s.header, id: s.header.id ?? s.id } : s) as typeof list[number]) : []; } catch { /* ignore */ }
   try {
     const live = liveSessions?.() ?? [];
     for (const s of live) {
@@ -436,7 +440,7 @@ export async function loadSessionMessages(
   if (uniqueChildHeaders.length > 0) {
     for (const ch of uniqueChildHeaders) {
       try {
-        const childInsp = await pers.inspect(ch.id);
+        const childInsp = await inspectSession(pers, ch.id);
         const childEvents = (childInsp?.events ?? []) as readonly SessionEvent[];
         if (!childEvents || childEvents.length === 0) continue;
         const childDerived = deriveMessagesFromEvents(childEvents);

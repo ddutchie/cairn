@@ -19,6 +19,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { foldScheduleEvents, scheduleView } from "@deepseek-ai/dsh-schedule";
 import { SessionId } from "@deepseek-ai/dsh-session";
+import { inspectSession, type InspectablePersistence } from "./session-inspect";
 
 /** Renderer-safe reminder summary (schedule_list view subset). */
 export interface ScheduleWire {
@@ -35,7 +36,7 @@ interface SessionLike {
 
 interface CordisLike {
   sessions?: { get?: (id: unknown) => SessionLike | undefined };
-  sessionPersistence?: { inspect?: (id: unknown, signal?: AbortSignal) => Promise<{ events?: unknown }> };
+  sessionPersistence?: InspectablePersistence;
 }
 
 /**
@@ -51,8 +52,7 @@ export async function listSchedules(ctx: Context, sessionId: string): Promise<Sc
     if (live && typeof live.snapshotEvents === "function") {
       events = live.snapshotEvents();
     } else {
-      const inspection = await cordis.sessionPersistence?.inspect?.(stableId);
-      events = inspection?.events ?? [];
+      events = cordis.sessionPersistence ? (await inspectSession(cordis.sessionPersistence, stableId)).events : [];
     }
   } catch {
     return [];

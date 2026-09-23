@@ -8,6 +8,7 @@ import { getContext, getSessionRoot, resolvePresentationMeta, resolveToolCallVie
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
+import { inspectSession, type InspectablePersistence } from "./session-inspect";
 
 export { getContext, dropChatAgentForThread, resolvePresentationMeta, resolveToolCallView, resolveToolResultView, withToolCallView, withToolResultView, getSessionRoot, setSessionRoot, __resetContextForTest, __setToolDefForTest } from "./cordis-context";
 export { ensureAgentAiAdapter } from "./session-runtime";
@@ -52,14 +53,14 @@ export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: st
   return messages;
 }
 
-export async function prepareReplayContext(pers: { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId: string): Promise<void> {
+export async function prepareReplayContext(pers: InspectablePersistence, sessionId: string): Promise<void> {
   try {
     const { pluginsDevEnabled } = await import("./plugin-loader");
     if (!pluginsDevEnabled()) return;
     const ctx = await getContext();
     if (!ctx.get("fs")) {
       let cwd: string | undefined;
-      try { cwd = (await pers.inspect(sessionId))?.header?.cwd; } catch { /* fall back */ }
+      try { cwd = (await inspectSession(pers, sessionId)).header.cwd; } catch { /* fall back */ }
       // Prefer the session's committed cwd; fall back to the current sessionRoot's
       // parent (workspace) rather than process.cwd() which may be the app bundle dir
       // and would over-permit the fs sandbox.

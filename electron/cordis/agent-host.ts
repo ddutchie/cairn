@@ -1,5 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { dropChatAgentForThread, getContext, getSessionRoot, setSessionRoot, shutdownContext } from "./cordis-context";
+import { inspectSession, type InspectablePersistence } from "./session-inspect";
 import { readGoalSnapshot, type GoalWire } from "./goal-bridge";
 import {
   getMessageFeedback,
@@ -274,7 +275,7 @@ function createLocalAgentHost(): AgentHost {
       const persistence = (ctx as unknown as { sessionPersistence?: Parameters<typeof loadReplaySessionMessages>[0] }).sessionPersistence;
       if (!persistence) return { messages: [], subagents: [] };
       const { prepareReplayContext } = await import("./run-cordis-loop");
-      await prepareReplayContext(persistence as { inspect: (id: string) => Promise<{ header?: { cwd?: string } }> }, sessionId);
+      await prepareReplayContext(persistence, sessionId);
       const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
       let statsSnapshot: SessionStatsSnapshot | undefined;
       try {
@@ -537,10 +538,10 @@ function createLocalAgentHost(): AgentHost {
         const value = registry.stateOf(session as never, "title" as never) as string | null | undefined;
         if (value) return value;
       }
-      const persistence = (ctx as unknown as { sessionPersistence?: { inspect: (id: unknown) => Promise<{ events: readonly unknown[] }> } }).sessionPersistence;
+      const persistence = (ctx as unknown as { sessionPersistence?: InspectablePersistence }).sessionPersistence;
       if (persistence) {
         try {
-          const inspection = await persistence.inspect(sessionId);
+          const inspection = await inspectSession(persistence, sessionId);
           const { foldSessionTitle } = await import("./plugins/session-title");
           const snapshot = foldSessionTitle(inspection.events as never);
           if (snapshot) return snapshot.title as string;
@@ -579,8 +580,10 @@ function createLocalAgentHost(): AgentHost {
     },
     async listSessionChildIds(parentSessionId) {
       try {
-        const persistence = (await context() as unknown as { sessionPersistence?: { list?: () => Promise<Array<{ id: unknown; origin?: string; parentSession?: unknown; meta?: { origin?: string; parentSession?: unknown } }>> } }).sessionPersistence;
-        const list = persistence?.list ? await persistence.list() : [];
+        type Listing = { id?: unknown; origin?: string; parentSession?: unknown; meta?: { origin?: string; parentSession?: unknown } };
+        const persistence = (await context() as unknown as { sessionPersistence?: { list?: () => Promise<Array<Listing & { header?: Listing }>> } }).sessionPersistence;
+        // dsh 0.1.5 list() snapshots nest id/origin/parentSession under `header`.
+        const list = (persistence?.list ? await persistence.list() : []).map((entry): Listing => entry.header ? { ...entry.header, id: entry.header.id ?? entry.id } : entry);
         return list.filter((entry) => {
           const origin = entry.origin ?? entry.meta?.origin;
           const parent = entry.parentSession ?? entry.meta?.parentSession;
