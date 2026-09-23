@@ -110,16 +110,16 @@ export interface TerminalSessionsSlice {
   appendAgentSubagentToken: (sessionId: string, childSessionId: string, delta: string) => void;
   /** Append a reasoning/thought delta to a subagent's last streaming message */
   appendAgentSubagentThought: (sessionId: string, childSessionId: string, delta: string) => void;
-  /** Finalise the last streaming message in a subagent */
-  finaliseAgentSubagentMessage: (sessionId: string, childSessionId: string) => void;
   /** Add a tool call to a subagent's last streaming message */
   addAgentSubagentToolCall: (sessionId: string, childSessionId: string, toolCall: { callId: string; name: string; label: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update an existing tool call chip on a subagent message in-place */
   updateAgentSubagentToolCall: (sessionId: string, childSessionId: string, callId: string, patch: { label?: string; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Update token usage on an inline subagent block */
   updateAgentSubagentUsage: (sessionId: string, childSessionId: string, promptTokens: number, completionTokens: number, reasoningTokens: number, breakdown?: TokenBreakdown, cacheReadTokens?: number, cacheCreationTokens?: number) => void;
-  /** Start a new step in a subagent (finalise current message) */
-  stepAgentSubagent: (sessionId: string, childSessionId: string) => void;
+  /** Attach an inline subagent block to the current assistant message (idempotent; re-marks a finished child as running) */
+  ensureAgentSubagent: (sessionId: string, childSessionId: string) => void;
+  /** Mark an inline subagent block as finished */
+  endAgentSubagent: (sessionId: string, childSessionId: string, result?: string) => void;
   /** Set the mode for a coding session and optionally record the plan note ID */
   setAgentMode: (sessionId: string, mode: "plan" | "execute", planNoteId?: string) => void;
   /** Record the explicit auto-approval choice for the session lifetime. */
@@ -559,31 +559,6 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  finaliseAgentSubagentMessage(sessionId, childSessionId) {
-    set((s) => ({
-      terminalSessions: s.terminalSessions.map((t) => {
-        if (t.sessionId !== sessionId) return t;
-        return {
-          ...t,
-          messages: (t.messages ?? []).map((msg) => {
-            const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
-            if (subIdx === -1) return msg;
-            const sub = msg.subagents![subIdx];
-            const subMsgs = sub.messages;
-            const last = subMsgs[subMsgs.length - 1];
-            if (!last?.isStreaming) return msg;
-            const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = {
-              ...sub,
-              messages: [...subMsgs.slice(0, -1), { ...last, isStreaming: false }],
-            };
-            return { ...msg, subagents: newSubagents };
-          }),
-        };
-      }),
-    }));
-  },
-
   addAgentSubagentToolCall(sessionId, childSessionId, toolCall) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
@@ -688,25 +663,59 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  stepAgentSubagent(sessionId, childSessionId) {
+  ensureAgentSubagent(sessionId, childSessionId) {
+    set((s) => ({
+      terminalSessions: s.terminalSessions.map((t) => {
+        if (t.sessionId !== sessionId) return t;
+        const msgs = t.messages ?? [];
+        const ownerIdx = msgs.findIndex((msg) => (msg.subagents ?? []).some((sa) => sa.childSessionId === childSessionId));
+        if (ownerIdx !== -1) {
+          const owner = msgs[ownerIdx];
+          if (owner.subagents!.every((sa) => sa.childSessionId !== childSessionId || sa.running)) return t;
+          const next = [...msgs];
+          next[ownerIdx] = { ...owner, subagents: owner.subagents!.map((sa) => sa.childSessionId === childSessionId ? { ...sa, running: true } : sa) };
+          return { ...t, messages: next };
+        }
+        // Every other subagent helper resolves the child by findIndex and is a
+        // no-op until this entry exists — attach it to the parent's streaming
+        // assistant message (creating one if the parent hasn't streamed yet).
+        const block = { childSessionId, messages: [], running: true };
+        const last = msgs[msgs.length - 1];
+        if (last?.isStreaming) {
+          return { ...t, messages: [...msgs.slice(0, -1), { ...last, subagents: [...(last.subagents ?? []), block] }] };
+        }
+        return {
+          ...t,
+          messages: [...msgs, {
+            id: `stream-${id()}`,
+            role: "assistant" as const,
+            content: "",
+            isStreaming: true,
+            timestamp: new Date().toISOString(),
+            subagents: [block],
+          }],
+        };
+      }),
+    }));
+  },
+
+  endAgentSubagent(sessionId, childSessionId, result) {
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
         return {
           ...t,
           messages: (t.messages ?? []).map((msg) => {
-            const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
-            if (subIdx === -1) return msg;
-            const sub = msg.subagents![subIdx];
-            const subMsgs = sub.messages;
-            const last = subMsgs[subMsgs.length - 1];
-            if (!last?.isStreaming) return msg;
-            const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = {
-              ...sub,
-              messages: [...subMsgs.slice(0, -1), { ...last, isStreaming: false }],
+            if (!(msg.subagents ?? []).some((sa) => sa.childSessionId === childSessionId)) return msg;
+            return {
+              ...msg,
+              subagents: msg.subagents!.map((sa) => {
+                if (sa.childSessionId !== childSessionId) return sa;
+                const last = sa.messages[sa.messages.length - 1];
+                const messages = last?.isStreaming ? [...sa.messages.slice(0, -1), { ...last, isStreaming: false }] : sa.messages;
+                return { ...sa, messages, running: false, result: result || sa.result };
+              }),
             };
-            return { ...msg, subagents: newSubagents };
           }),
         };
       }),

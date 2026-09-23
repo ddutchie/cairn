@@ -107,10 +107,10 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const updateAgentToolCall         = useCairnStore((s) => s.updateAgentToolCall);
   const updateAgentSubagentToolCall = useCairnStore((s) => s.updateAgentSubagentToolCall);
   const addAgentSubagentToolCall    = useCairnStore((s) => s.addAgentSubagentToolCall);
-  const stepAgentSubagent           = useCairnStore((s) => s.stepAgentSubagent);
+  const ensureAgentSubagent         = useCairnStore((s) => s.ensureAgentSubagent);
+  const endAgentSubagent            = useCairnStore((s) => s.endAgentSubagent);
   const appendAgentSubagentToken    = useCairnStore((s) => s.appendAgentSubagentToken);
   const appendAgentSubagentThought  = useCairnStore((s) => s.appendAgentSubagentThought);
-  const finaliseAgentSubagentMessage = useCairnStore((s) => s.finaliseAgentSubagentMessage);
   const setAgentMode                = useCairnStore((s) => s.setAgentMode);
   const _setAgentAutoApprove         = useCairnStore((s) => s.setAgentAutoApprove);
   const setAgentToolConfirmRequired = useCairnStore((s) => s.setAgentToolConfirmRequired);
@@ -360,16 +360,21 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       }
     }).catch(() => undefined);
 
+    const attachedSubagents = new Set<string>();
     const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
       if (projection.sessionId !== sessionId) return;
       const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
       if (projection.kind === "subagent-trace" && e.parentSession === sessionId) {
+        // Create the inline block before any update touches it (the pane may
+        // also mount mid-run and miss the "start" trace).
+        if (e.trace === "status" && e.status === "start") { attachedSubagents.add(e.childId); ensureAgentSubagent(sessionId, e.childId); }
+        else if (e.trace !== "status" && !attachedSubagents.has(e.childId)) { attachedSubagents.add(e.childId); ensureAgentSubagent(sessionId, e.childId); }
         if (e.trace === "token") appendAgentSubagentToken(sessionId, e.childId, e.delta);
         else if (e.trace === "thought") appendAgentSubagentThought(sessionId, e.childId, e.delta);
         else if (e.trace === "tool-call") addAgentSubagentToolCall(sessionId, e.childId, { callId: e.callId ?? `${e.tool}:${Date.now()}`, name: e.tool, label: e.label, args: e.args, running: true, ok: true });
         else if (e.trace === "tool-done") updateAgentSubagentToolCall(sessionId, e.childId, e.callId ?? `${e.tool}:unknown`, { label: e.tool, running: false, ok: e.ok ?? true, output: READ_ONLY_TOOLS.has(e.tool) ? undefined : redactAgentToolCall({ output: e.output }).output, cairnRef: e.cairnRef ?? extractCairnRef(e.tool, e.output) });
         else if (e.trace === "usage") updateAgentSubagentUsage(sessionId, e.childId, e.promptTokens, e.completionTokens, e.reasoningTokens ?? 0, e.breakdown as TokenBreakdown | undefined, e.cacheReadTokens, e.cacheCreationTokens);
-        else if (e.trace === "status" && e.status === "done") { stepAgentSubagent(sessionId, e.childId); finaliseAgentSubagentMessage(sessionId, e.childId); }
+        else if (e.trace === "status" && e.status === "done") { attachedSubagents.delete(e.childId); endAgentSubagent(sessionId, e.childId, e.error ? `Subagent ended: ${e.error}` : undefined); }
         else if (e.trace === "status" && e.status === "start") addAgentSubagentToolCall(sessionId, e.childId, { callId: `${e.childId}:start`, name: "subagent", label: e.role ?? "subagent", running: false, ok: true });
         return;
       }

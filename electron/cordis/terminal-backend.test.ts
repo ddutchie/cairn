@@ -17,8 +17,22 @@ import TerminalSessionService from "@deepseek-ai/dsh-terminal";
 import {
   CAIRN_TERMINAL_BACKEND_TYPE,
   CairnTerminalBackend,
+  stripTerminalControl,
   type PtyAdapter,
 } from "./terminal-backend";
+
+describe("stripTerminalControl", () => {
+  it("removes ConPTY cursor/erase/colour sequences and CRs", () => {
+    const raw = "\x1b[?25l\x1b[K\x1b[H\x1b[?25h\x1b[2J\x1b[33mcommit 29fc1b5\x1b[K\x1b[m\r\nAuthor: G\x1b[K\r\n\x1b]0;title\x07done";
+    expect(stripTerminalControl(raw)).toEqual({ text: "commit 29fc1b5\nAuthor: G\ndone", pending: "" });
+  });
+
+  it("holds a sequence split across chunks", () => {
+    const first = stripTerminalControl("ok\x1b[3");
+    expect(first).toEqual({ text: "ok", pending: "\x1b[3" });
+    expect(stripTerminalControl(first.pending + "3mred").text).toBe("red");
+  });
+});
 
 interface FakePty {
   id: string;

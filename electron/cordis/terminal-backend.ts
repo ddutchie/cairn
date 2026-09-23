@@ -78,6 +78,23 @@ function utf8Tail(text: string, maxBytes: number): { text: string; truncated: bo
   return { text: chars.slice(start).join(""), truncated: true };
 }
 
+// OSC (title/hyperlink), CSI (colour, cursor, erase, ?25l/h), and two-byte
+// ESC sequences. ConPTY emits these even for plain output, and the tool
+// result is plain text for both the model and the transcript.
+const TERMINAL_CONTROL_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-Z\\-_]|[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]/g;
+// An escape sequence split across two PTY chunks — held until the next chunk.
+const PARTIAL_CONTROL_RE = /\x1b(?:\[[0-?]*[ -/]*|\][^\x07\x1b]*)?$/;
+
+/** Strip terminal control sequences from one PTY chunk. Returns the plain
+ *  text plus any trailing incomplete sequence to prepend to the next chunk. */
+export function stripTerminalControl(data: string): { text: string; pending: string } {
+  const partial = PARTIAL_CONTROL_RE.exec(data);
+  const pending = partial ? partial[0] : "";
+  const complete = pending ? data.slice(0, -pending.length) : data;
+  const text = complete.replace(TERMINAL_CONTROL_RE, "").replace(/\r+\n/g, "\n").replace(/\r/g, "");
+  return { text, pending };
+}
+
 /** Injectable PTY substrate. Production delegates to the shared manager. */
 export interface PtyAdapter {
   spawn(cwd: string): Promise<{ sessionId: string; pid?: number }>;
@@ -133,6 +150,7 @@ export class CairnPtySession implements TerminalBackendSession {
   private readonly sendTimeoutMs: number;
   private readonly disposeGraceMs: number;
   private buffer = "";
+  private pendingControl = "";
   private dropped = false;
   private statusValue: TerminalSessionStatus = { kind: "running" };
   private active: ActiveSend | undefined;
@@ -161,7 +179,12 @@ export class CairnPtySession implements TerminalBackendSession {
     );
   }
 
-  private appendOutput(data: string): void {
+  private appendOutput(raw: string): void {
+    const { text: data, pending } = stripTerminalControl(this.pendingControl + raw);
+    this.pendingControl = pending.length > 256 ? "" : pending;
+    // Output arrived even if it was only control bytes (ConPTY repaints) —
+    // keep the idle-silence clock honest.
+    if (raw.length > 0 && this.active) this.active.lastOutputAt = Date.now();
     if (data.length === 0) return;
     this.buffer += data;
     const lines = this.buffer.split("\n");

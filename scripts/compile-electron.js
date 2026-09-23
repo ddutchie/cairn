@@ -99,12 +99,19 @@ const runtimeServer = {
 // this file via internals.windowsAclRunnerEntry (see cordis-coding-tools.ts)
 // so the resolve() call is never reached. koffi stays external (shipped since
 // #147); the runner requires it at runtime from app/node_modules.
+// dsh spawns it as `[process.execPath, runner]`, which in Cairn is Electron.exe,
+// so cordis-coding-tools.ts adds ELECTRON_RUN_AS_NODE=1 to that one spawn
+// (without it every shell command booted a second Cairn instance). The banner
+// drops it again before the runner spawns the sandboxed command, which
+// inherits this process's environment block. Otherwise user commands like
+// `electron .` would silently run as Node.
 const windowsAclRunner = {
   entryPoints: ["node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/runner.js"],
   bundle: true,
   platform: "node",
   target: "node24",
   external: ["koffi"],
+  banner: { js: "delete process.env.ELECTRON_RUN_AS_NODE;" },
   outfile: "dist-electron/windows-acl-runner.cjs",
   format: "cjs",
 };

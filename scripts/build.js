@@ -71,7 +71,7 @@ run(
 
 // 3a. Bundle the Windows sandbox runner as a standalone file (see
 // scripts/compile-electron.js for the full rationale).
-run("esbuild node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/runner.js --bundle --platform=node --target=node24 --external:koffi --outfile=dist-electron/windows-acl-runner.cjs --format=cjs");
+run("esbuild node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/runner.js --bundle --platform=node --target=node24 --external:koffi --outfile=dist-electron/windows-acl-runner.cjs --format=cjs --banner:js=\"delete process.env.ELECTRON_RUN_AS_NODE;\"");
 
 // 3b. Bundle the runtime server (unified embeddings + LLM — runs as ELECTRON_RUN_AS_NODE child)
 run("esbuild electron/runtime/server.ts --bundle --platform=node --target=node24 --external:@huggingface/transformers --external:onnxruntime-node --outfile=dist-electron/runtime-server.bundle.js --format=cjs");
