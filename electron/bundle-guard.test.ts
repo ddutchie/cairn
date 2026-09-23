@@ -305,7 +305,7 @@ describe("import.meta stub guards (esbuild CJS breaks ESM import.meta.*)", () =>
     const offenders = src.match(/import_meta\d*\.resolve\s*\(/g) ?? [];
     expect(
       offenders,
-      `dist-electron/main.js calls a stubbed import.meta.resolve (${offenders.length}x). Add a define+banner shim in scripts/compile-electron.js (and the matching flags in scripts/build.js).`,
+      `dist-electron/main.js calls a stubbed import.meta.resolve (${offenders.length}x). Add a define+banner shim in scripts/compile-electron.js (scripts/build.js reuses it via --electron-only).`,
     ).toHaveLength(0);
   });
 
@@ -319,6 +319,24 @@ describe("import.meta stub guards (esbuild CJS breaks ESM import.meta.*)", () =>
       fs.existsSync(path.join(ROOT, "dist-electron/windows-acl-runner.cjs")),
       "dist-electron/windows-acl-runner.cjs missing — run `npm run compile` (scripts/compile-electron.js builds it from dsh-sandbox-windows-acl).",
     ).toBe(true);
+  });
+
+  it("subprocess containment runner ships and is launched in Node mode", () => {
+    // dsh-subprocess-local spawns `[process.execPath, runner]` — Electron.exe
+    // in Cairn. The resolve shim points at the bundled bootstrap and the
+    // patchSubprocessRunnerEnv plugin adds ELECTRON_RUN_AS_NODE to the
+    // runner's env; without both, every agent subprocess boots a second app.
+    if (!fs.existsSync(mainBundle)) return;
+    const src = fs.readFileSync(mainBundle, "utf8");
+    expect(fs.existsSync(path.join(ROOT, "dist-electron/subprocess-runner.cjs")), "dist-electron/subprocess-runner.cjs missing — run `npm run compile`.").toBe(true);
+    expect(src, "resolve shim no longer maps the dsh-subprocess-local runner to subprocess-runner.cjs").toContain("'subprocess-runner.cjs'");
+    expect(src, "patchSubprocessRunnerEnv did not apply — runnerEnvironment lacks ELECTRON_RUN_AS_NODE").toMatch(/\[SUBPROCESS_RUNNER_ENV\]: selection,\s*\.\.\.\(?process\.versions\.electron \? \{ ELECTRON_RUN_AS_NODE: "1" \}/);
+  });
+
+  it("workflow worker ships beside the bundle", () => {
+    // dsh-workflow-worker-thread loads new URL("./worker.cjs", import.meta.url).
+    if (!fs.existsSync(mainBundle)) return;
+    expect(fs.existsSync(path.join(ROOT, "dist-electron/worker.cjs")), "dist-electron/worker.cjs missing — run `npm run compile`.").toBe(true);
   });
 });
 

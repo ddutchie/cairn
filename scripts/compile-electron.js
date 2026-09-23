@@ -16,9 +16,40 @@
  * Usage: node scripts/compile-electron.js [--watch]
  */
 
+const fs = require("fs");
 const esbuild = require("esbuild");
 
 const watch = process.argv.includes("--watch");
+// Main/preload + the helpers spawned or loaded beside it. scripts/build.js
+// uses this so release builds get the same plugins and shims as dev.
+const electronOnly = process.argv.includes("--electron-only");
+
+/**
+ * dsh-subprocess-local spawns its containment runner (Win32 Job / systemd
+ * scope) as `[process.execPath, runner]`. Upstream's desktop app runs the
+ * whole dsh Host with ELECTRON_RUN_AS_NODE=1 (apps/desktop
+ * desktopNodeEnvironment), so that spawn inherits Node mode. Cairn runs
+ * Cordis in the Electron main process, where it would boot a second Cairn
+ * per subprocess. Add ELECTRON_RUN_AS_NODE to the runner's own environment
+ * (runnerEnvironment) only; the target command's env travels separately in
+ * the launch request. Fails the build if a dsh upgrade moves the line.
+ */
+const patchSubprocessRunnerEnv = {
+  name: "dsh-subprocess-runner-electron-env",
+  setup(build) {
+    build.onLoad({ filter: /dsh-subprocess-local[\\/]lib[\\/]runner-launch-[^\\/]+\.js$/ }, async (args) => {
+      const src = await fs.promises.readFile(args.path, "utf8");
+      const needle = "[SUBPROCESS_RUNNER_ENV]: selection,";
+      if (src.split(needle).length !== 2) {
+        throw new Error(`patchSubprocessRunnerEnv: expected exactly one "${needle}" in ${args.path} — dsh-subprocess-local changed; update scripts/compile-electron.js`);
+      }
+      return {
+        contents: src.replace(needle, `${needle} ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),`),
+        loader: "js",
+      };
+    });
+  },
+};
 
 const mainPreload = {
   entryPoints: ["electron/main.ts", "electron/preload.ts"],
@@ -48,13 +79,13 @@ const mainPreload = {
   alias: { "@vscode/ripgrep": "./electron/lib/ripgrep-path.ts" },
   outdir: "dist-electron",
   format: "cjs",
-  // The resolve shim refuses dsh-subprocess-local's runner: dsh spawns it as
-  // `[process.execPath, runner]` (Electron.exe, not Node) for Windows Job
-  // containment, which boots a second Cairn for every subprocess. Refusing
-  // makes probeWindowsJob() fail, so dsh uses its plain-spawn fallback — what
-  // the packaged app already did, since the runner isn't shipped.
+  // The resolve shim maps dsh-subprocess-local's runner to Cairn's bundled
+  // bootstrap beside main.js (electron/subprocess-runner.ts) — the package
+  // itself is inlined, not shipped on disk. patchSubprocessRunnerEnv supplies
+  // the Node-mode half.
+  plugins: [patchSubprocessRunnerEnv],
   banner: {
-    js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>{if(s==='@deepseek-ai/dsh-subprocess-local/runner')throw new Error('subprocess runner disabled in Electron');return require('url').pathToFileURL(require.resolve(s)).href};",
+    js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(s==='@deepseek-ai/dsh-subprocess-local/runner'?require('path').join(__dirname,'subprocess-runner.cjs'):require.resolve(s)).href;",
   },
   define: {
     "import.meta.url": "globalThis.__cairnImportMetaUrl",
@@ -141,8 +172,24 @@ const workflowWorker = {
   define: mainPreload.define,
 };
 
+// dsh-subprocess-local containment runner bootstrap (see
+// electron/subprocess-runner.ts). Runs under ELECTRON_RUN_AS_NODE; needs the
+// import.meta.url shim because runner-launch computes a path from it at load.
+const subprocessRunner = {
+  entryPoints: ["electron/subprocess-runner.ts"],
+  bundle: true,
+  platform: "node",
+  target: "node24",
+  external: ["electron", "koffi"],
+  outfile: "dist-electron/subprocess-runner.cjs",
+  format: "cjs",
+  banner: mainPreload.banner,
+  define: mainPreload.define,
+};
+
 async function main() {
-  const configs = [mainPreload, mcpServer, embeddingsServer, runtimeServer, windowsAclRunner, workflowWorker];
+  const electronConfigs = [mainPreload, windowsAclRunner, workflowWorker, subprocessRunner];
+  const configs = electronOnly ? electronConfigs : [...electronConfigs, mcpServer, embeddingsServer, runtimeServer];
   if (watch) {
     const contexts = await Promise.all(configs.map((c) => esbuild.context(c)));
     await Promise.all(contexts.map((ctx) => ctx.watch()));
