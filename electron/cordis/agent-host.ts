@@ -15,6 +15,7 @@ import {
 } from "./session-replay";
 import type { SessionStatsSnapshot } from "./session-stats";
 import { buildSystemPrompt, getCachedConfig } from "./host-store";
+import type { OneShotOptions } from "./one-shot";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -83,6 +84,7 @@ export interface AgentHost {
   releaseSessionAgent(sessionId: string): Promise<void>;
   listSessionChildIds(parentSessionId: string): Promise<string[]>;
   clearChatSessionAgents(threadId: string, subagentIds?: string[]): Promise<void>;
+  runOneShot(options: OneShotOptions): Promise<string>;
 }
 
 interface CommandRuntimeLike {
@@ -398,6 +400,10 @@ function createLocalAgentHost(): AgentHost {
           if (id === threadId || id === stableId || id.startsWith(prefix) || id.startsWith(threadId) || id.startsWith(stableId) || subagentIds.includes(id)) tryReleaseAgent(agents, id);
         }
       } catch { }
+    },
+    async runOneShot(options) {
+      const { runOneShotWithContext } = await import("./one-shot");
+      return runOneShotWithContext(await context(), options);
     },
   };
 }

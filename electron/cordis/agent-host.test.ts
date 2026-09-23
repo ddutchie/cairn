@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   dispose: vi.fn(),
   deleteAgent: vi.fn(),
   getAgent: vi.fn(),
+  runOneShotWithContext: vi.fn(),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -34,6 +35,7 @@ vi.mock("./permissions-bridge", () => ({ readPermissionsSnapshot: mocks.readPerm
 vi.mock("./session-replay", () => ({ loadSessionMessages: mocks.loadSessionMessages }));
 vi.mock("./run-cordis-loop", () => ({ prepareReplayContext: mocks.prepareReplayContext }));
 vi.mock("./session-stats", () => ({ readSessionStatsSnapshot: mocks.readSessionStatsSnapshot }));
+vi.mock("./one-shot", () => ({ runOneShotWithContext: mocks.runOneShotWithContext }));
 
 import { getAgentHost } from "./agent-host";
 
@@ -150,6 +152,16 @@ describe("AgentHost", () => {
     expect(execute).toHaveBeenCalledWith(agent, "/plan", [], expect.any(AbortSignal));
     expect(mocks.getPlanModeActive).toHaveBeenCalledWith(contextWithCommands, agent.session);
     expect(mocks.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("runs one-shot AI with the host context", async () => {
+    const options = { systemPrompt: "system", userPrompt: "user", config: { baseUrl: "https://api.openai.com", model: "model-1", apiKey: "key-1" }, source: "test" };
+    mocks.runOneShotWithContext.mockResolvedValue("result");
+
+    await expect(getAgentHost().runOneShot(options)).resolves.toBe("result");
+
+    expect(mocks.runOneShotWithContext).toHaveBeenCalledWith(context, options);
+    expect(mocks.getContext).toHaveBeenCalledOnce();
   });
 
   it("releases a resident session agent best-effort", async () => {
