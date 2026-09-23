@@ -75,7 +75,11 @@ run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node24 --e
 // 5. Build self-contained cairn-mcp binary (bundles Node 24 + better-sqlite3)
 run(`node scripts/build-mcp-binary.js ${platformFlags}`);
 
-// 6. Package with electron-builder
+// 6. Fetch runtime-resolved native packages (ripgrep, dsh node-addon-system)
+// for every packaged arch — npm only installed the build machine's.
+run(`node scripts/fetch-cross-arch-natives.js ${platformFlags}`);
+
+// 7. Package with electron-builder
 run(`electron-builder ${platformFlags}`);
 
 console.log("\nBuild complete. Output in dist-app/");

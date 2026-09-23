@@ -53,9 +53,9 @@ const REVIEWED_RUNTIME_LOOKUPS: Record<string, string> = {
   "createRequire dist-electron/main.js node_modules/@deepseek-ai/dsh-llm/lib/index.js":
     "Reads ../package.json for APP_IDENTITY.version; resolves to Cairn's package.json when bundled, so it reports Cairn's version. Harmless.",
   "createRequire dist-electron/main.js node_modules/@deepseek-ai/node-addon-system/lib/flock.js":
-    `POSIX session lock (dsh-session-persistence-jsonl) needs @deepseek-ai/node-addon-system-<platform>-<arch> shipped on macOS/Linux. OPEN — ${PLAN}.`,
+    "POSIX session lock (dsh-session-persistence-jsonl) loads bin/system.node from @deepseek-ai/node-addon-system-<platform>-<arch>; shipped + unpacked (electron-builder.yml, RUNTIME_RESOLVED_FILES below), every arch fetched by scripts/fetch-cross-arch-natives.js.",
   "createRequire dist-electron/main.js node_modules/@deepseek-ai/node-addon-system/lib/index.js":
-    `Linux Landlock launcher path (dsh-sandbox-local). OPEN — ${PLAN}.`,
+    "Linux Landlock launcher default path — overridden by pinLandlockLauncher (cordis-coding-tools.ts), which points at the app.asar.unpacked copy.",
   "createRequire dist-electron/main.js node_modules/fflate/esm/index.mjs":
     "Probes the worker_threads builtin only.",
   "execPath dist-electron/main.js node_modules/@deepseek-ai/dsh-sandbox-local/lib/index.js":
@@ -79,7 +79,7 @@ const REVIEWED_RUNTIME_LOOKUPS: Record<string, string> = {
   "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-workflow-worker-thread/lib/index.js":
     "./worker.cjs — built to dist-electron/worker.cjs by compile-electron.js.",
   "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/node-addon-system/lib/index.js":
-    `Landlock launcher fallback path (Linux). OPEN — ${PLAN}.`,
+    "Landlock launcher fallback path (Linux) — unused once pinLandlockLauncher sets internals.landlockLauncher.",
   "worker dist-electron/main.js node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js":
     "Verification worker — never called (dead code).",
   "worker dist-electron/main.js node_modules/@deepseek-ai/dsh-workflow-worker-thread/lib/index.js":
@@ -121,6 +121,35 @@ function scanRuntimeLookups(): Set<string> {
 
 const allBuilt = LOOKUP_BUNDLES.every((b) => fs.existsSync(path.join(ROOT, b)));
 
+/**
+ * Per-platform packages resolved at runtime from bundled code. Each must ship
+ * AND be unpacked from app.asar (native addons / spawned executables). Sample
+ * files use every platform's name, since a Windows CI run can't see the
+ * macOS/Linux packages on disk.
+ */
+const RUNTIME_RESOLVED_FILES = [
+  // Session-lock flock binding + Landlock launcher (node-addon-system).
+  "node_modules/@deepseek-ai/node-addon-system-darwin-arm64/bin/system.node",
+  "node_modules/@deepseek-ai/node-addon-system-darwin-x64/bin/system.node",
+  "node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/landlock-run",
+  "node_modules/@deepseek-ai/node-addon-system-linux-arm64/bin/landlock-run",
+  // ripgrep for glob/grep (electron/lib/ripgrep-path.ts).
+  "node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe",
+  "node_modules/@vscode/ripgrep-darwin-arm64/bin/rg",
+  "node_modules/@vscode/ripgrep-linux-x64/bin/rg",
+];
+
+/** Run electron-builder.yml's `files` / `asarUnpack` through electron-builder's own matcher. */
+function builderFilter(key: "files" | "asarUnpack"): (rel: string) => boolean {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const yaml = require(require.resolve("js-yaml", { paths: [path.join(ROOT, "node_modules/app-builder-lib")] }));
+  const { FileMatcher } = require("app-builder-lib/out/fileMatcher");
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const config = yaml.load(fs.readFileSync(path.join(ROOT, "electron-builder.yml"), "utf8"));
+  const filter = new FileMatcher(ROOT, "/", (s: string) => s, config[key]).createFilter();
+  return (rel) => filter(path.join(ROOT, rel), { isDirectory: () => false });
+}
+
 describe("runtime lookups in bundled dependencies", () => {
   it("every runtime file/binary lookup in node_modules code is reviewed", () => {
     if (!allBuilt) return;
@@ -130,6 +159,19 @@ describe("runtime lookups in bundled dependencies", () => {
       "A bundled dependency (usually a dsh upgrade) added a runtime lookup that bundling can break: spawning process.execPath (Electron, not Node, in Cairn), import.meta.resolve / new URL(…, import.meta.url) / createRequire (resolve relative to the ORIGINAL module, which isn't on disk once bundled), or a worker file. " +
         `Check the target ships beside the bundle and runs under Electron, fix it (patterns used so far: ${PLAN}), then add the key to REVIEWED_RUNTIME_LOOKUPS with how it's handled.\n  Unreviewed:\n    - ` +
         unreviewed.join("\n    - "),
+    ).toHaveLength(0);
+  });
+
+  it("per-platform packages resolved at runtime ship unpacked (electron-builder.yml)", () => {
+    const shipped = builderFilter("files");
+    const unpacked = builderFilter("asarUnpack");
+    const problems = RUNTIME_RESOLVED_FILES.flatMap((rel) => [
+      ...(shipped(rel) ? [] : [`not shipped: ${rel}`]),
+      ...(unpacked(rel) ? [] : [`not unpacked: ${rel}`]),
+    ]);
+    expect(
+      problems,
+      "electron-builder.yml drops or packs a runtime-resolved native package. Add `node_modules/<pkg>-*/**/*` to `files` AFTER the `!node_modules/!(…)` exclusion (last match wins) and to `asarUnpack`.\n  Problems:\n    - " + problems.join("\n    - "),
     ).toHaveLength(0);
   });
 

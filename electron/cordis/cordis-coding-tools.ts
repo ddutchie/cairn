@@ -112,6 +112,8 @@ async function plugFsChain(
   try { remapChatArtifactDirs(ctx); } catch { /* best-effort */ }
   // Pin the Windows sandbox runner (no-op off win32 / when already pinned).
   try { pinWindowsAclRunnerEntry(ctx); } catch { /* best-effort */ }
+  // Pin the Linux Landlock launcher (no-op off Linux / when already pinned).
+  try { pinLandlockLauncher(ctx); } catch { /* best-effort */ }
 }
 
 /** Mount ONLY the fs/sandbox ownership trio — used by the chat loop so plugin
@@ -161,6 +163,27 @@ export function pinWindowsAclRunnerEntry(ctx: Context): void {
     const entry = path.join(path.dirname(__filename), "windows-acl-runner.cjs");
     if (fs.existsSync(entry)) sandbox.internals.windowsAclRunnerEntry = entry;
   } catch { /* best-effort — the resolve() shim remains as fallback */ }
+}
+
+/** Pin the Linux Landlock launcher to the unpacked binary.
+ *
+ *  dsh-sandbox-local finds `landlock-run` in the per-platform
+ *  `@deepseek-ai/node-addon-system-linux-<arch>` package relative to its own
+ *  (bundled) module, and in the packaged app that path is inside app.asar,
+ *  which `spawn` can't execute. The package ships unpacked
+ *  (electron-builder.yml), so resolve it here and rewrite to
+ *  app.asar.unpacked. No-op off Linux, when already pinned, or when the
+ *  package is missing (dsh then reports the sandbox as unavailable). */
+export function pinLandlockLauncher(ctx: Context): void {
+  if (process.platform !== "linux") return;
+  const sandbox = ctx.get("sandbox") as { internals?: { landlockLauncher?: string } } | undefined;
+  if (!sandbox || typeof sandbox.internals !== "object" || sandbox.internals.landlockLauncher) return;
+  try {
+    const manifest = require.resolve(`@deepseek-ai/node-addon-system-${process.platform}-${process.arch}/package.json`);
+    sandbox.internals.landlockLauncher = path
+      .join(path.dirname(manifest), "bin", "landlock-run")
+      .replace(/app\.asar([\\/])/, "app.asar.unpacked$1");
+  } catch { /* package not installed for this arch — leave dsh's default */ }
 }
 
 /** Run the pinned Windows sandbox runner as Node, not as a second Cairn.
