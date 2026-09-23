@@ -110,6 +110,7 @@ export async function listSubagentChildren(
   scope: SubagentScope | AbortSignal = "children",
   signal?: AbortSignal,
 ): Promise<SubagentCatalogView> {
+  requireId(parentSessionId, "parentSessionId");
   return listSubagentChildrenWithContext(await getContext(), parentSessionId, scope, signal);
 }
 
@@ -117,6 +118,8 @@ export async function interruptSubagentChild(
   parentSessionId: string,
   childId: string,
 ): Promise<{ accepted: true }> {
+  requireId(parentSessionId, "parentSessionId");
+  requireId(childId, "childId");
   return interruptSubagentChildWithContext(await getContext(), parentSessionId, childId);
 }
 
@@ -126,6 +129,14 @@ export async function messageSubagentChild(
   text: string,
   signal?: AbortSignal,
 ): Promise<{ messageId: string }> {
+  requireId(parentSessionId, "parentSessionId");
+  requireId(childId, "childId");
+  if (typeof text !== "string" || text.trim().length === 0) {
+    throw new SubagentControlError("bad-request", "message text must be non-empty");
+  }
+  if (text.length > 8000) {
+    throw new SubagentControlError("bad-request", "message text exceeds 8000 characters");
+  }
   return messageSubagentChildWithContext(await getContext(), parentSessionId, childId, text, signal);
 }
 
