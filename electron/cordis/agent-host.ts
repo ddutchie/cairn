@@ -22,6 +22,8 @@ import {
   clearPendingQuestions,
   resolvePendingQuestionAnswer,
 } from "./pending-question-broker";
+import { canonicalBashCommand, clearSessionGrants, getSessionGrants } from "./approval-grants";
+import { clearSecretGrants } from "./secret-grants";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -84,6 +86,9 @@ export interface AgentHost {
   messageSubagentChild(parentSessionId: string, childId: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>;
   respondToQuestion(sessionId: string, callId: string, answers: string): boolean;
   clearSessionQuestions(sessionId: string): void;
+  grantSessionBash(sessionId: string, command: string): void;
+  grantSessionTool(sessionId: string, toolName: string): void;
+  clearSessionApprovalState(sessionId: string): void;
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -212,6 +217,17 @@ function createLocalAgentHost(): AgentHost {
     },
     clearSessionQuestions(sessionId) {
       clearPendingQuestions(sessionId);
+    },
+    grantSessionBash(sessionId, command) {
+      const canonical = canonicalBashCommand(command);
+      if (canonical) getSessionGrants(sessionId).bashCommands.add(canonical);
+    },
+    grantSessionTool(sessionId, toolName) {
+      if (toolName) getSessionGrants(sessionId).tools.add(toolName);
+    },
+    clearSessionApprovalState(sessionId) {
+      clearSessionGrants(sessionId);
+      clearSecretGrants(sessionId);
     },
     async listCommands() {
       const ctx = await context();

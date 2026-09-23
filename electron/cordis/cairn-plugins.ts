@@ -38,6 +38,7 @@ import {
 export { CAIRN_DB, CAIRN_HOST };
 export type { HostStore };
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, readPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
+import { getSecretGrants } from "./secret-grants";
 import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
 import type { RiskClass } from "../../shared/agent/tool-risk";
 import { shouldAskForTool, modeFromAutoApprove, isMode, type Mode } from "../../shared/agent/approval-mode";
@@ -49,15 +50,6 @@ function toolCallTitle(name: string, argsRaw?: string): string {
   try {
     return resolveToolCallView(name, argsRaw)?.title as string ?? name;
   } catch { return name; }
-}
-const secretGrantsBySession = new Map<string, Set<string>>();
-function getSecretGrants(sessionId: string): Set<string> {
-  let s = secretGrantsBySession.get(sessionId);
-  if (!s) { s = new Set(); secretGrantsBySession.set(sessionId, s); }
-  return s;
-}
-export function clearSecretGrants(sessionId: string): void {
-  secretGrantsBySession.delete(sessionId);
 }
 function secretPathForCall(name: string, args: Record<string, unknown>): string | undefined {
   if (name === "bash" && typeof args.command === "string" && bashReferencesSecretFile(args.command)) {

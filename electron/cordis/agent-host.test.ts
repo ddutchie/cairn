@@ -25,6 +25,10 @@ const mocks = vi.hoisted(() => ({
   messageSubagentChildWithContext: vi.fn(),
   resolvePendingQuestionAnswer: vi.fn(),
   clearPendingQuestions: vi.fn(),
+  getSessionGrants: vi.fn(),
+  clearSessionGrants: vi.fn(),
+  clearSecretGrants: vi.fn(),
+  canonicalBashCommand: vi.fn(),
 }));
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext }));
@@ -51,6 +55,12 @@ vi.mock("./pending-question-broker", () => ({
   resolvePendingQuestionAnswer: mocks.resolvePendingQuestionAnswer,
   clearPendingQuestions: mocks.clearPendingQuestions,
 }));
+vi.mock("./approval-grants", () => ({
+  getSessionGrants: mocks.getSessionGrants,
+  clearSessionGrants: mocks.clearSessionGrants,
+  canonicalBashCommand: mocks.canonicalBashCommand,
+}));
+vi.mock("./secret-grants", () => ({ clearSecretGrants: mocks.clearSecretGrants }));
 
 import { getAgentHost } from "./agent-host";
 
@@ -202,6 +212,21 @@ describe("AgentHost", () => {
 
     expect(mocks.resolvePendingQuestionAnswer).toHaveBeenCalledWith("session-1", "call-1", "answer");
     expect(mocks.clearPendingQuestions).toHaveBeenCalledWith("session-1");
+  });
+
+  it("routes session approval grants through the host", () => {
+    const grants = { tools: new Set<string>(), bashCommands: new Set<string>() };
+    mocks.getSessionGrants.mockReturnValue(grants);
+    mocks.canonicalBashCommand.mockReturnValue("echo ok");
+
+    getAgentHost().grantSessionBash("session-1", " echo   ok ");
+    getAgentHost().grantSessionTool("session-1", "read_file");
+    getAgentHost().clearSessionApprovalState("session-1");
+
+    expect(grants.bashCommands).toEqual(new Set(["echo ok"]));
+    expect(grants.tools).toEqual(new Set(["read_file"]));
+    expect(mocks.clearSessionGrants).toHaveBeenCalledWith("session-1");
+    expect(mocks.clearSecretGrants).toHaveBeenCalledWith("session-1");
   });
 
   it("runs one-shot AI with the host context", async () => {

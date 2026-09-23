@@ -26,8 +26,7 @@ import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
-import { getSessionGrants, clearSessionGrants, canonicalBashCommand, readPendingApprovalArgs, forgetPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
-import { clearSecretGrants } from "../cordis/cairn-plugins";
+import { canonicalBashCommand, readPendingApprovalArgs, forgetPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import { addWorkspaceApprovalGrant } from "../db/approval-grant-queries";
 import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
@@ -97,8 +96,7 @@ function sweepSessionPendings(sessionId: string): void {
       if (key.startsWith(prefix)) map.delete(key);
     }
   }
-  clearSessionGrants(sessionId);
-  clearSecretGrants(sessionId);
+  getAgentHost().clearSessionApprovalState(sessionId);
   pendingAsks.clearSession(sessionId);
   getAgentHost().clearSessionQuestions(sessionId);
   clearAskNoncesForSession(sessionId);
@@ -1059,7 +1057,7 @@ export function registerSessionRuntimeHandlers(
       const trusted = readPendingApprovalArgs(sessionId, callId);
       const trustedCommand = trusted && typeof trusted.command === "string" ? trusted.command : undefined;
       const cmd = canonicalBashCommand(trustedCommand);
-      if (cmd) getSessionGrants(sessionId).bashCommands.add(cmd);
+       if (cmd) getAgentHost().grantSessionBash(sessionId, cmd);
     }
     if (approved && grant === "workspace") {
       // Persistent workspace grant — survives across sessions. The tool name is
@@ -1082,8 +1080,8 @@ export function registerSessionRuntimeHandlers(
             // Also grant this session immediately so the current turn proceeds
             // without needing to re-read the DB before the next ask.
             if (grantRec) {
-              if (toolName === "bash" && target) getSessionGrants(sessionId).bashCommands.add(target);
-              else getSessionGrants(sessionId).tools.add(toolName);
+               if (toolName === "bash" && target) getAgentHost().grantSessionBash(sessionId, target);
+               else getAgentHost().grantSessionTool(sessionId, toolName);
             }
           }
         } catch (e) {
