@@ -782,7 +782,12 @@ app.on("before-quit", (event) => {
   shutdownStarted = true;
   void (async () => {
     try {
-      await getAgentHost().shutdown();
+      // Fail-open on a timer so a hung turn can never wedge the quit: the
+      // dev supervisor uses the same 5s force-kill window on restart.
+      await Promise.race([
+        getAgentHost().shutdown(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
     } catch (err) {
       console.error("[main] agent host shutdown failed:", err);
     }

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getContext: vi.fn(),
+  getSessionRoot: vi.fn(() => "/tmp/sessions"),
   setSessionRoot: vi.fn(),
   shutdownContext: vi.fn(),
+  dropChatAgentForThread: vi.fn(),
   readGoalSnapshot: vi.fn(),
   putMessageFeedback: vi.fn(),
   getMessageFeedback: vi.fn(),
@@ -27,9 +29,15 @@ const mocks = vi.hoisted(() => ({
   interruptSubagentChildWithContext: vi.fn(),
   messageSubagentChildWithContext: vi.fn(),
   resolvePendingQuestionAnswer: vi.fn(),
+  registerPendingQuestion: vi.fn(),
+  recordPendingQuestion: vi.fn(),
+  listPendingQuestions: vi.fn((): PendingQuestionRecord[] => []),
   clearPendingQuestions: vi.fn(),
   clearAllPendingQuestions: vi.fn(),
   getSessionGrants: vi.fn(),
+  readPendingApprovalArgs: vi.fn(),
+  forgetPendingApprovalArgs: vi.fn(),
+  forgetSessionApprovalArgs: vi.fn(),
   clearSessionGrants: vi.fn(),
   clearSecretGrants: vi.fn(),
   clearAllSecretGrants: vi.fn(),
@@ -38,13 +46,19 @@ const mocks = vi.hoisted(() => ({
   canonicalBashCommand: vi.fn(),
   createPendingAskRegistry: vi.fn(() => ({ record: vi.fn(), resolve: vi.fn(), listForSession: vi.fn(() => []), clearSession: vi.fn(), clearAll: vi.fn() })),
   setPluginsRoot: vi.fn(),
+  getPluginsRoot: vi.fn(() => "/tmp/plugins"),
   stopWatchingUserPlugins: vi.fn(),
   installPlugin: vi.fn(),
   updatePlugin: vi.fn(),
   uninstallPlugin: vi.fn(),
+  createInteractiveConfirmTransport: vi.fn(),
+  createHeadlessConfirmTransport: vi.fn(),
+  setConfirmTransport: vi.fn(),
+  clearAllConfirmTransports: vi.fn(),
+  killJob: vi.fn(),
 }));
 
-vi.mock("./cordis-context", () => ({ getContext: mocks.getContext, setSessionRoot: mocks.setSessionRoot, shutdownContext: mocks.shutdownContext }));
+vi.mock("./cordis-context", () => ({ getContext: mocks.getContext, getSessionRoot: mocks.getSessionRoot, setSessionRoot: mocks.setSessionRoot, shutdownContext: mocks.shutdownContext, dropChatAgentForThread: mocks.dropChatAgentForThread }));
 vi.mock("./goal-bridge", () => ({ readGoalSnapshot: mocks.readGoalSnapshot }));
 vi.mock("./message-feedback", () => ({
   putMessageFeedback: mocks.putMessageFeedback,
@@ -66,6 +80,9 @@ vi.mock("./subagent-control", () => ({
 }));
 vi.mock("./pending-question-broker", () => ({
   resolvePendingQuestionAnswer: mocks.resolvePendingQuestionAnswer,
+  registerPendingQuestion: mocks.registerPendingQuestion,
+  recordPendingQuestion: mocks.recordPendingQuestion,
+  listPendingQuestions: mocks.listPendingQuestions,
   clearPendingQuestions: mocks.clearPendingQuestions,
   clearAllPendingQuestions: mocks.clearAllPendingQuestions,
 }));
@@ -74,11 +91,22 @@ vi.mock("./approval-grants", () => ({
   clearSessionGrants: mocks.clearSessionGrants,
   clearAllSessionGrants: mocks.clearAllSessionGrants,
   canonicalBashCommand: mocks.canonicalBashCommand,
+  readPendingApprovalArgs: mocks.readPendingApprovalArgs,
+  forgetPendingApprovalArgs: mocks.forgetPendingApprovalArgs,
+  forgetSessionApprovalArgs: mocks.forgetSessionApprovalArgs,
   createPendingAskRegistry: mocks.createPendingAskRegistry,
 }));
+vi.mock("./approval-transports", () => ({
+  clearAllConfirmTransports: mocks.clearAllConfirmTransports,
+  createInteractiveConfirmTransport: mocks.createInteractiveConfirmTransport,
+  createHeadlessConfirmTransport: mocks.createHeadlessConfirmTransport,
+  setConfirmTransport: mocks.setConfirmTransport,
+}));
+vi.mock("./jobs-bridge", () => ({ killJob: mocks.killJob }));
 vi.mock("./secret-grants", () => ({ clearSecretGrants: mocks.clearSecretGrants, clearAllSecretGrants: mocks.clearAllSecretGrants }));
 vi.mock("./plugin-loader", () => ({
   setPluginsRoot: mocks.setPluginsRoot,
+  getPluginsRoot: mocks.getPluginsRoot,
   stopWatchingUserPlugins: mocks.stopWatchingUserPlugins,
 }));
 vi.mock("./plugin-installer", () => ({
@@ -88,6 +116,7 @@ vi.mock("./plugin-installer", () => ({
 }));
 
 import { getAgentHost } from "./agent-host";
+import type { PendingQuestionRecord } from "./pending-question-broker";
 
 const context = { marker: "context", compaction: undefined as unknown };
 
@@ -309,6 +338,68 @@ describe("AgentHost", () => {
     getAgentHost().configurePluginsRoot("/tmp/plugins");
 
     expect(mocks.setPluginsRoot).toHaveBeenCalledWith("/tmp/plugins");
+    expect(getAgentHost().getSessionRoot()).toBe("/tmp/sessions");
+    expect(getAgentHost().getPluginsRoot()).toBe("/tmp/plugins");
+  });
+
+  it("routes trusted approval args through the host", () => {
+    mocks.readPendingApprovalArgs.mockReturnValue({ command: "echo hi" });
+    mocks.canonicalBashCommand.mockImplementation((cmd: unknown) =>
+      typeof cmd === "string" ? cmd.trim().replace(/\s+/g, " ") || null : null,
+    );
+
+    expect(getAgentHost().readPendingApprovalArgs("session-1", "call-1")).toEqual({ command: "echo hi" });
+    expect(getAgentHost().readTrustedBashCommand("session-1", "call-1")).toBe("echo hi");
+    getAgentHost().forgetPendingApprovalArgs("session-1", "call-1");
+    getAgentHost().forgetSessionApprovalArgs("session-1");
+
+    expect(mocks.readPendingApprovalArgs).toHaveBeenCalledWith("session-1", "call-1");
+    expect(mocks.forgetPendingApprovalArgs).toHaveBeenCalledWith("session-1", "call-1");
+    expect(mocks.forgetSessionApprovalArgs).toHaveBeenCalledWith("session-1");
+  });
+
+  it("routes question broker reads and writes through the host", () => {
+    const record = { sessionId: "session-1", callId: "call-1", questions: [{ id: "q1" }] };
+    const resolve = vi.fn();
+    mocks.listPendingQuestions.mockReturnValue([record]);
+    mocks.registerPendingQuestion.mockReturnValue(() => {});
+
+    getAgentHost().recordPendingQuestion(record);
+    expect(getAgentHost().listPendingQuestions("session-1")).toEqual([record]);
+    getAgentHost().registerPendingQuestion("session-1", "call-1", resolve);
+
+    expect(mocks.recordPendingQuestion).toHaveBeenCalledWith(record);
+    expect(mocks.listPendingQuestions).toHaveBeenCalledWith("session-1");
+    expect(mocks.registerPendingQuestion).toHaveBeenCalledWith("session-1", "call-1", resolve);
+  });
+
+  it("binds and unbinds confirm transports through the host", () => {
+    const interactive = { send: vi.fn(), registerPending: vi.fn() };
+    const headless = { emitApproval: vi.fn(), registerPending: vi.fn() };
+    const transport = { confirm: vi.fn() };
+    mocks.createInteractiveConfirmTransport.mockReturnValue(transport);
+    mocks.createHeadlessConfirmTransport.mockReturnValue(transport);
+
+    getAgentHost().bindInteractiveConfirmTransport("session-1", interactive);
+    getAgentHost().bindHeadlessConfirmTransport("run-1", headless);
+    getAgentHost().unbindConfirmTransport("session-1");
+
+    expect(mocks.createInteractiveConfirmTransport).toHaveBeenCalledWith({ sessionId: "session-1", ...interactive });
+    expect(mocks.createHeadlessConfirmTransport).toHaveBeenCalledWith(headless);
+    expect(mocks.setConfirmTransport).toHaveBeenCalledWith("session-1", transport);
+    expect(mocks.setConfirmTransport).toHaveBeenCalledWith("run-1", transport);
+    expect(mocks.setConfirmTransport).toHaveBeenCalledWith("session-1", undefined);
+  });
+
+  it("delegates chat-agent drops and job kills through the host", async () => {
+    mocks.dropChatAgentForThread.mockResolvedValue(undefined);
+    mocks.killJob.mockReturnValue({ ok: true });
+
+    await getAgentHost().dropChatAgentForThread("thread-1");
+    expect(getAgentHost().killJob("job-1", "session-1")).toEqual({ ok: true });
+
+    expect(mocks.dropChatAgentForThread).toHaveBeenCalledWith("thread-1");
+    expect(mocks.killJob).toHaveBeenCalledWith("job-1", "session-1");
   });
 
   it("routes automation turns through the host", async () => {

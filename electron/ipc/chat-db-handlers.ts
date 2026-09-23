@@ -14,7 +14,6 @@ import * as q from "../db/queries";
 import { assertSafeId, resolveWithinRoot, isSafeId } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { dropChatAgentForThread, getSessionRoot } from "../cordis/run-cordis-loop";
 import { getAgentHost } from "../cordis/agent-host";
 
 export function registerChatDbHandlers(ctx: DbContext): void {
@@ -40,16 +39,16 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     // after its transcript has been wiped.
     q.saveSessionTodos(ctx.db, `chat-${threadId}`, []);
     q.saveSessionTodos(ctx.db, threadId, []);
-    // Drop the cached live chat agent FIRST (see dropChatAgentForThread): the
+    // Drop the cached live chat agent FIRST (see AgentHost.dropChatAgentForThread): the
     // module-global cache survives jsonl/ctx.agents wipes, and reusing a stale
     // agent both leaks pre-clear context into the next turn and writes to
     // deleted files (turns stop persisting). Dispose may flush pending events,
     // so this must run before the file wipe below removes them.
     try {
-      await dropChatAgentForThread(threadId);
+      await getAgentHost().dropChatAgentForThread(threadId);
     } catch { /* best-effort; wipe still proceeds */ }
     try {
-      const primaryRoot = getSessionRoot();
+      const primaryRoot = getAgentHost().getSessionRoot();
       const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
       const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
     const stableId = `chat-${threadId}`;
@@ -141,7 +140,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     ctx.db.prepare(`DELETE FROM chat_threads WHERE id IN (${placeholders})`).run(...ids);
     // Also clear Cordis sessions for all deleted threads (best-effort, same brute-force as single clear)
     try {
-      const primaryRoot = getSessionRoot();
+      const primaryRoot = getAgentHost().getSessionRoot();
       const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
       const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
       for (const threadId of ids) {

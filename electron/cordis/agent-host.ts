@@ -1,5 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
-import { getContext, getSessionRoot, setSessionRoot, shutdownContext } from "./cordis-context";
+import { dropChatAgentForThread, getContext, getSessionRoot, setSessionRoot, shutdownContext } from "./cordis-context";
 import { readGoalSnapshot, type GoalWire } from "./goal-bridge";
 import {
   getMessageFeedback,
@@ -22,9 +22,13 @@ import type { SubagentCatalogView, SubagentScope } from "./subagent-control";
 import {
   clearPendingQuestions,
   clearAllPendingQuestions,
+  listPendingQuestions,
+  recordPendingQuestion,
+  registerPendingQuestion,
   resolvePendingQuestionAnswer,
+  type PendingQuestionRecord,
 } from "./pending-question-broker";
-import { canonicalBashCommand, clearAllSessionGrants, clearSessionGrants, getSessionGrants, type PendingAskMeta } from "./approval-grants";
+import { canonicalBashCommand, clearAllSessionGrants, clearSessionGrants, forgetPendingApprovalArgs, forgetSessionApprovalArgs, getSessionGrants, readPendingApprovalArgs, type PendingAskMeta } from "./approval-grants";
 import {
   clearApprovalState,
   clearAllApprovalState,
@@ -49,8 +53,14 @@ import {
   updatePlugin as updatePluginImpl,
   type InstallResult,
 } from "./plugin-installer";
-import { setPluginsRoot, stopWatchingUserPlugins } from "./plugin-loader";
-import { clearAllConfirmTransports } from "./approval-transports";
+import { setPluginsRoot, getPluginsRoot, stopWatchingUserPlugins } from "./plugin-loader";
+import {
+  clearAllConfirmTransports,
+  createHeadlessConfirmTransport,
+  createInteractiveConfirmTransport,
+  setConfirmTransport,
+} from "./approval-transports";
+import { killJob } from "./jobs-bridge";
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -149,9 +159,39 @@ export interface AgentHost {
   clearChatSessionAgents(threadId: string, subagentIds?: string[]): Promise<void>;
   runAutomation(options: RunCordisCodingOptions): Promise<RunCordisCodingResult>;
   configureSessionRoot(root: string): void;
+  getSessionRoot(): string;
   configurePluginsRoot(root: string): void;
+  getPluginsRoot(): string;
   runOneShot(options: OneShotOptions): Promise<string>;
+  readPendingApprovalArgs(sessionId: string, callId: string): Record<string, unknown> | undefined;
+  forgetPendingApprovalArgs(sessionId: string, callId: string): void;
+  forgetSessionApprovalArgs(sessionId: string): void;
+  /** Canonicalized trusted `command` arg for a pending ask (null when absent/empty). */
+  readTrustedBashCommand(sessionId: string, callId: string): string | null;
+  registerPendingQuestion(sessionId: string, callId: string, resolve: (answersText: string) => void): () => void;
+  recordPendingQuestion(record: PendingQuestionRecord): void;
+  listPendingQuestions(sessionId: string): PendingQuestionRecord[];
+  bindInteractiveConfirmTransport(sessionId: string, wiring: InteractiveTransportWiring): void;
+  bindHeadlessConfirmTransport(sessionId: string, wiring: HeadlessTransportWiring): void;
+  unbindConfirmTransport(sessionId: string): void;
+  dropChatAgentForThread(threadId: string): Promise<void>;
+  killJob(jobId: string, requesterSessionId: string): unknown;
   shutdown(): Promise<void>;
+}
+
+export interface InteractiveTransportWiring {
+  /** Emit `session:*` events (already tagged with sessionId upstream). */
+  send: (channel: string, payload: Record<string, unknown>) => void;
+  /** Same pairing the native approval bridge uses (composite-keyed upstream). */
+  registerPending: (callId: string, resolve: (decision: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => () => void;
+  timeoutMs?: number;
+}
+
+export interface HeadlessTransportWiring {
+  /** Surface one ask to watchers (automation approval inbox / notifications). */
+  emitApproval: (req: { callId: string; toolName: string; title?: string; detail?: string }) => void;
+  /** Park one ask until a human answers (durable inbox + live resolver map). */
+  registerPending: (callId: string, resolve: (approved: boolean) => void) => () => void;
 }
 
 interface CommandRuntimeLike {
@@ -566,12 +606,56 @@ function createLocalAgentHost(): AgentHost {
     configureSessionRoot(root) {
       setSessionRoot(root);
     },
+    getSessionRoot() {
+      return getSessionRoot();
+    },
     configurePluginsRoot(root) {
       setPluginsRoot(root);
+    },
+    getPluginsRoot() {
+      return getPluginsRoot();
     },
     async runOneShot(options) {
       const { runOneShotWithContext } = await import("./one-shot");
       return runOneShotWithContext(await context(), options);
+    },
+    readPendingApprovalArgs(sessionId, callId) {
+      return readPendingApprovalArgs(sessionId, callId);
+    },
+    forgetPendingApprovalArgs(sessionId, callId) {
+      forgetPendingApprovalArgs(sessionId, callId);
+    },
+    forgetSessionApprovalArgs(sessionId) {
+      forgetSessionApprovalArgs(sessionId);
+    },
+    readTrustedBashCommand(sessionId, callId) {
+      const trusted = readPendingApprovalArgs(sessionId, callId);
+      const command = trusted && typeof trusted.command === "string" ? trusted.command : undefined;
+      return canonicalBashCommand(command);
+    },
+    registerPendingQuestion(sessionId, callId, resolve) {
+      return registerPendingQuestion(sessionId, callId, resolve);
+    },
+    recordPendingQuestion(record) {
+      recordPendingQuestion(record);
+    },
+    listPendingQuestions(sessionId) {
+      return listPendingQuestions(sessionId);
+    },
+    bindInteractiveConfirmTransport(sessionId, wiring) {
+      setConfirmTransport(sessionId, createInteractiveConfirmTransport({ sessionId, ...wiring }));
+    },
+    bindHeadlessConfirmTransport(sessionId, wiring) {
+      setConfirmTransport(sessionId, createHeadlessConfirmTransport(wiring));
+    },
+    unbindConfirmTransport(sessionId) {
+      setConfirmTransport(sessionId, undefined);
+    },
+    dropChatAgentForThread(threadId) {
+      return dropChatAgentForThread(threadId);
+    },
+    killJob(jobId, requesterSessionId) {
+      return killJob(jobId, requesterSessionId);
     },
     shutdown() {
       if (!shutdownPromise) {

@@ -26,16 +26,13 @@ import { ts } from "../db/utils";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
-import { canonicalBashCommand, readPendingApprovalArgs, forgetPendingApprovalArgs, forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import { addWorkspaceApprovalGrant } from "../db/approval-grant-queries";
-import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
-import { getSessionRoot, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
+import { withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
 import { getAgentHost } from "../cordis/agent-host";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { registerPendingQuestion, recordPendingQuestion, listPendingQuestions } from "../cordis/pending-question-broker";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { runChatPrompt } from "./chat";
@@ -46,18 +43,15 @@ const sessions = new Map<string, AgentSession>();
 const clearingSessions = new Set<string>();
 
 // ── Cordis engine wiring ────────────────────────────────────────────────────
-// Per-turn pending resolvers for the dsh loop's HITL seams, keyed by callId (or
-// requestId for questions). The session:respond-* IPC handlers resolve these,
-// exactly like the builtin loop's pendingApprovals/pendingDoomLoop maps. Kept
-// module-level so the (single) respond handlers can reach any session's turn.
-// Extracted to approval-state.ts so the chat loop can share the same maps
-// (previously coding-only — `session:respond-tool`'s global handler found an
-// empty map for `chat-*` sessions).
+// Per-turn pending resolvers for the dsh loop's HITL seams live in the Cordis
+// engine (approval + question brokers) and are reached through AgentHost, so
+// the (single) respond handlers can reach any session's turn regardless of
+// which profile created the ask.
 
 /**
  * Outstanding QUESTION asks (ask_questions / exit_plan_mode's plan-review),
  * so a reloading renderer can pull the question payload back via
- * session:is-running. The tool-approval registry above (pendingAsks) only
+ * session:is-running. The tool-approval registry (pending asks) only
  * records name/callId — questions need the full payload preserved so the
  * PlanReviewCard can re-render its plan-under-review after reload.
  */
@@ -73,8 +67,9 @@ const clearingSessions = new Set<string>();
  * event, and required on the respond-tool payload. Legacy
  * window.electron.piAgent alias is also covered.
  *
- * Store lives in ./ask-nonce.ts so chat.ts can mint/verify the same map
- * without a circular import (session-runtime-handlers ↔ chat).
+ * Store lives in the Cordis engine (approval runtime) behind AgentHost, so
+ * chat.ts and this module mint/verify the same map without a circular import
+ * (session-runtime-handlers ↔ chat).
  */
 
 /** Drop every pending resolver + approval grant belonging to one session. */
@@ -82,8 +77,8 @@ function sweepSessionPendings(sessionId: string): void {
   getAgentHost().clearSessionApprovalState(sessionId);
   getAgentHost().clearApprovalState(sessionId);
   getAgentHost().clearSessionQuestions(sessionId);
-  forgetSessionApprovalArgs(sessionId);
-  setConfirmTransport(sessionId, undefined);
+  getAgentHost().forgetSessionApprovalArgs(sessionId);
+  getAgentHost().unbindConfirmTransport(sessionId);
 }
 
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
@@ -237,7 +232,7 @@ async function runCordisCodingSession(
       } else if (data.status === "expired" && typeof data.callId === "string") {
         getAgentHost().resolvePendingApprovalAsk(sessionId, data.callId);
         getAgentHost().dropApprovalNonce(sessionId, data.callId);
-        forgetPendingApprovalArgs(sessionId, data.callId);
+        getAgentHost().forgetPendingApprovalArgs(sessionId, data.callId);
       }
     }
     if (projection.kind === "plan-note" && typeof (projection.data as unknown as { noteId?: unknown }).noteId === "string") {
@@ -260,13 +255,12 @@ async function runCordisCodingSession(
   // Bind the plugin confirmation seam for this session's turn: ctx.cairn.confirm
   // routes through the same interactive pairing (chip + ApprovalCard + respond
   // IPC) the native approval bridge uses. Cleared when the turn ends.
-  setConfirmTransport(sessionId, createInteractiveConfirmTransport({
-    sessionId,
+  getAgentHost().bindInteractiveConfirmTransport(sessionId, {
     send: loopSend,
     registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
       return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
     },
-  }));
+  });
 
   try {
     await runCordisCodingLoop({
@@ -305,7 +299,7 @@ async function runCordisCodingSession(
           } else if (data && data.status === "expired" && typeof data.callId === "string") {
             getAgentHost().resolvePendingApprovalAsk(sessId, data.callId);
             getAgentHost().dropApprovalNonce(sessId, data.callId);
-            forgetPendingApprovalArgs(sessId, data.callId);
+            getAgentHost().forgetPendingApprovalArgs(sessId, data.callId);
           }
         } else if (payload && typeof payload === "object" && typeof (payload as { callId?: unknown }).callId === "string") {
           const p = payload as { sessionId?: string; name?: string; label?: string; callId?: string };
@@ -328,7 +322,7 @@ async function runCordisCodingSession(
             } else if (channel === "session:tool-confirm-expired") {
               getAgentHost().resolvePendingApprovalAsk(p.sessionId, p.callId ?? "");
               getAgentHost().dropApprovalNonce(p.sessionId, p.callId ?? "");
-              forgetPendingApprovalArgs(p.sessionId, p.callId ?? "");
+              getAgentHost().forgetPendingApprovalArgs(p.sessionId, p.callId ?? "");
             }
 
           }
@@ -359,7 +353,7 @@ async function runCordisCodingSession(
             if (requestId && qs) {
               const nonce = getAgentHost().mintApprovalNonce(sessionId, requestId);
               (p as { nonce?: string }).nonce = nonce;
-              recordPendingQuestion({
+              getAgentHost().recordPendingQuestion({
                 sessionId,
                 callId: requestId,
                 questions: qs as Array<{ id: string; [k: string]: unknown }>,
@@ -381,10 +375,7 @@ async function runCordisCodingSession(
           send(channel, { sessionId, ...p });
         },
         registerPending: (requestId, resolve) => {
-           const dispose = registerPendingQuestion(sessionId, requestId, resolve);
-           return () => {
-             dispose();
-           };
+           return getAgentHost().registerPendingQuestion(sessionId, requestId, resolve);
         },
       },
       approvals: {
@@ -402,7 +393,7 @@ async function runCordisCodingSession(
     // The turn is over — every ask in it was settled (answered, aborted, or
     // timed out). Drop any registry residue so the next turn starts clean.
      getAgentHost().clearApprovalState(sessionId);
-    setConfirmTransport(sessionId, undefined);
+    getAgentHost().unbindConfirmTransport(sessionId);
   }
 }
 
@@ -433,7 +424,7 @@ export function registerSessionRuntimeHandlers(
       // Outstanding question asks (ask_questions / plan-review). The renderer
       // uses this to re-open a PlanReviewCard after a reload that swallowed
       // the original session:ask-questions push.
-      pendingQuestions: listPendingQuestions(sessionId).map((q) => ({
+      pendingQuestions: getAgentHost().listPendingQuestions(sessionId).map((q) => ({
         callId: q.callId,
         questions: q.questions,
         nonce: getAgentHost().getApprovalNonce(sessionId, q.callId),
@@ -492,8 +483,7 @@ export function registerSessionRuntimeHandlers(
   // otherwise). The requesting session id is mandatory — the bridge only
   // stops jobs the caller's dock would show (unowned, or its own).
   registerIpcHandle("session:job-kill", (_event, { jobId, sessionId }: { jobId: string; sessionId: string }) => handle(async () => {
-    const { killJob } = await import("../cordis/jobs-bridge");
-    return subagentResult(() => Promise.resolve(killJob(jobId, sessionId)));
+    return subagentResult(() => Promise.resolve(getAgentHost().killJob(jobId, sessionId)));
   }));
 
   // ── session:goal ─────────────────────────────────────────────────────────
@@ -1018,10 +1008,9 @@ export function registerSessionRuntimeHandlers(
       // Read the trusted command from the pre-execute stash — the renderer's
       // command field is ignored (parameter kept in the type signature only
       // so old renderers don't get a payload-validation error at the IPC
-      // boundary; it's intentionally unused).
-      const trusted = readPendingApprovalArgs(sessionId, callId);
-      const trustedCommand = trusted && typeof trusted.command === "string" ? trusted.command : undefined;
-      const cmd = canonicalBashCommand(trustedCommand);
+      // boundary; it's intentionally unused). grantSessionBash canonicalizes,
+      // so a cosmetic mismatch still matches the grant.
+      const cmd = getAgentHost().readTrustedBashCommand(sessionId, callId);
        if (cmd) getAgentHost().grantSessionBash(sessionId, cmd);
     }
     if (approved && grant === "workspace") {
@@ -1039,8 +1028,7 @@ export function registerSessionRuntimeHandlers(
             ?? (sessionId.startsWith("chat-") ? (ctx.db.prepare("SELECT workspace_id FROM chat_threads WHERE id = ?").get(sessionId.slice(5)) as { workspace_id?: string } | undefined)?.workspace_id : undefined);
           const workspaceId = wsRow ?? undefined;
           if (workspaceId) {
-            const trusted = readPendingApprovalArgs(sessionId, callId);
-            const target = toolName === "bash" && trusted ? canonicalBashCommand(trusted.command) : null;
+            const target = toolName === "bash" ? getAgentHost().readTrustedBashCommand(sessionId, callId) : null;
             const grantRec = addWorkspaceApprovalGrant(ctx.db, workspaceId, toolName, target);
             // Also grant this session immediately so the current turn proceeds
             // without needing to re-read the DB before the next ask.
@@ -1129,7 +1117,7 @@ export function registerSessionRuntimeHandlers(
       // messages. The transcript lives in <userData>/sessions/<sessionId>.jsonl
       // via dsh-session-persistence-jsonl. Best-effort: delete the file/dir if it exists.
       try {
-        const primaryRoot = getSessionRoot();
+        const primaryRoot = getAgentHost().getSessionRoot();
         const fallbackRoot = path.join(process.cwd(), ".cairn-sessions");
         const roots = [primaryRoot, fallbackRoot].filter((r, i, a) => r && a.indexOf(r) === i);
         let deleted = false;

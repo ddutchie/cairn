@@ -10,14 +10,11 @@
 import { registerIpcHandle, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
-import { createInteractiveConfirmTransport, setConfirmTransport } from "../cordis/approval-transports";
-import { forgetSessionApprovalArgs } from "../cordis/approval-grants";
 import type { DbContext } from "./result-helpers";
 import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
-import { registerPendingQuestion, recordPendingQuestion } from "../cordis/pending-question-broker";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { getAgentHost } from "../cordis/agent-host";
 
@@ -166,9 +163,9 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
 
     // Chat HITL: interactive approval transport so EXTERNAL/EXEC tools (and
     // deletions) gate through the same approval cards as coding. Mirrors the
-    // coding loop's setConfirmTransport pattern; the pending-ask state is
-    // shared via approval-state.ts so session:respond-tool's global handler
-    // can resolve it regardless of which profile created the ask.
+    // coding loop's transport binding; the pending-ask state is shared through
+    // AgentHost so session:respond-tool's global handler can resolve it
+    // regardless of which profile created the ask.
     const chatLoopSend = (channel: string, payload: Record<string, unknown>) => {
       if (channel === "session:projection" && payload && typeof payload === "object" && (payload as { kind?: unknown }).kind === "approval") {
         const data = (payload as { data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string } }).data;
@@ -179,19 +176,18 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
         } else if (data?.status === "expired" && data.callId) {
            getAgentHost().resolvePendingApprovalAsk(sessionId, data.callId);
            getAgentHost().dropApprovalNonce(sessionId, data.callId);
-          forgetSessionApprovalArgs(sessionId);
+          getAgentHost().forgetSessionApprovalArgs(sessionId);
         }
       }
       send(channel, payload);
     };
-    const chatConfirmTransport = createInteractiveConfirmTransport({
-      sessionId,
+    const chatConfirmTransportWiring = {
       send: chatLoopSend,
       registerPending: (callId: string, resolve: (d: { approved: boolean; grant?: "session" | "command" | "workspace" }) => void) => {
         return getAgentHost().registerPendingApproval(sessionId, callId, resolve);
       },
-    });
-    setConfirmTransport(sessionId, chatConfirmTransport);
+    };
+    getAgentHost().bindInteractiveConfirmTransport(sessionId, chatConfirmTransportWiring);
 
     if (!apiKey && !isLocalEndpointUrl) {
        getAgentHost().endTurn(sessionId, abortCtrl);
@@ -250,11 +246,11 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
               send: (channel, payload) => chatLoopSend(channel, payload),
                emitQuestions: (requestId, questions) => {
                   const nonce = getAgentHost().mintApprovalNonce(sessionId, requestId);
-                 recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
+                 getAgentHost().recordPendingQuestion({ sessionId, callId: requestId, questions: questions as Array<{ id: string; [key: string]: unknown }> });
                   chatLoopSend("session:projection", makeSessionProjection(sessionId, "question", { callId: requestId, questions, nonce } as never));
                },
              registerPending: (requestId, resolve) => {
-               return registerPendingQuestion(sessionId, requestId, resolve);
+               return getAgentHost().registerPendingQuestion(sessionId, requestId, resolve);
               },
            },
            onSessionEvent: (sessionEvent) => broadcastEvent("session:event", { sessionId, event: withToolResultView(withToolCallView(sessionEvent)) }),
@@ -266,9 +262,9 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
          }
       } finally {
           getAgentHost().endTurn(sessionId, abortCtrl);
-         setConfirmTransport(sessionId, undefined);
+         getAgentHost().unbindConfirmTransport(sessionId);
          getAgentHost().clearApprovalState(sessionId);
-         forgetSessionApprovalArgs(sessionId);
+         getAgentHost().forgetSessionApprovalArgs(sessionId);
       }
       return;
     }

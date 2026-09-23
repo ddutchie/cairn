@@ -29,6 +29,9 @@ const { runCordisCodingLoopMock, getExternalToolDefsMock, agentHostMock } = vi.h
     startTurn: vi.fn(() => new AbortController()),
     endTurn: vi.fn(),
     runAutomation: vi.fn((opts: unknown) => runCordisCodingLoopMock(opts)),
+    bindHeadlessConfirmTransport: vi.fn(),
+    unbindConfirmTransport: vi.fn(),
+    readPendingApprovalArgs: vi.fn(() => undefined),
   },
 }));
 
