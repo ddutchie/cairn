@@ -26,6 +26,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import { foldGoal } from "@deepseek-ai/dsh-goal";
 import type { GoalPhase } from "@deepseek-ai/dsh-goal";
 import { SessionId } from "@deepseek-ai/dsh-session";
+import { inspectSession, type InspectablePersistence } from "./session-inspect";
 import {
   makeSessionProjection,
   type SessionProjectionKind,
@@ -138,7 +139,7 @@ interface SessionLike {
 
 interface CordisLike {
   sessions?: { get?: (id: unknown) => SessionLike | undefined };
-  sessionPersistence?: { inspect?: (id: unknown, signal?: AbortSignal) => Promise<{ events?: unknown }> };
+  sessionPersistence?: InspectablePersistence;
 }
 
 /**
@@ -156,8 +157,7 @@ export async function readGoalSnapshot(ctx: Context, sessionId: string): Promise
     if (live && typeof live.snapshotEvents === "function") {
       events = live.snapshotEvents();
     } else {
-      const inspection = await cordis.sessionPersistence?.inspect?.(stableId);
-      events = inspection?.events ?? [];
+      events = cordis.sessionPersistence ? (await inspectSession(cordis.sessionPersistence, stableId)).events : [];
     }
   } catch {
     return null;
