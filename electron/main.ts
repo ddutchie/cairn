@@ -780,6 +780,10 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   if (shutdownStarted) return;
   shutdownStarted = true;
+  // Note: this gate is safe with autoInstallOnAppQuit. electron-updater
+  // installs on the `quit` event (after this gate), and the app never calls
+  // quitAndInstall — so the delayed re-quit below still lets a downloaded
+  // update install instead of blocking it.
   void (async () => {
     try {
       // Fail-open on a timer so a hung turn can never wedge the quit: the

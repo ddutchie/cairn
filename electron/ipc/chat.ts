@@ -18,29 +18,6 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { getAgentHost } from "../cordis/agent-host";
 
-// One controller and concurrency slot per canonical session, regardless of
-// which renderer issued the prompt.
-/**
- * Threads that currently have an in-flight streaming turn. Prevents two
- * concurrent session:prompt requests on the SAME thread from writing to the
- * same session.jsonl.zstd in parallel — dsh's in-process persistence
- * serialises WRITES (so the file doesn't tear), but the two turns' events
- * still interleave into an incoherent transcript. Mirrors the coding session
- * runtime's
- * `runningLoops` guard on the coding side (review finding M13).
- */
-export function getRunningChatIds(): string[] {
-  return getAgentHost().getRunningTurnIds().filter((id) => id.startsWith("chat-"));
-}
-
-export function isChatThreadRunning(sessionId: string): boolean {
-  return getAgentHost().isTurnRunning(sessionId);
-}
-
-export function abortChatSession(sessionId: string): void {
-  getAgentHost().abortTurn(sessionId);
-}
-
 function resolveAIConfig(config?: {
   provider?: string;
   baseUrl?: string;
@@ -136,7 +113,7 @@ export async function runChatPrompt(ctx: DbContext, event: Electron.IpcMainEvent
        return;
     }
     // A new turn supersedes a previous turn from the same session.
-     abortChatSession(sessionId);
+     getAgentHost().abortTurn(sessionId);
      const abortCtrl = getAgentHost().startTurn(sessionId);
     
     const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
