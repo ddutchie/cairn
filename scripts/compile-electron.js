@@ -48,8 +48,13 @@ const mainPreload = {
   alias: { "@vscode/ripgrep": "./electron/lib/ripgrep-path.ts" },
   outdir: "dist-electron",
   format: "cjs",
+  // The resolve shim refuses dsh-subprocess-local's runner: dsh spawns it as
+  // `[process.execPath, runner]` (Electron.exe, not Node) for Windows Job
+  // containment, which boots a second Cairn for every subprocess. Refusing
+  // makes probeWindowsJob() fail, so dsh uses its plain-spawn fallback — what
+  // the packaged app already did, since the runner isn't shipped.
   banner: {
-    js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(require.resolve(s)).href;",
+    js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>{if(s==='@deepseek-ai/dsh-subprocess-local/runner')throw new Error('subprocess runner disabled in Electron');return require('url').pathToFileURL(require.resolve(s)).href};",
   },
   define: {
     "import.meta.url": "globalThis.__cairnImportMetaUrl",
@@ -119,8 +124,25 @@ const windowsAclRunner = {
   format: "cjs",
 };
 
+// Workflow worker thread (dsh-workflow-worker-thread, mounted globally in
+// cordis-context.ts). It loads `new URL("./worker.cjs", import.meta.url)`,
+// which inside main.js means dist-electron/worker.cjs. The upstream file
+// requires other dsh packages that aren't shipped on disk, so bundle it
+// rather than copy it. Same import.meta shims as main.
+const workflowWorker = {
+  entryPoints: ["node_modules/@deepseek-ai/dsh-workflow-worker-thread/lib/worker.cjs"],
+  bundle: true,
+  platform: "node",
+  target: "node24",
+  external: ["electron", "koffi"],
+  outfile: "dist-electron/worker.cjs",
+  format: "cjs",
+  banner: mainPreload.banner,
+  define: mainPreload.define,
+};
+
 async function main() {
-  const configs = [mainPreload, mcpServer, embeddingsServer, runtimeServer, windowsAclRunner];
+  const configs = [mainPreload, mcpServer, embeddingsServer, runtimeServer, windowsAclRunner, workflowWorker];
   if (watch) {
     const contexts = await Promise.all(configs.map((c) => esbuild.context(c)));
     await Promise.all(contexts.map((ctx) => ctx.watch()));
