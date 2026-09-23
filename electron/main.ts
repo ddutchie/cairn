@@ -48,6 +48,7 @@ import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
 import { registerChatPopoutHandlers } from "./chat-popout";
 import { initUsageRecorder } from "./lib/usage-recorder";
+import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 
 const isDev = !app.isPackaged;
@@ -775,15 +776,39 @@ app.whenReady().then(async () => {
   });
 });
 
+// Synchronous child-process teardown shared by both quit paths: kill
+// processes that would otherwise linger (and block the relaunching
+// version's ports) without waiting on anything async.
+function teardownChildProcesses(): void {
+  // Terminate mobile access server if running
+  try {
+    stopMobileServer();
+  } catch { /* ignore */ }
+
+  // Kill any bash child processes that are still running so they don't linger
+  killTrackedBashProcesses();
+  // Terminate the embeddings worker child process (HTTP server) so it doesn't linger
+  void disposeEmbeddingsWorker();
+  // Terminate the unified runtime process (embeddings + LLM proxy)
+  runtime.stopRuntimeSync();
+}
+
 app.on("before-quit", (event) => {
   if (shutdownComplete) return;
+  if (isUpdaterQuitRequested()) {
+    // Explicit update install (boot-sequence / updater:install): the
+    // installer is staged and quitAndInstall already quit — never veto this
+    // quit with preventDefault, just run the sync teardown and exit fast.
+    // (The passive autoInstallOnAppQuit path needs no flag: electron-updater
+    // hooks the later `quit` event, so the async gate below runs first and
+    // the install proceeds on the re-quit.)
+    teardownChildProcesses();
+    shutdownComplete = true;
+    return;
+  }
   event.preventDefault();
   if (shutdownStarted) return;
   shutdownStarted = true;
-  // Note: this gate is safe with autoInstallOnAppQuit. electron-updater
-  // installs on the `quit` event (after this gate), and the app never calls
-  // quitAndInstall — so the delayed re-quit below still lets a downloaded
-  // update install instead of blocking it.
   void (async () => {
     try {
       // Fail-open on a timer so a hung turn can never wedge the quit: the
@@ -795,10 +820,7 @@ app.on("before-quit", (event) => {
     } catch (err) {
       console.error("[main] agent host shutdown failed:", err);
     }
-    try { stopMobileServer(); } catch { }
-    killTrackedBashProcesses();
-    void disposeEmbeddingsWorker();
-    runtime.stopRuntimeSync();
+    teardownChildProcesses();
     shutdownComplete = true;
     app.quit();
   })();
