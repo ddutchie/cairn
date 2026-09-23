@@ -34,6 +34,7 @@ import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
 import { getSessionRoot, getContext, withToolCallView, withToolResultView } from "../cordis/run-cordis-loop";
+import { getAgentHost } from "../cordis/agent-host";
 import { mintAskNonce, verifyAskNonce, dropAskNonce, clearAskNoncesForSession, getAskNonce } from "./approval-state";
 import { getPlanModeActive } from "../cordis/plan-fold";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
@@ -529,12 +530,7 @@ export function registerSessionRuntimeHandlers(
   // Null goal = no current goal (pre-create / cleared) → chip hides. Same
   // {ok:true,value}|{ok:false,code,message} envelope as subagent:*.
   registerIpcHandle("session:goal", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
-    const [{ getContext }, { readGoalSnapshot }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/goal-bridge"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => readGoalSnapshot(ctx as never, sessionId));
+    return subagentResult(() => getAgentHost().readGoalSnapshot(sessionId));
   }));
 
   // ── session:feedback{,-get} ─────────────────────────────────────────────
@@ -543,20 +539,10 @@ export function registerSessionRuntimeHandlers(
   // envelope as subagent:*. The /feedback command needs no handler — it is an
   // ENTRY_LIST-mounted command and surfaces via cordis:listCommands.
   registerIpcHandle("session:feedback", (_event, req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => handle(async () => {
-    const [{ getContext }, { putMessageFeedback }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/message-feedback"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => putMessageFeedback(ctx as never, req));
+    return subagentResult(() => getAgentHost().putMessageFeedback(req));
   }));
   registerIpcHandle("session:feedback-get", (_event, req: { sessionId: string; messageId: string }) => handle(async () => {
-    const [{ getContext }, { getMessageFeedback }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/message-feedback"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => getMessageFeedback(ctx as never, req.sessionId, req.messageId));
+    return subagentResult(() => getAgentHost().getMessageFeedback(req.sessionId, req.messageId));
   }));
 
   // ── session:schedule-list ────────────────────────────────────────────────
@@ -564,12 +550,7 @@ export function registerSessionRuntimeHandlers(
   // header mount + turn end — no standing subscription). Empty list = overlay
   // off or no reminders → pill hides. Same envelope as subagent:*.
   registerIpcHandle("session:schedule-list", (_event, req: { sessionId: string }) => handle(async () => {
-    const [{ getContext }, { listSchedules }] = await Promise.all([
-      import("../cordis/run-cordis-loop"),
-      import("../cordis/schedule-read"),
-    ]);
-    const ctx = await getContext();
-    return subagentResult(() => listSchedules(ctx as never, req.sessionId));
+    return subagentResult(() => getAgentHost().listSchedules(req.sessionId));
   }));
 
   // ── session:abort ────────────────────────────────────────────────────────
