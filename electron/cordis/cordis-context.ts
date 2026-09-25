@@ -22,6 +22,8 @@ import approvalService from "@deepseek-ai/dsh-user-approval";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import ToolResultPruner from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
+import { apply as imageOffloadApply, inject as imageOffloadInject, name as imageOffloadName } from "@deepseek-ai/dsh-compaction-image-offload";
+import { apply as toolSessionQueryApply, inject as toolSessionQueryInject, name as toolSessionQueryName } from "@deepseek-ai/dsh-tool-session-query";
 import SkillRegistry from "@deepseek-ai/dsh-skill";
 import { apply as skillFilesystemApply, inject as skillFilesystemInject, name as skillFilesystemName } from "@deepseek-ai/dsh-skill-filesystem";
 import InvariantRegistry from "@deepseek-ai/dsh-invariants";
@@ -57,6 +59,7 @@ import { createCairnSkillProvider } from "./cairn-skill-provider";
 import { peekChatAgentCache } from "./chat-agent-cache";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import WebRuntime from "@deepseek-ai/dsh-web";
+import McpResourceRuntime from "@deepseek-ai/dsh-mcp-resources";
 import { apply as webFetchHttpApply, inject as webFetchHttpInject, name as webFetchHttpName } from "@deepseek-ai/dsh-web-fetch-http";
 import { apply as toolWebApply, inject as toolWebInject, name as toolWebName } from "@deepseek-ai/dsh-tool-web";
 import { apply as sessionExportApply, inject as sessionExportInject, name as sessionExportName } from "./session-export";
@@ -143,6 +146,8 @@ export async function getContext(): Promise<Context> {
     B["dsh:token-meter"] = TokenMeter;
     B["dsh:tool-result-pruner"] = ToolResultPruner;
     B["dsh:compaction"] = BasicCompactionEngine;
+    B["dsh:image-offload"] = { apply: imageOffloadApply, inject: imageOffloadInject, name: imageOffloadName };
+    B["dsh:tool-session-query"] = { apply: toolSessionQueryApply, inject: toolSessionQueryInject, name: toolSessionQueryName };
     B["dsh:subagent"] = subagentServicePlugin;
     B["dsh:skills"] = SkillRegistry;
     B["dsh:skill-filesystem"] = { apply: skillFilesystemApply, inject: skillFilesystemInject, name: skillFilesystemName };
@@ -196,6 +201,10 @@ export async function getContext(): Promise<Context> {
     // layers inject only ENTRY_LIST-resident services (tools/web/systemPrompt),
     // so the whole stack composes as loader entries in dependency order.
     B["dsh:web"] = WebRuntime;
+    // MCP resources seam: registerExternalCairnTools registers each in-scope
+    // MCP server that serves resources; the shared resource tools exist only
+    // while one is registered.
+    B["dsh:mcp-resources"] = McpResourceRuntime;
     B["dsh:web-fetch-http"] = { apply: webFetchHttpApply, inject: webFetchHttpInject, name: webFetchHttpName };
     B["dsh:tool-web"] = { apply: toolWebApply, inject: toolWebInject, name: toolWebName };
     // Session-log export trigger. Cairn-owned shim (not the upstream plugin:
@@ -237,6 +246,15 @@ export async function getContext(): Promise<Context> {
       // thresholdRatio is the whole-window fallback; the active Cairn route gets a
       // message-budget-scaled override from applyCompactionBudget (compaction-budget.ts).
       { id: "compaction", name: "cordis:dsh:compaction", config: { auto: true, thresholdRatio: COMPACTION_THRESHOLD_RATIO } },
+      // When a route refuses a request for carrying too many images, replace
+      // the oldest ones with placeholders and retry, instead of failing the
+      // turn (the pi-ai adapter reports IMAGE_OFFLOAD_REQUIRED).
+      { id: "image-offload", name: "cordis:dsh:image-offload" },
+      // Model-facing search over earlier sessions (session_search & co.),
+      // backed by the session-query-sqlite index above. Scoped by the
+      // session's cwd, i.e. the Cairn workspace folder.
+      { id: "mcp-resources", name: "cordis:dsh:mcp-resources" },
+      { id: "tool-session-query", name: "cordis:dsh:tool-session-query", config: { maxSearchResults: 100, searchTimeoutMs: 30_000 } },
       // Session-title service (log-backed fallback) + first-prompt LLM provider.
       // The provider omits provider/model so it inherits the chat route's exact
       // logged request/header — no separate title model; the chat model titles.

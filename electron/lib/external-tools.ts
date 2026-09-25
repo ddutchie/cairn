@@ -255,6 +255,50 @@ export async function getExternalToolDefs(
   return [...mcpDefs, ...svcDefs];
 }
 
+/** An in-scope MCP server's instructions and resource support, for the agent turn. */
+export interface ExternalMcpServerMeta {
+  id: string;
+  name: string;
+  instructions?: string;
+  resources: boolean;
+}
+
+/**
+ * Instructions + resource capability for every in-scope MCP server that
+ * {@link getExternalToolDefs} just connected to. Read from the live
+ * connections only (no new network round trip); unreachable servers are left
+ * out.
+ */
+export async function getExternalMcpServerMeta(
+  db: Database.Database,
+  workspaceId: string,
+  projectId: string,
+): Promise<ExternalMcpServerMeta[]> {
+  const { mcpServers } = loadScopedConfigs(db, workspaceId, projectId);
+  return mcpServers.flatMap((server) => {
+    const meta = mcpClient.getServerMeta(toRuntimeConfig(server));
+    return meta ? [{ id: server.id, name: server.name || server.id, ...meta }] : [];
+  });
+}
+
+/**
+ * Run one resource operation on an in-scope MCP server. Re-validates scope
+ * like {@link executeExternalTool}, but throws instead of returning an error
+ * string (the dsh resource tools report thrown errors to the model).
+ */
+export async function requestExternalMcpResource(
+  db: Database.Database,
+  workspaceId: string,
+  projectId: string,
+  serverId: string,
+  request: mcpClient.McpResourceRequest,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const server = loadScopedConfigs(db, workspaceId, projectId).mcpServers.find((s) => s.id === serverId);
+  if (!server) throw new Error(`MCP server ${serverId} is not enabled/attached for this project`);
+  return mcpClient.requestResource(toRuntimeConfig(server), request, signal);
+}
+
 /** Build the shared runtime config for a stored custom service (single- or multi-op). */
 function svcToRuntimeConfig(s: {
   id: string;

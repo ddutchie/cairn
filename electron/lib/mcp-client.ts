@@ -285,3 +285,58 @@ export async function testConnection(
     await dispose(cfg.id);
   }
 }
+
+/** What a connected server advertises beyond tools: its instructions and whether it serves resources. */
+export interface McpServerMeta {
+  instructions?: string;
+  resources: boolean;
+}
+
+/**
+ * Read a server's `initialize` result (instructions + resources capability)
+ * from its live cached connection. Never connects: callers run this right
+ * after {@link listTools}, so an unreachable server (no connection) costs no
+ * second connect timeout. Returns null when there is no live connection.
+ */
+export function getServerMeta(cfg: McpServerRuntimeConfig): McpServerMeta | null {
+  const conn = conns.get(cfg.id);
+  if (!conn || conn.signature !== configSignature(cfg)) return null;
+  try {
+    touch(conn);
+    const instructions = conn.client.getInstructions()?.trim();
+    return {
+      ...(instructions ? { instructions } : {}),
+      resources: conn.client.getServerCapabilities()?.resources !== undefined,
+    };
+  } catch (e) {
+    console.error(`[mcp-client] getServerMeta failed for ${cfg.id}:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/** One MCP resource operation (list / list templates / read), with server-owned cursors and URIs. */
+export type McpResourceRequest =
+  | { method: "resources/list" | "resources/templates/list"; cursor?: string }
+  | { method: "resources/read"; uri: string };
+
+/**
+ * Run one resource operation against a server. Unlike {@link callTool} this
+ * throws: the dsh resource tools turn a thrown error into an `isError` result.
+ */
+export async function requestResource(
+  cfg: McpServerRuntimeConfig,
+  request: McpResourceRequest,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const conn = await connect(cfg);
+  const options = { signal, timeout: CALL_TIMEOUT_MS };
+  const label = `MCP ${request.method} ${cfg.id}`;
+  switch (request.method) {
+    case "resources/list":
+      return withTimeout(conn.client.listResources(request.cursor ? { cursor: request.cursor } : undefined, options), CALL_TIMEOUT_MS, label);
+    case "resources/templates/list":
+      return withTimeout(conn.client.listResourceTemplates(request.cursor ? { cursor: request.cursor } : undefined, options), CALL_TIMEOUT_MS, label);
+    case "resources/read":
+      return withTimeout(conn.client.readResource({ uri: request.uri }, options), CALL_TIMEOUT_MS, label);
+  }
+}

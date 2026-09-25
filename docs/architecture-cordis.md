@@ -116,6 +116,9 @@ caches it in module-level `sharedCtx`.
 | spill / spill-policy | dsh builtins | oversized-tool-text spill store + inline policy |
 | token-meter / compaction / llm-retry | dsh builtins | pressure + auto-compact + retry |
 | tool-result-pruner | `cordis:dsh:tool-result-pruner` | replay-safe tool-result pruning |
+| image-offload | `cordis:dsh:image-offload` | on `IMAGE_OFFLOAD_REQUIRED`, logs `image/offload` for the oldest images and retries (placeholders from then on) |
+| tool-session-query | `cordis:dsh:tool-session-query` | read-only `session_search` / `session_event_search` / `session_trace` / `session_event_trace` / `session_event_read`, scoped to the caller session's `cwd` (the workspace folder) |
+| mcp-resources | `cordis:dsh:mcp-resources` | `mcpResources`; `registerExternalCairnTools` registers each in-scope hand-bridge MCP server that serves resources (shared `list_mcp_resources` / `list_mcp_resource_templates` / `read_mcp_resource`, EXTERNAL risk) and adds its `initialize` instructions as an `mcp-server:<id>` prompt section |
 | session-title (+first-prompt LLM) | `cordis:dsh:session-title` (+ `cordis:dsh:session-title-first-prompt-llm`) | log-backed titles, chat model titles |
 | subagent (+spawn +tool-subagent) | `cordis:cairn:*` wrappers | subagent capability (one-shot `subagent` + continuable `delegate`) |
 | tool-subagent-control + list-agents | `cordis:cairn:*` wrappers | `send_message` / `interrupt_agent` / `list_agents` (model side) |

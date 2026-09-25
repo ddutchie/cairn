@@ -87,7 +87,9 @@ import type { ApprovalGrant } from "../db/approval-grant-queries";
 import type {
   getExternalToolDefs as getExternalToolDefsType,
   executeExternalTool as executeExternalToolType,
+  getExternalMcpServerMeta as getExternalMcpServerMetaType,
 } from "../lib/external-tools";
+import type { McpResourceRequest } from "../lib/mcp-client";
 
 // ── Service keys (owned here; re-exported by cairn-plugins.ts for compat) ────
 
@@ -265,6 +267,17 @@ export interface HostStore {
     name: string,
     args: Record<string, unknown>,
   ): ReturnType<typeof executeExternalToolType>;
+  getExternalMcpServerMeta(
+    workspaceId: string,
+    projectId: string,
+  ): ReturnType<typeof getExternalMcpServerMetaType>;
+  requestExternalMcpResource(
+    workspaceId: string,
+    projectId: string,
+    serverId: string,
+    request: McpResourceRequest,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
 }
 
 /**
@@ -439,6 +452,25 @@ export function createHostStore(db: Database.Database): HostStore {
     ): ReturnType<typeof executeExternalToolType> {
       const { executeExternalTool } = await import("../lib/external-tools");
       return executeExternalTool(db, workspaceId, projectId, name, args);
+    },
+
+    async getExternalMcpServerMeta(
+      workspaceId: string,
+      projectId: string,
+    ): ReturnType<typeof getExternalMcpServerMetaType> {
+      const { getExternalMcpServerMeta } = await import("../lib/external-tools");
+      return getExternalMcpServerMeta(db, workspaceId, projectId);
+    },
+
+    async requestExternalMcpResource(
+      workspaceId: string,
+      projectId: string,
+      serverId: string,
+      request: McpResourceRequest,
+      signal?: AbortSignal,
+    ): Promise<unknown> {
+      const { requestExternalMcpResource } = await import("../lib/external-tools");
+      return requestExternalMcpResource(db, workspaceId, projectId, serverId, request, signal);
     },
   };
 }

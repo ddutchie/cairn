@@ -44,6 +44,9 @@ const DSH_TOOL_NAMES = new Set<string>([
   "terminal_read", "terminal_list",
   "lsp",
   "web_search", "web_fetch",
+  "session_search", "session_event_search", "session_trace",
+  "session_event_trace", "session_event_read",
+  "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
 ]);
 
 // Expected risk bucket + approval behaviour for each dsh coding-stack tool the
@@ -80,6 +83,16 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   // Untrusted external content stays an explicit per-call decision (v1).
   ["web_search", "WRITE_LOCAL", true, "none"],
   ["web_fetch", "WRITE_LOCAL", true, "none"],
+  // Past-session search: read-only, workspace-scoped (dsh-tool-session-query).
+  ["session_search", "READ", false, "none"],
+  ["session_event_search", "READ", false, "none"],
+  ["session_trace", "READ", false, "none"],
+  ["session_event_trace", "READ", false, "none"],
+  ["session_event_read", "READ", false, "none"],
+  // MCP resources reach the user's external server, like its mcp__ tools.
+  ["list_mcp_resources", "EXTERNAL", true, "session"],
+  ["list_mcp_resource_templates", "EXTERNAL", true, "session"],
+  ["read_mcp_resource", "EXTERNAL", true, "session"],
 ];
 
 describe("tool-risk classifier — set membership", () => {
