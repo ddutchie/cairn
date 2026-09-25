@@ -46,6 +46,7 @@ import { apply as scheduleApply, inject as scheduleInject, name as scheduleName 
 import { isScheduleEnabled as hostIsScheduleEnabled, resolveHooksConfig } from "./host-store";
 import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
+import { COMPACTION_THRESHOLD_RATIO } from "./compaction-budget";
 import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
 import * as SpillPolicy from "@deepseek-ai/dsh-spill-policy";
 import { app as electronApp } from "electron";
@@ -235,7 +236,9 @@ export async function getContext(): Promise<Context> {
       { id: "spill-policy", name: "cordis:dsh:spill-policy", config: { maxInlineBytes: 32768 } },
       { id: "token-meter", name: "cordis:dsh:token-meter" },
       { id: "tool-result-pruner", name: "cordis:dsh:tool-result-pruner" },
-      { id: "compaction", name: "cordis:dsh:compaction", config: { auto: true, thresholdRatio: 0.8 } },
+      // thresholdRatio is the whole-window fallback; the active Cairn route gets a
+      // message-budget-scaled override from applyCompactionBudget (compaction-budget.ts).
+      { id: "compaction", name: "cordis:dsh:compaction", config: { auto: true, thresholdRatio: COMPACTION_THRESHOLD_RATIO } },
       // Session-title service (log-backed fallback) + first-prompt LLM provider.
       // The provider omits provider/model so it inherits the chat route's exact
       // logged request/header — no separate title model; the chat model titles.
