@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon,
+  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon, Focus, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -18,6 +18,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { EmptyState as EmptyStateView } from "@/components/ui/empty-state";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
+import { neighbourhoodGraph, NEIGHBOURHOOD_HOPS, type NeighbourhoodHops } from "./neighbourhood";
 
 // Edge-type legend. Mirrors the tokens in shared/ui/graph.ts `edgeStyle()`:
 // structural note links = success, wikilinks = accent, semantic = a neutral
@@ -86,12 +87,39 @@ export function KnowledgeGraphView() {
     if (typeof localStorage === "undefined") return true;
     return localStorage.getItem("kg-hulls") !== "false";
   });
+  // Neighbourhood mode: show only the nodes within N hops of one node.
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const [focusHops, setFocusHops] = useState<NeighbourhoodHops>(() => {
+    if (typeof localStorage === "undefined") return 1;
+    const v = Number(localStorage.getItem("kg-focus-hops"));
+    return (NEIGHBOURHOOD_HOPS as number[]).includes(v) ? (v as NeighbourhoodHops) : 1;
+  });
 
   // Persist graph prefs to localStorage
   useEffect(() => { localStorage.setItem("kg-label-mode", labelMode); }, [labelMode]);
   useEffect(() => { localStorage.setItem("kg-spacing", String(spacing)); }, [spacing]);
   useEffect(() => { localStorage.setItem("kg-semantic-threshold", String(semanticThreshold)); }, [semanticThreshold]);
   useEffect(() => { localStorage.setItem("kg-hulls", String(showHulls)); }, [showHulls]);
+  useEffect(() => { localStorage.setItem("kg-focus-hops", String(focusHops)); }, [focusHops]);
+
+  // Leave Neighbourhood mode when the workspace changes.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFocusNodeId(null);
+  }, [activeWorkspaceId]);
+
+  // Esc leaves Neighbourhood mode (unless typing in a field).
+  useEffect(() => {
+    if (!focusNodeId) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      setFocusNodeId(null);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [focusNodeId]);
 
   // ⌘F / Ctrl+F — focus the graph search input
   const graphSearchRef = useRef<HTMLInputElement>(null);
@@ -130,10 +158,19 @@ export function KnowledgeGraphView() {
     return { nodes, edges };
   }, [graphData.nodes, graphData.edges, graphFilters]);
 
+  // Neighbourhood mode narrows the filtered graph to the focus node's
+  // surroundings. Null when off, or when the focus node is filtered out.
+  const focusedGraph = useMemo(
+    () => (focusNodeId ? neighbourhoodGraph(filteredGraph, focusNodeId, focusHops, semanticThreshold) : null),
+    [filteredGraph, focusNodeId, focusHops, semanticThreshold],
+  );
+  const focusNode = focusedGraph ? focusedGraph.nodes.find((n) => n.id === focusNodeId) ?? null : null;
+  const baseGraph = focusedGraph ?? filteredGraph;
+
   // For force/radial: further filter by search query
   const searchedGraph = useMemo(() => {
     const q = graphSearch.trim().toLowerCase();
-    if (!q || (graphLayout !== "force" && graphLayout !== "radial")) return filteredGraph;
+    if (!q || (graphLayout !== "force" && graphLayout !== "radial")) return baseGraph;
 
     // Build a map of tag-member edges so we can find nodes by tag name
     const tagNameMap = new Map<string, string>();
@@ -151,7 +188,7 @@ export function KnowledgeGraphView() {
 
     // First pass: nodes whose title, snippet, or tag name matches
     const matchingIds = new Set(
-      filteredGraph.nodes
+      baseGraph.nodes
         .filter((n) => {
           if (n.title.toLowerCase().includes(q)) return true;
           if (n.meta?.snippet && n.meta.snippet.toLowerCase().includes(q)) return true;
@@ -164,7 +201,7 @@ export function KnowledgeGraphView() {
     );
 
     // Also match tag nodes themselves by name
-    for (const n of filteredGraph.nodes) {
+    for (const n of baseGraph.nodes) {
       if (n.type === "tag" && n.title.toLowerCase().includes(q)) {
         matchingIds.add(n.id);
       }
@@ -174,21 +211,21 @@ export function KnowledgeGraphView() {
     // so radial hierarchy builder always has a bucket for matched children,
     // and force graph keeps clusters anchored.
     const projectIdsToKeep = new Set<string>();
-    for (const n of filteredGraph.nodes) {
+    for (const n of baseGraph.nodes) {
       if (matchingIds.has(n.id) && n.projectId) {
         projectIdsToKeep.add(n.projectId);
       }
     }
 
-    const nodes = filteredGraph.nodes.filter(
+    const nodes = baseGraph.nodes.filter(
       (n) => matchingIds.has(n.id) || (n.type === "project" && projectIdsToKeep.has(n.id))
     );
     const nodeIdSet = new Set(nodes.map((n) => n.id));
-    const edges = filteredGraph.edges.filter(
+    const edges = baseGraph.edges.filter(
       (e) => nodeIdSet.has(e.source) && nodeIdSet.has(e.target)
     );
     return { nodes, edges };
-  }, [filteredGraph, graphSearch, graphLayout, graphData.nodes, graphData.edges]);
+  }, [baseGraph, graphSearch, graphLayout, graphData.nodes, graphData.edges]);
 
   const filteredNodes = searchedGraph.nodes;
   const filteredEdges = searchedGraph.edges;
@@ -205,6 +242,7 @@ export function KnowledgeGraphView() {
     () => setSelectedGraphNode(null),
     [setSelectedGraphNode]
   );
+  const handleFocus = useCallback((node: GraphNode) => setFocusNodeId(node.id), []);
 
   async function handleRecompute() {
     if (!activeWorkspaceId) return;
@@ -272,6 +310,39 @@ export function KnowledgeGraphView() {
             );
           })}
         </div>
+
+        {/* Neighbourhood mode chip: hop count + exit */}
+        {focusNode && (
+          <div className="flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-md border border-transparent bg-[var(--accent-dim)] text-[var(--accent)] text-xs">
+            <Focus size={12} className="flex-shrink-0" />
+            <span className="max-w-40 truncate" title={focusNode.title}>{focusNode.title}</span>
+            <div className="flex items-center rounded border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] overflow-hidden ml-1">
+              {NEIGHBOURHOOD_HOPS.map((h) => (
+                <Tooltip key={h} content={`${h} hop${h > 1 ? "s" : ""} away`}>
+                  <button
+                    onClick={() => setFocusHops(h)}
+                    aria-pressed={focusHops === h}
+                    className={cn(
+                      "px-1.5 py-0.5 tabular-nums transition-colors",
+                      focusHops === h ? "bg-[var(--accent)] text-[var(--background)]" : "hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)]"
+                    )}
+                  >
+                    {h}
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
+            <Tooltip content="Show the whole graph (Esc)">
+              <button
+                onClick={() => setFocusNodeId(null)}
+                aria-label="Exit neighbourhood"
+                className="p-0.5 rounded hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </Tooltip>
+          </div>
+        )}
 
         {/* Project filter */}
         <ProjectScopePicker
@@ -490,6 +561,10 @@ export function KnowledgeGraphView() {
 
           {!graphError && filteredNodes.length > 0 && graphLayout === "force" && (
             <ForceGraphCanvas
+              // A neighbourhood gets its own canvas (fresh layout, framed to fit);
+              // leaving it remounts the full graph from its remembered layout.
+              key={focusNode ? `focus:${focusNode.id}` : "all"}
+              layoutKey={focusNode ? undefined : activeWorkspaceId ?? undefined}
               graph={searchedGraph}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
@@ -556,6 +631,8 @@ export function KnowledgeGraphView() {
           <GraphDetailPanel
             node={selectedNode}
             onClose={() => setSelectedGraphNode(null)}
+            onFocus={graphLayout === "force" || graphLayout === "radial" ? handleFocus : undefined}
+            focused={selectedNode.id === focusNode?.id}
           />
         )}
       </div>

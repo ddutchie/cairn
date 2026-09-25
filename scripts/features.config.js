@@ -210,6 +210,19 @@ const FEATURES = [
       "Background Jobs: Long delegations run as jobs with output collection and kill support, surfaced to the model.",
     ],
   },
+  {
+    id: "v3.0.13-graph-neighbourhood",
+    version: "v3.0.13",
+    title: "Graph Neighbourhoods",
+    category: "Knowledge Graph",
+    description:
+      "Focus the Knowledge Graph on one note, task, tag or project and see only what's around it, while large graphs lay themselves out without slowing the rest of the app.",
+    highlights: [
+      "Neighbourhood Mode: Pick a node, choose Show neighbourhood, and see everything within 1, 2 or 3 links of it. Press Esc to return to the whole graph.",
+      "Smooth Layout: The graph's layout runs in the background, so typing, scrolling and panels stay responsive while a big graph settles.",
+      "Picks Up Where You Left Off: Reopening the graph starts from its last layout instead of rebuilding it from scratch.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };
