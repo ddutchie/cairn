@@ -33,20 +33,6 @@ export interface Command {
 // Populated by IdeaFlowCanvas on mount; cleared on unmount.
 // Flow commands call these to patch local React Flow state without a full reload.
 
-// Touched by ipc() and flow-view on every own DB write so that page.tsx's
-// db:changed listener knows not to clear history for those events.
-export const ownWriteGuard = {
-  /** Millisecond timestamp of the last own write. */
-  lastWriteAt: 0,
-  /** Returns true if a db:changed event is likely from our own write. */
-  isOwnWrite(): boolean {
-    return Date.now() - this.lastWriteAt < 3000;
-  },
-  touch() {
-    this.lastWriteAt = Date.now();
-  },
-};
-
 export const flowHandlers: {
   addNode:    ((node: Node) => void) | null;
   removeNode: ((id: string) => void) | null;

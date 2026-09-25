@@ -11,7 +11,7 @@ import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useLoadGraph } from "@/hooks/useLoadGraph";
-import { filterGraphNodes } from "@/store/slices/graph";
+import { filterGraphNodes, EMPTY_GRAPH } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -45,6 +45,7 @@ export function InsightsView() {
   const {
     activeWorkspaceId,
     graphData,
+    graphStale,
     graphLoading,
     graphError,
     graphFilters,
@@ -55,7 +56,9 @@ export function InsightsView() {
     setSelectedGraphNode,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId:   s.activeWorkspaceId,
-    graphData:           s.graphData,
+    // Another workspace's graph (mid-switch) is shown as empty → loading state.
+    graphData:           s.graphWorkspaceId === s.activeWorkspaceId ? s.graphData : EMPTY_GRAPH,
+    graphStale:          s.graphWorkspaceId !== s.activeWorkspaceId,
     graphLoading:        s.graphLoading,
     graphError:          s.graphError,
     graphFilters:        s.graphFilters,
@@ -242,7 +245,7 @@ export function InsightsView() {
 
           {/* Blocking overlay only for the first load — later reloads keep the
               current canvases on screen (the toolbar spinner shows progress). */}
-          {graphLoading && graphData.nodes.length === 0 && (
+          {(graphLoading || graphStale) && !graphError && graphData.nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/80 z-10">
               <span className="text-xs text-[var(--text-tertiary)]">Loading…</span>
             </div>

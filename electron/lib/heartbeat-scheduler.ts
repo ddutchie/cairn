@@ -96,12 +96,6 @@ export class HeartbeatScheduler {
     const db = this.opts.dbGetter();
     if (!db) return;
     const nowIso = new Date(this.opts.now?.() ?? Date.now()).toISOString();
-    // Fail-closed sweep: any pending approval parked longer than the approval
-    // timeout (e.g. by a run whose process died before it could be resolved) is
-    // marked expired so it doesn't sit in the inbox forever. Cutoff derives from
-    // the same injected clock as the tick so tests control one source of time.
-    try {
-    } catch { /* best-effort */ }
     const due = listDueAutomations(db, nowIso);
     for (const automation of due) {
       try {

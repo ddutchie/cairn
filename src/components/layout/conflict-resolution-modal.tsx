@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { fetchConflicts, resolveConflict, type ConflictCopy } from "@/lib/sync-client";
 import { merge3 } from "@/lib/merge3";
 import { diffLines, diffStats } from "@/lib/line-diff";
+import { onChangeFeed, feedTouches } from "@/store/change-feed";
 
 export function ConflictResolutionModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [conflicts, setConflicts] = useState<ConflictCopy[]>([]);
@@ -46,9 +47,10 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
   // new conflict copy (or a resolution on another window) fires db:changed, so
   // refetch rather than showing a stale list until reopen.
   useEffect(() => {
-    if (!open || typeof window === "undefined" || !window.electron?.onDbChanged) return;
-    const unsub = window.electron.onDbChanged(() => void refresh(false));
-    return () => { unsub(); };
+    if (!open) return;
+    return onChangeFeed((e) => {
+      if (feedTouches(e, ["notes"])) void refresh(false);
+    });
   }, [open, refresh]);
 
   const removeLocal = (copyId: string) => {

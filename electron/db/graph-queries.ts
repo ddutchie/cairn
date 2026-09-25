@@ -375,11 +375,18 @@ export function getKnowledgeGraph(
 
     if (autoTypes.length > 0) {
       const typePlaceholders = autoTypes.map(() => "?").join(",");
+      // Scope in SQL: relationship_cache spans every workspace and project, so
+      // reading it whole and filtering in JS cost O(all cached pairs) per load
+      // even with a single project selected. The source_id IN (json_each) probe
+      // uses the (source_id, target_id, type) primary key.
+      const scopedIds = JSON.stringify([...nodeSet]);
       const cacheRows = db.prepare(
         `SELECT source_id, target_id, type, weight, source_section_title, target_section_title
          FROM relationship_cache
-         WHERE type IN (${typePlaceholders})`
-      ).all(...autoTypes) as Row[];
+         WHERE type IN (${typePlaceholders})
+           AND source_id IN (SELECT value FROM json_each(?))
+           AND target_id IN (SELECT value FROM json_each(?))`
+      ).all(...autoTypes, scopedIds, scopedIds) as Row[];
 
       for (const r of cacheRows) {
         const src = r.source_id as string;

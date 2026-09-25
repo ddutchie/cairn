@@ -26,7 +26,7 @@ function setup() {
   };
   const slice = createGraphSlice(mockSet, () => state, {} as any);
   state = { ...state, ...slice, graphFilters: DEFAULT_GRAPH_FILTERS };
-  return { get: () => state, loadingHistory };
+  return { get: () => state, setState: (patch: any) => { state = { ...state, ...patch }; }, loadingHistory };
 }
 
 const graphA = () => ({ nodes: [{ id: "n1", type: "note", title: "A" }], edges: [] });
@@ -56,5 +56,45 @@ describe("loadGraph background refresh", () => {
     expect(get().graphData.nodes[0].title).toBe("B");
     expect(loadingHistory.every((v) => v === false)).toBe(true);
     expect(get().graphLoading).toBe(false);
+  });
+
+  it("records which workspace produced graphData", async () => {
+    const { get } = setup();
+    graphGet.mockResolvedValueOnce(graphA());
+    await get().loadGraph("ws-1");
+    expect(get().graphWorkspaceId).toBe("ws-1");
+  });
+
+  it("drops a response that arrives after the workspace changed", async () => {
+    const { get, setState } = setup();
+    let resolveA!: (v: unknown) => void;
+    graphGet.mockReturnValueOnce(new Promise((r) => { resolveA = r; }));
+    const pending = get().loadGraph("ws-1");
+    setState({ activeWorkspaceId: "ws-2" }); // user switched mid-load
+    resolveA(graphA());
+    await pending;
+    expect(get().graphData.nodes).toEqual([]);
+    expect(get().graphWorkspaceId).toBeNull();
+    expect(get().graphLoading).toBe(false); // not stuck on
+  });
+
+  it("a failed silent refresh keeps the graph on screen (no graphError)", async () => {
+    const { get } = setup();
+    graphGet.mockResolvedValueOnce(graphA());
+    await get().loadGraph("ws-1");
+    const shown = get().graphData;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    graphGet.mockRejectedValueOnce(new Error("db busy"));
+    await get().loadGraph("ws-1", { silent: true });
+    expect(get().graphError).toBeNull();
+    expect(get().graphData).toBe(shown);
+    warn.mockRestore();
+  });
+
+  it("a failed user-visible load still reports graphError", async () => {
+    const { get } = setup();
+    graphGet.mockRejectedValueOnce(new Error("db busy"));
+    await get().loadGraph("ws-1");
+    expect(get().graphError).toBe("db busy");
   });
 });

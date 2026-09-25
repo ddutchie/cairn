@@ -17,7 +17,9 @@ vi.mock("electron", () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
-import { __isWriteChannel as isWriteChannel } from "./registry";
+import { __isWriteChannel as isWriteChannel, __classifyChannel as classifyChannel } from "./registry";
+import fs from "fs";
+import path from "path";
 
 describe("isWriteChannel", () => {
   it("treats read channels with non-verb names as reads (no db:changed storm from polling)", () => {
@@ -95,5 +97,29 @@ describe("isWriteChannel", () => {
     // Previously misclassified as a write because it wasn't in the denylist,
     // causing a db:changed re-hydration on every URL preview.
     expect(isWriteChannel("db:flow:url:fetch")).toBe(false);
+  });
+});
+
+describe("db:* channel classification coverage", () => {
+  it("every registered db:* channel is explicitly a read or a write", () => {
+    // A db:* channel whose action is neither a known read nor a known write
+    // verb defaults to "write" and broadcasts db:changed (→ every window
+    // refreshes) on every call. Make new channels choose explicitly: add the
+    // action to READ_ACTIONS / WRITE_ACTIONS, or the channel to READ_CHANNELS.
+    const root = path.resolve(__dirname, "..");
+    const channels = new Set<string>();
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+          for (const m of fs.readFileSync(full, "utf8").matchAll(/registerIpcHandle\(\s*"(db:[^"]+)"/g)) channels.add(m[1]);
+        }
+      }
+    };
+    walk(root);
+    expect(channels.size).toBeGreaterThan(20);
+    const unknown = [...channels].filter((c) => classifyChannel(c) === "unknown");
+    expect(unknown).toEqual([]);
   });
 });

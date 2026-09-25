@@ -20,6 +20,40 @@ export const GRAPH_TABLES = new Set([
 
 let cursor: { feedId: string | null; seq: number | null } = { feedId: null, seq: null };
 
+/**
+ * Emitted after the store has processed a db:changed event. Components that
+ * reload their own data (flow view, dashboards, conflict dialog) subscribe here
+ * instead of raw `db:changed`, so they only reload when a table they show
+ * actually changed. `reset` = the store fell back to a full snapshot (treat as
+ * "everything may have changed").
+ */
+export interface ChangeFeedEvent {
+  reset: boolean;
+  /** Tables with any change (including this window's own writes). */
+  touched: string[];
+  /** Tables changed by something other than this window. */
+  externalTouched: string[];
+}
+const feedListeners = new Set<(e: ChangeFeedEvent) => void>();
+
+export function onChangeFeed(cb: (e: ChangeFeedEvent) => void): () => void {
+  feedListeners.add(cb);
+  return () => { feedListeners.delete(cb); };
+}
+
+export function emitChangeFeed(e: ChangeFeedEvent): void {
+  for (const cb of feedListeners) {
+    try { cb(e); } catch (err) { console.error("[change-feed] listener failed", err); }
+  }
+}
+
+/** True if the event may have changed any of `tables` (always true on reset). */
+export function feedTouches(e: ChangeFeedEvent, tables: readonly string[], external = false): boolean {
+  if (e.reset) return true;
+  const set = external ? e.externalTouched : e.touched;
+  return set.some((t) => tables.includes(t));
+}
+
 export function getChangeFeedCursor() {
   return cursor;
 }

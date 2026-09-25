@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useLoadGraph } from "@/hooks/useLoadGraph";
-import { filterGraphNodes, filterGraphEdges, nodeTypeColor } from "@/store/slices/graph";
+import { filterGraphNodes, filterGraphEdges, nodeTypeColor, EMPTY_GRAPH } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { NodeTypeChip } from "./NodeTypeChip";
@@ -34,6 +34,7 @@ export function KnowledgeGraphView() {
   const {
     activeWorkspaceId,
     graphData,
+    graphStale,
     graphLoading,
     graphError,
     graphLayout,
@@ -47,7 +48,9 @@ export function KnowledgeGraphView() {
     setSelectedGraphNode,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId:            s.activeWorkspaceId,
-    graphData:                    s.graphData,
+    // Another workspace's graph (mid-switch) is shown as empty → loading state.
+    graphData:                    s.graphWorkspaceId === s.activeWorkspaceId ? s.graphData : EMPTY_GRAPH,
+    graphStale:                   s.graphWorkspaceId !== s.activeWorkspaceId,
     graphLoading:                 s.graphLoading,
     graphError:                   s.graphError,
     graphLayout:                  s.graphLayout,
@@ -465,7 +468,7 @@ export function KnowledgeGraphView() {
           {/* Blocking overlay only for the first load — reloads (filter changes,
               view re-mounts) keep the current graph on screen until the new
               data lands, so the canvas never flashes. */}
-          {graphLoading && graphData.nodes.length === 0 && (
+          {(graphLoading || graphStale) && !graphError && graphData.nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/80 z-10">
               <span className="text-xs text-[var(--text-tertiary)]">Loading graph…</span>
             </div>
@@ -479,7 +482,7 @@ export function KnowledgeGraphView() {
             </div>
           )}
 
-          {!graphLoading && !graphError && filteredNodes.length === 0 && (
+          {!graphLoading && !graphStale && !graphError && filteredNodes.length === 0 && (
             graphData.nodes.length === 0
               ? <EmptyState />
               : <FilteredEmptyState />

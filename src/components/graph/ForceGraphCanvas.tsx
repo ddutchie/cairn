@@ -95,6 +95,13 @@ function computeHulls(nodes: SimNode[]): [number, number][][] {
 }
 
 const radiusOf = (n: SimNode) => nodeRadius(n.nodeType);
+const NODE_TYPES = ["project", "note", "card", "tag"] as const;
+/** Largest label font size (screen px, before font scale). */
+const LABEL_MAX_SCREEN_PX = Math.max(...NODE_TYPES.map((t) => labelScreenPx(t)));
+/** Conservative widest label (screen px, before font scale): longest allowed text × ~0.62em per char. */
+const LABEL_MAX_SCREEN_W = Math.max(...NODE_TYPES.map((t) => labelMaxLen(t, true) * labelScreenPx(t) * 0.62));
+/** Largest hit radius any node can have (biggest node radius + 6px slop). */
+const PICK_REACH = Math.max(nodeRadius("project"), nodeRadius("note"), nodeRadius("card"), nodeRadius("tag")) + 6;
 
 const ZOOM_BTN_CLASS =
   "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
@@ -376,6 +383,14 @@ function ForceGraphCanvasImpl({
     const vx0 = -t.x / t.k - margin, vx1 = (width - t.x) / t.k + margin;
     const vy0 = -t.y / t.k - margin, vy1 = (height - t.y) / t.k + margin;
     const inView = (x: number, y: number) => x >= vx0 && x <= vx1 && y >= vy0 && y <= vy1;
+    // Labels hang below their node and can be much wider than it, so a label
+    // can still be on screen while its node centre is culled. Give labels their
+    // own bounds: half the widest possible label sideways, and the label's
+    // height above the top edge (a node just above the viewport shows its text).
+    const labelHalfW = (LABEL_MAX_SCREEN_W * fs) / 2 / t.k;
+    const labelH = (LABEL_MAX_SCREEN_PX * fs + 4) / t.k + 12;
+    const inLabelView = (x: number, y: number) =>
+      x >= vx0 - labelHalfW && x <= vx1 + labelHalfW && y >= vy0 - labelH && y <= vy1;
 
     // ── cluster hulls (recomputed only when positions changed) ──
     if (hulls) {
@@ -438,10 +453,11 @@ function ForceGraphCanvasImpl({
     // ── nodes — plain circles batched by fill; highlighted ones drawn after ──
     const fills = new Map<string, SimNode[]>();
     const highlighted: SimNode[] = [];
-    const visible: SimNode[] = [];
+    const labelCandidates: SimNode[] = [];
     for (const n of nodes) {
-      if (n.x == null || n.y == null || !inView(n.x, n.y)) continue;
-      visible.push(n);
+      if (n.x == null || n.y == null) continue;
+      if (inLabelView(n.x, n.y)) labelCandidates.push(n);
+      if (!inView(n.x, n.y)) continue;
       if (n.id === sel || n.id === hovered) { highlighted.push(n); continue; }
       const dim = !!sel && connected != null && !connected.has(n.id);
       const fill = alpha(typeColor(n.nodeType), dim ? 0.22 : 0.92);
@@ -487,7 +503,7 @@ function ForceGraphCanvasImpl({
     ctx.lineWidth = 4 / t.k;
     ctx.strokeStyle = bg;
     let lastFont = "";
-    for (const n of visible) {
+    for (const n of labelCandidates) {
       const isSel = n.id === sel;
       const isHov = n.id === hovered;
       const showLabel = shouldShowLabel({
@@ -568,18 +584,40 @@ function ForceGraphCanvasImpl({
   }, []);
 
   // ── hit testing for hover + click ──
+  // Spatial index for hit testing, rebuilt only when positions changed (at most
+  // once per sim tick) instead of scanning every node on every mouse move.
+  const pickIndexRef = useRef<{ version: number; nodes: SimNode[]; tree: d3.Quadtree<SimNode> } | null>(null);
   const pick = useCallback((mx: number, my: number): SimNode | null => {
     const t = transformRef.current;
     const x = (mx - t.x) / t.k;
     const y = (my - t.y) / t.k;
+    const nodes = nodesRef.current;
+    let index = pickIndexRef.current;
+    if (!index || index.version !== posVersionRef.current || index.nodes !== nodes) {
+      const tree = d3.quadtree<SimNode>()
+        .x((n) => n.x!)
+        .y((n) => n.y!)
+        .addAll(nodes.filter((n) => n.x != null && n.y != null));
+      index = { version: posVersionRef.current, nodes, tree };
+      pickIndexRef.current = index;
+    }
+    // Same rule as before (nearest node whose centre is within its radius + 6),
+    // but only nodes inside the largest possible hit radius are examined.
+    const reach = PICK_REACH;
     let best: SimNode | null = null;
     let bd = Infinity;
-    for (const n of nodesRef.current) {
-      if (n.x == null || n.y == null) continue;
-      const d = Math.hypot(n.x - x, n.y - y);
-      const r = radiusOf(n) + 6;
-      if (d < r && d < bd) { bd = d; best = n; }
-    }
+    index.tree.visit((quad, x0, y0, x1, y1) => {
+      if (!quad.length) {
+        let leaf: d3.QuadtreeLeaf<SimNode> | undefined = quad as d3.QuadtreeLeaf<SimNode>;
+        do {
+          const n = leaf.data;
+          const d = Math.hypot(n.x! - x, n.y! - y);
+          if (d < radiusOf(n) + 6 && d < bd) { bd = d; best = n; }
+          leaf = leaf.next;
+        } while (leaf);
+      }
+      return x0 > x + reach || x1 < x - reach || y0 > y + reach || y1 < y - reach;
+    });
     return best;
   }, []);
 

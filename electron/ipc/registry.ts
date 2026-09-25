@@ -77,27 +77,48 @@ const READ_CHANNELS = new Set([
   "db:session:todos",
 ]);
 
-function isWriteChannel(channel: string): boolean {
-  if (!channel.startsWith("db:")) return false;
-  if (READ_CHANNELS.has(channel)) return false;
+// Known write verbs. Not needed for behaviour (anything unrecognised is treated
+// as a write — the safe default), but lets registry.test.ts fail on a NEW db:*
+// channel whose action is neither a known read nor a known write, forcing an
+// explicit decision instead of a silent db:changed broadcast on every call.
+const WRITE_ACTIONS = new Set([
+  "create", "update", "delete", "set", "clear", "upsertThread", "deleteThread",
+  "clearAllThreads", "clearThreadMessages", "addBlocker", "removeBlocker",
+  "archive-done", "moveToFolder", "markRead", "updateSettings", "recompute",
+  "recomputeProjections", "reindex", "runNow", "syncFromManifest",
+  "merge", "moveToProject", "summarize",
+]);
+
+type ChannelKind = "read" | "write" | "unknown";
+
+function classifyChannel(channel: string): ChannelKind {
+  if (!channel.startsWith("db:")) return "read";
+  if (READ_CHANNELS.has(channel)) return "read";
   const action = channel.slice(channel.lastIndexOf(":") + 1);
-  if (READ_ACTIONS.has(action)) return false;
-  return true;
+  if (READ_ACTIONS.has(action)) return "read";
+  return WRITE_ACTIONS.has(action) ? "write" : "unknown";
+}
+
+function isWriteChannel(channel: string): boolean {
+  return classifyChannel(channel) !== "read";
 }
 
 /** Exported for unit testing the read/write classification. */
 export const __isWriteChannel = isWriteChannel;
+export const __classifyChannel = classifyChannel;
 
 /**
  * Observer wrapped around every renderer-initiated `db:*` write handler. main.ts
  * installs one that records the change-feed seq range each window wrote, so the
  * change feed can tell a window which changes it already holds optimistically.
  * `begin` runs before the handler; `end` after it settles (before db:changed is
- * broadcast, so the attribution is in place when the renderer asks).
+ * broadcast, so the attribution is in place when the renderer asks), with how
+ * long the handler took — a slow async handler (e.g. an LLM call) spans writes
+ * from other processes, so the observer should not claim its range.
  */
 export interface WriteObserver {
   begin: () => number;
-  end: (begin: number, senderId: number | undefined) => void;
+  end: (begin: number, senderId: number | undefined, elapsedMs: number) => void;
 }
 let writeObserver: WriteObserver | null = null;
 export function setWriteObserver(observer: WriteObserver | null): void {
@@ -119,13 +140,14 @@ export function registerIpcHandle<T extends unknown[]>(
   const wrappedHandler = async (event: unknown, ...args: unknown[]) => {
     const observer = isWrite ? writeObserver : null;
     let begin = 0;
+    const startedAt = Date.now();
     try { if (observer) begin = observer.begin(); } catch { /* attribution is best-effort */ }
     let result: unknown;
     try {
       result = await handler(event as IpcMainInvokeEvent, ...(args as T));
     } finally {
       if (observer) {
-        try { observer.end(begin, (event as IpcMainInvokeEvent | undefined)?.sender?.id); } catch { /* best-effort */ }
+        try { observer.end(begin, (event as IpcMainInvokeEvent | undefined)?.sender?.id, Date.now() - startedAt); } catch { /* best-effort */ }
       }
     }
     if (isWrite) {

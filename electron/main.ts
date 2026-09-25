@@ -53,6 +53,9 @@ import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/
 
 const isDev = !app.isPackaged;
 let shutdownStarted = false;
+// Final Device Sync publish started by the sync wiring's before-quit listener;
+// the shutdown gate waits for it alongside the agent host.
+let quitSyncWork: Promise<void> | null = null;
 let shutdownComplete = false;
 
 if (isDev) {
@@ -529,10 +532,16 @@ app.whenReady().then(async () => {
   // ── Change-feed attribution ───────────────────────────────────────────
   // Record which renderer window produced each db:* write's feed rows, so the
   // change feed can skip them for that window (it already holds them).
+  // Only quick handlers are attributed: a slow one (LLM summarize, reindex…)
+  // spans time in which MCP/sync may also write, and claiming that whole range
+  // as "own" would hide those changes from the window. Unattributed = treated
+  // as external, which at worst costs one redundant row refresh.
+  const OWN_WRITE_MAX_MS = 250;
   setWriteObserver({
     begin: () => changeFeedHead(ctx.db),
-    end: (begin, senderId) => {
-      if (senderId !== undefined) recordOwnWrite(ctx.db, begin, changeFeedHead(ctx.db), senderId);
+    end: (begin, senderId, elapsedMs) => {
+      if (senderId === undefined || elapsedMs > OWN_WRITE_MAX_MS) return;
+      recordOwnWrite(ctx.db, begin, changeFeedHead(ctx.db), senderId);
     },
   });
 
@@ -710,12 +719,30 @@ app.whenReady().then(async () => {
   // One full sync at a time: the 30s interval, window focus and power resume
   // can all fire while a round is still awaiting folder I/O. Overlapping rounds
   // are safe (engine work is transactional) but duplicate the read/write of the
-  // whole oplog, so a request that lands mid-round is simply dropped — the next
-  // tick picks up anything it would have seen.
-  let fullSyncInFlight = false;
-  async function runFullSync(reason: string) {
-    if (fullSyncInFlight) return;
-    fullSyncInFlight = true;
+  // whole oplog, so a request that lands mid-round joins it instead — the next
+  // tick picks up anything it would have seen. The exception is quit: nothing
+  // comes after it, so it queues one more round to publish edits drained after
+  // the in-flight round started. Returns a promise the quit gate can await.
+  let fullSyncInFlight: Promise<void> | null = null;
+  let fullSyncRerun = false;
+  function runFullSync(reason: string): Promise<void> {
+    if (fullSyncInFlight) {
+      if (reason === "before-quit") fullSyncRerun = true;
+      return fullSyncInFlight;
+    }
+    fullSyncInFlight = (async () => {
+      try {
+        do {
+          fullSyncRerun = false;
+          await runFullSyncOnce(reason);
+        } while (fullSyncRerun);
+      } finally {
+        fullSyncInFlight = null;
+      }
+    })();
+    return fullSyncInFlight;
+  }
+  async function runFullSyncOnce(reason: string) {
     try {
       if (!getSyncFolder(ctx.db)) {
         // Device Sync not enabled: do nothing. We deliberately DON'T drain here —
@@ -741,8 +768,6 @@ app.whenReady().then(async () => {
       }
     } catch (err) {
       console.error(`[sync] ${reason} failed:`, err);
-    } finally {
-      fullSyncInFlight = false;
     }
   }
 
@@ -769,10 +794,17 @@ app.whenReady().then(async () => {
     const { powerMonitor } = await import("electron");
     powerMonitor.on("resume", () => runFullSync("resume"));
     win.on("focus", () => runFullSync("focus"));
+    let quitSyncStarted = false;
     app.on("before-quit", () => {
-      try {
-        if (getSyncFolder(ctx.db)) { drainDesktop(ctx.db); runFullSync("before-quit"); }
-      } catch { /* ignore */ }
+      // before-quit fires again on the re-quit after the shutdown gate below;
+      // publish once. The gate awaits `quitSyncWork` (bounded by its timeout),
+      // so the last edits actually reach the sync folder before exit.
+      if (!quitSyncStarted) {
+        quitSyncStarted = true;
+        try {
+          if (getSyncFolder(ctx.db)) { drainDesktop(ctx.db); quitSyncWork = runFullSync("before-quit"); }
+        } catch { /* ignore */ }
+      }
       // Stop the heartbeat scheduler so no background automation fires during teardown.
       try { heartbeatScheduler.stop(); } catch { /* ignore */ }
       clearInterval(drainInterval);
@@ -837,10 +869,14 @@ app.on("before-quit", (event) => {
   shutdownStarted = true;
   void (async () => {
     try {
-      // Fail-open on a timer so a hung turn can never wedge the quit: the
-      // dev supervisor uses the same 5s force-kill window on restart.
+      // Let the other before-quit listeners (registered later, e.g. the Device
+      // Sync final publish) run first so their work can be awaited below.
+      await new Promise((resolve) => setImmediate(resolve));
+      // Fail-open on a timer so a hung turn (or an unreachable sync folder)
+      // can never wedge the quit: the dev supervisor uses the same 5s
+      // force-kill window on restart.
       await Promise.race([
-        getAgentHost().shutdown(),
+        Promise.all([getAgentHost().shutdown(), quitSyncWork ?? Promise.resolve()]),
         new Promise((resolve) => setTimeout(resolve, 5000)),
       ]);
     } catch (err) {

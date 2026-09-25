@@ -24,7 +24,7 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
-import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, GRAPH_TABLES, type ChangeSet } from "./change-feed";
+import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
 import { ipcAwaitResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
@@ -225,6 +225,7 @@ async function runChangeFeedRefresh(
   const fullRefresh = async () => {
     await get().hydrateFromElectron(true);
     void get().refreshGraphIfLoaded();
+    emitChangeFeed({ reset: true, touched: [], externalTouched: [] });
   };
   if (!api || seq === null) return fullRefresh();
 
@@ -253,6 +254,7 @@ async function runChangeFeedRefresh(
   }
 
   if (cs.touched.some((t) => GRAPH_TABLES.has(t))) void get().refreshGraphIfLoaded();
+  emitChangeFeed({ reset: false, touched: cs.touched, externalTouched: cs.externalTouched });
 }
 
 /**

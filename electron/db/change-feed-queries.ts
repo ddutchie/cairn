@@ -22,8 +22,9 @@
  * that seq range are reported back to that same window as own (it already holds
  * them optimistically), and as external to every other window. A write from
  * another process that commits *during* an own handler would be misattributed as
- * own for that one window — a narrow window (handlers are synchronous SQLite
- * calls) and the row still converges on its next change.
+ * own for that one window. main.ts only attributes handlers that finish within
+ * 250ms (plain synchronous SQLite CRUD), keeping that window narrow; the row
+ * still converges on its next change.
  */
 
 import type Database from "better-sqlite3";

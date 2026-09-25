@@ -28,7 +28,8 @@ import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType, ResolvedIdeaFlow } from "@/types";
-import { historyManager, flowHandlers, ownWriteGuard } from "@/lib/history";
+import { historyManager, flowHandlers } from "@/lib/history";
+import { onChangeFeed, feedTouches } from "@/store/change-feed";
 import {
   makeAddNodeCmd,
   makeUpdateNodeCmd,
@@ -50,6 +51,9 @@ import {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+
+/** Tables whose external changes should reload the open flow. */
+const FLOW_TABLES = ["idea_flows", "idea_flow_nodes", "idea_flow_edges", "notes", "task_cards"] as const;
 export function IdeaFlowView() {
   return (
     <ReactFlowProvider>
@@ -102,14 +106,8 @@ function IdeaFlowCanvas() {
   // reset React Flow state mid-interaction (e.g. during a connection drag).
   const suppressReloadRef = useRef(false);
   const suppressReloadTimer = useRef<ReturnType<typeof setTimeout>>(null);
-  // Timestamp of the last user-initiated DB write. Used to distinguish
-  // our own db:changed events from genuinely external (MCP/AI) ones.
-  const lastOwnWriteAtRef = useRef(0);
-
   function suppressReload(ms = 1500) {
     suppressReloadRef.current = true;
-    lastOwnWriteAtRef.current = Date.now();
-    ownWriteGuard.touch(); // tell page.tsx's db:changed not to clear history
     if (suppressReloadTimer.current) clearTimeout(suppressReloadTimer.current);
     suppressReloadTimer.current = setTimeout(() => {
       suppressReloadRef.current = false;
@@ -200,20 +198,16 @@ function IdeaFlowCanvas() {
     };
   }, [setNodes, setEdges]);
 
-  // Re-hydrate on external (MCP/AI) DB writes — but NOT on our own writes.
-  // External writes also clear the undo stack since history is now stale.
+  // Re-load on external (MCP/AI/sync/other-window) changes to flow data — but
+  // NOT on our own writes. The change feed attributes writes per window, so
+  // own drags/edits never reload mid-interaction; the store already clears the
+  // undo stack for external changes. Flow nodes can show note/card titles, so
+  // those tables count too.
   useEffect(() => {
-    if (!window.electron) return;
-    const unsub = window.electron.onDbChanged(() => {
-      const isOwnWrite = (Date.now() - lastOwnWriteAtRef.current) < 3000;
-      if (!suppressReloadRef.current) {
-        loadFlow(false);
-      }
-      if (!isOwnWrite) {
-        historyManager.clear();
-      }
+    return onChangeFeed((e) => {
+      if (suppressReloadRef.current) return;
+      if (feedTouches(e, FLOW_TABLES, /* external */ true)) loadFlow(false);
     });
-    return () => { unsub(); };
   }, [loadFlow]);
 
   // Close add-menu on outside click
