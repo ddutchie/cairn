@@ -5,6 +5,7 @@
  */
 
 import { stripMarkdown } from "./text-utils";
+import { noteExcerpt } from "../../shared/notes/excerpt";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
 export type DbRow = Record<string, unknown>;
@@ -182,9 +183,10 @@ export function toNote(row: DbRow) {
     workspaceId: row.workspace_id as string,
     title: row.title as string,
     content: (row.content ?? "") as string,
-    // Plain-text mirror, derived on read from `content` (the dedicated column was
-    // removed — see schema v44). Dashboards keep an empty mirror as before.
-    contentText: row.type === "dashboard" ? "" : stripMarkdown((row.content ?? "") as string),
+    // Short plain-text excerpt for previews (see shared/notes/excerpt.ts) —
+    // NOT a full mirror; full-text search derives it from `content`.
+    // Dashboards keep an empty excerpt as before.
+    contentText: noteExcerpt(row.content as string | null, row.type as string | null, stripMarkdown),
     tagIds: p(row.tag_ids) as string[],
     linkedNoteIds: p(row.linked_note_ids) as string[],
     linkedCardIds: p(row.linked_card_ids) as string[],

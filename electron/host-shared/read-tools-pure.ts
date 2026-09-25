@@ -7,6 +7,7 @@
 
 import { noteDigest } from "../../shared/notes/toc";
 import { matchesQuery } from "../../shared/notes/text";
+import { stripMarkdown } from "./text-utils";
 import { buildNoteMarkdown, buildProjectMarkdown } from "../../shared/notes/export";
 import { isOverdue, isDueWithin } from "../../shared/notes/due";
 
@@ -233,7 +234,8 @@ export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
     if (n.archivedAt) return false;
     if (projectId && n.projectId !== projectId) return false;
     if (updatedAfterMs !== undefined && new Date(n.updatedAt).getTime() < updatedAfterMs) return false;
-    return listAll || matchesQuery(qr, `${n.title}\n${n.contentText}`);
+    // contentText is only a preview excerpt — search the full body.
+    return listAll || matchesQuery(qr, `${n.title}\n${n.type === "dashboard" ? "" : stripMarkdown(n.content ?? "")}`);
   });
   // Sort by updatedAt DESC to ensure stable pagination ordering
   matches.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());

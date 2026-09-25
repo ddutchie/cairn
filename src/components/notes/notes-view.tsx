@@ -29,11 +29,11 @@ import { OverflowPill } from "@/components/ui/overflow-pill";
 import { FolderPickerDialog } from "./notes-view/FolderPickerDialog";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import { STARTER_TEMPLATES } from "../../../shared/notes/starter-templates";
-import { stripMarkdown } from "./note-editor-utils";
 import type { Note } from "@/types";
 import { DialogClose } from "@/components/ui/dialog";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
+import { excerptFor } from "@/lib/note-text";
 
 // ── NotesView orchestrator ──────────────────────────────────────────────────
 
@@ -433,7 +433,7 @@ export function NotesView() {
     const note = createNote(activeProjectId, title, "note");
     updateNote(note.id, {
       content,
-      contentText: stripMarkdown(content),
+      contentText: excerptFor(content),
       tagIds: template.tagIds ?? [],
     });
     setActiveNoteId(note.id);
@@ -462,7 +462,7 @@ export function NotesView() {
       const title = `Template: ${s.name}`;
       if (existing.has(title.toLowerCase())) continue;
       const tpl = createNote(activeProjectId, title, "template");
-      updateNote(tpl.id, { content: s.body, contentText: stripMarkdown(s.body) });
+      updateNote(tpl.id, { content: s.body, contentText: excerptFor(s.body) });
     }
   }
 

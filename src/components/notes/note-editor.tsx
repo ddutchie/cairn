@@ -21,12 +21,13 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { makeLatexPlugins, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
-import { countWords, stripMarkdown, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
+import { countWords, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { resolveFontPreset } from "../../../shared/ui/fonts";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
+import { excerptFor } from "@/lib/note-text";
 
 interface NoteEditorProps {
   note: Note;
@@ -244,7 +245,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
       pendingContent.current = null;
       updateNoteRef.current(noteId, {
         content: markdown,
-        contentText: stripMarkdown(markdown),
+        contentText: excerptFor(markdown),
       });
     }
   }, []);
@@ -286,7 +287,7 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
         pendingContent.current = null;
         updateNote(note.id, {
           content: markdown,
-          contentText: stripMarkdown(markdown),
+          contentText: excerptFor(markdown),
         });
       }, 300);
     },
@@ -550,9 +551,9 @@ export function NoteEditor({ note, onBack }: NoteEditorProps) {
     if (idx === -1) return;
     const next = toggleCheckboxInSource(noteContentRef.current ?? "", idx);
     if (next !== (noteContentRef.current ?? "")) {
-      // Keep contentText in sync with content (matching the save flow above) so
-      // derived plain-text state doesn't go stale after a preview toggle.
-      updateNote(note.id, { content: next, contentText: stripMarkdown(next) });
+      // Keep the contentText excerpt in sync with content (matching the save
+      // flow above) so previews don't go stale after a preview toggle.
+      updateNote(note.id, { content: next, contentText: excerptFor(next) });
     }
   }, [note.id, updateNote]);
 
