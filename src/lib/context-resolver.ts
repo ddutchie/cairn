@@ -41,13 +41,15 @@ export async function resolvePromptContext(
       (n) => n.title.toLowerCase() === title.toLowerCase() && !n.archivedAt
     );
     if (note) {
+      // A body that failed to load is reported as such — never as "(empty)".
+      const body = note.content ?? (await loadNoteBody?.(note.id));
       attachedContext.push(`[[${note.title}]]:
 ---
 ID: ${note.id}
 Type: ${note.type}
 Folder: ${note.folder || "(root)"}
 Content:
-${(note.content ?? (await loadNoteBody?.(note.id))) || "(empty)"}`);
+${body === undefined ? "(content could not be loaded)" : body || "(empty)"}`);
       continue;
     }
 

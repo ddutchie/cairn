@@ -437,7 +437,7 @@ export function searchNoteIds(db: Database.Database, query: string, opts: { proj
 
 /** Ids of live notes containing a `[[<title of noteId>]]` wikilink (case-insensitive, trimmed). */
 export function wikilinkBacklinkIds(db: Database.Database, noteId: string): string[] {
-  const target = db.prepare("SELECT title FROM notes WHERE id = ?").get(noteId) as { title: string } | undefined;
+  const target = db.prepare("SELECT title FROM notes WHERE id = ? AND deleted_at IS NULL").get(noteId) as { title: string } | undefined;
   if (!target) return [];
   // Same comparison as the renderer scan it replaces: trimmed link text vs the
   // lower-cased title.

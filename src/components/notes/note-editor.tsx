@@ -44,16 +44,30 @@ type EditorMode = "edit" | "read";
  * back over it). The body stays pinned in the cache while the editor is open.
  */
 export function NoteEditor(props: NoteEditorProps) {
-  const { loaded } = useNoteBody(props.note.id);
-  if (!loaded) return <NoteBodyLoading />;
+  const { loaded, failed, retry } = useNoteBody(props.note.id);
+  if (!loaded) return <NoteBodyLoading failed={failed} onRetry={retry} />;
   return <NoteEditorLoaded {...props} />;
 }
 
 /** Centred placeholder while a lazily-loaded note body arrives (Electron). */
-export function NoteBodyLoading() {
+export function NoteBodyLoading({ failed = false, onRetry }: { failed?: boolean; onRetry?: () => void }) {
   return (
-    <div className="flex flex-1 items-center justify-center h-full text-xs text-[var(--text-tertiary)]">
-      <span className="animate-pulse">Loading note…</span>
+    <div className="flex flex-1 flex-col gap-2 items-center justify-center h-full text-xs text-[var(--text-tertiary)]">
+      {failed ? (
+        <>
+          <span>Couldn&apos;t load this note.</span>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="px-2.5 py-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              Retry
+            </button>
+          )}
+        </>
+      ) : (
+        <span className="animate-pulse">Loading note…</span>
+      )}
     </div>
   );
 }

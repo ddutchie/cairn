@@ -56,8 +56,8 @@ const ALLOWED_TOOLS = new Set([
 
 /** Dashboard HTML loads lazily in Electron — see NoteEditor's gate. */
 export function DashboardView(props: DashboardViewProps) {
-  const { loaded } = useNoteBody(props.note.id);
-  if (!loaded) return <NoteBodyLoading />;
+  const { loaded, failed, retry } = useNoteBody(props.note.id);
+  if (!loaded) return <NoteBodyLoading failed={failed} onRetry={retry} />;
   return <DashboardViewLoaded {...props} />;
 }
 

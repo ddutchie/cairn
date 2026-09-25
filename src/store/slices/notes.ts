@@ -180,9 +180,12 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       let content: string | undefined;
       try {
         content = (await window.electron!.note.bodies([noteId]))[0]?.content;
-      } catch { /* fall through: delete anyway, undo restores metadata only */ }
+      } catch { /* fall through: delete, but without an undo entry */ }
       ipc((e) => e.note.delete(noteId));
-      historyManager.push(makeDeleteNoteCmd({ ...savedNote!, content: content ?? "" }, set));
+      // Only offer undo when it can restore the real content — an undo that
+      // re-creates the note empty would be a silent data loss.
+      if (content !== undefined) historyManager.push(makeDeleteNoteCmd({ ...savedNote!, content }, set));
+      else console.warn(`[notes] deleted ${noteId} without undo: its content couldn't be read`);
     })();
   },
 

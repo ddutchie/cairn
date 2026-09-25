@@ -146,7 +146,10 @@ export function ActionsList({ actions }: ActionsListProps) {
         if (!note) throw new Error("Note not found");
         const targetTitle = a.targetTitle || a.cardTitle || a.noteTitle || "";
         // Bodies load lazily (Electron): read the real body before appending.
-        const existing = note.content ?? (await loadNoteBody(sourceNoteId)) ?? "";
+        // A failed read must NOT be treated as an empty body — appending to ""
+        // would overwrite the note with just the link.
+        const existing = note.content ?? (await loadNoteBody(sourceNoteId));
+        if (existing === undefined) throw new Error("Couldn't load the note's content");
         if (wikilinkAlreadyExists(existing, targetTitle)) break;
         updateNote(sourceNoteId, { content: existing + `\n\n[[${targetTitle}]]` });
         affectedIds.push(sourceNoteId);

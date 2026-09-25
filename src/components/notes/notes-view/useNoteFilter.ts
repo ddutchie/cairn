@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Note } from "@/types";
 import { matchesQuery } from "../../../../shared/notes/text";
 import { noteSearchText } from "@/lib/note-text";
+import { onChangeFeed, feedTouches } from "@/store/change-feed";
 
 const BODY_SEARCH_DEBOUNCE_MS = 120;
 
@@ -24,6 +25,12 @@ export function useNoteFilter(
 ): Note[] {
   const [bodyMatches, setBodyMatches] = useState<{ query: string; ids: Set<string> } | null>(null);
   const query = filter.trim();
+  // Bumped when notes change (edits, external writes) so body matches are
+  // re-queried — otherwise a note that stopped matching would stay listed.
+  const [notesVersion, setNotesVersion] = useState(0);
+  useEffect(() => onChangeFeed((e) => {
+    if (feedTouches(e, ["notes"])) setNotesVersion((v) => v + 1);
+  }), []);
 
   useEffect(() => {
     const searchNotes = typeof window !== "undefined" ? window.electron?.note?.search : undefined;
@@ -36,7 +43,7 @@ export function useNoteFilter(
       } catch { /* title matches still apply */ }
     }, BODY_SEARCH_DEBOUNCE_MS);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [query, projectId]);
+  }, [query, projectId, notesVersion]);
 
   return useMemo(() => {
     const ids = bodyMatches?.query === query ? bodyMatches.ids : null;

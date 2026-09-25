@@ -88,6 +88,13 @@ describe("lazy note bodies — main-process queries", () => {
     expect(wikilinkBacklinkIds(db, "target")).toEqual(["a"]);
   });
 
+  it("returns no backlinks for a deleted (tombstoned) target", () => {
+    mk(db, "target", "Design Doc", "");
+    mk(db, "a", "A", "see [[Design Doc]]");
+    db.prepare("UPDATE notes SET deleted_at = ? WHERE id = 'target'").run(new Date().toISOString());
+    expect(wikilinkBacklinkIds(db, "target")).toEqual([]);
+  });
+
   it("change feed delivers note upserts without bodies", () => {
     const init = getChangesSince(db, null, null, 1);
     mk(db, "n1", "Title", "some body text");

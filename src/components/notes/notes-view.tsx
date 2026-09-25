@@ -430,7 +430,8 @@ export function NotesView() {
   async function handleNewFromTemplate(template: Note) {
     if (!activeProjectId) return;
     // Template bodies load lazily (Electron) — never instantiate an empty one.
-    const templateBody = template.content ?? (await loadNoteBody(template.id)) ?? "";
+    const templateBody = template.content ?? (await loadNoteBody(template.id));
+    if (templateBody === undefined) return; // load failed — don't create an empty note
     const now = new Date();
     const title = defaultTitleFromTemplate(template.title.replace(/^Template:\s*/i, ""), { now });
     const content = instantiateTemplate(templateBody, { title, now });
@@ -447,7 +448,8 @@ export function NotesView() {
   // Turn the active note into a reusable template (type="template").
   async function handleSaveAsTemplate(note: Note) {
     if (!activeProjectId) return;
-    const body = note.content ?? (await loadNoteBody(note.id)) ?? "";
+    const body = note.content ?? (await loadNoteBody(note.id));
+    if (body === undefined) return; // load failed — don't save an empty template
     const title = /^Template:/i.test(note.title) ? note.title : `Template: ${note.title}`;
     const tpl = createNote(activeProjectId, title, "template");
     updateNote(tpl.id, {

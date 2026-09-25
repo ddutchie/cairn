@@ -118,4 +118,25 @@ describe("lazy note bodies", () => {
     expect(useCairnStore.getState().noteChangeMarks.w1).toBeUndefined();
     await vi.waitFor(() => expect(clearChangeMark).toHaveBeenCalledWith("w1"));
   });
+
+  it("never records a lossy undo when the body can't be read before a delete", async () => {
+    const { historyManager } = await import("@/lib/history");
+    const push = vi.spyOn(historyManager, "push");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    useCairnStore.setState({ notes: [meta("x1")] });
+    bodies.mockRejectedValueOnce(new Error("ipc down"));
+    useCairnStore.getState().deleteNote("x1");
+    await vi.waitFor(() => expect(del).toHaveBeenCalledWith("x1"));
+    expect(push).not.toHaveBeenCalled();
+    push.mockRestore();
+    warn.mockRestore();
+  });
+
+  it("loadNoteBody resolves undefined (not \"\") when the read fails", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    useCairnStore.setState({ notes: [meta("f1")] });
+    bodies.mockRejectedValueOnce(new Error("ipc down"));
+    expect(await useCairnStore.getState().loadNoteBody("f1")).toBeUndefined();
+    err.mockRestore();
+  });
 });
