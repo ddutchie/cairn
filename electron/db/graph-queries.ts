@@ -378,14 +378,18 @@ export function getKnowledgeGraph(
       // Scope in SQL: relationship_cache spans every workspace and project, so
       // reading it whole and filtering in JS cost O(all cached pairs) per load
       // even with a single project selected. The source_id IN (json_each) probe
-      // uses the (source_id, target_id, type) primary key.
+      // uses the (source_id, target_id, type) primary key. The unary `+` on
+      // target_id keeps that term out of the index key: without it the
+      // planner probes the key with every (source, target) pair — O(nodes²),
+      // ~12s at 5k notes (see bench/graph.bench.ts). With it, the target list
+      // is a bloom-filtered membership check on the rows the source probe finds.
       const scopedIds = JSON.stringify([...nodeSet]);
       const cacheRows = db.prepare(
         `SELECT source_id, target_id, type, weight, source_section_title, target_section_title
          FROM relationship_cache
          WHERE type IN (${typePlaceholders})
            AND source_id IN (SELECT value FROM json_each(?))
-           AND target_id IN (SELECT value FROM json_each(?))`
+           AND +target_id IN (SELECT value FROM json_each(?))`
       ).all(...autoTypes, scopedIds, scopedIds) as Row[];
 
       for (const r of cacheRows) {
