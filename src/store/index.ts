@@ -23,7 +23,7 @@ import type {
 } from "@/types";
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
-import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
+import { isOwnNoteWrite, isAiNoteWrite, isElectron } from "./ipc";
 import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
 import { ipcAwaitResult } from "./ipc";
@@ -586,6 +586,11 @@ export const useCairnStore = create<CairnStore>()(
       const [set, get] = a;
 
       if (!isRefresh) {
+        // Drop the web-build entity cache if an older Electron build wrote one:
+        // Chromium loads an origin's whole localStorage into memory, and this
+        // copy is never read in Electron (see persist()).
+        storage.delete(STORAGE_KEY);
+
         // Fetch configurations from backend cache first if window.electron is available
         let backendAiConfig = null;
         let backendAgentConfig = null;
@@ -783,6 +788,12 @@ export const useCairnStore = create<CairnStore>()(
     },
 
     persist() {
+      // Web build only. In Electron SQLite is the source of truth and this copy
+      // is never read back (hydrateFromElectron uses the IPC snapshot), yet
+      // serialising every note body + chat message on each edit froze the
+      // renderer ~110ms per autosave at 5k notes (~68MB string) and then blew
+      // the localStorage quota anyway.
+      if (isElectron()) return;
       const [, get] = a;
       savePersisted(get());
     },
