@@ -18,7 +18,12 @@ export default defineConfig({
   // walker collects tests/e2e/electron/*.test.ts under this config and
   // schedules them for browser execution, where they silently no-op via
   // test.skip(!LIVE) — the wrong test runner, hiding the real coverage gap.
-  testIgnore: "**/electron/**",
+  // electron/: needs the real app (playwright.electron.config.ts).
+  // screenshots.spec.ts: marketing captures for the site — run locally via
+  // `npm run screenshots` (playwright.screenshots.config.ts). Matching it here
+  // made every CI/release smoke run render the full screenshot set into the
+  // runner's ./screenshots, where it was discarded.
+  testIgnore: ["**/electron/**", "**/screenshots.spec.ts"],
 
   // Run tests serially — the dev server is shared, parallel runs can race on
   // React hydration timing. Increase if the suite grows and timing is stable.
