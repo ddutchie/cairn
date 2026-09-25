@@ -374,7 +374,8 @@ export function registerDbHandlers(ctx: DbContext): void {
     }
     invalidateRelationshipCache(ctx.db, id);
     if (note.workspaceId) {
-      computeAutoRelationships(ctx.db, note.workspaceId, [id]);
+      // Relinked notes' bodies changed too (their [[Old]] became [[New]]).
+      computeAutoRelationships(ctx.db, note.workspaceId, [id, ...relinked.map((r) => r.id)]);
       void reindexSingleNoteEmbedding(ctx, id, note.workspaceId).then((didReindex) => {
         if (!didReindex) return;
         try {
