@@ -42,7 +42,8 @@ import { apply as storageJsonApply, inject as storageJsonInject, name as storage
 import { apply as storageDomainApply, inject as storageDomainInject, name as storageDomainName } from "@deepseek-ai/dsh-storage-domain";
 import MessageFeedbackService from "@deepseek-ai/dsh-message-feedback";
 import { apply as commandFeedbackApply, inject as commandFeedbackInject, name as commandFeedbackName } from "@deepseek-ai/dsh-command-feedback";
-import { apply as scheduleApply, inject as scheduleInject, name as scheduleName } from "@deepseek-ai/dsh-schedule";
+import ScheduleService from "@deepseek-ai/dsh-schedule";
+import CairnSessionController from "./session-controller-shim";
 import { isScheduleEnabled as hostIsScheduleEnabled, resolveHooksConfig } from "./host-store";
 import { apply as firstPromptApply, inject as firstPromptInject, name as firstPromptName } from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import { CairnAttachmentStore } from "./cairn-attachment-store";
@@ -58,7 +59,6 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import WebRuntime from "@deepseek-ai/dsh-web";
 import { apply as webFetchHttpApply, inject as webFetchHttpInject, name as webFetchHttpName } from "@deepseek-ai/dsh-web-fetch-http";
 import { apply as toolWebApply, inject as toolWebInject, name as toolWebName } from "@deepseek-ai/dsh-tool-web";
-import WorkerThreadWorkflowEngine from "@deepseek-ai/dsh-workflow-worker-thread";
 import { apply as sessionExportApply, inject as sessionExportInject, name as sessionExportName } from "./session-export";
 
 let sharedCtx: Context | null = null;
@@ -188,18 +188,16 @@ export async function getContext(): Promise<Context> {
     // all ENTRY_LIST-resident, never per-turn — so it composes as a loader
     // entry. No dsh-time-context: time_zone is a model-supplied IANA string
     // validated inside the schedule domain (Intl), not a service.
-    B["dsh:schedule"] = { apply: scheduleApply, inject: scheduleInject, name: scheduleName };
+    B["dsh:schedule"] = ScheduleService;
+    // dsh-schedule 0.1.7 injects the web API's sessionController; the shim
+    // resolves live root agents only (session-controller-shim.ts).
+    B["cairn:session-controller"] = CairnSessionController;
     // Web research stack (dsh-web seam + providers + model tools). All three
     // layers inject only ENTRY_LIST-resident services (tools/web/systemPrompt),
     // so the whole stack composes as loader entries in dependency order.
     B["dsh:web"] = WebRuntime;
     B["dsh:web-fetch-http"] = { apply: webFetchHttpApply, inject: webFetchHttpInject, name: webFetchHttpName };
     B["dsh:tool-web"] = { apply: toolWebApply, inject: toolWebInject, name: toolWebName };
-    // Workflow seam: the worker-thread engine is a Service with
-    // `static inject = ['subagents']` (ENTRY_LIST-resident), so it composes as
-    // a loader entry like `dsh:terminal`. The model tools (tool-workflow /
-    // tool-ralph) mount per CODING turn instead — see mountCodingStack.
-    B["dsh:workflow-engine"] = WorkerThreadWorkflowEngine;
     // Session-log export trigger. Cairn-owned shim (not the upstream plugin:
     // that one injects the web shell's `connection` service, which Electron
     // does not have — see session-export.ts). Injects only `commands`.
@@ -309,7 +307,7 @@ export async function getContext(): Promise<Context> {
       // sessions only open per-turn afterwards — so when enabled, every
       // session sees the tools; when disabled, no session does. Gated by
       // isScheduleEnabled() (restart to apply).
-      ...(isScheduleEnabled() ? [{ id: "schedule", name: "cordis:dsh:schedule" }] : []),
+      ...(isScheduleEnabled() ? [{ id: "session-controller", name: "cordis:cairn:session-controller" }, { id: "schedule", name: "cordis:dsh:schedule" }] : []),
       // Web research stack (dsh-product-decisions "Web research stack"):
       // first-party cited answers in notes without a connector. Shared ctx
       // (not coding-only): web research serves notes research in chat AND
@@ -329,13 +327,6 @@ export async function getContext(): Promise<Context> {
       // coding stack passes full configs per turn).
       { id: "web-fetch-http", name: "cordis:dsh:web-fetch-http", config: { maxResponseBytes: 5_000_000, maxBodyChars: 100_000, timeoutMs: 30_000, maxRedirects: 5, userAgent: "deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)" } },
       { id: "tool-web", name: "cordis:dsh:tool-web", config: { search: false, fetch: true, searchMaxResults: 8, searchMaxQueries: 4, fetchTimeoutMs: 30_000, searchTimeoutMs: 30_000, fetchMaxOutputChars: 200_000 } },
-      // Workflow engine seam (dsh-product-decisions "Workflows + Ralph"): JS
-      // orchestration scripts fanning out subagents. Engine only — the
-      // workflow/ralph model tools mount per coding turn in mountCodingStack.
-      // Config mirrors the package defaults: `provider: "spawn"` is Cairn's
-      // in-process child route; maxTotalAgents 1000 is the runaway-loop
-      // backstop (pinned in workflow-ralph.test.ts).
-      { id: "workflow-engine", name: "cordis:dsh:workflow-engine", config: { provider: "spawn", maxConcurrentAgents: 0, maxTotalAgents: 1000, maxItemsPerCall: 4096, syncTimeoutMs: 5000, disposeGraceMs: 5000 } },
       // Session-log export trigger (dsh-product-decisions "Session-log
       // export"): the `/export` command writing a ZIP to disk. Surfaces via
       // the existing cordis:listCommands merge (palette/command input) with

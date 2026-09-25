@@ -8,7 +8,7 @@
  * directions (model close kills the substrate; substrate exit surfaces as
  * `exited`), SIGKILL rejection, and fail-closed spawn without a db handle.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Context } from "@deepseek-ai/cordis";
 import AgentRegistry from "@deepseek-ai/dsh-agent";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -277,6 +277,9 @@ describe("CairnTerminalBackend", () => {
     ctx.terminals.registerBackend(new CairnTerminalBackend({ defaultCwd: "/ws" }));
     const owner = stubAgent(ctx, "owner");
     ctx.agents.register(owner);
+    // dsh-agent 0.1.7 publishes the registration asynchronously; the terminal
+    // service now checks owner liveness before reaching the backend.
+    await vi.waitFor(() => expect(ctx.agents.get(owner.id)).toBe(owner));
     await expect(ctx.terminals.spawn(owner, { type: "shell" })).rejects.toThrow("no database handle");
   });
 });

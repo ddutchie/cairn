@@ -52,6 +52,31 @@ const patchSubprocessRunnerEnv = {
 };
 
 /**
+ * dsh-ptc-runtime-node launches its bootstrap with `process.execPath` and
+ * keeps ELECTRON_RUN_AS_NODE only when the host process already has it (true
+ * for upstream's Node-mode desktop host). Cairn runs the harness in the
+ * Electron main process, so without this the PTC child (workflow scripts)
+ * would boot a second Cairn window instead of Node. Fails the build if a dsh
+ * upgrade moves the line.
+ */
+const patchPtcRuntimeElectronEnv = {
+  name: "dsh-ptc-runtime-electron-env",
+  setup(build) {
+    build.onLoad({ filter: /dsh-ptc-runtime-node[\\/]lib[\\/]index\.js$/ }, async (args) => {
+      const src = await fs.promises.readFile(args.path, "utf8");
+      const needle = "if (packaged) {\n\t\t\t\tenv.DSH_PTC_RUNTIME_NODE";
+      if (src.split(needle).length !== 2) {
+        throw new Error(`patchPtcRuntimeElectronEnv: expected exactly one packaged-env block in ${args.path} — dsh-ptc-runtime-node changed; update scripts/compile-electron.js`);
+      }
+      return {
+        contents: src.replace(needle, `if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";\n\t\t\t${needle}`),
+        loader: "js",
+      };
+    });
+  },
+};
+
+/**
  * dsh-win32-process creates Windows children with CreateProcess(AsUser)W and
  * never sets CREATE_NO_WINDOW. The runners that call it (subprocess runner,
  * Windows sandbox runner) are spawned with windowsHide, so they own no
@@ -118,13 +143,13 @@ const mainPreload = {
   // bootstrap beside main.js (electron/subprocess-runner.ts) — the package
   // itself is inlined, not shipped on disk. patchSubprocessRunnerEnv supplies
   // the Node-mode half.
-  plugins: [patchSubprocessRunnerEnv, patchWin32NoWindow],
+  plugins: [patchSubprocessRunnerEnv, patchPtcRuntimeElectronEnv, patchWin32NoWindow],
   banner: {
     js: "globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;globalThis.__cairnImportMetaResolve=(s)=>require('url').pathToFileURL(s==='@deepseek-ai/dsh-subprocess-local/runner'?require('path').join(__dirname,'subprocess-runner.cjs'):require.resolve(s)).href;",
   },
   define: {
     "import.meta.url": "globalThis.__cairnImportMetaUrl",
-    // dsh-sandbox-local + dsh-workflow-worker-thread call import.meta.resolve()
+    // dsh-sandbox-local calls import.meta.resolve()
     // at runtime. esbuild stubs import.meta as {} in CJS output, so without
     // this every sandboxed command on Windows throws
     // "import_meta2.resolve is not a function". The primary fix is the
@@ -186,26 +211,30 @@ const windowsAclRunner = {
   target: "node24",
   external: ["koffi"],
   plugins: [patchWin32NoWindow],
-  banner: { js: "delete process.env.ELECTRON_RUN_AS_NODE;" },
+  // dsh ≥0.1.7 loads koffi through dsh-lazy-require's
+  // createRequire(import.meta.url); without the shim esbuild stubs
+  // import.meta.url to undefined in CJS and every Windows sandbox launch
+  // would fail to load koffi.
+  banner: { js: "delete process.env.ELECTRON_RUN_AS_NODE;globalThis.__cairnImportMetaUrl=require('url').pathToFileURL(__filename).href;" },
+  define: { "import.meta.url": "globalThis.__cairnImportMetaUrl" },
   outfile: "dist-electron/windows-acl-runner.cjs",
   format: "cjs",
 };
 
-// Workflow worker thread (dsh-workflow-worker-thread, mounted globally in
-// cordis-context.ts). It loads `new URL("./worker.cjs", import.meta.url)`,
-// which inside main.js means dist-electron/worker.cjs. The upstream file
-// requires other dsh packages that aren't shipped on disk, so bundle it
-// rather than copy it. Same import.meta shims as main.
-const workflowWorker = {
-  entryPoints: ["node_modules/@deepseek-ai/dsh-workflow-worker-thread/lib/worker.cjs"],
+// PTC process bootstrap (dsh-ptc-runtime-node, mounted per coding turn in
+// cordis-coding-tools.ts for dsh-workflow-ptc). The provider launches
+// `new URL("./process.js", import.meta.url)`, which inside main.js means
+// dist-electron/process.js, under ELECTRON_RUN_AS_NODE. The bootstrap only
+// imports node: builtins (no top-level await), but bundle it so the file
+// exists beside main.js.
+const ptcProcess = {
+  entryPoints: ["node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/process.js"],
   bundle: true,
   platform: "node",
   target: "node24",
-  external: ["electron", "koffi"],
-  outfile: "dist-electron/worker.cjs",
+  outfile: "dist-electron/process.js",
+  // Cairn's package.json has no "type": "module", so the launched .js runs as CJS.
   format: "cjs",
-  banner: mainPreload.banner,
-  define: mainPreload.define,
 };
 
 // dsh-subprocess-local containment runner bootstrap (see
@@ -225,7 +254,7 @@ const subprocessRunner = {
 };
 
 async function main() {
-  const electronConfigs = [mainPreload, windowsAclRunner, workflowWorker, subprocessRunner];
+  const electronConfigs = [mainPreload, windowsAclRunner, ptcProcess, subprocessRunner];
   const configs = electronOnly ? electronConfigs : [...electronConfigs, mcpServer, embeddingsServer, runtimeServer];
   if (watch) {
     const contexts = await Promise.all(configs.map((c) => esbuild.context(c)));

@@ -26,6 +26,7 @@ import {
 } from "./plugins/context-ring";
 import { foldSessionStats, sessionStatsFromSnapshot, type SessionStats, type SessionStatsSnapshot, type TurnStats } from "./session-stats";
 import { inspectSession, type InspectablePersistence } from "./session-inspect";
+import { isToolResultMessage, readToolResults } from "./tool-result-message";
 
 /** One `SessionPersistence.list()` row — legacy flat shape or dsh 0.1.5 `{ header }` snapshot. */
 type StoredSessionListing = { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number }; header?: { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number } };
@@ -169,22 +170,21 @@ export function collapseDerivedToMessages(
   for (const m of derived) {
     const src = getMessageSource(m);
 
-    if (m.role === "user") {
-      const isToolResult = (m.content ?? []).some((b) => b.type === "tool-result");
-      if (isToolResult) {
-        for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
-          const output = tr.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
-          const callId = tr.toolCallId ?? (m.source as { callId?: string })?.callId;
-          const meta = callId ? metaByCallId?.get(callId) : undefined;
-          pendingToolResults.push({ callId, output, ok: !tr.isError, error: tr.isError ? (output || "tool error") : undefined, ...(meta ? { meta } : {}) });
-        }
-        continue;
+    // Tool results: v4 `role: "tool"` messages (or legacy v3 user-role
+    // `tool-result` wrappers — see tool-result-message.ts).
+    if (isToolResultMessage(m)) {
+      for (const tr of readToolResults(m)) {
+        const meta = tr.callId ? metaByCallId?.get(tr.callId) : undefined;
+        pendingToolResults.push({ callId: tr.callId, output: tr.output, ok: !tr.isError, error: tr.isError ? (tr.output || "tool error") : undefined, ...(meta ? { meta } : {}) });
       }
+      continue;
+    }
 
+    if (m.role === "user") {
       // In DSH architecture, human chat prompts are strictly identified by
       // source.kind === "user". Plugin/system injections (skill catalogs,
-      // dynamic context snapshots, invariants) carry source.kind === "plugin"
-      // and belong solely to model context, not the human chat transcript.
+      // dynamic context snapshots, invariants) carry their producer's own
+      // source.kind (session format v4; "plugin" in v3) and belong solely to model context, not the human chat transcript.
       if (src?.kind && src.kind !== "user") {
         continue;
       }
@@ -237,13 +237,6 @@ export function collapseDerivedToMessages(
     }
 
 
-    if (m.role === "tool") {
-      for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
-        const output = tr.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
-        pendingToolResults.push({ callId: tr.toolCallId, output, ok: !tr.isError, error: tr.isError ? (output || "tool error") : undefined });
-      }
-      continue;
-    }
   }
   // If there are carryover tool calls, attach them to the last assistant message
   // if one exists. Never emit a standalone empty assistant message (content === "")
@@ -269,36 +262,27 @@ export function childDerivedToSubagent(derived: readonly DerivedMessage[], child
   const toolCallsById = new Map<string, number>();
 
   for (const m of derived) {
-    if (m.role === "user") {
-      const isToolResult = (m.content ?? []).some((b) => b.type === "tool-result");
-      if (isToolResult) {
-        for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
-          const out = tr.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
-          const idx = tr.toolCallId ? toolCallsById.get(tr.toolCallId) : undefined;
-          if (idx !== undefined) {
-            const ref = extractCairnRef(toolCalls[idx].tool, out);
-            toolCalls[idx] = {
-              ...toolCalls[idx],
-              output: tr.isError ? undefined : (out || "{}"),
-              ok: !tr.isError,
-              error: tr.isError ? (out || "tool error") : undefined,
-              ...(ref ? { cairnRef: ref } : {}),
-            };
-          }
+    if (isToolResultMessage(m)) {
+      for (const tr of readToolResults(m)) {
+        const out = tr.output;
+        const idx = tr.callId ? toolCallsById.get(tr.callId) : undefined;
+        if (idx !== undefined) {
+          const ref = extractCairnRef(toolCalls[idx].tool, out);
+          toolCalls[idx] = {
+            ...toolCalls[idx],
+            output: tr.isError ? undefined : (out || "{}"),
+            ok: !tr.isError,
+            error: tr.isError ? (out || "tool error") : undefined,
+            ...(ref ? { cairnRef: ref } : {}),
+          };
         }
-
-        continue;
       }
+      continue;
+    }
+    if (m.role === "user") {
       if (!instruction) {
         const txt = (m.content ?? []).filter((b) => b.type === "text" && b.text).map((b) => b.text).join("");
         if (txt.trim() && !txt.startsWith("Current runtime context")) instruction = txt.trim();
-      }
-    }
-    if (m.role === "tool") {
-      for (const tr of (m.content ?? []).filter((b) => b.type === "tool-result")) {
-        const out = tr.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
-        const idx = tr.toolCallId ? toolCallsById.get(tr.toolCallId) : undefined;
-        if (idx !== undefined) toolCalls[idx] = { ...toolCalls[idx], output: tr.isError ? undefined : (out || "{}"), ok: !tr.isError, error: tr.isError ? (out || "tool error") : undefined };
       }
     }
     if (m.role === "assistant") {

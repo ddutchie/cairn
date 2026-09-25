@@ -333,10 +333,13 @@ describe("import.meta stub guards (esbuild CJS breaks ESM import.meta.*)", () =>
     expect(src, "patchSubprocessRunnerEnv did not apply — runnerEnvironment lacks ELECTRON_RUN_AS_NODE").toMatch(/\[SUBPROCESS_RUNNER_ENV\]: selection,\s*\.\.\.\(?process\.versions\.electron \? \{ ELECTRON_RUN_AS_NODE: "1" \}/);
   });
 
-  it("workflow worker ships beside the bundle", () => {
-    // dsh-workflow-worker-thread loads new URL("./worker.cjs", import.meta.url).
+  it("PTC bootstrap ships beside the bundle and runs Electron as Node", () => {
+    // dsh-ptc-runtime-node launches new URL("./process.js", import.meta.url)
+    // with process.execPath; patchPtcRuntimeElectronEnv adds ELECTRON_RUN_AS_NODE.
     if (!fs.existsSync(mainBundle)) return;
-    expect(fs.existsSync(path.join(ROOT, "dist-electron/worker.cjs")), "dist-electron/worker.cjs missing — run `npm run compile`.").toBe(true);
+    const src = fs.readFileSync(mainBundle, "utf8");
+    expect(fs.existsSync(path.join(ROOT, "dist-electron/process.js")), "dist-electron/process.js missing — run `npm run compile`.").toBe(true);
+    expect(src, "patchPtcRuntimeElectronEnv did not apply").toMatch(/if \(process\.versions\.electron\) env\d*\.ELECTRON_RUN_AS_NODE = "1";/);
   });
 });
 

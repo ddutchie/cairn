@@ -29,7 +29,7 @@ import AttachmentStore, {
   type ImageAttachmentLimits,
   type ImageAttachmentRef,
   type ImageMediaType,
-  type ImageRequestPolicy,
+  type ImageRequestTarget,
   type RequestImageAttachment,
   type SaveImageAttachment,
   type StoredImageAttachment,
@@ -247,14 +247,14 @@ export class CairnAttachmentStore extends AttachmentStore {
    * this (not readImage) to get the bytes it base64-encodes into the wire
    * request. We do NOT re-encode/resize (no native image pipeline — sharp is
    * stubbed): the stored, already-validated bytes ARE the request version. The
-   * policy's pixel/byte caps are honoured at admission time (assertAndMeasure)
+   * route's dimension/byte target is honoured at admission time (assertAndMeasure)
    * rather than by a lossy downscale here; a stored image that passed our
    * limits is emitted as-is. variantId is a deterministic key over
-   * (attachmentId, policy) so the adapter's per-request cache is stable.
+   * (attachmentId, target) so the adapter's per-request cache is stable.
    */
   async readImageRequest(
     ref: ImageAttachmentRef,
-    policy: ImageRequestPolicy,
+    target: ImageRequestTarget,
     signal?: AbortSignal,
   ): Promise<RequestImageAttachment> {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
@@ -265,7 +265,7 @@ export class CairnAttachmentStore extends AttachmentStore {
       crypto
         .createHash("sha256")
         .update(String(ref.attachmentId))
-        .update(`|${policy.maxPixels}|${policy.maxBytes}`)
+        .update(`|${target.width}x${target.height}|${target.maxBytes}`)
         .digest("hex"),
     );
     // PNG/WebP/GIF may carry alpha; JPEG never does. We don't inspect the alpha
