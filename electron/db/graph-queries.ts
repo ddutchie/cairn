@@ -85,6 +85,9 @@ function parseJson(v: string | null | undefined): string[] {
   try { return JSON.parse(v) as string[]; } catch { return []; }
 }
 
+/** Markdown prefix read per note to build its ≤600-char graph snippet. */
+const SNIPPET_SOURCE_CHARS = 2400;
+
 let _edgeSeq = 0;
 function edgeId(type: string, src: string, tgt: string): string {
   return `${type}:${src}:${tgt}:${_edgeSeq++}`;
@@ -160,8 +163,12 @@ export function getKnowledgeGraph(
   // ── 2. Notes ───────────────────────────────────────────────────────────────
   // Exclude soft-deleted notes (deleted_at tombstone) — otherwise a deleted
   // note keeps showing up in the Knowledge Graph until a full recompute.
+  // Only a prefix of each body is read: the node carries a ≤600-char plain
+  // snippet, and reading + stripping every full body dominated load time on
+  // workspaces with long notes. 2400 chars of markdown leaves headroom for
+  // markup that stripping removes (links, emphasis, headings).
   const notes = db.prepare(
-    `SELECT id, project_id, workspace_id, title, content, tag_ids,
+    `SELECT id, project_id, workspace_id, title, substr(content, 1, ${SNIPPET_SOURCE_CHARS}) AS content, tag_ids,
             linked_note_ids, linked_card_ids, is_pinned
      FROM notes
      WHERE project_id IN (${projPlaceholders}) AND archived_at IS NULL AND deleted_at IS NULL`
@@ -378,15 +385,17 @@ export function getKnowledgeGraph(
       // Scope in SQL: relationship_cache spans every workspace and project, so
       // reading it whole and filtering in JS cost O(all cached pairs) per load
       // even with a single project selected. The source_id IN (json_each) probe
-      // uses the (source_id, target_id, type) primary key.
+      // uses the (source_id, target_id, type) primary key; the target is
+      // checked against nodeSet below. Never add `target_id IN (json_each)`
+      // here: the planner then probes the key with every (source, target)
+      // pair — O(nodes²), ~12s at 5k notes (see graph.bench.ts).
       const scopedIds = JSON.stringify([...nodeSet]);
       const cacheRows = db.prepare(
         `SELECT source_id, target_id, type, weight, source_section_title, target_section_title
          FROM relationship_cache
          WHERE type IN (${typePlaceholders})
-           AND source_id IN (SELECT value FROM json_each(?))
-           AND target_id IN (SELECT value FROM json_each(?))`
-      ).all(...autoTypes, scopedIds, scopedIds) as Row[];
+           AND source_id IN (SELECT value FROM json_each(?))`
+      ).all(...autoTypes, scopedIds) as Row[];
 
       for (const r of cacheRows) {
         const src = r.source_id as string;

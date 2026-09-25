@@ -607,3 +607,39 @@ describe("getKnowledgeGraph — soft-deleted entities (issue #141)", () => {
     expect(graph.edges.filter((e) => e.source === "n2" || e.target === "n2")).toHaveLength(0);
   });
 });
+
+describe("getKnowledgeGraph — auto edges and snippets under a project scope", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+    seed(db);
+    createProject(db, { id: "p2", workspaceId: "ws1", name: "Other" });
+    createNote(db, { id: "a1", projectId: "p1", workspaceId: "ws1", title: "A1", content: "a" });
+    createNote(db, { id: "a2", projectId: "p1", workspaceId: "ws1", title: "A2", content: "a" });
+    createNote(db, { id: "b1", projectId: "p2", workspaceId: "ws1", title: "B1", content: "b" });
+    const cache = db.prepare(
+      "INSERT INTO relationship_cache (source_id, target_id, type, weight, computed_at) VALUES (?, ?, ?, ?, 0)",
+    );
+    cache.run("a1", "a2", "keyword", 0.5);
+    cache.run("a1", "b1", "keyword", 0.5); // crosses the scope boundary
+    cache.run("a2", "b1", "co-mention", 0.5);
+  });
+
+  it("keeps only cached edges whose endpoints are both in scope", () => {
+    const auto = (g: ReturnType<typeof getKnowledgeGraph>) =>
+      g.edges.filter((e) => e.type === "keyword" || e.type === "co-mention").map((e) => `${e.source}-${e.target}`).sort();
+    expect(auto(getKnowledgeGraph(db, "ws1"))).toEqual(["a1-a2", "a1-b1", "a2-b1"]);
+    expect(auto(getKnowledgeGraph(db, "ws1", { projectIds: ["p1"] }))).toEqual(["a1-a2"]);
+    expect(auto(getKnowledgeGraph(db, "ws1", { projectIds: ["p2"] }))).toEqual([]);
+  });
+
+  it("builds the snippet from the start of a long body", () => {
+    const body = "# Heading\n\n" + "**intro** text ".repeat(50) + "TAIL-MARKER " + "filler ".repeat(5000);
+    createNote(db, { id: "long", projectId: "p1", workspaceId: "ws1", title: "Long", content: body });
+    const node = getKnowledgeGraph(db, "ws1").nodes.find((n) => n.id === "long")!;
+    expect(node.meta?.snippet?.startsWith("Heading")).toBe(true);
+    expect(node.meta?.snippet).not.toContain("**");
+    expect(node.meta?.snippet?.length).toBe(600);
+  });
+});
