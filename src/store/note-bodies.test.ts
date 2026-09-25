@@ -16,6 +16,7 @@ describe("lazy note bodies", () => {
   const bodies = vi.fn();
   const changesGet = vi.fn();
   const del = vi.fn();
+  const clearChangeMark = vi.fn();
   let db: Record<string, string>;
 
   beforeEach(() => {
@@ -25,7 +26,8 @@ describe("lazy note bodies", () => {
       ids.filter((id) => id in db).map((id) => ({ id, content: db[id], version: 1, updatedAt: "x" })));
     changesGet.mockReset();
     del.mockReset().mockResolvedValue(undefined);
-    (globalThis as any).window = { electron: { note: { bodies, delete: del }, changes: { get: changesGet } } };
+    clearChangeMark.mockReset().mockResolvedValue(undefined);
+    (globalThis as any).window = { electron: { note: { bodies, delete: del, clearChangeMark }, changes: { get: changesGet } } };
     useCairnStore.setState({
       workspaces: [{ id: "ws1", name: "WS", createdAt: "2026-01-01", updatedAt: "2026-01-01" } as any],
       projects: [], columns: [], cards: [], tags: [], notes: [], noteChangeMarks: {},
@@ -99,5 +101,21 @@ describe("lazy note bodies", () => {
     expect(bodies).toHaveBeenCalledWith(["n1"]);
     // bodies() resolved before delete() was sent.
     expect(bodies.mock.invocationCallOrder[0]).toBeLessThan(del.mock.invocationCallOrder[0]);
+  });
+
+  it("marks a note changed while the user was away (persisted baseline) and clears it once seen", async () => {
+    useCairnStore.setState({ notes: [meta("w1")] });
+    bodies.mockResolvedValueOnce([
+      { id: "w1", content: "new text", version: 3, updatedAt: "x", previousContent: "old text", changedAt: "2026-01-02T00:00:00.000Z" },
+    ]);
+    await useCairnStore.getState().loadNoteBody("w1");
+    const mark = useCairnStore.getState().noteChangeMarks.w1;
+    expect(mark?.previousContent).toBe("old text");
+    expect(mark?.changedAt).toBe(Date.parse("2026-01-02T00:00:00.000Z"));
+
+    // The editor consumes the mark → the persisted baseline is cleared too.
+    useCairnStore.getState().clearNoteChangeMark("w1");
+    expect(useCairnStore.getState().noteChangeMarks.w1).toBeUndefined();
+    await vi.waitFor(() => expect(clearChangeMark).toHaveBeenCalledWith("w1"));
   });
 });

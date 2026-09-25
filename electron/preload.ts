@@ -284,6 +284,8 @@ const api = {
       invoke<string[]>("db:note:search", { query, projectId }),
     backlinks: (noteId: string) =>
       invoke<string[]>("db:note:backlinks:list", { noteId }),
+    /** The user has seen this note's "what's new" changes. */
+    clearChangeMark: (id: string) => invoke("db:note:changeMark:clear", { id }),
   },
 
   // ── Board columns ─────────────────────────────

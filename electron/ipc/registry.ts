@@ -117,8 +117,9 @@ export const __classifyChannel = classifyChannel;
  * from other processes, so the observer should not claim its range.
  */
 export interface WriteObserver {
-  begin: () => number;
-  end: (begin: number, senderId: number | undefined, elapsedMs: number) => void;
+  /** Returns an opaque token handed back to `end`. */
+  begin: () => unknown;
+  end: (begin: unknown, senderId: number | undefined, elapsedMs: number) => void;
 }
 let writeObserver: WriteObserver | null = null;
 export function setWriteObserver(observer: WriteObserver | null): void {
@@ -139,7 +140,7 @@ export function registerIpcHandle<T extends unknown[]>(
   const isWrite = isWriteChannel(channel);
   const wrappedHandler = async (event: unknown, ...args: unknown[]) => {
     const observer = isWrite ? writeObserver : null;
-    let begin = 0;
+    let begin: unknown;
     const startedAt = Date.now();
     try { if (observer) begin = observer.begin(); } catch { /* attribution is best-effort */ }
     let result: unknown;

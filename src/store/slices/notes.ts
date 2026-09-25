@@ -393,30 +393,40 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
           console.error("[notes] loading note bodies failed", err);
           return;
         }
-        const fetched = new Map(bodies.map((b) => [b.id, b.content]));
+        const fetched = new Map(bodies.map((b) => [b.id, b]));
         set((s) => {
           let marks = s.noteChangeMarks;
           let changed = false;
+          // "What's new" mark: keep the EARLIEST previous content across a
+          // burst of edits; a fresh changedAt re-triggers an open editor.
+          const addMark = (noteId: ID, previousContent: string, changedAt: number) => {
+            marks = {
+              ...marks,
+              [noteId]: marks[noteId]
+                ? { ...marks[noteId], changedAt }
+                : { previousContent, changedAt },
+            };
+          };
           const notes = s.notes.map((n) => {
-            const body = fetched.get(n.id);
-            if (body === undefined) return n;
+            const b = fetched.get(n.id);
+            if (!b) return n;
             if (n.content !== undefined) {
               // Loaded meanwhile (e.g. an optimistic edit) — the local copy wins.
               if (!force) return n;
               // The user is typing in it: keep their copy (same rule as refresh).
               if (isOwnNoteWrite(n.id) && !isAiNoteWrite(n.id)) return n;
-              if (n.content === body) return n;
-              // External change to a loaded body → "what's new" mark (keep the
-              // EARLIEST previous content across a burst of edits).
-              marks = {
-                ...marks,
-                [n.id]: marks[n.id]
-                  ? { ...marks[n.id], changedAt: Date.now() }
-                  : { previousContent: n.content, changedAt: Date.now() },
-              };
+              if (n.content === b.content) return n;
+              // External change to a loaded body. Prefer the persisted baseline
+              // (body before the FIRST unseen change) over our in-memory copy.
+              addMark(n.id, b.previousContent ?? n.content, Date.now());
+            } else if (b.previousContent !== undefined && b.previousContent !== b.content) {
+              // First load of a note changed by someone else since the user
+              // last saw it (possibly while the app was closed): the persisted
+              // baseline (note_change_base) drives the highlight on open.
+              addMark(n.id, b.previousContent, Date.parse(b.changedAt ?? "") || Date.now());
             }
             changed = true;
-            return { ...n, content: body };
+            return { ...n, content: b.content };
           });
           return changed ? { notes, noteChangeMarks: marks } : {};
         });
@@ -464,6 +474,9 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
   },
 
   clearNoteChangeMark(noteId) {
+    // The user has now seen the change: drop the persisted baseline too, so it
+    // isn't highlighted again on the next load / after a restart.
+    if (lazyNoteBodies()) ipc((e) => e.note.clearChangeMark(noteId));
     set((s) => {
       if (!s.noteChangeMarks[noteId]) return {};
       const next = { ...s.noteChangeMarks };

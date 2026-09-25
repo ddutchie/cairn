@@ -1380,6 +1380,34 @@ const MIGRATIONS: Migration[] = [
       `);
     }
   },
+
+  // v57: note_change_base — the "what's new" baseline. When any writer (MCP,
+  // AI chat, sync, file watcher…) changes a note's body, keep the body as it
+  // was BEFORE the first unseen change (only the earliest is kept).
+  // The renderer diffs it against the current body when the note is opened,
+  // then clears it. The user's own edits discard what they create (see the
+  // write observer in main.ts). Persisted, so it also covers edits made while
+  // the app was closed and survives restarts — and the renderer no longer
+  // needs every body in memory to notice changes.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS note_change_base (
+        note_id          TEXT NOT NULL UNIQUE,
+        previous_content TEXT NOT NULL,
+        changed_at       TEXT NOT NULL
+      );
+      -- Guarded by NOT EXISTS rather than INSERT OR IGNORE: an outer
+      -- statement's conflict clause (e.g. the sync engine's writes) overrides
+      -- the one inside a trigger body, so OR IGNORE alone can still throw.
+      CREATE TRIGGER IF NOT EXISTS trg_note_change_base AFTER UPDATE OF content ON notes
+      WHEN OLD.content IS NOT NEW.content AND OLD.deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM note_change_base WHERE note_id = OLD.id)
+      BEGIN
+        INSERT INTO note_change_base (note_id, previous_content, changed_at)
+        VALUES (OLD.id, COALESCE(OLD.content, ''), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+      END;
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

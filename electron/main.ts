@@ -31,7 +31,7 @@ import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
-import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions, changeFeedHead, recordOwnWrite, pruneChangeFeed } from "./db/queries";
+import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions, changeFeedHead, recordOwnWrite, pruneChangeFeed, noteChangeBaseHead, discardNoteChangeBasesSince, pruneNoteChangeBases } from "./db/queries";
 import { recoverInterruptedRuns } from "./db/automation-queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
@@ -537,13 +537,22 @@ app.whenReady().then(async () => {
   // as "own" would hide those changes from the window. Unattributed = treated
   // as external, which at worst costs one redundant row refresh.
   const OWN_WRITE_MAX_MS = 250;
+  // The same window also discards any "what's new" baselines its own write
+  // created (note_change_base) — your own edit isn't news.
   setWriteObserver({
-    begin: () => changeFeedHead(ctx.db),
-    end: (begin, senderId, elapsedMs) => {
-      if (senderId === undefined || elapsedMs > OWN_WRITE_MAX_MS) return;
-      recordOwnWrite(ctx.db, begin, changeFeedHead(ctx.db), senderId);
+    begin: () => ({ feed: changeFeedHead(ctx.db), base: noteChangeBaseHead(ctx.db) }),
+    end: (token, senderId, elapsedMs) => {
+      if (senderId === undefined) return;
+      const { feed, base } = token as { feed: number; base: number };
+      // Baselines: always discard what a renderer write created, however long
+      // it took — highlighting your own save as "what's new" is worse than
+      // occasionally missing a concurrent agent edit.
+      discardNoteChangeBasesSince(ctx.db, base);
+      if (elapsedMs > OWN_WRITE_MAX_MS) return;
+      recordOwnWrite(ctx.db, feed, changeFeedHead(ctx.db), senderId);
     },
   });
+  try { pruneNoteChangeBases(ctx.db); } catch { /* housekeeping only */ }
 
   // ── MCP notification poller ───────────────────────────────────────────
   const poller = startMcpNotificationPoller({

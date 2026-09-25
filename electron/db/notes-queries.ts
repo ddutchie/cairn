@@ -376,6 +376,10 @@ export interface NoteBody {
   content: string;
   version: number;
   updatedAt: string;
+  /** Body as it was before unseen external changes ("what's new" baseline). */
+  previousContent?: string;
+  /** When the first unseen change landed (ISO). */
+  changedAt?: string;
 }
 
 /** Bodies for the given live note ids (missing / deleted ids are omitted). */
@@ -384,9 +388,23 @@ export function getNoteBodies(db: Database.Database, ids: string[]): NoteBody[] 
   for (let i = 0; i < ids.length; i += 500) {
     const chunk = ids.slice(i, i + 500);
     const rows = db
-      .prepare(`SELECT id, content, version, updated_at FROM notes WHERE deleted_at IS NULL AND id IN (${chunk.map(() => "?").join(",")})`)
-      .all(...chunk) as Array<{ id: string; content: string | null; version: number | null; updated_at: string }>;
-    for (const r of rows) out.push({ id: r.id, content: r.content ?? "", version: r.version ?? 0, updatedAt: r.updated_at });
+      .prepare(
+        `SELECT n.id, n.content, n.version, n.updated_at, b.previous_content, b.changed_at
+           FROM notes n LEFT JOIN note_change_base b ON b.note_id = n.id
+          WHERE n.deleted_at IS NULL AND n.id IN (${chunk.map(() => "?").join(",")})`,
+      )
+      .all(...chunk) as Array<{
+        id: string; content: string | null; version: number | null; updated_at: string;
+        previous_content: string | null; changed_at: string | null;
+      }>;
+    for (const r of rows) {
+      const body: NoteBody = { id: r.id, content: r.content ?? "", version: r.version ?? 0, updatedAt: r.updated_at };
+      if (r.previous_content !== null && r.changed_at !== null) {
+        body.previousContent = r.previous_content;
+        body.changedAt = r.changed_at;
+      }
+      out.push(body);
+    }
   }
   return out;
 }
@@ -441,4 +459,39 @@ export function wikilinkBacklinkIds(db: Database.Database, noteId: string): stri
     }
   }
   return out;
+}
+
+// ── "What's new" baselines (note_change_base, schema v57) ─────────────────────
+
+/** Highest baseline rowid — taken before an own write so its rows can be discarded. */
+export function noteChangeBaseHead(db: Database.Database): number {
+  try {
+    const row = db.prepare("SELECT COALESCE(MAX(rowid), 0) AS n FROM note_change_base").get() as { n: number };
+    return row.n;
+  } catch {
+    return 0;
+  }
+}
+
+/** Drop baselines created after `rowid` (the user's own edit isn't news). */
+export function discardNoteChangeBasesSince(db: Database.Database, rowid: number): void {
+  db.prepare("DELETE FROM note_change_base WHERE rowid > ?").run(rowid);
+}
+
+/** The user has seen the note's current body. */
+export function clearNoteChangeBase(db: Database.Database, noteId: string): void {
+  db.prepare("DELETE FROM note_change_base WHERE note_id = ?").run(noteId);
+}
+
+/** Housekeeping: forget baselines for deleted notes and ones older than `maxAgeDays`. */
+export function pruneNoteChangeBases(db: Database.Database, maxAgeDays = 30): number {
+  const cutoff = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
+  const res = db
+    .prepare(
+      `DELETE FROM note_change_base
+        WHERE changed_at < ?
+           OR note_id NOT IN (SELECT id FROM notes WHERE deleted_at IS NULL)`,
+    )
+    .run(cutoff) as { changes: number };
+  return res.changes;
 }

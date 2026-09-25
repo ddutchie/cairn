@@ -126,6 +126,8 @@ export function registerDbHandlers(ctx: DbContext): void {
     handle(() => q.getNoteBodies(ctx.db, Array.isArray(ids) ? ids : [])));
   registerIpcHandle("db:note:search", (_e, { query, projectId }: { query: string; projectId?: string }) =>
     handle(() => q.searchNoteIds(ctx.db, String(query ?? ""), { projectId })));
+  registerIpcHandle("db:note:changeMark:clear", (_e, { id }: { id: string }) =>
+    handle(() => q.clearNoteChangeBase(ctx.db, id)));
   registerIpcHandle("db:note:backlinks:list", (_e, { noteId }: { noteId: string }) =>
     handle(() => q.wikilinkBacklinkIds(ctx.db, noteId)));
   registerIpcHandle("db:hasData", () => handle(() => q.hasData(ctx.db)));

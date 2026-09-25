@@ -14,6 +14,10 @@ import {
   wikilinkBacklinkIds,
   getChangesSince,
   changeFeedHead,
+  clearNoteChangeBase,
+  noteChangeBaseHead,
+  discardNoteChangeBasesSince,
+  pruneNoteChangeBases,
 } from "./queries";
 import { NOTE_EXCERPT_CHARS } from "../../shared/notes/excerpt";
 
@@ -93,5 +97,55 @@ describe("lazy note bodies — main-process queries", () => {
     expect(n).not.toHaveProperty("content");
     expect(n.contentText).toBe("some body text");
     expect(cs.head).toBe(changeFeedHead(db));
+  });
+});
+
+describe("what's new baselines (note_change_base)", () => {
+  let db: Database.Database;
+  beforeEach(() => { db = makeDb(); });
+  const base = (id: string) =>
+    db.prepare("SELECT previous_content FROM note_change_base WHERE note_id = ?").get(id) as { previous_content: string } | undefined;
+
+  it("keeps the body from before the FIRST unseen change and serves it with the body", () => {
+    mk(db, "n1", "Plan", "v1");
+    updateNote(db, "n1", { content: "v2" }); // e.g. MCP
+    updateNote(db, "n1", { content: "v3" }); // e.g. sync
+    expect(base("n1")?.previous_content).toBe("v1");
+    const [b] = getNoteBodies(db, ["n1"]);
+    expect(b.content).toBe("v3");
+    expect(b.previousContent).toBe("v1");
+    expect(b.changedAt).toBeTruthy();
+  });
+
+  it("ignores metadata-only updates and clears once seen", () => {
+    mk(db, "n1", "Plan", "v1");
+    updateNote(db, "n1", { isPinned: true });
+    expect(base("n1")).toBeUndefined();
+    updateNote(db, "n1", { content: "v2" });
+    clearNoteChangeBase(db, "n1");
+    expect(base("n1")).toBeUndefined();
+    expect(getNoteBodies(db, ["n1"])[0].previousContent).toBeUndefined();
+  });
+
+  it("an own write discards only the baselines it created", () => {
+    mk(db, "ext", "Ext", "a");
+    mk(db, "own", "Own", "x");
+    updateNote(db, "ext", { content: "b" });     // external, before the own write
+    const before = noteChangeBaseHead(db);
+    updateNote(db, "own", { content: "y" });     // the user's save
+    discardNoteChangeBasesSince(db, before);
+    expect(base("own")).toBeUndefined();
+    expect(base("ext")?.previous_content).toBe("a");
+  });
+
+  it("prunes baselines for deleted notes and old ones", () => {
+    mk(db, "gone", "Gone", "a");
+    mk(db, "old", "Old", "a");
+    mk(db, "fresh", "Fresh", "a");
+    for (const id of ["gone", "old", "fresh"]) updateNote(db, id, { content: "b" });
+    db.prepare("UPDATE notes SET deleted_at = ? WHERE id = 'gone'").run(new Date().toISOString());
+    db.prepare("UPDATE note_change_base SET changed_at = '2000-01-01T00:00:00.000Z' WHERE note_id = 'old'").run();
+    expect(pruneNoteChangeBases(db)).toBe(2);
+    expect(base("fresh")?.previous_content).toBe("a");
   });
 });
