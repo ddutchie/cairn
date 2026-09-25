@@ -456,6 +456,46 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect((B.db.prepare("SELECT content FROM notes WHERE id='n1'").get() as { content: string }).content).toBe("v2");
   });
 
+  it("a converged sync round writes nothing (no WAL growth → no db:changed storm)", () => {
+    // File-backed WAL DB: the desktop's MCP poller treats ANY WAL mtime change
+    // as db:changed and re-hydrates the whole renderer, so an idle round (every
+    // 30s + on window focus) must not append frames.
+    const clkA = clockFrom(7_500_000);
+    const clkB = clockFrom(7_500_000);
+    const A = makeDevice("A", clkA.now);
+    const bPath = path.join(dir, "b.db");
+    const bDb = new BetterSqlite3(bPath);
+    bDb.pragma("journal_mode = WAL");
+    applySchema(bDb);
+    const B = { db: bDb, engine: new SyncEngine(bDb, "B", { now: clkB.now }) };
+
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "Note", content: "body", created_at: "t", updated_at: "t", content_text: "" });
+    syncFolder(dir, A.engine, B.engine);
+    syncFolder(dir, A.engine, B.engine);
+    const before = liveState(B.db);
+
+    bDb.pragma("wal_checkpoint(TRUNCATE)");
+    expect(fs.statSync(bPath + "-wal").size).toBe(0);
+
+    clkA.advance(30_000);
+    clkB.advance(30_000);
+    const res = B.engine.applyRemote(readPeerOplogs(dir, B.engine.deviceId));
+    expect(res.applied).toEqual([]);
+    expect(fs.statSync(bPath + "-wal").size).toBe(0);
+    expect(liveState(B.db)).toEqual(before);
+    // Suppress flag rolled back to off, so local edits are still captured.
+    expect((bDb.prepare("SELECT value FROM sync_state WHERE key='suppress'").get() as { value: string }).value).toBe("0");
+
+    // A genuine peer edit after the idle round still applies and commits.
+    clkA.advance(5);
+    A.engine.put("notes", { id: "n1", content: "body v2" });
+    writeOplogFile(dir, A.engine.deviceId, A.engine.exportOplog());
+    B.engine.applyRemote(readPeerOplogs(dir, B.engine.deviceId));
+    expect((bDb.prepare("SELECT content FROM notes WHERE id='n1'").get() as { content: string }).content).toBe("body v2");
+    bDb.close();
+  });
+
   it("HLC total order is stable and skew-tolerant", () => {
     // Lower physical but later logical must still order correctly; deviceId breaks final ties.
     expect(compareHlc("00000000000a:0001:A", "00000000000a:0002:A")).toBeLessThan(0);

@@ -691,7 +691,15 @@ app.whenReady().then(async () => {
     return total;
   }
 
+  // One full sync at a time: the 30s interval, window focus and power resume
+  // can all fire while a round is still awaiting folder I/O. Overlapping rounds
+  // are safe (engine work is transactional) but duplicate the read/write of the
+  // whole oplog, so a request that lands mid-round is simply dropped — the next
+  // tick picks up anything it would have seen.
+  let fullSyncInFlight = false;
   async function runFullSync(reason: string) {
+    if (fullSyncInFlight) return;
+    fullSyncInFlight = true;
     try {
       if (!getSyncFolder(ctx.db)) {
         // Device Sync not enabled: do nothing. We deliberately DON'T drain here —
@@ -717,6 +725,8 @@ app.whenReady().then(async () => {
       }
     } catch (err) {
       console.error(`[sync] ${reason} failed:`, err);
+    } finally {
+      fullSyncInFlight = false;
     }
   }
 
