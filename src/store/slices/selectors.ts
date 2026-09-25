@@ -64,7 +64,13 @@ export interface SelectorsSlice {
   /** The active project / workspace, or null/undefined when none selected. */
   getActiveProject: () => Project | undefined;
   getActiveWorkspace: () => Workspace | undefined;
-  searchAll: (query: string) => SearchResult[];
+  /**
+   * Keyword search over notes + cards. Note bodies load lazily in Electron, so
+   * callers pass `noteBodyMatches` — ids whose BODY matched, from the main
+   * process (`window.electron.note.search`); titles and loaded bodies are
+   * matched here.
+   */
+  searchAll: (query: string, noteBodyMatches?: ReadonlySet<string>) => SearchResult[];
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -188,7 +194,7 @@ export const createSelectorsSlice: StateCreator<
     );
   },
 
-  searchAll(query) {
+  searchAll(query, noteBodyMatches) {
     if (!query.trim()) return [];
     const q = query;
     const s = get();
@@ -196,7 +202,7 @@ export const createSelectorsSlice: StateCreator<
 
     s.notes.forEach((n) => {
       if (n.archivedAt) return;
-      if (matchesQuery(q, noteSearchText(n))) {
+      if (noteBodyMatches?.has(n.id) || matchesQuery(q, noteSearchText(n))) {
         const proj = s.projects.find((p) => p.id === n.projectId);
         results.push({
           type: "note",

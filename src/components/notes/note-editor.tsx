@@ -28,6 +28,7 @@ import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import { excerptFor } from "@/lib/note-text";
+import { useNoteBody } from "@/hooks/useNoteBody";
 
 interface NoteEditorProps {
   note: Note;
@@ -36,7 +37,42 @@ interface NoteEditorProps {
 
 type EditorMode = "edit" | "read";
 
-export function NoteEditor({ note, onBack }: NoteEditorProps) {
+/**
+ * Note bodies load lazily in Electron (store/note-bodies.ts): mount the editor
+ * only once the body is present, so CodeMirror, word counts and autosave always
+ * start from the real content (never an empty placeholder that could be saved
+ * back over it). The body stays pinned in the cache while the editor is open.
+ */
+export function NoteEditor(props: NoteEditorProps) {
+  const { loaded, failed, retry } = useNoteBody(props.note.id);
+  if (!loaded) return <NoteBodyLoading failed={failed} onRetry={retry} />;
+  return <NoteEditorLoaded {...props} />;
+}
+
+/** Centred placeholder while a lazily-loaded note body arrives (Electron). */
+export function NoteBodyLoading({ failed = false, onRetry }: { failed?: boolean; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-1 flex-col gap-2 items-center justify-center h-full text-xs text-[var(--text-tertiary)]">
+      {failed ? (
+        <>
+          <span>Couldn&apos;t load this note.</span>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="px-2.5 py-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              Retry
+            </button>
+          )}
+        </>
+      ) : (
+        <span className="animate-pulse">Loading note…</span>
+      )}
+    </div>
+  );
+}
+
+function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
   const { updateNote, aiConfig, activeProjectId, getProjectColumns, tags, createTag, getTagById, activeWorkspaceId, setView, notes, projects, noteChangeMarks, clearNoteChangeMark, notesFullscreen, toggleNotesFullscreen, fontFamily: fontFamilyId } = useCairnStore(useShallow((s) => ({
     updateNote:        s.updateNote,
     aiConfig:          s.aiConfig,

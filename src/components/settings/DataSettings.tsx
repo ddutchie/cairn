@@ -54,10 +54,15 @@ export function DataSettings({
     }
   }
 
-  function handleExport() {
+  async function handleExport() {
     try {
       setExportError(false);
-      const data = { workspaces, projects, notes, columns, cards, tags, exportedAt: new Date().toISOString() };
+      // Electron keeps note bodies out of the store (loaded on demand), so read
+      // the full snapshot — bodies included — straight from the database.
+      const full = window.electron
+        ? (await window.electron.snapshot()) as { workspaces: unknown[]; projects: unknown[]; notes: unknown[]; columns: unknown[]; cards: unknown[]; tags: unknown[] }
+        : { workspaces, projects, notes, columns, cards, tags };
+      const data = { ...full, exportedAt: new Date().toISOString() };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

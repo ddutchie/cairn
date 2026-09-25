@@ -106,13 +106,14 @@ interface ActionsListProps {
 export function ActionsList({ actions }: ActionsListProps) {
   const {
     notes, cards, tags, activeWorkspaceId,
-    updateNote, updateCard, linkNoteToCard, createTag, recomputeGraphRelationshipsIncremental,
+    updateNote, loadNoteBody, updateCard, linkNoteToCard, createTag, recomputeGraphRelationshipsIncremental,
   } = useCairnStore(useShallow((s) => ({
     notes:                                  s.notes,
     cards:                                  s.cards,
     tags:                                   s.tags,
     activeWorkspaceId:                      s.activeWorkspaceId,
     updateNote:                             s.updateNote,
+    loadNoteBody:                           s.loadNoteBody,
     updateCard:                             s.updateCard,
     linkNoteToCard:                         s.linkNoteToCard,
     createTag:                              s.createTag,
@@ -144,7 +145,11 @@ export function ActionsList({ actions }: ActionsListProps) {
         const note = notes.find((n) => n.id === sourceNoteId);
         if (!note) throw new Error("Note not found");
         const targetTitle = a.targetTitle || a.cardTitle || a.noteTitle || "";
-        const existing = note.content ?? "";
+        // Bodies load lazily (Electron): read the real body before appending.
+        // A failed read must NOT be treated as an empty body — appending to ""
+        // would overwrite the note with just the link.
+        const existing = note.content ?? (await loadNoteBody(sourceNoteId));
+        if (existing === undefined) throw new Error("Couldn't load the note's content");
         if (wikilinkAlreadyExists(existing, targetTitle)) break;
         updateNote(sourceNoteId, { content: existing + `\n\n[[${targetTitle}]]` });
         affectedIds.push(sourceNoteId);

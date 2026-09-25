@@ -12,7 +12,9 @@
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
 import { toNote, j, type DbRow } from "../host-shared/db-mappers";
-import { normalizeNoteTitle } from "../host-shared/text-utils";
+import { normalizeNoteTitle, stripMarkdown } from "../host-shared/text-utils";
+import { EXCERPT_SOURCE_CHARS } from "../../shared/notes/excerpt";
+import { matchesQuery, queryTerms } from "../../shared/notes/text";
 
 // ── Notes ─────────────────────────────────────
 
@@ -318,4 +320,178 @@ export function restoreNote(db: Database.Database, id: string) {
   const now = ts();
   db.prepare("UPDATE notes SET archived_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?").run(now, id);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id) as DbRow);
+}
+
+// ── Lazy note bodies (renderer) ───────────────────────────────────────────────
+// The renderer keeps note METADATA for every note but loads bodies on demand
+// (open note, template instantiation, AI context…). These helpers serve that:
+// summaries carry everything except `content` (the preview excerpt is still
+// derived from a bounded prefix), and bodies/search/backlinks are fetched by id.
+
+const summaryColumnsByDb = new WeakMap<Database.Database, string>();
+
+/** SELECT list for notes with the body replaced by the prefix the excerpt needs. */
+function noteSummaryColumns(db: Database.Database): string {
+  let cols = summaryColumnsByDb.get(db);
+  if (!cols) {
+    const names = (db.prepare("PRAGMA table_info(notes)").all() as { name: string }[]).map((c) => c.name);
+    cols = names
+      .map((n) => (n === "content" ? `substr(content, 1, ${EXCERPT_SOURCE_CHARS}) AS content` : `"${n}"`))
+      .join(", ");
+    summaryColumnsByDb.set(db, cols);
+  }
+  return cols;
+}
+
+/** A note without its body (`content` omitted; `contentText` = preview excerpt). */
+export function toNoteSummary(row: DbRow) {
+  const { content: _content, ...summary } = toNote(row);
+  void _content;
+  return summary;
+}
+
+/** Every live note as a summary — the renderer snapshot's notes (no bodies). */
+export function getNoteSummaries(db: Database.Database) {
+  return db
+    .prepare(`SELECT ${noteSummaryColumns(db)} FROM notes WHERE deleted_at IS NULL ORDER BY updated_at DESC`)
+    .all()
+    .map((row) => toNoteSummary(row as DbRow));
+}
+
+/** Note summaries for the given ids that are live (deleted rows omitted). */
+export function getNoteSummariesByIds(db: Database.Database, ids: string[]) {
+  const out: ReturnType<typeof toNoteSummary>[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    const rows = db
+      .prepare(`SELECT ${noteSummaryColumns(db)} FROM notes WHERE deleted_at IS NULL AND id IN (${chunk.map(() => "?").join(",")})`)
+      .all(...chunk) as DbRow[];
+    for (const r of rows) out.push(toNoteSummary(r));
+  }
+  return out;
+}
+
+export interface NoteBody {
+  id: string;
+  content: string;
+  version: number;
+  updatedAt: string;
+  /** Body as it was before unseen external changes ("what's new" baseline). */
+  previousContent?: string;
+  /** When the first unseen change landed (ISO). */
+  changedAt?: string;
+}
+
+/** Bodies for the given live note ids (missing / deleted ids are omitted). */
+export function getNoteBodies(db: Database.Database, ids: string[]): NoteBody[] {
+  const out: NoteBody[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    const rows = db
+      .prepare(
+        `SELECT n.id, n.content, n.version, n.updated_at, b.previous_content, b.changed_at
+           FROM notes n LEFT JOIN note_change_base b ON b.note_id = n.id
+          WHERE n.deleted_at IS NULL AND n.id IN (${chunk.map(() => "?").join(",")})`,
+      )
+      .all(...chunk) as Array<{
+        id: string; content: string | null; version: number | null; updated_at: string;
+        previous_content: string | null; changed_at: string | null;
+      }>;
+    for (const r of rows) {
+      const body: NoteBody = { id: r.id, content: r.content ?? "", version: r.version ?? 0, updatedAt: r.updated_at };
+      if (r.previous_content !== null && r.changed_at !== null) {
+        body.previousContent = r.previous_content;
+        body.changedAt = r.changed_at;
+      }
+      out.push(body);
+    }
+  }
+  return out;
+}
+
+/**
+ * Ids of live notes matching `query` with the renderer's search semantics:
+ * AND-of-terms, case-insensitive substring over `title + stripped body`
+ * (dashboards: title only). Newest first. A cheap SQL prefilter narrows the
+ * rows (ASCII terms only — SQLite's lower() is ASCII-only), then every
+ * candidate is verified with the exact JS matcher.
+ */
+export function searchNoteIds(db: Database.Database, query: string, opts: { projectId?: string } = {}): string[] {
+  const terms = queryTerms(query);
+  if (terms.length === 0) return [];
+  const where: string[] = ["deleted_at IS NULL"];
+  const args: unknown[] = [];
+  if (opts.projectId) { where.push("project_id = ?"); args.push(opts.projectId); }
+  for (const t of terms) {
+    if (!/^[\x00-\x7f]*$/.test(t)) continue;
+    where.push("(instr(lower(title), ?) > 0 OR instr(lower(content), ?) > 0)");
+    args.push(t, t);
+  }
+  const rows = db
+    .prepare(`SELECT id, title, content, type FROM notes WHERE ${where.join(" AND ")} ORDER BY updated_at DESC`)
+    .all(...args) as Array<{ id: string; title: string; content: string | null; type: string | null }>;
+  return rows
+    .filter((r) => matchesQuery(query, `${r.title}\n${r.type === "dashboard" ? "" : stripMarkdown(r.content ?? "")}`))
+    .map((r) => r.id);
+}
+
+/** Ids of live notes containing a `[[<title of noteId>]]` wikilink (case-insensitive, trimmed). */
+export function wikilinkBacklinkIds(db: Database.Database, noteId: string): string[] {
+  const target = db.prepare("SELECT title FROM notes WHERE id = ? AND deleted_at IS NULL").get(noteId) as { title: string } | undefined;
+  if (!target) return [];
+  // Same comparison as the renderer scan it replaces: trimmed link text vs the
+  // lower-cased title.
+  const titleLower = target.title.toLowerCase();
+  if (!titleLower.trim()) return [];
+  const rows = db
+    .prepare(`SELECT id, content FROM notes WHERE deleted_at IS NULL AND id != ? AND instr(content, '[[') > 0`)
+    .all(noteId) as Array<{ id: string; content: string | null }>;
+  const re = /\[\[([^\][\n]+?)\]\]/g;
+  const out: string[] = [];
+  for (const r of rows) {
+    const content = r.content ?? "";
+    // Cheap reject: a match needs the title's text somewhere in the body.
+    if (!content.toLowerCase().includes(titleLower.trim())) continue;
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(content)) !== null) {
+      if (m[1].trim().toLowerCase() === titleLower) { out.push(r.id); break; }
+    }
+  }
+  return out;
+}
+
+// ── "What's new" baselines (note_change_base, schema v57) ─────────────────────
+
+/** Highest baseline rowid — taken before an own write so its rows can be discarded. */
+export function noteChangeBaseHead(db: Database.Database): number {
+  try {
+    const row = db.prepare("SELECT COALESCE(MAX(rowid), 0) AS n FROM note_change_base").get() as { n: number };
+    return row.n;
+  } catch {
+    return 0;
+  }
+}
+
+/** Drop baselines created after `rowid` (the user's own edit isn't news). */
+export function discardNoteChangeBasesSince(db: Database.Database, rowid: number): void {
+  db.prepare("DELETE FROM note_change_base WHERE rowid > ?").run(rowid);
+}
+
+/** The user has seen the note's current body. */
+export function clearNoteChangeBase(db: Database.Database, noteId: string): void {
+  db.prepare("DELETE FROM note_change_base WHERE note_id = ?").run(noteId);
+}
+
+/** Housekeeping: forget baselines for deleted notes and ones older than `maxAgeDays`. */
+export function pruneNoteChangeBases(db: Database.Database, maxAgeDays = 30): number {
+  const cutoff = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
+  const res = db
+    .prepare(
+      `DELETE FROM note_change_base
+        WHERE changed_at < ?
+           OR note_id NOT IN (SELECT id FROM notes WHERE deleted_at IS NULL)`,
+    )
+    .run(cutoff) as { changes: number };
+  return res.changes;
 }

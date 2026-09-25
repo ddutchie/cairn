@@ -14,7 +14,9 @@ export async function resolvePromptContext(
   notes: Note[],
   cards: TaskCard[],
   columns: BoardColumn[],
-  cwd: string | null
+  cwd: string | null,
+  /** Loads a note body that isn't in memory yet (Electron loads bodies lazily). */
+  loadNoteBody?: (noteId: string) => Promise<string | undefined>,
 ): Promise<string> {
   const wikilinks = parseWikilinks(prompt);
 
@@ -39,13 +41,15 @@ export async function resolvePromptContext(
       (n) => n.title.toLowerCase() === title.toLowerCase() && !n.archivedAt
     );
     if (note) {
+      // A body that failed to load is reported as such — never as "(empty)".
+      const body = note.content ?? (await loadNoteBody?.(note.id));
       attachedContext.push(`[[${note.title}]]:
 ---
 ID: ${note.id}
 Type: ${note.type}
 Folder: ${note.folder || "(root)"}
 Content:
-${note.content || "(empty)"}`);
+${body === undefined ? "(content could not be loaded)" : body || "(empty)"}`);
       continue;
     }
 

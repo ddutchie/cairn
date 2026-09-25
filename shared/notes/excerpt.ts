@@ -13,7 +13,7 @@
 /** Longest preview any UI shows is 120 chars; keep a little headroom. */
 export const NOTE_EXCERPT_CHARS = 200;
 /** Markdown prefix stripped to produce the excerpt (markup shrinks when stripped). */
-const EXCERPT_SOURCE_CHARS = 600;
+export const EXCERPT_SOURCE_CHARS = 600;
 
 export function noteExcerpt(
   content: string | null | undefined,

@@ -168,19 +168,41 @@ export function SearchPanel() {
       return;
     }
     const trimmed = query.trim();
-    searchTimer.current = setTimeout(() => {
-      setResults(searchAll(trimmed));
+    // Cleared by this effect's cleanup when the query changes: every async
+    // result below checks it, so a slow response for an older query can never
+    // overwrite the results for the current one.
+    let cancelled = false;
+    // Keyword (local + main-process body matches) and semantic results arrive
+    // independently; publish() always shows their merge, so neither clobbers
+    // the other.
+    let keyword: SearchResult[] = [];
+    let semantic: SearchResult[] = [];
+    const publish = () => setResults(mergeSemanticResults(keyword, semantic));
+
+    searchTimer.current = setTimeout(async () => {
+      // Titles, loaded note bodies and cards match locally — show them now.
+      keyword = searchAll(trimmed);
+      publish();
       setFocused(0);
+      // Note bodies aren't all in the renderer (loaded lazily): the main
+      // process matches bodies; merge those in when they arrive.
+      const searchNotes = window.electron?.note?.search;
+      if (!searchNotes) return;
+      try {
+        const bodyMatches = new Set(await searchNotes(trimmed));
+        if (cancelled) return;
+        keyword = searchAll(trimmed, bodyMatches);
+        publish();
+      } catch { /* title-only note matches stay on screen */ }
     }, 150);
 
     if (semanticMode && embeddingsReady && activeWorkspaceId) {
       semanticTimer.current = setTimeout(async () => {
         const e = window.electron?.embeddings;
         if (!e?.search) return;
-        const requestQuery = trimmed;
         try {
-          const hits: SemanticHit[] = await e.search(activeWorkspaceId, requestQuery, { k: 20 });
-          if (query.trim() !== requestQuery) return;
+          const hits: SemanticHit[] = await e.search(activeWorkspaceId, trimmed, { k: 20 });
+          if (cancelled) return;
           const storeNotes = notesRef.current;
           const scoreMap = new Map<string, number>();
           const enriched: SearchResult[] = [];
@@ -199,7 +221,8 @@ export function SearchPanel() {
             });
           }
           setSemanticScores(scoreMap);
-          setResults((prevKeyword) => mergeSemanticResults(prevKeyword, enriched));
+          semantic = enriched;
+          publish();
         } catch {
         }
       }, 250);
@@ -207,6 +230,7 @@ export function SearchPanel() {
       queueMicrotask(() => setSemanticScores(new Map()));
     }
     return () => {
+      cancelled = true;
       if (searchTimer.current) clearTimeout(searchTimer.current);
       if (semanticTimer.current) clearTimeout(semanticTimer.current);
     };

@@ -10,6 +10,7 @@ import { nodeTypeColor } from "@/store/slices/graph";
 import { CairnEvents } from "@/lib/events";
 import { extractWikiLinks } from "@/components/notes/toc-utils";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { useNoteBody } from "@/hooks/useNoteBody";
 
 interface Props {
   node: GraphNode | null;
@@ -38,6 +39,10 @@ export function GraphDetailPanel({ node, onClose }: Props) {
     graphData:           s.graphData,
     setSelectedGraphNode: s.setSelectedGraphNode,
   })));
+
+  // Outgoing wikilinks are parsed from the note body, which loads lazily
+  // (Electron). Loading it updates `notes`, which re-runs the memo below.
+  useNoteBody(node?.type === "note" ? node.id : null);
 
   const { wikiLinks, semanticLinks } = useMemo(() => {
     if (!node || node.type !== "note") {
