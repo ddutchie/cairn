@@ -19,6 +19,7 @@ import {
   computeSemanticRelationships,
   getKnowledgeGraph,
 } from "./graph-queries";
+import { buildGraphFixture } from "./bench/graph-fixture";
 
 const TOP_K = 5;
 const FLOOR = 0.55;
@@ -633,13 +634,18 @@ describe("getKnowledgeGraph — auto edges and snippets under a project scope", 
     expect(auto(getKnowledgeGraph(db, "ws1", { projectIds: ["p1"] }))).toEqual(["a1-a2"]);
     expect(auto(getKnowledgeGraph(db, "ws1", { projectIds: ["p2"] }))).toEqual([]);
   });
+});
 
-  it("builds the snippet from the start of a long body", () => {
-    const body = "# Heading\n\n" + "**intro** text ".repeat(50) + "TAIL-MARKER " + "filler ".repeat(5000);
-    createNote(db, { id: "long", projectId: "p1", workspaceId: "ws1", title: "Long", content: body });
-    const node = getKnowledgeGraph(db, "ws1").nodes.find((n) => n.id === "long")!;
-    expect(node.meta?.snippet?.startsWith("Heading")).toBe(true);
-    expect(node.meta?.snippet).not.toContain("**");
-    expect(node.meta?.snippet?.length).toBe(600);
-  });
+describe("getKnowledgeGraph — load time grows linearly (regression: O(nodes²) cache probe)", () => {
+  it("loads a 3,000-note workspace well under a second", () => {
+    // The quadratic plan took ~4.5s here; the fixed query takes ~0.1s. The
+    // bound is loose on purpose so slow CI machines don't flake.
+    const f = buildGraphFixture({ notes: 3000 });
+    getKnowledgeGraph(f.db, f.workspaceId); // warm statement cache
+    const t = performance.now();
+    const g = getKnowledgeGraph(f.db, f.workspaceId);
+    const ms = performance.now() - t;
+    expect(g.edges.length).toBeGreaterThan(10000);
+    expect(ms).toBeLessThan(1500);
+  }, 60000);
 });

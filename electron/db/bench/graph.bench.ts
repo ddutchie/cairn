@@ -9,13 +9,13 @@
  *   - computeAutoRelationships([id]): the synchronous work each note save
  *     triggers on the main process.
  *
- * Fixtures are seeded (graph-bench-fixture.ts) so numbers compare across
+ * Fixtures are seeded (graph-fixture.ts) so numbers compare across
  * branches. Sizes are kept modest so a run finishes in about a minute.
  */
 
 import { bench, describe } from "vitest";
-import { buildGraphFixture, type GraphFixture } from "./graph-bench-fixture";
-import { getKnowledgeGraph, computeAutoRelationships } from "./graph-queries";
+import { buildGraphFixture, type GraphFixture } from "./graph-fixture";
+import { getKnowledgeGraph, computeAutoRelationships } from "../graph-queries";
 
 const SIZES = [1000, 5000] as const;
 
@@ -48,9 +48,13 @@ for (const n of SIZES) {
       JSON.stringify(graph);
     }, opts);
 
+    // computeAutoRelationships rewrites relationship_cache rows, so it runs on
+    // its own fixture: the read benches above always see the seeded edge set,
+    // whatever the bench order or filter.
+    const saveFixture = buildGraphFixture({ notes: n });
     bench("save path: computeAutoRelationships([note])", () => {
       // Rotate through notes so the pass isn't just re-reading a warm row.
-      computeAutoRelationships(f.db, f.workspaceId, [f.noteIds[i++ % f.noteIds.length]]);
+      computeAutoRelationships(saveFixture.db, saveFixture.workspaceId, [saveFixture.noteIds[i++ % saveFixture.noteIds.length]]);
     }, { time: 2000, warmupIterations: 1 });
   });
 }

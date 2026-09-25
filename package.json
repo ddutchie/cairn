@@ -9,7 +9,7 @@
     "test:fast": "vitest run",
     "test:live": "CAIRN_LIVE_TESTS=1 CORDIS_LIVE=1 vitest run",
     "test:unit": "vitest run --project node",
-    "bench:graph": "vitest bench --project node --run electron/db/graph.bench.ts",
+    "bench:graph": "vitest bench --project node --run electron/db/bench/graph.bench.ts",
     "test:component": "vitest run --project component",
     "test:watch": "vitest",
     "test:coverage": "npm run compile && vitest run --coverage",

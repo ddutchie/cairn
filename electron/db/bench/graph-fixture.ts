@@ -1,6 +1,7 @@
 /**
  * Seeded synthetic workspace for the knowledge-graph benchmarks
- * (`graph.bench.ts`, run with `npm run bench:graph`).
+ * (`graph.bench.ts`, run with `npm run bench:graph`) and the
+ * graph-load regression test.
  *
  * Deterministic: the same size + seed always produces the same rows, so
  * numbers are comparable across branches. Shapes follow what the graph
@@ -9,14 +10,15 @@
  * assignees and a pre-filled relationship_cache (computing it for real is
  * O(notes²) and is benchmarked separately on the single-save path).
  *
- * Test/bench-only: constructs its own in-memory Database, which the
- * bootstrap-site rule exempts for test code.
+ * Test/bench-only (lives under db/bench/ so it is never mistaken for a runtime
+ * module): constructs its own in-memory Database, which the bootstrap-site
+ * rule exempts for test code. Never import it from runtime code.
  */
 
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
-import { applySchema } from "./schema";
-import { createWorkspace, createProject, createNote, createColumn, createCard, createTag } from "./queries";
+import { applySchema } from "../schema";
+import { createWorkspace, createProject, createNote, createColumn, createCard, createTag } from "../queries";
 
 export interface GraphFixture {
   db: Database.Database;
