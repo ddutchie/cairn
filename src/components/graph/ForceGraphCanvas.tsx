@@ -11,20 +11,18 @@ import {
   nodeTypeToken,
   nodeRadius,
   edgeStyle as sharedEdgeStyle,
-  chargeStrength,
-  linkDistance,
-  collideRadius,
-  anchorStrength as sharedAnchorStrength,
-  CLUSTER_RADIUS,
-  LINK_STRENGTH,
-  COLLIDE_ITERATIONS,
-  ALPHA_DECAY,
-  VELOCITY_DECAY,
   shouldShowLabel,
   labelScreenPx,
   labelMaxLen,
   type ThemeToken,
 } from "../../../shared/ui/graph";
+import type { LayoutLink } from "./force-layout";
+import {
+  createForceLayoutClient,
+  rememberLayout,
+  recallLayout,
+  type ForceLayoutClient,
+} from "./force-layout-client";
 
 interface Props {
   graph: KnowledgeGraph;
@@ -36,6 +34,9 @@ interface Props {
   semanticThreshold?: number;
   /** Draw convex-hull outlines around each project cluster. */
   showHulls?: boolean;
+  /** Remembers this graph's layout in memory under this key (e.g. the
+   *  workspace), so reopening the view resumes from the last positions. */
+  layoutKey?: string;
 }
 
 // ── colour helpers ──────────────────────────────────────────────────────────
@@ -94,6 +95,13 @@ function computeHulls(nodes: SimNode[]): [number, number][][] {
   return out;
 }
 
+/** Current positions by node id (nodes the layout hasn't placed yet are skipped). */
+function positionsOf(nodes: SimNode[]): Map<string, { x: number; y: number }> {
+  const out = new Map<string, { x: number; y: number }>();
+  for (const n of nodes) if (n.x != null && n.y != null) out.set(n.id, { x: n.x, y: n.y });
+  return out;
+}
+
 const radiusOf = (n: SimNode) => nodeRadius(n.nodeType);
 const NODE_TYPES = ["project", "note", "card", "tag"] as const;
 /** Largest label font size (screen px, before font scale). */
@@ -115,6 +123,7 @@ function ForceGraphCanvasImpl({
   spacing,
   semanticThreshold = 1,
   showHulls = true,
+  layoutKey,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -135,14 +144,13 @@ function ForceGraphCanvasImpl({
   // Mutable refs the render loop reads without re-instantiating the simulation
   const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
   const hoveredNodeRef = useRef<string | null>(null);
-  const simRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
   const nodesRef = useRef<SimNode[]>([]);
   const linksRef = useRef<SimLink[]>([]);
   const drawRef = useRef<() => void>(() => {});
   // rAF handle for the coalesced repaint (sim ticks, zoom events and hover all
   // request a frame; at most one paint happens per animation frame).
   const frameRef = useRef(0);
-  // Bumped on every simulation tick; lets the hull cache skip recomputation
+  // Bumped whenever positions change (each layout frame); lets the hull cache skip recomputation
   // while the layout is at rest (pan/zoom/hover repaints).
   const posVersionRef = useRef(0);
   const hullCacheRef = useRef<HullCache | null>(null);
@@ -229,115 +237,105 @@ function ForceGraphCanvasImpl({
     .map((e) => `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}`)
     .join(","), [visibleEdges]);
 
-  // ── build / rebuild simulation when topology changes ──
+  // ── force layout (runs in a Web Worker; see force-layout.ts) ──
+  const layoutRef = useRef<ForceLayoutClient | null>(null);
+  // Increments per rebuild; ticks from an older layout are ignored.
+  const genRef = useRef(0);
+  // Spacing the running layout was built or last updated with.
+  const layoutSpacingRef = useRef(spacing);
+  // layoutKey the current nodes were laid out under (for remembering them).
+  const layoutKeyUsedRef = useRef<string | undefined>(undefined);
+
+  const rememberCurrent = useCallback(() => {
+    const key = layoutKeyUsedRef.current;
+    if (key) rememberLayout(key, positionsOf(nodesRef.current));
+  }, []);
+
   useEffect(() => {
-    // Preserve positions of nodes that still exist across rebuilds
-    const prevPos = new Map(nodesRef.current.map((n) => [n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy }]));
+    const client = createForceLayoutClient({
+      onTick: (gen, positions) => {
+        if (gen !== genRef.current) return;
+        const nodes = nodesRef.current;
+        for (let i = 0; i < nodes.length; i++) {
+          nodes[i].x = positions[i * 2];
+          nodes[i].y = positions[i * 2 + 1];
+        }
+        // Until the user takes control (or the first animated fit completes),
+        // keep the whole graph framed instantly each frame so it never sits
+        // stranded in a corner while positions are still settling.
+        if (!userInteractedRef.current && !didInitialFitRef.current) zoomFit(false);
+        posVersionRef.current++;
+        scheduleDraw();
+      },
+      onEnd: (gen) => {
+        if (gen !== genRef.current) return;
+        // final animated fit once settled
+        if (!userInteractedRef.current) zoomFit(true);
+        didInitialFitRef.current = true;
+        rememberCurrent();
+      },
+    });
+    layoutRef.current = client;
+    return () => {
+      rememberCurrent();
+      client.dispose();
+      layoutRef.current = null;
+    };
+  }, [zoomFit, scheduleDraw, rememberCurrent]);
+
+  // ── rebuild the layout when topology changes ──
+  useEffect(() => {
+    // Seed from the nodes already on screen, then from the layout this graph
+    // had when the view was last open, so both edits and revisits re-heat
+    // gently instead of starting from scratch.
+    const sameKey = layoutKeyUsedRef.current === layoutKey;
+    if (!sameKey) rememberCurrent();
+    const current = sameKey ? positionsOf(nodesRef.current) : new Map<string, { x: number; y: number }>();
+    const recalled = layoutKey ? recallLayout(layoutKey) : undefined;
+    layoutKeyUsedRef.current = layoutKey;
 
     const nodes: SimNode[] = graph.nodes.map((n) => {
-      const p = prevPos.get(n.id);
+      const p = current.get(n.id) ?? recalled?.get(n.id);
       return {
         id: n.id,
         title: n.title ?? "",
         nodeType: n.type,
         projectId: n.projectId,
-        x: p?.x, y: p?.y, vx: p?.vx, vy: p?.vy,
+        x: p?.x, y: p?.y,
       };
     });
-    const nodeById = new Map(nodes.map((n) => [n.id, n]));
-    const links: SimLink[] = visibleEdges
-      .filter((e) => nodeById.has(e.source) && nodeById.has(e.target))
-      .map((e) => ({ source: e.source, target: e.target, edgeType: e.type, weight: e.weight ?? 1 }));
+    const indexById = new Map(nodes.map((n, i) => [n.id, i]));
+    const links: SimLink[] = [];
+    const layoutLinks: LayoutLink[] = [];
+    for (const e of visibleEdges) {
+      const si = indexById.get(e.source), ti = indexById.get(e.target);
+      if (si == null || ti == null) continue;
+      links.push({ source: nodes[si], target: nodes[ti], edgeType: e.type, weight: e.weight ?? 1 });
+      layoutLinks.push({ source: si, target: ti, edgeType: e.type });
+    }
 
     nodesRef.current = nodes;
     linksRef.current = links;
     hullCacheRef.current = null;
+    posVersionRef.current++;
+    scheduleDraw();
 
-    // degree map — must exist before sim construction (forces read it on first tick)
-    const degree = new Map<string, number>();
-    for (const l of links) {
-      const s = typeof l.source === "object" ? (l.source as SimNode).id : (l.source as string);
-      const t = typeof l.target === "object" ? (l.target as SimNode).id : (l.target as string);
-      degree.set(s, (degree.get(s) ?? 0) + 1);
-      degree.set(t, (degree.get(t) ?? 0) + 1);
-    }
-
-    // project cluster anchors (radial arrangement of project regions)
-    const projects = nodes.filter((n) => n.nodeType === "project");
-    const projIndex = new Map(projects.map((p, i) => [p.id, i]));
-    const clusterAnchor = (n: SimNode): { x: number; y: number } | null => {
-      const pid = n.projectId;
-      if (!pid || !projIndex.has(pid)) return null;
-      const i = projIndex.get(pid)!;
-      const k = Math.max(1, projects.length);
-      const ang = (i / k) * 2 * Math.PI;
-      const R = CLUSTER_RADIUS * propsRef.current.spacing;
-      return { x: Math.cos(ang) * R, y: Math.sin(ang) * R };
-    };
-
-    const chargeFor = (n: SimNode) =>
-      chargeStrength(n.nodeType, degree.get(n.id) ?? 0, propsRef.current.spacing);
-    const linkDist = (l: SimLink) => linkDistance(l.edgeType, propsRef.current.spacing);
-    const anchorStrength = (n: SimNode) =>
-      sharedAnchorStrength(n.nodeType, !!n.projectId);
-
-    const sim = d3.forceSimulation<SimNode>(nodes)
-      .force("charge", d3.forceManyBody<SimNode>().strength(chargeFor))
-      .force("link", d3.forceLink<SimNode, SimLink>(links).id((d) => d.id).distance(linkDist).strength(LINK_STRENGTH))
-      .force("collide", d3.forceCollide<SimNode>().radius((n) => collideRadius(n.nodeType, propsRef.current.spacing)).iterations(COLLIDE_ITERATIONS))
-      .force("x", d3.forceX<SimNode>((n) => clusterAnchor(n)?.x ?? 0).strength(anchorStrength))
-      .force("y", d3.forceY<SimNode>((n) => clusterAnchor(n)?.y ?? 0).strength(anchorStrength))
-      .alphaDecay(ALPHA_DECAY)
-      .velocityDecay(VELOCITY_DECAY)
-      .on("tick", () => {
-        // Until the user takes control (or the first animated fit completes),
-        // keep the whole graph framed instantly each tick so it never sits
-        // stranded in a corner while positions are still settling.
-        if (!userInteractedRef.current && !didInitialFitRef.current) {
-          zoomFit(false);
-        }
-        posVersionRef.current++;
-        scheduleDraw();
-      });
-
-    // Incremental change (most nodes kept their positions, e.g. a note was added
-    // or a link drawn): re-heat gently so the existing layout settles in place
-    // instead of re-running the full ~270-tick explosion on every edit.
-    let kept = 0;
-    for (const n of nodes) if (n.x != null) kept++;
-    if (nodes.length > 0 && kept / nodes.length >= 0.9) sim.alpha(0.3);
-
-    simRef.current = sim;
-    // expose anchor/cluster fns to the spacing-update effect via the sim object
-    (sim as unknown as { _cairn: unknown })._cairn = { chargeFor, linkDist, clusterAnchor, anchorStrength, projects };
-
-    // final animated fit once settled
-    sim.on("end", () => {
-      if (!userInteractedRef.current) zoomFit(true);
-      didInitialFitRef.current = true;
+    const spacingNow = propsRef.current.spacing;
+    layoutSpacingRef.current = spacingNow;
+    layoutRef.current?.init({
+      gen: ++genRef.current,
+      nodes: nodes.map((n) => ({ id: n.id, nodeType: n.nodeType, projectId: n.projectId, x: n.x, y: n.y })),
+      links: layoutLinks,
+      spacing: spacingNow,
     });
-
-    return () => { sim.stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeFingerprint, edgeFingerprint]);
+  }, [nodeFingerprint, edgeFingerprint, layoutKey]);
 
-  // ── react to spacing changes without rebuilding the sim ──
+  // ── react to spacing changes without rebuilding the layout ──
   useEffect(() => {
-    const sim = simRef.current;
-    if (!sim) return;
-    const c = (sim as unknown as { _cairn?: {
-      chargeFor: (n: SimNode) => number;
-      linkDist: (l: SimLink) => number;
-      anchorStrength: (n: SimNode) => number;
-      clusterAnchor: (n: SimNode) => { x: number; y: number } | null;
-    } })._cairn;
-    if (!c) return;
-    (sim.force("charge") as d3.ForceManyBody<SimNode>)?.strength(c.chargeFor);
-    (sim.force("link") as d3.ForceLink<SimNode, SimLink>)?.distance(c.linkDist);
-    (sim.force("collide") as d3.ForceCollide<SimNode>)?.radius((n) => collideRadius(n.nodeType, spacing));
-    (sim.force("x") as d3.ForceX<SimNode>)?.x((n) => c.clusterAnchor(n)?.x ?? 0);
-    (sim.force("y") as d3.ForceY<SimNode>)?.y((n) => c.clusterAnchor(n)?.y ?? 0);
-    sim.alpha(0.5).restart();
+    if (spacing === layoutSpacingRef.current) return;
+    layoutSpacingRef.current = spacing;
+    layoutRef.current?.setSpacing(spacing);
   }, [spacing]);
 
   // ── the draw routine ──

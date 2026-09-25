@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { X, FileText, Kanban, Layers, Hash, ExternalLink, Link2, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { X, FileText, Kanban, Layers, Hash, ExternalLink, Link2, Sparkles, ChevronDown, ChevronUp, Focus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -15,6 +15,10 @@ import { useNoteBody } from "@/hooks/useNoteBody";
 interface Props {
   node: GraphNode | null;
   onClose: () => void;
+  /** Show only this node's neighbourhood (Knowledge Graph). Omitted → no button. */
+  onFocus?: (node: GraphNode) => void;
+  /** This node is already the neighbourhood focus. */
+  focused?: boolean;
 }
 
 interface LinkEntry {
@@ -25,7 +29,7 @@ interface LinkEntry {
   targetSectionTitle?: string;
 }
 
-export function GraphDetailPanel({ node, onClose }: Props) {
+export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Props) {
   const [linksExpanded, setLinksExpanded] = useState(true);
   const [linkedExpanded, setLinkedExpanded] = useState(true);
   const [showAllSemantic, setShowAllSemantic] = useState(false);
@@ -173,6 +177,16 @@ export function GraphDetailPanel({ node, onClose }: Props) {
     card:    "Task",
     tag:     "Tag",
   }[node.type];
+
+  const focusButton = onFocus && !focused && (
+    <button
+      onClick={() => onFocus(node)}
+      className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-md text-xs font-medium border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+    >
+      <Focus size={12} />
+      Show neighbourhood
+    </button>
+  );
 
   function selectNode(noteId: string) {
     const exists = graphData.nodes.find((n) => n.id === noteId);
@@ -369,7 +383,8 @@ export function GraphDetailPanel({ node, onClose }: Props) {
 
       {/* Footer CTA */}
       {node.type !== "tag" && (
-        <div className="border-t border-[var(--border)] p-3">
+        <div className="border-t border-[var(--border)] p-3 flex flex-col gap-2">
+          {focusButton}
           <button
             onClick={navigateTo}
             className={cn(
@@ -383,7 +398,8 @@ export function GraphDetailPanel({ node, onClose }: Props) {
         </div>
       )}
       {node.type === "tag" && (
-        <div className="border-t border-[var(--border)] p-3">
+        <div className="border-t border-[var(--border)] p-3 flex flex-col gap-2">
+          {focusButton}
           <button
             onClick={() => {
               const targetProjectId = node.projectId ?? null;
