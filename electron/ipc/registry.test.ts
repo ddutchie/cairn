@@ -20,6 +20,21 @@ vi.mock("electron", () => ({
 import { __isWriteChannel as isWriteChannel } from "./registry";
 
 describe("isWriteChannel", () => {
+  it("treats read channels with non-verb names as reads (no db:changed storm from polling)", () => {
+    for (const ch of [
+      "db:automation:runningCount",
+      "db:automation:recentRuns",
+      "db:automation:runs",
+      "db:automation:runLog",
+      "db:notification:count",
+      "db:session:todos",
+      "db:chat:sessionMessages",
+      "db:changes:get",
+    ]) {
+      expect(isWriteChannel(ch), ch).toBe(false);
+    }
+  });
+
   it("treats non-db channels as non-writes (they never broadcast db:changed)", () => {
     for (const c of ["app:setTheme", "git:status", "session:prompt", "updater:install"]) {
       expect(isWriteChannel(c)).toBe(false);

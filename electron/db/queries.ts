@@ -144,3 +144,4 @@ export * from "./embeddings-queries";
 // ── User writing style ────────────────────────
 
 export * from "./user-style-queries";
+export * from "./change-feed-queries";

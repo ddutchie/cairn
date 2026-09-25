@@ -6,8 +6,8 @@ import { unwrapSessionPayload } from "@/components/conversation/conversation-ses
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
-import { historyManager, ownWriteGuard } from "@/lib/history";
-import { markAiNoteWriteStarted, markAiNoteWriteEnded, hasRecentAiNoteWrite } from "@/store/ipc";
+import { historyManager } from "@/lib/history";
+import { markAiNoteWriteStarted, markAiNoteWriteEnded } from "@/store/ipc";
 import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
 import { AppOverlayLayer, AppStatusBar } from "@/lib/plugin-ui/SlotOutlet";
 import { startUIPlugins } from "@/lib/plugin-ui/loader";
@@ -266,28 +266,19 @@ export default function Home() {
 
       // Register db:changed listener synchronously so React gets the cleanup fn
       const unsubDb = electron.onDbChanged(() => {
-        // Own writes are already reflected in Zustand via optimistic updates —
-        // re-hydrating from SQLite would race against in-flight IPC and overwrite
-        // the optimistic state with stale content. Skip hydration entirely.
-        //
-        // Exception: if the AI (chat executor or MCP) just wrote a note, the
-        // surrounding chat IPC also touched ownWriteGuard — but those changes
-        // are NOT in Zustand, so we must hydrate to surface them in the open
-        // editor. A recent AI note write overrides the own-write skip.
-        if (ownWriteGuard.isOwnWrite() && !hasRecentAiNoteWrite()) {
-          // graphData has no optimistic path (unlike the entity slices), so
-          // refresh it here — no-op when the graph was never loaded.
-          void useCairnStore.getState().refreshGraphIfLoaded();
-          return;
-        }
-        // Don't re-hydrate (and potentially reset onboardingState) while the
+        // Don't refresh (and potentially reset onboardingState) while the
         // onboarding wizard is still in progress — folder selection and workspace
-        // creation trigger db:changed but the wizard handles its own state.
+        // creation trigger db:changed but the wizard handles its own state. The
+        // change-feed cursor isn't advanced, so nothing is lost: the first event
+        // after onboarding picks up everything since.
         if (onboardingStateRef.current !== false) return;
-        hydrateFromElectron(true);
-        // Entity slices hydrate above; the graph has no optimistic path, so it
-        // would otherwise go stale until a manual refresh.
-        void useCairnStore.getState().refreshGraphIfLoaded();
+        // Pull only what changed since this window's cursor. The main process
+        // attributes each change to the window that wrote it, so our own
+        // optimistic writes are skipped (they're already in the store) while
+        // MCP / AI / sync / other-window changes are merged — replacing the old
+        // time-window own-write guard + full-snapshot re-hydrate. Falls back to
+        // a full refresh when the feed can't answer.
+        void useCairnStore.getState().refreshFromChangeFeed();
       });
 
       // Auto-updater listeners — events may arrive in any order

@@ -61,6 +61,20 @@ const READ_CHANNELS = new Set([
   "db:snapshot",
   "db:hasData",
   "db:mcpQuery",
+  // Reads with non-verb action names. Misclassified as writes, each call used
+  // to broadcast db:changed to every window (runningCount/recentRuns are polled).
+  "db:automation:checkRequirements",
+  "db:automation:env",
+  "db:automation:files",
+  "db:automation:folder",
+  "db:automation:preview",
+  "db:automation:recentRuns",
+  "db:automation:runLog",
+  "db:automation:runningCount",
+  "db:automation:runs",
+  "db:chat:sessionMessages",
+  "db:notification:count",
+  "db:session:todos",
 ]);
 
 function isWriteChannel(channel: string): boolean {
@@ -75,6 +89,22 @@ function isWriteChannel(channel: string): boolean {
 export const __isWriteChannel = isWriteChannel;
 
 /**
+ * Observer wrapped around every renderer-initiated `db:*` write handler. main.ts
+ * installs one that records the change-feed seq range each window wrote, so the
+ * change feed can tell a window which changes it already holds optimistically.
+ * `begin` runs before the handler; `end` after it settles (before db:changed is
+ * broadcast, so the attribution is in place when the renderer asks).
+ */
+export interface WriteObserver {
+  begin: () => number;
+  end: (begin: number, senderId: number | undefined) => void;
+}
+let writeObserver: WriteObserver | null = null;
+export function setWriteObserver(observer: WriteObserver | null): void {
+  writeObserver = observer;
+}
+
+/**
  * Register a handler that maps to ipcMain.handle.
  */
 export function registerIpcHandle<T extends unknown[]>(
@@ -85,9 +115,20 @@ export function registerIpcHandle<T extends unknown[]>(
   // duplicate invoke handlers, and duplicate listeners would run a turn twice.
   ipcMain.removeHandler?.(channel);
   ipcMain.removeAllListeners?.(channel);
+  const isWrite = isWriteChannel(channel);
   const wrappedHandler = async (event: unknown, ...args: unknown[]) => {
-    const result = await handler(event as IpcMainInvokeEvent, ...(args as T));
-    if (isWriteChannel(channel)) {
+    const observer = isWrite ? writeObserver : null;
+    let begin = 0;
+    try { if (observer) begin = observer.begin(); } catch { /* attribution is best-effort */ }
+    let result: unknown;
+    try {
+      result = await handler(event as IpcMainInvokeEvent, ...(args as T));
+    } finally {
+      if (observer) {
+        try { observer.end(begin, (event as IpcMainInvokeEvent | undefined)?.sender?.id); } catch { /* best-effort */ }
+      }
+    }
+    if (isWrite) {
       broadcastEvent("db:changed", null);
     }
     return result;

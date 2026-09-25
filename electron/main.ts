@@ -20,7 +20,7 @@ import { autoUpdater } from "electron-updater";
 import { loadMobileSettings, startMobileServer, stopMobileServer } from "./lib/mobile-server";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
-import { broadcastEvent } from "./ipc/registry";
+import { broadcastEvent, setWriteObserver } from "./ipc/registry";
 import { registerAgentHandlers } from "./ipc/agent";
 import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
@@ -31,7 +31,7 @@ import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
-import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions } from "./db/queries";
+import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions, changeFeedHead, recordOwnWrite, pruneChangeFeed } from "./db/queries";
 import { recoverInterruptedRuns } from "./db/automation-queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
@@ -526,6 +526,16 @@ app.whenReady().then(async () => {
   // ── System tray ───────────────────────────────────────────────────────
   const { updateBadge } = createTray(win);
 
+  // ── Change-feed attribution ───────────────────────────────────────────
+  // Record which renderer window produced each db:* write's feed rows, so the
+  // change feed can skip them for that window (it already holds them).
+  setWriteObserver({
+    begin: () => changeFeedHead(ctx.db),
+    end: (begin, senderId) => {
+      if (senderId !== undefined) recordOwnWrite(ctx.db, begin, changeFeedHead(ctx.db), senderId);
+    },
+  });
+
   // ── MCP notification poller ───────────────────────────────────────────
   const poller = startMcpNotificationPoller({
     getDb: () => ctx.db,
@@ -533,6 +543,12 @@ app.whenReady().then(async () => {
     win,
     updateBadge,
     onDbChanged: notifyDbChanged,
+    // Only UI-visible changes (the change-feed head) reach the renderer; writes
+    // to sync bookkeeping, usage, automation runs, embeddings… are ignored.
+    getChangeHead: () => {
+      pruneChangeFeed(ctx.db);
+      return changeFeedHead(ctx.db);
+    },
   });
 
   // ── Heartbeat scheduler (scheduled / recurring background automations) ──

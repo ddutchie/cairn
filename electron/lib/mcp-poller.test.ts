@@ -95,3 +95,44 @@ describe("startMcpNotificationPoller — workspace swap", () => {
     }
   });
 });
+
+describe("startMcpNotificationPoller — change-feed gating", () => {
+  it("fires onDbChanged only when the change-feed head moves", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-poller-feed-"));
+    const dbPath = seedDbWithUnread(tmp, 0);
+    const db = new BetterSqlite3(dbPath);
+    try {
+      let head = 0;
+      const onDbChanged = vi.fn();
+      const poller = startMcpNotificationPoller({
+        getDb: () => db,
+        getDbPath: () => dbPath,
+        win: fakeWin(),
+        updateBadge: vi.fn(),
+        onDbChanged,
+        getChangeHead: () => head,
+      });
+      await poller.tick(); // baseline
+      onDbChanged.mockClear();
+
+      const bumpWal = async () => {
+        await new Promise((r) => setTimeout(r, 15)); // distinct mtime
+        db.prepare("INSERT INTO sync_state (key, value) VALUES ('probe', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(Math.random()));
+      };
+
+      // A write to a table the UI never shows: WAL moves, feed head doesn't.
+      await bumpWal();
+      await poller.tick();
+      expect(onDbChanged).not.toHaveBeenCalled();
+
+      // A UI-visible change: the head moves.
+      await bumpWal();
+      head = 1;
+      await poller.tick();
+      expect(onDbChanged).toHaveBeenCalledTimes(1);
+    } finally {
+      db.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
