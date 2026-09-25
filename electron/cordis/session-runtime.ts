@@ -7,6 +7,7 @@ import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
 import type { ChatRequest } from "../lib/tools";
 import type { UsageSource } from "../db/usage-queries";
+import { applyCompactionBudget } from "./compaction-budget";
 import { cairnDbPlugin, cairnSessionPlugin, cairnUsagePlugin, cairnSubagentPlugin, cairnQuestionsPlugin } from "./cairn-plugins";
 
 // White-label the DSH harness attribution: every provider request via
@@ -192,6 +193,7 @@ export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: stri
     } } },
   );
   await handle;
+  applyCompactionBudget(ctx, "cairn", config.model, config.contextWindow ?? 128000, config.maxTokens ?? 32768);
   piAiDisposer = async () => { try { const resolved = await handle; resolved.dispose(); } catch { /* noop */ } };
   lastPiAiConfig = config;
 }

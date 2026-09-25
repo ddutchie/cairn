@@ -123,6 +123,7 @@ const DEV_ONLY = new Set([
   "esbuild",
   "eslint",
   "eslint-config-next",
+  "patch-package",
   "vitest",
   "wait-on",
 ]);
