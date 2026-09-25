@@ -11,6 +11,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { DashboardApiModal } from "./DashboardApiModal";
 import { Button } from "@/components/ui/button";
+import { onChangeFeed } from "@/store/change-feed";
 
 interface DashboardViewProps {
   note: Note;
@@ -93,16 +94,17 @@ export function DashboardView({ note, onBack }: DashboardViewProps) {
     setRev((r) => r + 1);
   }, [note.content, projectId, workspaceId]);
 
-  // Auto-refresh when DB changes — send cairn:refresh to iframe instead of remounting
+  // Auto-refresh when workspace data changes — send cairn:refresh to the iframe
+  // instead of remounting. Driven by the change feed, so writes to tables a
+  // dashboard can't query (sync bookkeeping, usage, runs…) don't re-run it.
   useEffect(() => {
-    if (!electron?.onDbChanged) return;
-    const unsub = electron.onDbChanged(() => {
+    return onChangeFeed((e) => {
+      if (!e.reset && e.touched.length === 0) return;
       iframeRef.current?.contentWindow?.postMessage({ type: "cairn:refresh" }, "*");
       setAutoRefreshed(true);
       setTimeout(() => setAutoRefreshed(false), 1500);
     });
-    return () => { unsub(); };
-  }, [electron]);
+  }, []);
 
   // postMessage bridge — forward cairn:query and cairn:error from iframe
   useEffect(() => {

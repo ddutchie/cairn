@@ -6,6 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Note, BoardColumn, TaskCard, Project, Workspace, ID } from "@/types";
 import { matchesQuery } from "../../../shared/notes/text";
+import { noteSearchText } from "@/lib/note-text";
 
 // ── SearchResult (returned by searchAll; re-exported from the store root) ────
 
@@ -195,7 +196,7 @@ export const createSelectorsSlice: StateCreator<
 
     s.notes.forEach((n) => {
       if (n.archivedAt) return;
-      if (matchesQuery(q, `${n.title}\n${n.contentText}`)) {
+      if (matchesQuery(q, noteSearchText(n))) {
         const proj = s.projects.find((p) => p.id === n.projectId);
         results.push({
           type: "note",

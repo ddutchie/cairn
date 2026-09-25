@@ -8,6 +8,7 @@
 import { useMemo } from "react";
 import type { Note } from "@/types";
 import { matchesQuery } from "../../../../shared/notes/text";
+import { noteSearchText } from "@/lib/note-text";
 
 export function useNoteFilter(
   notes: Note[],
@@ -19,7 +20,7 @@ export function useNoteFilter(
       // Empty filter matches all; otherwise every query term must appear in the
       // title or body (AND-of-terms), so "meeting notes" matches a note titled
       // "Notes from the meeting" — not just the literal phrase.
-      const matchesText = !filter.trim() || matchesQuery(filter, `${n.title}\n${n.contentText}`);
+      const matchesText = !filter.trim() || matchesQuery(filter, noteSearchText(n));
       const matchesTag = !activeTagId || n.tagIds.includes(activeTagId);
       return matchesText && matchesTag;
     });

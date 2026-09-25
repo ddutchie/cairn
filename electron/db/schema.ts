@@ -1338,6 +1338,48 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE mcp_servers ADD COLUMN dsh_path INTEGER NOT NULL DEFAULT 0");
     }
   },
+
+  // v56: change_feed — a trigger-maintained log of which UI-visible rows
+  // changed, from ANY writer (Electron main, standalone cairn-mcp, sync engine,
+  // file watcher). The renderer reads it from a cursor to apply just the
+  // changeset instead of re-reading the full snapshot on every db:changed, and
+  // the WAL poller uses its head to ignore writes to tables the UI never shows
+  // (see electron/db/change-feed-queries.ts). Table lists are frozen here on
+  // purpose — a later table joins the feed via its own migration.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS change_feed (
+        seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity    TEXT NOT NULL,
+        entity_id TEXT NOT NULL DEFAULT ''
+      );
+    `);
+    // Snapshot tables: one row per changed id (the renderer refetches by id).
+    for (const t of ["workspaces", "projects", "board_columns", "tags", "notes", "task_cards"]) {
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_feed_${t}_ins AFTER INSERT ON ${t}
+        BEGIN INSERT INTO change_feed (entity, entity_id) VALUES ('${t}', NEW.id); END;
+        CREATE TRIGGER IF NOT EXISTS trg_feed_${t}_upd AFTER UPDATE ON ${t}
+        BEGIN INSERT INTO change_feed (entity, entity_id) VALUES ('${t}', NEW.id); END;
+        CREATE TRIGGER IF NOT EXISTS trg_feed_${t}_del AFTER DELETE ON ${t}
+        BEGIN INSERT INTO change_feed (entity, entity_id) VALUES ('${t}', OLD.id); END;
+      `);
+    }
+    // Signal tables: listeners only need "touched", and these churn in bursts
+    // (flow node drags, relationship recomputes upserting thousands of rows).
+    // Replace the newest feed row when it is already this table's marker, so a
+    // burst stays one row while the head (AUTOINCREMENT) still advances.
+    for (const t of ["idea_flows", "idea_flow_nodes", "idea_flow_edges", "relationship_cache"]) {
+      const body = `
+          DELETE FROM change_feed WHERE seq = (SELECT MAX(seq) FROM change_feed) AND entity = '${t}';
+          INSERT INTO change_feed (entity) VALUES ('${t}');`;
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_feed_${t}_ins AFTER INSERT ON ${t} BEGIN ${body} END;
+        CREATE TRIGGER IF NOT EXISTS trg_feed_${t}_upd AFTER UPDATE ON ${t} BEGIN ${body} END;
+        CREATE TRIGGER IF NOT EXISTS trg_feed_${t}_del AFTER DELETE ON ${t} BEGIN ${body} END;
+      `);
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

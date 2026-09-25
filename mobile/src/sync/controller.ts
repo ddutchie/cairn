@@ -48,7 +48,9 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
 let appStateSub: { remove: () => void } | null = null;
 let unsubWrite: (() => void) | null = null;
-let inFlight = false;
+// The running sync chain (including any queued rerun); callers that arrive
+// mid-run await it instead of polling.
+let inFlight: Promise<void> | null = null;
 let pendingRerun = false; // a sync was requested while one was running
 
 function emit(): void {
@@ -103,15 +105,30 @@ export function switchSource(workspaceId: string): void {
  * Callers that hit the in-flight window await the full chain (including any
  * queued rerun) so a pull-to-refresh can reload only after the rerun lands.
  */
-export async function requestSync(_reason: string = "manual"): Promise<void> {
+export function requestSync(_reason: string = "manual"): Promise<void> {
   if (inFlight) {
+    // Join the running chain (it re-runs once for us) instead of polling.
     pendingRerun = true;
-    while (inFlight || pendingRerun) {
-      await new Promise<void>((r) => setTimeout(r, 30));
-    }
-    return;
+    return inFlight;
   }
-  inFlight = true;
+  inFlight = (async () => {
+    try {
+      do {
+        pendingRerun = false;
+        await runSyncOnce();
+        // Only run a queued rerun while the scheduler is still running —
+        // otherwise a sync finishing after stopAutoSync() would resurrect
+        // work post-teardown.
+      } while (pendingRerun && started);
+    } finally {
+      pendingRerun = false;
+      inFlight = null;
+    }
+  })();
+  return inFlight;
+}
+
+async function runSyncOnce(): Promise<void> {
   snapshot = { ...snapshot, state: "syncing" };
   emit();
   try {
@@ -130,16 +147,6 @@ export async function requestSync(_reason: string = "manual"): Promise<void> {
   } catch {
     snapshot = { ...snapshot, state: "offline" };
     emit();
-  } finally {
-    inFlight = false;
-    // Only fire a queued rerun if the scheduler is still running — otherwise a
-    // sync that finishes after stopAutoSync() would resurrect work post-teardown.
-    if (pendingRerun && started) {
-      pendingRerun = false;
-      await requestSync("rerun");
-    } else {
-      pendingRerun = false;
-    }
   }
 }
 

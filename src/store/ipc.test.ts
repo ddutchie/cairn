@@ -18,7 +18,6 @@ import {
   markAiNoteWriteStarted,
   markAiNoteWriteEnded,
   isAiNoteWrite,
-  hasRecentAiNoteWrite,
 } from "./ipc";
 
 // Window/tail constants mirrored from ipc.ts (kept private there).
@@ -85,7 +84,6 @@ describe("AI-write guard", () => {
     const note = uid("ai");
     markAiNoteWriteStarted(note);
     expect(isAiNoteWrite(note)).toBe(true);
-    expect(hasRecentAiNoteWrite()).toBe(true);
     // End the write so the active-set entry doesn't leak into later tests.
     markAiNoteWriteEnded(note);
   });
@@ -96,7 +94,6 @@ describe("AI-write guard", () => {
     // Far beyond the tail window, but the write never ended — still active.
     vi.advanceTimersByTime(AI_NOTE_WRITE_TAIL_MS * 10);
     expect(isAiNoteWrite(note)).toBe(true);
-    expect(hasRecentAiNoteWrite()).toBe(true);
     // Clean up the active flag so it doesn't leak into later tests' global checks.
     markAiNoteWriteEnded(note);
   });
@@ -107,7 +104,6 @@ describe("AI-write guard", () => {
     markAiNoteWriteEnded(note);
     vi.advanceTimersByTime(AI_NOTE_WRITE_TAIL_MS - 1);
     expect(isAiNoteWrite(note)).toBe(true);
-    expect(hasRecentAiNoteWrite()).toBe(true);
   });
 
   it("expires exactly at the tail boundary after the write ends", () => {
@@ -116,26 +112,12 @@ describe("AI-write guard", () => {
     markAiNoteWriteEnded(note);
     vi.advanceTimersByTime(AI_NOTE_WRITE_TAIL_MS);
     expect(isAiNoteWrite(note)).toBe(false);
-    expect(hasRecentAiNoteWrite()).toBe(false);
   });
 
   it("returns false for a note that was never AI-written", () => {
     expect(isAiNoteWrite(uid("never"))).toBe(false);
   });
 
-  it("hasRecentAiNoteWrite is true if ANY note is recently AI-written", () => {
-    const noteA = uid("ai-a");
-    const noteB = uid("ai-b");
-    markAiNoteWriteStarted(noteA);
-    markAiNoteWriteEnded(noteA);
-    // noteA's tail has fully expired...
-    vi.advanceTimersByTime(AI_NOTE_WRITE_TAIL_MS);
-    expect(isAiNoteWrite(noteA)).toBe(false);
-    // ...but a fresh write to noteB keeps the global check true.
-    markAiNoteWriteStarted(noteB);
-    markAiNoteWriteEnded(noteB);
-    expect(hasRecentAiNoteWrite()).toBe(true);
-  });
 });
 
 describe("guard interaction (the bug this fixes)", () => {

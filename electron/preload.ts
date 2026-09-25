@@ -242,6 +242,11 @@ function invoke<T>(channel: string, args?: unknown): Promise<T> {
 const api = {
   // ── Full snapshot ────────────────────────────
   snapshot: () => invoke("db:snapshot"),
+  // ── Change feed (cursor-based incremental refresh) ──
+  changes: {
+    get: (args: { since: number | null; feedId: string | null }) =>
+      invoke<import("./db/change-feed-queries").ChangeSet>("db:changes:get", args),
+  },
   hasData:  () => invoke<boolean>("db:hasData"),
 
   // ── Workspaces ───────────────────────────────

@@ -25,6 +25,12 @@ export interface McpPollerOptions {
   win: BrowserWindow;
   updateBadge: (count: number) => void;
   onDbChanged: () => void;
+  /**
+   * Optional change-feed head (see electron/db/change-feed-queries.ts). When
+   * provided, a WAL write only fires `onDbChanged` if the head moved — i.e. a
+   * UI-visible table changed — instead of for every write to any table.
+   */
+  getChangeHead?: () => number;
 }
 
 export interface McpPoller {
@@ -54,10 +60,17 @@ export function startMcpNotificationPoller({
   win,
   updateBadge,
   onDbChanged,
+  getChangeHead,
 }: McpPollerOptions): McpPoller {
   let dbPath = getDbPath();
   let walPath = dbPath + "-wal";
   let lastMtime = 0;
+  // Last change-feed head seen (null = not yet baselined).
+  let lastHead: number | null = null;
+  const readHead = (): number | null => {
+    if (!getChangeHead) return null;
+    try { return getChangeHead(); } catch { return null; }
+  };
   // Notification ids already shown as an OS toast (dedupe across WAL ticks).
   const toastedIds = new Set<string>();
   // Last unread count we broadcast — only push on change.
@@ -71,6 +84,7 @@ export function startMcpNotificationPoller({
 
   void getMtimeAsync(walPath, dbPath).then((mtime) => {
     if (lastMtime === 0) lastMtime = mtime;
+    if (lastHead === null) lastHead = readHead();
   });
 
   function sendToWin(channel: string, payload: unknown): void {
@@ -109,6 +123,7 @@ export function startMcpNotificationPoller({
         lastUnread = -1;
         try { pushUnread(getUnreadMcpNotifications(db).length); } catch { /* db transient */ }
         lastMtime = await getMtimeAsync(walPath, dbPath);
+        lastHead = readHead();
       }
       // Retention: prune old notifications once a day (30d / 1000 rows cap).
       if (Date.now() - lastPruneTs >= PRUNE_INTERVAL_MS) {
@@ -120,7 +135,10 @@ export function startMcpNotificationPoller({
         const mtimeChanged = mtime > lastMtime;
         if (mtimeChanged) {
           lastMtime = mtime;
-          onDbChanged();
+          const head = readHead();
+          // No feed (or unreadable) → legacy behaviour: every write notifies.
+          if (head === null || lastHead === null || head !== lastHead) onDbChanged();
+          lastHead = head;
 
           const unread = getUnreadMcpNotifications(db);
           const appFocused = !win.isDestroyed() && win.isFocused();

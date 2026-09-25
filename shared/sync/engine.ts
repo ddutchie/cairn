@@ -218,6 +218,15 @@ function syncBodiesEqual(a: unknown, b: unknown): boolean {
   return normalizeForSyncBody(a) === normalizeForSyncBody(b);
 }
 
+/** Thrown inside applyRemote's transaction to roll back a converged no-op round. */
+const NOOP_ROLLBACK = new Error("sync: no-op reconcile (rolled back)");
+
+/** Rows changed on this connection so far (includes changes made by triggers). */
+function totalChanges(db: SyncDb): number {
+  const row = db.prepare("SELECT total_changes() AS n").get() as { n?: number } | undefined;
+  return Number(row?.n ?? 0);
+}
+
 function tableColumns(db: SyncDb, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 }
@@ -374,6 +383,10 @@ export class SyncEngine {
 
   private setBaseBody(entity: string, id: string, body: unknown): void {
     const val = body == null ? null : String(body);
+    // Skip the no-op upsert: every converged sync round re-reads the peer's
+    // full snapshot and lands here once per echoed note, and an UPSERT writes
+    // its page even when the value is identical (WAL churn → db:changed).
+    if (this.getBaseBody(entity, id) === val) return;
     this.db
       .prepare(
         `INSERT INTO sync_row_base (entity, entity_id, base_body) VALUES (?, ?, ?)
@@ -465,6 +478,7 @@ export class SyncEngine {
   }
 
   private setState(key: string, value: string): void {
+    if (this.getState(key) === value) return; // no-op writes still dirty the page
     this.db
       .prepare("INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(key, value);
@@ -849,6 +863,7 @@ export class SyncEngine {
 
     const run = this.db.transaction(() => {
       this.setSuppress(true); // reconcile writes must not be re-captured as local ops
+      const changesBefore = totalChanges(this.db);
       for (const entry of sorted) {
         // Note the peer's wire-protocol version (absent = pre-versioning = 1) so
         // the UI can flag a device that is behind this build. Kept outside the
@@ -885,11 +900,21 @@ export class SyncEngine {
           /* ditto */
         }
       }
+      // Converged round: nothing was reconciled, forwarded or recorded. Roll
+      // the transaction back instead of committing the suppress-flag flip and
+      // HLC bookkeeping — otherwise every idle sync tick (desktop: every 30s and
+      // on window focus) appends WAL frames, which the desktop WAL poller turns
+      // into a db:changed → full renderer re-hydrate (and cleared undo history).
+      // Skipping persistHlc here is safe: every entry was already reflected in
+      // a stored row/tombstone, whose stamp was persisted when it was applied.
+      if (totalChanges(this.db) === changesBefore) throw NOOP_ROLLBACK;
       this.setSuppress(false);
       this.persistHlc();
     });
     try {
       run();
+    } catch (err) {
+      if (err !== NOOP_ROLLBACK) throw err;
     } finally {
       if (fkWasOn) this.db.prepare("PRAGMA foreign_keys = ON").run();
     }

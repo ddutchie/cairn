@@ -76,8 +76,8 @@ describe("searchAll", () => {
     const { get } = setup({
       notes: [
         note("n1", "p1", { title: "Authentication flow" }),
-        note("n2", "p1", { title: "Login pipeline", contentText: "covers auth and refresh" }),
-        note("n3", "p1", { title: "Unrelated", contentText: "nothing here" }),
+        note("n2", "p1", { title: "Login pipeline", content: "covers **auth** and refresh" }),
+        note("n3", "p1", { title: "Unrelated", content: "nothing here" }),
       ],
     });
     // "auth flow" is NOT a contiguous phrase in either note, but both terms are
@@ -89,14 +89,24 @@ describe("searchAll", () => {
     expect(get().searchAll("auth missing")).toEqual([]);
   });
 
-  it("matches notes by contentText and builds a 120-char snippet", () => {
+  it("matches notes by body and builds a 120-char snippet from the excerpt", () => {
     const longText = "x".repeat(200);
     const { get } = setup({
-      notes: [note("n1", "p1", { title: "T", contentText: `needle ${longText}` })],
+      notes: [note("n1", "p1", { title: "T", content: `needle ${longText}`, contentText: `needle ${longText}`.slice(0, 200) })],
     });
     const results = get().searchAll("needle");
     expect(results).toHaveLength(1);
     expect(results[0].snippet.length).toBe(120);
+  });
+
+  it("searches the full body, not just the contentText preview excerpt", () => {
+    // contentText only carries a ~200-char excerpt; a term deep in the body must
+    // still be found.
+    const body = `# Intro\n\n${"filler words ".repeat(400)}\n\nthe deepterm is here`;
+    const { get } = setup({
+      notes: [note("n1", "p1", { title: "Long", content: body, contentText: "Intro filler words" })],
+    });
+    expect(get().searchAll("deepterm").map((r: any) => r.id)).toEqual(["n1"]);
   });
 
   it("matches cards by title and description", () => {

@@ -18,6 +18,7 @@ import {
   makeRestoreNoteCmd,
   makeLinkNoteToCardCmd,
 } from "@/lib/commands/note-commands";
+import { excerptFor } from "@/lib/note-text";
 
 /**
  * Notes in `projectId` that live at `source` (a normalized folder path) or any
@@ -104,7 +105,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       workspaceId: proj?.workspaceId ?? "",
       title,
       content,
-      contentText: content,
+      contentText: excerptFor(content, type),
       tagIds: [],
       linkedNoteIds: [],
       linkedCardIds: [],

@@ -121,6 +121,11 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerIpcHandle("db:snapshot", () => handle(() => q.getFullSnapshot(ctx.db)));
   registerIpcHandle("db:hasData", () => handle(() => q.hasData(ctx.db)));
 
+  // ── Change feed (incremental refresh on db:changed) ───
+  // `get` is a read verb, so the registry never re-broadcasts db:changed for it.
+  registerIpcHandle("db:changes:get", (e, args: { since: number | null; feedId: string | null }) =>
+    handle(() => q.getChangesSince(ctx.db, args?.since ?? null, args?.feedId ?? null, e?.sender?.id)));
+
   // ── Dashboard live query bridge ───────────────────
   // Executes read-only MCP-style tool calls from dashboard iframes.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

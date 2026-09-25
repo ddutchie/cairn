@@ -287,11 +287,19 @@ export function getKnowledgeGraph(
 
   if (wantsType("tag") && wantsEdge("tag-member")) {
     // Collect which tags are actually referenced in scoped notes/cards
-    const usedTagIds = new Set<string>();
-    for (const n of notes) for (const tid of parseJson(n.tag_ids)) usedTagIds.add(tid);
-    for (const c of cards) for (const tid of parseJson(c.tag_ids)) usedTagIds.add(tid);
+    // Invert tag_ids once (tag → tagged notes, then cards) instead of
+    // re-parsing every row's JSON for every tag — that was
+    // O(tags × (notes + cards)) JSON.parse calls on large workspaces.
+    const membersByTag = new Map<string, { notes: string[]; cards: string[] }>();
+    const membersOf = (tid: string) => {
+      let m = membersByTag.get(tid);
+      if (!m) membersByTag.set(tid, (m = { notes: [], cards: [] }));
+      return m;
+    };
+    for (const n of notes) for (const tid of new Set(parseJson(n.tag_ids))) membersOf(tid).notes.push(n.id as string);
+    for (const c of cards) for (const tid of new Set(parseJson(c.tag_ids))) membersOf(tid).cards.push(c.id as string);
 
-    for (const tagId of usedTagIds) {
+    for (const [tagId, members] of membersByTag) {
       const t = tagMap.get(tagId);
       if (!t) continue;
       addNode({
@@ -302,84 +310,55 @@ export function getKnowledgeGraph(
         meta: { color: t.color },
       });
 
-      // edges from tagged items → tag
-      for (const n of notes) {
-        if (parseJson(n.tag_ids).includes(tagId)) {
-          edges.push({
-            id: edgeId("tag-member", n.id, tagId),
-            source: n.id as string,
-            target: tagId,
-            type: "tag-member",
-            label: "tagged",
-          });
-        }
-      }
-      for (const c of cards) {
-        if (parseJson(c.tag_ids).includes(tagId)) {
-          edges.push({
-            id: edgeId("tag-member", c.id, tagId),
-            source: c.id as string,
-            target: tagId,
-            type: "tag-member",
-            label: "tagged",
-          });
-        }
+      // edges from tagged items → tag (notes first, then cards — same order
+      // as before, so edge ids stay stable)
+      for (const id of [...members.notes, ...members.cards]) {
+        edges.push({
+          id: edgeId("tag-member", id, tagId),
+          source: id,
+          target: tagId,
+          type: "tag-member",
+          label: "tagged",
+        });
       }
     }
   }
 
-  // ── 5. IdeaFlow refs + edges ───────────────────────────────────────────────
-  if (wantsEdge("flow-ref") || wantsEdge("flow-edge")) {
+  // ── 5. IdeaFlow edges ──────────────────────────────────────────────────────
+  // (flow-ref: note_ref / task_ref nodes only restate membership that the
+  // project-member edges already capture, so they add no edges. The loop that
+  // used to read + JSON-parse every note_ref node per flow did nothing with the
+  // result and has been removed.)
+  if (wantsEdge("flow-edge")) {
     const flows = db.prepare(
       `SELECT id FROM idea_flows WHERE project_id IN (${projPlaceholders})`
     ).all(...projIdArgs) as Row[];
 
+    // Explicit user-drawn edges between note_ref / task_ref nodes. Prepared
+    // once and re-run per flow.
+    const flowEdgesStmt = db.prepare(
+      `SELECT fe.id, sn.type as stype, sn.data as sdata,
+              tn.type as ttype, tn.data as tdata, fe.label
+       FROM idea_flow_edges fe
+       JOIN idea_flow_nodes sn ON sn.id = fe.source_node_id
+       JOIN idea_flow_nodes tn ON tn.id = fe.target_node_id
+       WHERE fe.flow_id = ?`
+    );
     for (const flow of flows) {
-      const flowId = flow.id as string;
-
-      if (wantsEdge("flow-ref")) {
-        // note_ref nodes pointing to notes
-        const noteRefs = db.prepare(
-          `SELECT data FROM idea_flow_nodes WHERE flow_id = ? AND type = 'note_ref'`
-        ).all(flowId) as Row[];
-        for (const nr of noteRefs) {
-          const data = JSON.parse(nr.data as string || "{}") as Record<string, string>;
-          if (data.noteId && nodeSet.has(data.noteId)) {
-            // flow references create a self-referential "mentioned in flow" concept,
-            // represented as an edge from the project to the note already exists;
-            // here we skip to avoid noise — the note is already in the graph.
-          }
-        }
-
-        // task_ref nodes pointing to cards
-        // (same rationale — already captured via project-member)
-      }
-
-      if (wantsEdge("flow-edge")) {
-        // Explicit user-drawn edges between note_ref / task_ref nodes
-        const flowEdges = db.prepare(
-          `SELECT fe.id, sn.type as stype, sn.data as sdata,
-                  tn.type as ttype, tn.data as tdata, fe.label
-           FROM idea_flow_edges fe
-           JOIN idea_flow_nodes sn ON sn.id = fe.source_node_id
-           JOIN idea_flow_nodes tn ON tn.id = fe.target_node_id
-           WHERE fe.flow_id = ?`
-        ).all(flowId) as Row[];
-
-        for (const fe of flowEdges) {
-          const sdata = JSON.parse((fe.sdata as string) || "{}") as Record<string, string>;
-          const tdata = JSON.parse((fe.tdata as string) || "{}") as Record<string, string>;
-          const srcId = sdata.noteId || sdata.cardId;
-          const tgtId = tdata.noteId || tdata.cardId;
-          if (srcId && tgtId && nodeSet.has(srcId) && nodeSet.has(tgtId)) {
-            edges.push({
-              id: edgeId("flow-edge", srcId, tgtId),
-              source: srcId,
-              target: tgtId,
-              type: "flow-edge",
-              label: (fe.label as string) || "connected",
-            });
-          }
+      const flowEdges = flowEdgesStmt.all(flow.id as string) as Row[];
+      for (const fe of flowEdges) {
+        const sdata = JSON.parse((fe.sdata as string) || "{}") as Record<string, string>;
+        const tdata = JSON.parse((fe.tdata as string) || "{}") as Record<string, string>;
+        const srcId = sdata.noteId || sdata.cardId;
+        const tgtId = tdata.noteId || tdata.cardId;
+        if (srcId && tgtId && nodeSet.has(srcId) && nodeSet.has(tgtId)) {
+          edges.push({
+            id: edgeId("flow-edge", srcId, tgtId),
+            source: srcId,
+            target: tgtId,
+            type: "flow-edge",
+            label: (fe.label as string) || "connected",
+          });
         }
       }
     }
@@ -396,11 +375,18 @@ export function getKnowledgeGraph(
 
     if (autoTypes.length > 0) {
       const typePlaceholders = autoTypes.map(() => "?").join(",");
+      // Scope in SQL: relationship_cache spans every workspace and project, so
+      // reading it whole and filtering in JS cost O(all cached pairs) per load
+      // even with a single project selected. The source_id IN (json_each) probe
+      // uses the (source_id, target_id, type) primary key.
+      const scopedIds = JSON.stringify([...nodeSet]);
       const cacheRows = db.prepare(
         `SELECT source_id, target_id, type, weight, source_section_title, target_section_title
          FROM relationship_cache
-         WHERE type IN (${typePlaceholders})`
-      ).all(...autoTypes) as Row[];
+         WHERE type IN (${typePlaceholders})
+           AND source_id IN (SELECT value FROM json_each(?))
+           AND target_id IN (SELECT value FROM json_each(?))`
+      ).all(...autoTypes, scopedIds, scopedIds) as Row[];
 
       for (const r of cacheRows) {
         const src = r.source_id as string;

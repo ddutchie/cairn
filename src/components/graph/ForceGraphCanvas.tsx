@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { resolveCssVar, withAlpha, tokenToCssVar } from "./analyticsUtils";
+import { createCssVarReader, createAlphaCache, tokenToCssVar } from "./analyticsUtils";
 import { useFontScale, useThemeRepaint, useContainerDims } from "./analyticsHooks";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
@@ -39,19 +39,14 @@ interface Props {
 }
 
 // ── colour helpers ──────────────────────────────────────────────────────────
+// Colours are resolved through a per-frame `createCssVarReader()` — never a raw
+// getComputedStyle per node/edge, which dominated frame time on large graphs.
+
+type VarReader = (varName: string) => string;
 
 /** Resolve a shared graph theme token to a concrete CSS-var colour. */
-function tokenColor(token: ThemeToken): string {
-  return resolveCssVar(tokenToCssVar(token));
-}
-
-function hexForType(type: GraphNode["type"]): string {
-  return tokenColor(nodeTypeToken(type));
-}
-
-function edgeColor(edgeType: string): { color: string; opacity: number; dash: boolean } {
-  const s = sharedEdgeStyle(edgeType);
-  return { color: tokenColor(s.token), opacity: s.opacity, dash: s.dash };
+function tokenColor(read: VarReader, token: ThemeToken): string {
+  return read(tokenToCssVar(token));
 }
 
 // ── simulation node/link shapes ──────────────────────────────────────────────
@@ -67,10 +62,51 @@ type SimLink = d3.SimulationLinkDatum<SimNode> & {
   weight: number;
 };
 
+/** Hull outline in world coords, cached until node positions next change. */
+type HullCache = { version: number; nodes: SimNode[]; hulls: [number, number][][] };
+
+/** Compute padded convex hulls for every project cluster in a single pass. */
+function computeHulls(nodes: SimNode[]): [number, number][][] {
+  const byProject = new Map<string, [number, number][]>();
+  for (const n of nodes) {
+    if (n.x == null || n.y == null) continue;
+    const key = n.nodeType === "project" ? n.id : n.projectId;
+    if (!key) continue;
+    let pts = byProject.get(key);
+    if (!pts) byProject.set(key, (pts = []));
+    pts.push([n.x, n.y]);
+  }
+  const projectIds = new Set(nodes.filter((n) => n.nodeType === "project").map((n) => n.id));
+  const out: [number, number][][] = [];
+  for (const [pid, pts] of byProject) {
+    if (!projectIds.has(pid) || pts.length < 3) continue;
+    const hull = d3.polygonHull(pts);
+    if (!hull) continue;
+    let cx = 0, cy = 0;
+    for (const [x, y] of hull) { cx += x; cy += y; }
+    cx /= hull.length; cy /= hull.length;
+    const pad = 22;
+    out.push(hull.map(([x, y]) => {
+      const dx = x - cx, dy = y - cy, m = Math.hypot(dx, dy) || 1;
+      return [x + (dx / m) * pad, y + (dy / m) * pad] as [number, number];
+    }));
+  }
+  return out;
+}
+
 const radiusOf = (n: SimNode) => nodeRadius(n.nodeType);
+const NODE_TYPES = ["project", "note", "card", "tag"] as const;
+/** Largest label font size (screen px, before font scale). */
+const LABEL_MAX_SCREEN_PX = Math.max(...NODE_TYPES.map((t) => labelScreenPx(t)));
+/** Conservative widest label (screen px, before font scale): longest allowed text × ~0.62em per char. */
+const LABEL_MAX_SCREEN_W = Math.max(...NODE_TYPES.map((t) => labelMaxLen(t, true) * labelScreenPx(t) * 0.62));
+/** Largest hit radius any node can have (biggest node radius + 6px slop). */
+const PICK_REACH = Math.max(nodeRadius("project"), nodeRadius("note"), nodeRadius("card"), nodeRadius("tag")) + 6;
 
 const ZOOM_BTN_CLASS =
-  "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";export function ForceGraphCanvas({
+  "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
+
+function ForceGraphCanvasImpl({
   graph,
   selectedNodeId,
   onNodeClick,
@@ -103,6 +139,24 @@ const ZOOM_BTN_CLASS =
   const nodesRef = useRef<SimNode[]>([]);
   const linksRef = useRef<SimLink[]>([]);
   const drawRef = useRef<() => void>(() => {});
+  // rAF handle for the coalesced repaint (sim ticks, zoom events and hover all
+  // request a frame; at most one paint happens per animation frame).
+  const frameRef = useRef(0);
+  // Bumped on every simulation tick; lets the hull cache skip recomputation
+  // while the layout is at rest (pan/zoom/hover repaints).
+  const posVersionRef = useRef(0);
+  const hullCacheRef = useRef<HullCache | null>(null);
+
+  // Coalesce repaint requests (sim ticks, zoom events, hover) into ≤1 paint per
+  // animation frame — d3's zoom and timer can each fire several times a frame.
+  const scheduleDraw = useCallback(() => {
+    if (frameRef.current) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = 0;
+      drawRef.current();
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
   const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
 
   // ── fit-to-view (stable; reads live state from refs) ──
@@ -112,9 +166,15 @@ const ZOOM_BTN_CLASS =
     const nodes = nodesRef.current.filter((n) => n.x != null && n.y != null);
     if (!nodes.length) return;
     const { width, height } = dimsRef.current;
-    const xs = nodes.map((n) => n.x!), ys = nodes.map((n) => n.y!);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    // Plain loop — spreading thousands of coords into Math.min/max is slow and
+    // can overflow the call stack on very large graphs.
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      if (n.x! < minX) minX = n.x!;
+      if (n.x! > maxX) maxX = n.x!;
+      if (n.y! < minY) minY = n.y!;
+      if (n.y! > maxY) maxY = n.y!;
+    }
     const gw = maxX - minX || 1, gh = maxY - minY || 1;
     const pad = 60;
     const k = Math.max(0.2, Math.min(4, Math.min(
@@ -160,12 +220,14 @@ const ZOOM_BTN_CLASS =
   // rebuild effect reads (node: id/type/projectId/title; link:
   // endpoints/type/weight) so renamed nodes, retyped/recoloured edges, etc.
   // refresh instead of showing stale data.
-  const nodeFingerprint = graph.nodes
+  // Memoised: these are O(nodes/edges) string builds and the component
+  // re-renders on every edge-tooltip mouse move.
+  const nodeFingerprint = useMemo(() => graph.nodes
     .map((n) => `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}`)
-    .join(",");
-  const edgeFingerprint = visibleEdges
+    .join(","), [graph.nodes]);
+  const edgeFingerprint = useMemo(() => visibleEdges
     .map((e) => `${e.source}-${e.target}:${e.type}:${e.weight ?? 1}`)
-    .join(",");
+    .join(","), [visibleEdges]);
 
   // ── build / rebuild simulation when topology changes ──
   useEffect(() => {
@@ -189,6 +251,7 @@ const ZOOM_BTN_CLASS =
 
     nodesRef.current = nodes;
     linksRef.current = links;
+    hullCacheRef.current = null;
 
     // degree map — must exist before sim construction (forces read it on first tick)
     const degree = new Map<string, number>();
@@ -233,8 +296,16 @@ const ZOOM_BTN_CLASS =
         if (!userInteractedRef.current && !didInitialFitRef.current) {
           zoomFit(false);
         }
-        drawRef.current();
+        posVersionRef.current++;
+        scheduleDraw();
       });
+
+    // Incremental change (most nodes kept their positions, e.g. a note was added
+    // or a link drawn): re-heat gently so the existing layout settles in place
+    // instead of re-running the full ~270-tick explosion on every edit.
+    let kept = 0;
+    for (const n of nodes) if (n.x != null) kept++;
+    if (nodes.length > 0 && kept / nodes.length >= 0.9) sim.alpha(0.3);
 
     simRef.current = sim;
     // expose anchor/cluster fns to the spacing-update effect via the sim object
@@ -271,6 +342,8 @@ const ZOOM_BTN_CLASS =
 
   // ── the draw routine ──
   const draw = useCallback(() => {
+    cancelAnimationFrame(frameRef.current);
+    frameRef.current = 0;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -283,6 +356,11 @@ const ZOOM_BTN_CLASS =
     const hovered = hoveredNodeRef.current;
     const nodes = nodesRef.current;
     const links = linksRef.current;
+    const { width, height } = dimsRef.current;
+
+    // One style read per frame (see createCssVarReader), memoised alpha strings.
+    const read = createCssVarReader();
+    const alpha = createAlphaCache();
 
     // Fully reset the transform and clear the ENTIRE backing store (in device
     // pixels) before painting. Clearing in CSS-pixel space after applying the
@@ -295,42 +373,54 @@ const ZOOM_BTN_CLASS =
     ctx.translate(t.x, t.y);
     ctx.scale(t.k, t.k);
 
-    const bg = resolveCssVar("--background");
-    const accent = resolveCssVar("--accent");
+    const bg = read("--background");
+    const accent = read("--accent");
+    const typeColor = (type: GraphNode["type"]) => tokenColor(read, nodeTypeToken(type));
 
-    // ── cluster hulls ──
+    // Visible world-space rect (+ margin for glows/labels) — everything outside
+    // it is culled so zoomed-in frames only pay for what's on screen.
+    const margin = 40 / t.k + 20;
+    const vx0 = -t.x / t.k - margin, vx1 = (width - t.x) / t.k + margin;
+    const vy0 = -t.y / t.k - margin, vy1 = (height - t.y) / t.k + margin;
+    const inView = (x: number, y: number) => x >= vx0 && x <= vx1 && y >= vy0 && y <= vy1;
+    // Labels hang below their node and can be much wider than it, so a label
+    // can still be on screen while its node centre is culled. Give labels their
+    // own bounds: half the widest possible label sideways, and the label's
+    // height above the top edge (a node just above the viewport shows its text).
+    const labelHalfW = (LABEL_MAX_SCREEN_W * fs) / 2 / t.k;
+    const labelH = (LABEL_MAX_SCREEN_PX * fs + 4) / t.k + 12;
+    const inLabelView = (x: number, y: number) =>
+      x >= vx0 - labelHalfW && x <= vx1 + labelHalfW && y >= vy0 - labelH && y <= vy1;
+
+    // ── cluster hulls (recomputed only when positions changed) ──
     if (hulls) {
-      const projects = nodes.filter((n) => n.nodeType === "project");
-      for (const p of projects) {
-        const members = nodes.filter((n) => n.projectId === p.id && n.x != null && n.y != null);
-        const pts: [number, number][] = members.map((m) => [m.x!, m.y!]);
-        if (p.x != null && p.y != null) pts.push([p.x, p.y]);
-        if (pts.length < 3) continue;
-        const hull = d3.polygonHull(pts);
-        if (!hull) continue;
-        const cx = d3.mean(hull, (d) => d[0]) ?? 0;
-        const cy = d3.mean(hull, (d) => d[1]) ?? 0;
-        const pad = 22;
-        const expanded = hull.map(([x, y]) => {
-          const dx = x - cx, dy = y - cy, m = Math.hypot(dx, dy) || 1;
-          return [x + (dx / m) * pad, y + (dy / m) * pad] as [number, number];
-        });
+      let cache = hullCacheRef.current;
+      if (!cache || cache.version !== posVersionRef.current || cache.nodes !== nodes) {
+        cache = { version: posVersionRef.current, nodes, hulls: computeHulls(nodes) };
+        hullCacheRef.current = cache;
+      }
+      const curve = d3.line().curve(d3.curveCatmullRomClosed.alpha(0.6)).context(ctx);
+      ctx.fillStyle = alpha(accent, 0.05);
+      ctx.strokeStyle = alpha(accent, 0.18);
+      ctx.lineWidth = 1.2 / t.k;
+      for (const hull of cache.hulls) {
         ctx.beginPath();
-        const curve = d3.line().curve(d3.curveCatmullRomClosed.alpha(0.6)).context(ctx);
-        curve(expanded);
-        ctx.fillStyle = withAlpha(accent, 0.05);
-        ctx.strokeStyle = withAlpha(accent, 0.18);
-        ctx.lineWidth = 1.2 / t.k;
+        curve(hull);
         ctx.fill();
         ctx.stroke();
       }
     }
 
-    // ── edges ──
+    // ── edges — batched into one path per distinct stroke style ──
+    type EdgeBatch = { stroke: string; width: number; dash: boolean; coords: number[] };
+    const batches = new Map<string, EdgeBatch>();
     for (const l of links) {
       const s = l.source as SimNode, tg = l.target as SimNode;
       if (s.x == null || s.y == null || tg.x == null || tg.y == null) continue;
-      const st = edgeColor(l.edgeType);
+      // Cull segments whose bounding box misses the viewport entirely.
+      if ((s.x < vx0 && tg.x < vx0) || (s.x > vx1 && tg.x > vx1) ||
+          (s.y < vy0 && tg.y < vy0) || (s.y > vy1 && tg.y > vy1)) continue;
+      const st = sharedEdgeStyle(l.edgeType);
       let op = st.opacity;
       let w = l.edgeType === "wikilink" ? 1.6 : 1;
       if (l.edgeType === "semantic" && l.weight < 1) w = 0.5 + l.weight;
@@ -339,47 +429,83 @@ const ZOOM_BTN_CLASS =
         op = on ? Math.max(op, 0.9) : op * 0.1;
         if (on) w *= 1.4;
       }
+      const stroke = alpha(tokenColor(read, st.token), op);
+      const key = `${stroke}|${w}|${st.dash ? 1 : 0}`;
+      let b = batches.get(key);
+      if (!b) batches.set(key, (b = { stroke, width: w, dash: st.dash, coords: [] }));
+      b.coords.push(s.x, s.y, tg.x, tg.y);
+    }
+    const dashPattern = [3 / t.k, 3 / t.k];
+    for (const b of batches.values()) {
       ctx.beginPath();
-      ctx.moveTo(s.x, s.y);
-      ctx.lineTo(tg.x, tg.y);
-      ctx.strokeStyle = withAlpha(st.color, op);
-      ctx.lineWidth = w / t.k;
-      ctx.setLineDash(st.dash ? [3 / t.k, 3 / t.k] : []);
+      const c = b.coords;
+      for (let i = 0; i < c.length; i += 4) {
+        ctx.moveTo(c[i], c[i + 1]);
+        ctx.lineTo(c[i + 2], c[i + 3]);
+      }
+      ctx.strokeStyle = b.stroke;
+      ctx.lineWidth = b.width / t.k;
+      ctx.setLineDash(b.dash ? dashPattern : []);
       ctx.stroke();
     }
     ctx.setLineDash([]);
 
-    // ── nodes ──
+    // ── nodes — plain circles batched by fill; highlighted ones drawn after ──
+    const fills = new Map<string, SimNode[]>();
+    const highlighted: SimNode[] = [];
+    const labelCandidates: SimNode[] = [];
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
+      if (inLabelView(n.x, n.y)) labelCandidates.push(n);
+      if (!inView(n.x, n.y)) continue;
+      if (n.id === sel || n.id === hovered) { highlighted.push(n); continue; }
+      const dim = !!sel && connected != null && !connected.has(n.id);
+      const fill = alpha(typeColor(n.nodeType), dim ? 0.22 : 0.92);
+      let arr = fills.get(fill);
+      if (!arr) fills.set(fill, (arr = []));
+      arr.push(n);
+    }
+    for (const [fill, arr] of fills) {
+      ctx.beginPath();
+      for (const n of arr) {
+        const r = radiusOf(n);
+        ctx.moveTo(n.x! + r, n.y!);
+        ctx.arc(n.x!, n.y!, r, 0, 2 * Math.PI);
+      }
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    for (const n of highlighted) {
       const r = radiusOf(n);
-      const col = hexForType(n.nodeType);
+      const col = typeColor(n.nodeType);
+      const isSel = n.id === sel;
+      const dim = !isSel && !!sel && connected != null && !connected.has(n.id);
+      const g = ctx.createRadialGradient(n.x!, n.y!, r, n.x!, n.y!, r + 14);
+      g.addColorStop(0, alpha(col, 0.35));
+      g.addColorStop(1, alpha(col, 0));
+      ctx.beginPath();
+      ctx.arc(n.x!, n.y!, r + 14, 0, 2 * Math.PI);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(n.x!, n.y!, r, 0, 2 * Math.PI);
+      ctx.fillStyle = isSel ? col : alpha(col, dim ? 0.22 : 0.92);
+      ctx.fill();
+      ctx.lineWidth = 1.6 / t.k;
+      ctx.strokeStyle = col;
+      ctx.stroke();
+    }
+
+    // ── labels (on top of every node so they're never covered) ──
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 4 / t.k;
+    ctx.strokeStyle = bg;
+    let lastFont = "";
+    for (const n of labelCandidates) {
       const isSel = n.id === sel;
       const isHov = n.id === hovered;
-      const dim = !!sel && connected != null && !connected.has(n.id);
-
-      if (isSel || isHov) {
-        const g = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 14);
-        g.addColorStop(0, withAlpha(col, 0.35));
-        g.addColorStop(1, withAlpha(col, 0));
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 14, 0, 2 * Math.PI);
-        ctx.fillStyle = g;
-        ctx.fill();
-      }
-
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = isSel ? col : withAlpha(col, dim ? 0.22 : 0.92);
-      ctx.fill();
-      if (isSel || isHov) {
-        ctx.lineWidth = 1.6 / t.k;
-        ctx.strokeStyle = col;
-        ctx.stroke();
-      }
-
-      // labels
-      const isProject = n.nodeType === "project";
       const showLabel = shouldShowLabel({
         type: n.nodeType,
         isSelected: isSel,
@@ -387,46 +513,48 @@ const ZOOM_BTN_CLASS =
         labelMode: lm,
         zoom: t.k,
       });
-
-      if (showLabel) {
-        const isHighlight = isSel || isHov;
-        const screenPx = labelScreenPx(n.nodeType) * fs;
-        const fontSize = screenPx / t.k;
-        const maxLen = labelMaxLen(n.nodeType, isHighlight);
-        const text = n.title.length > maxLen ? n.title.slice(0, maxLen - 1) + "…" : n.title;
-        ctx.font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        ctx.lineJoin = "round";
-        ctx.lineWidth = 4 / t.k;
-        ctx.strokeStyle = bg;
-        ctx.strokeText(text, n.x, n.y + r + 4 / t.k);
-        ctx.fillStyle = isHighlight && !isProject
-          ? accent
-          : dim
-            ? withAlpha(resolveCssVar("--text-tertiary"), 0.5)
-            : resolveCssVar(isProject ? "--text-primary" : "--text-secondary");
-        ctx.fillText(text, n.x, n.y + r + 4 / t.k);
-      }
+      if (!showLabel) continue;
+      const isProject = n.nodeType === "project";
+      const isHighlight = isSel || isHov;
+      const dim = !!sel && connected != null && !connected.has(n.id);
+      const r = radiusOf(n);
+      const fontSize = (labelScreenPx(n.nodeType) * fs) / t.k;
+      const maxLen = labelMaxLen(n.nodeType, isHighlight);
+      const text = n.title.length > maxLen ? n.title.slice(0, maxLen - 1) + "…" : n.title;
+      const font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+      if (font !== lastFont) { ctx.font = font; lastFont = font; }
+      ctx.strokeText(text, n.x!, n.y! + r + 4 / t.k);
+      ctx.fillStyle = isHighlight && !isProject
+        ? accent
+        : dim
+          ? alpha(read("--text-tertiary"), 0.5)
+          : read(isProject ? "--text-primary" : "--text-secondary");
+      ctx.fillText(text, n.x!, n.y! + r + 4 / t.k);
     }
 
     ctx.restore();
   }, [fs]);
   useEffect(() => { drawRef.current = draw; }, [draw]);
 
-  // ── canvas sizing (DPR-aware) + initial centering ──
+
+  // ── canvas sizing (DPR-aware) ──
+  // Only touches the backing store when the size actually changes: assigning
+  // canvas.width/height clears and reallocates it, which reads as a flash.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = dims.width * dpr;
-    canvas.height = dims.height * dpr;
-    canvas.style.width = dims.width + "px";
-    canvas.style.height = dims.height + "px";
-    draw();
-  }, [dims, draw]);
+    const w = Math.round(dims.width * dpr), h = Math.round(dims.height * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      canvas.style.width = dims.width + "px";
+      canvas.style.height = dims.height + "px";
+    }
+    drawRef.current();
+  }, [dims]);
 
-  // redraw whenever selection / threshold / hull-toggle / label-mode changes
+  // redraw whenever selection / threshold / hull-toggle / label-mode / font scale changes
   useEffect(() => { draw(); }, [selectedNodeId, semanticThreshold, showHulls, labelMode, draw]);
 
   // Repaint after a theme change so the canvas picks up the new CSS-var colours.
@@ -439,7 +567,7 @@ const ZOOM_BTN_CLASS =
     const selection = d3.select<HTMLCanvasElement, unknown>(canvas);
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.2, 6])
-      .on("zoom", (ev) => { transformRef.current = ev.transform; draw(); })
+      .on("zoom", (ev) => { transformRef.current = ev.transform; scheduleDraw(); })
       .on("start", (ev) => {
         // A pointer/wheel-driven zoom means the user has taken control; stop
         // auto-fitting on subsequent simulation ticks.
@@ -456,18 +584,40 @@ const ZOOM_BTN_CLASS =
   }, []);
 
   // ── hit testing for hover + click ──
+  // Spatial index for hit testing, rebuilt only when positions changed (at most
+  // once per sim tick) instead of scanning every node on every mouse move.
+  const pickIndexRef = useRef<{ version: number; nodes: SimNode[]; tree: d3.Quadtree<SimNode> } | null>(null);
   const pick = useCallback((mx: number, my: number): SimNode | null => {
     const t = transformRef.current;
     const x = (mx - t.x) / t.k;
     const y = (my - t.y) / t.k;
+    const nodes = nodesRef.current;
+    let index = pickIndexRef.current;
+    if (!index || index.version !== posVersionRef.current || index.nodes !== nodes) {
+      const tree = d3.quadtree<SimNode>()
+        .x((n) => n.x!)
+        .y((n) => n.y!)
+        .addAll(nodes.filter((n) => n.x != null && n.y != null));
+      index = { version: posVersionRef.current, nodes, tree };
+      pickIndexRef.current = index;
+    }
+    // Same rule as before (nearest node whose centre is within its radius + 6),
+    // but only nodes inside the largest possible hit radius are examined.
+    const reach = PICK_REACH;
     let best: SimNode | null = null;
     let bd = Infinity;
-    for (const n of nodesRef.current) {
-      if (n.x == null || n.y == null) continue;
-      const d = Math.hypot(n.x - x, n.y - y);
-      const r = radiusOf(n) + 6;
-      if (d < r && d < bd) { bd = d; best = n; }
-    }
+    index.tree.visit((quad, x0, y0, x1, y1) => {
+      if (!quad.length) {
+        let leaf: d3.QuadtreeLeaf<SimNode> | undefined = quad as d3.QuadtreeLeaf<SimNode>;
+        do {
+          const n = leaf.data;
+          const d = Math.hypot(n.x! - x, n.y! - y);
+          if (d < radiusOf(n) + 6 && d < bd) { bd = d; best = n; }
+          leaf = leaf.next;
+        } while (leaf);
+      }
+      return x0 > x + reach || x1 < x - reach || y0 > y + reach || y1 < y - reach;
+    });
     return best;
   }, []);
 
@@ -522,8 +672,8 @@ const ZOOM_BTN_CLASS =
       setHoveredEdgeText(null);
     }
 
-    if (prevHover !== hoveredNodeRef.current) draw();
-  }, [pick, pickEdge, graph.edges, hoveredEdgeText, draw]);
+    if (prevHover !== hoveredNodeRef.current) scheduleDraw();
+  }, [pick, pickEdge, graph.edges, hoveredEdgeText, scheduleDraw]);
 
   const handleClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current;
@@ -555,7 +705,7 @@ const ZOOM_BTN_CLASS =
       ref={containerRef}
       className="flex-1 overflow-hidden relative"
       onMouseMove={handleMouseMove}
-      onMouseLeave={() => { hoveredNodeRef.current = null; setHoveredEdgeText(null); draw(); }}
+      onMouseLeave={() => { hoveredNodeRef.current = null; setHoveredEdgeText(null); scheduleDraw(); }}
       onClick={handleClick}
     >
       <canvas ref={canvasRef} className="block" />
@@ -602,3 +752,7 @@ const ZOOM_BTN_CLASS =
     </div>
   );
 }
+
+// Memoised: KnowledgeGraphView re-renders on unrelated toolbar/store state;
+// all props are memoised upstream, so this skips those renders entirely.
+export const ForceGraphCanvas = React.memo(ForceGraphCanvasImpl);

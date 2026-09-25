@@ -88,7 +88,10 @@ export interface Note {
   title: string;
   /** Raw markdown (type=note) or HTML string (type=dashboard) */
   content: string;
-  /** Plain-text representation for search (markdown stripped) */
+  /**
+   * Short plain-text EXCERPT of the body (≤200 chars) for previews — not a
+   * full mirror. Search full text via `noteSearchText()` (src/lib/note-text).
+   */
   contentText: string;
   tagIds: ID[];
   /** Backlink references: note IDs this note mentions */

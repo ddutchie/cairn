@@ -9,7 +9,6 @@
  */
 
 import { CairnEvents } from "@/lib/events";
-import { ownWriteGuard } from "@/lib/history";
 
 // ── Per-note own-write map ────────────────────────────────────────────────────
 // Tracks the timestamp of the last own write per note ID so the db:changed
@@ -46,11 +45,10 @@ export function isOwnNoteWrite(noteId: string): boolean {
 // (the in-app chat executor or the standalone MCP server), as signalled by the
 // note:aiWriteStarted / note:aiWriteEnded events.
 //
-// This is the inverse of the own-write guard: when the AI patches a note we
-// MUST re-hydrate from SQLite and accept the snapshot content for that note,
-// even though the surrounding chat IPC touched ownWriteGuard and even if the
-// user typed in the note shortly before. Without this override the open editor
-// never sees the AI's changes (both guards would suppress the snapshot).
+// This is the inverse of the per-note own-write guard: when the AI patches a
+// note we MUST accept the incoming content for that note even if the user typed
+// in it shortly before. Without this override the open editor never sees the
+// AI's changes (the own-note guard would keep the local copy).
 //
 // We keep a short tail window after the write ends so the db:changed event
 // (broadcast once after the whole chat stream finishes) still counts the note
@@ -78,16 +76,6 @@ export function isAiNoteWrite(noteId: string): boolean {
   return t !== undefined && Date.now() - t < AI_NOTE_WRITE_TAIL_MS;
 }
 
-/** True if any note is actively or recently AI-written (cheap pre-check). */
-export function hasRecentAiNoteWrite(): boolean {
-  if (aiWritingNotes.size > 0) return true;
-  const now = Date.now();
-  for (const t of aiNoteWriteMap.values()) {
-    if (now - t < AI_NOTE_WRITE_TAIL_MS) return true;
-  }
-  return false;
-}
-
 export function isElectron(): boolean {
   return typeof window !== "undefined" && !!window.electron;
 }
@@ -108,7 +96,6 @@ export function ipc(
   fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
 ): void {
   if (!isElectron() || !window.electron) return;
-  ownWriteGuard.touch();
   fn(window.electron)
     ?.then(handleResult)
     ?.catch?.((err: unknown) => {
@@ -123,7 +110,6 @@ export function ipc(
 export function ipcAwait(
   fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
 ): Promise<void> {
-  ownWriteGuard.touch();
   if (!isElectron() || !window.electron) return Promise.resolve();
   return (fn(window.electron) ?? Promise.resolve())
     .then((result) => { handleResult(result); })
@@ -137,8 +123,7 @@ export function ipcAwait(
  * the { data } envelope and rejects on { error }).
  *
  * This is the read counterpart to ipc()/ipcAwait(): it applies the same
- * isElectron guard but deliberately does NOT touch ownWriteGuard (reads must
- * not suppress the db:changed echo protection) and does NOT toast (callers
+ * isElectron guard but deliberately does NOT toast (callers
  * surface read errors in their own UI state, e.g. graphError). Rejections
  * propagate to the caller; off-Electron resolves undefined.
  */
@@ -156,7 +141,6 @@ export function ipcData<T>(
 export async function ipcAwaitResult<T>(
   fn: (e: NonNullable<Window["electron"]>) => Promise<{ data: T } | { error: string } | undefined>
 ): Promise<{ data: T } | { error: string }> {
-  ownWriteGuard.touch();
   if (!isElectron() || !window.electron) return { error: "Not in Electron" };
   try {
     const result = await (fn(window.electron) ?? Promise.resolve(undefined));

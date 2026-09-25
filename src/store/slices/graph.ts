@@ -23,6 +23,19 @@ let graphRefreshQueued = false;
 let graphRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 const GRAPH_REFRESH_DEBOUNCE_MS = 1200;
 
+// Number of loadGraph calls (foreground or silent) awaiting IPC. Silent
+// refreshes don't toggle `graphLoading`, so the coalescing check needs this; a
+// counter (not a flag) because view mounts, filter changes and refreshes can
+// overlap — the queued refresh runs only once the LAST load settles.
+let graphLoadsInFlight = 0;
+
+// Serialized payload of the last graph committed to the store. The WAL poller
+// fires db:changed for every write from any source (sync drain, usage recorder,
+// automations…), most of which don't touch the graph — when a refresh returns
+// an identical payload we skip the `set` so graphData keeps its identity and no
+// canvas re-renders, rebuilds its layout, or resets its drill-down.
+let lastGraphSignature: string | null = null;
+
 // ── Slice interface ───────────────────────────────────────────────────────────
 
 export interface GraphSlice {
@@ -32,6 +45,12 @@ export interface GraphSlice {
   graphError: string | null;
   /** True after the first successful loadGraph (gates refresh-if-loaded). */
   graphLoaded: boolean;
+  /**
+   * Workspace that produced `graphData`. Views treat the graph as stale (and
+   * show the loading state instead of the old canvas) while it differs from
+   * `activeWorkspaceId`, e.g. right after a workspace switch.
+   */
+  graphWorkspaceId: string | null;
 
   // View state
   graphLayout: GraphLayoutMode;
@@ -39,7 +58,12 @@ export interface GraphSlice {
   selectedGraphNodeId: string | null;
 
   // Actions
-  loadGraph: (workspaceId: string) => Promise<void>;
+  /**
+   * Fetch the graph. `silent` (background db:changed refreshes) keeps the
+   * current graph on screen: it doesn't toggle `graphLoading`, so the view
+   * never flashes its loading overlay for a refresh the user didn't ask for.
+   */
+  loadGraph: (workspaceId: string, opts?: { silent?: boolean }) => Promise<void>;
   recomputeGraphRelationships: (workspaceId: string) => Promise<void>;
   recomputeGraphRelationshipsIncremental: (workspaceId: string, entityIds: string[]) => Promise<void>;
   /**
@@ -54,6 +78,13 @@ export interface GraphSlice {
   setGraphFilters: (patch: Partial<GraphFilters>) => void;
   setSelectedGraphNode: (id: string | null) => void;
 }
+
+/**
+ * Stable empty graph. Views select this instead of `graphData` while the data
+ * belongs to another workspace (see `graphWorkspaceId`), so they show the
+ * loading state rather than the previous workspace's canvas.
+ */
+export const EMPTY_GRAPH: KnowledgeGraph = { nodes: [], edges: [] };
 
 // ── Default filters ───────────────────────────────────────────────────────────
 
@@ -78,13 +109,16 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
   graphLoading: false,
   graphError: null,
   graphLoaded: false,
+  graphWorkspaceId: null,
 
   graphLayout: "force",
   graphFilters: DEFAULT_GRAPH_FILTERS,
   selectedGraphNodeId: null,
 
-  async loadGraph(workspaceId) {
-    set({ graphLoading: true, graphError: null });
+  async loadGraph(workspaceId, opts) {
+    const silent = !!opts?.silent;
+    if (!silent) set({ graphLoading: true, graphError: null });
+    graphLoadsInFlight++;
     try {
       const filters = get().graphFilters;
       const data = await ipcData((e) => e.graph.get(workspaceId, {
@@ -93,20 +127,50 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
         nodeTypes: filters.nodeTypes,
         edgeTypes: filters.edgeTypes,
       }) as Promise<KnowledgeGraph>);
+      // The user switched workspace while this was in flight: drop the stale
+      // payload rather than showing workspace A's graph under workspace B.
+      if (get().activeWorkspaceId !== workspaceId) return;
       if (!data) {
         // Off-Electron (or empty backend): latch loaded so first-read hooks
         // don't refetch in a loop; there is simply nothing to show.
-        set({ graphError: "Not in Electron", graphLoading: false, graphLoaded: true });
+        set({ graphError: "Not in Electron", graphLoading: false, graphLoaded: true, graphWorkspaceId: workspaceId });
         return;
       }
-      set({ graphData: data, graphLoading: false, graphLoaded: true });
+      const signature = JSON.stringify(data);
+      const cur = get();
+      if (signature === lastGraphSignature && cur.graphLoaded && !cur.graphError) {
+        // Unchanged — keep graphData's identity (no downstream re-render). Two
+        // workspaces can have identical graphs (e.g. both empty), so still
+        // record which workspace this data now belongs to.
+        if (cur.graphLoading || cur.graphWorkspaceId !== workspaceId) {
+          set({ graphLoading: false, graphWorkspaceId: workspaceId });
+        }
+        return;
+      }
+      lastGraphSignature = signature;
+      set({ graphData: data, graphLoading: false, graphLoaded: true, graphError: null, graphWorkspaceId: workspaceId });
     } catch (e) {
-      set({ graphError: e instanceof Error ? e.message : String(e), graphLoading: false });
+      const message = e instanceof Error ? e.message : String(e);
+      if (silent) {
+        // A failed background refresh keeps the graph that's on screen; only a
+        // user-visible load surfaces graphError (which replaces the canvas).
+        console.warn("[graph] background refresh failed:", message);
+      } else {
+        set({ graphError: message, graphLoading: false });
+      }
     } finally {
-      if (graphRefreshQueued) {
-        graphRefreshQueued = false;
-        // Re-read the workspace: it may have switched mid-load.
-        await get().loadGraph(get().activeWorkspaceId ?? workspaceId);
+      graphLoadsInFlight--;
+      if (graphLoadsInFlight === 0) {
+        // A stale (workspace-switched) foreground load returns without
+        // committing; don't leave the loading state stuck on.
+        if (get().graphLoading) set({ graphLoading: false });
+        if (graphRefreshQueued) {
+          graphRefreshQueued = false;
+          // Re-read the workspace: it may have switched (or closed) mid-load.
+          // The queued re-run is always a background refresh.
+          const ws = get().activeWorkspaceId;
+          if (ws) await get().loadGraph(ws, { silent: true });
+        }
       }
     }
   },
@@ -122,11 +186,11 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
       graphRefreshTimer = null;
       const cur = get();
       if (!cur.graphLoaded || !cur.activeWorkspaceId) return;
-      if (cur.graphLoading) {
+      if (cur.graphLoading || graphLoadsInFlight > 0) {
         graphRefreshQueued = true;
         return;
       }
-      void cur.loadGraph(cur.activeWorkspaceId);
+      void cur.loadGraph(cur.activeWorkspaceId, { silent: true });
     }, GRAPH_REFRESH_DEBOUNCE_MS);
   },
 

@@ -23,7 +23,8 @@ import type {
 } from "@/types";
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
-import { isOwnNoteWrite, isAiNoteWrite } from "./ipc";
+import { isOwnNoteWrite, isAiNoteWrite, isElectron } from "./ipc";
+import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
 import { ipcAwaitResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
@@ -91,6 +92,14 @@ interface PersistedState {
 interface HydrationSlice {
   hydrate: () => void;
   hydrateFromElectron: (isRefresh?: boolean) => Promise<void>;
+  /**
+   * Handle a `db:changed` event: pull only the rows changed since this window's
+   * change-feed cursor and merge them. Falls back to a full refresh hydrate when
+   * the feed can't answer (no cursor, workspace swapped, gap after pruning, or a
+   * changeset too large to be worth it). Serialised: events arriving mid-refresh
+   * coalesce into one follow-up pass.
+   */
+  refreshFromChangeFeed: () => Promise<void>;
   persist: () => void;
   applyServerSnapshot: (
     snap: Pick<
@@ -201,6 +210,177 @@ function shallowEqualEntity<T extends Record<string, unknown>>(a: T, b: T): bool
     return false;
   }
   return true;
+}
+
+// Serialises refreshFromChangeFeed (module-level: single store instance per window).
+let changeFeedInFlight = false;
+let changeFeedQueued = false;
+
+async function runChangeFeedRefresh(
+  set: (partial: Partial<CairnStore>) => void,
+  get: () => CairnStore,
+): Promise<void> {
+  const api = typeof window !== "undefined" ? window.electron?.changes : undefined;
+  const { feedId, seq } = getChangeFeedCursor();
+  const fullRefresh = async () => {
+    await get().hydrateFromElectron(true);
+    void get().refreshGraphIfLoaded();
+    emitChangeFeed({ reset: true, touched: [], externalTouched: [] });
+  };
+  if (!api || seq === null) return fullRefresh();
+
+  let cs: ChangeSet | null = null;
+  try {
+    cs = await api.get({ since: seq, feedId });
+  } catch {
+    cs = null;
+  }
+  if (!cs || cs.reset) return fullRefresh();
+  setChangeFeedCursor(cs.feedId, cs.head);
+  if (cs.touched.length === 0) return;
+
+  // A change this window didn't make (MCP, AI, sync, another window, file
+  // watcher) invalidates the undo stack — same rule as the full refresh, but no
+  // longer tripped by writes to tables the UI never shows.
+  if (cs.externalTouched.length > 0) historyManager.clear();
+
+  if (Object.keys(cs.upserts).length > 0 || Object.keys(cs.removed).length > 0) {
+    const cur = get();
+    const next = applyChangesetToArrays(
+      { workspaces: cur.workspaces, projects: cur.projects, notes: cur.notes, columns: cur.columns, cards: cur.cards, tags: cur.tags },
+      cs,
+    );
+    mergeEntitySnapshot(set, get, next, true);
+  }
+
+  if (cs.touched.some((t) => GRAPH_TABLES.has(t))) void get().refreshGraphIfLoaded();
+  emitChangeFeed({ reset: false, touched: cs.touched, externalTouched: cs.externalTouched });
+}
+
+/**
+ * Merge an entity snapshot (full, or synthesised from a change-feed changeset)
+ * into the store. On a refresh this preserves notes the user is actively
+ * editing (own-write window), records "what's new" change marks for externally
+ * changed note bodies, keeps object identity for unchanged rows (reconcileById)
+ * and skips the `set` entirely when nothing changed.
+ */
+function mergeEntitySnapshot(
+  set: (partial: Partial<CairnStore>) => void,
+  get: () => CairnStore,
+  snap: Pick<PersistedState, "workspaces" | "projects" | "notes" | "columns" | "cards" | "tags">,
+  isRefresh: boolean,
+): void {
+  const current = get();
+
+  // Merge snapshot notes: preserve any note that was recently written by
+  // the user (within the own-write window) so we don't overwrite optimistic
+  // state with a stale snapshot triggered by the WAL poller.
+  //
+  // Exception: notes the AI just wrote (chat executor / MCP) always take the
+  // snapshot content — the AI's edit isn't in our in-memory copy, so keeping
+  // the local version would hide it from the open editor.
+  const snapNotes: Note[] = snap.notes ?? [];
+  const mergedNotes = isRefresh
+    ? snapNotes.map((sn) => {
+        if (isOwnNoteWrite(sn.id) && !isAiNoteWrite(sn.id)) {
+          return current.notes.find((cn) => cn.id === sn.id) ?? sn;
+        }
+        return sn;
+      })
+    : snapNotes;
+
+  // Record "what's new" marks: on an external refresh (AI / MCP / sync), when
+  // a note we already had in memory arrives with DIFFERENT body content, stash
+  // the pre-change content so the editor can highlight the new lines the next
+  // time the user opens it (or immediately, if that note is already open). We
+  // only mark notes whose content we're actually adopting from the snapshot
+  // (i.e. not the own-write ones we just preserved above), so the user's own
+  // live typing is never flagged as "new".
+  let nextChangeMarks = current.noteChangeMarks;
+  if (isRefresh) {
+    const currentById = new Map(current.notes.map((n) => [n.id, n]));
+    for (const merged of mergedNotes) {
+      const prevNote = currentById.get(merged.id);
+      if (!prevNote) continue; // brand-new note — nothing to diff against
+      // Skip own-writes we preserved (merged === prevNote reference).
+      if (merged === prevNote) continue;
+      const prevContent = prevNote.content ?? "";
+      const nextContent = merged.content ?? "";
+      if (prevContent === nextContent) continue; // unchanged body
+      if (nextChangeMarks === current.noteChangeMarks) {
+        nextChangeMarks = { ...current.noteChangeMarks };
+      }
+      // Keep the EARLIEST previous content if a mark already exists, so a
+      // burst of edits before the user looks shows the full delta.
+      if (!nextChangeMarks[merged.id]) {
+        nextChangeMarks[merged.id] = { previousContent: prevContent, changedAt: Date.now() };
+      } else {
+        nextChangeMarks[merged.id] = { ...nextChangeMarks[merged.id], changedAt: Date.now() };
+      }
+    }
+  }
+
+  // On a refresh, keep the currently-active workspace ONLY if it still
+  // exists in the snapshot (another window may have deleted it); otherwise
+  // fall back to the first snapshot workspace. On a cold hydrate, always
+  // take the first snapshot workspace.
+  const snapWorkspaces = snap.workspaces ?? [];
+  const currentWsStillExists =
+    current.activeWorkspaceId != null &&
+    snapWorkspaces.some((w: { id: string }) => w.id === current.activeWorkspaceId);
+  const nextWorkspaceId = isRefresh
+    ? (currentWsStillExists ? current.activeWorkspaceId : (snapWorkspaces[0]?.id ?? null))
+    : (snapWorkspaces[0]?.id ?? null);
+
+  const nextProjectId = isRefresh
+    ? (() => {
+        const cur = current.activeProjectId;
+        const stillExists =
+          cur != null && snap.projects?.some((p: { id: string }) => p.id === cur);
+        return stillExists ? cur : (snap.projects?.[0]?.id ?? null);
+      })()
+    : (() => {
+        const saved = storage.get<string>(ACTIVE_PROJECT_KEY);
+        const valid =
+          saved &&
+          snap.projects?.find(
+            (p: { id: string }) => p.id === saved
+          );
+        return valid ? saved : (snap.projects?.[0]?.id ?? null);
+      })();
+
+  const nextWorkspaces = reconcileById(current.workspaces, snap.workspaces ?? []);
+  const nextProjects = reconcileById(current.projects, snap.projects ?? []);
+  const nextNotes = reconcileById(current.notes, mergedNotes);
+  const nextColumns = reconcileById(current.columns, snap.columns ?? []);
+  const nextCards = reconcileById(current.cards, snap.cards ?? []);
+  const nextTags = reconcileById(current.tags, snap.tags ?? []);
+
+  const anyDataChanged =
+    !isRefresh ||
+    nextWorkspaces !== current.workspaces ||
+    nextProjects !== current.projects ||
+    nextNotes !== current.notes ||
+    nextChangeMarks !== current.noteChangeMarks ||
+    nextColumns !== current.columns ||
+    nextCards !== current.cards ||
+    nextTags !== current.tags ||
+    nextWorkspaceId !== current.activeWorkspaceId ||
+    nextProjectId !== current.activeProjectId;
+
+  if (anyDataChanged) {
+    set({
+      workspaces: nextWorkspaces,
+      projects: nextProjects,
+      notes: nextNotes,
+      noteChangeMarks: nextChangeMarks,
+      columns: nextColumns,
+      cards: nextCards,
+      tags: nextTags,
+      activeWorkspaceId: nextWorkspaceId,
+      activeProjectId: nextProjectId,
+    });
+  }
 }
 
 /**
@@ -385,10 +565,32 @@ export const useCairnStore = create<CairnStore>()(
       void get; // suppress unused warning
     },
 
+    async refreshFromChangeFeed() {
+      const [set, get] = a;
+      if (changeFeedInFlight) {
+        changeFeedQueued = true;
+        return;
+      }
+      changeFeedInFlight = true;
+      try {
+        do {
+          changeFeedQueued = false;
+          await runChangeFeedRefresh(set, get);
+        } while (changeFeedQueued);
+      } finally {
+        changeFeedInFlight = false;
+      }
+    },
+
     async hydrateFromElectron(isRefresh = false) {
       const [set, get] = a;
 
       if (!isRefresh) {
+        // Drop the web-build entity cache if an older Electron build wrote one:
+        // Chromium loads an origin's whole localStorage into memory, and this
+        // copy is never read in Electron (see persist()).
+        storage.delete(STORAGE_KEY);
+
         // Fetch configurations from backend cache first if window.electron is available
         let backendAiConfig = null;
         let backendAgentConfig = null;
@@ -510,122 +712,16 @@ export const useCairnStore = create<CairnStore>()(
         restorePersistedUiPrefs(set);
       }
 
+      // Establish the change-feed cursor BEFORE reading the snapshot: anything
+      // written in between is re-delivered by the next changeset (idempotent).
+      await initChangeFeedCursor();
       const snap = (await window.electron!.snapshot()) as PersistedState;
-
-      const current = get();
 
       // External (MCP/AI) write refreshes invalidate the undo stack.
       if (isRefresh) historyManager.clear();
 
-      // Merge snapshot notes: preserve any note that was recently written by
-      // the user (within the own-write window) so we don't overwrite optimistic
-      // state with a stale snapshot triggered by the WAL poller.
-      //
-      // Exception: notes the AI just wrote (chat executor / MCP) always take the
-      // snapshot content — the AI's edit isn't in our in-memory copy, so keeping
-      // the local version would hide it from the open editor.
-      const snapNotes: Note[] = snap.notes ?? [];
-      const mergedNotes = isRefresh
-        ? snapNotes.map((sn) => {
-            if (isOwnNoteWrite(sn.id) && !isAiNoteWrite(sn.id)) {
-              return current.notes.find((cn) => cn.id === sn.id) ?? sn;
-            }
-            return sn;
-          })
-        : snapNotes;
-
-      // Record "what's new" marks: on an external refresh (AI / MCP / sync), when
-      // a note we already had in memory arrives with DIFFERENT body content, stash
-      // the pre-change content so the editor can highlight the new lines the next
-      // time the user opens it (or immediately, if that note is already open). We
-      // only mark notes whose content we're actually adopting from the snapshot
-      // (i.e. not the own-write ones we just preserved above), so the user's own
-      // live typing is never flagged as "new".
-      let nextChangeMarks = current.noteChangeMarks;
-      if (isRefresh) {
-        const currentById = new Map(current.notes.map((n) => [n.id, n]));
-        for (const merged of mergedNotes) {
-          const prevNote = currentById.get(merged.id);
-          if (!prevNote) continue; // brand-new note — nothing to diff against
-          // Skip own-writes we preserved (merged === prevNote reference).
-          if (merged === prevNote) continue;
-          const prevContent = prevNote.content ?? "";
-          const nextContent = merged.content ?? "";
-          if (prevContent === nextContent) continue; // unchanged body
-          if (nextChangeMarks === current.noteChangeMarks) {
-            nextChangeMarks = { ...current.noteChangeMarks };
-          }
-          // Keep the EARLIEST previous content if a mark already exists, so a
-          // burst of edits before the user looks shows the full delta.
-          if (!nextChangeMarks[merged.id]) {
-            nextChangeMarks[merged.id] = { previousContent: prevContent, changedAt: Date.now() };
-          } else {
-            nextChangeMarks[merged.id] = { ...nextChangeMarks[merged.id], changedAt: Date.now() };
-          }
-        }
-      }
-
-      // On a refresh, keep the currently-active workspace ONLY if it still
-      // exists in the snapshot (another window may have deleted it); otherwise
-      // fall back to the first snapshot workspace. On a cold hydrate, always
-      // take the first snapshot workspace.
-      const snapWorkspaces = snap.workspaces ?? [];
-      const currentWsStillExists =
-        current.activeWorkspaceId != null &&
-        snapWorkspaces.some((w: { id: string }) => w.id === current.activeWorkspaceId);
-      const nextWorkspaceId = isRefresh
-        ? (currentWsStillExists ? current.activeWorkspaceId : (snapWorkspaces[0]?.id ?? null))
-        : (snapWorkspaces[0]?.id ?? null);
-
-      const nextProjectId = isRefresh
-        ? (() => {
-            const cur = current.activeProjectId;
-            const stillExists =
-              cur != null && snap.projects?.some((p: { id: string }) => p.id === cur);
-            return stillExists ? cur : (snap.projects?.[0]?.id ?? null);
-          })()
-        : (() => {
-            const saved = storage.get<string>(ACTIVE_PROJECT_KEY);
-            const valid =
-              saved &&
-              snap.projects?.find(
-                (p: { id: string }) => p.id === saved
-              );
-            return valid ? saved : (snap.projects?.[0]?.id ?? null);
-          })();
-
-      const nextWorkspaces = reconcileById(current.workspaces, snap.workspaces ?? []);
-      const nextProjects = reconcileById(current.projects, snap.projects ?? []);
-      const nextNotes = reconcileById(current.notes, mergedNotes);
-      const nextColumns = reconcileById(current.columns, snap.columns ?? []);
-      const nextCards = reconcileById(current.cards, snap.cards ?? []);
-      const nextTags = reconcileById(current.tags, snap.tags ?? []);
-
-      const anyDataChanged =
-        !isRefresh ||
-        nextWorkspaces !== current.workspaces ||
-        nextProjects !== current.projects ||
-        nextNotes !== current.notes ||
-        nextChangeMarks !== current.noteChangeMarks ||
-        nextColumns !== current.columns ||
-        nextCards !== current.cards ||
-        nextTags !== current.tags ||
-        nextWorkspaceId !== current.activeWorkspaceId ||
-        nextProjectId !== current.activeProjectId;
-
-      if (anyDataChanged) {
-        set({
-          workspaces: nextWorkspaces,
-          projects: nextProjects,
-          notes: nextNotes,
-          noteChangeMarks: nextChangeMarks,
-          columns: nextColumns,
-          cards: nextCards,
-          tags: nextTags,
-          activeWorkspaceId: nextWorkspaceId,
-          activeProjectId: nextProjectId,
-        });
-      }
+      mergeEntitySnapshot(set, get, snap, isRefresh);
+      const snapWorkspaces: Workspace[] = snap.workspaces ?? [];
 
       // Chat threads/messages live in their own session persistence (dsh session logs)
       // separate from the Cairn SQLite snapshot. Chat does NOT participate in db:changed
@@ -692,6 +788,12 @@ export const useCairnStore = create<CairnStore>()(
     },
 
     persist() {
+      // Web build only. In Electron SQLite is the source of truth and this copy
+      // is never read back (hydrateFromElectron uses the IPC snapshot), yet
+      // serialising every note body + chat message on each edit froze the
+      // renderer ~110ms per autosave at 5k notes (~68MB string) and then blew
+      // the localStorage quota anyway.
+      if (isElectron()) return;
       const [, get] = a;
       savePersisted(get());
     },

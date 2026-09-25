@@ -22,6 +22,42 @@ export function resolveCssVar(varName: string): string {
 }
 
 /**
+ * Per-frame memoised `resolveCssVar`. `getComputedStyle` + `getPropertyValue`
+ * is far too slow to call once per node/edge per frame (thousands of calls on a
+ * large graph), so canvas draw loops create one reader at the top of each frame
+ * and look colours up through it. A fresh reader per frame keeps theme changes
+ * correct without any invalidation bookkeeping.
+ */
+export function createCssVarReader(): (varName: string) => string {
+  if (typeof document === "undefined") return () => "#888";
+  let style: CSSStyleDeclaration | null = null;
+  const cache = new Map<string, string>();
+  return (varName) => {
+    let v = cache.get(varName);
+    if (v === undefined) {
+      style ??= getComputedStyle(document.documentElement);
+      v = style.getPropertyValue(varName.replace(/^var\((.+)\)$/, "$1")).trim();
+      cache.set(varName, v);
+    }
+    return v;
+  };
+}
+
+/** Per-frame memoised `withAlpha` (same rationale as `createCssVarReader`). */
+export function createAlphaCache(): (color: string, opacity: number) => string {
+  const cache = new Map<string, string>();
+  return (color, opacity) => {
+    const key = `${color}|${opacity}`;
+    let v = cache.get(key);
+    if (v === undefined) {
+      v = withAlpha(color, opacity);
+      cache.set(key, v);
+    }
+    return v;
+  };
+}
+
+/**
  * Map a shared graph `ThemeToken` (camelCase, e.g. "textPrimary", "nodeProject")
  * to its CSS custom-property name (kebab-case, e.g. "--text-primary",
  * "--node-project"). Single source of truth for the token→var conversion used by
