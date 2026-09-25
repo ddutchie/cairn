@@ -10,6 +10,7 @@
  * text for the model.
  */
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
+import type { McpResourceRuntime } from "@deepseek-ai/dsh-mcp-resources";
 import "./ctx-augment";
 import z from "zod";
 import { TOOL_SCHEMAS, createHostStore } from "./host-store";
@@ -298,6 +299,69 @@ export async function registerExternalCairnTools(
     } catch (err) {
        
       console.error(`[cordis] failed to register external tool ${name}:`, err);
+    }
+  }
+  disposers.push(...(await registerMcpServerExtras(ctx, exec, opts.excludeServerIds)));
+  return disposers;
+}
+
+/** Cap on one server's instructions in the system prompt (upstream dsh-mcp-client default). */
+const MAX_MCP_INSTRUCTION_BYTES = 16_384;
+
+function truncateUtf8(text: string, maxBytes: number): string {
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.byteLength <= maxBytes) return text;
+  // Drop a trailing partial code point left by the byte cut.
+  return `${bytes.subarray(0, maxBytes).toString("utf8").replace(/\uFFFD$/, "")}\n[…instructions truncated]`;
+}
+
+/**
+ * Per in-scope MCP server (hand bridge), publish what dsh-mcp-client publishes
+ * for its own servers: the server's `initialize` instructions as a system
+ * prompt section, and its resources through dsh-mcp-resources, whose shared
+ * `list_mcp_resources` / `list_mcp_resource_templates` / `read_mcp_resource`
+ * tools appear while at least one server is registered. Each operation
+ * re-validates the server's scope at call time, like executeExternalTool.
+ */
+async function registerMcpServerExtras(
+  ctx: import("@deepseek-ai/cordis").Context,
+  exec: ExternalToolsExecCtx,
+  excludeServerIds: ReadonlySet<string> | undefined,
+): Promise<Array<() => void>> {
+  const disposers: Array<() => void> = [];
+  let servers: Awaited<ReturnType<ReturnType<typeof createHostStore>["getExternalMcpServerMeta"]>>;
+  try {
+    servers = await createHostStore(exec.db).getExternalMcpServerMeta(exec.workspaceId, exec.projectId);
+  } catch (err) {
+    console.error("[cordis] failed to read MCP server instructions/resources:", err);
+    return disposers;
+  }
+  const resources = (ctx as unknown as { mcpResources?: McpResourceRuntime }).mcpResources;
+  const systemPrompt = ctx.systemPrompt;
+  for (const server of servers) {
+    if (excludeServerIds?.has(server.id)) continue;
+    if (server.resources && resources) {
+      try {
+        disposers.push(resources.register(server.id, {
+          request: async (request, run) =>
+            (await createHostStore(exec.db).requestExternalMcpResource(exec.workspaceId, exec.projectId, server.id, request, run.signal)) as never,
+        }));
+      } catch (err) {
+        console.error(`[cordis] failed to register MCP resources for ${server.id}:`, err);
+      }
+    }
+    if (server.instructions && systemPrompt) {
+      try {
+        disposers.push(systemPrompt.section({
+          name: `mcp-server:${server.id}`,
+          order: systemPrompt.getSectionOrder("MCP_SERVERS"),
+          // Server-authored text: never expand template placeholders in it.
+          interpolate: false,
+          text: `### MCP server: ${server.name} (tools named mcp__${server.id}__*)\n\n${truncateUtf8(server.instructions, MAX_MCP_INSTRUCTION_BYTES)}`,
+        }) as () => void);
+      } catch (err) {
+        console.error(`[cordis] failed to add MCP instructions for ${server.id}:`, err);
+      }
     }
   }
   return disposers;

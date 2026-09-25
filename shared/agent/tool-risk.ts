@@ -42,6 +42,10 @@ export const APPROVAL_SAFE_TOOLS = new Set<string>([
   // Read-only LSP navigation (dsh-tool-lsp): transient open → query → close,
   // no workspace mutation possible through the 4-op union.
   "lsp",
+  // Past-session search/read (dsh-tool-session-query): read-only, and
+  // limited to sessions in the caller's own workspace folder.
+  "session_search", "session_event_search", "session_trace",
+  "session_event_trace", "session_event_read",
 ]);
 
 /** Mutating Cairn-data tools (notes/tasks/tags/boards/dashboards/idea flow). */
@@ -85,6 +89,9 @@ export function needsApprovalForCall(name: string, args: Record<string, unknown>
 
 export function riskForTool(name: string): RiskClass {
   if (/^(?:mcp|svc)__/.test(name)) return "EXTERNAL";
+  // Shared MCP resource tools (dsh-mcp-resources): they reach a user-configured
+  // external server just like its mcp__ tools, so they carry the same class.
+  if (name === "list_mcp_resources" || name === "list_mcp_resource_templates" || name === "read_mcp_resource") return "EXTERNAL";
   if (name === "bash") return "EXEC";
   // `subagent` (dsh-tool-subagent, registered under toolName "subagent") spawns
   // an in-process child agent that inherits the coding tool stack — including
