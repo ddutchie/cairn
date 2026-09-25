@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { ChevronLeft } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { resolveCssVar, withAlpha, tokenToCssVar } from "./analyticsUtils";
+import { createCssVarReader, createAlphaCache, tokenToCssVar } from "./analyticsUtils";
 import { useFontScale, useThemeRepaint, useContainerDims } from "./analyticsHooks";
 import {
   buildHierarchy as sharedBuildHierarchy,
@@ -27,8 +27,8 @@ interface Props {
 
 type HNode = HierarchyNode;
 
-function colorForType(type: string): string {
-  return resolveCssVar(tokenToCssVar(sunburstTypeToken(type as HNode["type"])));
+function colorForType(read: (varName: string) => string, type: string): string {
+  return read(tokenToCssVar(sunburstTypeToken(type as HNode["type"])));
 }
 
 const INNER_R = 38;
@@ -39,7 +39,7 @@ const INNER_R_FOCUSED = 140;
 type Arc = { x0: number; x1: number; y0: number; y1: number };
 type PNode = d3.HierarchyRectangularNode<HNode>;
 
-export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, spacing }: Props) {
+function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onBackgroundClick, spacing }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fs = useFontScale();
@@ -74,6 +74,13 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     return set;
   }, [selectedNodeId, adjacency]);
 
+  // Everything buildHierarchy reads from a node. Keying the partition on this
+  // (not on `graph` identity) means a refresh that returns new-but-equivalent
+  // arrays doesn't rebuild the hierarchy — which would also reset the drill-in.
+  const hierarchyKey = useMemo(() => graph.nodes
+    .map((n) => `${n.id}:${n.type}:${n.projectId ?? ""}:${n.title}`)
+    .join(","), [graph.nodes]);
+
   // ── build partitioned hierarchy (rebuilds only when topology changes) ──
   const root = useMemo(() => {
     const r = d3.hierarchy(sharedBuildHierarchy(graph))
@@ -83,7 +90,8 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
     d3.partition<HNode>().size([2 * Math.PI, r.height + 1])(r);
     return r as PNode;
-  }, [graph]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hierarchyKey]);
 
   // Mutable render state the draw loop reads without re-creating itself.
   const focusRef = useRef<PNode>(root);
@@ -153,13 +161,17 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     const focus = focusRef.current;
     const hovered = hoveredRef.current;
 
-    const bg = resolveCssVar("--background");
-    const accent = resolveCssVar("--accent");
-    const accentFg = resolveCssVar("--accent-fg");
-    const surface = resolveCssVar("--surface");
-    const border = resolveCssVar("--border");
-    const textPrimary = resolveCssVar("--text-primary");
-    const textSecondary = resolveCssVar("--text-secondary");
+    // One style read per frame — a getComputedStyle per wedge made every
+    // drill-in animation frame O(wedges) style lookups.
+    const read = createCssVarReader();
+    const withAlpha = createAlphaCache();
+    const bg = read("--background");
+    const accent = read("--accent");
+    const accentFg = read("--accent-fg");
+    const surface = read("--surface");
+    const border = read("--border");
+    const textPrimary = read("--text-primary");
+    const textSecondary = read("--text-secondary");
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -180,7 +192,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
       const r1 = ringR(a.y1) - 1.5;
       if (r1 <= r0) return;
 
-      const col = colorForType(d.data.type);
+      const col = colorForType(read, d.data.type);
       const isHover = d === hovered;
       // Spotlight: when a node is selected, the selection itself is the brightest
       // and is the ONLY wedge with an accent ring + glow; its connections stay
@@ -330,11 +342,18 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     setFocusLabel(node === root ? null : node.data.title);
     const start = performance.now();
     const dur = 520;
-    const from = new Map<PNode, Arc>();
-    const to = new Map<PNode, Arc>();
+    // Only wedges whose arc actually changes are interpolated per frame; the
+    // rest (typically everything outside both the old and new focus, which
+    // stays collapsed to zero width) are settled once up front.
+    const moving: Array<{ d: PNode; a: Arc; b: Arc }> = [];
     root.each((d) => {
-      from.set(d, currentRef.current.get(d) ?? targetArc(d));
-      to.set(d, targetArc(d));
+      const a = currentRef.current.get(d) ?? targetArc(d);
+      const b = targetArc(d);
+      if (a.x0 === b.x0 && a.x1 === b.x1 && a.y0 === b.y0 && a.y1 === b.y1) {
+        currentRef.current.set(d, b);
+      } else {
+        moving.push({ d, a, b });
+      }
     });
     cancelAnimationFrame(animRef.current);
     const tick = (now: number) => {
@@ -344,16 +363,14 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
         innerR: fromInnerR + (toInnerR - fromInnerR) * e,
         levels: fromLevels + (toLevels - fromLevels) * e,
       };
-      root.each((d) => {
-        const a = from.get(d)!;
-        const b = to.get(d)!;
+      for (const { d, a, b } of moving) {
         currentRef.current.set(d, {
           x0: a.x0 + (b.x0 - a.x0) * e,
           x1: a.x1 + (b.x1 - a.x1) * e,
           y0: a.y0 + (b.y0 - a.y0) * e,
           y1: a.y1 + (b.y1 - a.y1) * e,
         });
-      });
+      }
       drawRef.current();
       if (t < 1) animRef.current = requestAnimationFrame(tick);
     };
@@ -386,10 +403,16 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = dims.width * dpr;
-    canvas.height = dims.height * dpr;
-    canvas.style.width = dims.width + "px";
-    canvas.style.height = dims.height + "px";
+    // Only reassign the backing store when the size changes — assigning
+    // canvas.width clears + reallocates it (a visible flash), and this effect
+    // used to re-run on every selection change via `draw`.
+    const w = Math.round(dims.width * dpr), h = Math.round(dims.height * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      canvas.style.width = dims.width + "px";
+      canvas.style.height = dims.height + "px";
+    }
     geomRef.current = {
       cx: dims.width / 2,
       cy: dims.height / 2,
@@ -405,8 +428,8 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     root.each((d) => {
       if (!currentRef.current.has(d)) currentRef.current.set(d, targetArc(d));
     });
-    draw();
-  }, [dims, spacing, root, targetArc, draw, innerRadiusFor, visibleLevels]);
+    drawRef.current();
+  }, [dims, spacing, root, targetArc, innerRadiusFor, visibleLevels]);
 
   // Redraw when theme/selection-driven colours change.
   useEffect(() => { draw(); }, [draw, selectedNodeId]);
@@ -493,3 +516,7 @@ export function RadialTreeCanvas({ graph, selectedNodeId, onNodeClick, onBackgro
     </div>
   );
 }
+
+// Memoised: KnowledgeGraphView re-renders on unrelated toolbar/store state;
+// all props are memoised upstream, so this skips those renders entirely.
+export const RadialTreeCanvas = React.memo(RadialTreeCanvasImpl);

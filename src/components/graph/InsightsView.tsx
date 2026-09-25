@@ -240,7 +240,9 @@ export function InsightsView() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-1 min-w-0 overflow-hidden relative">
 
-          {graphLoading && (
+          {/* Blocking overlay only for the first load — later reloads keep the
+              current canvases on screen (the toolbar spinner shows progress). */}
+          {graphLoading && graphData.nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/80 z-10">
               <span className="text-xs text-[var(--text-tertiary)]">Loading…</span>
             </div>

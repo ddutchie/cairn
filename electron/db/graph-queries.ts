@@ -287,11 +287,19 @@ export function getKnowledgeGraph(
 
   if (wantsType("tag") && wantsEdge("tag-member")) {
     // Collect which tags are actually referenced in scoped notes/cards
-    const usedTagIds = new Set<string>();
-    for (const n of notes) for (const tid of parseJson(n.tag_ids)) usedTagIds.add(tid);
-    for (const c of cards) for (const tid of parseJson(c.tag_ids)) usedTagIds.add(tid);
+    // Invert tag_ids once (tag → tagged notes, then cards) instead of
+    // re-parsing every row's JSON for every tag — that was
+    // O(tags × (notes + cards)) JSON.parse calls on large workspaces.
+    const membersByTag = new Map<string, { notes: string[]; cards: string[] }>();
+    const membersOf = (tid: string) => {
+      let m = membersByTag.get(tid);
+      if (!m) membersByTag.set(tid, (m = { notes: [], cards: [] }));
+      return m;
+    };
+    for (const n of notes) for (const tid of new Set(parseJson(n.tag_ids))) membersOf(tid).notes.push(n.id as string);
+    for (const c of cards) for (const tid of new Set(parseJson(c.tag_ids))) membersOf(tid).cards.push(c.id as string);
 
-    for (const tagId of usedTagIds) {
+    for (const [tagId, members] of membersByTag) {
       const t = tagMap.get(tagId);
       if (!t) continue;
       addNode({
@@ -302,28 +310,16 @@ export function getKnowledgeGraph(
         meta: { color: t.color },
       });
 
-      // edges from tagged items → tag
-      for (const n of notes) {
-        if (parseJson(n.tag_ids).includes(tagId)) {
-          edges.push({
-            id: edgeId("tag-member", n.id, tagId),
-            source: n.id as string,
-            target: tagId,
-            type: "tag-member",
-            label: "tagged",
-          });
-        }
-      }
-      for (const c of cards) {
-        if (parseJson(c.tag_ids).includes(tagId)) {
-          edges.push({
-            id: edgeId("tag-member", c.id, tagId),
-            source: c.id as string,
-            target: tagId,
-            type: "tag-member",
-            label: "tagged",
-          });
-        }
+      // edges from tagged items → tag (notes first, then cards — same order
+      // as before, so edge ids stay stable)
+      for (const id of [...members.notes, ...members.cards]) {
+        edges.push({
+          id: edgeId("tag-member", id, tagId),
+          source: id,
+          target: tagId,
+          type: "tag-member",
+          label: "tagged",
+        });
       }
     }
   }

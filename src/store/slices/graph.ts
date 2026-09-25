@@ -23,6 +23,17 @@ let graphRefreshQueued = false;
 let graphRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 const GRAPH_REFRESH_DEBOUNCE_MS = 1200;
 
+// True while ANY loadGraph (foreground or silent) is awaiting IPC. Silent
+// refreshes don't toggle `graphLoading`, so the coalescing check needs this.
+let graphLoadInFlight = false;
+
+// Serialized payload of the last graph committed to the store. The WAL poller
+// fires db:changed for every write from any source (sync drain, usage recorder,
+// automations…), most of which don't touch the graph — when a refresh returns
+// an identical payload we skip the `set` so graphData keeps its identity and no
+// canvas re-renders, rebuilds its layout, or resets its drill-down.
+let lastGraphSignature: string | null = null;
+
 // ── Slice interface ───────────────────────────────────────────────────────────
 
 export interface GraphSlice {
@@ -39,7 +50,12 @@ export interface GraphSlice {
   selectedGraphNodeId: string | null;
 
   // Actions
-  loadGraph: (workspaceId: string) => Promise<void>;
+  /**
+   * Fetch the graph. `silent` (background db:changed refreshes) keeps the
+   * current graph on screen: it doesn't toggle `graphLoading`, so the view
+   * never flashes its loading overlay for a refresh the user didn't ask for.
+   */
+  loadGraph: (workspaceId: string, opts?: { silent?: boolean }) => Promise<void>;
   recomputeGraphRelationships: (workspaceId: string) => Promise<void>;
   recomputeGraphRelationshipsIncremental: (workspaceId: string, entityIds: string[]) => Promise<void>;
   /**
@@ -83,8 +99,10 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
   graphFilters: DEFAULT_GRAPH_FILTERS,
   selectedGraphNodeId: null,
 
-  async loadGraph(workspaceId) {
-    set({ graphLoading: true, graphError: null });
+  async loadGraph(workspaceId, opts) {
+    const silent = !!opts?.silent;
+    if (!silent) set({ graphLoading: true, graphError: null });
+    graphLoadInFlight = true;
     try {
       const filters = get().graphFilters;
       const data = await ipcData((e) => e.graph.get(workspaceId, {
@@ -99,14 +117,24 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
         set({ graphError: "Not in Electron", graphLoading: false, graphLoaded: true });
         return;
       }
-      set({ graphData: data, graphLoading: false, graphLoaded: true });
+      const signature = JSON.stringify(data);
+      const cur = get();
+      if (signature === lastGraphSignature && cur.graphLoaded && !cur.graphError) {
+        // Unchanged — keep graphData's identity (no downstream re-render).
+        if (cur.graphLoading) set({ graphLoading: false });
+        return;
+      }
+      lastGraphSignature = signature;
+      set({ graphData: data, graphLoading: false, graphLoaded: true, graphError: null });
     } catch (e) {
       set({ graphError: e instanceof Error ? e.message : String(e), graphLoading: false });
     } finally {
+      graphLoadInFlight = false;
       if (graphRefreshQueued) {
         graphRefreshQueued = false;
-        // Re-read the workspace: it may have switched mid-load.
-        await get().loadGraph(get().activeWorkspaceId ?? workspaceId);
+        // Re-read the workspace: it may have switched mid-load. The queued
+        // re-run is always a background refresh.
+        await get().loadGraph(get().activeWorkspaceId ?? workspaceId, { silent: true });
       }
     }
   },
@@ -122,11 +150,11 @@ export const createGraphSlice: StateCreator<CairnStore, [], [], GraphSlice> = (
       graphRefreshTimer = null;
       const cur = get();
       if (!cur.graphLoaded || !cur.activeWorkspaceId) return;
-      if (cur.graphLoading) {
+      if (cur.graphLoading || graphLoadInFlight) {
         graphRefreshQueued = true;
         return;
       }
-      void cur.loadGraph(cur.activeWorkspaceId);
+      void cur.loadGraph(cur.activeWorkspaceId, { silent: true });
     }, GRAPH_REFRESH_DEBOUNCE_MS);
   },
 

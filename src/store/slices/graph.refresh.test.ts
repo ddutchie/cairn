@@ -35,7 +35,7 @@ function setup(initial: any = {}) {
   state = { ...state, ...slice, ...initial };
   // Swap the real (IPC-backed) loadGraph for a mock: refreshGraphIfLoaded
   // reads it via get() at fire time, so this intercepts the debounced call.
-  const loadGraph = vi.fn(async (_ws: string) => {});
+  const loadGraph = vi.fn(async (_ws: string, _opts?: { silent?: boolean }) => {});
   state = { ...state, loadGraph };
   return { get: () => state, loadGraph };
 }
@@ -75,7 +75,7 @@ describe("refreshGraphIfLoaded debounce", () => {
     expect(loadGraph).not.toHaveBeenCalled();
     vi.advanceTimersByTime(DEBOUNCE_MS - 200);
     expect(loadGraph).toHaveBeenCalledTimes(1);
-    expect(loadGraph).toHaveBeenCalledWith("ws-1");
+    expect(loadGraph).toHaveBeenCalledWith("ws-1", { silent: true });
     // Settling further fires nothing more.
     vi.advanceTimersByTime(5000);
     expect(loadGraph).toHaveBeenCalledTimes(1);
