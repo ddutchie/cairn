@@ -93,6 +93,17 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
   const nodesRef = useRef<SimNode[]>([]);
   const linksRef = useRef<SimLink[]>([]);
   const drawRef = useRef<() => void>(() => {});
+  // Coalesce sim ticks + zoom events (the per-tick auto-fit emits a zoom event
+  // too) into at most one paint per animation frame.
+  const frameRef = useRef(0);
+  const scheduleDraw = useCallback(() => {
+    if (frameRef.current) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = 0;
+      drawRef.current();
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
   const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
   const dimsRef = useRef(dims);
   // eslint-disable-next-line react-hooks/refs -- keep latest value for ref-only consumers (render loop / fit)
@@ -173,7 +184,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
       .alphaDecay(0.03)
       .on("tick", () => {
         if (!userInteractedRef.current) zoomFit(false);
-        drawRef.current();
+        scheduleDraw();
       });
     simRef.current = sim;
     sim.on("end", () => { if (!userInteractedRef.current) zoomFit(true); });
@@ -299,7 +310,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
     const selection = d3.select<HTMLCanvasElement, unknown>(canvas);
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.1, 5])
-      .on("zoom", (ev) => { transformRef.current = ev.transform; draw(); })
+      .on("zoom", (ev) => { transformRef.current = ev.transform; scheduleDraw(); })
       .on("start", (ev) => { if (ev.sourceEvent) userInteractedRef.current = true; });
     zoomRef.current = zoom;
     selection.call(zoom);
@@ -340,8 +351,8 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
     } else if (hoverLabel) {
       setHoverLabel(null);
     }
-    if (prev !== hoveredRef.current) draw();
-  }, [pick, nodes, root, hoverLabel, draw]);
+    if (prev !== hoveredRef.current) scheduleDraw();
+  }, [pick, nodes, root, hoverLabel, scheduleDraw]);
 
   const handleClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current;

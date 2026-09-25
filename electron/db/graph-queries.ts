@@ -324,58 +324,41 @@ export function getKnowledgeGraph(
     }
   }
 
-  // ── 5. IdeaFlow refs + edges ───────────────────────────────────────────────
-  if (wantsEdge("flow-ref") || wantsEdge("flow-edge")) {
+  // ── 5. IdeaFlow edges ──────────────────────────────────────────────────────
+  // (flow-ref: note_ref / task_ref nodes only restate membership that the
+  // project-member edges already capture, so they add no edges. The loop that
+  // used to read + JSON-parse every note_ref node per flow did nothing with the
+  // result and has been removed.)
+  if (wantsEdge("flow-edge")) {
     const flows = db.prepare(
       `SELECT id FROM idea_flows WHERE project_id IN (${projPlaceholders})`
     ).all(...projIdArgs) as Row[];
 
+    // Explicit user-drawn edges between note_ref / task_ref nodes. Prepared
+    // once and re-run per flow.
+    const flowEdgesStmt = db.prepare(
+      `SELECT fe.id, sn.type as stype, sn.data as sdata,
+              tn.type as ttype, tn.data as tdata, fe.label
+       FROM idea_flow_edges fe
+       JOIN idea_flow_nodes sn ON sn.id = fe.source_node_id
+       JOIN idea_flow_nodes tn ON tn.id = fe.target_node_id
+       WHERE fe.flow_id = ?`
+    );
     for (const flow of flows) {
-      const flowId = flow.id as string;
-
-      if (wantsEdge("flow-ref")) {
-        // note_ref nodes pointing to notes
-        const noteRefs = db.prepare(
-          `SELECT data FROM idea_flow_nodes WHERE flow_id = ? AND type = 'note_ref'`
-        ).all(flowId) as Row[];
-        for (const nr of noteRefs) {
-          const data = JSON.parse(nr.data as string || "{}") as Record<string, string>;
-          if (data.noteId && nodeSet.has(data.noteId)) {
-            // flow references create a self-referential "mentioned in flow" concept,
-            // represented as an edge from the project to the note already exists;
-            // here we skip to avoid noise — the note is already in the graph.
-          }
-        }
-
-        // task_ref nodes pointing to cards
-        // (same rationale — already captured via project-member)
-      }
-
-      if (wantsEdge("flow-edge")) {
-        // Explicit user-drawn edges between note_ref / task_ref nodes
-        const flowEdges = db.prepare(
-          `SELECT fe.id, sn.type as stype, sn.data as sdata,
-                  tn.type as ttype, tn.data as tdata, fe.label
-           FROM idea_flow_edges fe
-           JOIN idea_flow_nodes sn ON sn.id = fe.source_node_id
-           JOIN idea_flow_nodes tn ON tn.id = fe.target_node_id
-           WHERE fe.flow_id = ?`
-        ).all(flowId) as Row[];
-
-        for (const fe of flowEdges) {
-          const sdata = JSON.parse((fe.sdata as string) || "{}") as Record<string, string>;
-          const tdata = JSON.parse((fe.tdata as string) || "{}") as Record<string, string>;
-          const srcId = sdata.noteId || sdata.cardId;
-          const tgtId = tdata.noteId || tdata.cardId;
-          if (srcId && tgtId && nodeSet.has(srcId) && nodeSet.has(tgtId)) {
-            edges.push({
-              id: edgeId("flow-edge", srcId, tgtId),
-              source: srcId,
-              target: tgtId,
-              type: "flow-edge",
-              label: (fe.label as string) || "connected",
-            });
-          }
+      const flowEdges = flowEdgesStmt.all(flow.id as string) as Row[];
+      for (const fe of flowEdges) {
+        const sdata = JSON.parse((fe.sdata as string) || "{}") as Record<string, string>;
+        const tdata = JSON.parse((fe.tdata as string) || "{}") as Record<string, string>;
+        const srcId = sdata.noteId || sdata.cardId;
+        const tgtId = tdata.noteId || tdata.cardId;
+        if (srcId && tgtId && nodeSet.has(srcId) && nodeSet.has(tgtId)) {
+          edges.push({
+            id: edgeId("flow-edge", srcId, tgtId),
+            source: srcId,
+            target: tgtId,
+            type: "flow-edge",
+            label: (fe.label as string) || "connected",
+          });
         }
       }
     }

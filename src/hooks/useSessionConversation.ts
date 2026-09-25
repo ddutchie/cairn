@@ -113,6 +113,24 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const assistantRef = useRef<SessionConversationSnapshot["assistant"]>(undefined);
   const statsRef = useRef<FoldedStats | undefined>(undefined);
   const eventsRef = useRef<Array<{ type: string; time?: unknown; data?: unknown }>>([]);
+  // Text/reasoning deltas arrive one IPC task per token; setting state on each
+  // re-rendered (and re-parsed the growing markdown of) the pane per token —
+  // quadratic over a long reply. Deltas accumulate in the refs above and are
+  // flushed to state at most once per animation frame.
+  const streamFrameRef = useRef(0);
+  const scheduleStreamFlush = () => {
+    if (streamFrameRef.current) return;
+    streamFrameRef.current = requestAnimationFrame(() => {
+      streamFrameRef.current = 0;
+      setStreamingContent(textRef.current);
+      setStreamingThought(thoughtRef.current);
+    });
+  };
+  const cancelStreamFlush = () => {
+    cancelAnimationFrame(streamFrameRef.current);
+    streamFrameRef.current = 0;
+  };
+  useEffect(() => cancelStreamFlush, []);
 
   useEffect(() => {
     if (sessionIdRef.current !== sessionId) {
@@ -131,6 +149,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   };
 
   const resetTransient = (keepQuestions = false) => {
+    cancelStreamFlush();
     setIsLoading(false); setStreamingContent(""); setStreamingThought(""); setToolCalls([]); setSubagents([]);
     textRef.current = ""; thoughtRef.current = ""; toolsRef.current = []; subagentsRef.current = []; assistantRef.current = undefined; statsRef.current = undefined;
     // keep eventsRef for live stats fallback until next turn/start clears it
@@ -156,8 +175,8 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     };
     const fold = createSessionEventFold({
       onTurnStart: () => { eventsRef.current = []; statsRef.current = undefined; setIsLoading(true); adapterRef.current.onTurnStart?.(); },
-      onText: (delta) => { textRef.current += delta; setStreamingContent((current) => current + delta); adapterRef.current.onText?.(delta); },
-      onReasoning: (delta) => { thoughtRef.current += delta; setStreamingThought((current) => current + delta); adapterRef.current.onReasoning?.(delta); },
+      onText: (delta) => { textRef.current += delta; scheduleStreamFlush(); adapterRef.current.onText?.(delta); },
+      onReasoning: (delta) => { thoughtRef.current += delta; scheduleStreamFlush(); adapterRef.current.onReasoning?.(delta); },
       onUsage: (usage) => adapterRef.current.onUsage?.(usage),
       onStats: (stats) => { statsRef.current = stats; },
       onToolCall: (call) => {

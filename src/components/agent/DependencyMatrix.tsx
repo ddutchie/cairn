@@ -143,6 +143,7 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
     const border = resolveCssVar("--border");
     const textCol = resolveCssVar("--text-secondary");
     const textDim = resolveCssVar("--text-tertiary");
+    const background = resolveCssVar("--background");
 
     ctx.fillStyle = withAlpha(border, 0.12);
     ctx.fillRect(LABEL_W, LABEL_W, gridSize, gridSize);
@@ -169,7 +170,7 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
       // show the count when cells are large enough
       if (cell >= 22) {
         ctx.font = `${9 * fs}px ui-sans-serif, system-ui, sans-serif`;
-        ctx.fillStyle = intensity > 0.55 ? resolveCssVar("--background") : withAlpha(textCol, 0.8);
+        ctx.fillStyle = intensity > 0.55 ? background : withAlpha(textCol, 0.8);
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(String(w), LABEL_W + c * cell + cell / 2, LABEL_W + r * cell + cell / 2);
