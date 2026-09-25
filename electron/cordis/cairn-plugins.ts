@@ -16,6 +16,7 @@
  * runner's drain so the renderer gets realtime
  * deltas while the DB gets the durable record.
  */
+import { readToolResult } from "./tool-result-message";
 import type { Context } from "@deepseek-ai/cordis";
 import { onAssistantStream } from "./assistant-stream-frames";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
@@ -322,7 +323,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       // shape, so the instruction fell back to "subagent".
       const src = (event.data as { message?: { source?: { kind?: string; form?: string } }; source?: { kind?: string; form?: string } }).message?.source
         ?? (event.data as { source?: { kind?: string; form?: string } }).source;
-      if (src?.kind === "plugin" && src?.form === "snapshot") return;
+      if (src?.form === "snapshot") return;
       if (!started.has(childId)) {
         started.add(childId);
         const full = eventText(event).trim();
@@ -352,11 +353,10 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
     }
 
     if (event.type === "tool/result") {
-      const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ type?: string; isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
-      const callId = msg?.source?.callId;
-      const block = msg?.content?.[0];
-      const isError = block?.isError === true;
-      const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
+      const result = readToolResult((event.data as { message?: unknown }).message);
+      const callId = result?.callId;
+      const isError = result?.isError === true;
+      const output = result?.output ?? "";
       const tool = callId ? (callName.get(callId) ?? "tool") : "tool";
        sendProjection(send, sessionId, "subagent-trace", { trace: "tool-done",
         childId, parentSession, tool, callId,
@@ -827,12 +827,11 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
 
     // ── Tool result (after execution) ────────────────────────────────────────
     if (event.type === "tool/result") {
-      const msg = (event.data as { message?: { source?: { callId?: string }; content?: Array<{ type?: string; isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } }).message;
-      const callId = msg?.source?.callId;
-      const block = msg?.content?.[0];
-      const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
+      const result = readToolResult((event.data as { message?: unknown }).message);
+      const callId = result?.callId;
+      const output = result?.output ?? "";
       const name = callId ? (callName.get(callId) ?? "tool") : "tool";
-      const ok = block?.isError !== true;
+      const ok = result?.isError !== true;
       // ── note-updated: after a note-write tool, push fresh note content so the
       // plan task list updates live (mirrors builtin NOTE_WRITE_TOOLS handling).
       const host = getHost(ctx);

@@ -1,25 +1,20 @@
 /**
  * schedule-read — on-demand active-reminder snapshot for the header alarm pill.
  *
- * Folds the session log through dsh's pure `foldScheduleEvents` (live
- * `snapshotEvents()` when the session is resident, else the durable prefix
- * via `sessionPersistence.inspect`) and renders each record with
- * `scheduleView(record, Date.now())` for its scheduled/overdue state — the
- * same value shape `schedule_list` returns, without starting or resuming an
- * agent. No standing subscription: the pill polls this on header mount and
- * turn end via the `session:schedule-list` IPC channel.
+ * dsh-schedule 0.1.7 keeps reminders in the shared storage domain (not the
+ * session log), so this reads `ctx.schedule.list({ sessionId })` and renders
+ * each record with `scheduleView(record, Date.now())` for its scheduled/overdue
+ * state — the same value shape `schedule_list` returns, without starting or
+ * resuming an agent. No standing subscription: the pill polls this on header
+ * mount and turn end via the `session:schedule-list` IPC channel.
  *
- * Returns an empty list (pill hides) when the schedule overlay is not mounted
- * or the session has no log — including right after a restart with the
- * setting off. Throws a coded `unavailable` error only when the overlay is
- * expected but unreadable, so the IPC envelope can distinguish "off" from
- * "broken".
+ * Returns an empty list (pill hides) when the schedule service is not mounted
+ * (setting off) or the read fails.
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import { foldScheduleEvents, scheduleView } from "@deepseek-ai/dsh-schedule";
+import { scheduleView, type ScheduleRecord } from "@deepseek-ai/dsh-schedule";
 import { SessionId } from "@deepseek-ai/dsh-session";
-import { inspectSession, type InspectablePersistence } from "./session-inspect";
 
 /** Renderer-safe reminder summary (schedule_list view subset). */
 export interface ScheduleWire {
@@ -30,13 +25,8 @@ export interface ScheduleWire {
   state: "scheduled" | "overdue";
 }
 
-interface SessionLike {
-  snapshotEvents?: () => Array<{ type?: unknown }>;
-}
-
 interface CordisLike {
-  sessions?: { get?: (id: unknown) => SessionLike | undefined };
-  sessionPersistence?: InspectablePersistence;
+  schedule?: { list?: (request: { sessionId: SessionId }) => Promise<ScheduleRecord[]> };
 }
 
 /**
@@ -45,23 +35,11 @@ interface CordisLike {
  */
 export async function listSchedules(ctx: Context, sessionId: string): Promise<ScheduleWire[]> {
   const cordis = ctx as unknown as CordisLike;
-  const stableId = SessionId(sessionId);
-  let events: unknown;
+  if (typeof cordis.schedule?.list !== "function") return [];
   try {
-    const live = cordis.sessions?.get?.(stableId);
-    if (live && typeof live.snapshotEvents === "function") {
-      events = live.snapshotEvents();
-    } else {
-      events = cordis.sessionPersistence ? (await inspectSession(cordis.sessionPersistence, stableId)).events : [];
-    }
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(events)) return [];
-  try {
-    const folded = foldScheduleEvents(events as never);
+    const records = await cordis.schedule.list({ sessionId: SessionId(sessionId) });
     const now = Date.now();
-    return folded.active.map((record) => {
+    return records.map((record) => {
       const view = scheduleView(record, now) as {
         id?: unknown; prompt?: unknown; scheduledAt?: unknown; kind?: unknown; state?: unknown;
       };

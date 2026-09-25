@@ -246,7 +246,7 @@ diff recipe, deadlock recovery, testing matrix) lives in
 **`docs/dsh-upgrade-guide.md`** — this section is the Cairn-specific checklist
 with the current pin and the historical breakage index.
 
-**Current pin (branch `ddutchie/dsh_012`):** `@deepseek-ai/*@0.1.2-rc.1` (tag `next`) + `cordis@4.0.2` — live-swept, see the eval doc §5.1 log.  
+**Current pin:** `@deepseek-ai/*@0.1.7-rc.2` (tag `next`) + `cordis@4.0.4`. 0.1.7 moved sessions to format v4 (tool results are `role: "tool"` messages, read through `electron/cordis/tool-result-message.ts`), workflows onto the PTC runtime (`dsh-workflow-ptc` + `dsh-ptc-runtime-node`, bootstrap bundled to `dist-electron/process.js`), and schedule onto `ctx.sessionController` (Cairn shim: `electron/cordis/session-controller-shim.ts`).  
 **Next:** track `next` (`0.1.2-rc.x` follow-ups); release the Cairn update off this branch per the lockstep changelog rule.  
 Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection = defer):
 `docs/plans/dsh-0.1.2-alpha.3-evaluation.md`.
@@ -280,7 +280,7 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 ### 8.1 Known historical breakage points (each bump, check these)
 | Symbol | Symptom if stale | Fix |
 |---|---|---|
-| `AttachmentStore.readImageRequest(ref, policy, signal)` | "cannot derive model-request images" | implement on `CairnAttachmentStore` (bytes passthrough + deterministic `variantId`, `depth/space/hasAlpha`) |
+| `AttachmentStore.readImageRequest(ref, target, signal)` (0.1.7: `target = { width, height, maxBytes }`) | "cannot derive model-request images" | implement on `CairnAttachmentStore` (bytes passthrough + deterministic `variantId`, `depth/space/hasAlpha`) |
 | session jsonl compression/naming | replay empty or "not found" | `session.jsonl[.zstd]`, `<root>/<encodedCwd>/<id>/…` plaintext+flat fallbacks are handled in handlers |
 | `SessionId` stringification / `brandString` | replay path lookups fail / `subagent/CONTROL_*_UNAVAILABLE` | `0.1.2-alpha.3`: control-plane subagent paths use `brandString(x)` not `SessionId(x)`; keep `SessionId` for session construction, migrate `sendMessage`/`interrupt`/`listChildren` auth paths |
 | `SessionSeq` branding / `Session.events` removal | `tsc` errors on `event.seq` arithmetic; `session.events` undefined at runtime | `0.1.2-alpha.4`: `seq` is branded `SessionSeq` (wrap with `SessionSeq()`), `session.events` → `seq`/`eventAt()`/`snapshotEvents()`/`ownEvents()`; header `seedLength` → `isSeeded` + `inheritedEventCount` (Cairn has zero `seedLength` refs — verified) |
@@ -348,7 +348,7 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Permissions UI | `electron/cordis/permissions-bridge.ts` (`permissions` projection → `session:permissions` IPC), `src/components/agent/AgentPermissionSelect.tsx` |
 | Goals / feedback / schedule | `electron/cordis/goal-bridge.ts`, `message-feedback.ts`, `schedule-read.ts` + `session:goal|feedback|schedule-list` IPC; `AgentGoalChip.tsx`, `MessageFeedbackControl.tsx`, `SchedulePill.tsx` |
 | Terminal / LSP / web-fetch | `electron/cordis/terminal-backend.ts` (node-pty over shared `pty-sessions.ts`), `cordis-lsp.ts` (stdio, PATH detect), `dsh-web` seam + `web-fetch-http` (fetch-only, `search: false`) |
-| Export / workflows | `electron/cordis/session-export.ts` (Cairn shim, `/export`), worker-thread engine + coding-turn `workflow`/`ralph` tools |
+| Export / workflows | `electron/cordis/session-export.ts` (Cairn shim, `/export`), PTC workflow engine (per coding turn) + `workflow`/`ralph` tools |
 | Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |
 | Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |
 | Per-surface tool inventory | `electron/lib/tool-inventory.ts` (static manifests + `CHAT_DENIED_GLOBAL_TOOLS`) → `runtime:tools:inventory` — chat/coding/automation-dev/mcp + live global tools; Settings → AI tabs render it |

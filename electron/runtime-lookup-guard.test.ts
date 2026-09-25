@@ -22,7 +22,7 @@ const ROOT = path.resolve(__dirname, "..");
 
 const LOOKUP_BUNDLES = [
   "dist-electron/main.js",
-  "dist-electron/worker.cjs",
+  "dist-electron/process.js",
   "dist-electron/subprocess-runner.cjs",
   "dist-electron/windows-acl-runner.cjs",
 ];
@@ -70,28 +70,34 @@ const REVIEWED_RUNTIME_LOOKUPS: Record<string, string> = {
     "tsx bootstrap for the verification worker — only when running from .ts source.",
   "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
     "Runner entry — shim maps it to dist-electron/subprocess-runner.cjs; the tsx branch is dev-only.",
-  "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-workflow-worker-thread/lib/index.js":
-    "tsx bootstrap for the workflow worker — only when running from .ts source.",
   "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js":
     "worker.cjs for verifyCurrentGenerationInWorker — never called (dead code); plus the .ts-source branch.",
   "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
     "SOURCE_TSCONFIG_PATH and bin.ts — used only by the .ts-source runner branch.",
-  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-workflow-worker-thread/lib/index.js":
-    "./worker.cjs — built to dist-electron/worker.cjs by compile-electron.js.",
+  "createRequire dist-electron/main.js node_modules/@deepseek-ai/dsh-lazy-require/lib/index.js":
+    "createLazyRequire(specifier, import.meta.url) for koffi / node-pty (dsh ≥0.1.7). The banner shim makes import.meta.url dist-electron/main.js, so require() resolves the shipped externals from the app's node_modules.",
+  "execPath dist-electron/main.js node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js":
+    "PTC bootstrap spawn (workflow scripts) — patchPtcRuntimeElectronEnv adds ELECTRON_RUN_AS_NODE (compile-electron.js).",
+  "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js":
+    "Source-bootstrap helper — only when running from .ts source.",
+  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js":
+    "./process.js — built to dist-electron/process.js by compile-electron.js; the .ts branch is dev-only.",
+  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-sandbox-local/lib/index.js":
+    "tsconfig path for the Windows ACL runner's .ts-source fallback — skipped because internals.windowsAclRunnerEntry is pinned and exists.",
   "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/node-addon-system/lib/index.js":
     "Landlock launcher fallback path (Linux) — unused once pinLandlockLauncher sets internals.landlockLauncher.",
   "worker dist-electron/main.js node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js":
     "Verification worker — never called (dead code).",
-  "worker dist-electron/main.js node_modules/@deepseek-ai/dsh-workflow-worker-thread/lib/index.js":
-    "Workflow worker — dist-electron/worker.cjs.",
-  // ── dist-electron/worker.cjs ───────────────────────────────────────────
-  "createRequire dist-electron/worker.cjs node_modules/@deepseek-ai/dsh-llm/lib/index.js":
-    "Same as main.js: reads ../package.json for the version. Harmless.",
   // ── dist-electron/subprocess-runner.cjs ────────────────────────────────
   "importMetaStub dist-electron/subprocess-runner.cjs node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner.js":
     "import.meta.main auto-run guard, intentionally inert; electron/subprocess-runner.ts calls runSelectedSubprocessRunner.",
+  "createRequire dist-electron/subprocess-runner.cjs node_modules/@deepseek-ai/dsh-lazy-require/lib/index.js":
+    "createLazyRequire(\"koffi\", import.meta.url); the banner shim keeps import.meta.url valid, so koffi resolves from the app's node_modules.",
   "urlFromImportMeta dist-electron/subprocess-runner.cjs node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
     "SOURCE_TSCONFIG_PATH computed at load; the banner shim keeps import.meta.url valid and the value is only used from .ts source.",
+  // ── dist-electron/windows-acl-runner.cjs ───────────────────────────────
+  "createRequire dist-electron/windows-acl-runner.cjs node_modules/@deepseek-ai/dsh-lazy-require/lib/index.js":
+    "createLazyRequire(\"koffi\", import.meta.url); windowsAclRunner now carries the import.meta.url banner shim (compile-electron.js), so koffi resolves from the app's node_modules.",
 };
 
 /** Hits inside node_modules code, keyed `<pattern> <bundle> <module>`. */

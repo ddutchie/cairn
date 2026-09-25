@@ -2,9 +2,9 @@
  * Unit tests for the jobs bridge (dsh background jobs → session:projection).
  *
  * Fake jobs registry + capturing Electron window; no live model, no real ctx.
- * Proves: change/completion notifications re-list through the notifying owner
- * (ownership fence), summaries carry ownerSession, kill passes the stashed
- * owner, settled jobs prune the kill map, mount is idempotent.
+ * Proves: registry events re-list through the job's owner session (ownership
+ * fence), summaries carry ownerSession, kill passes the remembered owner
+ * session, settled jobs prune the kill map, mount is idempotent.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -29,26 +29,27 @@ interface FakeSnap {
   detail?: string;
   startedAt: number;
   finishedAt?: number;
-  ownerSession?: string;
+  owner?: string;
 }
+
+type FakeEvent = { type: string; job?: FakeSnap; id?: string; owner?: string };
 
 function makeRegistry() {
   let snaps: FakeSnap[] = [];
-  const changed: Array<(owner: unknown) => void> = [];
-  const done: Array<(snap: FakeSnap, owner: unknown) => void> = [];
+  const listeners: Array<(event: FakeEvent) => void> = [];
   const kills: Array<{ id: string; caller: unknown }> = [];
+  const subscribe = vi.fn((_filter: unknown, fn: (event: FakeEvent) => void) => { listeners.push(fn); return () => {}; });
   return {
     setSnaps(next: FakeSnap[]) { snaps = next; },
-    changed,
-    done,
+    emit(event: FakeEvent) { for (const fn of listeners) fn(event); },
     kills,
+    subscribe,
+    events: { subscribe },
     list: vi.fn((_caller?: unknown) => snaps),
     kill: vi.fn((id: string, caller?: unknown) => {
       kills.push({ id, caller });
       return "requested" as const;
     }),
-    onJobsChanged: vi.fn((fn: (owner: unknown) => void) => { changed.push(fn); return () => {}; }),
-    onJobDone: vi.fn((fn: (snap: FakeSnap, owner: unknown) => void) => { done.push(fn); return () => {}; }),
   };
 }
 
@@ -84,71 +85,68 @@ beforeEach(() => {
 describe("mountJobsBridge", () => {
   it("emits the owner's visible set with ownerSession on change", async () => {
     const reg = makeRegistry();
-    const owner = { id: "agent-1", session: { id: "session-a" } };
-    reg.setSnaps([
-      { id: "subagent-1", kind: "subagent", label: "research", status: "running", startedAt: 1000, ownerSession: "session-a" },
-      { id: "bash-1", kind: "bash", label: "ls", status: "running", startedAt: 2000 },
-    ]);
+    const job = { id: "subagent-1", kind: "subagent", label: "research", status: "running", startedAt: 1000, owner: "session-a" };
+    reg.setSnaps([job, { id: "bash-1", kind: "bash", label: "ls", status: "running", startedAt: 2000, owner: "session-a" }]);
     mountJobsBridge({ jobs: reg } as never);
 
-    const proj = await expectOneProjection(() => { reg.changed[0]?.(owner); });
+    const proj = await expectOneProjection(() => { reg.emit({ type: "registered", job }); });
     expect(proj.kind).toBe("jobs");
     expect(proj.sessionId).toBe("session-a");
     expect(proj.data.ownerSession).toBe("session-a");
     expect(proj.data.jobs.map((j) => j.id)).toEqual(["subagent-1", "bash-1"]);
-    // Fence respected: re-listed through the notifying owner.
-    expect(reg.list).toHaveBeenCalledWith(owner);
+    expect(proj.data.jobs[0]!.ownerSession).toBe("session-a");
+    // Fence respected: re-listed through the owning session.
+    expect(reg.list).toHaveBeenCalledWith("session-a");
   });
 
-  it("falls back to the agent session id when snapshots lack ownerSession", async () => {
+  it("ignores output chunks", async () => {
     const reg = makeRegistry();
-    const owner = { id: "agent-9", session: { id: "session-z" } };
-    reg.setSnaps([{ id: "bash-2", kind: "bash", label: "x", status: "running", startedAt: 1 }]);
     mountJobsBridge({ jobs: reg } as never);
-
-    const proj = await expectOneProjection(() => { reg.changed[0]?.(owner); });
-    expect(proj.sessionId).toBe("session-z");
+    reg.emit({ type: "output", id: "bash-1", owner: "session-a" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(projections()).toHaveLength(0);
   });
 
-  it("kill passes the stashed owner; settled jobs prune the kill map", async () => {
+  it("kill passes the owner session; settled jobs prune the kill map", async () => {
     const reg = makeRegistry();
-    const owner = { id: "agent-1", session: { id: "session-a" } };
-    reg.setSnaps([{ id: "subagent-1", kind: "subagent", label: "r", status: "running", startedAt: 1, ownerSession: "session-a" }]);
+    const job = { id: "subagent-1", kind: "subagent", label: "r", status: "running", startedAt: 1, owner: "session-a" };
+    reg.setSnaps([job]);
     mountJobsBridge({ jobs: reg } as never);
-    await expectOneProjection(() => { reg.changed[0]?.(owner); });
+    await expectOneProjection(() => { reg.emit({ type: "registered", job }); });
 
     killJob("subagent-1", "session-a");
-    expect(reg.kills).toEqual([{ id: "subagent-1", caller: owner }]);
+    expect(reg.kills).toEqual([{ id: "subagent-1", caller: "session-a" }]);
 
-    // Settle → re-emit prunes the stash → kill now fails owner-unavailable.
-    reg.setSnaps([{ id: "subagent-1", kind: "subagent", label: "r", status: "completed", startedAt: 1, finishedAt: 2, ownerSession: "session-a" }]);
-    await expectOneProjection(() => { reg.done[0]?.({ id: "subagent-1", status: "completed" } as FakeSnap, owner); });
+    // Settle → re-emit prunes the map → kill now fails owner-unavailable.
+    const settled = { ...job, status: "completed", finishedAt: 2 };
+    reg.setSnaps([settled]);
+    await expectOneProjection(() => { reg.emit({ type: "settled", job: settled }); });
     expect(killCode("subagent-1")).toBe("owner-unavailable");
   });
 
   it("kill from another session fails not-owner and never reaches the registry", async () => {
     const reg = makeRegistry();
-    const owner = { id: "agent-1", session: { id: "session-a" } };
-    reg.setSnaps([{ id: "subagent-1", kind: "subagent", label: "r", status: "running", startedAt: 1, ownerSession: "session-a" }]);
+    const job = { id: "subagent-1", kind: "subagent", label: "r", status: "running", startedAt: 1, owner: "session-a" };
+    reg.setSnaps([job]);
     mountJobsBridge({ jobs: reg } as never);
-    await expectOneProjection(() => { reg.changed[0]?.(owner); });
+    await expectOneProjection(() => { reg.emit({ type: "registered", job }); });
 
     expect(killCode("subagent-1", "session-b")).toBe("not-owner");
     expect(reg.kills).toEqual([]);
-    // Owner session still kills fine.
     expect(killCode("subagent-1", "session-a")).toBe("no-throw");
-    expect(reg.kills).toEqual([{ id: "subagent-1", caller: owner }]);
+    expect(reg.kills).toEqual([{ id: "subagent-1", caller: "session-a" }]);
   });
 
-  it("kill of a snapshot without ownerSession stays allowed (dock-visible everywhere)", async () => {
+  it("kill of an unowned job stays allowed (dock-visible everywhere)", async () => {
     const reg = makeRegistry();
-    const owner = { id: "agent-1", session: { id: "session-a" } };
-    reg.setSnaps([{ id: "bash-1", kind: "bash", label: "ls", status: "running", startedAt: 1 }]);
+    const job = { id: "bash-1", kind: "bash", label: "ls", status: "running", startedAt: 1 };
+    reg.setSnaps([job]);
     mountJobsBridge({ jobs: reg } as never);
-    await expectOneProjection(() => { reg.changed[0]?.(owner); });
+    const proj = await expectOneProjection(() => { reg.emit({ type: "registered", job }); });
+    expect(proj.sessionId).toBe("jobs");
 
     expect(killCode("bash-1", "session-b")).toBe("no-throw");
-    expect(reg.kills).toEqual([{ id: "bash-1", caller: owner }]);
+    expect(reg.kills).toEqual([{ id: "bash-1", caller: undefined }]);
   });
 
   it("kill of an unknown job fails owner-unavailable", () => {
@@ -162,8 +160,8 @@ describe("mountJobsBridge", () => {
     const ctx = { jobs: reg } as never;
     mountJobsBridge(ctx);
     mountJobsBridge(ctx);
-    expect(reg.onJobsChanged).toHaveBeenCalledTimes(1);
-    expect(reg.onJobDone).toHaveBeenCalledTimes(1);
+    expect(reg.subscribe).toHaveBeenCalledTimes(1);
+    expect(reg.subscribe).toHaveBeenCalledWith({ owners: "all" }, expect.any(Function));
   });
 
   it("missing ctx.jobs warns instead of throwing", () => {

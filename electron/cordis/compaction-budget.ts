@@ -1,28 +1,33 @@
 /**
  * Compaction pressure against the message budget, not the whole window.
  *
- * dsh-compaction-basic (0.1.5) scales `thresholdRatio` by the route's entire
- * `contextWindow`, but every request also reserves `maxTokens` of output from
- * that same window. With Cairn's defaults (128K window, 32K output) the gate
- * sat at ~102K prompt tokens while the provider already refused anything over
- * ~96K, so long chats hit "maximum context length" before auto-compaction ever
- * ran. Upstream fixed this in 0.1.7 ("gate pressure on the message budget");
- * until then we install a per-route `modelPolicies` override for the Cairn
- * provider whose ratio is scaled to `(contextWindow - maxTokens) / contextWindow`.
+ * dsh-compaction-basic 0.1.7 prices each routed request as
+ *   threshold = min(contextWindow * thresholdRatio, messageBudget - headroomTokens)
+ * where messageBudget = contextWindow - the request's reserved output tokens,
+ * and headroomTokens (default 64K, also the summary's default maxTokens) is a
+ * fixed reserve. That fits 1M-token routes but not Cairn's typical ones: with
+ * the default 128K window / 32K output it would compact at ~32K tokens, and any
+ * route whose message budget is under 64K gets no auto-compaction at all
+ * (the engine logs a pressure-config warning once and skips it).
+ *
+ * So the active Cairn route gets a per-route `modelPolicies` override that
+ * sizes the headroom to the budget: threshold = 80% of the message budget,
+ * headroom (the summary's room) = the remaining 20%.
  */
 
 import { symbols, type Context } from "@deepseek-ai/cordis";
 
 /** Share of the message budget at which proactive compaction fires. */
 export const COMPACTION_THRESHOLD_RATIO = 0.8;
-/** dsh-compaction-basic's default retainRatio (must stay below the threshold). */
-const DEFAULT_RETAIN_RATIO = 0.16;
+/** dsh-compaction-basic's default summary cap when the route declares no output limit. */
+const DEFAULT_SUMMARY_MAX_TOKENS = 65536;
 
 export interface CompactionModelPolicy {
   provider: string;
   model: string;
   thresholdRatio: number;
-  retainRatio?: number;
+  headroomTokens: number;
+  maxTokens: number;
 }
 
 /**
@@ -30,15 +35,18 @@ export interface CompactionModelPolicy {
  * message budget (the overflow-recovery path still applies then).
  */
 export function compactionPolicyFor(provider: string, model: string, contextWindow: number, maxTokens: number): CompactionModelPolicy | undefined {
-  if (!(contextWindow > 0) || !(maxTokens >= 0) || maxTokens >= contextWindow) return undefined;
-  const thresholdRatio = Math.floor((COMPACTION_THRESHOLD_RATIO * (contextWindow - maxTokens) / contextWindow) * 1000) / 1000;
-  if (!(thresholdRatio > 0)) return undefined;
+  if (!Number.isInteger(contextWindow) || contextWindow <= 0 || !(maxTokens >= 0) || maxTokens >= contextWindow) return undefined;
+  const budget = contextWindow - maxTokens;
+  const headroomTokens = budget - Math.floor(COMPACTION_THRESHOLD_RATIO * budget);
+  if (headroomTokens <= 0 || headroomTokens >= budget) return undefined;
   return {
     provider,
     model,
-    thresholdRatio,
-    // The engine rejects retainRatio >= thresholdRatio; only tiny budgets need this.
-    ...(thresholdRatio <= DEFAULT_RETAIN_RATIO ? { retainRatio: thresholdRatio / 2 } : {}),
+    // The window-fraction cap is disabled; the budget-minus-headroom cap decides.
+    thresholdRatio: 1,
+    headroomTokens,
+    // The summary must fit the headroom and the route's own output limit.
+    maxTokens: Math.min(headroomTokens, maxTokens > 0 ? maxTokens : DEFAULT_SUMMARY_MAX_TOKENS),
   };
 }
 

@@ -10,7 +10,7 @@ import systemPromptPlugin from "@deepseek-ai/dsh-system-prompt";
 import agentPlugin from "@deepseek-ai/dsh-agent";
 import toolsPlugin from "@deepseek-ai/dsh-tools";
 import agentLoopPlugin from "@deepseek-ai/dsh-agent-loop";
-import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
+import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName, Config as LlmPiAiConfig } from "@deepseek-ai/dsh-llm-pi-ai";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -38,7 +38,7 @@ describe.skipIf(process.env.CORDIS_LIVE !== "1")("cordis coding stack (gated on 
     const disposeCoding = await mountCodingStack(ctx, { cwd: "/tmp" });
 
     const plug = ctx.plugin.bind(ctx) as unknown as (p: unknown, c?: unknown) => Promise<unknown>;
-    await plug({ name: llmPiAiName, inject: llmPiAiInject as never, apply: llmPiAiApply }, {
+    await plug({ name: llmPiAiName, inject: llmPiAiInject as never, apply: llmPiAiApply, Config: LlmPiAiConfig } as never, {
       providers: { cairn: { api: "openai-responses", baseURL: BASE, displayName: "Cairn", models: [{ id: MODEL, contextWindow: 262144, maxTokens: 8192 }], apiKeyEnv: "CORDIS_DUMMY_KEY" } },
     });
     await plug(agentLoopPlugin, { agents: [] });

@@ -1,5 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
-import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName } from "@deepseek-ai/dsh-llm-pi-ai";
+import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName, Config as LlmPiAiConfig } from "@deepseek-ai/dsh-llm-pi-ai";
 import { APP_IDENTITY } from "@deepseek-ai/dsh-llm";
 import { CAIRN_APP_IDENTITY, createHostStore } from "./host-store";
 import type { LLMConfig } from "../lib/llm";
@@ -168,7 +168,9 @@ export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: stri
   piAiDisposer = null;
   process.env.CAIRN_LLM_API_KEY = config.apiKey || "local";
   const handle = ctx.plugin(
-    { name: llmPiAiName, inject: llmPiAiInject, apply: llmPiAiApply },
+    // Config schema attached so Cordis parses the plain options into the
+    // Volatile provider table the adapter reads (dsh-llm-pi-ai 0.1.7).
+    { name: llmPiAiName, inject: llmPiAiInject, apply: llmPiAiApply, Config: LlmPiAiConfig },
     { providers: { cairn: {
       api: config.api,
       baseURL: config.baseUrl,

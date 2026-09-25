@@ -1,10 +1,12 @@
 /**
- * workflow-ralph tests — dsh-workflow seam (worker-thread engine, global) +
- * the `workflow` / `ralph` model tools (coding turns only).
+ * workflow-ralph tests — dsh-workflow seam (dsh-workflow-ptc engine over the
+ * Node PTC runtime) + the `workflow` / `ralph` model tools. Since dsh 0.1.7
+ * the engine injects the per-turn fs/subprocess/sandbox services, so engine
+ * and tools all mount per coding turn.
  *
  * Proves (no live model, no child agents spawned):
  *  - mount: the real mountCodingStack registers `workflow` + `ralph` and the
- *    engine service is live; the chat (fs-chain-only) path registers neither;
+ *    engine service is live; the chat (fs-chain-only) path mounts none of it;
  *  - fail-closed: an unparseable script becomes an isError tool result
  *    (SCRIPT_PARSE before any child starts);
  *  - bounded iteration (no double-runaway): ralph rejects a model-requested
@@ -22,19 +24,9 @@ import agentPlugin from "@deepseek-ai/dsh-agent";
 import toolsPlugin from "@deepseek-ai/dsh-tools";
 import subagentServicePlugin from "@deepseek-ai/dsh-subagent";
 import { apply as spawnProviderApply, inject as spawnProviderInject, name as spawnProviderName } from "@deepseek-ai/dsh-subagent-spawn-in-process";
-import WorkerThreadWorkflowEngine from "@deepseek-ai/dsh-workflow-worker-thread";
 import { WorkflowError } from "@deepseek-ai/dsh-workflow";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { mountCodingStack, mountFsChain } from "./cordis-coding-tools";
-
-const ENGINE_CONFIG = {
-  provider: "spawn",
-  maxConcurrentAgents: 0,
-  maxTotalAgents: 1000,
-  maxItemsPerCall: 4096,
-  syncTimeoutMs: 5000,
-  disposeGraceMs: 5000,
-};
 
 function toolNames(ctx: Context): string[] {
   const tools = ctx.tools as unknown as {
@@ -63,10 +55,9 @@ async function mountGlobals(ctx: Context): Promise<void> {
     { apply: spawnProviderApply, inject: spawnProviderInject, name: spawnProviderName } as never,
     { providerName: "spawn" } as never,
   );
-  await ctx.plugin(WorkerThreadWorkflowEngine as never, ENGINE_CONFIG as never);
 }
 
-/** Full production composition: globals + engine + one coding turn. */
+/** Full production composition: globals + one coding turn (engine included). */
 async function codingContext(): Promise<{ ctx: Context; dispose: () => Promise<void> }> {
   const ctx = new Context();
   await mountGlobals(ctx);
@@ -103,9 +94,8 @@ describe("workflow + ralph mounting", () => {
     try {
       await mountGlobals(ctx);
       await mountFsChain(ctx, { cwd: os.tmpdir() });
-      // The engine seam is global (like the terminals registry); the model
-      // tools are turn-scoped, so chat sees the seam but no tools.
-      expect((ctx as unknown as { workflowEngine?: unknown }).workflowEngine).toBeDefined();
+      // Engine and model tools are coding-turn scoped; chat sees neither.
+      expect((ctx as unknown as { workflowEngine?: unknown }).workflowEngine).toBeUndefined();
       const names = toolNames(ctx);
       expect(names).not.toContain("workflow");
       expect(names).not.toContain("ralph");
@@ -116,6 +106,27 @@ describe("workflow + ralph mounting", () => {
 });
 
 describe("workflow + ralph bounds (fail-closed, no runaway)", () => {
+  it("runs a script end-to-end in the sandboxed PTC process", async () => {
+    const { ctx, dispose } = await codingContext();
+    try {
+      const engine = (ctx as unknown as {
+        workflowEngine: { start: (req: unknown) => { result: Promise<unknown>; dispose(): Promise<void> } };
+      }).workflowEngine;
+      const run = engine.start({
+        script: "log('hello'); return { answer: 41 + 1 }",
+        meta: { name: "smoke", description: "no-agent smoke run" },
+        parent: { session: (ctx as unknown as { sessions: { create(): unknown } }).sessions.create() },
+      });
+      try {
+        expect(await run.result).toMatchObject({ value: { answer: 42 } });
+      } finally {
+        await run.dispose();
+      }
+    } finally {
+      await dispose();
+    }
+  }, 90000);
+
   it("fails a malformed script closed (SCRIPT_PARSE, no child starts)", async () => {
     const { ctx, dispose } = await codingContext();
     try {

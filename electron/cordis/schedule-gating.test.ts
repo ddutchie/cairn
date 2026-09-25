@@ -3,10 +3,11 @@
  *
  * Proves, with fakes and no live model:
  *   - gating: `isScheduleEnabled()` reflects the persisted agent setting;
- *     disabled → the schedule overlay is NOT mounted (no `schedule`
- *     projection, no schedule tools); enabled → it IS mounted;
- *   - `listSchedules` folds the session log into the schedule_list view shape
- *     (id/prompt/scheduledAt/kind/state) and returns [] for unknown sessions.
+ *     disabled → the schedule service is NOT mounted; enabled → `ctx.schedule`
+ *     is live and each root agent gets agent-scoped schedule_* tools;
+ *   - `listSchedules` renders `ctx.schedule.list()` records in the
+ *     schedule_list view shape (id/prompt/scheduledAt/kind/state) and returns
+ *     [] when the service is off or the read fails.
  *
  * The config-cache mock below only affects this file (per-file module
  * registry); production reads the real userData cache.
@@ -36,11 +37,8 @@ import { setPluginsRoot } from "./plugin-loader";
 import { setSessionRoot, getContext, __resetContextForTest } from "./run-cordis-loop";
 import { isScheduleEnabled } from "./cordis-context";
 import { listSchedules } from "./schedule-read";
-import {
-  allocateScheduleId,
-  createAfterScheduleRecord,
-  foldScheduleEvents,
-} from "@deepseek-ai/dsh-schedule";
+import { ScheduleId, createAfterScheduleRecord } from "@deepseek-ai/dsh-schedule";
+import { scopeOf } from "@deepseek-ai/dsh-scope";
 
 beforeEach(() => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-schedule-"));
@@ -48,14 +46,8 @@ beforeEach(() => {
   setPluginsRoot(path.join(tmp, "plugins"));
 });
 
-function makeCreateEvent(afterSeconds = 3600) {
-  const id = allocateScheduleId({ active: [], seenIds: [] });
-  const record = createAfterScheduleRecord(id, "Stretch and drink water", afterSeconds, Date.now());
-  return {
-    seq: 0,
-    type: "schedule/change",
-    data: { version: 1, operation: "create", schedule: record },
-  } as never;
+function makeRecord(afterSeconds = 3600) {
+  return createAfterScheduleRecord(ScheduleId("sched-1"), "Stretch and drink water", afterSeconds, Date.now(), "Stretch");
 }
 
 async function openProbeAgent(ctx: Awaited<ReturnType<typeof getContext>>, tag: string) {
@@ -69,10 +61,6 @@ async function openProbeAgent(ctx: Awaited<ReturnType<typeof getContext>>, tag: 
   });
 }
 
-function projectionState(ctx: Awaited<ReturnType<typeof getContext>>, session: unknown) {
-  const registry = (ctx as unknown as { sessionProjections?: { stateOf?: (s: unknown, key: string) => unknown } }).sessionProjections;
-  return registry?.stateOf?.(session as never, "schedule");
-}
 
 describe("schedule gating", () => {
   it("isScheduleEnabled() is false by default", () => {
@@ -85,8 +73,7 @@ describe("schedule gating", () => {
     const ctx = await getContext();
     const handle = await openProbeAgent(ctx, "off");
     try {
-      const agent = (handle as { agent: { session?: unknown } }).agent;
-      expect(projectionState(ctx, agent.session)).toBeUndefined();
+      expect((ctx as unknown as { schedule?: unknown }).schedule).toBeUndefined();
       const tools = (ctx as unknown as { tools?: { get?: (name: string) => unknown } }).tools;
       expect(tools?.get?.("schedule_create")).toBeUndefined();
       expect(tools?.get?.("schedule_list")).toBeUndefined();
@@ -104,13 +91,14 @@ describe("schedule gating", () => {
     try {
       const handle = await openProbeAgent(ctx, "on");
       try {
-        const agent = (handle as { agent: { session?: unknown } }).agent;
-        const state = projectionState(ctx, agent.session) as { active?: unknown[] } | undefined;
-        expect(state, "schedule projection registered").toBeDefined();
-        expect(state?.active).toEqual([]);
+        const agent = (handle as { agent: { ctx?: { tools?: { get?: (name: string, scope?: unknown) => unknown } } } }).agent;
+        // dsh-schedule 0.1.7: a host-wide service (storage-domain backed) that
+        // attaches schedule_* tools to each root agent's own tool scope.
+        expect((ctx as unknown as { schedule?: unknown }).schedule, "schedule service mounted").toBeDefined();
+        // Registered in the agent's tool scope, so look it up with that scope key.
+        await vi.waitFor(() => expect(agent.ctx?.tools?.get?.("schedule_create", scopeOf(agent.ctx as never)), "agent-scoped schedule tools").toBeDefined());
         const tools = (ctx as unknown as { tools?: { get?: (name: string) => unknown } }).tools;
-        // Schedule tools are agent-scoped; the overlay proves itself through
-        // the projection above. Global tools stay untouched either way.
+        // Global tools stay untouched either way.
         expect(tools?.get?.("schedule_create")).toBeUndefined();
       } finally {
         try { await (handle as { dispose?: () => Promise<void> }).dispose?.(); } catch { /* noop */ }
@@ -123,28 +111,22 @@ describe("schedule gating", () => {
 });
 
 describe("listSchedules", () => {
-  it("returns [] for sessions without an inspectable log", async () => {
-    const fakeCtx = {
-      sessions: { get: () => undefined },
-      sessionPersistence: { inspect: async () => { throw new Error("no such session"); } },
-    };
+  it("returns [] when the schedule service is not mounted", async () => {
+    await expect(listSchedules({} as never, "ghost")).resolves.toEqual([]);
+  });
+
+  it("returns [] when the service read fails", async () => {
+    const fakeCtx = { schedule: { list: async () => { throw new Error("storage down"); } } };
     await expect(listSchedules(fakeCtx as never, "ghost")).resolves.toEqual([]);
   });
 
-  it("folds one create event into the schedule_list view shape", async () => {
-    const events = [makeCreateEvent(3600)];
-    const fakeCtx = { sessions: { get: () => ({ snapshotEvents: () => events }) } };
+  it("renders the session's records in the schedule_list view shape", async () => {
+    const seen: unknown[] = [];
+    const fakeCtx = { schedule: { list: async (req: unknown) => { seen.push(req); return [makeRecord(3600)]; } } };
     const list = await listSchedules(fakeCtx as never, "live-session");
+    expect(seen).toEqual([{ sessionId: "live-session" }]);
     expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ prompt: "Stretch and drink water", kind: "after", state: "scheduled" });
-    expect(typeof list[0]!.id).toBe("string");
+    expect(list[0]).toMatchObject({ id: "sched-1", prompt: "Stretch and drink water", kind: "after", state: "scheduled" });
     expect(typeof list[0]!.scheduledAt).toBe("string");
-    // Same fold the overlay itself reads — the IPC shape cannot drift from it.
-    expect(foldScheduleEvents(events).active).toHaveLength(1);
-  });
-
-  it("returns [] when the log holds no schedule events", async () => {
-    const fakeCtx = { sessions: { get: () => ({ snapshotEvents: () => [] }) } };
-    await expect(listSchedules(fakeCtx as never, "empty")).resolves.toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { readToolResult } from "./tool-result-message";
 import type { Database } from "better-sqlite3";
 import { buildCordisUserContent } from "./cairn-attachment-store";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
@@ -61,7 +62,7 @@ function collect(events: readonly SessionEvent[], firstSeq: number): Collected {
     // text + per-attempt usage) — fold those exactly as chunks accumulated.
     if (event.type === "assistant/message") {
       const msg = event.data as {
-        message?: { content?: Array<{ type?: string; text?: string }> };
+        message?: { content?: ReadonlyArray<{ type?: string; text?: string }> };
         usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
       };
       const content = Array.isArray(msg.message?.content) ? msg.message.content : [];
@@ -275,7 +276,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           }
         }
         if (event.type === "assistant/message" && !liveReasoning) {
-          const content = (event.data as { message?: { content?: Array<{ type?: string; text?: string }> } }).message?.content;
+          const content = (event.data as { message?: { content?: ReadonlyArray<{ type?: string; text?: string }> } }).message?.content;
           const value = Array.isArray(content) ? content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text).join("") : "";
           if (value) { liveReasoning += value; opts.onThought?.(value); }
           return;
@@ -287,12 +288,12 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           return;
         }
         if (event.type === "tool/result") {
-          const d = event.data as { meta?: unknown; message?: { source?: { callId?: string }; content?: Array<{ isError?: boolean; content?: Array<{ type?: string; text?: string }> }> } };
-          const callId = d.message?.source?.callId;
-          if (!callId || doneIds.has(callId)) return;
-          const block = d.message?.content?.[0];
-          const error = block?.isError === true;
-          const output = block?.content?.filter((b) => b.type === "text" && b.text).map((b) => b.text).join("") ?? "";
+          const d = event.data as { meta?: unknown; message?: unknown };
+          const result = readToolResult(d.message);
+          const callId = result?.callId;
+          if (!result || !callId || doneIds.has(callId)) return;
+          const error = result.isError;
+          const output = result.output;
           const tool = toolNames.get(callId) ?? "tool";
           const meta = (d.meta as Record<string, unknown> | undefined) ?? (!error ? resolvePresentationMeta(tool, toolArgs.get(callId), output) as Record<string, unknown> | undefined : undefined);
           const resultView = resolveToolResultView(tool, toolArgs.get(callId), output, error);
