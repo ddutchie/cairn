@@ -45,7 +45,7 @@ import { newId } from "./utils";
 import { toNote, toCard, type DbRow } from "../host-shared/db-mappers";
 import { ftsMatchQuery } from "../../shared/notes/text";
 import { getAllWorkspaces, getProjects } from "./workspace-queries";
-import { getNotes } from "./notes-queries";
+import { getNotes, getNoteSummaries } from "./notes-queries";
 import { getColumns, getCards } from "./board-queries";
 import { getTags } from "./tags-queries";
 
@@ -59,6 +59,22 @@ export function getFullSnapshot(db: Database.Database) {
     workspaces: getAllWorkspaces(db),
     projects: getProjects(db),
     notes: getNotes(db),
+    columns: getColumns(db),
+    cards: getCards(db),
+    tags: getTags(db),
+  };
+}
+
+/**
+ * The renderer's snapshot: like getFullSnapshot, but notes carry no `content`
+ * (the renderer loads bodies on demand), which keeps the IPC payload and the
+ * renderer heap proportional to note COUNT rather than note size.
+ */
+export function getRendererSnapshot(db: Database.Database) {
+  return {
+    workspaces: getAllWorkspaces(db),
+    projects: getProjects(db),
+    notes: getNoteSummaries(db),
     columns: getColumns(db),
     cards: getCards(db),
     tags: getTags(db),

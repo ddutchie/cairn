@@ -280,14 +280,20 @@ function mergeEntitySnapshot(
   // snapshot content — the AI's edit isn't in our in-memory copy, so keeping
   // the local version would hide it from the open editor.
   const snapNotes: Note[] = snap.notes ?? [];
-  const mergedNotes = isRefresh
-    ? snapNotes.map((sn) => {
-        if (isOwnNoteWrite(sn.id) && !isAiNoteWrite(sn.id)) {
-          return current.notes.find((cn) => cn.id === sn.id) ?? sn;
-        }
-        return sn;
-      })
-    : snapNotes;
+  const currentNotesById = new Map(current.notes.map((n) => [n.id, n]));
+  // Lazily-loaded bodies (Electron): incoming notes carry no `content`. Keep a
+  // body we already hold so open editors/panels don't flash, and refetch it
+  // when the note changed (the refetch records the "what's new" mark).
+  const bodiesToRefetch: string[] = [];
+  const mergedNotes = snapNotes.map((sn) => {
+    const cur = currentNotesById.get(sn.id);
+    if (isRefresh && cur && isOwnNoteWrite(sn.id) && !isAiNoteWrite(sn.id)) return cur;
+    if (sn.content === undefined && cur?.content !== undefined) {
+      if (cur.version !== sn.version || cur.updatedAt !== sn.updatedAt) bodiesToRefetch.push(sn.id);
+      return { ...sn, content: cur.content };
+    }
+    return sn;
+  });
 
   // Record "what's new" marks: on an external refresh (AI / MCP / sync), when
   // a note we already had in memory arrives with DIFFERENT body content, stash
@@ -298,9 +304,8 @@ function mergeEntitySnapshot(
   // live typing is never flagged as "new".
   let nextChangeMarks = current.noteChangeMarks;
   if (isRefresh) {
-    const currentById = new Map(current.notes.map((n) => [n.id, n]));
     for (const merged of mergedNotes) {
-      const prevNote = currentById.get(merged.id);
+      const prevNote = currentNotesById.get(merged.id);
       if (!prevNote) continue; // brand-new note — nothing to diff against
       // Skip own-writes we preserved (merged === prevNote reference).
       if (merged === prevNote) continue;
@@ -381,6 +386,7 @@ function mergeEntitySnapshot(
       activeProjectId: nextProjectId,
     });
   }
+  if (bodiesToRefetch.length > 0) void get().ensureNoteBodies(bodiesToRefetch, { force: true });
 }
 
 /**
@@ -715,7 +721,8 @@ export const useCairnStore = create<CairnStore>()(
       // Establish the change-feed cursor BEFORE reading the snapshot: anything
       // written in between is re-delivered by the next changeset (idempotent).
       await initChangeFeedCursor();
-      const snap = (await window.electron!.snapshot()) as PersistedState;
+      // Notes arrive without bodies (loaded on demand — store/note-bodies.ts).
+      const snap = (await window.electron!.snapshot({ noteBodies: false })) as PersistedState;
 
       // External (MCP/AI) write refreshes invalidate the undo stack.
       if (isRefresh) historyManager.clear();

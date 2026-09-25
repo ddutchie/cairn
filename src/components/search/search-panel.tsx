@@ -168,8 +168,18 @@ export function SearchPanel() {
       return;
     }
     const trimmed = query.trim();
-    searchTimer.current = setTimeout(() => {
-      setResults(searchAll(trimmed));
+    searchTimer.current = setTimeout(async () => {
+      // Note bodies aren't in the renderer (loaded lazily): the main process
+      // matches bodies; titles/cards are matched locally by searchAll.
+      let bodyMatches: Set<string> | undefined;
+      const searchNotes = window.electron?.note?.search;
+      if (searchNotes) {
+        try {
+          bodyMatches = new Set(await searchNotes(trimmed));
+        } catch { /* fall back to title-only note matches */ }
+        if (query.trim() !== trimmed) return; // superseded while awaiting
+      }
+      setResults(searchAll(trimmed, bodyMatches));
       setFocused(0);
     }, 150);
 

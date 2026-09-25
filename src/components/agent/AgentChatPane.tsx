@@ -514,7 +514,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       store.notes,
       store.cards,
       store.columns,
-      session.cwd || null
+      session.cwd || null,
+      store.loadNoteBody,
     );
 
     const promptPayload = {

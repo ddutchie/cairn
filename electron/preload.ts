@@ -241,7 +241,7 @@ function invoke<T>(channel: string, args?: unknown): Promise<T> {
 
 const api = {
   // ── Full snapshot ────────────────────────────
-  snapshot: () => invoke("db:snapshot"),
+  snapshot: (opts?: { noteBodies?: boolean }) => invoke("db:snapshot", opts),
   // ── Change feed (cursor-based incremental refresh) ──
   changes: {
     get: (args: { since: number | null; feedId: string | null }) =>
@@ -277,6 +277,13 @@ const api = {
     // backwards-compatible call sites but no longer required.
     moveToProject: (id: string, projectId: string, _workspaceId?: string) =>
       invoke("db:note:moveToProject", { id, projectId }),
+    // Lazy bodies: the renderer store holds note metadata only (Electron).
+    bodies: (ids: string[]) =>
+      invoke<import("./db/notes-queries").NoteBody[]>("db:note:bodies:get", { ids }),
+    search: (query: string, projectId?: string) =>
+      invoke<string[]>("db:note:search", { query, projectId }),
+    backlinks: (noteId: string) =>
+      invoke<string[]>("db:note:backlinks:list", { noteId }),
   },
 
   // ── Board columns ─────────────────────────────

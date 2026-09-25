@@ -12,6 +12,8 @@ import { useShallow } from "zustand/react/shallow";
 import { DashboardApiModal } from "./DashboardApiModal";
 import { Button } from "@/components/ui/button";
 import { onChangeFeed } from "@/store/change-feed";
+import { useNoteBody } from "@/hooks/useNoteBody";
+import { NoteBodyLoading } from "./note-editor";
 
 interface DashboardViewProps {
   note: Note;
@@ -52,7 +54,14 @@ const ALLOWED_TOOLS = new Set([
   "list_tasks",
 ]);
 
-export function DashboardView({ note, onBack }: DashboardViewProps) {
+/** Dashboard HTML loads lazily in Electron — see NoteEditor's gate. */
+export function DashboardView(props: DashboardViewProps) {
+  const { loaded } = useNoteBody(props.note.id);
+  if (!loaded) return <NoteBodyLoading />;
+  return <DashboardViewLoaded {...props} />;
+}
+
+function DashboardViewLoaded({ note, onBack }: DashboardViewProps) {
   const electron = typeof window !== "undefined" ? window.electron : null;
   const { updateNote, aiConfig } = useCairnStore(useShallow((s) => ({ updateNote: s.updateNote, aiConfig: s.aiConfig })));
   const aiEnabled = aiConfig.aiEnabled ?? true;

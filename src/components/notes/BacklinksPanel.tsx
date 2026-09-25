@@ -10,6 +10,7 @@ import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { Note, Tag } from "@/types";
+import { onChangeFeed, feedTouches } from "@/store/change-feed";
 
 interface SemanticHit {
   noteId: string;
@@ -118,12 +119,37 @@ export function BacklinksPanel({
     [note.linkedCardIds, cards],
   );
 
+  // Incoming [[wikilinks]]. Other notes' bodies aren't in the renderer in
+  // Electron (loaded lazily), so the main process scans them; the result is
+  // refreshed whenever the change feed reports note changes. The web build
+  // (bodies in memory) scans locally.
+  const [remoteBacklinkIds, setRemoteBacklinkIds] = useState<string[] | null>(null);
+  const [backlinkRefresh, setBacklinkRefresh] = useState(0);
+  useEffect(() => onChangeFeed((e) => {
+    if (feedTouches(e, ["notes"])) setBacklinkRefresh((v) => v + 1);
+  }), []);
+  useEffect(() => {
+    const listBacklinks = window.electron?.note?.backlinks;
+    if (!listBacklinks) return;
+    let cancelled = false;
+    listBacklinks(note.id)
+      .then((ids) => { if (!cancelled) setRemoteBacklinkIds(ids); })
+      .catch(() => { if (!cancelled) setRemoteBacklinkIds([]); });
+    return () => { cancelled = true; };
+  }, [note.id, note.title, backlinkRefresh]);
+
   const wikilinkBacklinks = useMemo(() => {
+    const linked = new Set(note.linkedNoteIds ?? []);
+    if (window.electron?.note?.backlinks) {
+      if (!remoteBacklinkIds) return [];
+      const ids = new Set(remoteBacklinkIds);
+      return notes.filter((n) => ids.has(n.id) && n.id !== note.id && !linked.has(n.id));
+    }
     const titleLower = note.title.toLowerCase();
     const re = /\[\[([^\][\n]+?)\]\]/g;
     return notes.filter((n) => {
       if (n.id === note.id) return false;
-      if ((note.linkedNoteIds ?? []).includes(n.id)) return false;
+      if (linked.has(n.id)) return false;
       const content = n.content ?? "";
       let m: RegExpExecArray | null;
       re.lastIndex = 0;
@@ -132,7 +158,7 @@ export function BacklinksPanel({
       }
       return false;
     });
-  }, [note.id, note.title, note.linkedNoteIds, notes]);
+  }, [note.id, note.title, note.linkedNoteIds, notes, remoteBacklinkIds]);
 
   const semanticCount = semanticEnabled ? semanticHits.length + sectionHits.length : 0;
   const total = linkedNotes.length + linkedCards.length + wikilinkBacklinks.length + semanticCount;

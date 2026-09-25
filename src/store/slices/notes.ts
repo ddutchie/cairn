@@ -6,7 +6,8 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Note, ID, NoteType } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, isElectron, markOwnNoteWrite } from "../ipc";
+import { ipc, isElectron, markOwnNoteWrite, isOwnNoteWrite, isAiNoteWrite } from "../ipc";
+import { bodiesToEvict, forgetNoteBody, lazyNoteBodies, touchNoteBody } from "../note-bodies";
 import { normalizeFolderPath } from "../../../shared/notes/folder-tree";
 import { historyManager } from "@/lib/history";
 import {
@@ -86,7 +87,22 @@ export interface NotesSlice {
   recordNoteChangeMark: (noteId: ID, previousContent: string) => void;
   /** Clear a note's unseen-change mark (called once the user has viewed it). */
   clearNoteChangeMark: (noteId: ID) => void;
+  /**
+   * Load note bodies into the store (Electron keeps only metadata until a body
+   * is needed — see store/note-bodies.ts). Resolves once every requested live
+   * note has `content`. `force` refetches already-loaded bodies (an external
+   * change landed) and records a "what's new" mark when the body differs.
+   * No-op in the web build.
+   */
+  ensureNoteBodies: (ids: ID[], opts?: { force?: boolean }) => Promise<void>;
+  /** A note's body, loading it first if needed (undefined if the note is gone). */
+  loadNoteBody: (id: ID) => Promise<string | undefined>;
+  /** Bodies for several notes (loaded in one round-trip); missing notes omitted. */
+  loadNoteBodies: (ids: ID[]) => Promise<Map<ID, string>>;
 }
+
+// Coalesces concurrent (non-forced) body requests for the same note.
+const bodyRequests = new Map<ID, Promise<void>>();
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
 
@@ -142,6 +158,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
 
   deleteNote(noteId) {
     const savedNote = get().notes.find((n) => n.id === noteId);
+    const needsBody = !!savedNote && savedNote.content === undefined && lazyNoteBodies();
     set((s) => ({
       notes: s.notes.filter((n) => n.id !== noteId),
       cards: s.cards.map((c) => ({
@@ -151,8 +168,22 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     }));
     get().persist();
     markOwnNoteWrite(noteId);
-    ipc((e) => e.note.delete(noteId));
-    if (savedNote) historyManager.push(makeDeleteNoteCmd(savedNote, set));
+    forgetNoteBody(noteId);
+    if (!needsBody) {
+      ipc((e) => e.note.delete(noteId));
+      if (savedNote) historyManager.push(makeDeleteNoteCmd(savedNote, set));
+      return;
+    }
+    // Lazy body not loaded: read it BEFORE the delete reaches the main process
+    // so undo can restore the note with its content (never an empty note).
+    void (async () => {
+      let content: string | undefined;
+      try {
+        content = (await window.electron!.note.bodies([noteId]))[0]?.content;
+      } catch { /* fall through: delete anyway, undo restores metadata only */ }
+      ipc((e) => e.note.delete(noteId));
+      historyManager.push(makeDeleteNoteCmd({ ...savedNote!, content: content ?? "" }, set));
+    })();
   },
 
   archiveNote(noteId) {
@@ -336,6 +367,90 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     } catch (e: unknown) {
       return { error: e instanceof Error ? e.message : "Failed to generate PRD" };
     }
+  },
+
+  async ensureNoteBodies(ids, opts) {
+    if (!lazyNoteBodies() || ids.length === 0) return;
+    const force = !!opts?.force;
+    for (const nid of ids) touchNoteBody(nid);
+    const byId = new Map(get().notes.map((n) => [n.id, n]));
+    const pending: Promise<void>[] = [];
+    const want: ID[] = [];
+    for (const nid of ids) {
+      const n = byId.get(nid);
+      if (!n) continue;
+      if (!force && n.content !== undefined) continue;
+      const inflight = !force ? bodyRequests.get(nid) : undefined;
+      if (inflight) pending.push(inflight);
+      else want.push(nid);
+    }
+    if (want.length > 0) {
+      const req = (async () => {
+        let bodies: Awaited<ReturnType<NonNullable<Window["electron"]>["note"]["bodies"]>> = [];
+        try {
+          bodies = await window.electron!.note.bodies(want);
+        } catch (err) {
+          console.error("[notes] loading note bodies failed", err);
+          return;
+        }
+        const fetched = new Map(bodies.map((b) => [b.id, b.content]));
+        set((s) => {
+          let marks = s.noteChangeMarks;
+          let changed = false;
+          const notes = s.notes.map((n) => {
+            const body = fetched.get(n.id);
+            if (body === undefined) return n;
+            if (n.content !== undefined) {
+              // Loaded meanwhile (e.g. an optimistic edit) — the local copy wins.
+              if (!force) return n;
+              // The user is typing in it: keep their copy (same rule as refresh).
+              if (isOwnNoteWrite(n.id) && !isAiNoteWrite(n.id)) return n;
+              if (n.content === body) return n;
+              // External change to a loaded body → "what's new" mark (keep the
+              // EARLIEST previous content across a burst of edits).
+              marks = {
+                ...marks,
+                [n.id]: marks[n.id]
+                  ? { ...marks[n.id], changedAt: Date.now() }
+                  : { previousContent: n.content, changedAt: Date.now() },
+              };
+            }
+            changed = true;
+            return { ...n, content: body };
+          });
+          return changed ? { notes, noteChangeMarks: marks } : {};
+        });
+        // Stay under the cache limit (pinned / mid-edit notes are kept).
+        const evict = bodiesToEvict((nid) => isOwnNoteWrite(nid));
+        if (evict.length > 0) {
+          const drop = new Set(evict);
+          set((s) => ({
+            notes: s.notes.map((n) => {
+              if (!drop.has(n.id) || n.content === undefined) return n;
+              const { content: _content, ...rest } = n;
+              void _content;
+              return rest;
+            }),
+          }));
+        }
+      })();
+      if (!force) for (const nid of want) bodyRequests.set(nid, req);
+      pending.push(req.finally(() => { for (const nid of want) if (bodyRequests.get(nid) === req) bodyRequests.delete(nid); }));
+    }
+    await Promise.all(pending);
+  },
+
+  async loadNoteBody(noteId) {
+    await get().ensureNoteBodies([noteId]);
+    return get().notes.find((n) => n.id === noteId)?.content;
+  },
+
+  async loadNoteBodies(ids) {
+    await get().ensureNoteBodies(ids);
+    const want = new Set(ids);
+    const out = new Map<ID, string>();
+    for (const n of get().notes) if (want.has(n.id) && n.content !== undefined) out.set(n.id, n.content);
+    return out;
   },
 
   recordNoteChangeMark(noteId, previousContent) {

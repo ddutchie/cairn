@@ -163,11 +163,14 @@ export function UserStyleWizardModal({
     setSampleText("");
   }, [context, sampleText]);
 
-  const addNotesAsSamples = useCallback(() => {
-    const recentNotes = [...notes]
+  const addNotesAsSamples = useCallback(async () => {
+    const recent = [...notes]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .slice(0, 5)
-      .map((n) => `### ${n.title}\n${(n.content ?? "").slice(0, 700)}`)
+      .slice(0, 5);
+    // Bodies load lazily (Electron): fetch just these five.
+    const bodies = await useCairnStore.getState().loadNoteBodies(recent.map((n) => n.id));
+    const recentNotes = recent
+      .map((n) => `### ${n.title}\n${(n.content ?? bodies.get(n.id) ?? "").slice(0, 700)}`)
       .join("\n\n");
     const recentCards = [...cards]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())

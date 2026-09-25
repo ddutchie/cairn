@@ -118,7 +118,16 @@ function recomputeCardSemanticEdges(ctx: DbContext, cardId: string, workspaceId:
 
 export function registerDbHandlers(ctx: DbContext): void {
   // ── Full snapshot (hydrate store on app launch) ───
-  registerIpcHandle("db:snapshot", () => handle(() => q.getFullSnapshot(ctx.db)));
+  registerIpcHandle("db:snapshot", (_e, opts?: { noteBodies?: boolean }) =>
+    handle(() => (opts?.noteBodies === false ? q.getRendererSnapshot(ctx.db) : q.getFullSnapshot(ctx.db))));
+
+  // ── Lazy note bodies (renderer keeps metadata, loads bodies on demand) ───
+  registerIpcHandle("db:note:bodies:get", (_e, { ids }: { ids: string[] }) =>
+    handle(() => q.getNoteBodies(ctx.db, Array.isArray(ids) ? ids : [])));
+  registerIpcHandle("db:note:search", (_e, { query, projectId }: { query: string; projectId?: string }) =>
+    handle(() => q.searchNoteIds(ctx.db, String(query ?? ""), { projectId })));
+  registerIpcHandle("db:note:backlinks:list", (_e, { noteId }: { noteId: string }) =>
+    handle(() => q.wikilinkBacklinkIds(ctx.db, noteId)));
   registerIpcHandle("db:hasData", () => handle(() => q.hasData(ctx.db)));
 
   // ── Change feed (incremental refresh on db:changed) ───

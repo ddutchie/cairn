@@ -58,6 +58,7 @@ export function NotesView() {
     setNotesFolderCollapsed,
     notesFullscreen,
     toggleNotesFullscreen,
+    loadNoteBody,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:         s.activeProjectId,
     activeWorkspaceId:       s.activeWorkspaceId,
@@ -66,6 +67,7 @@ export function NotesView() {
     getProjectTemplates:     s.getProjectTemplates,
     createNote:              s.createNote,
     updateNote:              s.updateNote,
+    loadNoteBody:            s.loadNoteBody,
     deleteNote:              s.deleteNote,
     archiveNote:             s.archiveNote,
     restoreNote:             s.restoreNote,
@@ -336,7 +338,7 @@ export function NotesView() {
   const shownProjectTagIds = new Set(shownProjectTags.map((t) => t.id));
   const hiddenProjectTags = sortedProjectTags.filter((t) => !shownProjectTagIds.has(t.id));
 
-  const filtered   = useNoteFilter(notes, filter, activeTagId);
+  const filtered   = useNoteFilter(notes, filter, activeTagId, activeProjectId);
   // Resolve the active note across notes and templates (templates are excluded
   // from `notes`, but a just-saved/opened template can be the active id), then
   // fall back to the first note.
@@ -425,11 +427,13 @@ export function NotesView() {
 
   // Instantiate a new note from a template: substitute {{vars}} and create a
   // normal note (type="note"). No live link back — templates are a starting point.
-  function handleNewFromTemplate(template: Note) {
+  async function handleNewFromTemplate(template: Note) {
     if (!activeProjectId) return;
+    // Template bodies load lazily (Electron) — never instantiate an empty one.
+    const templateBody = template.content ?? (await loadNoteBody(template.id)) ?? "";
     const now = new Date();
     const title = defaultTitleFromTemplate(template.title.replace(/^Template:\s*/i, ""), { now });
-    const content = instantiateTemplate(template.content ?? "", { title, now });
+    const content = instantiateTemplate(templateBody, { title, now });
     const note = createNote(activeProjectId, title, "note");
     updateNote(note.id, {
       content,
@@ -441,12 +445,13 @@ export function NotesView() {
   }
 
   // Turn the active note into a reusable template (type="template").
-  function handleSaveAsTemplate(note: Note) {
+  async function handleSaveAsTemplate(note: Note) {
     if (!activeProjectId) return;
+    const body = note.content ?? (await loadNoteBody(note.id)) ?? "";
     const title = /^Template:/i.test(note.title) ? note.title : `Template: ${note.title}`;
     const tpl = createNote(activeProjectId, title, "template");
     updateNote(tpl.id, {
-      content: note.content ?? "",
+      content: body,
       contentText: note.contentText ?? "",
       tagIds: note.tagIds ?? [],
     });

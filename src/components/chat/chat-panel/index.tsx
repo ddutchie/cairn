@@ -554,7 +554,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       store.notes,
       store.cards,
       store.columns,
-      project?.codeDirectory ?? null
+      project?.codeDirectory ?? null,
+      store.loadNoteBody,
     );
 
     let systemPrompt: string | undefined = undefined;

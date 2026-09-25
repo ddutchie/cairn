@@ -28,13 +28,15 @@
  */
 
 import type Database from "better-sqlite3";
-import { toWorkspace, toProject, toNote, toColumn, toCard, toTag, type DbRow } from "../host-shared/db-mappers";
+import { toWorkspace, toProject, toColumn, toCard, toTag, type DbRow } from "../host-shared/db-mappers";
+import { getNoteSummariesByIds } from "./notes-queries";
 
 /** Store key → table + snapshot filter + mapper. Filters MUST match getFullSnapshot's queries. */
 const SNAPSHOT_ENTITIES = {
   workspaces: { table: "workspaces", where: "", map: toWorkspace },
   projects: { table: "projects", where: "", map: toProject },
-  notes: { table: "notes", where: "deleted_at IS NULL AND ", map: toNote },
+  // Notes are fetched as summaries (no body) — see fetchRows below.
+  notes: { table: "notes", where: "deleted_at IS NULL AND ", map: (row: DbRow) => row },
   columns: { table: "board_columns", where: "", map: toColumn },
   cards: { table: "task_cards", where: "deleted_at IS NULL AND ", map: toCard },
   tags: { table: "tags", where: "", map: toTag },
@@ -178,8 +180,16 @@ export function getChangesSince(
     const ids = [...idSet];
     const found: unknown[] = [];
     const foundIds = new Set<string>();
+    if (entity === "notes") {
+      // The renderer loads note bodies on demand: deliver metadata + excerpt
+      // only; it refetches the body of any changed note it has loaded.
+      for (const n of getNoteSummariesByIds(db, ids)) {
+        foundIds.add(n.id);
+        found.push(n);
+      }
+    }
     // Chunk to stay under SQLite's bound-parameter limit.
-    for (let i = 0; i < ids.length; i += 500) {
+    for (let i = 0; entity !== "notes" && i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
       const placeholders = chunk.map(() => "?").join(",");
       const got = db
