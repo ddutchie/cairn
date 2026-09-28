@@ -14,6 +14,10 @@
  *   tool-bash → tool-fs → tool-fs-search → tool-str-replace-editor →
  *   tool-todo → agent-instructions
  *
+ * On Windows the shell is PowerShell instead (pwsh-sandbox → tool-pwsh), as in
+ * upstream's shipped profiles: MSYS/Git Bash cannot start under the ACL
+ * restricted token (`couldn't create signal pipe, Win32 error 5`).
+ *
  * bash-SANDBOX (not bash-local) is mounted so `workspace-write` and
  * `read-only` sessions are actually confined via `ctx.sandbox`. It falls
  * through to unconfined execution when the resolved mode is
@@ -43,11 +47,12 @@ import { apply as agentInstApply, name as agentInstName } from "@deepseek-ai/dsh
 import subprocessLocalPlugin from "@deepseek-ai/dsh-subprocess-local";
 import bashLocalPlugin from "@deepseek-ai/dsh-bash-local";
 import bashSandboxPlugin from "@deepseek-ai/dsh-bash-sandbox";
+import pwshSandboxPlugin from "@deepseek-ai/dsh-pwsh-sandbox";
+import { apply as toolPwshApply, inject as toolPwshInject, name as toolPwshName } from "@deepseek-ai/dsh-tool-pwsh";
 import { apply as toolTerminalApply, inject as toolTerminalInject, name as toolTerminalName } from "@deepseek-ai/dsh-tool-terminal";
 import { cairnTerminalBackendPlugin } from "./terminal-backend";
 import type { Database } from "better-sqlite3";
 import { mountCodingLsp } from "./cordis-lsp";
-import { getBashExecutable } from "./host-store";
 
 export interface CodingStackOptions {
   /** Working directory the coding tools are scoped to (the session cwd). */
@@ -217,31 +222,6 @@ export function runWindowsAclRunnerAsNode(ctx: Context): void {
   shell.__cairnRunnerAsNode = true;
 }
 
-/** Point sandboxed `bash -c` at Git Bash instead of the WSL launcher.
- *
- *  dsh-bash-sandbox confines a bare `["bash", "-c", cmd]`, and the Windows ACL
- *  runner hands that to CreateProcessAsUserW with no application name. The
- *  default search checks System32 BEFORE PATH, so any machine with WSL gets
- *  `C:\Windows\System32\bash.exe`. Under the restricted token that fails with
- *  `Bash/Service/CreateInstance/E_ACCESSDENIED` (printed as UTF-16). Full-access
- *  spawns resolve through PATH and are unaffected. Instance-level patch on
- *  `sandbox.confine`: rewrite argv[0] to the absolute Git Bash path (same
- *  resolver as automations). No-op off win32 / when Git Bash isn't found.
- *  Idempotent. */
-export function pinWindowsSandboxBash(ctx: Context): void {
-  if (process.platform !== "win32") return;
-  const sandbox = ctx.get("sandbox") as
-    | { confine?: (argv: string[], ...rest: unknown[]) => unknown; __cairnGitBash?: boolean }
-    | undefined;
-  if (!sandbox || typeof sandbox.confine !== "function" || sandbox.__cairnGitBash) return;
-  const bash = getBashExecutable();
-  if (!path.isAbsolute(bash)) return;
-  const origConfine = sandbox.confine.bind(sandbox);
-  sandbox.confine = (argv: string[], ...rest: unknown[]) =>
-    origConfine(argv[0] === "bash" ? [bash, ...argv.slice(1)] : argv, ...rest);
-  sandbox.__cairnGitBash = true;
-}
-
 /** Instance-level patch on the mounted fs service: rewrite the well-known
  *  plugin-artifact prefix `viz(/…)` to `.chat/viz(…)`. Only the chat-mounted
  *  chain is patched (coding mounts its own per-turn and stays stock). Harmless
@@ -305,11 +285,24 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     // survives — the mount is now unreachable and can be removed once we're
     // confident the sandbox path is stable across all supported platforms.
     void bashLocalPlugin;
-    await plug(bashSandboxPlugin);
-    try { runWindowsAclRunnerAsNode(ctx); } catch { /* best-effort */ }
-    try { pinWindowsSandboxBash(ctx); } catch { /* best-effort */ }
-    await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
-    await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
+    if (process.platform === "win32") {
+      // Windows: PowerShell is the sandboxed shell, matching upstream's win32
+      // default ("bash has no Windows runner"). MSYS/Git Bash dies under the
+      // ACL restricted token (`couldn't create signal pipe, Win32 error 5`).
+      // Commands that need wider access use the tool's own sandbox_permissions
+      // escalation (approval-gated), exactly like bash elsewhere. Both
+      // executors register `ctx.shell`: exactly one mounts per host.
+      void bashSandboxPlugin; void toolBashApply; void toolBashInject; void toolBashName;
+      await plug(pwshSandboxPlugin);
+      try { runWindowsAclRunnerAsNode(ctx); } catch { /* best-effort */ }
+      await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
+      await plug({ apply: toolPwshApply, inject: toolPwshInject as never, name: toolPwshName }, {});
+    } else {
+      void pwshSandboxPlugin; void toolPwshApply; void toolPwshInject; void toolPwshName;
+      await plug(bashSandboxPlugin);
+      await plug({ apply: shellEnvApply, inject: shellEnvInject as never, name: shellEnvName }, {});
+      await plug({ apply: toolBashApply, inject: toolBashInject as never, name: toolBashName }, {});
+    }
     // Persistent model shells over the shared node-pty manager (same login
     // shells + project-boundary validation as the bottom-terminal tabs — no
     // second PTY implementation). Coding turns only: the automation-dev
@@ -360,6 +353,7 @@ export async function mountCodingStack(ctx: Context, opts: CodingStackOptions): 
     // can't see conditionally-skipped imports.
     void subprocessLocalPlugin;
     void bashSandboxPlugin;
+    void pwshSandboxPlugin; void toolPwshApply; void toolPwshInject; void toolPwshName;
     void bashLocalPlugin;
     void shellEnvApply; void shellEnvInject; void shellEnvName;
     void toolBashApply; void toolBashInject; void toolBashName;

@@ -112,7 +112,7 @@ Before writing your final response to the user:
 ## Coding guidelines
 1. **Read before editing.** Always use \`read\` to see exact content before using \`edit\`.
 2. **Use \`edit\` for targeted changes**, \`write\` only when creating new files or fully replacing content.
-3. **Run tests after changes.** Use \`bash\` to verify your work compiles and tests pass.
+3. **Run tests after changes.** Use \`${process.platform === "win32" ? "pwsh" : "bash"}\` to verify your work compiles and tests pass.
 4. **Be concise in your final reply.** Summarise what you did and why — don't repeat file contents back.
 5. **Security.** Never read or write outside the project's code directory.
 6. **Use \`spawn_subagent\` for deep sub-tasks** — e.g. "research all usages of X", "refactor this module end-to-end", "investigate and summarise the bug". The subagent has the same tools. Pass it a fully self-contained prompt.

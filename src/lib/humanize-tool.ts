@@ -23,7 +23,8 @@ export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
     case "grep": return { pre: "Searched the code for", obj: `“${short(args.pattern, "a pattern")}”` };
     case "find": return { pre: "Found files matching", obj: `“${short(args.pattern, "a pattern")}”` };
     case "ls": return { pre: "Listed", obj: short(args.path, "the current folder") };
-    case "bash": return typeof args.description === "string" && args.description.trim()
+    case "bash":
+    case "pwsh": return typeof args.description === "string" && args.description.trim()
       ? { pre: short(args.description) }
       : { pre: "Ran", obj: short(args.command, "a command") };
     case "todo_write": return { pre: "Updated the plan", obj: short(args.todos, "the task list") };

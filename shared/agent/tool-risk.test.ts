@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from "vitest";
 import { TOOL_SCHEMAS } from "../../electron/lib/tool-schemas";
-import { APPROVAL_SAFE_TOOLS, riskForTool, approvalGrantScope, needsApproval, needsApprovalForCall, type RiskClass, type GrantScope } from "./tool-risk";
+import { APPROVAL_SAFE_TOOLS, riskForTool, approvalGrantScope, approvalPreview, isShellTool, needsApproval, needsApprovalForCall, type RiskClass, type GrantScope } from "./tool-risk";
 
 // Sets local to this test file — the same shape tool-risk.ts uses
 // internally, re-declared here so the coverage assertion doesn't have to
@@ -37,7 +37,7 @@ const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
 // (the TOOL_SCHEMAS keys), while riskForTool ALSO handles dsh names.
 const DSH_TOOL_NAMES = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
-  "write", "edit", "str_replace_editor", "todo_write", "skill", "bash",
+  "write", "edit", "str_replace_editor", "todo_write", "skill", "bash", "pwsh",
   "subagent", "delegate", "send_message", "interrupt_agent", "list_agents",
   "job_list", "job_output", "job_kill",
   "terminal_open", "terminal_send", "terminal_signal", "terminal_close",
@@ -65,6 +65,8 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   ["str_replace_editor", "WRITE_LOCAL", true, "session"],
   ["todo_write", "WRITE_LOCAL", true, "session"],
   ["bash", "EXEC", true, "command"],
+  // Windows mounts dsh-tool-pwsh in place of dsh-tool-bash — same gating.
+  ["pwsh", "EXEC", true, "command"],
   ["subagent", "EXEC", true, "none"],
   ["delegate", "EXEC", true, "none"],
   ["send_message", "EXEC", true, "none"],
@@ -156,6 +158,13 @@ describe("tool-risk classifier — set membership", () => {
     // `spawn_subagent` was the old phantom name — it must NOT be treated as the
     // real tool. It falls through to the conservative WRITE_LOCAL default.
     expect(riskForTool("spawn_subagent")).toBe("WRITE_LOCAL");
+  });
+
+  it("pwsh (the Windows shell) is gated exactly like bash", () => {
+    expect(isShellTool("bash")).toBe(true);
+    expect(isShellTool("pwsh")).toBe(true);
+    expect(isShellTool("terminal_send")).toBe(false);
+    expect(approvalPreview("pwsh", { command: "git status" })).toBe("git status");
   });
 
   it("continuable-control tools: delegate/send_message/interrupt_agent are one-off EXEC, list_agents is READ", () => {

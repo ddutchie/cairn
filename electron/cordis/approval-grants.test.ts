@@ -161,6 +161,16 @@ describe("cairnApprovalPlugin ask-classification", () => {
     expect((otherCmd as { kind: string }).kind).toBe("ask");
     expect(hasProjection(sent, "approval", "required")).toBe(true);
   });
+
+  it("grant:'command' applies to pwsh (the Windows shell) exactly like bash", async () => {
+    getSessionGrants("s4").bashCommands.add(canonicalBashCommand("git status")!);
+
+    const { invokeTool } = makeHarness("s4");
+    const sameCmd = await invokeTool("pwsh", { command: "git  status" });
+    expect((sameCmd as { kind: string }).kind).toBe("allow");
+    const otherCmd = await invokeTool("pwsh", { command: "Remove-Item -Recurse build" });
+    expect((otherCmd as { kind: string }).kind).toBe("ask");
+  });
 });
 
 describe("doom-loop sees calls claimed by the approval classifier", () => {

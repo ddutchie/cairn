@@ -47,7 +47,7 @@ export function standingRuleTarget(tool: string, args: Record<string, unknown>):
   if (tool === RUN_SCRIPT_TOOL_NAME) {
     return typeof args.name === "string" && args.name ? args.name : undefined;
   }
-  if (tool === "bash") {
+  if (tool === "bash" || tool === "pwsh") {
     return typeof args.command === "string" && args.command ? args.command : undefined;
   }
   const target = [args.path, args.noteId, args.cardId, args.title]
@@ -63,7 +63,7 @@ export function standingRuleTarget(tool: string, args: Record<string, unknown>):
  * target (see standingRuleTarget), so a target-less rule can only enter via a
  * hand/agent-authored manifest — sanitise those on ingest.
  */
-const CODE_EXEC_TOOLS = new Set([RUN_SCRIPT_TOOL_NAME, "bash"]);
+const CODE_EXEC_TOOLS = new Set([RUN_SCRIPT_TOOL_NAME, "bash", "pwsh"]);
 
 /**
  * Persist an "always allow" decision as a standing rule on the run's automation

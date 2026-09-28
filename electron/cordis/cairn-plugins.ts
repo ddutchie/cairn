@@ -40,7 +40,7 @@ export { CAIRN_DB, CAIRN_HOST };
 export type { HostStore };
 import { getSessionGrants, canonicalBashCommand, recordPendingApprovalArgs, readPendingApprovalArgs, forgetPendingApprovalArgs } from "./approval-grants";
 import { getSecretGrants } from "./secret-grants";
-import { riskForTool as riskForToolShared } from "../../shared/agent/tool-risk";
+import { riskForTool as riskForToolShared, isShellTool } from "../../shared/agent/tool-risk";
 import type { RiskClass } from "../../shared/agent/tool-risk";
 import { shouldAskForTool, modeFromAutoApprove, isMode, type Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
@@ -53,7 +53,7 @@ function toolCallTitle(name: string, argsRaw?: string): string {
   } catch { return name; }
 }
 function secretPathForCall(name: string, args: Record<string, unknown>): string | undefined {
-  if (name === "bash" && typeof args.command === "string" && bashReferencesSecretFile(args.command)) {
+  if (isShellTool(name) && typeof args.command === "string" && bashReferencesSecretFile(args.command)) {
     // use the raw command as key — exact match for session grant
     return `bash:${args.command}`;
   }
@@ -1004,7 +1004,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
   const grants = getSessionGrants(sessionId);
   const isGranted = (name: string, argsObj: Record<string, unknown>): boolean => {
     if (grants.tools.has(name)) return true;
-    if (name === "bash") {
+    if (isShellTool(name)) {
       const cmd = canonicalBashCommand(argsObj.command);
       if (cmd && grants.bashCommands.has(cmd)) return true;
     }
@@ -1015,7 +1015,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
     if (workspaceId && host) {
       try {
         if (host.isWorkspaceGranted(workspaceId, name)) return true;
-        if (name === "bash") {
+        if (isShellTool(name)) {
           const cmd = canonicalBashCommand(argsObj.command);
           if (cmd && host.isWorkspaceGranted(workspaceId, name, cmd)) return true;
         }
@@ -1146,14 +1146,19 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           if (decision.approved && decision.grant === "workspace" && workspaceId && host) {
             try {
               const trusted = readPendingApprovalArgs(sessionId, callId);
-              // For bash the workspace grant is command-scoped (like grant:command);
-              // for everything else it is tool-scoped (target = null).
-              const target = toolName === "bash" && trusted ? canonicalBashCommand(trusted.command) : null;
+              // For bash/pwsh the workspace grant is command-scoped (like
+              // grant:command); for everything else it is tool-scoped (target = null).
+              const commandScoped = isShellTool(toolName);
+              const target = commandScoped && trusted ? canonicalBashCommand(trusted.command) : null;
               host.addWorkspaceApprovalGrant(workspaceId, toolName, target);
               // Also grant this session immediately so the current turn proceeds
               // without waiting for the DB read to take effect on the next ask.
-              grants.tools.add(toolName);
-              if (toolName === "bash" && target) grants.bashCommands.add(target);
+              // A command-scoped grant covers that command only, never the whole shell.
+              if (commandScoped) {
+                if (target) grants.bashCommands.add(target);
+              } else {
+                grants.tools.add(toolName);
+              }
             } catch { /* DB not migrated or closed — session grant already applied */ }
           }
           settle(decision.approved ? "allowed-once" : "rejected");
