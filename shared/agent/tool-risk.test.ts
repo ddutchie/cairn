@@ -165,6 +165,8 @@ describe("tool-risk classifier — set membership", () => {
     expect(isShellTool("pwsh")).toBe(true);
     expect(isShellTool("terminal_send")).toBe(false);
     expect(approvalPreview("pwsh", { command: "git status" })).toBe("git status");
+    // A connector call with no arguments has no preview, never a bare "{}".
+    expect(approvalPreview("mcp__atl1__getAccessibleAtlassianResources", {})).toBe("");
   });
 
   it("continuable-control tools: delegate/send_message/interrupt_agent are one-off EXEC, list_agents is READ", () => {

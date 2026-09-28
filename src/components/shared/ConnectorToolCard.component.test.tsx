@@ -21,13 +21,15 @@ function renderCard(toolCall: ConnectorToolCall, meta: ConnectorMeta = connector
 }
 
 describe("connector-inbound", () => {
-  it("shows the branded connector label and transport, collapsed by default", () => {
-    renderCard({ tool: "search_issues", args: { query: "sync" } });
+  it("shows the branded connector label and the action inline, collapsed by default", () => {
+    renderCard({ tool: "mcp__lin1__search_issues", args: { query: "sync" } });
     const card = screen.getByTestId("connector-message-card");
     expect(card).toBeTruthy();
-    // Branded display label, not the raw internal name.
+    // Branded display label, not the raw internal name…
     expect(screen.getByText("Linear")).toBeTruthy();
-    expect(screen.getByText("via MCP")).toBeTruthy();
+    // …and what the call did, without expanding.
+    expect(screen.getByTestId("connector-tool-summary").textContent).toBe("Linear · Search issues sync");
+    expect(screen.getByRole("button").getAttribute("title")).toBe("Linear via MCP");
     // Collapsed: details (arguments/result) are not in the DOM yet.
     expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Arguments")).toBeNull();
@@ -38,7 +40,12 @@ describe("connector-inbound", () => {
       { tool: "send_message" },
       { name: "slack-svc", kind: "service", label: "Slack" },
     );
-    expect(screen.getByText("via HTTP service")).toBeTruthy();
+    expect(screen.getByRole("button").getAttribute("title")).toBe("Slack via HTTP service");
+  });
+
+  it("marks a failed call on the chip", () => {
+    renderCard({ tool: "mcp__lin1__create_issue", args: { title: "Bug" }, ok: false });
+    expect(screen.getByTestId("connector-tool-summary").textContent).toContain("failed");
   });
 
   it("expands to reveal the tool details on click", async () => {
@@ -49,6 +56,7 @@ describe("connector-inbound", () => {
     expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("Arguments")).toBeTruthy();
     expect(screen.getByText("Result")).toBeTruthy();
+    expect(screen.getByText(/via MCP/)).toBeTruthy();
   });
 
   it("falls back to the raw name when no branded label is given", () => {

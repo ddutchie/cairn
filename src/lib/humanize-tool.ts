@@ -1,4 +1,22 @@
+import { prettifyToolLabel } from "../../shared/ui/constants";
+
 export type ToolArgs = Record<string, unknown>;
+
+/** Argument keys that name what a connector call acts on, most specific first. */
+const CONNECTOR_TARGET_KEYS = [
+  "title", "name", "summary", "subject", "query", "jql", "cql", "q",
+  "issueKey", "issueIdOrKey", "pageId", "key", "id", "url", "path", "channel",
+];
+
+/** The one argument worth showing inline for a connector call (never an arg dump). */
+function connectorTarget(args: ToolArgs): string | undefined {
+  for (const key of CONNECTOR_TARGET_KEYS) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number") return String(value);
+  }
+  return undefined;
+}
 
 export interface HumanizedTool {
   pre: string;
@@ -27,6 +45,7 @@ export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
     case "pwsh": return typeof args.description === "string" && args.description.trim()
       ? { pre: short(args.description) }
       : { pre: "Ran", obj: short(args.command, "a command") };
+    case "skill": return { pre: "Loaded skill", obj: short(args.name, "a skill") };
     case "todo_write": return { pre: "Updated the plan", obj: short(args.todos, "the task list") };
     case "create_note": return { pre: "Created note", obj: short(args.title) };
     case "ensure_note": return { pre: "Saved note", obj: short(args.title) };
@@ -38,7 +57,9 @@ export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
     case "search_tasks": return { pre: "Searched tasks for", obj: `“${short(args.query, "a phrase")}”` };
     default: {
       if (/^(?:mcp|svc)__/.test(name)) {
-        return { pre: "Used", obj: short(name.split("__").pop(), "a tool") };
+        // "Create confluence page" + its title — the action, not "Used <tool>".
+        const target = connectorTarget(args);
+        return target ? { pre: prettifyToolLabel(name), obj: short(target) } : { pre: prettifyToolLabel(name) };
       }
       return { pre: "Used", obj: short(name, "a tool") };
     }

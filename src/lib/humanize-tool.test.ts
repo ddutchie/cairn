@@ -14,8 +14,20 @@ describe("humanizeTool", () => {
 
   it("handles unknown and external tools without exposing an argument dump", () => {
     expect(humanizeTool("svc__slack__post_message", { channel: "alerts", text: "hello" }))
-      .toEqual({ pre: "Used", obj: "post_message" });
+      .toEqual({ pre: "Post message", obj: "alerts" });
     expect(humanizedText("mystery_tool")).toBe("Used mystery_tool");
+  });
+
+  it("names the connector action and its target, camelCase included", () => {
+    expect(humanizeTool("mcp__atl1__createConfluencePage", { spaceId: "123", title: "Q3 plan", body: "…" }))
+      .toEqual({ pre: "Create confluence page", obj: "Q3 plan" });
+    expect(humanizeTool("mcp__atl1__getAccessibleAtlassianResources", {}))
+      .toEqual({ pre: "Get accessible atlassian resources" });
+    expect(humanizeTool("mcp__BZ__search-designs", { query: "logo" })).toEqual({ pre: "Search designs", obj: "logo" });
+  });
+
+  it("names the loaded skill", () => {
+    expect(humanizedText("skill", { name: "pdf" })).toBe("Loaded skill pdf");
   });
 
   it("bounds long display objects", () => {

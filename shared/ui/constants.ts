@@ -93,7 +93,10 @@ export function prettifyToolLabel(
   if (typeof label !== "string") return label;
   const match = /^(?:mcp|svc)__.+?__(.+)$/.exec(label);
   if (match && match[1]) {
-    const tool = match[1].replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
+    // camelCase names (Atlassian's `createConfluencePage`) split into words too.
+    const camel = /[a-z0-9][A-Z]/.test(match[1]);
+    const spaced = camel ? match[1].replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase() : match[1];
+    const tool = spaced.replace(/[_.\-]+/g, " ").replace(/\s+/g, " ").trim();
     if (!tool) return label;
     return tool.charAt(0).toUpperCase() + tool.slice(1);
   }
