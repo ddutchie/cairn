@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { CheckCircle, ChevronDown, ChevronRight, XCircle } from "lucide-react";
 import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { MicroLabel } from "@/components/ui/labels";
 import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
-import { humanizeTool } from "@/lib/humanize-tool";
+import { humanizeConnectorTool } from "@/lib/humanize-tool";
 import { prettyToolOutput, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { prettifyToolLabel } from "@/lib/utils";
 import { extractExternalRefs, type ExternalRef } from "../../../shared/chat/external-ref";
@@ -24,6 +24,8 @@ export interface ConnectorToolCall {
   tool: string;
   args?: Record<string, unknown>;
   output?: string;
+  /** false renders the failed state; undefined/true renders success. */
+  ok?: boolean;
   externalRef?: { url: string; title?: string; snippet?: string };
 }
 
@@ -33,36 +35,40 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
   testId?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const summary = humanizeTool(toolCall.tool, toolCall.args);
+  const summary = humanizeConnectorTool(toolCall.tool, toolCall.args, connector.label || connector.name);
   const output = prettyToolOutput(redactToolOutput(toolCall.output));
   const args = toolCall.args ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2).slice(0, MAX_DETAIL_LENGTH) : undefined;
   const toolLabel = prettifyToolLabel(toolCall.tool, { prettifyBare: true });
   const refs = collectExternalRefs(toolCall.externalRef, extractExternalRefs(output, 20));
+  const transport = connector.kind === "mcp" ? "MCP" : "HTTP service";
+  const ok = toolCall.ok !== false;
+  // Same compact chip as regular tool calls (ConversationToolCall's
+  // ToolCallBody): status icon, small connector logo, "Connector · action".
   return (
-    <div data-testid={testId} className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden w-full max-w-xl">
-      <div className="w-1 self-stretch shrink-0" style={{ background: connector.brandColor || "var(--accent)" }} />
-      <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-          className="flex w-full items-center gap-2 px-2.5 py-2 text-left hover:bg-[var(--surface-2)] transition-colors"
-        >
-          <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={24} />
-          <span className="min-w-0 flex-1 truncate text-[0.714rem] font-semibold text-[var(--text-primary)]">{connector.label || connector.name}</span>
-          <span className="text-[0.607rem] text-[var(--text-tertiary)]">via {connector.kind === "mcp" ? "MCP" : "HTTP service"}</span>
-          {expanded ? <ChevronDown size={12} className="shrink-0 text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="shrink-0 text-[var(--text-tertiary)]" />}
-        </button>
-        {expanded && (
-          <div className="border-t border-[var(--border)] px-2.5 pb-2 pt-1.5">
-            <p className="text-[0.714rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}</p>
-            <p className="mt-1 text-[0.643rem] text-[var(--text-tertiary)]">Tool: {toolLabel}</p>
-            {args && <ToolPayload label="Arguments" value={args} />}
-            {output && <ToolPayload label="Result" value={output} />}
-            {refs.length > 0 && <ExternalRefs toolName={toolCall.tool} refs={refs} />}
-          </div>
-        )}
-      </div>
+    <div data-testid={testId} className="max-w-xl">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        title={`${connector.label || connector.name} via ${transport}`}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit max-w-full text-left hover:border-[var(--accent)] cursor-pointer"
+      >
+        {ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}
+        <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={14} className="shrink-0" />
+        <span data-testid="connector-tool-summary" className="min-w-0 truncate text-[0.714rem] text-[var(--text-secondary)]">
+          <span className="font-medium text-[var(--text-primary)]">{connector.label || connector.name}</span>
+          {" · "}{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!ok && " failed"}
+        </span>
+        {expanded ? <ChevronDown size={9} className="shrink-0 text-[var(--text-tertiary)]" /> : <ChevronRight size={9} className="shrink-0 text-[var(--text-tertiary)]" />}
+      </button>
+      {expanded && (
+        <div className="mt-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
+          <p className="text-[0.643rem] text-[var(--text-tertiary)]">Tool: {toolLabel} · via {transport}</p>
+          {args && <ToolPayload label="Arguments" value={args} />}
+          {output && <ToolPayload label="Result" value={output} />}
+          {refs.length > 0 && <ExternalRefs toolName={toolCall.tool} refs={refs} />}
+        </div>
+      )}
     </div>
   );
 }
@@ -87,7 +93,7 @@ function ExternalRefs({ toolName, refs }: { toolName: string; refs: ExternalRef[
   );
 }
 
-function ToolPayload({ label, value }: { label: string; value: string }) {
+export function ToolPayload({ label, value }: { label: string; value: string }) {
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);

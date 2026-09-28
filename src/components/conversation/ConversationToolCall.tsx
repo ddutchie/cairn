@@ -5,9 +5,11 @@ import { CheckCircle, ChevronDown, ChevronRight, Globe2, ShieldAlert, XCircle } 
 import { Spinner } from "@/components/ui/spinner";
 import { cn, prettifyToolLabel } from "@/lib/utils";
 import { CairnRefChip, ExternalRefChip, extractCairnRef } from "@/components/shared/cairn-ref-chip";
-import { ConnectorToolCard, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
+import { ConnectorToolCard, ToolPayload, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
+import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
+import { redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
-import { humanizeTool } from "@/lib/humanize-tool";
+import { humanizeConnectorTool, humanizeTool } from "@/lib/humanize-tool";
 import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-risk";
 import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
 import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
@@ -46,10 +48,18 @@ function referencedPath(toolCall: ConversationToolCall): string | undefined {
   return undefined;
 }
 
-function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
+function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallProps) {
   const [pending, setPending] = useState<null | "allow" | "deny" | "always" | "command">(null);
   const risk = riskForTool(toolCall.name);
-  const preview = approvalPreview(toolCall.name, toolCall.args);
+  const connector = connectorForTool(toolCall.name, connectors);
+  const summary = connector
+    ? humanizeConnectorTool(toolCall.name, toolCall.args, connector.label || connector.name)
+    : humanizeTool(toolCall.name, toolCall.args);
+  // Connector calls show their arguments as a key/value tree (below), not a JSON preview.
+  const preview = connector ? "" : approvalPreview(toolCall.name, toolCall.args);
+  const connectorArgs = connector && toolCall.args && Object.keys(toolCall.args).length > 0
+    ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2)
+    : undefined;
   const scope = approvalScopeLabel(toolCall.name);
   const command = typeof toolCall.args?.command === "string" ? toolCall.args.command : undefined;
   if (!sessionId || !toolCall.callId) return <ToolCallBody toolCall={toolCall} />;
@@ -67,13 +77,25 @@ function ApprovalCard({ toolCall, sessionId }: ConversationToolCallProps) {
   return (
     <div data-testid="approval-card" className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5">
       <div className="flex items-start gap-2">
-        {risk === "EXTERNAL" ? <Globe2 size={14} className="mt-0.5 text-[var(--warning)] shrink-0" /> : <ShieldAlert size={14} className="mt-0.5 text-[var(--warning)] shrink-0" />}
+        {connector
+          ? <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={24} />
+          : risk === "EXTERNAL" ? <Globe2 size={14} className="mt-0.5 text-[var(--warning)] shrink-0" /> : <ShieldAlert size={14} className="mt-0.5 text-[var(--warning)] shrink-0" />}
         <div className="min-w-0 flex-1">
-          <p className="text-[0.786rem] font-medium text-[var(--text-primary)]">{toolCall.viewTitle ?? humanizeTool(toolCall.name, toolCall.args).pre}</p>
+          {connector && (
+            <p data-testid="approval-connector" className="text-[0.643rem] text-[var(--text-tertiary)]">
+              <span className="font-semibold text-[var(--text-secondary)]">{connector.label || connector.name}</span> via {connector.kind === "mcp" ? "MCP" : "HTTP service"}
+            </p>
+          )}
+          <p data-testid="approval-title" className="text-[0.786rem] font-medium text-[var(--text-primary)] break-words">
+            {toolCall.viewTitle ?? <>{summary.pre}{summary.obj ? <> <strong className="font-semibold">{summary.obj}</strong></> : null}</>}
+          </p>
           <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">This {scope}.</p>
         </div>
         <span className="text-[0.607rem] font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
       </div>
+      {connector && (connectorArgs
+        ? <div className="max-h-48 overflow-auto"><ToolPayload label="Arguments" value={connectorArgs} /></div>
+        : <p data-testid="approval-no-args" className="mt-1.5 text-[0.643rem] text-[var(--text-tertiary)]">No arguments.</p>)}
       {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
       <div className="mt-2 flex items-center justify-end gap-1.5 min-h-[28px]">
         {pending ? (
@@ -177,7 +199,7 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
   if (ref) return <CairnRefChip toolName={toolCall.name} cairnRef={ref} ok={toolCall.ok} />;
   const connector = connectorForTool(toolCall.name, connectors);
-  if (connector) return <ConnectorToolCard toolCall={{ tool: toolCall.name, args: toolCall.args, output: toolCall.output, externalRef: toolCall.externalRef }} connector={connector} />;
+  if (connector) return <ConnectorToolCard toolCall={{ tool: toolCall.name, args: toolCall.args, output: toolCall.output, ok: toolCall.ok, externalRef: toolCall.externalRef }} connector={connector} />;
   if (toolCall.externalRef) return <ExternalRefChip toolName={toolCall.name} externalRef={toolCall.externalRef} />;
   return <ToolCallBody toolCall={toolCall} />;
 }

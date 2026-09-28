@@ -16,29 +16,18 @@ import type { ConversationLiveToolCall as ChatToolCall } from "@/components/conv
 import { getToolView, registerToolView, registeredToolViewKeys } from "./registry";
 import { toToolCallViewProps } from "./adapter";
 import { SkillRow } from "./SkillRow";
-import { registerSlot } from "@/lib/plugin-ui/registry";
-import type { ToolCallViewProps } from "./contract";
 import "./dsw-theme.css";
 
 let registered = false;
 
-/** SkillRow wrapped in the --dsw-* theme scope, for the plugin-ui slot registry. */
-function ScopedSkillRow(props: ToolCallViewProps) {
-  return (
-    <div className="dsh-toolview-scope">
-      <SkillRow {...props} />
-    </div>
-  );
-}
-
-/** Register the built-in (vendored) dsh toolviews into BOTH the self-contained
- *  §11 registry AND Cairn's unified plugin-ui slot matrix (tool.call.toolview),
- *  so the transcript can render them via the shared SlotOutlet. Idempotent. */
+/** Register the built-in (vendored) dsh toolviews into the self-contained §11
+ *  registry. The skill view is deliberately NOT put in the plugin-ui slot
+ *  (tool.call.toolview): the transcript renders `skill` as Cairn's standard
+ *  tool chip so every tool looks and expands the same. Idempotent. */
 export function registerBuiltinToolViews(): void {
   if (registered) return;
   registered = true;
   registerToolView("skill", SkillRow);
-  registerSlot("tool.call.toolview", { id: "dsh:skill", key: "skill" }, ScopedSkillRow);
 }
 
 export function hasToolView(toolName: string): boolean {

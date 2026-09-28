@@ -14,6 +14,18 @@ export type RiskClass = "READ" | "WRITE_LOCAL" | "EXEC" | "EXTERNAL";
 export type GrantScope = "none" | "command" | "session";
 
 /**
+ * Shell tools with a `command` argument. `pwsh` replaces `bash` on Windows
+ * (dsh-tool-pwsh, upstream's win32 default); both are EXEC and bind standing
+ * grants to the exact command.
+ */
+const SHELL_TOOLS = new Set<string>(["bash", "pwsh"]);
+
+/** The coding shell tool (`bash`, or `pwsh` on Windows). */
+export function isShellTool(name: string): boolean {
+  return SHELL_TOOLS.has(name);
+}
+
+/**
  * Tools that never need approval — read-only over Cairn data, codebase, or the
  * skill catalog, plus the pure-communication forms. Anything NOT in this set
  * routes through the approval seam when auto-approve is off.
@@ -92,7 +104,7 @@ export function riskForTool(name: string): RiskClass {
   // Shared MCP resource tools (dsh-mcp-resources): they reach a user-configured
   // external server just like its mcp__ tools, so they carry the same class.
   if (name === "list_mcp_resources" || name === "list_mcp_resource_templates" || name === "read_mcp_resource") return "EXTERNAL";
-  if (name === "bash") return "EXEC";
+  if (isShellTool(name)) return "EXEC";
   // `subagent` (dsh-tool-subagent, registered under toolName "subagent") spawns
   // an in-process child agent that inherits the coding tool stack — including
   // bash/fs/editor — so it reaches the shell and is EXEC-class, not a local
@@ -129,7 +141,7 @@ export function riskForTool(name: string): RiskClass {
 }
 
 export function approvalPreview(name: string, args: Record<string, unknown> = {}): string {
-  const value = name === "bash"
+  const value = isShellTool(name)
     ? args.command
     : name === "terminal_send"
       ? args.text
@@ -142,7 +154,8 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
             : name === "write"
               ? args.content
               : name.startsWith("mcp__") || name.startsWith("svc__")
-                ? JSON.stringify(args, null, 2)
+                // No arguments → no preview (never a bare "{}").
+                ? (Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : "")
                 : args.path ?? args.title ?? args.query ?? "";
   const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
   const lines = text.split("\n").slice(0, 5);
@@ -153,13 +166,13 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
 /**
  * Which "always allow" grant the approval card offers for a tool:
  *
- * - `command` — bash only: bind the standing grant to this exact command.
+ * - `command` — bash/pwsh only: bind the standing grant to this exact command.
  * - `session` — writes and external calls: allow this tool for the session.
  * - `none`    — reads and other exec: one-off allow/deny only, no standing grant.
  */
 export function approvalGrantScope(name: string): GrantScope {
   const risk = riskForTool(name);
-  if (risk === "EXEC" && name === "bash") return "command";
+  if (risk === "EXEC" && isShellTool(name)) return "command";
   // Untrusted external content stays an explicit per-call decision (v1) —
   // no standing session grant, even though the risk class is WRITE_LOCAL.
   if (name === "web_search" || name === "web_fetch") return "none";

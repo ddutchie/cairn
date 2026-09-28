@@ -98,6 +98,10 @@ describe("prettifyToolLabel", () => {
     expect(prettifyToolLabel("svc__abc123__list_invoices")).toBe("List invoices");
   });
 
+  it("splits camelCase tool names", () => {
+    expect(prettifyToolLabel("mcp__atl1__createConfluencePage")).toBe("Create confluence page");
+  });
+
   it("keeps a tool name that contains the separator", () => {
     expect(prettifyToolLabel("mcp__srv1__weird__tool")).toBe("Weird tool");
   });

@@ -82,6 +82,7 @@ function sweepSessionPendings(sessionId: string): void {
 }
 
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
+import { isShellTool } from "../../shared/agent/tool-risk";
 
 /** The raw turn inputs the Cordis coding loop needs (prompt + attachments + config). */
 interface CordisTurnPayload {
@@ -1028,12 +1029,13 @@ export function registerSessionRuntimeHandlers(
             ?? (sessionId.startsWith("chat-") ? (ctx.db.prepare("SELECT workspace_id FROM chat_threads WHERE id = ?").get(sessionId.slice(5)) as { workspace_id?: string } | undefined)?.workspace_id : undefined);
           const workspaceId = wsRow ?? undefined;
           if (workspaceId) {
-            const target = toolName === "bash" ? getAgentHost().readTrustedBashCommand(sessionId, callId) : null;
+            const commandScoped = isShellTool(toolName);
+            const target = commandScoped ? getAgentHost().readTrustedBashCommand(sessionId, callId) : null;
             const grantRec = addWorkspaceApprovalGrant(ctx.db, workspaceId, toolName, target);
             // Also grant this session immediately so the current turn proceeds
             // without needing to re-read the DB before the next ask.
             if (grantRec) {
-               if (toolName === "bash" && target) getAgentHost().grantSessionBash(sessionId, target);
+               if (commandScoped) { if (target) getAgentHost().grantSessionBash(sessionId, target); }
                else getAgentHost().grantSessionTool(sessionId, toolName);
             }
           }
@@ -1208,7 +1210,7 @@ export function registerSessionRuntimeHandlers(
   // ── approval grants (workspace-persistent "Always allow") ─────────────────
   // Device-local, not synced: a trust decision on this machine must not
   // silently apply on another. One row per (workspace, tool, target) — target
-  // is the exact bash command for "bash", otherwise null (whole tool).
+  // is the exact command for "bash"/"pwsh", otherwise null (whole tool).
   registerIpcHandle("approval-grants:list", (_event, { workspaceId }: { workspaceId: string }) =>
     handle(async () => {
       assertSafeId(workspaceId, "workspaceId");

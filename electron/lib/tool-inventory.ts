@@ -91,7 +91,10 @@ export const CODING_FS_TOOLS: readonly CodingStackTool[] = [
 ];
 
 export const CODING_EXEC_TOOLS: readonly CodingStackTool[] = [
-  { name: "bash", description: "Run a shell command (sandboxed to workspace-write by default).", category: "exec" },
+  // Windows mounts dsh-tool-pwsh instead of dsh-tool-bash (see mountCodingStack).
+  process.platform === "win32"
+    ? { name: "pwsh", description: "Run a PowerShell command (sandboxed to workspace-write by default).", category: "exec" }
+    : { name: "bash", description: "Run a shell command (sandboxed to workspace-write by default).", category: "exec" },
   { name: "terminal_open", description: "Open a persistent model shell (shared PTY manager).", category: "exec" },
   { name: "terminal_send", description: "Send input to a model shell.", category: "exec" },
   { name: "terminal_read", description: "Read output from a model shell.", category: "exec" },
