@@ -237,8 +237,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       const threads = get().chatThreads.filter((t) => t.workspaceId === workspaceId);
       const hasMsgs = (tid: string) => get().chatMessages.some((m) => m.threadId === tid);
       const activeId = get().activeChatThreadId;
+      // On startup activeChatThreadId is still null while the saved pointer names
+      // the thread that is about to be restored — protect both.
+      const savedActiveId = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
       const redundant = threads.filter((t) => {
-        if (t.id === activeId || t.title || failedThreadIds.has(t.id) || hasMsgs(t.id)) return false;
+        if (t.id === activeId || t.id === savedActiveId || t.title || failedThreadIds.has(t.id) || hasMsgs(t.id)) return false;
         const counterparts = [`chat-${t.id}`, t.id.startsWith("chat-") ? t.id.slice(5) : ""];
         return counterparts.some((cid) => cid && threads.some((o) => o.id === cid && hasMsgs(o.id)));
       });

@@ -50,8 +50,9 @@ describe("startMcpNotificationPoller — toast baseline", () => {
       });
       await new Promise((r) => setTimeout(r, 20));
 
+      let bumps = 0;
       const bump = () => {
-        const future = new Date(Date.now() + 5000 + toasts.length * 1000);
+        const future = new Date(Date.now() + 5000 + ++bumps * 1000);
         for (const f of [dbPath, dbPath + "-wal"]) if (fs.existsSync(f)) fs.utimesSync(f, future, future);
       };
 

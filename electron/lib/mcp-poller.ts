@@ -77,8 +77,14 @@ export function startMcpNotificationPoller({
   // or workspace swap) were raised before this session, so they are baselined
   // as "already toasted" — only rows that arrive afterwards toast. Without
   // this, every restart re-toasted the whole unread backlog.
+  // A failed read leaves the baseline pending; it is retried before any toast
+  // is raised so a transient error can't turn the backlog into "new" rows.
+  let baselined = false;
   const baselineToasts = (): void => {
-    try { for (const n of getUnreadMcpNotifications(getDb())) toastedIds.add(n.id); } catch { /* db transient */ }
+    try {
+      for (const n of getUnreadMcpNotifications(getDb())) toastedIds.add(n.id);
+      baselined = true;
+    } catch { baselined = false; }
   };
   baselineToasts();
   // Last unread count we broadcast — only push on change.
@@ -124,6 +130,7 @@ export function startMcpNotificationPoller({
         walPath = dbPath + "-wal";
         prevLocked = new Set<string>();
         toastedIds.clear();
+        baselined = false;
         baselineToasts();
         // We re-baseline lastMtime to the new file's current mtime, so the
         // `mtime > lastMtime` branch below won't fire until the NEXT write to the
@@ -151,6 +158,12 @@ export function startMcpNotificationPoller({
           lastHead = head;
 
           const unread = getUnreadMcpNotifications(db);
+          // Baseline never completed (its read failed): treat what is unread now
+          // as the backlog instead of toasting it.
+          if (!baselined) {
+            for (const n of unread) toastedIds.add(n.id);
+            baselined = true;
+          }
           const appFocused = !win.isDestroyed() && win.isFocused();
           // Toast NEW notifications only while the app is unfocused (the user can
           // already see the badge/inbox in-app when focused).
