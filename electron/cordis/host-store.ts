@@ -334,7 +334,19 @@ export function createHostStore(db: Database.Database): HostStore {
     },
 
     indexChatThread(threadId: string, workspaceId: string, projectId?: string): void {
-      upsertChatThreadImpl(db, { id: threadId, scope: "workspace", workspaceId, projectId });
+      // Re-indexing on every session event must not reset what the thread
+      // already has (the upsert overwrites title / use_subagents / scope).
+      const existing = db.prepare("SELECT scope, title, use_subagents FROM chat_threads WHERE id = ?").get(threadId) as
+        | { scope: string; title: string | null; use_subagents: number }
+        | undefined;
+      upsertChatThreadImpl(db, {
+        id: threadId,
+        scope: existing?.scope ?? "workspace",
+        workspaceId,
+        projectId,
+        title: existing?.title ?? undefined,
+        useSubagents: existing ? existing.use_subagents === 1 : undefined,
+      });
     },
 
     upsertSessionProfile(
