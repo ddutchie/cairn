@@ -5,7 +5,7 @@ import { CheckCircle, ChevronDown, ChevronRight, XCircle } from "lucide-react";
 import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { MicroLabel } from "@/components/ui/labels";
 import { ExternalRefChip } from "@/components/shared/cairn-ref-chip";
-import { humanizeTool } from "@/lib/humanize-tool";
+import { humanizeConnectorTool } from "@/lib/humanize-tool";
 import { prettyToolOutput, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { prettifyToolLabel } from "@/lib/utils";
 import { extractExternalRefs, type ExternalRef } from "../../../shared/chat/external-ref";
@@ -35,7 +35,7 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
   testId?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const summary = humanizeTool(toolCall.tool, toolCall.args);
+  const summary = humanizeConnectorTool(toolCall.tool, toolCall.args, connector.label || connector.name);
   const output = prettyToolOutput(redactToolOutput(toolCall.output));
   const args = toolCall.args ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2).slice(0, MAX_DETAIL_LENGTH) : undefined;
   const toolLabel = prettifyToolLabel(toolCall.tool, { prettifyBare: true });

@@ -9,7 +9,7 @@ import { ConnectorToolCard, ToolPayload, type ConnectorMeta } from "@/components
 import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
-import { humanizeTool } from "@/lib/humanize-tool";
+import { humanizeConnectorTool, humanizeTool } from "@/lib/humanize-tool";
 import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-risk";
 import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
 import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
@@ -52,7 +52,9 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   const [pending, setPending] = useState<null | "allow" | "deny" | "always" | "command">(null);
   const risk = riskForTool(toolCall.name);
   const connector = connectorForTool(toolCall.name, connectors);
-  const summary = humanizeTool(toolCall.name, toolCall.args);
+  const summary = connector
+    ? humanizeConnectorTool(toolCall.name, toolCall.args, connector.label || connector.name)
+    : humanizeTool(toolCall.name, toolCall.args);
   // Connector calls show their arguments as a key/value tree (below), not a JSON preview.
   const preview = connector ? "" : approvalPreview(toolCall.name, toolCall.args);
   const connectorArgs = connector && toolCall.args && Object.keys(toolCall.args).length > 0

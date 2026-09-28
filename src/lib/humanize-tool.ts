@@ -66,6 +66,22 @@ export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
   }
 }
 
+/**
+ * Connector-call summary shown next to the connector's own name: drop that
+ * name from the action so "Confluence · Create confluence page" reads
+ * "Confluence · Create page". Whole-word, case-insensitive; keeps the
+ * original when stripping would leave nothing.
+ */
+export function humanizeConnectorTool(name: string, args: ToolArgs = {}, connectorLabel?: string): HumanizedTool {
+  const result = humanizeTool(name, args);
+  const label = connectorLabel?.trim();
+  if (!label) return result;
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const stripped = result.pre.replace(new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, "gi"), "$1").replace(/\s+/g, " ").trim();
+  if (!stripped) return result;
+  return { ...result, pre: stripped.charAt(0).toUpperCase() + stripped.slice(1) };
+}
+
 export function humanizedText(name: string, args?: ToolArgs): string {
   const result = humanizeTool(name, args);
   return [result.pre, result.obj, result.post].filter(Boolean).join(" ");

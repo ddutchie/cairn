@@ -35,6 +35,11 @@ describe("connector-inbound", () => {
     expect(screen.queryByText("Arguments")).toBeNull();
   });
 
+  it("does not repeat the connector name in the action", () => {
+    renderCard({ tool: "mcp__lin1__linear_create_issue", args: { title: "Bug" } });
+    expect(screen.getByTestId("connector-tool-summary").textContent).toBe("Linear · Create issue Bug");
+  });
+
   it("labels an HTTP service connector as such", () => {
     renderCard(
       { tool: "send_message" },

@@ -26,7 +26,8 @@ describe("connector approval card", () => {
       toolCall={call({ name: "mcp__atl1__createConfluencePage", args: { spaceId: "42", title: "Q3 plan" }, confirmRequired: true })}
     />);
     expect(screen.getByTestId("approval-connector").textContent).toBe("Confluence via MCP");
-    expect(screen.getByTestId("approval-title").textContent).toBe("Create confluence page Q3 plan");
+    // The connector's own name is dropped from the action ("Create confluence page").
+    expect(screen.getByTestId("approval-title").textContent).toBe("Create page Q3 plan");
     expect(screen.getByText("Arguments")).toBeTruthy();
     expect(screen.queryByTestId("approval-preview")).toBeNull();
   });
