@@ -1,0 +1,13 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js b/node_modules/@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js
+index 3c60ae8..362d537 100644
+--- a/node_modules/@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js
+@@ -617,7 +617,7 @@ var Relationships = class {
+ 	}
+ 	tool(event, data) {
+ 		if (event.type === "tool/result" && event["surfaceOp"] !== "append") {
+-			this.requireTurn(event.type);
++			// cairn patch: dsh's tool-result pruner (<=0.1.5) wrote replacement results after turn/end; accept them so those sessions migrate.
+ 			return;
+ 		}
+ 		this.requireStep(event, data);

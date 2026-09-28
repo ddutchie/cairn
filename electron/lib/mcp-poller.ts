@@ -73,6 +73,20 @@ export function startMcpNotificationPoller({
   };
   // Notification ids already shown as an OS toast (dedupe across WAL ticks).
   const toastedIds = new Set<string>();
+  // Notifications already unread when we start watching a database (app launch
+  // or workspace swap) were raised before this session, so they are baselined
+  // as "already toasted" — only rows that arrive afterwards toast. Without
+  // this, every restart re-toasted the whole unread backlog.
+  // A failed read leaves the baseline pending; it is retried before any toast
+  // is raised so a transient error can't turn the backlog into "new" rows.
+  let baselined = false;
+  const baselineToasts = (): void => {
+    try {
+      for (const n of getUnreadMcpNotifications(getDb())) toastedIds.add(n.id);
+      baselined = true;
+    } catch { baselined = false; }
+  };
+  baselineToasts();
   // Last unread count we broadcast — only push on change.
   let lastUnread = -1;
   // Previous snapshot of MCP-locked note IDs — diff each poll to fire started/ended events
@@ -115,6 +129,9 @@ export function startMcpNotificationPoller({
         dbPath = currentPath;
         walPath = dbPath + "-wal";
         prevLocked = new Set<string>();
+        toastedIds.clear();
+        baselined = false;
+        baselineToasts();
         // We re-baseline lastMtime to the new file's current mtime, so the
         // `mtime > lastMtime` branch below won't fire until the NEXT write to the
         // new workspace. Push its unread count now so the badge reflects the new
@@ -141,6 +158,12 @@ export function startMcpNotificationPoller({
           lastHead = head;
 
           const unread = getUnreadMcpNotifications(db);
+          // Baseline never completed (its read failed): treat what is unread now
+          // as the backlog instead of toasting it.
+          if (!baselined) {
+            for (const n of unread) toastedIds.add(n.id);
+            baselined = true;
+          }
           const appFocused = !win.isDestroyed() && win.isFocused();
           // Toast NEW notifications only while the app is unfocused (the user can
           // already see the badge/inbox in-app when focused).

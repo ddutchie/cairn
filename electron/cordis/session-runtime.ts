@@ -96,7 +96,10 @@ export async function mountCordisSessionPlugins({
   await mount(cairnDbPlugin, { db, host: createHostStore(db) });
   if (includeSessionIndex) {
     await mount(cairnSessionPlugin, {
-      threadId: sessionId,
+      // The thread index is keyed by thread id, not the dsh session id
+      // (`chat-<threadId>`) — indexing the latter created a phantom `chat-…`
+      // thread row (a stray untitled "New chat") on every chat.
+      threadId: req.threadId ?? sessionId.replace(/^chat-/, ""),
       workspaceId: req.workspaceId ?? "",
       projectId: req.projectId,
     });

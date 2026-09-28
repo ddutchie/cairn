@@ -115,6 +115,10 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // is written — expected behaviour, not a fallback.
     const usageByThreadId = new Map<string, unknown>();
     const titleByThreadId = new Map<string, string | null>();
+    // Threads whose session log could not be read (as opposed to being empty).
+    // A failed replay is NOT evidence that a thread is blank, so these are
+    // never pruned or treated as redundant below.
+    const failedThreadIds = new Set<string>();
     const messageLists = await Promise.all(
       dbThreads.map(async (t) => {
         try {
@@ -124,6 +128,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
           );
           // Shared unwrapper — see unwrapSessionPayload for why this used to be
           // open-coded here (and drifted from the other three call sites).
+          if (sessRes && typeof sessRes === "object" && "error" in sessRes && (sessRes as { error?: unknown }).error) {
+            failedThreadIds.add(t.id);
+            console.warn("[chat] sessionMessages failed", { threadId: t.id, error: String((sessRes as { error: unknown }).error) });
+            return [];
+          }
           const payload = unwrapSessionPayload(sessRes);
           const data: ChatMessage[] | null = payload.messages.length > 0 ? payload.messages as ChatMessage[] : null;
           const usage: unknown = payload.usage;
@@ -134,7 +143,10 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
           if (data && data.length > 0) {
             return data;
           }
-        } catch (e) { console.warn("[chat] sessionMessages failed", { threadId: t.id, error: String(e) }); }
+        } catch (e) {
+          failedThreadIds.add(t.id);
+          console.warn("[chat] sessionMessages failed", { threadId: t.id, error: String(e) });
+        }
         return [];
       })
     );
@@ -216,8 +228,35 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
     get().persist();
 
-    // Prune blank demo threads (1515 → ~30) — keep active + recent with messages
+    // Drop redundant duplicate rows. Older builds indexed every chat event under
+    // the dsh session id (`chat-<threadId>`) instead of the thread id, leaving
+    // an untitled phantom `chat-<id>` row next to the real `<id>` row (or the
+    // reverse, when the conversation continued on the phantom). A blank,
+    // untitled row is redundant when its counterpart holds the conversation.
     {
+      const threads = get().chatThreads.filter((t) => t.workspaceId === workspaceId);
+      const hasMsgs = (tid: string) => get().chatMessages.some((m) => m.threadId === tid);
+      const activeId = get().activeChatThreadId;
+      // On startup activeChatThreadId is still null while the saved pointer names
+      // the thread that is about to be restored — protect both.
+      const savedActiveId = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
+      const redundant = threads.filter((t) => {
+        if (t.id === activeId || t.id === savedActiveId || t.title || failedThreadIds.has(t.id) || hasMsgs(t.id)) return false;
+        const counterparts = [`chat-${t.id}`, t.id.startsWith("chat-") ? t.id.slice(5) : ""];
+        return counterparts.some((cid) => cid && threads.some((o) => o.id === cid && hasMsgs(o.id)));
+      });
+      if (redundant.length > 0) {
+        const ids = new Set(redundant.map((t) => t.id));
+        set((s) => ({ chatThreads: s.chatThreads.filter((t) => !ids.has(t.id)) }));
+        get().persist();
+        for (const t of redundant) ipc((e) => e.chat.deleteThread(t.id));
+      }
+    }
+
+    // Prune blank demo threads (1515 → ~30) — keep active + recent with messages.
+    // Skipped entirely if any replay failed: a failed load makes real threads
+    // look blank, and deleting them would compound the failure.
+    if (failedThreadIds.size === 0) {
       const activeId = get().activeChatThreadId;
       const nowMs = Date.now();
       const blanks = get().chatThreads.filter(
