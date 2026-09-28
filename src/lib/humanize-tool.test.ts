@@ -34,6 +34,8 @@ describe("humanizeTool", () => {
     // Whole words only, and never empty.
     expect(humanizeConnectorTool("mcp__j__jiraform_submit", {}, "Jira").pre).toBe("Jiraform submit");
     expect(humanizeConnectorTool("mcp__l__linear", {}, "Linear").pre).toBe("Linear");
+    // Bare (un-namespaced) connector tool names are humanized too, not "Used send_message".
+    expect(humanizeConnectorTool("send_message", { channel: "alerts" }, "Slack")).toEqual({ pre: "Send message", obj: "alerts" });
     expect(humanizeConnectorTool("mcp__a__getAccessibleAtlassianResources", {}, "Confluence").pre)
       .toBe("Get accessible atlassian resources");
   });

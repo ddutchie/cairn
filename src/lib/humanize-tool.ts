@@ -56,14 +56,18 @@ export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
     case "search_notes": return { pre: "Searched notes for", obj: `“${short(args.query, "a phrase")}”` };
     case "search_tasks": return { pre: "Searched tasks for", obj: `“${short(args.query, "a phrase")}”` };
     default: {
-      if (/^(?:mcp|svc)__/.test(name)) {
-        // "Create confluence page" + its title — the action, not "Used <tool>".
-        const target = connectorTarget(args);
-        return target ? { pre: prettifyToolLabel(name), obj: short(target) } : { pre: prettifyToolLabel(name) };
-      }
+      if (/^(?:mcp|svc)__/.test(name)) return humanizeConnectorAction(name, args);
       return { pre: "Used", obj: short(name, "a tool") };
     }
   }
+}
+
+/** "Create confluence page" + its target — the action, not "Used <tool>". Accepts
+ *  namespaced (`mcp__id__tool`) and bare (`send_message`) connector tool names. */
+function humanizeConnectorAction(name: string, args: ToolArgs): HumanizedTool {
+  const pre = prettifyToolLabel(name, { prettifyBare: true });
+  const target = connectorTarget(args);
+  return target ? { pre, obj: short(target) } : { pre };
 }
 
 /**
@@ -73,7 +77,9 @@ export function humanizeTool(name: string, args: ToolArgs = {}): HumanizedTool {
  * original when stripping would leave nothing.
  */
 export function humanizeConnectorTool(name: string, args: ToolArgs = {}, connectorLabel?: string): HumanizedTool {
-  const result = humanizeTool(name, args);
+  // The caller already knows this is a connector call, so a bare tool name
+  // (e.g. an HTTP service's `send_message`) is humanized as an action too.
+  const result = humanizeConnectorAction(name, args);
   const label = connectorLabel?.trim();
   if (!label) return result;
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
