@@ -118,6 +118,28 @@ stands: knowing which features get used. Plan for a Cairn-owned telemetry
 system (feature-usage scope, local-first defaults, explicit opt-in story to be
 designed) as its own project. Not dsh OTel, not now.
 
+### Not yet evaluated (2026-09-29 registry sweep)
+Found by diffing the npm registry (`@deepseek-ai/*`, 250 results) against the
+lockfile. Web-shell/client packages (`dsh-client-*`, `dsh-host-*`, `dsh-web-*`,
+`dsh-sdk-*`, `dsh-acp*`) are out of scope by the rule of thumb above.
+
+| Package | What it is | Note |
+|---|---|---|
+| `dsh-session-checkpoint-policy` | Semantic durability checkpoints before model requests and tool side effects | Worth evaluating given past silent session-flush failures; behaviour not yet read |
+| `dsh-webhook` + `dsh-webhook-github` | Webhook rules that create sessions | Needs `dsh-host-webserver` (an HTTP listener + tunnel on desktop) — product decision first; automations are cron/heartbeat today |
+| `dsh-tool-bash-persistent` + `dsh-terminal-bash` | Persistent PTY shell tool | These are the packages behind the accepted terminal bridge above |
+| `dsh-tool-present`, `dsh-session-turn-outline` | File-delivery declarations; whole-log turn outline projection | Value for Cairn unclear |
+| `dsh-session-projection-cache` | Persisted projection cache | Not useful: session lists come from SQLite (`db:session:list`), not dsh projections |
+
+### 0.2.0-rc.2 delta (2026-09-29, tarball diff vs 0.1.7-rc.2)
+Peers still `cordis ~4.0.4`. Only ~15 of ~100 direct packages change code. Type-level
+changes are additive or unused by Cairn: `dsh-user-questions` adds `askTimed()` +
+a projection (`ask()` unchanged), `dsh-session` adds `ToolCallRecovery` (crash-tail
+repair now supplies error results), `dsh-llm-pi-ai` renames compat fields
+(`deferredToolsMode` etc.; Cairn references none). Runtime changes not yet
+exercised: `agent-loop`, `sandbox-local`, `tool-bash`/`tool-pwsh`,
+`session-persistence-jsonl` worker. Bump with the upgrade guide, then run the live tests.
+
 ### `dsh-attachment-local` — blocked
 Needs real sharp; sharp ships no Windows-arm64 prebuild (see stub rationale in
 `electron/sharp-stub/`). Cairn's sharp-free store stands. Unblocks on: a
@@ -134,3 +156,5 @@ pure-JS decoder, a platform-gated optional dep, or dropping the platform.
   PTY), session export, web research, LSP, workflows/Ralph, cross-session
   refs design doc. Deferred: feedback read side, loop hygiene, model routing.
   Planned-later: first-party telemetry system.
+- 2026-09-29: registry sweep — added "Not yet evaluated" and 0.2.0-rc.2 delta;
+  dropped unused `cordis-plugin-hmr` / `cordis-plugin-timer` deps.
