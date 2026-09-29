@@ -1,5 +1,5 @@
 /**
- * Guards patches/@earendil-works+pi-ai+0.85.1.patch (applied by patch-package
+ * Guards patches/@earendil-works+pi-ai+0.87.1.patch (applied by patch-package
  * on postinstall). Unpatched pi-ai re-parses the whole accumulated tool-call
  * JSON on every streamed delta — O(n²) on the main process for a large write.
  * The patch (ported from deepseek-harness #4740) parses once at toolcall_end.
@@ -11,6 +11,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { stream as streamCompletions } from "@earendil-works/pi-ai/api/openai-completions";
 import { stream as streamResponses } from "@earendil-works/pi-ai/api/openai-responses";
+import { normalizeContext } from "@earendil-works/pi-ai";
 
 const servers: Server[] = [];
 afterEach(async () => {
@@ -35,7 +36,7 @@ async function sseServer(events: string[]): Promise<string> {
 const args = { file_path: "notes.md", content: "x".repeat(2048) };
 const argsJson = JSON.stringify(args);
 const fragments = argsJson.match(/.{1,7}/gs) ?? [];
-const context = { messages: [{ role: "user" as const, content: "hi", timestamp: 0 }] };
+const context = normalizeContext({ messages: [{ role: "user" as const, content: "hi", timestamp: 0 }] });
 
 function model(api: "openai-completions" | "openai-responses", baseUrl: string) {
   return {

@@ -118,6 +118,40 @@ stands: knowing which features get used. Plan for a Cairn-owned telemetry
 system (feature-usage scope, local-first defaults, explicit opt-in story to be
 designed) as its own project. Not dsh OTel, not now.
 
+### Not yet evaluated (2026-09-29 registry sweep)
+Found by diffing the npm registry (`@deepseek-ai/*`, 250 results) against the
+lockfile. Web-shell/client packages (`dsh-client-*`, `dsh-host-*`, `dsh-web-*`,
+`dsh-sdk-*`, `dsh-acp*`) are out of scope by the rule of thumb above.
+
+| Package | What it is | Note |
+|---|---|---|
+| `dsh-session-checkpoint-policy` | Semantic durability checkpoints before model requests and tool side effects | Worth evaluating given past silent session-flush failures; behaviour not yet read |
+| `dsh-webhook` + `dsh-webhook-github` | Webhook rules that create sessions | Needs `dsh-host-webserver` (an HTTP listener + tunnel on desktop) — product decision first; automations are cron/heartbeat today |
+| `dsh-tool-bash-persistent` + `dsh-terminal-bash` | Persistent PTY shell tool | These are the packages behind the accepted terminal bridge above |
+| `dsh-tool-present`, `dsh-session-turn-outline` | File-delivery declarations; whole-log turn outline projection | Value for Cairn unclear |
+| `dsh-session-projection-cache` | Persisted projection cache | Not useful: session lists come from SQLite (`db:session:list`), not dsh projections |
+
+### 0.2.0-rc.2 bump (2026-09-29) — landed on the mechanical-bump rules
+All `@deepseek-ai/dsh-*` moved 0.1.7-rc.2 → 0.2.0-rc.2 in one commit; cordis stays 4.0.4.
+Only ~15 of ~100 direct packages change code. What the bump actually cost:
+- **`koffi` pinned exact 3.1.1** by five dsh packages (was a range that deduped to
+  Cairn's 3.3.1) → five nested copies that packaging doesn't ship. Fixed with an npm
+  override `"koffi": "$koffi"`.
+- **pi-ai 0.85.1 → 0.87.1** (required by `dsh-llm-pi-ai`): re-based
+  `patches/@earendil-works+pi-ai`; `stream()` now takes a branded `TranscriptContext`
+  (`normalizeContext()`), fixed in `pi-ai-tool-streaming.test.ts`.
+- **Session-format patch** re-based to 0.2.0-rc.2 (same `requireTurn` site).
+- **New Windows-only lookup:** `dsh-sandbox-windows-acl` registers a bundled
+  diagnosis skill from `../assets/…` and throws if missing. `compile-electron.js` now
+  stages it to `<root>/assets/` and `electron-builder.yml` ships `assets/**/*`.
+  **Not verified on a real Windows install** — check the sandbox mounts and the skill
+  appears before releasing.
+- Type-level: `dsh-user-questions` adds `askTimed()` (`ask()` unchanged);
+  `dsh-session` adds `ToolCallRecovery`; pi-ai compat fields renamed (unused by Cairn).
+- **Not run:** live tests (`CORDIS_LIVE=1`, need the model bridge) and the Electron QA
+  suite — runtime changes in `agent-loop`, `sandbox-local`, `tool-bash`/`tool-pwsh`,
+  `session-persistence-jsonl` are exercised only by unit tests so far.
+
 ### `dsh-attachment-local` — blocked
 Needs real sharp; sharp ships no Windows-arm64 prebuild (see stub rationale in
 `electron/sharp-stub/`). Cairn's sharp-free store stands. Unblocks on: a
@@ -134,3 +168,5 @@ pure-JS decoder, a platform-gated optional dep, or dropping the platform.
   PTY), session export, web research, LSP, workflows/Ralph, cross-session
   refs design doc. Deferred: feedback read side, loop hygiene, model routing.
   Planned-later: first-party telemetry system.
+- 2026-09-29: registry sweep — added "Not yet evaluated" and 0.2.0-rc.2 delta;
+  dropped unused `cordis-plugin-hmr` / `cordis-plugin-timer` deps.

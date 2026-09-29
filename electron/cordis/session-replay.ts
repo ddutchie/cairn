@@ -27,6 +27,7 @@ import {
 import { foldSessionStats, sessionStatsFromSnapshot, type SessionStats, type SessionStatsSnapshot, type TurnStats } from "./session-stats";
 import { inspectSession, type InspectablePersistence } from "./session-inspect";
 import { isToolResultMessage, readToolResults } from "./tool-result-message";
+import { cairnRefFromMeta } from "../../shared/agent/session-event-fold";
 
 /** One `SessionPersistence.list()` row — legacy flat shape or dsh 0.1.5 `{ header }` snapshot. */
 type StoredSessionListing = { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number }; header?: { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number } };
@@ -153,7 +154,7 @@ export function collapseDerivedToMessages(
     for (const tr of pendingToolResults) {
       const idx = calls.findIndex((tc) => tc.callId === tr.callId);
       if (idx !== -1) {
-        const ref = extractCairnRef(calls[idx].tool, tr.output);
+        const ref = extractCairnRef(calls[idx].tool, tr.output) ?? cairnRefFromMeta(tr.meta);
         calls[idx] = {
           ...calls[idx],
           output: tr.ok === false ? undefined : tr.output,

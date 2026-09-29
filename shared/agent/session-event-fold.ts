@@ -81,6 +81,13 @@ function contentText(value: unknown): string {
     .join("");
 }
 
+/** The note/task reference a Cairn tool persisted in its result `meta` (`presentationMeta`), if well-formed. */
+export function cairnRefFromMeta(meta: unknown): { type: "note" | "task"; id: string; title: string } | undefined {
+  const ref = record(record(meta).cairnRef);
+  if ((ref.type !== "note" && ref.type !== "task") || typeof ref.id !== "string" || !ref.id) return undefined;
+  return { type: ref.type, id: ref.id, title: typeof ref.title === "string" ? ref.title : "(untitled)" };
+}
+
 function usage(value: unknown): FoldedUsage | undefined {
   const u = record(value);
   if (!Object.keys(u).length) return undefined;
@@ -190,14 +197,20 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
     if (event.type === "tool/result") {
       const message = record(data.message);
       const source = record(message.source);
-      const block = Array.isArray(message.content) ? record(message.content[0]) : {};
+      // Session format v4 (dsh 0.1.7): a first-class `role: "tool"` message whose
+      // `content` IS the output blocks, with `toolCallId`/`isError` on the message.
+      // Formats <= v3 wrapped the output in a `{ content, isError }` block.
+      const isV4 = message.role === "tool";
+      const block = isV4 ? message : Array.isArray(message.content) ? record(message.content[0]) : {};
       const output = typeof data.output === "string"
         ? data.output
-        : contentText(block.content);
+        : contentText(isV4 ? message.content : block.content);
       const error = typeof data.error === "string"
         ? data.error
         : block.isError === true ? (output || "tool error") : undefined;
-      const callId = typeof data.callId === "string" ? data.callId : typeof source.callId === "string" ? source.callId : undefined;
+      const callId = typeof data.callId === "string" ? data.callId
+        : typeof message.toolCallId === "string" ? message.toolCallId
+        : typeof source.callId === "string" ? source.callId : undefined;
       const rawResultView = data.resultView as { card?: unknown } | undefined;
       const resultView = rawResultView && typeof rawResultView === "object" && typeof rawResultView.card === "string"
         ? (rawResultView as FoldedToolResult["resultView"])
