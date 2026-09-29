@@ -51,6 +51,7 @@ next-env.d.ts
 
 # electron build outputs
 /dist-electron
+/assets
 /dist-app
 /dist-mcp
 /out

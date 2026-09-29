@@ -33,6 +33,9 @@ files:
   - dist-mcp/better_sqlite3-x64.node
   # Next.js static export
   - out/**/*
+  # dsh-sandbox-windows-acl diagnosis skill, staged by compile-electron.js and
+  # read via new URL("../assets/…", import.meta.url) from the bundle.
+  - assets/**/*
   # Electron-ABI better-sqlite3 binaries, arch-separated (electron-native/<arch>/)
   # so a universal macOS build ships both arm64 and x64. Resolved by process.arch.
   - electron-native/**/*

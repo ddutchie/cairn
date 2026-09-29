@@ -70,6 +70,8 @@ const REVIEWED_RUNTIME_LOOKUPS: Record<string, string> = {
     "tsx bootstrap for the verification worker — only when running from .ts source.",
   "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
     "Runner entry — shim maps it to dist-electron/subprocess-runner.cjs; the tsx branch is dev-only.",
+  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/types-*.js":
+    "registerAclDiagnosisSkill (Windows only, dsh 0.2.0+) reads ../assets/diagnose-windows-sandbox-acl/ beside the bundle and throws if missing — compile-electron.js stages it to <root>/assets/ and electron-builder.yml ships assets/**/* (asserted below). NOT yet verified on a real Windows install.",
   "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js":
     "worker.cjs for verifyCurrentGenerationInWorker — never called (dead code); plus the .ts-source branch.",
   "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
@@ -179,6 +181,16 @@ describe("runtime lookups in bundled dependencies", () => {
       problems,
       "electron-builder.yml drops or packs a runtime-resolved native package. Add `node_modules/<pkg>-*/**/*` to `files` AFTER the `!node_modules/!(…)` exclusion (last match wins) and to `asarUnpack`.\n  Problems:\n    - " + problems.join("\n    - "),
     ).toHaveLength(0);
+  });
+
+  it("Windows ACL diagnosis skill assets are staged and shipped", () => {
+    const shipped = builderFilter("files");
+    const skill = "assets/diagnose-windows-sandbox-acl";
+    expect(shipped(`${skill}/SKILL.md`)).toBe(true);
+    expect(shipped(`${skill}/scripts/diagnose-windows-sandbox-acl.ps1`)).toBe(true);
+    if (!allBuilt) return;
+    expect(fs.existsSync(path.join(ROOT, skill, "SKILL.md"))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, skill, "scripts/diagnose-windows-sandbox-acl.ps1"))).toBe(true);
   });
 
   it("REVIEWED_RUNTIME_LOOKUPS has no stale entries", () => {

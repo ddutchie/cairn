@@ -1,8 +1,8 @@
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js b/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js
-index e1538a5..abb8f99 100644
+index 5dd85f1..e94fa77 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js
-@@ -500,7 +500,6 @@ export const stream = (model, context, options) => {
+@@ -507,7 +507,6 @@ export const stream = (model, context, options) => {
                          const block = blocks[index];
                          if (block && block.type === "toolCall") {
                              block.partialJson += event.delta.partial_json;
@@ -11,10 +11,10 @@ index e1538a5..abb8f99 100644
                                  type: "toolcall_delta",
                                  contentIndex: index,
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js b/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js
-index 6bc6312..7ff68fb 100644
+index 44e3f13..6c4899b 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js
-@@ -453,7 +453,6 @@ function handleContentBlockDelta(event, blocks, output, stream) {
+@@ -459,7 +459,6 @@ function handleContentBlockDelta(event, blocks, output, stream) {
      }
      else if (delta?.toolUse && block?.type === "toolCall") {
          block.partialJson = (block.partialJson || "") + (delta.toolUse.input || "");
@@ -23,10 +23,10 @@ index 6bc6312..7ff68fb 100644
      }
      else if (delta?.reasoningContent) {
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js b/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js
-index 67f9341..afdb5c2 100644
+index 3106c5d..c54c1b5 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js
-@@ -543,7 +543,6 @@ async function consumeChatStream(model, output, stream, mistralStream) {
+@@ -541,7 +541,6 @@ async function consumeChatStream(model, output, stream, mistralStream) {
                  ? toolCall.function.arguments
                  : JSON.stringify(toolCall.function.arguments || {});
              block.partialArgs = (block.partialArgs || "") + argsDelta;
@@ -35,10 +35,10 @@ index 67f9341..afdb5c2 100644
                  type: "toolcall_delta",
                  contentIndex: toolBlocksByKey.get(key),
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
-index 48464f2..d829f5e 100644
+index fc8e893..f5acd00 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
-@@ -453,7 +453,6 @@ export const stream = (model, context, options) => {
+@@ -437,7 +437,6 @@ export const stream = (model, context, options) => {
                              if (toolCall.function?.arguments) {
                                  delta = toolCall.function.arguments;
                                  block.partialArgs = (block.partialArgs ?? "") + toolCall.function.arguments;
@@ -47,7 +47,7 @@ index 48464f2..d829f5e 100644
                              else if (toolCall.custom?.input) {
                                  const nextInput = getCustomToolCallInput(block) + toolCall.custom.input;
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js
-index 43e463d..f425977 100644
+index 53597d2..0aa5752 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js
 @@ -546,7 +546,6 @@ export async function processResponsesStream(openaiStream, output, stream, model
@@ -59,7 +59,7 @@ index 43e463d..f425977 100644
          }
          else if (event.type === "response.function_call_arguments.done") {
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js b/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js
-index 5b9cb16..dc5a43e 100644
+index ad5f460..5609d61 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js
 @@ -155,8 +155,6 @@ function createEventConverter(model) {

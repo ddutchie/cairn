@@ -17,6 +17,7 @@
  */
 
 const fs = require("fs");
+const path = require("path");
 const esbuild = require("esbuild");
 
 const watch = process.argv.includes("--watch");
@@ -253,7 +254,21 @@ const subprocessRunner = {
   define: mainPreload.define,
 };
 
+// dsh-sandbox-windows-acl (0.2.0+) registers a bundled diagnosis skill on
+// Windows, reading `new URL("../assets/diagnose-windows-sandbox-acl/",
+// import.meta.url)`. Inside the bundle that resolves to <app>/assets/…
+// (main.js lives in dist-electron/), and registration throws if the files are
+// missing, so stage them there. Shipped via electron-builder.yml `assets/**/*`.
+function stageAclDiagnosisSkill() {
+  const skill = "diagnose-windows-sandbox-acl";
+  const from = path.join("node_modules/@deepseek-ai/dsh-sandbox-windows-acl/assets", skill);
+  const to = path.join("assets", skill);
+  fs.rmSync(to, { recursive: true, force: true });
+  fs.cpSync(from, to, { recursive: true });
+}
+
 async function main() {
+  stageAclDiagnosisSkill();
   const electronConfigs = [mainPreload, windowsAclRunner, ptcProcess, subprocessRunner];
   const configs = electronOnly ? electronConfigs : [...electronConfigs, mcpServer, embeddingsServer, runtimeServer];
   if (watch) {

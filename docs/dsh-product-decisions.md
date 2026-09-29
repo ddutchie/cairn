@@ -131,14 +131,26 @@ lockfile. Web-shell/client packages (`dsh-client-*`, `dsh-host-*`, `dsh-web-*`,
 | `dsh-tool-present`, `dsh-session-turn-outline` | File-delivery declarations; whole-log turn outline projection | Value for Cairn unclear |
 | `dsh-session-projection-cache` | Persisted projection cache | Not useful: session lists come from SQLite (`db:session:list`), not dsh projections |
 
-### 0.2.0-rc.2 delta (2026-09-29, tarball diff vs 0.1.7-rc.2)
-Peers still `cordis ~4.0.4`. Only ~15 of ~100 direct packages change code. Type-level
-changes are additive or unused by Cairn: `dsh-user-questions` adds `askTimed()` +
-a projection (`ask()` unchanged), `dsh-session` adds `ToolCallRecovery` (crash-tail
-repair now supplies error results), `dsh-llm-pi-ai` renames compat fields
-(`deferredToolsMode` etc.; Cairn references none). Runtime changes not yet
-exercised: `agent-loop`, `sandbox-local`, `tool-bash`/`tool-pwsh`,
-`session-persistence-jsonl` worker. Bump with the upgrade guide, then run the live tests.
+### 0.2.0-rc.2 bump (2026-09-29) — landed on the mechanical-bump rules
+All `@deepseek-ai/dsh-*` moved 0.1.7-rc.2 → 0.2.0-rc.2 in one commit; cordis stays 4.0.4.
+Only ~15 of ~100 direct packages change code. What the bump actually cost:
+- **`koffi` pinned exact 3.1.1** by five dsh packages (was a range that deduped to
+  Cairn's 3.3.1) → five nested copies that packaging doesn't ship. Fixed with an npm
+  override `"koffi": "$koffi"`.
+- **pi-ai 0.85.1 → 0.87.1** (required by `dsh-llm-pi-ai`): re-based
+  `patches/@earendil-works+pi-ai`; `stream()` now takes a branded `TranscriptContext`
+  (`normalizeContext()`), fixed in `pi-ai-tool-streaming.test.ts`.
+- **Session-format patch** re-based to 0.2.0-rc.2 (same `requireTurn` site).
+- **New Windows-only lookup:** `dsh-sandbox-windows-acl` registers a bundled
+  diagnosis skill from `../assets/…` and throws if missing. `compile-electron.js` now
+  stages it to `<root>/assets/` and `electron-builder.yml` ships `assets/**/*`.
+  **Not verified on a real Windows install** — check the sandbox mounts and the skill
+  appears before releasing.
+- Type-level: `dsh-user-questions` adds `askTimed()` (`ask()` unchanged);
+  `dsh-session` adds `ToolCallRecovery`; pi-ai compat fields renamed (unused by Cairn).
+- **Not run:** live tests (`CORDIS_LIVE=1`, need the model bridge) and the Electron QA
+  suite — runtime changes in `agent-loop`, `sandbox-local`, `tool-bash`/`tool-pwsh`,
+  `session-persistence-jsonl` are exercised only by unit tests so far.
 
 ### `dsh-attachment-local` — blocked
 Needs real sharp; sharp ships no Windows-arm64 prebuild (see stub rationale in
