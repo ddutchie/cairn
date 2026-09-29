@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatSubagent, TokenBreakdown } from "@/types";
 import { redactSensitiveText, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
-import { createSessionEventFold, type FoldedToolCall, type FoldedToolResult, type FoldedUsage, type FoldedStats } from "../../shared/agent/session-event-fold";
+import { cairnRefFromMeta, createSessionEventFold, type FoldedToolCall, type FoldedToolResult, type FoldedUsage, type FoldedStats } from "../../shared/agent/session-event-fold";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 import { foldSessionStats } from "../../shared/session-stats";
@@ -18,6 +18,8 @@ export interface SessionConversationToolCall {
   ok?: boolean;
   error?: string;
   meta?: Record<string, unknown>;
+  /** Note/task the tool touched (from result `meta`); renders the clickable ref chip. */
+  cairnRef?: { type: "note" | "task"; id: string; title: string };
   /** Tool-authored title from dsh `presentCall` (main-attached); humanize fallback otherwise. */
   viewTitle?: string;
   /** Tool-authored result view from dsh `presentResult` (main-attached); raw output fallback otherwise. */
@@ -89,6 +91,8 @@ export function resolveSessionToolResult(current: SessionConversationToolCall[],
     // next turn's history reload, which is exactly the bug the user reported
     // (tool results only appearing on turn end).
     ...item, status: "done" as const, output: redactToolOutput(result.output), ok: result.ok,
+    // The persisted meta ref survives the 8k output truncation that breaks JSON parsing of large results.
+    ...(cairnRefFromMeta(result.meta) ? { cairnRef: cairnRefFromMeta(result.meta) } : {}),
     error: result.error ? redactSensitiveText(result.error) : undefined,
     confirmRequired: false, approvalNonce: undefined,
     ...(result.resultView ? { resultView: result.resultView } : {}),

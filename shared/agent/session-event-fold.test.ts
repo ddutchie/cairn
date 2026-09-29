@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSessionEventFold } from "./session-event-fold";
+import { cairnRefFromMeta, createSessionEventFold, type FoldedToolResult } from "./session-event-fold";
 
 const event = (type: string, data: unknown) => ({ type, seq: 1, time: 1, data });
 
@@ -62,5 +62,19 @@ describe("renderer session event fold", () => {
     fold2(event("tool/result", { message: { source: { callId: "c2" }, content: [{ content: [{ type: "text", text: "y" }] }] }, resultView: "nope" }));
     expect(seen.calls[1]).not.toHaveProperty("view");
     expect(seen.results[1]).not.toHaveProperty("resultView");
+  });
+
+  it("reads a v4 role:tool result (output blocks directly in content) and its meta cairnRef", () => {
+    const results: FoldedToolResult[] = [];
+    const fold = createSessionEventFold({ onToolResult: (r) => results.push(r) });
+    fold(event("tool/result", {
+      message: { role: "tool", toolCallId: "c9", content: [{ type: "text", text: '{"id":"n1","title":"Plan"}' }] },
+      meta: { cairnRef: { type: "note", id: "n1", title: "Plan" } },
+    }));
+    fold(event("tool/result", { message: { role: "tool", toolCallId: "c10", isError: true, content: [{ type: "text", text: "boom" }] } }));
+    expect(results[0]).toMatchObject({ callId: "c9", output: '{"id":"n1","title":"Plan"}', ok: true });
+    expect(cairnRefFromMeta(results[0].meta)).toEqual({ type: "note", id: "n1", title: "Plan" });
+    expect(results[1]).toMatchObject({ callId: "c10", ok: false, error: "boom" });
+    expect(cairnRefFromMeta({ cairnRef: { type: "other", id: "x" } })).toBeUndefined();
   });
 });
