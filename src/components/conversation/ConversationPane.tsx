@@ -81,10 +81,14 @@ export function ConversationPane({
       <ConversationHeader title={title ?? profile} usage={usage} contextLimit={contextLimit ?? 128000} actions={actions} schedule={{ sessionId, pollKey: isLoading }} />
       <span aria-live="polite" aria-atomic="true" className="sr-only">{isLoading ? "Working" : ""}</span>
       <ConversationTranscript
+        // Remount per session: the start position is mount-only, so without a key
+        // switching chats reuses the previous chat's scroll offset and measured
+        // row heights, and the new transcript builds from the top.
+        key={sessionId}
         transcriptRef={transcriptRef}
         className="flex-1 min-h-0"
         data={messages}
-        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+        initialTopMostItemIndex={{ index: "LAST", align: "end" }}
         emptyPlaceholder={() => <>{emptyState ?? <ConversationEmptyState />}</>}
         footer={transcriptFooter ?? (() => <div aria-live="polite" aria-atomic="true" className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading ? "Cairn is working…" : ""}<span className="sr-only">{isLoading ? "Working" : ""}</span></div>)}
         itemContent={(_index, message) => (

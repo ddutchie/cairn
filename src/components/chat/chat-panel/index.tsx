@@ -479,7 +479,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // absent from deps so a new message never yanks a scrolled-up user.
     const count = chatMessagesLengthRef.current;
     if (isChatActive && chatVirtuosoRef.current && count > 0) {
-      chatVirtuosoRef.current.scrollToIndex({ index: count - 1, align: "end", behavior: "smooth" });
+      // Instant on activation; the smooth animation chases rows whose heights are still being measured.
+      chatVirtuosoRef.current.scrollToIndex({ index: count - 1, align: "end", behavior: pendingQuestionCount > 0 ? "smooth" : "auto" });
     }
   }, [isChatActive, pendingQuestionCount]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
