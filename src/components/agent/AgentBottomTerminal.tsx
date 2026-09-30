@@ -39,6 +39,19 @@ interface ShellTab {
 /** Fixed width of model PTYs (see spawnShellPty) — observer tabs match it. */
 const MODEL_PTY_COLS = 120;
 
+type TermMount = { terminal: import("@xterm/xterm").Terminal; fitAddon: import("@xterm/addon-fit").FitAddon };
+
+/** Observed tabs keep the PTY's fixed column count and only fit rows;
+ *  a normal shell fits both (and reports the size to its PTY). */
+function fitTerm(m: TermMount, observed: boolean) {
+  if (observed) {
+    const d = m.fitAddon.proposeDimensions();
+    if (d && d.rows > 0) m.terminal.resize(MODEL_PTY_COLS, d.rows);
+  } else {
+    m.fitAddon.fit();
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTerminalProps) {
@@ -53,17 +66,6 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
 
   // Session ids of observed (agent-owned) tabs — never killed / resized / typed into.
   const observedIds = useRef<Set<string>>(new Set());
-
-  // Observed tabs keep the PTY's fixed column count and only fit rows;
-  // a normal shell fits both (and reports the size to its PTY).
-  const fitTerm = (id: string, m: { terminal: import("@xterm/xterm").Terminal; fitAddon: import("@xterm/addon-fit").FitAddon }) => {
-    if (observedIds.current.has(id)) {
-      const d = m.fitAddon.proposeDimensions();
-      if (d && d.rows > 0) m.terminal.resize(MODEL_PTY_COLS, d.rows);
-    } else {
-      m.fitAddon.fit();
-    }
-  };
 
   // Agent tabs the user closed — ignore their further output.
   const dismissedIds = useRef<Set<string>>(new Set());
@@ -170,7 +172,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     const fit = () => {
       const m = termRefs.current.get(activeId);
       if (m) {
-        try { fitTerm(activeId, m); } catch { /* not yet measured */ }
+        try { fitTerm(m, observedIds.current.has(activeId)); } catch { /* not yet measured */ }
       }
     };
     fit();
@@ -183,7 +185,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
   useEffect(() => {
     for (const [id, m] of termRefs.current) {
       m.terminal.options.fontSize = Math.round(11 * fontScale);
-      requestAnimationFrame(() => { try { fitTerm(id, m); } catch { /* ok */ } });
+      requestAnimationFrame(() => { try { fitTerm(m, observedIds.current.has(id)); } catch { /* ok */ } });
     }
   }, [fontScale]);
 
@@ -239,7 +241,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     const ro = new ResizeObserver(() => {
       const dims = fitAddon.proposeDimensions();
       if (dims && dims.cols > 0 && dims.rows > 0) {
-        fitTerm(sessionId, { terminal, fitAddon });
+        fitTerm({ terminal, fitAddon }, observed);
         ro.disconnect();
       }
     });
@@ -248,7 +250,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
 
     // Ongoing resize (height drag)
     const roOngoing = new ResizeObserver(() => {
-      try { fitTerm(sessionId, { terminal, fitAddon }); } catch { /* ok */ }
+      try { fitTerm({ terminal, fitAddon }, observed); } catch { /* ok */ }
     });
     roOngoing.observe(container);
 
