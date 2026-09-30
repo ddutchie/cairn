@@ -109,16 +109,57 @@ interface CordisLike {
     names?: unknown;
     defaultPreset?: unknown;
     optionOf?: (name: string) => unknown;
+    current?: (session: unknown) => unknown;
   };
+}
+
+/** The service's selectable preset rows (`names` → `optionOf`), or [] when inactive. */
+function catalogOptions(ctx: Context): PermissionsOption[] {
+  const svc = (ctx as unknown as CordisLike).permissionPresets;
+  const names = svc?.names;
+  const optionOf = svc?.optionOf?.bind(svc);
+  if (!Array.isArray(names) || typeof optionOf !== "function") return [];
+  const options: PermissionsOption[] = [];
+  for (const n of names) {
+    if (typeof n !== "string" || n === "") continue;
+    let raw: unknown;
+    try {
+      raw = optionOf(n);
+    } catch {
+      continue;
+    }
+    const one = toPermissionsOption(raw);
+    if (one) options.push(one);
+  }
+  return options;
+}
+
+/**
+ * dsh ≥0.2 projects `permissions` as `{ currentValue }` only — the option
+ * list moved to the service's process-level catalog. Fill it back in so the
+ * switcher gets the full select; the derived `custom` row is appended when
+ * it is the current value. A view that already carries options passes as-is.
+ */
+function withCatalog(ctx: Context, view: unknown): unknown {
+  if (typeof view !== "object" || view === null) return view;
+  const v = view as { options?: unknown; currentValue?: unknown };
+  if (Array.isArray(v.options) || typeof v.currentValue !== "string") return view;
+  const options = catalogOptions(ctx);
+  if (v.currentValue === PERMISSIONS_CUSTOM_VALUE && !options.some((o) => o.value === PERMISSIONS_CUSTOM_VALUE)) {
+    const svc = (ctx as unknown as CordisLike).permissionPresets;
+    const custom = toPermissionsOption(svc?.optionOf?.(PERMISSIONS_CUSTOM_VALUE)) ?? { value: PERMISSIONS_CUSTOM_VALUE, name: "Custom" };
+    options.push(custom);
+  }
+  return { options, currentValue: v.currentValue };
 }
 
 function registryOf(ctx: Context): RegistryLike | undefined {
   return (ctx as unknown as CordisLike).sessionProjections;
 }
 
-async function emitPermissionsChange(sessionId: unknown, value: unknown): Promise<void> {
+async function emitPermissionsChange(ctx: Context, sessionId: unknown, value: unknown): Promise<void> {
   if (sessionId == null) return;
-  const wire = toPermissionsWire(value);
+  const wire = toPermissionsWire(withCatalog(ctx, value));
   if (!wire) return;
   const { broadcastEvent } = await import("../ipc/registry");
   const kind: SessionProjectionKind = "permissions";
@@ -147,7 +188,7 @@ export function mountPermissionsBridge(ctx: Context): void {
     if (key !== PERMISSIONS_PROJECTION_KEY) return;
     const id = (session as SessionLike | undefined)?.id;
     if (id == null) return;
-    void emitPermissionsChange(id, value);
+    void emitPermissionsChange(ctx, id, value);
   });
 }
 
@@ -167,8 +208,15 @@ export async function readPermissionsSnapshot(ctx: Context, sessionId: string): 
   try {
     const live = cordis.sessions?.get?.(stableId);
     const registry = cordis.sessionProjections;
+    // dsh ≥0.2: stateOf returns the folded knob state, not the view — the
+    // service's current(session) derives the per-session preset name.
+    const svc = cordis.permissionPresets;
+    if (live && typeof svc?.current === "function") {
+      const wire = toPermissionsWire(withCatalog(ctx, { currentValue: svc.current(live) }));
+      if (wire) return wire;
+    }
     if (live && registry && typeof registry.stateOf === "function") {
-      const wire = toPermissionsWire(registry.stateOf(live as never, PERMISSIONS_PROJECTION_KEY as never));
+      const wire = toPermissionsWire(withCatalog(ctx, registry.stateOf(live as never, PERMISSIONS_PROJECTION_KEY as never)));
       if (wire) return wire;
     }
   } catch {
@@ -176,24 +224,9 @@ export async function readPermissionsSnapshot(ctx: Context, sessionId: string): 
   }
   // 2. Cold build from the service table (no per-session overrides yet).
   try {
-    const svc = cordis.permissionPresets;
-    const names = svc?.names;
-    const fallback = svc?.defaultPreset;
-    const optionOf = svc?.optionOf?.bind(svc);
-    if (Array.isArray(names) && typeof fallback === "string" && typeof optionOf === "function") {
-      const options: PermissionsOption[] = [];
-      for (const n of names) {
-        if (typeof n !== "string" || n === "") continue;
-        let raw: unknown;
-        try {
-          raw = optionOf(n);
-        } catch {
-          continue;
-        }
-        const one = toPermissionsOption(raw);
-        if (one) options.push(one);
-      }
-      const wire = toPermissionsWire({ options, currentValue: fallback });
+    const fallback = cordis.permissionPresets?.defaultPreset;
+    if (typeof fallback === "string") {
+      const wire = toPermissionsWire({ options: catalogOptions(ctx), currentValue: fallback });
       if (wire) return wire;
     }
   } catch {

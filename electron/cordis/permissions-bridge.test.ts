@@ -131,6 +131,22 @@ describe("readPermissionsSnapshot", () => {
     });
   });
 
+  const PRESETS = {
+    names: ["workspace-write", "danger-full-access"],
+    defaultPreset: "workspace-write",
+    optionOf: (n: string) => SELECT.options.find((o) => o.value === n),
+  };
+
+  it("dsh 0.2: derives the live preset via current(session) and fills options from the catalog", async () => {
+    const ctx = {
+      sessions: { get: () => ({ id: "sess-1" }) },
+      // 0.2 stateOf returns folded knobs, not a view
+      sessionProjections: { stateOf: () => ({ sandbox: "danger-full-access", approval: "never", seeded: true }) },
+      permissionPresets: { ...PRESETS, current: () => "danger-full-access" },
+    };
+    await expect(readPermissionsSnapshot(ctx as never, "sess-1")).resolves.toEqual({ ...SELECT, currentValue: "danger-full-access" });
+  });
+
   it("throws unavailable when the service is inject-gated (no shell yet)", async () => {
     const ctx = {
       sessions: { get: () => undefined },
@@ -177,6 +193,23 @@ describe("mountPermissionsBridge", () => {
     expect(proj.kind).toBe("permissions");
     expect(proj.sessionId).toBe("sess-1");
     expect(proj.data).toEqual(SELECT);
+  });
+
+  it("dsh 0.2: fills options into a { currentValue }-only view from the service catalog", async () => {
+    const registry = fakeRegistry();
+    mountPermissionsBridge({
+      sessionProjections: registry,
+      permissionPresets: {
+        names: ["workspace-write", "danger-full-access"],
+        optionOf: (n: string) => n === "custom" ? { value: "custom", name: "Custom" } : SELECT.options.find((o) => o.value === n),
+      },
+    } as never);
+    registry.emit({ id: "sess-2" }, PERMISSIONS_PROJECTION_KEY, { currentValue: "danger-full-access" });
+    registry.emit({ id: "sess-3" }, PERMISSIONS_PROJECTION_KEY, { currentValue: "custom" });
+    await vi.waitFor(() => expect(projections().filter((p) => p.sessionId !== "sess-1")).toHaveLength(2));
+    const bySession = Object.fromEntries(projections().map((p) => [p.sessionId, p.data]));
+    expect(bySession["sess-2"]).toEqual({ ...SELECT, currentValue: "danger-full-access" });
+    expect(bySession["sess-3"]).toEqual({ options: [...SELECT.options, { value: "custom", name: "Custom" }], currentValue: "custom" });
   });
 
   it("mount is idempotent per context", () => {

@@ -36,6 +36,7 @@ export interface ConversationToolCall {
   meta?: Record<string, unknown>;
   confirmRequired?: boolean;
   approvalNonce?: string;
+  approvalReason?: string;
 }
 
 export interface ConversationMessage {

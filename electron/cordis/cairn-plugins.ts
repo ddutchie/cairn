@@ -1070,9 +1070,16 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
       const req = args[0] as { toolName?: string; callId?: string; reason?: string; signal?: AbortSignal } | undefined;
       const toolName = req?.toolName ?? "tool";
       const callId = req?.callId ?? `approve-${newId()}`;
+      // dsh-sandbox routes a sandbox_permissions escalation through this same
+      // seam, for the same callId, after the tool gate already settled. A tool
+      // grant ("Allow for session" / "Always allow" on pwsh) must never widen
+      // the sandbox silently, so escalations always ask and carry their reason.
+      const escalation = typeof req?.reason === "string" && req.reason.startsWith("escalate sandbox to ");
       // Protected-file requests must be authorized by the exact secret path, not by a generic tool grant.
       const pendingSecret = readPendingApprovalArgs(sessionId, callId)?.__secretPath as string | undefined;
-      if (pendingSecret) {
+      if (escalation) {
+        // fall through to the interactive ask
+      } else if (pendingSecret) {
         if (getSecretGrants(sessionId).has(pendingSecret)) return Promise.resolve("allowed-once");
       } else {
         if (grants.tools.has(toolName)) return Promise.resolve("allowed-once");
@@ -1084,7 +1091,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           } catch { /* DB not migrated — fall through to ask */ }
         }
       }
-       sendProjection(send, sessionId, "approval", { status: "required", name: toolName, label: toolName, callId });
+       sendProjection(send, sessionId, "approval", { status: "required", name: toolName, label: toolName, callId, ...(escalation ? { reason: req!.reason } : {}) });
       return new Promise<string>((resolve) => {
         // Single-settle guard: exactly one of respond / abort / timeout wins,
         // and the abort listeners never linger after a normal settle.
@@ -1129,7 +1136,9 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           forgetPendingApprovalArgs(sessionId, callId);
           resolve(outcome);
         };
-        disposeRef.current = registerPending(callId, (decision) => {
+        disposeRef.current = registerPending(callId, (d) => {
+          // An escalation answer is one-shot: never let it mint a standing grant.
+          const decision = escalation ? { approved: d.approved } as typeof d : d;
           if (decision.approved && decision.grant === "session") {
             grants.tools.add(toolName);
             // Secret-file session grant — allow that exact secret path for the rest of the session

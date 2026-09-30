@@ -149,7 +149,7 @@ describe("withToolResultView", () => {
     withToolCallView({ type: "tool/call", data: { name: "bash", arguments: JSON.stringify({ command: "ls" }), callId: "c9" } });
     const result = {
       type: "tool/result",
-      data: { message: { source: { callId: "c9" }, content: [{ content: [{ type: "text", text: "hi" }] }] } },
+      data: { message: { source: { callId: "c9" }, content: [{ type: "tool-result", content: [{ type: "text", text: "hi" }] }] } },
     };
     const out = withToolResultView(result);
     expect((out.data as { resultView?: unknown }).resultView).toEqual({ card: "terminal", output: "hi", exitCode: 0 });
@@ -159,5 +159,34 @@ describe("withToolResultView", () => {
       { message: { source: { callId: "ghost" }, content: [] } },
     );
     expect(withToolResultView({ type: "assistant/message", data: {} })).toEqual({ type: "assistant/message", data: {} });
+  });
+
+  function terminalPwsh() {
+    __setToolDefForTest("pwsh", {
+      presentResult: (_a: unknown, result: unknown) => {
+        const r = result as { content?: Array<{ text?: string }>; isError?: boolean };
+        return { card: "terminal", output: r.content?.[0]?.text ?? "", exitCode: 0, isError: r.isError };
+      },
+    });
+  }
+
+  it("reads the flat { role: \"tool\" } result message", () => {
+    terminalPwsh();
+    withToolCallView({ type: "tool/call", data: { name: "pwsh", arguments: "{}", callId: "f1" } });
+    const out = withToolResultView({
+      type: "tool/result",
+      data: { message: { role: "tool", source: { callId: "f1" }, content: [{ type: "text", text: "ok\n[exit code: 3]" }], isError: true } },
+    });
+    expect((out.data as { resultView?: unknown }).resultView).toEqual({ card: "terminal", output: "ok\n[exit code: 3]", exitCode: 0, isError: true });
+  });
+
+  it("drops the terminal card for a shell error that never ran (no exit trailer)", () => {
+    terminalPwsh();
+    withToolCallView({ type: "tool/call", data: { name: "pwsh", arguments: "{}", callId: "f2" } });
+    const out = withToolResultView({
+      type: "tool/result",
+      data: { message: { role: "tool", source: { callId: "f2" }, content: [{ type: "text", text: "Error: SetNamedSecurityInfoW failed (Win32 5): grantWrite(D:\\ws)" }], isError: true } },
+    });
+    expect((out.data as { resultView?: unknown }).resultView).toBeUndefined();
   });
 });

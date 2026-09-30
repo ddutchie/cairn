@@ -81,6 +81,7 @@ export function toLiveConversationMessage(
       meta: tool.meta,
       confirmRequired: tool.confirmRequired,
       approvalNonce: tool.approvalNonce,
+      approvalReason: tool.approvalReason,
       cairnRef: tool.cairnRef,
       externalRef: tool.externalRef,
     })),

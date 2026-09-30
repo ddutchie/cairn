@@ -101,7 +101,7 @@ export interface TerminalSessionsSlice {
   /** Update an existing tool call chip in-place (start → done) */
   updateAgentToolCall: (sessionId: string, callId: string, patch: { label?: string; resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown }; args?: Record<string, unknown>; running: boolean; ok: boolean; output?: string; cairnRef?: { type: "note" | "task"; id: string; title: string } }) => void;
   /** Set confirmation requirement state for a tool chip */
-  setAgentToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean, approvalNonce?: string) => void;
+  setAgentToolConfirmRequired: (sessionId: string, callId: string, confirmRequired: boolean, approvalNonce?: string, approvalReason?: string) => void;
   /** Clear message history for a coding session */
   clearAgentMessages: (sessionId: string) => void;
   /** Update token usage for a session after a step completes */
@@ -413,14 +413,14 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     }));
   },
 
-  setAgentToolConfirmRequired(sessionId, callId, confirmRequired, approvalNonce) {
+  setAgentToolConfirmRequired(sessionId, callId, confirmRequired, approvalNonce, approvalReason) {
     // Approval-card patch: attach both the confirm flag and (when supplied)
     // the main-side per-ask nonce so session:respond-tool can verify the
     // click's provenance. On clear (confirmRequired=false), drop the nonce
     // too — it's a one-shot secret.
     const patch = confirmRequired
-      ? { confirmRequired: true, ...(approvalNonce ? { approvalNonce } : {}) }
-      : { confirmRequired: false, approvalNonce: undefined };
+      ? { confirmRequired: true, ...(approvalNonce ? { approvalNonce } : {}), approvalReason }
+      : { confirmRequired: false, approvalNonce: undefined, approvalReason: undefined };
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;

@@ -1025,6 +1025,8 @@ export interface AgentMessage {
      * push for. Present when confirmRequired is true; cleared on settle.
      */
     approvalNonce?: string;
+    /** Why the pending ask exists when it is not the plain tool gate (e.g. a sandbox escalation). */
+    approvalReason?: string;
   }[];
   subagents?: AgentSubagentMessage[];
   isStreaming?: boolean;
