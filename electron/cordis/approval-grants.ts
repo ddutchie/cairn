@@ -121,6 +121,10 @@ export interface PendingAskMeta {
    * expected nonce is missing.
    */
   nonce?: string;
+  /** dsh's reason for a sandbox escalation ask; undefined for ordinary tool asks. */
+  reason?: string;
+  /** True for sandbox escalations — one-shot only, never mint a standing grant. */
+  escalation?: boolean;
 }
 
 export interface PendingAskRegistry {

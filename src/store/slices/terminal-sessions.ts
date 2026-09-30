@@ -418,9 +418,16 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     // the main-side per-ask nonce so session:respond-tool can verify the
     // click's provenance. On clear (confirmRequired=false), drop the nonce
     // too — it's a one-shot secret.
-    const patch = confirmRequired
-      ? { confirmRequired: true, ...(approvalNonce ? { approvalNonce } : {}), approvalReason }
-      : { confirmRequired: false, approvalNonce: undefined, approvalReason: undefined };
+    // Reason: an explicit arg wins; otherwise keep the stored one only when the
+    // same nonce is being restored (a different ask must not inherit it).
+    const buildPatch = (prev: { approvalNonce?: string; approvalReason?: string }) =>
+      confirmRequired
+        ? {
+            confirmRequired: true,
+            ...(approvalNonce ? { approvalNonce } : {}),
+            approvalReason: approvalReason ?? (approvalNonce && prev.approvalNonce === approvalNonce ? prev.approvalReason : undefined),
+          }
+        : { confirmRequired: false, approvalNonce: undefined, approvalReason: undefined };
     set((s) => ({
       terminalSessions: s.terminalSessions.map((t) => {
         if (t.sessionId !== sessionId) return t;
@@ -432,7 +439,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
               const idx = msg.toolCalls.findIndex((tc) => tc.callId === callId);
               if (idx !== -1) {
                 const updated = [...msg.toolCalls];
-                updated[idx] = { ...updated[idx], ...patch };
+                updated[idx] = { ...updated[idx], ...buildPatch(updated[idx]) };
                 return { ...msg, toolCalls: updated };
               }
             }
@@ -449,7 +456,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
                 if (idx === -1) return m;
                 changed = true;
                 const updated = [...m.toolCalls];
-                updated[idx] = { ...updated[idx], ...patch };
+                updated[idx] = { ...updated[idx], ...buildPatch(updated[idx]) };
                 return { ...m, toolCalls: updated };
               }),
             }));

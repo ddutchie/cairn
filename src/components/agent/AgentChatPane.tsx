@@ -293,7 +293,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // Re-surface approval asks whose original push was lost to a reload —
       // the main-process loop is still blocked waiting on them.
       for (const ask of res?.pendingAsks ?? []) {
-        setAgentToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce);
+        setAgentToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce, ask.reason);
       }
       // Re-surface pending question asks (ask_questions / plan-review). The
       // main process kept the full question payload so we can rehydrate a
