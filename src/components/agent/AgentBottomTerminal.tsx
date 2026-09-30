@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Terminal as TerminalIcon, X, Plus } from "lucide-react";
+import { Terminal as TerminalIcon, X, Plus, Bot } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,24 @@ interface ShellTab {
   id: string;          // sessionId returned by spawnShell
   label: string;
   exited: boolean;
+  /** Agent-owned PTY: read-only view, closing the tab never kills the process. */
+  observed?: boolean;
+}
+
+/** Fixed width of model PTYs (see spawnShellPty) — observer tabs match it. */
+const MODEL_PTY_COLS = 120;
+
+type TermMount = { terminal: import("@xterm/xterm").Terminal; fitAddon: import("@xterm/addon-fit").FitAddon };
+
+/** Observed tabs keep the PTY's fixed column count and only fit rows;
+ *  a normal shell fits both (and reports the size to its PTY). */
+function fitTerm(m: TermMount, observed: boolean) {
+  if (observed) {
+    const d = m.fitAddon.proposeDimensions();
+    if (d && d.rows > 0) m.terminal.resize(MODEL_PTY_COLS, d.rows);
+  } else {
+    m.fitAddon.fit();
+  }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -45,6 +63,15 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
   // StrictMode guard — prevents the double-invoke of the mount effect from
   // spawning two shells. Mirrors the initStarted pattern in SessionMount.
   const spawnStarted = useRef(false);
+
+  // Session ids of observed (agent-owned) tabs — never killed / resized / typed into.
+  const observedIds = useRef<Set<string>>(new Set());
+
+  // Agent tabs the user closed — ignore their further output.
+  const dismissedIds = useRef<Set<string>>(new Set());
+
+  // Raw output for observed (agent) tabs that arrived before their xterm mounted.
+  const observedBuffers = useRef<Map<string, string>>(new Map());
 
   // containerRefs keyed by sessionId — the xterm Terminal mounts here
   const containerRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -61,12 +88,13 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
   useEffect(() => {
     const terms = termRefs.current;
     const containers = containerRefs.current;
+    const observed = observedIds.current;
     return () => {
       for (const [sid] of terms) {
         const container = containers.get(sid);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (container as any)?._cleanup?.();
-        window.electron?.agent.kill(sid).catch(() => {});
+        if (!observed.has(sid)) window.electron?.agent.kill(sid).catch(() => {});
       }
     };
   }, []);
@@ -78,6 +106,42 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     spawnStarted.current = true;
     spawnShell();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Observe agent-owned terminals: list the live ones (with scrollback) on
+  // mount, then follow spawn/exit. Output is buffered here until the tab's
+  // xterm exists; initTerminal replays the buffer, then goes live.
+  useEffect(() => {
+    const api = window.electron?.agent;
+    if (!api?.onModelTerminal) return;
+    let cancelled = false;
+    const addTab = (sessionId: string, cwd: string, scrollback = "") => {
+      if (dismissedIds.current.has(sessionId)) return;
+      if (scrollback) observedBuffers.current.set(sessionId, scrollback);
+      const base = cwd.split(/[\\/]/).filter(Boolean).pop() ?? "shell";
+      setTabs((prev) => prev.some((t) => t.id === sessionId)
+        ? prev
+        : [...prev, { id: sessionId, label: `Agent · ${base}`, exited: false, observed: true }]);
+    };
+    const off = api.onModelTerminal((e) => {
+      if (e.type === "spawn") addTab(e.sessionId, e.cwd);
+      else if (e.type === "data") {
+        if (dismissedIds.current.has(e.sessionId)) return;
+        const live = termRefs.current.get(e.sessionId);
+        if (live) live.terminal.write(e.data);
+        else observedBuffers.current.set(e.sessionId, (observedBuffers.current.get(e.sessionId) ?? "") + e.data);
+      } else if (e.type === "exit") {
+        termRefs.current.get(e.sessionId)?.terminal.writeln(`\r\n\x1b[33m[Process exited with code ${e.exitCode}]\x1b[0m`);
+        setTabs((prev) => prev.map((t) => t.id === e.sessionId ? { ...t, exited: true } : t));
+      }
+    });
+    void api.modelTerminals().then((res) => {
+      if (cancelled) return;
+      const list = (res as { data?: Array<{ sessionId: string; cwd: string; scrollback: string }> } | undefined)?.data
+        ?? (Array.isArray(res) ? res : []);
+      for (const m of list) addTab(m.sessionId, m.cwd, m.scrollback);
+    }).catch(() => {});
+    return () => { cancelled = true; off(); };
   }, []);
 
   async function spawnShell() {
@@ -98,7 +162,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
       if (termRefs.current.has(tab.id)) continue; // already initialised
       const container = containerRefs.current.get(tab.id);
       if (!container) continue;
-      initTerminal(tab.id, container);
+      initTerminal(tab.id, container, !!tab.observed);
     }
   }, [tabs]);
 
@@ -108,7 +172,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     const fit = () => {
       const m = termRefs.current.get(activeId);
       if (m) {
-        try { m.fitAddon.fit(); } catch { /* not yet measured */ }
+        try { fitTerm(m, observedIds.current.has(activeId)); } catch { /* not yet measured */ }
       }
     };
     fit();
@@ -119,13 +183,13 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
 
   // Update font size when the user changes the font scale setting
   useEffect(() => {
-    for (const [, m] of termRefs.current) {
+    for (const [id, m] of termRefs.current) {
       m.terminal.options.fontSize = Math.round(11 * fontScale);
-      requestAnimationFrame(() => { try { m.fitAddon.fit(); } catch { /* ok */ } });
+      requestAnimationFrame(() => { try { fitTerm(m, observedIds.current.has(id)); } catch { /* ok */ } });
     }
   }, [fontScale]);
 
-  async function initTerminal(sessionId: string, container: HTMLDivElement) {
+  async function initTerminal(sessionId: string, container: HTMLDivElement, observed = false) {
     const { Terminal }      = await import("@xterm/xterm");
     const { FitAddon }      = await import("@xterm/addon-fit");
     const { Unicode11Addon } = await import("@xterm/addon-unicode11");
@@ -140,10 +204,11 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
 
     const terminal = new Terminal({
       allowProposedApi: true,
-      cursorBlink: true,
+      cursorBlink: !observed,
+      disableStdin: observed,
       fontSize,
       fontFamily: resolvedFont,
-      cols: Math.max(40, Math.floor(container.offsetWidth / 8)),
+      cols: observed ? MODEL_PTY_COLS : Math.max(40, Math.floor(container.offsetWidth / 8)),
       rows: Math.max(4,  Math.floor(container.offsetHeight / 17)),
       theme: {
         background:          cs.getPropertyValue("--background").trim()   || "#111111",
@@ -163,11 +228,20 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     terminal.open(container);
     termRefs.current.set(sessionId, { terminal, fitAddon });
 
+    if (observed) {
+      observedIds.current.add(sessionId);
+      // Agent PTY: replay what it printed before this tab existed, then go
+      // live (later chunks are written directly by the observer effect).
+      const backlog = observedBuffers.current.get(sessionId);
+      if (backlog) terminal.write(backlog);
+      observedBuffers.current.delete(sessionId);
+    }
+
     // Initial fit via ResizeObserver (same pattern as SessionMount)
     const ro = new ResizeObserver(() => {
       const dims = fitAddon.proposeDimensions();
       if (dims && dims.cols > 0 && dims.rows > 0) {
-        fitAddon.fit();
+        fitTerm({ terminal, fitAddon }, observed);
         ro.disconnect();
       }
     });
@@ -176,15 +250,15 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
 
     // Ongoing resize (height drag)
     const roOngoing = new ResizeObserver(() => {
-      try { fitAddon.fit(); } catch { /* ok */ }
+      try { fitTerm({ terminal, fitAddon }, observed); } catch { /* ok */ }
     });
     roOngoing.observe(container);
 
     // Keystrokes → PTY
-    terminal.onData((data: string) => window.electron?.agent.input(sessionId, data));
+    if (!observed) terminal.onData((data: string) => window.electron?.agent.input(sessionId, data));
 
     // Resize → PTY
-    terminal.onResize(({ cols, rows }: { cols: number; rows: number }) =>
+    if (!observed) terminal.onResize(({ cols, rows }: { cols: number; rows: number }) =>
       window.electron?.agent.resize(sessionId, cols, rows));
 
     // PTY output → terminal
@@ -198,7 +272,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     // PTY exit
     const offExit = window.electron?.agent.onExit(
       ({ sessionId: sid, exitCode }: { sessionId: string; exitCode: number }) => {
-        if (sid !== sessionId) return;
+        if (observed || sid !== sessionId) return;
         terminal.writeln(`\r\n\x1b[33m[Process exited with code ${exitCode}]\x1b[0m`);
         setTabs((prev) => prev.map((t) => t.id === sessionId ? { ...t, exited: true } : t));
       }
@@ -216,7 +290,10 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
   }
 
   function closeTab(sessionId: string) {
-    window.electron?.agent.kill(sessionId).catch(() => {});
+    // Closing an observed tab only detaches the view; the agent still owns the shell.
+    if (!observedIds.current.has(sessionId)) window.electron?.agent.kill(sessionId).catch(() => {});
+    if (observedIds.current.delete(sessionId)) dismissedIds.current.add(sessionId);
+    observedBuffers.current.delete(sessionId);
     const container = containerRefs.current.get(sessionId);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (container as any)?._cleanup?.();
@@ -250,6 +327,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
             )}
             onClick={() => setActiveId(tab.id)}
           >
+            {tab.observed && <Bot size={10} className="text-[var(--accent)]" />}
             <span className={cn("text-[0.714rem]", tab.exited && "opacity-50")}>
               {tab.label}
             </span>

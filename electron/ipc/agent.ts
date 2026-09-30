@@ -33,6 +33,8 @@ import {
   getPtySession,
   isSafePath,
   killPtySession,
+  listModelPtySessions,
+  observeModelPtys,
   registerPtySession,
   resizePtySession,
   spawnRawPty,
@@ -550,6 +552,19 @@ export function registerAgentHandlers(ctx: DbContext): void {
       return { sessionId };
     });
   });
+
+  // ── Model terminals (read-only observation) ──────────────────────────────
+  //
+  // PTYs opened by the agent's terminal_* tools have no owning webContents, so
+  // fan their lifecycle + output out to every window on a dedicated channel.
+  // Windows opening late fetch the live list + scrollback via agent:modelTerminals.
+  observeModelPtys((e) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send("agent:model-terminal", e);
+    }
+  });
+
+  registerIpcHandle("agent:modelTerminals", () => handle(() => listModelPtySessions()));
 
   // ── PTY input / resize / kill ────────────────────────────────────────────
 

@@ -85,6 +85,62 @@ export function __setPtySpawnForTest(fn: SpawnFn | undefined): void {
 /** The single live session table (UI shells + agent runs + model PTYs). */
 const sessions = new Map<string, PtySessionEntry>();
 
+// ── Model-PTY observation ─────────────────────────────────────────────────────
+//
+// Model-owned PTYs (`kind: "model"`) are spawned by the dsh terminal backend,
+// not by a renderer, so no `webContents` is listening. Observers (the IPC
+// layer, which fans out to windows) subscribe here; raw output is also kept in
+// a bounded per-session ring so a late-opened tab can replay it.
+
+export type ModelPtyEvent =
+  | { type: "spawn"; sessionId: string; cwd: string }
+  | { type: "data"; sessionId: string; data: string }
+  | { type: "exit"; sessionId: string; exitCode: number };
+
+const MODEL_SCROLLBACK_MAX_CHARS = 256 * 1024;
+const modelObservers = new Set<(e: ModelPtyEvent) => void>();
+const modelScrollback = new Map<string, string>();
+const modelCwds = new Map<string, string>();
+
+/** Subscribe to model-PTY lifecycle + output; returns a disposer. */
+export function observeModelPtys(cb: (e: ModelPtyEvent) => void): () => void {
+  modelObservers.add(cb);
+  return () => { modelObservers.delete(cb); };
+}
+
+function emitModelPty(e: ModelPtyEvent): void {
+  for (const cb of modelObservers) {
+    try { cb(e); } catch { /* observer errors must not break the PTY */ }
+  }
+}
+
+/** Model PTYs still alive, with their raw (ANSI-preserving) scrollback tail. */
+export function listModelPtySessions(): Array<{ sessionId: string; cwd: string; scrollback: string }> {
+  const out: Array<{ sessionId: string; cwd: string; scrollback: string }> = [];
+  for (const [sessionId, entry] of sessions) {
+    if (entry.kind !== "model") continue;
+    out.push({ sessionId, cwd: modelCwds.get(sessionId) ?? entry.cwd, scrollback: modelScrollback.get(sessionId) ?? "" });
+  }
+  return out;
+}
+
+function trackModelPty(sessionId: string, cwd: string, pty: PtyHandle): void {
+  modelScrollback.set(sessionId, "");
+  modelCwds.set(sessionId, cwd);
+  pty.onData((data) => {
+    let next = (modelScrollback.get(sessionId) ?? "") + data;
+    if (next.length > MODEL_SCROLLBACK_MAX_CHARS) next = next.slice(next.length - MODEL_SCROLLBACK_MAX_CHARS);
+    modelScrollback.set(sessionId, next);
+    emitModelPty({ type: "data", sessionId, data });
+  });
+  pty.onExit(({ exitCode }) => {
+    modelScrollback.delete(sessionId);
+    modelCwds.delete(sessionId);
+    emitModelPty({ type: "exit", sessionId, exitCode });
+  });
+  emitModelPty({ type: "spawn", sessionId, cwd });
+}
+
 export function getPtySession(sessionId: string): PtySessionEntry | undefined {
   return sessions.get(sessionId);
 }
@@ -346,5 +402,6 @@ export async function spawnShellPty(
     kind: opts.kind ?? "shell",
     cwd: spawnedCwd,
   });
+  if (opts.kind === "model") trackModelPty(sessionId, spawnedCwd, pty);
   return { sessionId, cwd: spawnedCwd };
 }
