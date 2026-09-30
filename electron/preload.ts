@@ -799,6 +799,19 @@ const api = {
       invoke("agent:resize", { sessionId, cols, rows }),
     kill: (sessionId: string) => invoke("agent:kill", { sessionId }),
 
+    // Agent-owned (model) terminals — observe only.
+    modelTerminals: () =>
+      invoke<Array<{ sessionId: string; cwd: string; scrollback: string }>>("agent:modelTerminals"),
+    onModelTerminal: (cb: (e:
+      | { type: "spawn"; sessionId: string; cwd: string }
+      | { type: "data"; sessionId: string; data: string }
+      | { type: "exit"; sessionId: string; exitCode: number }) => void) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (_: any, e: any) => cb(e);
+      ipcRenderer.on("agent:model-terminal", handler);
+      return () => ipcRenderer.off("agent:model-terminal", handler);
+    },
+
     onData: (cb: (payload: { sessionId: string; data: string }) => void) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (_: any, payload: { sessionId: string; data: string }) => cb(payload);

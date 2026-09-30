@@ -22,6 +22,9 @@ import {
   hasPtySession,
   isSafePath,
   killPtySession,
+  listModelPtySessions,
+  observeModelPtys,
+  type ModelPtyEvent,
   onPtySessionData,
   onPtySessionExit,
   resizePtySession,
@@ -176,5 +179,29 @@ describe("pty-sessions", () => {
     expect(() => writePtySession("missing", "x")).not.toThrow();
     expect(() => resizePtySession("missing", 80, 24)).not.toThrow();
     expect(onPtySessionData("missing", () => {})).toBeTypeOf("function");
+  });
+
+  it("broadcasts model PTYs to observers and keeps a replayable scrollback", async () => {
+    const fake = makeFakeSpawn();
+    __setPtySpawnForTest(fake.fn);
+    const events: ModelPtyEvent[] = [];
+    const off = observeModelPtys((e) => events.push(e));
+
+    // A user shell is not observed.
+    await spawnShellPty(db, codeDir, { kind: "shell" });
+    expect(events).toEqual([]);
+
+    const { sessionId } = await spawnShellPty(db, codeDir, { kind: "model" });
+    fake.fakes[1]!.fireData("\x1b[32mhi\x1b[0m\n");
+    expect(events).toEqual([
+      { type: "spawn", sessionId, cwd: codeDir },
+      { type: "data", sessionId, data: "\x1b[32mhi\x1b[0m\n" },
+    ]);
+    // Raw ANSI is preserved for xterm replay.
+    expect(listModelPtySessions()).toEqual([{ sessionId, cwd: codeDir, scrollback: "\x1b[32mhi\x1b[0m\n" }]);
+
+    fake.fakes[1]!.fireExit(3);
+    expect(events.at(-1)).toEqual({ type: "exit", sessionId, exitCode: 3 });
+    off();
   });
 });
