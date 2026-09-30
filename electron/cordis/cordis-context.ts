@@ -35,6 +35,7 @@ import { apply as commandCompactApply, inject as commandCompactInject, name as c
 import SessionTitleService from "@deepseek-ai/dsh-session-title";
 import { apply as sessionStatsApply, inject as sessionStatsInject, name as sessionStatsName } from "@deepseek-ai/dsh-session-stats";
 import PermissionPresetService from "@deepseek-ai/dsh-permission-presets";
+import { readToolResult } from "./tool-result-message";
 import GoalService from "@deepseek-ai/dsh-goal";
 import { apply as toolGoalApply, inject as toolGoalInject, name as toolGoalName } from "@deepseek-ai/dsh-tool-goal";
 import { apply as commandGoalApply, inject as commandGoalInject, name as commandGoalName } from "@deepseek-ai/dsh-command-goal";
@@ -628,7 +629,7 @@ export function withToolResultView<T extends { type?: unknown; data?: unknown }>
   if (!event || (event as { type?: unknown }).type !== "tool/result") return event;
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data || typeof data !== "object" || (data as { resultView?: unknown }).resultView !== undefined) return event;
-  const message = data.message as { source?: { callId?: unknown }; content?: Array<{ isError?: unknown; content?: Array<{ type?: string; text?: string }> }> } | undefined;
+  const message = data.message as { source?: { callId?: unknown } } | undefined;
   const callId =
     (typeof data.callId === "string" ? data.callId : undefined) ??
     (typeof message?.source?.callId === "string" ? message.source.callId : undefined);
@@ -636,9 +637,16 @@ export function withToolResultView<T extends { type?: unknown; data?: unknown }>
   const pending = pendingToolCalls.get(callId);
   pendingToolCalls.delete(callId);
   if (!pending) return event;
-  const block = message?.content?.[0];
-  const output = block?.content?.filter((b) => b?.type === "text" && b.text).map((b) => b.text).join("");
-  const view = resolveToolResultView(pending.tool, pending.argsRaw, output, block?.isError === true);
+  // readToolResult covers both the flat `{ role:"tool", content, isError }`
+  // message and the legacy wrapped `tool-result` block.
+  const result = readToolResult(message);
+  const output = result?.output;
+  const isError = result?.isError === true;
+  const view = resolveToolResultView(pending.tool, pending.argsRaw, output, isError);
   if (!view) return event;
+  // A shell error with no exit/signal trailer never ran (e.g. the sandbox
+  // failed to set up). The terminal card would default to "exit 0" with an
+  // empty body — leave it off so the chip shows the error text instead.
+  if (view.card === "terminal" && isError && !/\n\[(exit code|killed by signal): [^\]\n]+\]$/.test(output ?? "")) return event;
   return { ...event, data: { ...data, resultView: view } };
 }

@@ -52,16 +52,22 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
     const electron = window.electron;
     if (!electron) return;
     // Cold read — works before any live projection (fresh pane, no turn yet).
-    void electron.session.permissions(sessionId).then((res: SnapshotResult) => {
+    const read = () => void electron.session.permissions(sessionId).then((res: SnapshotResult) => {
       if (cancelled || liveUpdate || !res || typeof res !== "object" || !("ok" in res) || !res.ok) return;
       if (isSelect(res.value)) setSelect(res.value);
     }).catch(() => undefined);
+    read();
+    // The presets service only mounts with a coding turn's shell, and a resumed
+    // session emits no preset change — so re-read once each turn is underway.
+    const unsubEvent = electron.session.onEvent?.((envelope) => {
+      if (!cancelled && envelope.sessionId === sessionId && envelope.event.type === "step/start") read();
+    });
     // Live select — preset switches (this pane's or the model's) re-render.
     const unsub = electron.session.onProjection((projection: SessionProjection) => {
       if (cancelled || projection.sessionId !== sessionId || projection.kind !== "permissions") return;
       if (isSelect(projection.data)) { liveUpdate = true; setSelect(projection.data); }
     });
-    return () => { cancelled = true; unsub?.(); };
+    return () => { cancelled = true; unsub?.(); unsubEvent?.(); };
   }, [sessionId]);
 
   if (!select) return null;

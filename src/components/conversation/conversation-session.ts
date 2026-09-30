@@ -54,7 +54,7 @@ export function normalizeSessionMessages(value: unknown): ConversationMessage[] 
 /** Apply an approval projection without coupling callers to a profile store. */
 export function applyApprovalProjection(
   messages: ConversationMessage[],
-  data: { callId?: unknown; status?: unknown; nonce?: unknown },
+  data: { callId?: unknown; status?: unknown; nonce?: unknown; reason?: unknown },
 ): ConversationMessage[] {
   if (typeof data.callId !== "string") return messages;
   return messages.map((message) => message.role !== "assistant" ? message : {
@@ -63,6 +63,7 @@ export function applyApprovalProjection(
       ...tool,
       confirmRequired: data.status === "required",
       approvalNonce: typeof data.nonce === "string" ? data.nonce : undefined,
+      approvalReason: typeof data.reason === "string" ? data.reason : undefined,
     }),
   });
 }

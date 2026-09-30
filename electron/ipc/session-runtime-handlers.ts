@@ -219,7 +219,7 @@ async function runCordisCodingSession(
     if (channel !== "session:projection") return;
     const projection = evtPayload as unknown as SessionProjection;
     if (projection.kind === "approval") {
-      const data = projection.data as unknown as { status?: string; callId?: string; name?: string; label?: string; nonce?: string };
+      const data = projection.data as unknown as { status?: string; callId?: string; name?: string; label?: string; nonce?: string; reason?: string };
       if (data.status === "required" && typeof data.callId === "string" && !data.nonce) {
         const nonce = getAgentHost().mintApprovalNonce(sessionId, data.callId);
         data.nonce = nonce;
@@ -229,6 +229,8 @@ async function runCordisCodingSession(
           label: data.label ?? data.name ?? "tool",
           callId: data.callId,
           nonce,
+          ...(data.reason ? { reason: data.reason } : {}),
+          escalation: data.reason?.startsWith("escalate sandbox to ") === true,
         } as never);
       } else if (data.status === "expired" && typeof data.callId === "string") {
         getAgentHost().resolvePendingApprovalAsk(sessionId, data.callId);
@@ -284,7 +286,7 @@ async function runCordisCodingSession(
         // Handle both legacy top-level callId shape (session:tool-confirm-*) and
         // the current Cairn approval plugin shape (session:projection kind:"approval").
         if (channel === "session:projection" && payload && typeof payload === "object" && (payload as { kind?: unknown }).kind === "approval") {
-          const proj = payload as { sessionId?: string; data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string } };
+          const proj = payload as { sessionId?: string; data?: { status?: string; callId?: string; name?: string; label?: string; nonce?: string; reason?: string } };
           const data = proj.data;
           const sessId = proj.sessionId ?? sessionId;
           if (data && data.status === "required" && typeof data.callId === "string" && !data.nonce) {
@@ -296,6 +298,8 @@ async function runCordisCodingSession(
               label: data.label ?? data.name ?? "tool",
               callId: data.callId,
               nonce,
+              ...(data.reason ? { reason: data.reason } : {}),
+              escalation: data.reason?.startsWith("escalate sandbox to ") === true,
             } as never);
           } else if (data && data.status === "expired" && typeof data.callId === "string") {
             getAgentHost().resolvePendingApprovalAsk(sessId, data.callId);
@@ -1001,11 +1005,13 @@ export function registerSessionRuntimeHandlers(
       return;
     }
      const pendingMetaForGrant = getAgentHost().listPendingApprovalAsks(sessionId).find((m) => m.callId === callId);
-     const resolved = getAgentHost().resolvePendingApproval(sessionId, callId, { approved, grant: approved ? grant : undefined });
+     // Sandbox escalations are one-shot: drop any renderer-supplied grant.
+     const effectiveGrant = pendingMetaForGrant?.escalation ? undefined : grant;
+     const resolved = getAgentHost().resolvePendingApproval(sessionId, callId, { approved, grant: approved ? effectiveGrant : undefined });
      if (!resolved) return;
      getAgentHost().resolvePendingApprovalAsk(sessionId, callId);
     getAgentHost().dropApprovalNonce(sessionId, callId);
-    if (approved && grant === "command") {
+    if (approved && effectiveGrant === "command") {
       // Read the trusted command from the pre-execute stash — the renderer's
       // command field is ignored (parameter kept in the type signature only
       // so old renderers don't get a payload-validation error at the IPC
@@ -1014,7 +1020,7 @@ export function registerSessionRuntimeHandlers(
       const cmd = getAgentHost().readTrustedBashCommand(sessionId, callId);
        if (cmd) getAgentHost().grantSessionBash(sessionId, cmd);
     }
-    if (approved && grant === "workspace") {
+    if (approved && effectiveGrant === "workspace") {
       // Persistent workspace grant — survives across sessions. The tool name is
       // stashed in the pending-ask registry main-side, so a compromised
       // renderer can't grant a different tool than the one that was asked.

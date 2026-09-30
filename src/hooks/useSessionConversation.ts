@@ -26,6 +26,7 @@ export interface SessionConversationToolCall {
   resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   confirmRequired?: boolean;
   approvalNonce?: string;
+  approvalReason?: string;
 }
 
 export type SessionConversationQuestion = {
@@ -94,7 +95,7 @@ export function resolveSessionToolResult(current: SessionConversationToolCall[],
     // The persisted meta ref survives the 8k output truncation that breaks JSON parsing of large results.
     ...(cairnRefFromMeta(result.meta) ? { cairnRef: cairnRefFromMeta(result.meta) } : {}),
     error: result.error ? redactSensitiveText(result.error) : undefined,
-    confirmRequired: false, approvalNonce: undefined,
+    confirmRequired: false, approvalNonce: undefined, approvalReason: undefined,
     ...(result.resultView ? { resultView: result.resultView } : {}),
   } : item);
 }
@@ -302,7 +303,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
          else if (data.trace === "usage") { ensureSubagent(childId); updateSubagent(childId, (item) => ({ ...item, lastUsage: { promptTokens: Number(data.promptTokens ?? 0), completionTokens: Number(data.completionTokens ?? 0), reasoningTokens: Number(data.reasoningTokens ?? 0), costUsd: typeof data.costUsd === "number" ? data.costUsd : undefined, breakdown: data.breakdown as TokenBreakdown | undefined } })); }
       } else if (projection.kind === "approval" && typeof data.callId === "string") {
         const next = toolsRef.current.map((item) => item.callId === data.callId
-          ? { ...item, confirmRequired: data.status === "required", approvalNonce: typeof data.nonce === "string" ? data.nonce : undefined }
+          ? { ...item, confirmRequired: data.status === "required", approvalNonce: typeof data.nonce === "string" ? data.nonce : undefined, approvalReason: typeof data.reason === "string" ? data.reason : undefined }
           : item);
         toolsRef.current = next;
         setToolCalls(next);

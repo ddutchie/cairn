@@ -949,7 +949,7 @@ const api = {
     contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("session:context-ring", { sessionId }),
     isRunning: (sessionId: string) => invoke<{
       running: boolean;
-      pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string; nonce?: string }>;
+      pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string; nonce?: string; reason?: string }>;
       /** Outstanding question asks (ask_questions / plan-review). The
        *  renderer surfaces these into pendingQuestions after a reload so a
        *  plan under review isn't lost. */

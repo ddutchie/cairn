@@ -293,7 +293,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // Re-surface approval asks whose original push was lost to a reload —
       // the main-process loop is still blocked waiting on them.
       for (const ask of res?.pendingAsks ?? []) {
-        setAgentToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce);
+        setAgentToolConfirmRequired(session.sessionId, ask.callId, true, ask.nonce, ask.reason);
       }
       // Re-surface pending question asks (ask_questions / plan-review). The
       // main process kept the full question payload so we can rehydrate a
@@ -380,7 +380,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       }
       if (projection.kind === "plan-note") { if (e.planContent) setPlanNoteContent(e.planContent); setAgentMode(sessionId, "plan", e.noteId); }
       else if (projection.kind === "mode-change") setAgentMode(sessionId, e.mode, e.planNoteId);
-      else if (projection.kind === "approval") setAgentToolConfirmRequired(sessionId, e.callId, e.status === "required", e.nonce);
+      else if (projection.kind === "approval") setAgentToolConfirmRequired(sessionId, e.callId, e.status === "required", e.nonce, e.reason);
       else if (projection.kind === "note-updated") {
         const planId = useCairnStore.getState().terminalSessions.find((t) => t.sessionId === sessionId)?.planNoteId;
         if (planId && e.noteId === planId) setPlanNoteContent(e.content);

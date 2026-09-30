@@ -73,7 +73,10 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   // tool it is tool-scoped. Not shown for READ (should never gate, but guard
   // anyway) and not for bare external failures that have no stable trust
   // target — those remain Allow once / Deny only.
-  const showAlwaysAllow = risk !== "READ";
+  // A sandbox escalation (dsh sandbox_permissions) widens what this one call
+  // may touch; it is Allow once / Deny only and states the model's reason.
+  const escalation = toolCall.approvalReason?.match(/^escalate sandbox to ([\w-]+): ([\s\S]*)$/);
+  const showAlwaysAllow = risk !== "READ" && !escalation;
   return (
     <div data-testid="approval-card" className="w-full max-w-xl rounded-lg border border-[color-mix(in_srgb,var(--warning)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_6%,var(--surface))] px-3 py-2.5">
       <div className="flex items-start gap-2">
@@ -89,7 +92,16 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
           <p data-testid="approval-title" className="text-[0.786rem] font-medium text-[var(--text-primary)] break-words">
             {toolCall.viewTitle ?? <>{summary.pre}{summary.obj ? <> <strong className="font-semibold">{summary.obj}</strong></> : null}</>}
           </p>
-          <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">This {scope}.</p>
+          {escalation ? (
+            <>
+              <p data-testid="approval-escalation" className="mt-0.5 text-[0.643rem] font-medium text-[var(--warning)]">
+                Runs outside the sandbox{escalation[1] === "danger-full-access" ? " with full access to your files" : ` (${escalation[1]})`}.
+              </p>
+              {escalation[2] && <p className="mt-0.5 text-[0.643rem] text-[var(--text-secondary)] break-words">{escalation[2]}</p>}
+            </>
+          ) : (
+            <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">This {scope}.</p>
+          )}
         </div>
         <span className="text-[0.607rem] font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
       </div>
@@ -106,7 +118,7 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
         ) : (
           <>
             <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
-            {command && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
+            {command && !escalation && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
             {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
             <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
           </>
@@ -193,7 +205,10 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
       callId: toolCall.callId,
     })} />;
   }
-  if (toolCall.confirmRequired) return <ApprovalCard toolCall={toolCall} sessionId={sessionId} connectors={connectors} />;
+  // Keyed by the per-ask nonce: dsh can ask twice for one callId (the tool
+  // gate, then a sandbox escalation), and the second ask must get fresh
+  // buttons rather than inherit the first card's "Allowed — running…" state.
+  if (toolCall.confirmRequired) return <ApprovalCard key={toolCall.approvalNonce ?? "ask"} toolCall={toolCall} sessionId={sessionId} connectors={connectors} />;
   if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
   if (toolCall.name === "get_user_writing_style" && writingStyleNeedsSetup(toolCall.output)) return <WritingStylePromptChip output={toolCall.output} />;
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
