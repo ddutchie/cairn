@@ -227,8 +227,9 @@ export function ProjectOverview() {
     return items;
   }, [metrics]);
 
-  function handleSendChat() {
-    const text = chatInput.trim();
+  function handleSendChat(submitted?: string) {
+    // The composer owns the live draft; `chatInput` only mirrors external sets.
+    const text = (submitted ?? chatInput).trim();
     if (!text) return;
     setChatInput("");
     if (sessionKind === "coding" && project?.codeDirectory) {
@@ -1216,7 +1217,7 @@ export function ProjectOverview() {
                     ref={chatInputRef}
                     value={chatInput}
                     onChange={setChatInput}
-                    onSubmit={() => handleSendChat()}
+                    onSubmit={(text) => handleSendChat(text)}
                     placeholder={placeholder}
                     variant="overview"
                     showSparkles

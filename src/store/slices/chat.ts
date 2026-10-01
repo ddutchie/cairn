@@ -40,7 +40,8 @@ export interface ChatSlice {
     reasoningModel?: string,
     stats?: ChatMessage["stats"],
   ) => ChatMessage;
-  deleteThread: (threadId: ID) => void;
+  /** Resolves false (and deletes nothing) when the thread has a live turn. */
+  deleteThread: (threadId: ID) => Promise<boolean>;
   renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   compactChatThread: (threadId: ID) => Promise<void>;
@@ -366,7 +367,13 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return msg;
   },
 
-  deleteThread(threadId) {
+  async deleteThread(threadId) {
+    // Authoritative check against the main process (the UI's running-ids poll
+    // can be up to 2s stale). A running turn must be stopped first.
+    try {
+      const state = await window.electron?.session.isRunning(`chat-${threadId}`);
+      if (state?.running) return false;
+    } catch {}
     const wasActive = get().activeChatThreadId === threadId;
     const deletedThread = get().chatThreads.find((t) => t.id === threadId);
     // Abort any live loop for this thread before deleting — otherwise
@@ -404,6 +411,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     }
     get().persist();
     ipc((e) => e.chat.deleteThread(threadId));
+    return true;
   },
 
   renameThread(threadId, title) {
@@ -536,6 +544,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       (t) => t.workspaceId === workspaceId && (projectId ? t.projectId === projectId : true)
     );
     const ids = new Set(toDelete.map((t) => t.id));
+    // Authoritative running check — refuse the whole clear if any turn is live.
+    const states = await Promise.all(
+      [...ids].map((id) => window.electron?.session.isRunning(`chat-${id}`).catch(() => null)),
+    );
+    if (states.some((st) => st?.running)) return;
     set((s) => {
       const nextTitles: Record<string, string | null> = { ...s.projectedTitles };
       for (const id of ids) delete nextTitles[id];

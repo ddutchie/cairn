@@ -62,6 +62,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     })
     .slice(0, 15);
+  const anyThreadRunning = projectThreads.some((t) => runningIds.has(`chat-${t.id}`));
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -85,10 +86,10 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     onActivate();
   }
 
-  function handleDeleteThread(e: React.MouseEvent, threadId: string) {
+  async function handleDeleteThread(e: React.MouseEvent, threadId: string) {
     e.stopPropagation();
     if (runningIds.has(`chat-${threadId}`)) return;
-    deleteThread(threadId);
+    if (!(await deleteThread(threadId))) return;
     if (activeChatThreadId === threadId && activeWorkspaceId) {
       const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
       setActiveChatThreadId(next.id);
@@ -118,8 +119,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     } else {
       // Fallback: delete one by one
       for (const t of chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId))) {
-        if (runningIds.has(`chat-${t.id}`)) continue;
-        deleteThread(t.id);
+        await deleteThread(t.id); // refuses (false) if the thread is running
       }
       if (activeWorkspaceId) {
         const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
@@ -171,13 +171,14 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
             <div className="px-3 py-1.5 border-b border-[var(--border)] flex justify-end">
               <button
                 onClick={handleClearAll}
+                disabled={anyThreadRunning}
                 className={cn(
-                  "text-[0.643rem] font-medium flex items-center gap-1 transition-colors",
+                  "text-[0.643rem] font-medium flex items-center gap-1 transition-colors disabled:opacity-40 disabled:pointer-events-none",
                   clearAllConfirm.armed
                     ? "text-[var(--danger)]"
                     : "text-[var(--text-tertiary)] hover:text-[var(--danger)]"
                 )}
-                title={clearAllConfirm.armed ? "Click again to delete all threads" : "Clear all threads for this project"}
+                title={anyThreadRunning ? "Stop running replies before clearing" : clearAllConfirm.armed ? "Click again to delete all threads" : "Clear all threads for this project"}
               >
                 <X size={10} /> {clearAllConfirm.armed ? "Confirm clear?" : `Clear all (${projectThreads.length})`}
               </button>
