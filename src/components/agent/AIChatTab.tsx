@@ -62,7 +62,10 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     })
     .slice(0, 15);
-  const anyThreadRunning = projectThreads.some((t) => runningIds.has(`chat-${t.id}`));
+  // Same scope as handleClearAll, before the 15-row display limit.
+  const anyThreadRunning = chatThreads.some(
+    (t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId) && runningIds.has(`chat-${t.id}`),
+  );
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -89,8 +92,12 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
   async function handleDeleteThread(e: React.MouseEvent, threadId: string) {
     e.stopPropagation();
     if (runningIds.has(`chat-${threadId}`)) return;
+    const wasActive = activeChatThreadId === threadId;
     if (!(await deleteThread(threadId))) return;
-    if (activeChatThreadId === threadId && activeWorkspaceId) {
+    // Re-read the live selection: deleteThread already activates a replacement
+    // (or the user picked another thread while it awaited) — only create a new
+    // thread if nothing is active now.
+    if (wasActive && !useCairnStore.getState().activeChatThreadId && activeWorkspaceId) {
       const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
       setActiveChatThreadId(next.id);
     }

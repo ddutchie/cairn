@@ -790,7 +790,12 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Stop the running session before deleting it." } }));
         return false;
       }
-    } catch {}
+    } catch (err) {
+      // Fail closed: an unknown running state must not authorize deletion.
+      console.error("[coding-sessions] running check failed", err);
+      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't confirm the session has stopped — not deleting." } }));
+      return false;
+    }
     // Optimistic removal
     set((s) => ({
       codingSessionHistory: s.codingSessionHistory.filter((h) => h.id !== sessionId),

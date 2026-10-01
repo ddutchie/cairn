@@ -370,10 +370,14 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   async deleteThread(threadId) {
     // Authoritative check against the main process (the UI's running-ids poll
     // can be up to 2s stale). A running turn must be stopped first.
+    // Fail closed: an unknown running state must not authorize deletion.
     try {
       const state = await window.electron?.session.isRunning(`chat-${threadId}`);
       if (state?.running) return false;
-    } catch {}
+    } catch (err) {
+      console.error("[chat] deleteThread: running check failed", err);
+      return false;
+    }
     const wasActive = get().activeChatThreadId === threadId;
     const deletedThread = get().chatThreads.find((t) => t.id === threadId);
     // Abort any live loop for this thread before deleting — otherwise
@@ -545,10 +549,14 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     );
     const ids = new Set(toDelete.map((t) => t.id));
     // Authoritative running check — refuse the whole clear if any turn is live.
-    const states = await Promise.all(
-      [...ids].map((id) => window.electron?.session.isRunning(`chat-${id}`).catch(() => null)),
-    );
-    if (states.some((st) => st?.running)) return;
+    // Fail closed: any failed check cancels the whole clear.
+    try {
+      const states = await Promise.all([...ids].map((id) => window.electron?.session.isRunning(`chat-${id}`)));
+      if (states.some((st) => st?.running)) return;
+    } catch (err) {
+      console.error("[chat] clearAllThreads: running check failed", err);
+      return;
+    }
     set((s) => {
       const nextTitles: Record<string, string | null> = { ...s.projectedTitles };
       for (const id of ids) delete nextTitles[id];
