@@ -74,6 +74,17 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
 ) {
   const [pendingImages, setPendingImages] = useState<AttachmentItem[]>([]);
 
+  // The draft lives HERE, not in the parent. Callers (chat/agent panes) are
+  // large trees; lifting per-keystroke state into them re-rendered the whole
+  // transcript on every key press (INP > 2s). The parent's `value` is now only
+  // an external-set channel (prefill / clear): when it changes we adopt it.
+  const [draft, setDraft] = useState(value);
+  const [seenValue, setSeenValue] = useState(value);
+  if (value !== seenValue) {
+    setSeenValue(value);
+    setDraft(value);
+  }
+
   const handleAttach = useCallback(async (files: File[]) => {
     const items = await readAttachments(files, { allowImages, allowPdf });
     setPendingImages((prev) => [...prev, ...items]);
@@ -87,17 +98,23 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
     // Nothing to send (no text, no staged attachments) → keep the staged
     // attachments: clearing them here would drop them even though nothing was
     // actually submitted.
-    if (!value.trim() && pendingImages.length === 0) return;
+    if (!draft.trim() && pendingImages.length === 0) return;
     setPendingImages([]);
-    onSubmit(value, pendingImages);
-  }, [onSubmit, value, pendingImages]);
+    const text = draft;
+    setDraft("");
+    // Reset the parent's channel so a later prefill of identical text still
+    // registers as a change.
+    setSeenValue("");
+    onChange("");
+    onSubmit(text, pendingImages);
+  }, [onSubmit, onChange, draft, pendingImages]);
 
   return (
     <div className={className}>
       <ChatInput
         ref={ref}
-        value={value}
-        onChange={onChange}
+        value={draft}
+        onChange={setDraft}
         onSubmit={handleSubmit}
         onStop={onStop}
         isLoading={isLoading}

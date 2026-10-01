@@ -35,7 +35,10 @@ export interface SessionRowProps {
  *  all surfaces stay on the same type scale, spacing, and selection treatment.
  *  Outer wrapper is roving-focus neutral (role=presentation); the inner div
  *  carries role=option so the delete button is NOT nested inside an option. */
-export function SessionRow({ session, selected, running, onSelect, onRemove, tabIndex, compact = false }: SessionRowProps) {
+export function SessionRow({ session, selected, running, onSelect, onRemove: onRemoveProp, tabIndex, compact = false }: SessionRowProps) {
+  // A running session can't be deleted — stop it first. (The store aborts the
+  // live loop on delete, which would silently kill the turn mid-flight.)
+  const onRemove = running ? undefined : onRemoveProp;
   function handleKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
     if (e.key === "Enter" || e.key === " ") {

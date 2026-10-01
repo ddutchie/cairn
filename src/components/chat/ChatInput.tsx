@@ -125,7 +125,14 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
           return;
         }
         const active = getActiveTrigger();
-        setTrigger(active);
+        // onChange/onKeyUp/onSelect all fire per keystroke; keep the old object
+        // when nothing changed so we don't re-render or re-run the search effect.
+        setTrigger((prev) =>
+          prev === active ||
+          (prev && active && prev.type === active.type && prev.query === active.query && prev.index === active.index)
+            ? prev
+            : active
+        );
       });
     };
 

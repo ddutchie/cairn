@@ -143,7 +143,8 @@ export interface TerminalSessionsSlice {
   /** Fetch and merge session history for the projects visible in the sidebar. */
   fetchCodingSessionHistoryForProjects: (projectIds: string[]) => Promise<void>;
   /** Remove a session from history (also calls the IPC delete) */
-  deleteCodingSessionFromHistory: (sessionId: string) => Promise<void>;
+  /** Resolves false (and deletes nothing) when the session has a live turn. */
+  deleteCodingSessionFromHistory: (sessionId: string) => Promise<boolean>;
   /** Add or update a session in the local history list (optimistic) */
   upsertCodingSessionSummary: (summary: CodingSessionSummary) => void;
   /** Open a file tab (no-op if already open) and make it active. */
@@ -781,7 +782,20 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   },
 
   async deleteCodingSessionFromHistory(sessionId) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !window.electron) return false;
+    // Authoritative running check (UI running-ids poll can be 2s stale).
+    try {
+      const state = await window.electron.session.isRunning(sessionId);
+      if (state?.running) {
+        window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Stop the running session before deleting it." } }));
+        return false;
+      }
+    } catch (err) {
+      // Fail closed: an unknown running state must not authorize deletion.
+      console.error("[coding-sessions] running check failed", err);
+      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't confirm the session has stopped — not deleting." } }));
+      return false;
+    }
     // Optimistic removal
     set((s) => ({
       codingSessionHistory: s.codingSessionHistory.filter((h) => h.id !== sessionId),
@@ -792,6 +806,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
     } catch (err) {
       console.error("[coding-sessions] deleteCodingSessionFromHistory error", err);
     }
+    return true;
   },
 
   upsertCodingSessionSummary(summary) {

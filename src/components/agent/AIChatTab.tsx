@@ -6,6 +6,7 @@ import { X, ChevronDown, MessageSquare, History, Pencil } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { useConfirmAction } from "@/components/ui/confirm-button";
+import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 
 interface AIChatTabProps {
   isActive: boolean;
@@ -47,6 +48,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
   }, []);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const runningIds = useSessionRunningIds(dropdownOpen);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -60,6 +62,10 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     })
     .slice(0, 15);
+  // Same scope as handleClearAll, before the 15-row display limit.
+  const anyThreadRunning = chatThreads.some(
+    (t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId) && runningIds.has(`chat-${t.id}`),
+  );
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -83,10 +89,15 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     onActivate();
   }
 
-  function handleDeleteThread(e: React.MouseEvent, threadId: string) {
+  async function handleDeleteThread(e: React.MouseEvent, threadId: string) {
     e.stopPropagation();
-    deleteThread(threadId);
-    if (activeChatThreadId === threadId && activeWorkspaceId) {
+    if (runningIds.has(`chat-${threadId}`)) return;
+    const wasActive = activeChatThreadId === threadId;
+    if (!(await deleteThread(threadId))) return;
+    // Re-read the live selection: deleteThread already activates a replacement
+    // (or the user picked another thread while it awaited) — only create a new
+    // thread if nothing is active now.
+    if (wasActive && !useCairnStore.getState().activeChatThreadId && activeWorkspaceId) {
       const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
       setActiveChatThreadId(next.id);
     }
@@ -100,6 +111,8 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     if (!activeWorkspaceId) return;
     const count = chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId)).length;
     if (count === 0) return;
+    // Clearing everything would abort in-flight replies — make the user stop them first.
+    if (chatThreads.some((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId) && runningIds.has(`chat-${t.id}`))) return;
     if (!clearAllConfirm.armed) {
       clearAllConfirm.arm();
       return;
@@ -113,7 +126,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     } else {
       // Fallback: delete one by one
       for (const t of chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId))) {
-        deleteThread(t.id);
+        await deleteThread(t.id); // refuses (false) if the thread is running
       }
       if (activeWorkspaceId) {
         const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
@@ -165,13 +178,14 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
             <div className="px-3 py-1.5 border-b border-[var(--border)] flex justify-end">
               <button
                 onClick={handleClearAll}
+                disabled={anyThreadRunning}
                 className={cn(
-                  "text-[0.643rem] font-medium flex items-center gap-1 transition-colors",
+                  "text-[0.643rem] font-medium flex items-center gap-1 transition-colors disabled:opacity-40 disabled:pointer-events-none",
                   clearAllConfirm.armed
                     ? "text-[var(--danger)]"
                     : "text-[var(--text-tertiary)] hover:text-[var(--danger)]"
                 )}
-                title={clearAllConfirm.armed ? "Click again to delete all threads" : "Clear all threads for this project"}
+                title={anyThreadRunning ? "Stop running replies before clearing" : clearAllConfirm.armed ? "Click again to delete all threads" : "Clear all threads for this project"}
               >
                 <X size={10} /> {clearAllConfirm.armed ? "Confirm clear?" : `Clear all (${projectThreads.length})`}
               </button>
@@ -228,8 +242,9 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
                     </button>
                     <button
                       onClick={(e) => handleDeleteThread(e, t.id)}
-                      className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors"
-                      title="Delete thread"
+                      disabled={runningIds.has(`chat-${t.id}`)}
+                      className="p-1 rounded disabled:opacity-30 disabled:pointer-events-none text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors"
+                      title={runningIds.has(`chat-${t.id}`) ? "Stop the running reply before deleting" : "Delete thread"}
                     >
                       <X size={10} />
                     </button>
