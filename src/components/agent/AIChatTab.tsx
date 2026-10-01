@@ -6,6 +6,7 @@ import { X, ChevronDown, MessageSquare, History, Pencil } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { useConfirmAction } from "@/components/ui/confirm-button";
+import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 
 interface AIChatTabProps {
   isActive: boolean;
@@ -47,6 +48,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
   }, []);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const runningIds = useSessionRunningIds(dropdownOpen);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -85,6 +87,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
 
   function handleDeleteThread(e: React.MouseEvent, threadId: string) {
     e.stopPropagation();
+    if (runningIds.has(`chat-${threadId}`)) return;
     deleteThread(threadId);
     if (activeChatThreadId === threadId && activeWorkspaceId) {
       const next = createNewThread(activeWorkspaceId, activeProjectId ?? undefined);
@@ -100,6 +103,8 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     if (!activeWorkspaceId) return;
     const count = chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId)).length;
     if (count === 0) return;
+    // Clearing everything would abort in-flight replies — make the user stop them first.
+    if (chatThreads.some((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId) && runningIds.has(`chat-${t.id}`))) return;
     if (!clearAllConfirm.armed) {
       clearAllConfirm.arm();
       return;
@@ -113,6 +118,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     } else {
       // Fallback: delete one by one
       for (const t of chatThreads.filter((t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId))) {
+        if (runningIds.has(`chat-${t.id}`)) continue;
         deleteThread(t.id);
       }
       if (activeWorkspaceId) {
@@ -228,8 +234,9 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
                     </button>
                     <button
                       onClick={(e) => handleDeleteThread(e, t.id)}
-                      className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors"
-                      title="Delete thread"
+                      disabled={runningIds.has(`chat-${t.id}`)}
+                      className="p-1 rounded disabled:opacity-30 disabled:pointer-events-none text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] transition-colors"
+                      title={runningIds.has(`chat-${t.id}`) ? "Stop the running reply before deleting" : "Delete thread"}
                     >
                       <X size={10} />
                     </button>
