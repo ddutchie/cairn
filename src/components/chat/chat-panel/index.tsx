@@ -677,6 +677,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // Active chat personality (Default = none). The main process appends it
       // to the system prompt as a delimited style layer.
       personality: activePersonality ? { name: activePersonality.name, prompt: activePersonality.prompt } : undefined,
+      // Chat approval policy (picker next to the input). Absent = "safe" main-side.
+      approvalPolicy: aiConfig.chatApprovalPolicy,
       images: attachmentsToSend?.map((a) => ({ name: a.name, dataUrl: a.dataUrl, kind: a.kind })),
       // Subagents is now a GLOBAL AI setting (aiConfig.subagentsEnabled), not a
       // per-thread flag.

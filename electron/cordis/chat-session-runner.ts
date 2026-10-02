@@ -10,7 +10,8 @@ import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
-import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
+import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId, getCachedConfig } from "./host-store";
+import { chatToolNeedsApproval, resolveChatApprovalPolicy } from "../../shared/agent/chat-approval";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
 import { breakdownUsageEvent } from "./plugins/context-ring";
@@ -179,6 +180,11 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   timer.mark("plugin fs chain + artifact hygiene");
 
   const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
+  // Per-request policy from the chat picker; requests that don't carry one
+  // (e.g. the note editor's inline AI) use the saved setting.
+  const approvalPolicy = resolveChatApprovalPolicy(req.approvalPolicy ?? (() => {
+    try { return (getCachedConfig().aiConfig as { chatApprovalPolicy?: unknown } | undefined)?.chatApprovalPolicy; } catch { return undefined; }
+  })());
   const chatAgents = getChatAgentCache();
   let liveText = "";
   let liveReasoning = "";
@@ -236,8 +242,9 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // show the approval card". This is especially confusing for EXTERNAL
       // tools like Tavily where the model thinks search is "not dangerous"
       // and hesitates. Make it explicit that the gating is automatic.
-      const systemText = opts.approvals
-        ? `${baseSystem}\n\n## Tool approvals\nExternal tools (like web search via Tavily) and destructive operations require user approval. To use them, simply call the tool — the system will automatically show an approval card to the user and pause your turn until they respond. Do NOT ask for permission in your text and do NOT use ask_questions to request approval. Just call the tool.`
+      // Omitted under "allow-all" — nothing asks, so the model needn't know.
+      const systemText = opts.approvals && approvalPolicy !== "allow-all"
+        ? `${baseSystem}\n\n## Tool approvals\nExternal tools (like web search via Tavily)${approvalPolicy === "safe" ? " and destructive operations" : ""} require user approval. To use them, simply call the tool — the system will automatically show an approval card to the user and pause your turn until they respond. Do NOT ask for permission in your text and do NOT use ask_questions to request approval. Just call the tool.`
         : baseSystem;
       await mount(cairnSystemPromptPlugin, { systemText });
 
@@ -320,8 +327,11 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           signal,
           workspaceId: req.workspaceId ?? undefined,
           host: createHostStore(db),
-          askRiskClasses: new Set(["EXTERNAL", "EXEC"] as const),
-          askFilter: (name: string) => name === "delete_note" || name === "delete_task" || name === "delete_project",
+          // The chat approval policy (picker next to the chat input) decides
+          // what asks; askFilter is the whole rule, so no risk class gates on
+          // its own.
+          askRiskClasses: new Set(),
+          askFilter: (name: string) => chatToolNeedsApproval(name, approvalPolicy),
         });
       }
       // Workspace-scoped external tools (MCP/service) — chat's reason to have

@@ -121,6 +121,7 @@ interface AgentPromptRequest {
   history?: ChatRequest["history"];
   systemPrompt?: string;
   personality?: ChatRequest["personality"];
+  approvalPolicy?: ChatRequest["approvalPolicy"];
   useSubagents?: boolean;
   config?: {
     provider?: string;
@@ -555,6 +556,7 @@ export function registerSessionRuntimeHandlers(
         history: req.history,
         systemPrompt: req.systemPrompt,
         personality: req.personality,
+        approvalPolicy: req.approvalPolicy,
         useSubagents: req.useSubagents,
         config: req.config,
       };

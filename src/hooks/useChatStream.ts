@@ -25,6 +25,7 @@ export interface ChatStreamRequest {
   };
   systemPrompt?: string;
   personality?: { name: string; prompt: string };
+  approvalPolicy?: import("../../shared/agent/chat-approval").ChatApprovalPolicy;
   images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
   useSubagents?: boolean;
 }
@@ -92,7 +93,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       sessionId: `chat-${req.threadId}`, profile: "chat", prompt: req.message,
       projectId: req.projectId ?? undefined, workspaceId: req.workspaceId ?? undefined,
       attachments: req.images, history: req.history, systemPrompt: req.systemPrompt,
-      personality: req.personality, useSubagents: req.useSubagents, config: req.config,
+      personality: req.personality, approvalPolicy: req.approvalPolicy, useSubagents: req.useSubagents, config: req.config,
     }));
     if (threadId) setThreadUsage(threadId, undefined);
   }

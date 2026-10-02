@@ -58,6 +58,8 @@ export interface CachedConfig {
     }>;
     /** Active personality id. `null` (explicit "None") is stored as absent. */
     personalityId?: string | null;
+    /** Chat approval policy ("safe" | "external" | "allow-all"); absent = "safe". */
+    chatApprovalPolicy?: string;
   };
   agentConfig?: {
     baseUrl?: string;
@@ -218,6 +220,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
           : typeof configRecord.personalityId === "string"
             ? configRecord.personalityId
             : current.aiConfig?.personalityId,
+        chatApprovalPolicy: typeof configRecord.chatApprovalPolicy === "string" ? configRecord.chatApprovalPolicy : current.aiConfig?.chatApprovalPolicy,
       };
     } else if (type === "agent" && configRecord) {
       // Mode + autoApprove are co-persisted: writing one syncs the other so
