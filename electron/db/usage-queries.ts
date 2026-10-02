@@ -307,7 +307,8 @@ export interface UsageThreadGroup extends UsageTotals {
  * Per-thread rollup for the history table, newest activity first. Honours the
  * same range/source/workspace filters as the flat rows, so a thread that
  * straddles the range boundary reports only its in-range cost. Titles come from
- * chat_threads and the agent session metadata table.
+ * chat_threads and the agent session metadata table. Chat usage rows carry the
+ * harness session id `chat-<threadId>`, so the prefix is stripped for the join.
  */
 export function queryUsageThreads(db: Database.Database, filter: UsageQueryFilter, limit = 50): UsageThreadGroup[] {
   const where = whereClause({ ...filter, noSession: false });
@@ -328,7 +329,7 @@ export function queryUsageThreads(db: Database.Database, filter: UsageQueryFilte
          GROUP BY session_id
          ORDER BY MAX(created_at) DESC LIMIT ?
        ) u
-       LEFT JOIN chat_threads t ON t.id = u.session_id
+       LEFT JOIN chat_threads t ON t.id = CASE WHEN u.session_id LIKE 'chat-%' THEN substr(u.session_id, 6) ELSE u.session_id END
        LEFT JOIN ${sessionsTable} s ON s.id = u.session_id
        ORDER BY u.last_at DESC`
     )

@@ -212,7 +212,7 @@ function ThreadGroupRow({ g, includeEstimated, expanded, rows, onToggle }: {
   onToggle: () => void;
 }) {
   const label = USAGE_SOURCE_LABELS[g.source] ?? g.source;
-  const title = g.title ?? `${label} · ${g.sessionId.slice(0, 8)}`;
+  const title = g.title ?? `${label} · ${g.sessionId.replace(/^chat-/, "").slice(0, 8)}`;
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const cost = includeEstimated || !g.hasEstimated ? g.costUsd : null;
   return (
