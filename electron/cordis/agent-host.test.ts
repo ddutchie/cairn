@@ -175,7 +175,7 @@ describe("AgentHost", () => {
     expect(mocks.readPermissionsSnapshot).toHaveBeenCalledWith(contextWithSessionData, "session-1", { readEvents: expect.any(Function) });
     expect(mocks.prepareReplayContext).toHaveBeenCalledWith(persistence, "session-1");
     expect(mocks.readSessionStatsSnapshot).toHaveBeenCalledWith(contextWithSessionData.sessionProjections, undefined);
-    expect(mocks.loadSessionMessages).toHaveBeenCalledWith(persistence, expect.any(Function), "session-1", undefined);
+    expect(mocks.loadSessionMessages).toHaveBeenCalledWith(persistence, expect.any(Function), "session-1", { usageFold: expect.any(Function) });
   });
 
   it("routes message feedback and schedule reads through the same host", async () => {

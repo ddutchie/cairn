@@ -112,6 +112,7 @@ export { getBashExecutable } from "../lib/coding-tools/bash";
 export { discoverSkills, loadSkill } from "../lib/skills";
 export type { SkillMeta, SkillContent } from "../lib/skills";
 export { getCachedConfig } from "../lib/config-cache";
+export { estimateCostUsd } from "../lib/model-pricing";
 // Shared node-pty session table (`electron/lib/pty-sessions.ts`, lazy native
 // load — safe to import from unit tests). The dsh terminal backend
 // (`./terminal-backend.ts`) reaches the manager ONLY through these

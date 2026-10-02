@@ -14,7 +14,7 @@ import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, s
 import { chatToolNeedsApproval, resolveChatApprovalPolicy } from "../../shared/agent/chat-approval";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
-import { breakdownUsageEvent } from "./plugins/context-ring";
+import { readLiveSessionUsage, usageChunkEvent } from "./context-usage";
 import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { foldSessionStats } from "./session-stats";
 import { onAssistantStream } from "./assistant-stream-frames";
@@ -88,20 +88,16 @@ function parseArgs(raw: string | undefined): Record<string, unknown> {
 }
 
 /**
- * Emit a single synthetic `assistant/chunk` usage event carrying the full
- * server-computed token breakdown (foldSessionUsage over the entire event log),
- * so the renderer's live event fold persists a breakdown-bearing `lastUsage`.
- *
- * Without this, the only usage events in the stream come straight from the
- * provider with just {inputTokens, outputTokens} — no breakdown — so the
- * Context Ring falls back to `Tool outputs 0`. This mirrors precisely what the
- * reload path (loadSessionMessages → foldSessionUsage) already returns, keeping
- * the live and reloaded rings identical.
+ * Emit a single synthetic `assistant/chunk` usage event carrying the Context
+ * Ring breakdown, so the renderer's live event fold persists a
+ * breakdown-bearing `lastUsage`. Read from the token meter's live projections
+ * (context-usage.ts) — the same accounting the reload path folds offline, so
+ * live and reloaded rings agree.
  */
-function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (event: SessionEvent) => void): void {
+function emitBreakdownUsage(ctx: unknown, session: unknown, onSessionEvent?: (event: SessionEvent) => void): void {
   if (!onSessionEvent) return;
   try {
-    const synthetic = breakdownUsageEvent(events);
+    const synthetic = usageChunkEvent(readLiveSessionUsage(ctx as never, session));
     if (synthetic) onSessionEvent(synthetic as unknown as SessionEvent);
   } catch { /* the ring is decoration — never break the turn over a breakdown */ }
 }
@@ -437,14 +433,9 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       const result = collect(sessionEvents, firstSeq);
       const end = sessionEvents.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
-      // The provider only streams {inputTokens, outputTokens} on its usage events,
-      // so the renderer's live fold persists a breakdown-less lastUsage and the
-      // Context Ring falls back to "Tool outputs 0". The real breakdown is only
-      // computable by char-counting the WHOLE event log (request/header system +
-      // tools, tool/result outputs, etc.) — exactly what the reload path does via
-      // foldSessionUsage. Emit one synthetic, breakdown-carrying usage event so the
-      // live ring matches the reload ring (single source of truth, no divergence).
-      emitBreakdownUsage(sessionEvents, opts.onSessionEvent);
+      // Provider usage carries no breakdown — emit the token meter's view so the
+      // live ring matches the reload ring.
+      emitBreakdownUsage(ctx, typed.session, opts.onSessionEvent);
       emitTurnStats(sessionEvents, opts.onSessionEvent);
       if (TIMING && kind && kind !== "completed") console.log(`[timing] turn/end kind="${kind}" at ${Date.now() - turnStart}ms (attempt did not complete cleanly)`);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };

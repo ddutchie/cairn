@@ -30,7 +30,7 @@ import {
   CAIRN_DB,
 } from "./cairn-plugins";
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
-import { breakdownUsageEvent } from "./plugins/context-ring";
+import { readLiveSessionUsage, usageChunkEvent } from "./context-usage";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS, dlog, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
@@ -153,19 +153,18 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
   // The live dsh session (set once the agent opens) — read for the Context
   // Ring breakdown below.
-  let liveSession: { snapshotEvents?: () => readonly import("@deepseek-ai/dsh-session").SessionEvent[] } | null = null;
+  let liveSession: unknown = null;
   // Provider usage carries no breakdown, so without this the live ring had no
-  // conversation / tool-output slices until a reload. Re-fold the whole log
-  // (same fold the reload path uses) after settled steps and tool results so
-  // the ring tracks a running session, like chat does at turn end
-  // (chat-session-runner emitBreakdownUsage). Coalesced: a burst of tool
-  // results costs one full-log fold, and turn/end flushes any pending one.
+  // conversation / tool-output slices until a reload. After settled steps and
+  // tool results, read the token meter's live projections (context-usage.ts —
+  // O(retained surface), no log scan) and forward them as a usage chunk, like
+  // chat does at turn end. Coalesced so a burst of tool results emits once;
+  // turn/end flushes any pending emit.
   let breakdownTimer: ReturnType<typeof setTimeout> | null = null;
   const emitLiveBreakdown = () => {
     breakdownTimer = null;
     try {
-      const events = liveSession?.snapshotEvents?.();
-      const synthetic = events ? breakdownUsageEvent(events) : null;
+      const synthetic = liveSession ? usageChunkEvent(readLiveSessionUsage(ctx, liveSession)) : null;
       if (synthetic) opts.onSessionEvent?.(synthetic as unknown as import("@deepseek-ai/dsh-session").SessionEvent);
     } catch { /* the ring is decoration — never break the turn over a breakdown */ }
   };

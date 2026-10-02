@@ -20,8 +20,6 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import * as z from "zod";
-import { foldSessionUsage as dshFoldSessionUsage } from "dsh-context-ring";
-import { contextPressureTokens } from "../../../shared/agent/context-pressure";
 
 export const CONTEXT_RING_KEY = "contextRing";
 
@@ -139,28 +137,7 @@ export function cachedContextRing(sessionId: string): ContextRingState | undefin
   return ringCache.get(sessionId);
 }
 
-// ── Session Telemetry & Usage Folds ──────────────────────────────────────────
-
-export interface SessionUsageMetrics {
-  promptTokens: number;
-  completionTokens: number;
-  reasoningTokens?: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
-  costUsd?: number;
-  contextLimit?: number;
-  contextWindow?: number;
-  breakdown?: {
-    systemPrompt?: number;
-    tools?: number;
-    rules?: number;
-    skills?: number;
-    mcp?: number;
-    subagentDefinitions?: number;
-    toolOutputs?: number;
-    conversation?: number;
-  };
-}
+// ── Session folds (reasoning provenance, todos) ──────────────────────────────────────────
 
 export interface SessionTodoItem {
   id: string;
@@ -175,131 +152,6 @@ export function foldContextRing(events: readonly { type: string; data?: unknown 
     state = applyContextRingEvent(state, ev);
   }
   return state;
-}
-
-/**
-
- * Fold latest/accumulated session token usage and metrics directly from the
- * append-only event log. This guarantees ContextRing and token counters survive
- * app restarts and thread reloads.
- */
-export function foldSessionUsage(events: readonly { type: string; data?: unknown }[]): SessionUsageMetrics | undefined {
-  // dsh-context-ring's fold accepts its own SessionEvent shape; ours carries
-  // the same discriminators (`type` + `data`) but is nominally typed. Cast
-  // through unknown to satisfy the structural boundary — dsh reads only the
-  // `type` + `data.usage` fields we already provide.
-  const usage = dshFoldSessionUsage(normalizeRingEvents(events) as unknown as Parameters<typeof dshFoldSessionUsage>[0]);
-  if (!usage) return undefined;
-  return {
-    promptTokens: usage.promptTokens,
-    completionTokens: usage.completionTokens,
-    reasoningTokens: usage.reasoningTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheCreationTokens: usage.cacheCreationTokens,
-    costUsd: usage.costUsd,
-    contextLimit: usage.contextLimit,
-    contextWindow: usage.contextWindow,
-    breakdown: usage.breakdown,
-  };
-}
-
-
-type RingEvent = { type: string; seq?: number; data?: unknown };
-
-/**
- * Adapt a dsh ≥0.2 event log to the shapes the dsh-context-ring fold reads.
- * The fold predates three upstream changes, each of which zeroed a ring slice:
- *
- *   1. Usage is DISJOINT (`inputTokens` = uncached only). The fold took
- *      `max(inputTokens)` as the context size, so with prompt caching on the
- *      prompt collapsed to the uncached delta and the system/tools estimates
- *      swallowed it — conversation + tool outputs read 0. Rewrite each usage to
- *      the full prompt pressure (input + cache read + cache write, as dsh
- *      token-meter computes it) and keep ONLY the latest settlement's usage:
- *      context size is the latest request, not the max (compaction shrinks it).
- *   2. The system prompt moved from `request/header.header.system` (now
- *      forbidden) to `system/message` surface nodes — re-expose the latest
- *      one as a header-system so the system slice is measured, not guessed.
- *   3. Injected user context is tagged by `source.kind` (`skill-catalog`,
- *      `agent-instructions`, …) + `form`, not `kind: "plugin"` — map those to
- *      the plugin source the fold buckets as skills/system instead of
- *      counting them as conversation.
- */
-export function normalizeRingEvents(events: readonly RingEvent[]): RingEvent[] {
-  let lastUsageIdx = -1;
-  for (let i = events.length - 1; i >= 0; i--) {
-    const ev = events[i];
-    if (ev.type === "assistant/message" && (ev.data as { usage?: unknown } | undefined)?.usage) { lastUsageIdx = i; break; }
-  }
-  const out: RingEvent[] = [];
-  for (let i = 0; i < events.length; i++) {
-    const ev = events[i];
-    if (ev.type === "assistant/message") {
-      const d = ev.data as { usage?: Record<string, unknown> } | undefined;
-      if (!d?.usage) { out.push(ev); continue; }
-      if (i !== lastUsageIdx) { const { usage: _drop, ...rest } = d; void _drop; out.push({ ...ev, data: rest }); continue; }
-      const u = d.usage;
-      out.push({
-        ...ev,
-        data: {
-          ...d,
-          usage: {
-            ...u,
-            inputTokens: contextPressureTokens(u),
-            ...(typeof u.cacheWriteTokens !== "number" && typeof u.cacheCreationTokens === "number" ? { cacheWriteTokens: u.cacheCreationTokens } : {}),
-          },
-        },
-      });
-      continue;
-    }
-    if (ev.type === "system/message") {
-      const msg = (ev.data as { message?: { content?: unknown } } | undefined)?.message;
-      const blocks = Array.isArray(msg?.content) ? msg.content as Array<{ type?: string; text?: unknown }> : [];
-      const text = blocks.filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text as string).join("");
-      out.push({ type: "request/header", seq: ev.seq, data: { header: { system: text } } });
-      continue;
-    }
-    if (ev.type === "user/message") {
-      const d = ev.data as { source?: { kind?: unknown } } | undefined;
-      const kind = d?.source?.kind;
-      if (typeof kind === "string" && kind !== "user" && kind !== "plugin") {
-        out.push({ ...ev, data: { ...d, source: { ...d!.source, kind: "plugin", plugin: kind } } });
-        continue;
-      }
-    }
-    out.push(ev);
-  }
-  return out;
-}
-
-/**
- * A synthetic `assistant/chunk` usage event carrying the full server-computed
- * breakdown (foldSessionUsage over the whole log), for the renderer's live
- * fold. `promptTokens` (not `inputTokens`) marks the count as already the full
- * context size, so the renderer does not re-add cache tokens. Null when the
- * log yields no usage.
- */
-export function breakdownUsageEvent(events: readonly RingEvent[]): RingEvent | null {
-  const usage = foldSessionUsage(events);
-  if (!usage?.breakdown) return null;
-  return {
-    type: "assistant/chunk",
-    seq: -1,
-    data: {
-      chunk: {
-        type: "usage",
-        usage: {
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          reasoningTokens: usage.reasoningTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheCreationTokens: usage.cacheCreationTokens,
-          costUsd: usage.costUsd,
-          breakdown: usage.breakdown,
-        },
-      },
-    },
-  };
 }
 
 /** Fold in-flight session TODO checklist items from todo/write events (last write wins). */

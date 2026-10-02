@@ -297,7 +297,11 @@ function createLocalAgentHost(): AgentHost {
           live,
         );
       } catch { }
-      return loadReplaySessionMessages(persistence, liveSessions, sessionId, statsSnapshot ? { statsSnapshot } : undefined);
+      const { foldSessionUsageOffline } = await import("./context-usage");
+      return loadReplaySessionMessages(persistence, liveSessions, sessionId, {
+        ...(statsSnapshot ? { statsSnapshot } : {}),
+        usageFold: (events, header) => foldSessionUsageOffline(ctx, events as never, header),
+      });
     },
     async readContextRing(sessionId) {
       const { readContextRingWithContext } = await import("./run-cordis-loop");

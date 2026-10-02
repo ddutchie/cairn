@@ -8,7 +8,7 @@ import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import ToolResultPruner from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import { deriveMessagesFromEvents, collapseDerivedToMessages } from "./session-replay";
 import { foldSessionStats } from "./session-stats";
-import { foldSessionUsage } from "./plugins/context-ring";
+import { foldSessionUsageOffline } from "./context-usage";
 
 function appendToolStep(session: Session, turn: number, call: string, content: ContentBlock[]): number {
   const callId = ToolCallId(call);
@@ -104,9 +104,13 @@ describe("tool-result-pruner replay tolerance (Cairn)", () => {
     const stats = foldSessionStats(events as unknown as Parameters<typeof foldSessionStats>[0]);
     expect(stats === undefined || typeof stats.totals.steps === "number").toBe(true);
 
-    const usage = foldSessionUsage(events as unknown as Parameters<typeof foldSessionUsage>[0]);
-    // usage may be undefined when no usage events, but must not throw
-    expect(usage === undefined || typeof usage.promptTokens === "number").toBe(true);
+    // Context Ring usage comes from the token meter's own definitions. The
+    // pruned result leaves the surface, so its tool-output slice shrinks —
+    // the old char-count fold kept summing every tool result ever produced.
+    const beforePrune = foldSessionUsageOffline(ctx, events.filter((e) => (e as { seq: number }).seq <= seq) as never);
+    const usage = foldSessionUsageOffline(ctx, events as never);
+    expect(beforePrune?.breakdown?.toolOutputs).toBeGreaterThan(0);
+    expect(usage?.breakdown?.toolOutputs).toBeLessThan(beforePrune!.breakdown!.toolOutputs);
 
     // Replay via fresh Session instance must derive identical messages (prune is durable)
     const replay = Session.create(session.id, [...session.snapshotEvents()]);
