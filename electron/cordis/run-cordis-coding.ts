@@ -30,6 +30,7 @@ import {
   CAIRN_DB,
 } from "./cairn-plugins";
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
+import { readLiveSessionUsage, usageChunkEvent } from "./context-usage";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS, dlog, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
@@ -55,6 +56,14 @@ export interface RunCordisCodingOptions {
   autoApprove?: boolean;
   /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
   approvalMode?: Mode;
+  /**
+   * "sandbox" (interactive coding sessions): dsh-parity approvals — no
+   * per-tool gate; the permission preset (sandbox + approval policy) decides,
+   * and only sandbox escalations / hooks ask. Cairn tools always run.
+   * "mode" (default — automations): Cairn's per-tool Mode gate, and the
+   * approval policy is forced from the mode each turn.
+   */
+  approvalGate?: "mode" | "sandbox";
   /**
    * Filesystem/bash sandbox mode. "workspace-write" (default) confines all
    * mutations to `cwd`; "read-only" forbids all mutation; "danger-full-access"
@@ -142,8 +151,33 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   // Legacy alias kept for the policy fold below (auto ↔ never, else ask).
   const autoApprove = effectiveMode === "auto";
   let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
+  // The live dsh session (set once the agent opens) — read for the Context
+  // Ring breakdown below.
+  let liveSession: unknown = null;
+  // Provider usage carries no breakdown, so without this the live ring had no
+  // conversation / tool-output slices until a reload. After settled steps and
+  // tool results, read the token meter's live projections (context-usage.ts —
+  // O(retained surface), no log scan) and forward them as a usage chunk, like
+  // chat does at turn end. Coalesced so a burst of tool results emits once;
+  // turn/end flushes any pending emit.
+  let breakdownTimer: ReturnType<typeof setTimeout> | null = null;
+  const emitLiveBreakdown = () => {
+    breakdownTimer = null;
+    try {
+      const synthetic = liveSession ? usageChunkEvent(readLiveSessionUsage(ctx, liveSession)) : null;
+      if (synthetic) opts.onSessionEvent?.(synthetic as unknown as import("@deepseek-ai/dsh-session").SessionEvent);
+    } catch { /* the ring is decoration — never break the turn over a breakdown */ }
+  };
   const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
     opts.onSessionEvent?.(event);
+    if (opts.onSessionEvent && liveSession && (event.type === "assistant/message" || event.type === "tool/result")) {
+      if (breakdownTimer !== null) clearTimeout(breakdownTimer);
+      breakdownTimer = setTimeout(emitLiveBreakdown, 250);
+    }
+    if (event.type === "turn/end" && breakdownTimer !== null) {
+      clearTimeout(breakdownTimer);
+      emitLiveBreakdown();
+    }
     if (event.type !== "turn/end") return;
     // `reason` is dsh's TurnEndReason. For kind:"error" it carries a structured
     // LlmFailure at `reason.error` ({message, code}) — the ONLY description of
@@ -237,9 +271,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // closed to "cancelled" → deterministic loop-halt.
       await mount(cairnDoomLoopPlugin, { sessionId, signal });
     // HITL tool approval — mounted whenever an approvals adapter is present.
-    // Mode decides what asks: "auto" only gates EXTERNAL, "interactive"/"plan"/"discuss" gate all mutating tools.
+    // gate "sandbox": dsh parity (only escalations/hooks ask, per the preset).
+    // gate "mode": "auto" only gates EXTERNAL, "interactive"/"plan"/"discuss" gate all mutating tools.
     if (approvals) {
       await mount(cairnApprovalPlugin, {
+        gate: opts.approvalGate ?? "mode",
         mode: effectiveMode,
         sessionId,
         send,
@@ -340,6 +376,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     },
     run: async ({ agent, mount, resources }) => {
       const typedAgent = agent as CordisTurnAgent & { session: { events: unknown[] } };
+      liveSession = typedAgent.session as typeof liveSession;
     try {
       // ctx.tools is dsh-tools; `schemas` returns the registered set. The
       // `list?.()` fallback covered a pre-dsh alternative surface — kept as
@@ -389,9 +426,23 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // model-visible approval section then reflect reality (auto-approve ⇒
     // "never"; HITL ⇒ "ask"). No-op when unchanged across turns; a resumed
     // session folds its own logged history.
+    // Under the dsh-parity gate the permission preset owns the policy (its
+    // `never` means "reject escalations", not "allow everything"), so Cairn
+    // must not overwrite it each turn — that flipped presets to "custom".
+    if ((opts.approvalGate ?? "mode") === "mode") {
+      try {
+        ctx.approval?.setPolicy?.(typedAgent as never, autoApprove ? "never" : "ask");
+      } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
+    }
+
+    // A permission preset picked while the session was idle (the presets
+    // service only exists while a turn's `shell` is mounted) is queued in the
+    // bridge — apply it now, after the approval write above so the user's
+    // explicit choice is the last word for this turn.
     try {
-      ctx.approval?.setPolicy?.(typedAgent as never, autoApprove ? "never" : "ask");
-    } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
+      const { applyPendingPermissionPreset } = await import("./permissions-bridge");
+      applyPendingPermissionPreset(ctx, sessionId, typedAgent.session);
+    } catch { /* non-fatal: the switcher re-reads the true value after the turn */ }
 
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
     // match events against (= the caller's sessionId, which is also how events

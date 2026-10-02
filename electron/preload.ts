@@ -1036,6 +1036,7 @@ const api = {
     goal: (sessionId: string) => invoke<{ ok: true; value: { id: string; revision: number; objective: string; phase: string; blockedReason?: { code: string; message: string }; roundsStarted: number; maxGoalRounds: number; createdAt: number; updatedAt: number } | null } | { ok: false; code: string; message: string }>("session:goal", { sessionId }),
     /** Current permission-preset select ({options, currentValue}); live changes arrive via onProjection kind:"permissions". ok:false while the presets service is unavailable (switcher hides) */
     permissions: (sessionId: string) => invoke<{ ok: true; value: { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } } | { ok: false; code: string; message: string }>("session:permissions", { sessionId }),
+    setPermissionPreset: (sessionId: string, preset: string) => invoke<{ ok: true; value: { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } } | { ok: false; code: string; message: string }>("session:permissions:set", { sessionId, preset }),
     /** Rate an assistant message (thumbs + optional note); preserves a stored note unless replaced */
     feedback: (req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } } | { ok: false; code: string; message: string }>("session:feedback", req),
     /** Current rating for one message (null when unrated) */

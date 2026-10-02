@@ -27,6 +27,7 @@ const SELECT = {
 interface FakeElectron {
   session: {
     permissions: (sessionId: string) => Promise<unknown>;
+    setPermissionPreset: (sessionId: string, preset: string) => Promise<unknown>;
     onProjection: (cb: (p: unknown) => void) => () => void;
   };
   runtime: {
@@ -35,6 +36,7 @@ interface FakeElectron {
 }
 
 let projectionCb: ((p: unknown) => void) | undefined;
+let setPermissionPreset: ReturnType<typeof vi.fn<(sessionId: string, preset: string) => Promise<unknown>>>;
 let executeCommand: ReturnType<typeof installExecuteCommand>;
 function installExecuteCommand() {
   return vi.fn(async (_req: { sessionId: string; line: string }) => ({ kind: "success" }));
@@ -44,10 +46,12 @@ let permissionsImpl: () => Promise<unknown>;
 function installFake() {
   projectionCb = undefined;
   executeCommand = installExecuteCommand();
+  setPermissionPreset = vi.fn(async (_sessionId: string, preset: string) => ({ ok: true, value: { ...SELECT, currentValue: preset } }));
   permissionsImpl = async () => ({ ok: true, value: { ...SELECT } });
   const fake: FakeElectron = {
     session: {
       permissions: () => permissionsImpl(),
+      setPermissionPreset: (sessionId, preset) => setPermissionPreset(sessionId, preset),
       onProjection: (cb) => { projectionCb = cb as (p: unknown) => void; return () => { projectionCb = undefined; }; },
     },
     runtime: { executeCommand },
@@ -74,13 +78,14 @@ describe("AgentPermissionSelect", () => {
     expect(await screen.findByText("workspace-write")).toBeTruthy();
   });
 
-  it("executes /permission <preset> through runtime.executeCommand on change", async () => {
+  it("switches through session.setPermissionPreset on change (works while idle)", async () => {
     const user = userEvent.setup();
     renderSelect();
     await user.click(await screen.findByText("workspace-write"));
     await user.click(await screen.findByText("danger-full-access"));
-    await waitFor(() => expect(executeCommand).toHaveBeenCalledTimes(1));
-    expect(executeCommand).toHaveBeenCalledWith({ sessionId: "sess-1", line: "/permission danger-full-access" });
+    await waitFor(() => expect(setPermissionPreset).toHaveBeenCalledTimes(1));
+    expect(setPermissionPreset).toHaveBeenCalledWith("sess-1", "danger-full-access");
+    expect(executeCommand).not.toHaveBeenCalled();
   });
 
   it("shows the derived custom row but never executes it", async () => {
@@ -99,9 +104,7 @@ describe("AgentPermissionSelect", () => {
     // Either the menu item is disabled (no call) or the click is ignored —
     // in no case does picking Custom execute a command.
     await user.click(screen.getByText("Custom")).catch(() => undefined);
-    expect(executeCommand).not.toHaveBeenCalledWith(
-      expect.objectContaining({ line: "/permission custom" }),
-    );
+    expect(setPermissionPreset).not.toHaveBeenCalledWith("sess-1", "custom");
   });
 
   it("updates from live permissions projections", async () => {

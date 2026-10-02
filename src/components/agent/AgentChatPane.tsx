@@ -670,8 +670,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       transcriptFooter={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
       actions={(
         <>
-          {/* Permission preset (dsh permission-presets select) — hidden until
-              the presets service is active. No approval-mode toggle exists in
+          {/* Permission preset (dsh permission-presets select) — rendered from
+              the static preset table until a turn mounts the service. No approval-mode toggle exists in
               this pane; this row (PLAN badge, PRD, clear) is the session-control
               home, so the switcher lives here. Keyed by session so a switch
               never flashes the previous session's preset. */}

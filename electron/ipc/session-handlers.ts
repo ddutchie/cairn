@@ -71,6 +71,20 @@ export function registerSessionHandlers(ctx: DbContext): void {
     }
   }));
 
+  // ── session:permissions:set ──────────────────────────────────────────
+  // Preset switch for the renderer switcher. Unlike `/permission <preset>`
+  // through cordis:executeCommand, this works while the session is idle (no
+  // per-turn `shell` → no presets service → no `/permission` command): the
+  // choice is queued and applied when the next coding turn mounts the service.
+  registerIpcHandle("session:permissions:set", (_e, { sessionId, preset }: { sessionId: string; preset: string }) => handle(async () => {
+    try {
+      return { ok: true as const, value: await getAgentHost().setPermissionPreset(sessionId, preset) };
+    } catch (err) {
+      const code = (err as { code?: string })?.code ?? "internal";
+      return { ok: false as const, code, message: err instanceof Error ? err.message : "permission switch failed" };
+    }
+  }));
+
   // Session-as-truth load: rebuild the coding session's transcript from the dsh
   // JSONL session log (same source the agent resumes from) via the shared
   // session-replay helpers, matching the chat path. The coding agent's dsh session id

@@ -203,7 +203,7 @@ function ChatPreviewSection() {
         <div className="space-y-3">
           <SurfaceToolsPanel
             tools={chatTools}
-            footnote="Deletes are approval-gated on chat. Filesystem tools (read/edit/bash) live on the coding agent."
+            footnote="What chat asks before running is set by the approvals picker under the chat input. Filesystem tools (read/edit/bash) live on the coding agent."
           />
           <ToolsLegend />
         </div>

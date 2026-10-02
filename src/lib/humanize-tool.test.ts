@@ -49,4 +49,39 @@ describe("humanizeTool", () => {
     expect(result.obj).toHaveLength(160);
     expect(result.obj?.endsWith("…")).toBe(true);
   });
+
+  describe("Cairn tools resolve ids to names", () => {
+    const lookup = {
+      note: (id: string) => ({ n1: "Release plan", n2: "Ideas" } as Record<string, string>)[id],
+      task: (id: string) => ({ c1: "Fix the ring" } as Record<string, string>)[id],
+      project: (id: string) => ({ p1: "Cairn" } as Record<string, string>)[id],
+      column: (id: string) => ({ done: "Done" } as Record<string, string>)[id],
+    };
+
+    it("shows the note title for an id-only note edit", () => {
+      expect(humanizedText("patch_note", { noteId: "n1", oldString: "a", newString: "b" }, lookup)).toBe("Updated note Release plan");
+      expect(humanizedText("append_to_note", { noteId: "n2", content: "x" }, lookup)).toBe("Added to note Ideas");
+      expect(humanizedText("delete_note", { noteId: "n1" }, lookup)).toBe("Deleted note Release plan");
+      expect(humanizedText("rename_note", { noteId: "n1", newTitle: "Launch plan" }, lookup)).toBe("Renamed note Release plan to “Launch plan”");
+    });
+
+    it("shows task, column and project names", () => {
+      expect(humanizedText("update_task", { cardId: "c1", columnId: "done" }, lookup)).toBe("Moved task Fix the ring to Done");
+      expect(humanizedText("update_task", { cardId: "c1", priority: "high" }, lookup)).toBe("Updated task Fix the ring");
+      expect(humanizedText("delete_task", { cardId: "c1" }, lookup)).toBe("Deleted task Fix the ring");
+      expect(humanizedText("link_note_to_task", { noteId: "n1", cardId: "c1" }, lookup)).toBe("Linked note Release plan to Fix the ring");
+      expect(humanizedText("delete_project", { projectId: "p1" }, lookup)).toBe("Deleted project Cairn");
+      expect(humanizedText("bulk_update_task_status", { cardIds: ["c1", "c2"], targetColumnId: "done" }, lookup)).toBe("Moved 2 tasks to Done");
+    });
+
+    it("update_task: padded ids resolve, whitespace-only title edits are not renames", () => {
+      expect(humanizedText("update_task", { cardId: "  c1 ", title: "Ship it" }, lookup)).toBe("Renamed task Fix the ring to “Ship it”");
+      expect(humanizedText("update_task", { cardId: "c1", title: "  Fix the ring " }, lookup)).toBe("Updated task Fix the ring");
+    });
+
+    it("falls back to the raw id when the entity isn't loaded", () => {
+      expect(humanizedText("patch_note", { noteId: "unknown-id" }, lookup)).toBe("Updated note unknown-id");
+      expect(humanizedText("patch_note", { noteId: "n1" })).toBe("Updated note n1");
+    });
+  });
 });

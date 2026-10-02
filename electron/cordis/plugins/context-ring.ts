@@ -20,7 +20,6 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import * as z from "zod";
-import { foldSessionUsage as dshFoldSessionUsage } from "dsh-context-ring";
 
 export const CONTEXT_RING_KEY = "contextRing";
 
@@ -138,28 +137,7 @@ export function cachedContextRing(sessionId: string): ContextRingState | undefin
   return ringCache.get(sessionId);
 }
 
-// ── Session Telemetry & Usage Folds ──────────────────────────────────────────
-
-export interface SessionUsageMetrics {
-  promptTokens: number;
-  completionTokens: number;
-  reasoningTokens?: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
-  costUsd?: number;
-  contextLimit?: number;
-  contextWindow?: number;
-  breakdown?: {
-    systemPrompt?: number;
-    tools?: number;
-    rules?: number;
-    skills?: number;
-    mcp?: number;
-    subagentDefinitions?: number;
-    toolOutputs?: number;
-    conversation?: number;
-  };
-}
+// ── Session folds (reasoning provenance, todos) ──────────────────────────────────────────
 
 export interface SessionTodoItem {
   id: string;
@@ -175,33 +153,6 @@ export function foldContextRing(events: readonly { type: string; data?: unknown 
   }
   return state;
 }
-
-/**
-
- * Fold latest/accumulated session token usage and metrics directly from the
- * append-only event log. This guarantees ContextRing and token counters survive
- * app restarts and thread reloads.
- */
-export function foldSessionUsage(events: readonly { type: string; data?: unknown }[]): SessionUsageMetrics | undefined {
-  // dsh-context-ring's fold accepts its own SessionEvent shape; ours carries
-  // the same discriminators (`type` + `data`) but is nominally typed. Cast
-  // through unknown to satisfy the structural boundary — dsh reads only the
-  // `type` + `data.usage` fields we already provide.
-  const usage = dshFoldSessionUsage(events as unknown as Parameters<typeof dshFoldSessionUsage>[0]);
-  if (!usage) return undefined;
-  return {
-    promptTokens: usage.promptTokens,
-    completionTokens: usage.completionTokens,
-    reasoningTokens: usage.reasoningTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheCreationTokens: usage.cacheCreationTokens,
-    costUsd: usage.costUsd,
-    contextLimit: usage.contextLimit,
-    contextWindow: usage.contextWindow,
-    breakdown: usage.breakdown,
-  };
-}
-
 
 /** Fold in-flight session TODO checklist items from todo/write events (last write wins). */
 export function foldSessionTodos(events: readonly { type: string; data?: unknown }[]): SessionTodoItem[] {

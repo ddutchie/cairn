@@ -158,6 +158,8 @@ export interface ChatRequest {
    * behavioral rules. Absent = no personality (default Cairn behavior).
    */
   personality?: { name: string; prompt: string };
+  /** Chat approval policy for this turn (see shared/agent/chat-approval.ts). Absent → the saved setting. */
+  approvalPolicy?: import("../../shared/agent/chat-approval").ChatApprovalPolicy;
   /** Attachments on the current user message (base64 data URLs; kind="pdf"
    *  becomes an Anthropic-style `document` part, images become `image_url`). */
   images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;

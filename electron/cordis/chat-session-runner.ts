@@ -10,10 +10,12 @@ import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
-import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
+import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId, getCachedConfig } from "./host-store";
+import { chatToolNeedsApproval, resolveChatApprovalPolicy } from "../../shared/agent/chat-approval";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
-import { foldSessionUsage } from "./plugins/context-ring";
+import { readLiveSessionUsage, usageChunkEvent } from "./context-usage";
+import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { foldSessionStats } from "./session-stats";
 import { onAssistantStream } from "./assistant-stream-frames";
 
@@ -71,7 +73,8 @@ function collect(events: readonly SessionEvent[], firstSeq: number): Collected {
       const reasoningDelta = content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text as string).join("");
       if (reasoningDelta) reasoning += reasoningDelta;
       if (msg.usage) {
-        pt = Math.max(pt, msg.usage.inputTokens ?? 0);
+        // Disjoint dsh usage — context size is input + cache read/write.
+        pt = Math.max(pt, contextPressureTokens(msg.usage));
         ct += msg.usage.outputTokens ?? 0;
         rt += msg.usage.reasoningTokens ?? 0;
       }
@@ -85,40 +88,17 @@ function parseArgs(raw: string | undefined): Record<string, unknown> {
 }
 
 /**
- * Emit a single synthetic `assistant/chunk` usage event carrying the full
- * server-computed token breakdown (foldSessionUsage over the entire event log),
- * so the renderer's live event fold persists a breakdown-bearing `lastUsage`.
- *
- * Without this, the only usage events in the stream come straight from the
- * provider with just {inputTokens, outputTokens} — no breakdown — so the
- * Context Ring falls back to `Tool outputs 0`. This mirrors precisely what the
- * reload path (loadSessionMessages → foldSessionUsage) already returns, keeping
- * the live and reloaded rings identical.
+ * Emit a single synthetic `assistant/chunk` usage event carrying the Context
+ * Ring breakdown, so the renderer's live event fold persists a
+ * breakdown-bearing `lastUsage`. Read from the token meter's live projections
+ * (context-usage.ts) — the same accounting the reload path folds offline, so
+ * live and reloaded rings agree.
  */
-function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (event: SessionEvent) => void): void {
+function emitBreakdownUsage(ctx: unknown, session: unknown, onSessionEvent?: (event: SessionEvent) => void): void {
   if (!onSessionEvent) return;
   try {
-    const usage = foldSessionUsage(events);
-    if (!usage?.breakdown) return;
-    const synthetic = {
-      type: "assistant/chunk",
-      seq: -1,
-      data: {
-        chunk: {
-          type: "usage",
-          usage: {
-            inputTokens: usage.promptTokens,
-            outputTokens: usage.completionTokens,
-            reasoningTokens: usage.reasoningTokens,
-            cacheReadTokens: usage.cacheReadTokens,
-            cacheCreationTokens: usage.cacheCreationTokens,
-            costUsd: usage.costUsd,
-            breakdown: usage.breakdown,
-          },
-        },
-      },
-    } as unknown as SessionEvent;
-    onSessionEvent(synthetic);
+    const synthetic = usageChunkEvent(readLiveSessionUsage(ctx as never, session));
+    if (synthetic) onSessionEvent(synthetic as unknown as SessionEvent);
   } catch { /* the ring is decoration — never break the turn over a breakdown */ }
 }
 
@@ -196,6 +176,11 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   timer.mark("plugin fs chain + artifact hygiene");
 
   const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
+  // Per-request policy from the chat picker; requests that don't carry one
+  // (e.g. the note editor's inline AI) use the saved setting.
+  const approvalPolicy = resolveChatApprovalPolicy(req.approvalPolicy ?? (() => {
+    try { return (getCachedConfig().aiConfig as { chatApprovalPolicy?: unknown } | undefined)?.chatApprovalPolicy; } catch { return undefined; }
+  })());
   const chatAgents = getChatAgentCache();
   let liveText = "";
   let liveReasoning = "";
@@ -253,8 +238,9 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // show the approval card". This is especially confusing for EXTERNAL
       // tools like Tavily where the model thinks search is "not dangerous"
       // and hesitates. Make it explicit that the gating is automatic.
-      const systemText = opts.approvals
-        ? `${baseSystem}\n\n## Tool approvals\nExternal tools (like web search via Tavily) and destructive operations require user approval. To use them, simply call the tool — the system will automatically show an approval card to the user and pause your turn until they respond. Do NOT ask for permission in your text and do NOT use ask_questions to request approval. Just call the tool.`
+      // Omitted under "allow-all" — nothing asks, so the model needn't know.
+      const systemText = opts.approvals && approvalPolicy !== "allow-all"
+        ? `${baseSystem}\n\n## Tool approvals\nExternal tools (like web search via Tavily)${approvalPolicy === "safe" ? " and destructive operations" : ""} require user approval. To use them, simply call the tool — the system will automatically show an approval card to the user and pause your turn until they respond. Do NOT ask for permission in your text and do NOT use ask_questions to request approval. Just call the tool.`
         : baseSystem;
       await mount(cairnSystemPromptPlugin, { systemText });
 
@@ -337,8 +323,11 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
           signal,
           workspaceId: req.workspaceId ?? undefined,
           host: createHostStore(db),
-          askRiskClasses: new Set(["EXTERNAL", "EXEC"] as const),
-          askFilter: (name: string) => name === "delete_note" || name === "delete_task" || name === "delete_project",
+          // The chat approval policy (picker next to the chat input) decides
+          // what asks; askFilter is the whole rule, so no risk class gates on
+          // its own.
+          askRiskClasses: new Set(),
+          askFilter: (name: string) => chatToolNeedsApproval(name, approvalPolicy),
         });
       }
       // Workspace-scoped external tools (MCP/service) — chat's reason to have
@@ -444,14 +433,9 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       const result = collect(sessionEvents, firstSeq);
       const end = sessionEvents.filter((event) => event.seq >= firstSeq && event.type === "turn/end").at(-1);
       const kind = (end?.data as { reason?: { kind?: string } } | undefined)?.reason?.kind;
-      // The provider only streams {inputTokens, outputTokens} on its usage events,
-      // so the renderer's live fold persists a breakdown-less lastUsage and the
-      // Context Ring falls back to "Tool outputs 0". The real breakdown is only
-      // computable by char-counting the WHOLE event log (request/header system +
-      // tools, tool/result outputs, etc.) — exactly what the reload path does via
-      // foldSessionUsage. Emit one synthetic, breakdown-carrying usage event so the
-      // live ring matches the reload ring (single source of truth, no divergence).
-      emitBreakdownUsage(sessionEvents, opts.onSessionEvent);
+      // Provider usage carries no breakdown — emit the token meter's view so the
+      // live ring matches the reload ring.
+      emitBreakdownUsage(ctx, typed.session, opts.onSessionEvent);
       emitTurnStats(sessionEvents, opts.onSessionEvent);
       if (TIMING && kind && kind !== "completed") console.log(`[timing] turn/end kind="${kind}" at ${Date.now() - turnStart}ms (attempt did not complete cleanly)`);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };

@@ -1,5 +1,6 @@
 import type { SessionEventEnvelope } from "./session-event";
 import { describeTurnEndReason, type TurnEndReasonLike } from "./turn-end-reason";
+import { contextPressureTokens } from "./context-pressure";
 
 export type RendererSessionEvent = SessionEventEnvelope["event"];
 
@@ -92,11 +93,13 @@ function usage(value: unknown): FoldedUsage | undefined {
   const u = record(value);
   if (!Object.keys(u).length) return undefined;
   return {
-    promptTokens: Number(u.inputTokens ?? u.promptTokens ?? 0),
+    // dsh usage is disjoint (inputTokens = uncached only) — context size is
+    // input + cache read + cache write. See context-pressure.ts.
+    promptTokens: contextPressureTokens(u),
     completionTokens: Number(u.outputTokens ?? u.completionTokens ?? 0),
     reasoningTokens: Number(u.reasoningTokens ?? 0),
     cacheReadTokens: typeof u.cacheReadTokens === "number" ? u.cacheReadTokens : undefined,
-    cacheCreationTokens: typeof u.cacheCreationTokens === "number" ? u.cacheCreationTokens : undefined,
+    cacheCreationTokens: typeof u.cacheCreationTokens === "number" ? u.cacheCreationTokens : typeof u.cacheWriteTokens === "number" ? u.cacheWriteTokens : undefined,
     breakdown: u.breakdown,
     costUsd: typeof u.costUsd === "number" ? u.costUsd : undefined,
   };

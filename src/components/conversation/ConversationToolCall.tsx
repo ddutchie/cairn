@@ -10,6 +10,7 @@ import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
 import { humanizeConnectorTool, humanizeTool } from "@/lib/humanize-tool";
+import { cairnNameLookup } from "@/lib/cairn-name-lookup";
 import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-risk";
 import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
 import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
@@ -54,7 +55,7 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   const connector = connectorForTool(toolCall.name, connectors);
   const summary = connector
     ? humanizeConnectorTool(toolCall.name, toolCall.args, connector.label || connector.name)
-    : humanizeTool(toolCall.name, toolCall.args);
+    : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
   // Connector calls show their arguments as a key/value tree (below), not a JSON preview.
   const preview = connector ? "" : approvalPreview(toolCall.name, toolCall.args);
   const connectorArgs = connector && toolCall.args && Object.keys(toolCall.args).length > 0
@@ -141,7 +142,7 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
     ? { pre: rv.title }
     : toolCall.viewTitle
       ? { pre: toolCall.viewTitle }
-      : humanizeTool(toolCall.name, toolCall.args);
+      : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
   // Tool-authored result body (dsh `presentResult`): terminal cards carry the
   // captured output + exit status, generic cards carry reformatted content
   // blocks. Anything else (or nothing) falls back to the raw output text.

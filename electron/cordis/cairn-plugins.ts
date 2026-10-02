@@ -44,6 +44,7 @@ import { riskForTool as riskForToolShared, isShellTool } from "../../shared/agen
 import type { RiskClass } from "../../shared/agent/tool-risk";
 import { shouldAskForTool, modeFromAutoApprove, isMode, type Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
+import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { resolveToolCallView } from "./cordis-context";
 
 /** Tool-authored chip title (dsh `presentCall`) with bare-name fallback. */
@@ -371,7 +372,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       if (usage) {
          sendProjection(send, sessionId, "subagent-trace", { trace: "usage",
           childId, parentSession,
-          promptTokens: usage.inputTokens ?? 0,
+          promptTokens: contextPressureTokens(usage),
           completionTokens: usage.outputTokens ?? 0,
           reasoningTokens: usage.reasoningTokens ?? 0,
         });
@@ -632,6 +633,8 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
     outputTokens?: number;
     reasoningTokens?: number;
     cacheReadTokens?: number;
+    /** dsh's name for cache-creation tokens. */
+    cacheWriteTokens?: number;
     cacheCreationTokens?: number;
     costUsd?: number;
   };
@@ -651,12 +654,13 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
 
     if (!u) return;
 
-    const rawInput = u.inputTokens ?? 0;
-    const rawCacheRead = u.cacheReadTokens ?? 0;
-    // dsh/Anthropic reports input as total, but some paths (second turn) report
-    // input as uncached delta (35) with cacheRead as total cached (20480) →
-    // 35+20480=20515. Heuristic: if cacheRead > rawInput, rawInput is delta.
-    const promptTokens = rawCacheRead > rawInput ? rawInput + rawCacheRead : rawInput;
+    // dsh usage is DISJOINT: inputTokens is uncached input only, cached input
+    // arrives as cacheReadTokens / cacheWriteTokens. The row's promptTokens is
+    // the full billed input (the cost estimator and the Usage view's "% of
+    // input" both treat cache tokens as a share of it), so sum all three. The
+    // old `cacheRead > input` heuristic undercounted whenever input ≥ cacheRead.
+    const promptTokens = contextPressureTokens(u);
+    const cacheCreationTokens = typeof u.cacheWriteTokens === "number" ? u.cacheWriteTokens : u.cacheCreationTokens;
     const completionTokens = u.outputTokens ?? 0;
     const reasoningTokens = u.reasoningTokens ?? 0;
     // dsh emits usage events that carry no counts (e.g. the synthetic
@@ -688,7 +692,7 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
       completionTokens,
       reasoningTokens,
       ...(typeof u.cacheReadTokens === "number" ? { cacheReadTokens: u.cacheReadTokens } : {}),
-      ...(typeof u.cacheCreationTokens === "number" ? { cacheCreationTokens: u.cacheCreationTokens } : {}),
+      ...(typeof cacheCreationTokens === "number" ? { cacheCreationTokens } : {}),
       ...(typeof u.costUsd === "number" ? { costUsd: u.costUsd } : {}),
     });
   });
@@ -960,6 +964,17 @@ export interface CairnApprovalConfig {
    * (which are WRITE_LOCAL) while still auto-allowing creates/updates.
    */
   askFilter?: (name: string, args: Record<string, unknown>) => boolean;
+  /**
+   * What decides when a tool call asks:
+   *   - "mode" (default): Cairn's risk taxonomy × approval Mode — every
+   *     mutating tool asks unless the mode is "auto". Automations rely on this.
+   *   - "sandbox": dsh parity. No per-tool gate at all — the sandbox (the
+   *     session's permission preset) is the guard, and only what dsh itself
+   *     routes through the approval seam asks: sandbox escalations and hooks,
+   *     under the preset's approval policy. Cairn data tools always run. The
+   *     protected secret-file guard is kept.
+   */
+  gate?: "mode" | "sandbox";
 }
 
 /**
@@ -1048,7 +1063,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           }
         }
       }
-      if (typeof name === "string" && shouldAskForTool(name, effectiveMode, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
+      if (typeof name === "string" && config.gate !== "sandbox" && shouldAskForTool(name, effectiveMode, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
         // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
         // whatever string a compromised renderer echoes back. dsh's

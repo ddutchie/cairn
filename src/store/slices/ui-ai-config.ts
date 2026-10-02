@@ -334,6 +334,12 @@ export interface AIConfig {
    *  null (JSON + the backend cache) rather than dropped as undefined. */
   personalityId?: string | null;
   /**
+   * What the chat assistant asks before running (picker next to the chat
+   * input): "safe" (deletes + connectors), "external" (connectors only),
+   * "allow-all" (nothing). Absent = "safe". Global like the personality.
+   */
+  chatApprovalPolicy?: import("../../../shared/agent/chat-approval").ChatApprovalPolicy;
+  /**
    * Reasoning effort for reasoning-capable models (models.dev `reasoning: true`).
    * Controls how much the model "thinks" before answering — chat defaults to a
    * lower budget so everyday replies aren't dominated by long thinking traces
@@ -447,6 +453,8 @@ export interface AiConfigSlice {
   // Chat personalities — a global installed list + active selection on aiConfig.
   /** Set (or clear, with null) the active chat personality. */
   setPersonality: (id: string | null) => void;
+  /** Set the chat approval policy (global, persisted). */
+  setChatApprovalPolicy: (policy: import("../../../shared/agent/chat-approval").ChatApprovalPolicy) => void;
   /**
    * Install (or update) a community personality from the catalog into the
    * installed list. Dedups by communityId (or name). Does NOT auto-select.
@@ -644,6 +652,14 @@ export const createAiConfigSlice: StateCreator<CairnStore, [], [], AiConfigSlice
     });
 
     return id;
+  },
+
+  setChatApprovalPolicy(policy) {
+    set((s) => {
+      const next = { ...s.aiConfig, chatApprovalPolicy: policy };
+      persistAi(next);
+      return { aiConfig: next };
+    });
   },
 
   // ── Chat personalities ──────────────────────────

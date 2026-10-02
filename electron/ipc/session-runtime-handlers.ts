@@ -121,6 +121,7 @@ interface AgentPromptRequest {
   history?: ChatRequest["history"];
   systemPrompt?: string;
   personality?: ChatRequest["personality"];
+  approvalPolicy?: ChatRequest["approvalPolicy"];
   useSubagents?: boolean;
   config?: {
     provider?: string;
@@ -277,6 +278,9 @@ async function runCordisCodingSession(
       mode,
       autoApprove: payload.autoApprove,
       approvalMode: payload.mode,
+      // Interactive coding sessions follow dsh: the permission preset is the
+      // guard and Cairn tools never ask (automations keep the Mode gate).
+      approvalGate: "sandbox",
       sandboxMode: payload.sandboxMode,
       role: payload.role,
       onSessionEvent: payload.onSessionEvent,
@@ -552,6 +556,7 @@ export function registerSessionRuntimeHandlers(
         history: req.history,
         systemPrompt: req.systemPrompt,
         personality: req.personality,
+        approvalPolicy: req.approvalPolicy,
         useSubagents: req.useSubagents,
         config: req.config,
       };

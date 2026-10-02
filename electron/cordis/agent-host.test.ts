@@ -68,7 +68,7 @@ vi.mock("./schedule-read", () => ({ listSchedules: mocks.listSchedules }));
 vi.mock("./run-cordis-coding", () => ({ openCordisAgent: mocks.openCordisAgent, runCordisCodingLoop: mocks.runCordisCodingLoop }));
 vi.mock("./session-runtime", () => ({ ensureAgentAiAdapter: mocks.ensureAgentAiAdapter }));
 vi.mock("./plan-fold", () => ({ getPlanModeActive: mocks.getPlanModeActive }));
-vi.mock("./permissions-bridge", () => ({ readPermissionsSnapshot: mocks.readPermissionsSnapshot }));
+vi.mock("./permissions-bridge", () => ({ readPermissionsSnapshot: mocks.readPermissionsSnapshot, setPermissionPreset: vi.fn() }));
 vi.mock("./session-replay", () => ({ loadSessionMessages: mocks.loadSessionMessages }));
 vi.mock("./run-cordis-loop", () => ({ prepareReplayContext: mocks.prepareReplayContext, readContextRingWithContext: mocks.readContextRingWithContext }));
 vi.mock("./session-stats", () => ({ readSessionStatsSnapshot: mocks.readSessionStatsSnapshot }));
@@ -172,10 +172,10 @@ describe("AgentHost", () => {
     await expect(getAgentHost().readPermissionsSnapshot("session-1")).resolves.toBe(permissions);
     await expect(getAgentHost().loadSessionMessages("session-1")).resolves.toBe(messages);
 
-    expect(mocks.readPermissionsSnapshot).toHaveBeenCalledWith(contextWithSessionData, "session-1");
+    expect(mocks.readPermissionsSnapshot).toHaveBeenCalledWith(contextWithSessionData, "session-1", { readEvents: expect.any(Function) });
     expect(mocks.prepareReplayContext).toHaveBeenCalledWith(persistence, "session-1");
     expect(mocks.readSessionStatsSnapshot).toHaveBeenCalledWith(contextWithSessionData.sessionProjections, undefined);
-    expect(mocks.loadSessionMessages).toHaveBeenCalledWith(persistence, expect.any(Function), "session-1", undefined);
+    expect(mocks.loadSessionMessages).toHaveBeenCalledWith(persistence, expect.any(Function), "session-1", { usageFold: expect.any(Function) });
   });
 
   it("routes message feedback and schedule reads through the same host", async () => {

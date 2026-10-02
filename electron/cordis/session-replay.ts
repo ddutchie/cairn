@@ -17,13 +17,12 @@
 
 import { foldSurface, deriveEventMessage, type SessionEvent } from "@deepseek-ai/dsh-session";
 import {
-  foldSessionUsage,
   foldContextRing,
   foldSessionTodos,
-  type SessionUsageMetrics,
   type ContextRingState,
   type SessionTodoItem,
 } from "./plugins/context-ring";
+import type { SessionUsageMetrics } from "./context-usage";
 import { foldSessionStats, sessionStatsFromSnapshot, type SessionStats, type SessionStatsSnapshot, type TurnStats } from "./session-stats";
 import { inspectSession, type InspectablePersistence } from "./session-inspect";
 import { isToolResultMessage, readToolResults } from "./tool-result-message";
@@ -349,13 +348,20 @@ export async function loadSessionMessages(
      * Cairn-only `byTurn`; otherwise the full fold is the fallback.
      */
     statsSnapshot?: SessionStatsSnapshot;
+    /**
+     * Context Ring usage for the persisted log — the host folds it through the
+     * token meter's registered definitions (`foldSessionUsageOffline`). Absent
+     * → no usage (the ring falls back to its prompt-only view).
+     */
+    usageFold?: (events: readonly SessionEvent[], header: unknown) => SessionUsageMetrics | undefined;
   },
 ): Promise<LoadSessionMessagesResult> {
   const inspection = await inspectSession(pers, sessionId);
   const events = (inspection?.events ?? []) as readonly SessionEvent[];
   if (!events || events.length === 0) return { messages: [], subagents: [] };
   const messages = collapseDerivedToMessages(deriveMessagesFromEvents(events), metaByCallIdFromEvents(events));
-  const usage = foldSessionUsage(events);
+  let usage: SessionUsageMetrics | undefined;
+  try { usage = opts?.usageFold?.(events, inspection?.header); } catch { usage = undefined; }
   const contextRing = foldContextRing(events);
   const todos = foldSessionTodos(events);
   const stats = opts?.statsSnapshot

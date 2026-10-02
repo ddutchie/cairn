@@ -4,8 +4,10 @@
  *   - `toPermissionsWire` maps the upstream `{options, currentValue}` select
  *     (including the derived `custom` row) and rejects malformed views;
  *   - `readPermissionsSnapshot` prefers the live projection view, falls back
- *     to a cold build from the service table, and reports `unavailable`
- *     when the service is inject-gated (no per-turn `shell` yet);
+ *     to a cold build from the service table, and serves the static preset
+ *     table (current from queued switch / logged knobs / default) while the
+ *     service is inject-gated (no per-turn `shell` yet);
+ *   - `setPermissionPreset` applies live or queues while idle;
  *   - `mountPermissionsBridge` re-emits registry `permissions` changes as
  *     session:projection kind:"permissions" and ignores other keys.
  */
@@ -25,8 +27,11 @@ vi.mock("electron", () => ({
 }));
 
 import {
+  __resetPendingPresetsForTest,
+  applyPendingPermissionPreset,
   mountPermissionsBridge,
   readPermissionsSnapshot,
+  setPermissionPreset,
   toPermissionsOption,
   toPermissionsWire,
   PERMISSIONS_CUSTOM_VALUE,
@@ -147,15 +152,99 @@ describe("readPermissionsSnapshot", () => {
     await expect(readPermissionsSnapshot(ctx as never, "sess-1")).resolves.toEqual({ ...SELECT, currentValue: "danger-full-access" });
   });
 
-  it("throws unavailable when the service is inject-gated (no shell yet)", async () => {
-    const ctx = {
+  // no permissionPresets — fiber still pending on per-turn `shell` (idle /
+  // brand-new session before its first message)
+  const idleCtx = () => ({
+    sessions: { get: () => undefined },
+    sessionProjections: { stateOf: () => undefined },
+  });
+
+  it("serves the static preset table for a never-run session (no shell yet)", async () => {
+    const res = await readPermissionsSnapshot(idleCtx() as never, "sess-new");
+    expect(res.options.map((o) => o.value)).toEqual(["workspace-write", "danger-full-access"]);
+    expect(res.currentValue).toBe("workspace-write");
+  });
+
+  it("resolves an idle session's preset from its logged knobs", async () => {
+    const readEvents = async () => [
+      { type: "permission/preset", data: { preset: "workspace-write" } },
+      { type: "sandbox/mode", data: { mode: "workspace-write" } },
+      { type: "approval/policy", data: { policy: "ask" } },
+      { type: "permission/preset", data: { preset: "danger-full-access" } },
+      { type: "sandbox/mode", data: { mode: "danger-full-access" } },
+      { type: "approval/policy", data: { policy: "never" } },
+    ];
+    const res = await readPermissionsSnapshot(idleCtx() as never, "sess-1", { readEvents });
+    expect(res.currentValue).toBe("danger-full-access");
+  });
+
+  it("reports custom (as a disabled-row option) when logged knobs match no preset", async () => {
+    const readEvents = async () => [
+      { type: "sandbox/mode", data: { mode: "workspace-write" } },
+      { type: "approval/policy", data: { policy: "never" } },
+    ];
+    const res = await readPermissionsSnapshot(idleCtx() as never, "sess-1", { readEvents });
+    expect(res.currentValue).toBe(PERMISSIONS_CUSTOM_VALUE);
+    expect(res.options.some((o) => o.value === PERMISSIONS_CUSTOM_VALUE)).toBe(true);
+  });
+});
+
+describe("setPermissionPreset / applyPendingPermissionPreset", () => {
+  beforeEach(() => __resetPendingPresetsForTest());
+
+  it("queues a switch while idle, echoes it, and applies it once the service mounts", async () => {
+    const ctx: Record<string, unknown> = {
       sessions: { get: () => undefined },
       sessionProjections: { stateOf: () => undefined },
-      // no permissionPresets — fiber still pending on per-turn `shell`
     };
-    const err = await readPermissionsSnapshot(ctx as never, "sess-1").catch((e) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect((err as { code?: string }).code).toBe("unavailable");
+    const res = await setPermissionPreset(ctx as never, "sess-1", "danger-full-access");
+    expect(res.currentValue).toBe("danger-full-access");
+    expect(sent.some((m) => m.channel === "session:projection")).toBe(true);
+    // snapshot keeps reporting the queued value until a turn applies it
+    await expect(readPermissionsSnapshot(ctx as never, "sess-1")).resolves.toMatchObject({ currentValue: "danger-full-access" });
+
+    const set = vi.fn();
+    ctx.permissionPresets = { set };
+    const session = { id: "sess-1" };
+    applyPendingPermissionPreset(ctx as never, "sess-1", session);
+    expect(set).toHaveBeenCalledWith(session, "danger-full-access");
+    applyPendingPermissionPreset(ctx as never, "sess-1", session);
+    expect(set).toHaveBeenCalledTimes(1);
+  });
+
+  it("a queued switch that throws is dropped and the switcher is corrected", async () => {
+    const ctx: Record<string, unknown> = {
+      sessions: { get: () => undefined },
+      sessionProjections: { stateOf: () => undefined },
+    };
+    await setPermissionPreset(ctx as never, "sess-9", "danger-full-access");
+    sent.length = 0;
+    ctx.permissionPresets = { set: () => { throw new Error("boom"); } };
+    applyPendingPermissionPreset(ctx as never, "sess-9", { id: "sess-9" });
+    await vi.waitFor(() => expect(sent.some((m) => m.channel === "session:projection")).toBe(true));
+    const last = sent.filter((m) => m.channel === "session:projection").at(-1)!.payload as { data?: { currentValue?: string } };
+    expect(last.data?.currentValue).toBe("workspace-write");
+    // no longer queued
+    await expect(readPermissionsSnapshot(ctx as never, "sess-9")).resolves.toMatchObject({ currentValue: "workspace-write" });
+  });
+
+  it("applies immediately through the service when the session is live", async () => {
+    const set = vi.fn();
+    const live = { id: "sess-1" };
+    const ctx = {
+      sessions: { get: () => live },
+      sessionProjections: { stateOf: () => undefined },
+      permissionPresets: { names: ["workspace-write", "danger-full-access"], defaultPreset: "workspace-write", optionOf: (n: string) => SELECT.options.find((o) => o.value === n), current: () => "danger-full-access", set },
+    };
+    const res = await setPermissionPreset(ctx as never, "sess-1", "danger-full-access");
+    expect(set).toHaveBeenCalledWith(live, "danger-full-access");
+    expect(res.currentValue).toBe("danger-full-access");
+  });
+
+  it("rejects unknown and custom presets", async () => {
+    const ctx = { sessions: { get: () => undefined } };
+    await expect(setPermissionPreset(ctx as never, "sess-1", "nope")).rejects.toMatchObject({ code: "invalid" });
+    await expect(setPermissionPreset(ctx as never, "sess-1", "custom")).rejects.toMatchObject({ code: "invalid" });
   });
 });
 
