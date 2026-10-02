@@ -203,14 +203,22 @@ function CallRow({ r, includeEstimated, nested = false }: { r: UsageRecentRow; i
 }
 
 /** Collapsible rollup row for a thread / session; children are fetched on expand. */
-function ThreadGroupRow({ g, includeEstimated, expanded, rows, onToggle }: {
+function ThreadGroupRow({ g, includeEstimated, loadRows }: {
   g: UsageThreadGroup;
   includeEstimated: boolean;
-  expanded: boolean;
-  /** undefined while loading */
-  rows: UsageRecentRow[] | undefined;
-  onToggle: () => void;
+  loadRows: (sessionId: string) => Promise<UsageRecentRow[]>;
 }) {
+  // Keyed by the group's totals in the parent, so a reload remounts the row and
+  // never shows stale children.
+  const [expanded, setExpanded] = useState(false);
+  const [rows, setRows] = useState<UsageRecentRow[] | undefined>(undefined);
+  const onToggle = () => {
+    const open = !expanded;
+    setExpanded(open);
+    if (open && rows === undefined) {
+      void loadRows(g.sessionId).then(setRows).catch(() => setRows([]));
+    }
+  };
   const label = USAGE_SOURCE_LABELS[g.source] ?? g.source;
   const title = g.title ?? `${label} · ${g.sessionId.replace(/^chat-/, "").slice(0, 8)}`;
   const Chevron = expanded ? ChevronDown : ChevronRight;
@@ -266,18 +274,6 @@ export function UsageView() {
 
   const range = USAGE_RANGES[rangeIdx];
   const { overview, recent, threads, loadThreadRows, loading, refresh, clear } = useUsage(range.days, source, !includeEstimated);
-  // Thread groups: expanded ids + their lazily-loaded per-request rows. Reset
-  // whenever the filters/data reload so a stale expansion never shows old rows.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [threadRows, setThreadRows] = useState<Record<string, UsageRecentRow[]>>({});
-  useEffect(() => { setExpanded(new Set()); setThreadRows({}); }, [threads, recent]);
-  const toggleThread = (id: string) => {
-    const open = !expanded.has(id);
-    setExpanded((prev) => { const n = new Set(prev); if (open) n.add(id); else n.delete(id); return n; });
-    if (open && threadRows[id] === undefined) {
-      void loadThreadRows(id).then((rows) => setThreadRows((prev) => ({ ...prev, [id]: rows }))).catch(() => setThreadRows((prev) => ({ ...prev, [id]: [] })));
-    }
-  };
   // Threads and one-shot calls interleaved by recency.
   const items = useMemo(() => {
     const all = [
@@ -517,12 +513,10 @@ export function UsageView() {
                   <tbody>
                     {items.map((it) => it.kind === "thread" ? (
                       <ThreadGroupRow
-                        key={`t:${it.g.sessionId}`}
+                        key={`t:${it.g.sessionId}:${it.g.lastAt}:${it.g.requests}:${includeEstimated}`}
                         g={it.g}
                         includeEstimated={includeEstimated}
-                        expanded={expanded.has(it.g.sessionId)}
-                        rows={threadRows[it.g.sessionId]}
-                        onToggle={() => toggleThread(it.g.sessionId)}
+                        loadRows={loadThreadRows}
                       />
                     ) : (
                       <CallRow key={it.r.id} r={it.r} includeEstimated={includeEstimated} />
