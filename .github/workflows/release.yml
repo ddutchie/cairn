@@ -227,7 +227,19 @@ jobs:
           rm -f /tmp/cairn-cert.p12
           export CSC_KEYCHAIN="$KEYCHAIN"
           unset CSC_LINK CSC_KEY_PASSWORD
-          npx electron-builder --mac "--$ARCH" --publish never
+          MAC_ARCH="$ARCH" npx electron-builder --mac --config scripts/electron-builder-mac-arch.js --publish never
+
+      # Guard against the per-arch jobs drifting back to building both arches
+      # (the other arch's app lacks its MCP binary, and the merged manifest
+      # would pick the wrong entries).
+      - name: Verify single-arch output
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          ls -l dist-app/*.dmg dist-app/*.zip
+          if [ "$ARCH" = "arm64" ]; then bad=$(ls dist-app/*.dmg dist-app/*.zip | grep -v arm64 || true)
+          else bad=$(ls dist-app/*.dmg dist-app/*.zip | grep arm64 || true); fi
+          if [ -n "$bad" ]; then echo "::error::unexpected other-arch artifacts: $bad"; exit 1; fi
 
       - name: Upload macOS assets
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
