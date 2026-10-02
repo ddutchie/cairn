@@ -74,6 +74,25 @@ describe("cairnUsagePlugin — one row per request", () => {
     expect(summed).toBe(978);
   });
 
+  it("records dsh's disjoint usage as full billed input (input + cache read + cache write)", () => {
+    const { ctx, fire } = harness();
+    cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "coding-agent" });
+    const cached = (inputTokens: number, cacheReadTokens: number, cacheWriteTokens: number): SessionEvent => ({
+      type: "assistant/message",
+      seq: 1,
+      time: Date.now(),
+      data: { message: { content: [{ type: "text", text: "hi" }] }, usage: { inputTokens, outputTokens: 10, cacheReadTokens, cacheWriteTokens } },
+    } as unknown as SessionEvent);
+    // cacheRead < input: the old `cacheRead > input` heuristic dropped the 3000 cached tokens.
+    fire(cached(5000, 3000, 0));
+    fire(cached(35, 20480, 120));
+    const recorded = db.prepare("SELECT prompt_tokens, cache_read_tokens, cache_creation_tokens FROM llm_usage ORDER BY rowid").all() as Array<{ prompt_tokens: number; cache_read_tokens: number; cache_creation_tokens: number | null }>;
+    expect(recorded.map((r) => [r.prompt_tokens, r.cache_read_tokens, r.cache_creation_tokens ?? 0])).toEqual([
+      [8000, 3000, 0],
+      [20635, 20480, 120],
+    ]);
+  });
+
   it("skips usage events that carry no counts", () => {
     const { ctx, fire } = harness();
     cairnUsagePlugin(ctx as never, { threadId: "s1", workspaceId: "w1", model: "test-model", source: "chat" });

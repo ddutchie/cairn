@@ -633,6 +633,8 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
     outputTokens?: number;
     reasoningTokens?: number;
     cacheReadTokens?: number;
+    /** dsh's name for cache-creation tokens. */
+    cacheWriteTokens?: number;
     cacheCreationTokens?: number;
     costUsd?: number;
   };
@@ -652,12 +654,13 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
 
     if (!u) return;
 
-    const rawInput = u.inputTokens ?? 0;
-    const rawCacheRead = u.cacheReadTokens ?? 0;
-    // dsh/Anthropic reports input as total, but some paths (second turn) report
-    // input as uncached delta (35) with cacheRead as total cached (20480) →
-    // 35+20480=20515. Heuristic: if cacheRead > rawInput, rawInput is delta.
-    const promptTokens = rawCacheRead > rawInput ? rawInput + rawCacheRead : rawInput;
+    // dsh usage is DISJOINT: inputTokens is uncached input only, cached input
+    // arrives as cacheReadTokens / cacheWriteTokens. The row's promptTokens is
+    // the full billed input (the cost estimator and the Usage view's "% of
+    // input" both treat cache tokens as a share of it), so sum all three. The
+    // old `cacheRead > input` heuristic undercounted whenever input ≥ cacheRead.
+    const promptTokens = contextPressureTokens(u);
+    const cacheCreationTokens = typeof u.cacheWriteTokens === "number" ? u.cacheWriteTokens : u.cacheCreationTokens;
     const completionTokens = u.outputTokens ?? 0;
     const reasoningTokens = u.reasoningTokens ?? 0;
     // dsh emits usage events that carry no counts (e.g. the synthetic
@@ -689,7 +692,7 @@ export function cairnUsagePlugin(ctx: Context, config: CairnUsageConfig): void {
       completionTokens,
       reasoningTokens,
       ...(typeof u.cacheReadTokens === "number" ? { cacheReadTokens: u.cacheReadTokens } : {}),
-      ...(typeof u.cacheCreationTokens === "number" ? { cacheCreationTokens: u.cacheCreationTokens } : {}),
+      ...(typeof cacheCreationTokens === "number" ? { cacheCreationTokens } : {}),
       ...(typeof u.costUsd === "number" ? { costUsd: u.costUsd } : {}),
     });
   });
