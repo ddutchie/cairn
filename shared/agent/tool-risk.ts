@@ -153,6 +153,13 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
             ? args.url
             : name === "write"
               ? args.content
+              // Cairn note/task writes: preview the text being written, not an id.
+              : name === "patch_note"
+                ? args.newString
+                : name === "append_to_note" || name === "ensure_note"
+                  ? args.content
+                  : name === "create_task" || name === "update_task"
+                    ? args.description ?? args.title ?? ""
               : name.startsWith("mcp__") || name.startsWith("svc__")
                 // No arguments → no preview (never a bare "{}").
                 ? (Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : "")
