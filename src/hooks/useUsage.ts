@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useCairnStore } from "@/store";
-import type { UsageOverview, UsageRecentRow, UsageSource } from "@/types/usage";
+import type { UsageOverview, UsageRecentRow, UsageSource, UsageThreadGroup } from "@/types/usage";
 
 export interface UsageRange {
   /** Number of days back, or null for all time. */
@@ -19,7 +19,12 @@ export const USAGE_RANGES: UsageRange[] = [
 
 export interface UseUsageResult {
   overview: UsageOverview | null;
+  /** Flat rows with no session id (one-shot calls), newest first. */
   recent: UsageRecentRow[];
+  /** Per-thread / session rollups, newest activity first. */
+  threads: UsageThreadGroup[];
+  /** Per-request rows of one thread (loaded when its group expands). */
+  loadThreadRows: (sessionId: string) => Promise<UsageRecentRow[]>;
   loading: boolean;
   refresh: () => void;
   /** Wipe the recorded usage for the current workspace, then reload. */
@@ -38,10 +43,26 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
   const [overview, setOverview] = useState<UsageOverview | null>(null);
   const [recent, setRecent] = useState<UsageRecentRow[]>([]);
+  const [threads, setThreads] = useState<UsageThreadGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [nonce, setNonce] = useState(0);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
+  const loadThreadRows = useCallback(async (sessionId: string) => {
+    const api = window.electron?.usage;
+    if (!api) return [];
+    const from = days == null ? undefined : Date.now() - days * 86_400_000;
+    return api.recent({
+      workspaceId: activeWorkspaceId ?? undefined,
+      source: source || undefined,
+      from,
+      to: Date.now(),
+      excludeEstimated,
+      sessionId,
+      limit: 500,
+    });
+  }, [days, source, activeWorkspaceId, excludeEstimated]);
 
   /** Delete the recorded usage rows for the current workspace (see usage:clear). */
   const clear = useCallback(async () => {
@@ -59,6 +80,7 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
       if (!api) {
         setOverview(null);
         setRecent([]);
+        setThreads([]);
         setLoading(false);
         return;
       }
@@ -71,18 +93,21 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
         excludeEstimated,
       };
       try {
-        const [o, r] = await Promise.all([
+        const [o, r, t] = await Promise.all([
           api.overview(args),
-          api.recent({ ...args, limit: 100 }),
+          api.recent({ ...args, noSession: true, limit: 100 }),
+          api.threads({ ...args, limit: 100 }),
         ]);
         if (!cancelled) {
           setOverview(o);
           setRecent(r);
+          setThreads(t);
         }
       } catch {
         if (!cancelled) {
           setOverview(null);
           setRecent([]);
+          setThreads([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -94,5 +119,5 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
     };
   }, [days, source, activeWorkspaceId, nonce, excludeEstimated]);
 
-  return { overview, recent, loading, refresh, clear };
+  return { overview, recent, threads, loadThreadRows, loading, refresh, clear };
 }

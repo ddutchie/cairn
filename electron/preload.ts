@@ -226,6 +226,10 @@ interface UsageRecentRow {
   cacheReadTokens: number; cacheCreationTokens: number;
   costUsd: number | null; costEstimated: boolean; finishReason: string | null; createdAt: number;
 }
+interface UsageThreadGroup extends UsageTotals {
+  sessionId: string; source: UsageSource; title: string | null; models: string[];
+  firstAt: number; lastAt: number; hasEstimated: boolean;
+}
 
 // Helper: invoke an IPC channel and unwrap the IpcResult<T> wrapper.
 // All handlers return { data: T } | { error: string } via the handle() helper.
@@ -475,8 +479,10 @@ const api = {
   usage: {
     overview: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; excludeEstimated?: boolean }) =>
       invoke<UsageOverviewData>("usage:overview", args),
-    recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean }) =>
+    recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean; sessionId?: string; noSession?: boolean }) =>
       invoke<UsageRecentRow[]>("usage:recent", args),
+    threads: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean }) =>
+      invoke<UsageThreadGroup[]>("usage:threads", args),
     /** Destructive — delete recorded usage rows scoped to the workspace filter. */
     clear: (args: { workspaceId?: string }) =>
       invoke<{ deleted: number; ok: boolean }>("usage:clear", args),

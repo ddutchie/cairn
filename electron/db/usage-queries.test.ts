@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "./schema";
-import { insertLlmUsage, queryUsageOverview, queryRecentUsage, applyRecoveredTurnCost, clearLlmUsage, type LlmUsageRecord } from "./usage-queries";
+import { insertLlmUsage, queryUsageOverview, queryRecentUsage, applyRecoveredTurnCost, clearLlmUsage, queryUsageThreads, type LlmUsageRecord } from "./usage-queries";
 
 // The per-day series buckets via SQLite's `localtime` modifier, which honours
 // the process TZ. Pin it to UTC so the "2026-08-05 / 2026-08-06" date
@@ -203,5 +203,32 @@ describe("usage-queries", () => {
     const other = queryRecentUsage(db, {}, 10).find((r) => r.sessionId === "other")!;
     expect(other.costUsd).toBe(0.02);
     expect(other.costEstimated).toBe(true);
+  });
+
+  it("rolls requests up per session with titles, and filters by session", () => {
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO workspaces (id, name, created_at, updated_at) VALUES ('w','W',?,?)").run(now, now);
+    db.prepare("INSERT INTO chat_threads (id, workspace_id, title, created_at, updated_at) VALUES ('t1','w','Plan the launch',?,?)").run(now, now);
+    insertLlmUsage(db, rec({ source: "chat", sessionId: "chat-t1", model: "a", promptTokens: 100, completionTokens: 10, costUsd: 0.1, createdAt: NOW }));
+    insertLlmUsage(db, rec({ source: "chat", sessionId: "chat-t1", model: "b", promptTokens: 200, completionTokens: 20, costUsd: 0.2, costEstimated: true, createdAt: NOW + 5 }));
+    insertLlmUsage(db, rec({ source: "automation", sessionId: "run9", promptTokens: 50, completionTokens: 5, costUsd: 0.05, createdAt: NOW + 10 }));
+    insertLlmUsage(db, rec({ source: "explain", promptTokens: 1, completionTokens: 1, costUsd: 0.01, createdAt: NOW + 20 }));
+
+    const groups = queryUsageThreads(db, {});
+    expect(groups.map((g) => g.sessionId)).toEqual(["run9", "chat-t1"]); // newest activity first, no-session rows excluded
+    const t1 = groups[1];
+    expect(t1).toMatchObject({ title: "Plan the launch", source: "chat", requests: 2, promptTokens: 300, completionTokens: 30, hasEstimated: true, firstAt: NOW, lastAt: NOW + 5 });
+    expect(t1.costUsd).toBeCloseTo(0.3, 6);
+    expect(t1.models.sort()).toEqual(["a", "b"]);
+    expect(groups[0].title).toBeNull();
+
+    // Hide estimates: tokens/requests stay, cost drops the estimated row.
+    const noEst = queryUsageThreads(db, { excludeEstimated: true }).find((g) => g.sessionId === "chat-t1")!;
+    expect(noEst.requests).toBe(2);
+    expect(noEst.costUsd).toBeCloseTo(0.1, 6);
+
+    // Expanding a group / the flat remainder.
+    expect(queryRecentUsage(db, { sessionId: "chat-t1" }, 10)).toHaveLength(2);
+    expect(queryRecentUsage(db, { noSession: true }, 10).map((r) => r.source)).toEqual(["explain"]);
   });
 });

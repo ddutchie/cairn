@@ -8,7 +8,8 @@
 
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
-import { queryUsageOverview, queryRecentUsage, clearLlmUsage, type UsageQueryFilter, type UsageSource } from "../db/usage-queries";
+import { queryUsageOverview, queryRecentUsage, queryUsageThreads, clearLlmUsage, type UsageQueryFilter, type UsageSource } from "../db/usage-queries";
+import { getAgentHost } from "../cordis/agent-host";
 import { setModelPricing, setNoTemperatureModels } from "../lib/model-pricing";
 
 export interface UsageRangeArgs {
@@ -17,6 +18,10 @@ export interface UsageRangeArgs {
   /** Epoch ms, inclusive. Omit for all time. */
   from?: number;
   to?: number;
+  /** Restrict to one thread/session (expanding a thread group). */
+  sessionId?: string;
+  /** Only rows with no session id (flat rows shown beside thread groups). */
+  noSession?: boolean;
   /** Drop rows whose cost is a models.dev estimate (provider reported none). */
   excludeEstimated?: boolean;
 }
@@ -45,6 +50,8 @@ export function registerUsageHandlers(ctx: DbContext): void {
     source: args?.source,
     from: args?.from,
     to: args?.to,
+    sessionId: args?.sessionId,
+    noSession: args?.noSession,
     excludeEstimated: args?.excludeEstimated,
   });
 
@@ -60,6 +67,22 @@ export function registerUsageHandlers(ctx: DbContext): void {
   registerIpcHandle("usage:recent", async (_e, args: UsageRangeArgs & { limit?: number }) => {
     return handle(() => {
       return queryRecentUsage(ctx.db, toFilter(args), args?.limit ?? 50);
+    });
+  });
+
+  // Per-thread rollups (chat threads, agent sessions, automation runs) for the
+  // grouped history table; expand a group with usage:recent + sessionId.
+  registerIpcHandle("usage:threads", async (_e, args: UsageRangeArgs & { limit?: number }) => {
+    return handle(async () => {
+      const groups = queryUsageThreads(ctx.db, toFilter(args), args?.limit ?? 50);
+      // Chat titles live in the session log (chat_threads.title is mostly empty),
+      // so resolve the untitled chat groups from there.
+      const host = getAgentHost();
+      await Promise.all(groups.map(async (g) => {
+        if (g.title || !g.sessionId.startsWith("chat-")) return;
+        try { g.title = (await host.readSessionTitle(g.sessionId)) || null; } catch { /* keep the id fallback */ }
+      }));
+      return groups;
     });
   });
 
