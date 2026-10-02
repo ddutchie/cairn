@@ -670,12 +670,6 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       transcriptFooter={() => <div className="px-3 pt-3 pb-3 space-y-3" />}
       actions={(
         <>
-          {/* Permission preset (dsh permission-presets select) — rendered from
-              the static preset table until a turn mounts the service. No approval-mode toggle exists in
-              this pane; this row (PLAN badge, PRD, clear) is the session-control
-              home, so the switcher lives here. Keyed by session so a switch
-              never flashes the previous session's preset. */}
-          <AgentPermissionSelect key={session.sessionId} sessionId={session.sessionId} />
           <SubagentCatalogAction parentSessionId={session.sessionId} />
           {session.mode === "plan" && <span className="flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"><MapIcon size={9} /> PLAN</span>}
           {session.planNoteId && <Tooltip content="Open plan note" side="left"><button onClick={() => revealNote(setView, session.planNoteId!)} className="flex items-center gap-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"><FileText size={9} /> PRD</button></Tooltip>}
@@ -701,6 +695,11 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         allowImages,
         allowPdf,
         providerModelTarget: "agent",
+        // Permission preset (dsh permission-presets select) — rendered from the
+        // static preset table until a turn mounts the service. Lives in the
+        // composer footer, same spot as chat's approvals picker. Keyed by
+        // session so a switch never flashes the previous session's preset.
+        approvalControl: <AgentPermissionSelect key={session.sessionId} sessionId={session.sessionId} />,
         statusText: retryInfo ? `Transient error — retrying (${retryInfo.attempt}/${retryInfo.maxRetries}) in ${Math.round(retryInfo.delayMs / 1000)}s…` : pendingQuestions ? "Waiting for your answers…" : isCompacting ? "Compacting context…" : isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send",
       }}
     />

@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * AgentPermissionSelect — permission-preset switcher for coding sessions.
+ * AgentPermissionSelect — permission-preset switcher for coding sessions,
+ * shown in the composer footer (the agent counterpart of ChatApprovalPicker).
  *
  * Data comes from the dsh permission-presets domain: an initial
  * `session:permissions` snapshot on mount, then live `session:projection
@@ -89,9 +90,9 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
   const tip = current?.description ?? "Permission preset (sandbox + approval)";
 
   return (
-    <Tooltip content={tip} side="left">
+    <Tooltip content={tip} side="top">
       <span className="flex items-center gap-1" aria-label={`Permission preset: ${current?.name ?? select.currentValue}`}>
-        <ShieldCheck size={12} className="text-[var(--text-tertiary)] shrink-0" />
+        <ShieldCheck size={11} className="text-[var(--text-tertiary)] shrink-0" />
         <Select
           size="sm"
           ariaLabel="Permission preset"
@@ -102,7 +103,7 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
             label: o.name,
             disabled: o.value === CUSTOM_VALUE,
           }))}
-          className="max-w-44 text-[0.714rem] py-1"
+          className="max-w-44 text-[0.643rem] px-1.5 py-0.5"
         />
       </span>
     </Tooltip>
