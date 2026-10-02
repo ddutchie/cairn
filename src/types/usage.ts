@@ -77,3 +77,15 @@ export interface UsageRecentRow {
   finishReason: string | null;
   createdAt: number;
 }
+
+/** One chat thread / agent session / automation run rolled up across its requests. */
+export interface UsageThreadGroup extends UsageTotals {
+  sessionId: string;
+  source: UsageSource;
+  /** Null for deleted threads and automation runs. */
+  title: string | null;
+  models: string[];
+  firstAt: number;
+  lastAt: number;
+  hasEstimated: boolean;
+}

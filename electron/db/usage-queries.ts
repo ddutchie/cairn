@@ -103,6 +103,10 @@ export interface UsageQueryFilter {
   from?: number;
   /** Epoch ms, inclusive. */
   to?: number;
+  /** Restrict to one chat thread / agent session / automation run. */
+  sessionId?: string;
+  /** Only rows with no session id (one-shot calls) — the flat rows beside thread groups. */
+  noSession?: boolean;
   /** When set, aggregate cost sums count only provider-reported costs (the
    *  rows themselves are never dropped — token/request stats stay complete). */
   excludeEstimated?: boolean;
@@ -124,6 +128,11 @@ function whereClause(f: UsageQueryFilter): { sql: string; params: unknown[] } {
     conds.push("source = ?");
     params.push(f.source);
   }
+  if (f.sessionId) {
+    conds.push("session_id = ?");
+    params.push(f.sessionId);
+  }
+  if (f.noSession) conds.push("session_id IS NULL");
   if (f.from != null) {
     conds.push("created_at >= ?");
     params.push(f.from);
@@ -277,6 +286,64 @@ export interface UsageRecentRow {
   costEstimated: boolean;
   finishReason: string | null;
   createdAt: number;
+}
+
+/** One chat thread / agent session / automation run, rolled up across its requests. */
+export interface UsageThreadGroup extends UsageTotals {
+  sessionId: string;
+  /** Source of the group's first request. */
+  source: UsageSource;
+  /** Thread / session title when it still exists; null for deleted threads and automation runs. */
+  title: string | null;
+  /** Distinct models used (unordered). */
+  models: string[];
+  firstAt: number;
+  lastAt: number;
+  /** Any request in the group has an estimated (models.dev) cost. */
+  hasEstimated: boolean;
+}
+
+/**
+ * Per-thread rollup for the history table, newest activity first. Honours the
+ * same range/source/workspace filters as the flat rows, so a thread that
+ * straddles the range boundary reports only its in-range cost. Titles come from
+ * chat_threads and the agent session metadata table.
+ */
+export function queryUsageThreads(db: Database.Database, filter: UsageQueryFilter, limit = 50): UsageThreadGroup[] {
+  const where = whereClause({ ...filter, noSession: false });
+  const sessionsTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_session_metadata'").get()
+    ? "agent_session_metadata"
+    : "pi_agent_sessions";
+  const rows = db
+    .prepare(
+      `SELECT u.session_id, u.source, u.first_at, u.last_at, u.models, u.has_estimated,
+         u.prompt_tokens, u.completion_tokens, u.reasoning_tokens, u.cache_read_tokens, u.cost_usd, u.requests,
+         COALESCE(NULLIF(t.title, ''), s.task_title) AS title
+       FROM (
+         -- bare source alongside MIN(created_at) comes from that earliest row
+         SELECT session_id, source, MIN(created_at) AS first_at, MAX(created_at) AS last_at,
+           group_concat(DISTINCT model) AS models, MAX(cost_estimated) AS has_estimated,
+           ${totalCols(!!filter.excludeEstimated)}
+         FROM llm_usage${where.sql ? `${where.sql} AND session_id IS NOT NULL` : " WHERE session_id IS NOT NULL"}
+         GROUP BY session_id
+         ORDER BY MAX(created_at) DESC LIMIT ?
+       ) u
+       LEFT JOIN chat_threads t ON t.id = u.session_id
+       LEFT JOIN ${sessionsTable} s ON s.id = u.session_id
+       ORDER BY u.last_at DESC`
+    )
+    .all(...where.params, Math.max(1, Math.min(500, limit))) as Array<Record<string, unknown>>;
+
+  return rows.map((r) => ({
+    sessionId: String(r.session_id),
+    source: r.source as UsageSource,
+    title: (r.title as string | null) ?? null,
+    models: String(r.models ?? "").split(",").filter(Boolean),
+    firstAt: Number(r.first_at) || 0,
+    lastAt: Number(r.last_at) || 0,
+    hasEstimated: Number(r.has_estimated) === 1,
+    ...toTotals(r as Record<string, number>),
+  }));
 }
 
 /**
