@@ -44,6 +44,7 @@ import { riskForTool as riskForToolShared, isShellTool } from "../../shared/agen
 import type { RiskClass } from "../../shared/agent/tool-risk";
 import { shouldAskForTool, modeFromAutoApprove, isMode, type Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection, type SessionProjectionKind } from "../../shared/agent/session-projection";
+import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { resolveToolCallView } from "./cordis-context";
 
 /** Tool-authored chip title (dsh `presentCall`) with bare-name fallback. */
@@ -371,7 +372,7 @@ export function cairnSubagentPlugin(ctx: Context, config: CairnSubagentConfig): 
       if (usage) {
          sendProjection(send, sessionId, "subagent-trace", { trace: "usage",
           childId, parentSession,
-          promptTokens: usage.inputTokens ?? 0,
+          promptTokens: contextPressureTokens(usage),
           completionTokens: usage.outputTokens ?? 0,
           reasoningTokens: usage.reasoningTokens ?? 0,
         });

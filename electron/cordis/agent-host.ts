@@ -9,7 +9,7 @@ import {
   type PutMessageFeedbackInput,
 } from "./message-feedback";
 import { listSchedules, type ScheduleWire } from "./schedule-read";
-import { readPermissionsSnapshot, type PermissionsSelect } from "./permissions-bridge";
+import { readPermissionsSnapshot, setPermissionPreset, type PermissionsSelect } from "./permissions-bridge";
 import {
   loadSessionMessages as loadReplaySessionMessages,
   type LoadSessionMessagesResult,
@@ -117,6 +117,8 @@ export interface AgentHost {
   getMessageFeedback(sessionId: string, messageId: string): Promise<MessageFeedbackItemWire | null>;
   listSchedules(sessionId: string): Promise<ScheduleWire[]>;
   readPermissionsSnapshot(sessionId: string): Promise<PermissionsSelect>;
+  /** Switch a coding session's permission preset — live via the service, or queued for the next turn while idle. */
+  setPermissionPreset(sessionId: string, preset: string): Promise<PermissionsSelect>;
   loadSessionMessages(sessionId: string): Promise<LoadSessionMessagesResult>;
   readContextRing(sessionId: string): Promise<ContextRingResult>;
   listSubagentChildren(parentSessionId: string, scope?: SubagentScope | AbortSignal, signal?: AbortSignal): Promise<SubagentCatalogView>;
@@ -268,7 +270,16 @@ function createLocalAgentHost(): AgentHost {
       return listSchedules(await context(), sessionId);
     },
     async readPermissionsSnapshot(sessionId) {
-      return readPermissionsSnapshot(await context(), sessionId);
+      const ctx = await context();
+      const persistence = (ctx as unknown as { sessionPersistence?: InspectablePersistence }).sessionPersistence;
+      // Idle sessions (no live service) resolve their preset from the logged
+      // permission knobs; a never-run session has no log and gets the default.
+      return readPermissionsSnapshot(ctx, sessionId, persistence ? {
+        readEvents: async () => (await inspectSession(persistence, sessionId)).events as readonly { type: string; data?: unknown }[],
+      } : undefined);
+    },
+    async setPermissionPreset(sessionId, preset) {
+      return setPermissionPreset(await context(), sessionId, preset);
     },
     async loadSessionMessages(sessionId) {
       const ctx = await context();

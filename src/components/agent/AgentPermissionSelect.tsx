@@ -5,15 +5,15 @@
  *
  * Data comes from the dsh permission-presets domain: an initial
  * `session:permissions` snapshot on mount, then live `session:projection
- * kind:"permissions"` updates from permissions-bridge. Writes go through the
- * existing command path (`runtime.executeCommand` with `/permission <preset>`
- * — the same route the composer uses for registry commands), so no new IPC
- * channel was added for the write side.
- *
- * Hidden while the presets service is unavailable (it inject-gates on the
- * per-turn `shell` — the snapshot IPC reports `unavailable` until a coding
- * turn has mounted it). The upstream `custom` value (effective knobs match no
- * preset) renders as a disabled row — shown, never a switch target.
+ * kind:"permissions"` updates from permissions-bridge. Writes go through
+ * `session:permissions:set`, which applies live when a turn has the presets
+ * service mounted and otherwise queues the choice for the next turn — the
+ * service inject-gates on the per-turn `shell`, so `/permission` does not
+ * exist while the session is idle (including a new session before its first
+ * message). The snapshot serves the package's static preset table in that
+ * state, so the switcher renders immediately. The upstream `custom` value
+ * (effective knobs match no preset) renders as a disabled row — shown, never
+ * a switch target.
  */
 
 import { useEffect, useState } from "react";
@@ -74,11 +74,9 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
 
   const onChange = (value: string) => {
     if (value === CUSTOM_VALUE || value === select.currentValue) return;
-    // Same executor the composer uses for registry commands (/plan, /compact…
-    // — see AgentChatPane sendPrompt). Errors surface via the runtime layer;
-    // refresh after settle so a rejected switch snaps back to the true value
+    // Refresh after settle so a rejected switch snaps back to the true value
     // even if the projection broadcast is missed.
-    const done = window.electron?.runtime?.executeCommand({ sessionId, line: `/permission ${value}` });
+    const done = window.electron?.session.setPermissionPreset(sessionId, value);
     void done?.catch(() => undefined).finally(() => {
       void window.electron?.session.permissions(sessionId).then((res: SnapshotResult) => {
         if (!res || typeof res !== "object" || !("ok" in res) || !res.ok) return;

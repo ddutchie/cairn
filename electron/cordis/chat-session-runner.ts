@@ -13,7 +13,8 @@ import { runCordisSession } from "./session-runner";
 import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
-import { foldSessionUsage } from "./plugins/context-ring";
+import { breakdownUsageEvent } from "./plugins/context-ring";
+import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { foldSessionStats } from "./session-stats";
 import { onAssistantStream } from "./assistant-stream-frames";
 
@@ -71,7 +72,8 @@ function collect(events: readonly SessionEvent[], firstSeq: number): Collected {
       const reasoningDelta = content.filter((b) => b.type === "reasoning" && b.text).map((b) => b.text as string).join("");
       if (reasoningDelta) reasoning += reasoningDelta;
       if (msg.usage) {
-        pt = Math.max(pt, msg.usage.inputTokens ?? 0);
+        // Disjoint dsh usage — context size is input + cache read/write.
+        pt = Math.max(pt, contextPressureTokens(msg.usage));
         ct += msg.usage.outputTokens ?? 0;
         rt += msg.usage.reasoningTokens ?? 0;
       }
@@ -98,27 +100,8 @@ function parseArgs(raw: string | undefined): Record<string, unknown> {
 function emitBreakdownUsage(events: readonly SessionEvent[], onSessionEvent?: (event: SessionEvent) => void): void {
   if (!onSessionEvent) return;
   try {
-    const usage = foldSessionUsage(events);
-    if (!usage?.breakdown) return;
-    const synthetic = {
-      type: "assistant/chunk",
-      seq: -1,
-      data: {
-        chunk: {
-          type: "usage",
-          usage: {
-            inputTokens: usage.promptTokens,
-            outputTokens: usage.completionTokens,
-            reasoningTokens: usage.reasoningTokens,
-            cacheReadTokens: usage.cacheReadTokens,
-            cacheCreationTokens: usage.cacheCreationTokens,
-            costUsd: usage.costUsd,
-            breakdown: usage.breakdown,
-          },
-        },
-      },
-    } as unknown as SessionEvent;
-    onSessionEvent(synthetic);
+    const synthetic = breakdownUsageEvent(events);
+    if (synthetic) onSessionEvent(synthetic as unknown as SessionEvent);
   } catch { /* the ring is decoration — never break the turn over a breakdown */ }
 }
 

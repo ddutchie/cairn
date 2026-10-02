@@ -101,6 +101,48 @@ describe("foldSessionUsage", () => {
   });
 });
 
+describe("foldSessionUsage — dsh 0.2 event shapes", () => {
+  // A cached mid-session request: dsh usage is DISJOINT, so the uncached
+  // `inputTokens` is tiny and the real context lives in cacheReadTokens.
+  const longText = (n: number) => "x".repeat(n);
+  const events = [
+    { type: "system/message", data: { turn: 1, step: 1, message: { role: "system", content: [{ type: "text", text: longText(4000) }], source: { kind: "system-prompt" } } } },
+    { type: "request/header", data: { header: { config: { provider: "openai", model: "deepseek-chat" }, tools: [{ name: "read", description: longText(2000) }] } } },
+    { type: "user/message", data: { role: "user", content: [{ type: "text", text: longText(800) }], source: { kind: "skill-catalog", form: "catalog" } } },
+    { type: "user/message", data: { role: "user", content: [{ type: "text", text: longText(2000) }], source: { kind: "user" } } },
+    { type: "assistant/message", data: { message: { role: "assistant", content: [{ type: "text", text: longText(400) }], source: { kind: "model", provider: "openai", model: "deepseek-chat" } }, stream: [], usage: { inputTokens: 9000, outputTokens: 100, cacheReadTokens: 0 } } },
+    { type: "tool/result", data: { message: { role: "tool", content: [{ type: "text", text: longText(8000) }], source: { kind: "tool", callId: "c1" }, toolCallId: "c1" } } },
+    { type: "assistant/message", data: { message: { role: "assistant", content: [{ type: "text", text: longText(400) }], source: { kind: "model", provider: "openai", model: "deepseek-chat" } }, stream: [], usage: { inputTokens: 60, outputTokens: 80, cacheReadTokens: 11000, cacheWriteTokens: 40 } } },
+  ];
+
+  it("measures context as input + cache read + cache write of the LATEST request", async () => {
+    const { foldSessionUsage } = await import("./plugins/context-ring");
+    const res = foldSessionUsage(events)!;
+    expect(res.promptTokens).toBe(60 + 11000 + 40);
+    expect(res.cacheReadTokens).toBe(11000);
+    expect(res.cacheCreationTokens).toBe(40);
+  });
+
+  it("keeps conversation + tool-output slices non-zero under prompt caching", async () => {
+    const { foldSessionUsage } = await import("./plugins/context-ring");
+    const b = foldSessionUsage(events)!.breakdown!;
+    expect(b.toolOutputs).toBe(2000);
+    expect(b.conversation).toBeGreaterThan(0);
+    // system prompt measured from system/message, not the 350 guess
+    expect(b.systemPrompt).toBeGreaterThan(1000);
+    // skill catalog injection is bucketed as skills, not conversation
+    expect(b.skills).toBe(200);
+  });
+
+  it("breakdownUsageEvent marks the count as already-total (promptTokens, no inputTokens)", async () => {
+    const { breakdownUsageEvent } = await import("./plugins/context-ring");
+    const ev = breakdownUsageEvent(events) as { data: { chunk: { usage: Record<string, unknown> } } };
+    expect(ev.data.chunk.usage.promptTokens).toBe(11100);
+    expect(ev.data.chunk.usage.inputTokens).toBeUndefined();
+    expect(ev.data.chunk.usage.breakdown).toBeDefined();
+  });
+});
+
 describe("foldSessionTodos", () => {
   it("folds last todo/write event into todo list", () => {
     const events = [

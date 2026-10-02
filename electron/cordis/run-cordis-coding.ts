@@ -30,6 +30,7 @@ import {
   CAIRN_DB,
 } from "./cairn-plugins";
 import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
+import { breakdownUsageEvent } from "./plugins/context-ring";
 import { registerCairnTools, registerExternalCairnTools } from "./cairn-tools";
 import { TOOL_SCHEMAS, dlog, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId } from "./host-store";
 import { buildCordisUserContent } from "./cairn-attachment-store";
@@ -142,8 +143,23 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   // Legacy alias kept for the policy fold below (auto ↔ never, else ask).
   const autoApprove = effectiveMode === "auto";
   let resolveTerminal: (r: RunCordisCodingResult) => void = () => {};
+  // The live dsh session (set once the agent opens) — read for the Context
+  // Ring breakdown below.
+  let liveSession: { snapshotEvents?: () => readonly import("@deepseek-ai/dsh-session").SessionEvent[] } | null = null;
   const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
     opts.onSessionEvent?.(event);
+    // Provider usage carries no breakdown, so without this the live ring had
+    // no conversation / tool-output slices until a reload. Re-fold the whole
+    // log (same fold the reload path uses) after each settled step and each
+    // tool result so the ring tracks a running session, like chat does at
+    // turn end (chat-session-runner emitBreakdownUsage).
+    if (opts.onSessionEvent && liveSession && (event.type === "assistant/message" || event.type === "tool/result")) {
+      try {
+        const events = liveSession.snapshotEvents?.();
+        const synthetic = events ? breakdownUsageEvent(events) : null;
+        if (synthetic) opts.onSessionEvent(synthetic as unknown as import("@deepseek-ai/dsh-session").SessionEvent);
+      } catch { /* the ring is decoration — never break the turn over a breakdown */ }
+    }
     if (event.type !== "turn/end") return;
     // `reason` is dsh's TurnEndReason. For kind:"error" it carries a structured
     // LlmFailure at `reason.error` ({message, code}) — the ONLY description of
@@ -340,6 +356,7 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     },
     run: async ({ agent, mount, resources }) => {
       const typedAgent = agent as CordisTurnAgent & { session: { events: unknown[] } };
+      liveSession = typedAgent.session as typeof liveSession;
     try {
       // ctx.tools is dsh-tools; `schemas` returns the registered set. The
       // `list?.()` fallback covered a pre-dsh alternative surface — kept as
@@ -392,6 +409,15 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     try {
       ctx.approval?.setPolicy?.(typedAgent as never, autoApprove ? "never" : "ask");
     } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
+
+    // A permission preset picked while the session was idle (the presets
+    // service only exists while a turn's `shell` is mounted) is queued in the
+    // bridge — apply it now, after the approval write above so the user's
+    // explicit choice is the last word for this turn.
+    try {
+      const { applyPendingPermissionPreset } = await import("./permissions-bridge");
+      applyPendingPermissionPreset(ctx, sessionId, typedAgent.session);
+    } catch { /* non-fatal: the switcher re-reads the true value after the turn */ }
 
     // Mount the bridge AFTER the agent exists so it knows the dsh session id to
     // match events against (= the caller's sessionId, which is also how events
