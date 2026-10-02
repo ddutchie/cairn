@@ -11,11 +11,14 @@ interface TooltipProps {
   children: React.ReactNode;
   side?: "top" | "bottom" | "left" | "right";
   delayDuration?: number;
+  /** Suppress the tooltip (e.g. while the trigger's own menu is open). */
+  disabled?: boolean;
 }
 
-export function Tooltip({ content, children, side = "top", delayDuration = 400 }: TooltipProps) {
+export function Tooltip({ content, children, side = "top", delayDuration = 400, disabled = false }: TooltipProps) {
+  const [open, setOpen] = React.useState(false);
   return (
-    <RadixTooltip.Root delayDuration={delayDuration}>
+    <RadixTooltip.Root delayDuration={delayDuration} open={open && !disabled} onOpenChange={setOpen}>
       <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
       <RadixTooltip.Portal>
         <RadixTooltip.Content

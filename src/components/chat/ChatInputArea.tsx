@@ -37,6 +37,10 @@ export interface ChatInputAreaProps {
   allowPdf?: boolean;
   /** Which config the provider · model picker edits ("ai" | "agent"). */
   providerModelTarget?: "ai" | "agent";
+  /** Approval/permission control for the footer row, after the model pickers.
+   *  Defaults to the chat approvals picker when `providerModelTarget` is "ai";
+   *  the agent pane passes its permission-preset select so both sit in the same spot. */
+  approvalControl?: React.ReactNode;
   /** Status/hint line shown right-aligned in the footer row. */
   statusText?: string;
   /** Optional trailing node in the footer row (e.g. the On-Device Llama badge). */
@@ -65,6 +69,7 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
     allowImages = false,
     allowPdf = false,
     providerModelTarget,
+    approvalControl,
     statusText,
     footerTrailing,
     queueWhileBusy = false,
@@ -138,7 +143,7 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
         {providerModelTarget && <ProviderModelPicker target={providerModelTarget} disabled={disabled} />}
         {providerModelTarget && <ReasoningEffortPicker target={providerModelTarget} disabled={disabled} />}
         {providerModelTarget === "ai" && <PersonalityPicker disabled={disabled} />}
-        {providerModelTarget === "ai" && <ChatApprovalPicker disabled={disabled} />}
+        {approvalControl ?? (providerModelTarget === "ai" && <ChatApprovalPicker disabled={disabled} />)}
         {statusText && (
           <p className={cn("text-[0.643rem] text-[var(--text-tertiary)] ml-auto shrink-0", isLoading && "text-[var(--text-secondary)]")}>
             {statusText}

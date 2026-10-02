@@ -44,6 +44,8 @@ export interface SelectProps<V extends string | number> {
   ariaLabel?: string;
   className?: string;
   contentClassName?: string;
+  /** Fires when the menu opens/closes (e.g. to hide a wrapping tooltip). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const SIZE_CLASSES = {
@@ -63,11 +65,12 @@ export function Select<V extends string | number>({
   ariaLabel,
   className,
   contentClassName,
+  onOpenChange,
 }: SelectProps<V>) {
   const selected = options.find((o) => o.value === value);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
