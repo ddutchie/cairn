@@ -97,10 +97,13 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
     case "create_task": return { pre: "Created task", obj: short(args.title) };
     case "get_task": return { pre: "Read task", obj: task() };
     case "update_task": {
-      const target = task();
+      // One normalized lookup feeds both the display and the rename check.
+      const id = typeof args.cardId === "string" ? args.cardId.trim() : "";
+      const current = id ? lookup.task?.(id) : undefined;
+      const target = current?.trim() ? short(current) : id ? short(id) : "a task";
       const column = typeof args.columnId === "string" ? lookup.column?.(args.columnId) : undefined;
       if (column) return { pre: "Moved task", obj: target, post: `to ${short(column)}` };
-      if (typeof args.title === "string" && args.title.trim() && typeof args.cardId === "string" && lookup.task?.(args.cardId) && lookup.task(args.cardId) !== args.title) {
+      if (typeof args.title === "string" && args.title.trim() && current?.trim() && current.trim() !== args.title.trim()) {
         return { pre: "Renamed task", obj: target, post: `to “${short(args.title)}”` };
       }
       return { pre: "Updated task", obj: target };

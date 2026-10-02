@@ -212,6 +212,22 @@ describe("setPermissionPreset / applyPendingPermissionPreset", () => {
     expect(set).toHaveBeenCalledTimes(1);
   });
 
+  it("a queued switch that throws is dropped and the switcher is corrected", async () => {
+    const ctx: Record<string, unknown> = {
+      sessions: { get: () => undefined },
+      sessionProjections: { stateOf: () => undefined },
+    };
+    await setPermissionPreset(ctx as never, "sess-9", "danger-full-access");
+    sent.length = 0;
+    ctx.permissionPresets = { set: () => { throw new Error("boom"); } };
+    applyPendingPermissionPreset(ctx as never, "sess-9", { id: "sess-9" });
+    await vi.waitFor(() => expect(sent.some((m) => m.channel === "session:projection")).toBe(true));
+    const last = sent.filter((m) => m.channel === "session:projection").at(-1)!.payload as { data?: { currentValue?: string } };
+    expect(last.data?.currentValue).toBe("workspace-write");
+    // no longer queued
+    await expect(readPermissionsSnapshot(ctx as never, "sess-9")).resolves.toMatchObject({ currentValue: "workspace-write" });
+  });
+
   it("applies immediately through the service when the session is live", async () => {
     const set = vi.fn();
     const live = { id: "sess-1" };

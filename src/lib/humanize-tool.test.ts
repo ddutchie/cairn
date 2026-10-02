@@ -74,6 +74,11 @@ describe("humanizeTool", () => {
       expect(humanizedText("bulk_update_task_status", { cardIds: ["c1", "c2"], targetColumnId: "done" }, lookup)).toBe("Moved 2 tasks to Done");
     });
 
+    it("update_task: padded ids resolve, whitespace-only title edits are not renames", () => {
+      expect(humanizedText("update_task", { cardId: "  c1 ", title: "Ship it" }, lookup)).toBe("Renamed task Fix the ring to “Ship it”");
+      expect(humanizedText("update_task", { cardId: "c1", title: "  Fix the ring " }, lookup)).toBe("Updated task Fix the ring");
+    });
+
     it("falls back to the raw id when the entity isn't loaded", () => {
       expect(humanizedText("patch_note", { noteId: "unknown-id" }, lookup)).toBe("Updated note unknown-id");
       expect(humanizedText("patch_note", { noteId: "n1" })).toBe("Updated note n1");

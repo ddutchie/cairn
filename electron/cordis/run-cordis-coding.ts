@@ -154,19 +154,30 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
   // The live dsh session (set once the agent opens) — read for the Context
   // Ring breakdown below.
   let liveSession: { snapshotEvents?: () => readonly import("@deepseek-ai/dsh-session").SessionEvent[] } | null = null;
+  // Provider usage carries no breakdown, so without this the live ring had no
+  // conversation / tool-output slices until a reload. Re-fold the whole log
+  // (same fold the reload path uses) after settled steps and tool results so
+  // the ring tracks a running session, like chat does at turn end
+  // (chat-session-runner emitBreakdownUsage). Coalesced: a burst of tool
+  // results costs one full-log fold, and turn/end flushes any pending one.
+  let breakdownTimer: ReturnType<typeof setTimeout> | null = null;
+  const emitLiveBreakdown = () => {
+    breakdownTimer = null;
+    try {
+      const events = liveSession?.snapshotEvents?.();
+      const synthetic = events ? breakdownUsageEvent(events) : null;
+      if (synthetic) opts.onSessionEvent?.(synthetic as unknown as import("@deepseek-ai/dsh-session").SessionEvent);
+    } catch { /* the ring is decoration — never break the turn over a breakdown */ }
+  };
   const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
     opts.onSessionEvent?.(event);
-    // Provider usage carries no breakdown, so without this the live ring had
-    // no conversation / tool-output slices until a reload. Re-fold the whole
-    // log (same fold the reload path uses) after each settled step and each
-    // tool result so the ring tracks a running session, like chat does at
-    // turn end (chat-session-runner emitBreakdownUsage).
     if (opts.onSessionEvent && liveSession && (event.type === "assistant/message" || event.type === "tool/result")) {
-      try {
-        const events = liveSession.snapshotEvents?.();
-        const synthetic = events ? breakdownUsageEvent(events) : null;
-        if (synthetic) opts.onSessionEvent(synthetic as unknown as import("@deepseek-ai/dsh-session").SessionEvent);
-      } catch { /* the ring is decoration — never break the turn over a breakdown */ }
+      if (breakdownTimer !== null) clearTimeout(breakdownTimer);
+      breakdownTimer = setTimeout(emitLiveBreakdown, 250);
+    }
+    if (event.type === "turn/end" && breakdownTimer !== null) {
+      clearTimeout(breakdownTimer);
+      emitLiveBreakdown();
     }
     if (event.type !== "turn/end") return;
     // `reason` is dsh's TurnEndReason. For kind:"error" it carries a structured

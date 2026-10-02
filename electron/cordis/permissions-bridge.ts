@@ -388,10 +388,16 @@ export function applyPendingPermissionPreset(ctx: Context, sessionId: string, se
   if (name === undefined) return;
   const svc = (ctx as unknown as { permissionPresets?: { set?: (session: unknown, name: string) => void } }).permissionPresets;
   if (typeof svc?.set !== "function") return; // keep it queued for a turn that has the service
-  pendingPresets.delete(sessionId);
   try {
     svc.set(session, name);
+    pendingPresets.delete(sessionId);
   } catch (err) {
     console.warn("[permissions-bridge] queued preset switch failed:", err instanceof Error ? err.message : err);
+    // Drop the queued value BEFORE re-reading, so the switcher is corrected to
+    // the session's effective preset instead of showing the failed choice.
+    pendingPresets.delete(sessionId);
+    void readPermissionsSnapshot(ctx, sessionId)
+      .then((snapshot) => emitPermissionsChange(ctx, sessionId, snapshot))
+      .catch(() => undefined);
   }
 }
