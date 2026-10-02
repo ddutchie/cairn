@@ -57,6 +57,14 @@ export interface RunCordisCodingOptions {
   /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
   approvalMode?: Mode;
   /**
+   * "sandbox" (interactive coding sessions): dsh-parity approvals — no
+   * per-tool gate; the permission preset (sandbox + approval policy) decides,
+   * and only sandbox escalations / hooks ask. Cairn tools always run.
+   * "mode" (default — automations): Cairn's per-tool Mode gate, and the
+   * approval policy is forced from the mode each turn.
+   */
+  approvalGate?: "mode" | "sandbox";
+  /**
    * Filesystem/bash sandbox mode. "workspace-write" (default) confines all
    * mutations to `cwd`; "read-only" forbids all mutation; "danger-full-access"
    * is unrestricted (legacy behaviour). Automation callers should use
@@ -253,9 +261,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // closed to "cancelled" → deterministic loop-halt.
       await mount(cairnDoomLoopPlugin, { sessionId, signal });
     // HITL tool approval — mounted whenever an approvals adapter is present.
-    // Mode decides what asks: "auto" only gates EXTERNAL, "interactive"/"plan"/"discuss" gate all mutating tools.
+    // gate "sandbox": dsh parity (only escalations/hooks ask, per the preset).
+    // gate "mode": "auto" only gates EXTERNAL, "interactive"/"plan"/"discuss" gate all mutating tools.
     if (approvals) {
       await mount(cairnApprovalPlugin, {
+        gate: opts.approvalGate ?? "mode",
         mode: effectiveMode,
         sessionId,
         send,
@@ -406,9 +416,14 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     // model-visible approval section then reflect reality (auto-approve ⇒
     // "never"; HITL ⇒ "ask"). No-op when unchanged across turns; a resumed
     // session folds its own logged history.
-    try {
-      ctx.approval?.setPolicy?.(typedAgent as never, autoApprove ? "never" : "ask");
-    } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
+    // Under the dsh-parity gate the permission preset owns the policy (its
+    // `never` means "reject escalations", not "allow everything"), so Cairn
+    // must not overwrite it each turn — that flipped presets to "custom".
+    if ((opts.approvalGate ?? "mode") === "mode") {
+      try {
+        ctx.approval?.setPolicy?.(typedAgent as never, autoApprove ? "never" : "ask");
+      } catch { /* non-fatal: the per-turn classifier bridge still gates asks */ }
+    }
 
     // A permission preset picked while the session was idle (the presets
     // service only exists while a turn's `shell` is mounted) is queued in the

@@ -961,6 +961,17 @@ export interface CairnApprovalConfig {
    * (which are WRITE_LOCAL) while still auto-allowing creates/updates.
    */
   askFilter?: (name: string, args: Record<string, unknown>) => boolean;
+  /**
+   * What decides when a tool call asks:
+   *   - "mode" (default): Cairn's risk taxonomy × approval Mode — every
+   *     mutating tool asks unless the mode is "auto". Automations rely on this.
+   *   - "sandbox": dsh parity. No per-tool gate at all — the sandbox (the
+   *     session's permission preset) is the guard, and only what dsh itself
+   *     routes through the approval seam asks: sandbox escalations and hooks,
+   *     under the preset's approval policy. Cairn data tools always run. The
+   *     protected secret-file guard is kept.
+   */
+  gate?: "mode" | "sandbox";
 }
 
 /**
@@ -1049,7 +1060,7 @@ export function cairnApprovalPlugin(ctx: Context, config: CairnApprovalConfig): 
           }
         }
       }
-      if (typeof name === "string" && shouldAskForTool(name, effectiveMode, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
+      if (typeof name === "string" && config.gate !== "sandbox" && shouldAskForTool(name, effectiveMode, argsObj) && riskGates(name, argsObj) && !isGranted(name, argsObj)) {
         // Stash the TRUSTED args so session:respond-tool can record a
         // grant:'command' against what dsh will actually execute — not
         // whatever string a compromised renderer echoes back. dsh's

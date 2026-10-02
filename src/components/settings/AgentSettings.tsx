@@ -288,8 +288,10 @@ export function AgentSettings() {
 
   // Connection fields (baseUrl/apiKey/model) are managed by the ProviderManager
   // switcher below; here we only need `model` (context lookup) + behavioural fields.
-  const { model: modelAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent, autoApprove: _autoApprove, mode: _agentMode } = agentConfig as typeof agentConfig & { mode?: import("../../../shared/agent/approval-mode").Mode };
-  const autoApprove = _agentMode ? _agentMode === "auto" : _autoApprove ?? true;
+  // No auto-approve toggle: coding sessions follow dsh — the per-session
+  // permission preset (workspace-write / danger-full-access, picked in the
+  // session header) is the guard, and only sandbox escalations ask.
+  const { model: modelAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent } = agentConfig;
 
   function updateAgent(patch: Partial<typeof agentConfig>) {
     setAgentConfig(patch);
@@ -490,20 +492,6 @@ export function AgentSettings() {
           suppressedPlaceholder="Auto (32K)"
           onAuto={() => updateAgent({ maxOutputAuto: true })}
         />
-
-        {/* Auto-approve */}
-        <SettingsRow
-          label="Auto-approve tool execution"
-          description="When disabled, the agent will pause and prompt for confirmation before running any shell commands, writing files, or managing boards."
-        >
-          <input
-            id="autoApprove"
-            type="checkbox"
-            checked={autoApprove}
-            onChange={(e) => updateAgent({ autoApprove: e.target.checked })}
-            className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
-          />
-        </SettingsRow>
 
         {/* Session reminders (dsh schedule overlay, opt-in) */}
         <SettingsRow

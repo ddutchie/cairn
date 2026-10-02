@@ -69,6 +69,7 @@ function makeHarness(
     /** Never answer the ask — lets the fail-closed timeout win. */
     neverRespond?: boolean;
     timeoutMs?: number;
+    gate?: "mode" | "sandbox";
   } = {},
 ) {
   const h = makeCtx();
@@ -84,6 +85,7 @@ function makeHarness(
       return () => {};
     },
     timeoutMs: opts.timeoutMs,
+    gate: opts.gate,
   });
   return { ...h, sent, dispose: () => dispose?.() };
 }
@@ -349,5 +351,28 @@ describe("pendingApprovalArgs (main-side trusted arg stash — confused-deputy f
     expect(stashed?.command).toBe("true # trusted");
     dispose?.();
     forgetSessionApprovalArgs("s-stash");
+  });
+});
+
+describe("cairnApprovalPlugin gate:'sandbox' (dsh parity)", () => {
+  it("never asks per tool — Cairn writes, fs writes and shell all run; the sandbox is the guard", async () => {
+    const { invokeTool, sent } = makeHarness("s1", { gate: "sandbox" });
+    for (const [name, args] of [
+      ["delete_task", { id: "t1" }],
+      ["create_task", { title: "x" }],
+      ["ensure_note", { title: "n" }],
+      ["write", { path: "a.ts", content: "x" }],
+      ["bash", { command: "npm test" }],
+    ] as const) {
+      const res = await invokeTool(name, args as Record<string, unknown>);
+      expect((res as { kind: string }).kind).toBe("allow");
+    }
+    expect(hasProjection(sent, "approval", "required")).toBe(false);
+  });
+
+  it("still guards protected secret files", async () => {
+    const { invokeTool } = makeHarness("s2", { gate: "sandbox" });
+    const res = await invokeTool("read", { path: ".env" });
+    expect((res as { kind: string }).kind).toBe("ask");
   });
 });
