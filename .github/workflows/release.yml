@@ -34,7 +34,7 @@ jobs:
           if [[ "$TAG" == *"-"* ]]; then PRERELEASE="--prerelease"; fi
           # Create as a draft first so the platform build jobs can upload their
           # DMG/installer assets to it. The final `publish-release` job flips the
-          # draft off and marks it `latest` only after E2E + all three builds
+          # draft off and marks it `latest` only after all three builds
           # pass — so a failed build leaves the release as an unpublished draft
           # (never shipped to auto-update users). To inspect a packaged build
           # before it goes public, cancel/fail the run or gate publish-release.
@@ -52,9 +52,12 @@ jobs:
               $PRERELEASE
           fi
 
-  # ── E2E smoke tests ───────────────────────────────────────────────────────
-  smoke-e2e:
-    name: E2E smoke tests
+  # ── Platform-independent build, done once ─────────────────────────────────
+  # Generated files + Next static export + esbuild bundles don't depend on the
+  # target OS, so build them once and hand the result to each platform job
+  # instead of repeating it three times (four with the mac arch split).
+  build-web:
+    name: Build web + bundles
     runs-on: ubuntu-latest
     needs: prepare-release
 
@@ -68,59 +71,68 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Hash of the dependency tree with the project's own version stripped.
+      # The release script bumps `version` in package-lock.json on every tag, so
+      # hashFiles('package-lock.json') missed every cache on every release.
+      - name: Compute dependency hash
+        id: deps
+        shell: bash
+        run: |
+          echo "hash=$(node -e "const l=require('./package-lock.json');delete l.version;if(l.packages&&l.packages[''])delete l.packages[''].version;process.stdout.write(require('crypto').createHash('sha256').update(JSON.stringify(l)).digest('hex'))")" >> "$GITHUB_OUTPUT"
+
       - name: Cache node_modules
         id: cache-npm
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: node_modules
-          key: npm-deps-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
+          key: npm-deps-web-${{ runner.os }}-${{ runner.arch }}-node-24-${{ steps.deps.outputs.hash }}
+
+      - name: Cache Next.js build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.hash }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.hash }}-
+            nextjs-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            playwright-chromium-${{ runner.os }}-${{ runner.arch }}-
-
-      # Install browser binary only on cache miss — the binary is what's cached
-      - name: Install Playwright Chromium binary
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium
-
-      # OS-level system deps (libglib, libnss, etc.) are not cacheable —
-      # always install them; they're fast (apt, no download)
-      - name: Install Playwright system dependencies
-        run: npx playwright install-deps chromium
-
-      - name: Run E2E smoke tests
-        # Generate the git-ignored artifacts the app/tests import (licenses.json
-        # + new-features.json for the What's New smoke tests) before running.
-        # The playwright.config webServer also does this, but generating here
-        # keeps parity with ci.yml and guards against config drift.
+      - name: Generate, build, compile
         run: |
           node scripts/generate-licenses.js
           node scripts/generate-features.js
-          npm run test:e2e
+          npx cross-env ELECTRON_BUILD=true npx next build
+          npm run compile
 
-      - name: Upload Playwright report
-        if: failure()
+      # `assets/` is staged by compile-electron.js and shipped via electron-builder.yml.
+      - name: Upload web build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
+          name: web-build
+          path: |
+            out
+            dist-electron
+            dist-mcp/mcp-server.bundle.js
+            assets
+          if-no-files-found: error
+          retention-days: 1
 
   # ── macOS ─────────────────────────────────────────────────────────────────
+  # arm64 and x64 build in parallel: notarization (~4 min per arch, Apple-side)
+  # used to run back to back inside one electron-builder invocation. Assets are
+  # NOT published from here — each arch's latest-mac.yml lists only its own
+  # files, so `publish-release` merges them and uploads everything.
   build-mac:
-    name: Build macOS
+    name: Build macOS (${{ matrix.arch }})
     runs-on: macos-latest
-    needs: [prepare-release, smoke-e2e]
+    needs: [prepare-release, build-web]
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
@@ -132,6 +144,15 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Hash of the dependency tree with the project's own version stripped.
+      # The release script bumps `version` in package-lock.json on every tag, so
+      # hashFiles('package-lock.json') missed every cache on every release.
+      - name: Compute dependency hash
+        id: deps
+        shell: bash
+        run: |
+          echo "hash=$(node -e "const l=require('./package-lock.json');delete l.version;if(l.packages&&l.packages[''])delete l.packages[''].version;process.stdout.write(require('crypto').createHash('sha256').update(JSON.stringify(l)).digest('hex'))")" >> "$GITHUB_OUTPUT"
+
       - name: Cache node_modules and native builds
         id: cache-npm
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -141,16 +162,7 @@ jobs:
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
-
-      - name: Cache Next.js build
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: .next/cache
-          key: nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
-          restore-keys: |
-            nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-
-            nextjs-${{ runner.os }}-${{ runner.arch }}-
+          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ steps.deps.outputs.hash }}
 
       - name: Cache Electron, Electron Builder, and PKG binaries
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -159,7 +171,7 @@ jobs:
             .cache/electron
             .cache/electron-builder
             .cache/pkg
-          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.hash }}
           restore-keys: |
             electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-
 
@@ -171,25 +183,31 @@ jobs:
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm run rebuild
 
-      - name: Build & publish (macOS)
+      - name: Download web build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: web-build
+
+      - name: Build & sign & notarize (macOS ${{ matrix.arch }})
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          node scripts/generate-licenses.js
-          node scripts/generate-features.js
-          npx cross-env ELECTRON_BUILD=true npx next build
-          npm run compile
           npm run smoke-test
           node -e "const fs = require('fs'); ['win32', 'linux'].forEach(p => fs.rmSync('node_modules/onnxruntime-node/bin/napi-v6/' + p, { recursive: true, force: true }))"
           node -e "const fs = require('fs'); ['win32-arm64', 'win32-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
-          node scripts/build-mcp-binary.js --mac
-          chmod +x dist-mcp/cairn-mcp dist-mcp/cairn-mcp-x64
-          npm run smoke-test:mcp
+          node scripts/build-mcp-binary.js --mac --arch="$ARCH"
+          if [ "$ARCH" = "arm64" ]; then
+            chmod +x dist-mcp/cairn-mcp
+            # The runner is arm64, so smoke-test:mcp only exercises the arm64 binary.
+            npm run smoke-test:mcp
+          else
+            chmod +x dist-mcp/cairn-mcp-x64
+          fi
           # electron-builder 26.15.3 creates its temp keychain with a random
           # password but runs `set-key-partition-list -k` with the *p12*
           # password — tolerated on macOS 26.5, rejected with SecKeychainUnlock
@@ -209,13 +227,25 @@ jobs:
           rm -f /tmp/cairn-cert.p12
           export CSC_KEYCHAIN="$KEYCHAIN"
           unset CSC_LINK CSC_KEY_PASSWORD
-          npx electron-builder --mac --publish onTagOrDraft
+          npx electron-builder --mac "--$ARCH" --publish never
+
+      - name: Upload macOS assets
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: mac-assets-${{ matrix.arch }}
+          path: |
+            dist-app/*.dmg
+            dist-app/*.zip
+            dist-app/*.blockmap
+            dist-app/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 1
 
   # ── Windows ───────────────────────────────────────────────────────────────
   build-win:
     name: Build Windows
     runs-on: windows-latest
-    needs: [prepare-release, smoke-e2e]
+    needs: [prepare-release, build-web]
     env:
       MSBUILDDISABLENODEREUSE: 1
       GYP_MSVS_VERSION: 2022
@@ -234,6 +264,15 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Hash of the dependency tree with the project's own version stripped.
+      # The release script bumps `version` in package-lock.json on every tag, so
+      # hashFiles('package-lock.json') missed every cache on every release.
+      - name: Compute dependency hash
+        id: deps
+        shell: bash
+        run: |
+          echo "hash=$(node -e "const l=require('./package-lock.json');delete l.version;if(l.packages&&l.packages[''])delete l.packages[''].version;process.stdout.write(require('crypto').createHash('sha256').update(JSON.stringify(l)).digest('hex'))")" >> "$GITHUB_OUTPUT"
+
       - name: Cache node_modules and native builds
         id: cache-npm
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -243,16 +282,7 @@ jobs:
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
-
-      - name: Cache Next.js build
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: .next/cache
-          key: nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
-          restore-keys: |
-            nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-
-            nextjs-${{ runner.os }}-${{ runner.arch }}-
+          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ steps.deps.outputs.hash }}
 
       - name: Cache Electron, Electron Builder, and PKG binaries
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -261,7 +291,7 @@ jobs:
             .cache/electron
             .cache/electron-builder
             .cache/pkg
-          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.hash }}
           restore-keys: |
             electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-
 
@@ -273,14 +303,15 @@ jobs:
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm run rebuild
 
+      - name: Download web build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: web-build
+
       - name: Build & publish (Windows)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node scripts/generate-licenses.js
-          node scripts/generate-features.js
-          npx cross-env ELECTRON_BUILD=true npx next build
-          npm run compile
           npm run smoke-test
           node -e "const fs = require('fs'); ['darwin', 'linux'].forEach(p => fs.rmSync('node_modules/onnxruntime-node/bin/napi-v6/' + p, { recursive: true, force: true }))"
           node -e "const fs = require('fs'); ['darwin-arm64', 'darwin-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
@@ -292,7 +323,7 @@ jobs:
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
-    needs: [prepare-release, smoke-e2e]
+    needs: [prepare-release, build-web]
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
@@ -304,6 +335,15 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Hash of the dependency tree with the project's own version stripped.
+      # The release script bumps `version` in package-lock.json on every tag, so
+      # hashFiles('package-lock.json') missed every cache on every release.
+      - name: Compute dependency hash
+        id: deps
+        shell: bash
+        run: |
+          echo "hash=$(node -e "const l=require('./package-lock.json');delete l.version;if(l.packages&&l.packages[''])delete l.packages[''].version;process.stdout.write(require('crypto').createHash('sha256').update(JSON.stringify(l)).digest('hex'))")" >> "$GITHUB_OUTPUT"
+
       - name: Cache node_modules and native builds
         id: cache-npm
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -313,16 +353,7 @@ jobs:
             pkg-native
             vitest-native
             electron-native
-          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ hashFiles('package-lock.json') }}
-
-      - name: Cache Next.js build
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: .next/cache
-          key: nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx') }}
-          restore-keys: |
-            nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}-
-            nextjs-${{ runner.os }}-${{ runner.arch }}-
+          key: npm-deps-build-${{ runner.os }}-${{ runner.arch }}-node-24-${{ steps.deps.outputs.hash }}
 
       - name: Cache Electron, Electron Builder, and PKG binaries
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -331,7 +362,7 @@ jobs:
             .cache/electron
             .cache/electron-builder
             .cache/pkg
-          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          key: electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.hash }}
           restore-keys: |
             electron-builder-pkg-${{ runner.os }}-${{ runner.arch }}-
 
@@ -361,14 +392,15 @@ jobs:
           cp build/Release/pty.node prebuilds/linux-arm64/pty.node
           npx electron-rebuild -f -o node-pty
 
+      - name: Download web build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: web-build
+
       - name: Build & publish (Linux)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node scripts/generate-licenses.js
-          node scripts/generate-features.js
-          npx cross-env ELECTRON_BUILD=true npx next build
-          npm run compile
           npm run smoke-test
           node -e "const fs = require('fs'); ['win32', 'darwin'].forEach(p => fs.rmSync('node_modules/onnxruntime-node/bin/napi-v6/' + p, { recursive: true, force: true }))"
           node -e "const fs = require('fs'); ['darwin-arm64', 'darwin-x64', 'win32-arm64', 'win32-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
@@ -378,19 +410,39 @@ jobs:
           npx electron-builder --linux --publish onTagOrDraft
 
   # ── Publish the release ───────────────────────────────────────────────────
-  # Runs only if E2E and all three platform builds succeeded (default `needs`
+  # Runs only if all platform builds succeeded (default `needs`
   # semantics — any failed/cancelled dependency skips this job, so the release
   # stays a draft for manual inspection). Flips the draft off and, for a stable
   # (non-prerelease) tag, marks it as `latest` so auto-update picks it up.
   publish-release:
     name: Publish Release
     runs-on: ubuntu-latest
-    needs: [smoke-e2e, build-mac, build-win, build-linux]
+    needs: [build-mac, build-win, build-linux]
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
+
+      - name: Download macOS assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: mac-assets-*
+          path: mac-assets
+
+      # Merge the per-arch update manifests and upload the mac assets (the mac
+      # jobs build with --publish never so neither overwrites the other's yml).
+      - name: Upload macOS assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          node scripts/merge-latest-mac.js mac-assets/latest-mac.yml \
+            mac-assets/mac-assets-arm64/latest-mac.yml mac-assets/mac-assets-x64/latest-mac.yml
+          cat mac-assets/latest-mac.yml
+          gh release upload "$TAG" --clobber \
+            mac-assets/*/*.dmg mac-assets/*/*.zip mac-assets/*/*.blockmap \
+            mac-assets/latest-mac.yml
 
       - name: Publish GitHub Release
         env:

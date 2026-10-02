@@ -69,6 +69,19 @@ if (wantLinux || (!wantMac && !wantWin && !wantLinux && platform === "linux")) {
   }
 }
 
+// Optional `--arch=<arm64|x64>`: build only that arch's binary (the release
+// workflow builds each mac arch in its own parallel job).
+const archArg = args.find((a) => a.startsWith("--arch="))?.slice("--arch=".length);
+if (archArg) {
+  for (let i = targets.length - 1; i >= 0; i--) {
+    if (targets[i].arch !== archArg) targets.splice(i, 1);
+  }
+  if (targets.length === 0) {
+    console.error(`[build-mcp-binary] --arch=${archArg} matches no target for the selected platform`);
+    process.exit(1);
+  }
+}
+
 function run(cmd) {
   console.log(`\n> ${cmd}`);
   execSync(cmd, { stdio: "inherit", cwd: root });
