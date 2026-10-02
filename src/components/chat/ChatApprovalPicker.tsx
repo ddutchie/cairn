@@ -9,6 +9,7 @@
  * permission presets.
  */
 
+import { useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { Select } from "@/components/ui/select";
@@ -23,10 +24,11 @@ export function ChatApprovalPicker({ disabled }: { disabled?: boolean }) {
   const stored = useCairnStore((s) => s.aiConfig.chatApprovalPolicy);
   const setPolicy = useCairnStore((s) => s.setChatApprovalPolicy);
   const value = resolveChatApprovalPolicy(stored);
+  const [menuOpen, setMenuOpen] = useState(false);
   const current = CHAT_APPROVAL_OPTIONS.find((o) => o.value === value);
 
   return (
-    <Tooltip content={current?.description ?? "What the assistant asks before running"} side="top">
+    <Tooltip content={current?.description ?? "What the assistant asks before running"} side="top" disabled={menuOpen}>
       <span className="flex items-center gap-1" aria-label={`Chat approvals: ${current?.label ?? value}`}>
         <ShieldCheck size={11} className="text-[var(--text-tertiary)] shrink-0" />
         <Select<ChatApprovalPolicy>
@@ -34,6 +36,7 @@ export function ChatApprovalPicker({ disabled }: { disabled?: boolean }) {
           ariaLabel="Chat approvals"
           value={value}
           disabled={disabled}
+          onOpenChange={setMenuOpen}
           onChange={(next) => { if (next !== value) setPolicy(next); }}
           options={CHAT_APPROVAL_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           className="text-[0.643rem] px-1.5 py-0.5"

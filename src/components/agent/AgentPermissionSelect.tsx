@@ -44,6 +44,8 @@ function isSelect(value: unknown): value is PermissionsSelect {
 
 export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps) {
   const [select, setSelect] = useState<PermissionsSelect | null>(null);
+  // The tooltip sits where the menu opens (footer); hide it while open.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +92,7 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
   const tip = current?.description ?? "Permission preset (sandbox + approval)";
 
   return (
-    <Tooltip content={tip} side="top">
+    <Tooltip content={tip} side="top" disabled={menuOpen}>
       <span className="flex items-center gap-1" aria-label={`Permission preset: ${current?.name ?? select.currentValue}`}>
         <ShieldCheck size={11} className="text-[var(--text-tertiary)] shrink-0" />
         <Select
@@ -98,6 +100,7 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
           ariaLabel="Permission preset"
           value={select.currentValue}
           onChange={onChange}
+          onOpenChange={setMenuOpen}
           options={select.options.map((o) => ({
             value: o.value,
             label: o.name,
