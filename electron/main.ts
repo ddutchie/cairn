@@ -424,11 +424,22 @@ app.whenReady().then(async () => {
   // visible during boot. Once the renderer has painted, we send the final
   // "Ready" progress, wait 200ms for the CSS transition to animate, then
   // show the main window and close the splash.
+  let splashClosed = false;
   const closeSplash = () => {
-    splash.progress({ step: "done", label: "Ready", pct: 100 });
+    // Idempotent: both did-finish-load and the 6s fallback call this, and the
+    // window/splash may already be destroyed by the time a timer fires.
+    if (splashClosed) return;
+    splashClosed = true;
+    try {
+      splash.progress({ step: "done", label: "Ready", pct: 100 });
+    } catch { /* splash already destroyed */ }
     setTimeout(() => {
-      win.show();
-      splash.close();
+      try {
+        if (!win.isDestroyed()) win.show();
+      } catch { /* window destroyed */ }
+      try {
+        splash.close();
+      } catch { /* splash already destroyed */ }
     }, 200);
   };
   win.webContents.once("did-finish-load", () => {
