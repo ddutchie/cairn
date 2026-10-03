@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useSyncExternalStore } from "react";
-import { Percent, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Percent, Trash2 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { OverflowPill } from "@/components/ui/overflow-pill";
@@ -14,7 +14,7 @@ import { useConfirmAction } from "@/components/ui/confirm-button";
 import { cacheHitColor } from "@/lib/cache-metrics";
 import { fmtCompact, fmtFull, fmtDateTime } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";
-import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals } from "@/types/usage";
+import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals, type UsageRecentRow, type UsageThreadGroup } from "@/types/usage";
 import { modelLogoUrl, prewarmModelCatalog, getModelCatalogVersion, subscribeModelCatalog } from "@/lib/models-dev";
 import { providerLogoUrl, endpointLogoSlug } from "../../../shared/models/model-catalog";
 
@@ -153,6 +153,116 @@ function deltaPct(cur: UsageTotals, prev: UsageTotals | null, field: "promptToke
   return `${arrow} ${Math.abs(d).toFixed(1)}% vs prior ${rangeLabel}`;
 }
 
+/** One recorded request. `nested` = a child row inside an expanded thread group. */
+function CallRow({ r, includeEstimated, nested = false }: { r: UsageRecentRow; includeEstimated: boolean; nested?: boolean }) {
+  return (
+          <tr
+                                    style={{ borderLeftColor: modelColor(r.model) }}
+            className={cn("border-b border-l-2 border-[var(--border-subtle)] last:border-b-0 hover:bg-[var(--surface-2)]", nested && "bg-[color-mix(in_srgb,var(--surface-2)_40%,transparent)]")}
+          >
+            <td className={cn("py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]", nested ? "pl-9 pr-4" : "px-4")}>{fmtDateTime(r.createdAt)}</td>
+            <td className="px-4 py-2 whitespace-nowrap">
+              <span className="inline-flex items-center gap-1.5">
+                <ModelLogo model={r.model} color={modelColor(r.model)} />
+                <span className="font-mono font-medium">{r.model}</span>
+              </span>
+            </td>
+            <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--accent)]">{fmtFull(r.promptTokens)}</td>
+            <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--info)]">{fmtFull(r.completionTokens)}</td>
+            <td className="px-4 py-2 whitespace-nowrap text-right">
+              {r.cacheReadTokens > 0 ? (
+                <span className="inline-flex flex-col items-end leading-tight">
+                  <span className="font-mono tabular-nums text-[var(--warning)]">{fmtFull(r.cacheReadTokens)}</span>
+                  {r.promptTokens > 0 && (
+                    <span className="text-[0.571rem]" style={{ color: cacheHitColor(Math.min(r.cacheReadTokens / r.promptTokens, 1)) }}>
+                      {Math.round(Math.min(r.cacheReadTokens / r.promptTokens, 1) * 100)}% of input
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="font-mono tabular-nums text-[var(--text-tertiary)]">—</span>
+              )}
+            </td>
+            <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{r.reasoningTokens > 0 ? fmtFull(r.reasoningTokens) : "—"}</td>
+            <td className="px-4 py-2 whitespace-nowrap">
+              <span className="inline-flex items-center gap-1.5 text-[0.714rem] text-[var(--text-secondary)]">
+                <ProviderLogo baseUrl={r.baseUrl} />
+                {r.provider ?? "—"}
+              </span>
+            </td>
+            <td className="px-4 py-2 whitespace-nowrap">
+              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.643rem] font-medium ${SOURCE_TAG_STYLE[r.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>
+                {USAGE_SOURCE_LABELS[r.source] ?? r.source}
+              </span>
+            </td>
+            <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums font-semibold text-[var(--text-secondary)]">
+              {r.costUsd != null && (includeEstimated || !r.costEstimated) ? `${r.costEstimated ? "~" : ""}${formatUsd(r.costUsd)}` : "—"}
+            </td>
+          </tr>
+  );
+}
+
+/** Collapsible rollup row for a thread / session; children are fetched on expand. */
+function ThreadGroupRow({ g, includeEstimated, loadRows }: {
+  g: UsageThreadGroup;
+  includeEstimated: boolean;
+  loadRows: (sessionId: string) => Promise<UsageRecentRow[]>;
+}) {
+  // Keyed by the group's totals in the parent, so a reload remounts the row and
+  // never shows stale children.
+  const [expanded, setExpanded] = useState(false);
+  const [rows, setRows] = useState<UsageRecentRow[] | undefined>(undefined);
+  const onToggle = () => {
+    const open = !expanded;
+    setExpanded(open);
+    if (open && rows === undefined) {
+      void loadRows(g.sessionId).then(setRows).catch(() => setRows([]));
+    }
+  };
+  const label = USAGE_SOURCE_LABELS[g.source] ?? g.source;
+  const title = g.title ?? `${label} · ${g.sessionId.replace(/^chat-/, "").slice(0, 8)}`;
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const cost = includeEstimated || !g.hasEstimated ? g.costUsd : null;
+  return (
+    <>
+      <tr
+        style={{ borderLeftColor: modelColor(g.models[0] ?? "") }}
+        className="border-b border-l-2 border-[var(--border-subtle)] hover:bg-[var(--surface-2)] cursor-pointer"
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">
+          <span className="inline-flex items-center gap-1.5">
+            <Chevron size={12} className="text-[var(--text-tertiary)] shrink-0" />
+            {fmtDateTime(g.lastAt)}
+          </span>
+        </td>
+        <td className="px-4 py-2 max-w-[22rem]">
+          <div className="truncate font-medium text-[var(--text-primary)]" title={title}>{title}</div>
+          <div className="truncate text-[0.643rem] text-[var(--text-tertiary)]">
+            {g.requests} {g.requests === 1 ? "request" : "requests"} · {g.models.join(", ")}
+          </div>
+        </td>
+        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--accent)]">{fmtFull(g.promptTokens)}</td>
+        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--info)]">{fmtFull(g.completionTokens)}</td>
+        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--warning)]">{g.cacheReadTokens > 0 ? fmtFull(g.cacheReadTokens) : <span className="text-[var(--text-tertiary)]">—</span>}</td>
+        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{g.reasoningTokens > 0 ? fmtFull(g.reasoningTokens) : "—"}</td>
+        <td className="px-4 py-2 whitespace-nowrap text-[var(--text-tertiary)]">—</td>
+        <td className="px-4 py-2 whitespace-nowrap">
+          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.643rem] font-medium ${SOURCE_TAG_STYLE[g.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>{label}</span>
+        </td>
+        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums font-semibold text-[var(--text-primary)]">
+          {cost != null ? `${g.hasEstimated ? "~" : ""}${formatUsd(cost)}` : "—"}
+        </td>
+      </tr>
+      {expanded && rows === undefined && (
+        <tr className="border-b border-[var(--border-subtle)]"><td colSpan={9} className="pl-9 py-2 text-[0.643rem] text-[var(--text-tertiary)]">Loading…</td></tr>
+      )}
+      {expanded && rows?.map((r) => <CallRow key={r.id} r={r} includeEstimated={includeEstimated} nested />)}
+    </>
+  );
+}
+
 export function UsageView() {
   const [rangeIdx, setRangeIdx] = useState(1); // 30D default
   const [metric, setMetric] = useState<UsageMetric>("tokens");
@@ -163,7 +273,15 @@ export function UsageView() {
   const [includeEstimated, setIncludeEstimated] = useState(true);
 
   const range = USAGE_RANGES[rangeIdx];
-  const { overview, recent, loading, refresh, clear } = useUsage(range.days, source, !includeEstimated);
+  const { overview, recent, threads, loadThreadRows, loading, refresh, clear } = useUsage(range.days, source, !includeEstimated);
+  // Threads and one-shot calls interleaved by recency.
+  const items = useMemo(() => {
+    const all = [
+      ...threads.map((g) => ({ kind: "thread" as const, g, at: g.lastAt })),
+      ...recent.map((r) => ({ kind: "call" as const, r, at: r.createdAt })),
+    ];
+    return all.sort((a, b) => b.at - a.at).slice(0, 100);
+  }, [threads, recent]);
   // Two-step destructive confirm for the clear action; auto-disarms after 4s.
   const clearConfirm = useConfirmAction();
 
@@ -365,12 +483,12 @@ export function UsageView() {
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-3 pb-1">
               <div className="text-xs font-semibold text-[var(--text-primary)]">Usage history</div>
-              <div className="text-[0.643rem] text-[var(--text-tertiary)]">{recent.length === 0 ? "" : `latest ${recent.length} calls`}</div>
+              <div className="text-[0.643rem] text-[var(--text-tertiary)]">{items.length === 0 ? "" : `latest ${items.length} threads & calls`}</div>
             </div>
-            {recent.length > 0 && includeEstimated && (
+            {items.length > 0 && includeEstimated && (
               <div className="px-4 pb-1 text-[0.643rem] text-[var(--text-tertiary)]">~ = estimated from models.dev pricing</div>
             )}
-            {recent.length === 0 ? (
+            {items.length === 0 ? (
               <EmptyState
                 title="No LLM calls recorded yet"
                 description="Send a chat message or run an agent and it will appear here."
@@ -393,51 +511,15 @@ export function UsageView() {
                     </tr>
                   </thead>
                   <tbody>
-                    {recent.map((r) => (
-                      <tr
-                        key={r.id}
-                        style={{ borderLeftColor: modelColor(r.model) }}
-                        className="border-b border-l-2 border-[var(--border-subtle)] last:border-b-0 hover:bg-[var(--surface-2)]"
-                      >
-                        <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">{fmtDateTime(r.createdAt)}</td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5">
-                            <ModelLogo model={r.model} color={modelColor(r.model)} />
-                            <span className="font-mono font-medium">{r.model}</span>
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--accent)]">{fmtFull(r.promptTokens)}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--info)]">{fmtFull(r.completionTokens)}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-right">
-                          {r.cacheReadTokens > 0 ? (
-                            <span className="inline-flex flex-col items-end leading-tight">
-                              <span className="font-mono tabular-nums text-[var(--warning)]">{fmtFull(r.cacheReadTokens)}</span>
-                              {r.promptTokens > 0 && (
-                                <span className="text-[0.571rem]" style={{ color: cacheHitColor(Math.min(r.cacheReadTokens / r.promptTokens, 1)) }}>
-                                  {Math.round(Math.min(r.cacheReadTokens / r.promptTokens, 1) * 100)}% of input
-                                </span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="font-mono tabular-nums text-[var(--text-tertiary)]">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{r.reasoningTokens > 0 ? fmtFull(r.reasoningTokens) : "—"}</td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5 text-[0.714rem] text-[var(--text-secondary)]">
-                            <ProviderLogo baseUrl={r.baseUrl} />
-                            {r.provider ?? "—"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.643rem] font-medium ${SOURCE_TAG_STYLE[r.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>
-                            {USAGE_SOURCE_LABELS[r.source] ?? r.source}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums font-semibold text-[var(--text-secondary)]">
-                          {r.costUsd != null && (includeEstimated || !r.costEstimated) ? `${r.costEstimated ? "~" : ""}${formatUsd(r.costUsd)}` : "—"}
-                        </td>
-                      </tr>
+                    {items.map((it) => it.kind === "thread" ? (
+                      <ThreadGroupRow
+                        key={`t:${it.g.sessionId}:${it.g.lastAt}:${it.g.requests}:${includeEstimated}`}
+                        g={it.g}
+                        includeEstimated={includeEstimated}
+                        loadRows={loadThreadRows}
+                      />
+                    ) : (
+                      <CallRow key={it.r.id} r={it.r} includeEstimated={includeEstimated} />
                     ))}
                   </tbody>
                 </table>
