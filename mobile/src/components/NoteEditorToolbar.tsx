@@ -10,6 +10,7 @@ import {
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
+  type TextInputInstance,
 } from "react-native";
 import Animated, { useAnimatedStyle, interpolate } from "react-native-reanimated";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
@@ -204,7 +205,7 @@ export function NoteEditorToolbar({
   const styles = useMemo(() => makeStyles(t), [t]);
   const [showCustom, setShowCustom] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
 
   // The toolbar rides the keyboard via KeyboardStickyView, so when the keyboard
   // is up it sits flush against it (no inset). When closed it drops to the

@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { View } from "react-native";
+import type { ViewInstance } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
 import {
   useSharedValue,
@@ -72,9 +72,9 @@ export interface DragController<T> {
    *  Pass `scrollIndependent: true` for zones that live OUTSIDE the scroll view
    *  (e.g. action zones fixed below the list) so the hit-test doesn't shift them
    *  by the scroll delta. */
-  registerZone: (zoneId: string, node: View | null, scrollIndependent?: boolean) => void;
+  registerZone: (zoneId: string, node: ViewInstance | null, scrollIndependent?: boolean) => void;
   /** Ref callback for the drag container (its origin is measured on drag begin). */
-  setContainer: (node: View | null) => void;
+  setContainer: (node: ViewInstance | null) => void;
   /** Re-measure the container origin + every zone frame (call on drag begin). */
   remeasure: () => void;
   /**
@@ -183,13 +183,13 @@ export function useDragController<T>({
     [scrollAxis, maxScroll],
   );
 
-  const containerRef = useRef<View>(null);
-  const zoneRefs = useRef<Record<string, View | null>>({});
+  const containerRef = useRef<ViewInstance>(null);
+  const zoneRefs = useRef<Record<string, ViewInstance | null>>({});
 
   const [dragging, setDragging] = useState<T | null>(null);
   const [scrollLocked, setScrollLocked] = useState(false);
 
-  const registerZone = useCallback((zoneId: string, node: View | null, scrollIndependent = false) => {
+  const registerZone = useCallback((zoneId: string, node: ViewInstance | null, scrollIndependent = false) => {
     if (node) {
       zoneRefs.current[zoneId] = node;
       // Keep the flag in sync with the current registration: set it when the
@@ -212,7 +212,7 @@ export function useDragController<T>({
     }
   }, [scrollIndependentZones]);
 
-  const setContainer = useCallback((node: View | null) => {
+  const setContainer = useCallback((node: ViewInstance | null) => {
     containerRef.current = node;
   }, []);
 

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { Alert, type NativeSyntheticEvent, type TextInputSelectionChangeEventData } from "react-native";
+import { Alert, type TextInputSelectionChangeEvent } from "react-native";
 import { useRouter } from "expo-router";
 import { applyFormat, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
 import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
@@ -31,7 +31,7 @@ export function useNoteFormattingToolbar(body: string, setBody: (next: string) =
   const [aiLoading, setAiLoading] = useState(false);
 
   const onSelectionChange = useCallback(
-    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+    (e: TextInputSelectionChangeEvent) => {
       selectionRef.current = e.nativeEvent.selection;
       setSelection(e.nativeEvent.selection);
     },

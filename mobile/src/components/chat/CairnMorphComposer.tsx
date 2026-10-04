@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { forwardRef, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInput as TextInputType } from "react-native";
+import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from "react-native";
 import { Image } from "expo-image";
 import { Send, X, Plus } from "lucide-react-native";
 import Animated, { Extrapolation, FadeOut, interpolate, LinearTransition, useAnimatedReaction, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
@@ -43,7 +43,7 @@ export interface CairnMorphComposerProps {
   queuedCount?: number;
 }
 
-export const CairnMorphComposer = forwardRef<TextInputType, CairnMorphComposerProps>(function CairnMorphComposer(
+export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
   { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
   ref,
 ) {

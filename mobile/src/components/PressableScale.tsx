@@ -1,5 +1,5 @@
 import { forwardRef, useCallback } from "react";
-import { Pressable, type PressableProps, type View , StyleProp, ViewStyle } from "react-native";
+import { Pressable, type PressableProps, type StyleProp, type ViewInstance, type ViewStyle } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -45,7 +45,7 @@ export interface PressableScaleProps extends Omit<PressableProps, "style"> {
  *
  * Press-in shrinks/dims instantly-ish; release springs back. Honours disabled.
  */
-export const PressableScale = forwardRef<View, PressableScaleProps>(function PressableScale(
+export const PressableScale = forwardRef<ViewInstance, PressableScaleProps>(function PressableScale(
   { scaleTo = 0.97, dimTo = 0.92, style, animatedStyle, onPressIn, onPressOut, onPress, haptic = "selection", disabled, children, ...rest },
   ref,
 ) {
