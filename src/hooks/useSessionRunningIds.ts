@@ -23,7 +23,11 @@ function poll() {
   window.electron.session
     .runningIds()
     .then((result) => {
-      sharedIds = new Set(result.ids);
+      const next = new Set(result.ids);
+      // Only notify when membership changed — a fresh Set every 2s would
+      // re-render every subscriber (board cards, sidebar rows) for nothing.
+      if (next.size === sharedIds.size && [...next].every((id) => sharedIds.has(id))) return;
+      sharedIds = next;
       for (const fn of listeners) fn(sharedIds);
     })
     .catch(() => undefined);

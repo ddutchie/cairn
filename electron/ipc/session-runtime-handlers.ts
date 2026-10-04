@@ -84,6 +84,7 @@ function sweepSessionPendings(sessionId: string): void {
 
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { isShellTool } from "../../shared/agent/tool-risk";
+import { notifyAgentAttention } from "../lib/agent-attention";
 
 /** The raw turn inputs the Cordis coding loop needs (prompt + attachments + config). */
 interface CordisTurnPayload {
@@ -222,6 +223,7 @@ async function runCordisCodingSession(
     const projection = evtPayload as unknown as SessionProjection;
     if (projection.kind === "approval") {
       const data = projection.data as unknown as { status?: string; callId?: string; name?: string; label?: string; nonce?: string; reason?: string };
+      if (data.status === "required") notifyAgentAttention(ctx.db, { sessionId, kind: "approval", detail: data.label ?? data.name });
       if (data.status === "required" && typeof data.callId === "string" && !data.nonce) {
         const nonce = getAgentHost().mintApprovalNonce(sessionId, data.callId);
         data.nonce = nonce;
@@ -358,6 +360,7 @@ async function runCordisCodingSession(
           // nonce via BrowserWindow.send while mobile gets a sanitized
           // payload. is-running remains the recovery path for reloads.
           if (channel === "session:ask-questions") {
+            notifyAgentAttention(ctx.db, { sessionId, kind: "question" });
             const requestId = typeof p.callId === "string" ? p.callId : undefined;
             const qs = Array.isArray(p.questions) ? p.questions : undefined;
             if (requestId && qs) {
@@ -394,9 +397,11 @@ async function runCordisCodingSession(
         },
       },
     });
+    if (!session.abortCtrl.signal.aborted) notifyAgentAttention(ctx.db, { sessionId, kind: "finished" });
   } catch (err) {
     if (!session.abortCtrl.signal.aborted) {
       console.error("[session] coding loop failed:", err);
+      notifyAgentAttention(ctx.db, { sessionId, kind: "failed", detail: errMsg(err) });
     }
   } finally {
      getAgentHost().endTurn(sessionId, turnController);

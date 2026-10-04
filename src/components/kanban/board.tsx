@@ -40,6 +40,8 @@ import { getZoneHit, resolveCardDrop } from "./board-dnd";
 import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import { EMPTY_BOARD_FILTER, cardMatchesFilter, assigneesOf, isFilterActive, type BoardFilter } from "@/lib/board-filters";
 import { BoardFilterMenu, BoardViewsMenu } from "./board-filter-menus";
+import { RunningSessionsContext } from "./card-agent-badge";
+import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 
 /**
  * Cross-project drag bridge (board → project sidebar).
@@ -266,6 +268,8 @@ export function KanbanBoard() {
   }, []);
 
   const columns = activeProjectId ? getProjectColumns(activeProjectId) : NO_COLUMNS;
+  // Running coding sessions, shared with every card's agent badge.
+  const runningSessionIds = useSessionRunningIds(true);
 
   function togglePriority(p: Priority) {
     setFilter((f) => ({ ...f, priorities: f.priorities.includes(p) ? f.priorities.filter((x) => x !== p) : [...f.priorities, p] }));
@@ -538,7 +542,7 @@ export function KanbanBoard() {
   // No more portal — action zones are rendered inline in the title bar.
 
   return (
-    <>
+    <RunningSessionsContext.Provider value={runningSessionIds}>
       <DndContext
         sensors={sensors}
         collisionDetection={boardCollision}
@@ -775,7 +779,7 @@ export function KanbanBoard() {
             </div>
           </form>
       </ModalShell>
-    </>
+    </RunningSessionsContext.Provider>
   );
 }
 

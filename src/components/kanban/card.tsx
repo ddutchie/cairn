@@ -18,6 +18,7 @@ import { useCairnStore } from "@/store";
 import type { TaskCard } from "@/types";
 import { PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { CardAgentBadge } from "./card-agent-badge";
 
 interface KanbanCardProps {
   card: TaskCard;
@@ -68,10 +69,13 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
       />
 
       <div className="pl-2 flex flex-col gap-2">
-        {/* Title */}
-        <p className="text-[0.929rem] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
-          {card.title}
-        </p>
+        {/* Title (+ live agent badge when a session spawned from this card is running) */}
+        <div className="flex items-start gap-2">
+          <p className="flex-1 min-w-0 text-[0.929rem] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
+            {card.title}
+          </p>
+          <CardAgentBadge cardId={card.id} />
+        </div>
 
         {/* Description — plain-text preview when collapsed, full markdown only
             when expanded. Rendering the heavy remark/rehype/KaTeX pipeline for

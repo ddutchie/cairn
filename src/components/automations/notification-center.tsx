@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Bell, Check, CheckCheck, Zap, ExternalLink, Trash2 } from "lucide-react";
+import { Bell, Bot, Check, CheckCheck, Zap, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CountBadge } from "@/components/ui/count-badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -15,6 +15,7 @@ import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 function toolIcon(tool: string): React.ReactNode {
   if (tool === "automation_run" || tool === "automation_approval") return <Zap size={13} className="text-[var(--accent)]" />;
+  if (tool.startsWith("agent_")) return <Bot size={13} className={tool === "agent_failed" ? "text-[var(--danger)]" : "text-[var(--accent)]"} />;
   return <Bell size={13} className="text-[var(--text-tertiary)]" />;
 }
 
@@ -35,7 +36,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
       clearNotifications: s.clearNotifications,
     })));
 
-  const { setView } = useCairnStore(useShallow((s) => ({ setView: s.setView })));
+  const { setView, openSession } = useCairnStore(useShallow((s) => ({ setView: s.setView, openSession: s.openSession })));
 
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -90,13 +91,14 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
             // inbox they pointed at was retired; render them as plain rows.
             const targetable =
               n.targetId !== null &&
-              (n.targetType === "note" || n.targetType === "task" || n.targetType === "automation");
+              (n.targetType === "note" || n.targetType === "task" || n.targetType === "automation" || n.targetType === "session");
             const _isApproval = false;
             const onClick = targetable
               ? () => {
                   if (n.targetType === "note") revealNote(setView, n.targetId!);
                   else if (n.targetType === "task") revealCard(setView, n.targetId!);
                   else if (n.targetType === "automation") setView("automations");
+                  else if (n.targetType === "session") openSession(n.targetId!, "coding");
                   void markNotificationRead(n.id);
                 }
               : undefined;

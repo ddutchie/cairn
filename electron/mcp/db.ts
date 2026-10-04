@@ -310,7 +310,7 @@ export function insertNotification(
   tool: string,
   title: string,
   body: string,
-  target?: { type: "note" | "task" | "automation" | "approval"; id: string } | null,
+  target?: { type: "note" | "task" | "automation" | "approval" | "session"; id: string } | null,
 ): void {
   try {
     const id = newId();
