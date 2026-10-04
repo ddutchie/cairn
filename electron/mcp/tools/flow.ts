@@ -5,15 +5,6 @@ import * as q from "../../db/queries";
 import { newId, ts } from "../../db/utils";
 import { Snapshot, insertNotification } from "../db";
 
-// Small helper: look up a single flow node's presence + flow_id.
-// (q.getFlowNodeById doesn't exist; keeping this local avoids adding API surface
-// to queries.ts purely for MCP-side validation.)
-function getNodeFlowId(db: Database.Database, nodeId: string): string | null {
-  const row = db.prepare("SELECT flow_id FROM idea_flow_nodes WHERE id = ?").get(nodeId) as
-    | { flow_id: string } | undefined;
-  return row?.flow_id ?? null;
-}
-
 export function get_idea_flow(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
   const project = snap.projects.find((p) => p.id === args.projectId);
   if (!project) return { error: "Project not found" };
@@ -141,15 +132,14 @@ export function update_idea_flow_node(db: Database.Database, args: Record<string
 }
 
 export function delete_idea_flow_node(db: Database.Database, args: Record<string, any>) {
-  const exists = db.prepare("SELECT 1 FROM idea_flow_nodes WHERE id = ?").get(args.nodeId);
-  if (!exists) return { error: "Node not found" };
+  if (!q.getFlowIdForNode(db, args.nodeId as string)) return { error: "Node not found" };
   q.deleteFlowNode(db, args.nodeId as string); // edges cascade-deleted via FK
   insertNotification(db, "delete_idea_flow_node", "Idea Flow updated", `Node removed from flow`);
   return { deleted: true, id: args.nodeId };
 }
 
 export function create_idea_flow_edge(db: Database.Database, args: Record<string, any>) {
-  const flowId = getNodeFlowId(db, args.sourceNodeId as string);
+  const flowId = q.getFlowIdForNode(db, args.sourceNodeId as string);
   if (!flowId) return { error: "Source node not found" };
   // Verify target exists AND belongs to the same flow.
   const targetExists = db.prepare("SELECT 1 FROM idea_flow_nodes WHERE id = ? AND flow_id = ?").get(args.targetNodeId, flowId);

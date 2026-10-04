@@ -194,3 +194,96 @@ export function getResolvedFlow(db: Database.Database, projectId: string) {
     spatial,
   };
 }
+
+/** The flow a node belongs to, or null when the node doesn't exist. */
+export function getFlowIdForNode(db: Database.Database, nodeId: string): string | null {
+  const row = db.prepare("SELECT flow_id FROM idea_flow_nodes WHERE id = ?").get(nodeId) as { flow_id: string } | undefined;
+  return row?.flow_id ?? null;
+}
+
+export interface FlowSummaryInputs {
+  /** One line of text per reachable content node (`[Idea] …`, `[Note] …`, `[Task] …`, `[URL] …`). */
+  parts: string[];
+  /** Owning project / workspace, for usage scoping (best-effort). */
+  projectId?: string;
+  workspaceId?: string;
+}
+
+/**
+ * Gather the text an `ai_summary` node should summarise: every node reachable
+ * from it through edges in either direction, without traversing other
+ * `ai_summary` nodes (they're peers, not content). Throws a user-facing error
+ * when the node is missing, isn't an ai_summary node, or has nothing to read.
+ */
+export function collectFlowSummaryInputs(db: Database.Database, nodeId: string): FlowSummaryInputs {
+  const nodeRow = db.prepare("SELECT * FROM idea_flow_nodes WHERE id = ?").get(nodeId) as DbRow | undefined;
+  if (!nodeRow) throw new Error("Node not found");
+  if (nodeRow.type !== "ai_summary") throw new Error("Summarize is only available on ai_summary nodes");
+  const flowId = nodeRow.flow_id as string;
+
+  const nodes = new Map<string, DbRow>();
+  for (const r of db.prepare("SELECT * FROM idea_flow_nodes WHERE flow_id = ?").all(flowId) as DbRow[]) nodes.set(r.id as string, r);
+  const edges = db.prepare("SELECT source_node_id, target_node_id FROM idea_flow_edges WHERE flow_id = ?").all(flowId) as Array<{ source_node_id: string; target_node_id: string }>;
+
+  // BFS over both edge directions from the summary node.
+  const visited = new Set<string>([nodeId]);
+  const queue: string[] = [nodeId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    // Don't recurse through other ai_summary nodes — they're peers, not content.
+    if (current !== nodeId && nodes.get(current)?.type === "ai_summary") continue;
+    for (const e of edges) {
+      const next = e.source_node_id === current ? e.target_node_id : e.target_node_id === current ? e.source_node_id : null;
+      if (next && !visited.has(next)) { visited.add(next); queue.push(next); }
+    }
+  }
+  visited.delete(nodeId);
+  if (visited.size === 0) throw new Error("Connect this node to other nodes first — nothing to summarise yet.");
+
+  const noteStmt = db.prepare("SELECT title, content FROM notes WHERE id = ?");
+  const cardStmt = db.prepare(
+    "SELECT tc.title, tc.description, tc.priority, bc.name as col FROM task_cards tc LEFT JOIN board_columns bc ON tc.column_id = bc.id WHERE tc.id = ?",
+  );
+  const parts: string[] = [];
+  for (const nid of visited) {
+    const nrow = nodes.get(nid);
+    if (!nrow) continue;
+    let data: Record<string, unknown> = {};
+    try { data = JSON.parse(nrow.data as string); } catch { /* empty */ }
+    const type = nrow.type as string;
+    if (type === "idea") {
+      const title = data.title as string | undefined;
+      const body = data.body as string | undefined;
+      parts.push(`[Idea] ${title ?? "Untitled"}${body ? `: ${body}` : ""}`);
+    } else if (type === "note_ref" && data.noteId) {
+      const note = noteStmt.get(data.noteId) as { title: string; content: string } | undefined;
+      if (note) parts.push(`[Note] ${note.title}: ${stripMarkdown(note.content ?? "").slice(0, 600)}`);
+    } else if (type === "task_ref" && data.cardId) {
+      const card = cardStmt.get(data.cardId) as { title: string; description: string; priority: string; col: string } | undefined;
+      if (card) parts.push(`[Task] ${card.title} (${card.priority}, ${card.col})${card.description ? `: ${card.description}` : ""}`);
+    } else if (type === "url") {
+      const title = data.title as string | undefined;
+      const url = data.url as string | undefined;
+      const desc = data.description as string | undefined;
+      parts.push(`[URL] ${title ?? url ?? "Link"}${desc ? `: ${desc}` : ""}`);
+    }
+    // ai_summary peers are reachable but contribute no content.
+  }
+  if (parts.length === 0) {
+    throw new Error("No content found in the connected nodes — add text to the idea, note, or task nodes first.");
+  }
+
+  let projectId: string | undefined;
+  let workspaceId: string | undefined;
+  try {
+    const flow = db.prepare("SELECT project_id FROM idea_flows WHERE id = ?").get(flowId) as { project_id?: string } | undefined;
+    projectId = flow?.project_id;
+    const project = projectId
+      ? db.prepare("SELECT workspace_id FROM projects WHERE id = ?").get(projectId) as { workspace_id?: string } | undefined
+      : undefined;
+    workspaceId = project?.workspace_id;
+  } catch {
+    // best-effort scoping — fall back to unset ids
+  }
+  return { parts, projectId, workspaceId };
+}
