@@ -8,6 +8,7 @@ import { migrateManifest } from "./model-manager";
 import { EmbedRequest, EMBED_DIM } from "../embeddings/types";
 import type { EmbedTask } from "../embeddings/types";
 import { errMsg } from "../host-shared/errors";
+import { readBody, sendJson } from "../lib/http-json";
 
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log" |
@@ -56,33 +57,6 @@ function parseArgs(argv: string[]): {
 }
 
 const MAX_BODY_BYTES = 10_000_000;
-
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    req.on("data", (c: Buffer) => {
-      total += c.length;
-      if (total > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error("payload too large"), { statusCode: 413 }));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
-}
-
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body);
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Content-Length": Buffer.byteLength(payload),
-  });
-  res.end(payload);
-}
 
 class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -141,7 +115,7 @@ async function run(): Promise<void> {
     // ── Embeddings endpoints (in-process) ──
     if (req.method === "POST" && req.url === "/v1/embed") {
       try {
-        const body = await readBody(req);
+        const body = await readBody(req, MAX_BODY_BYTES);
         let parsed: unknown;
         try { parsed = JSON.parse(body); }
         catch { throw new HttpError(400, "invalid JSON body"); }
@@ -167,7 +141,7 @@ async function run(): Promise<void> {
     }
     if (req.method === "POST" && req.url === "/v1/embeddings/models/install") {
       try {
-        const body = await readBody(req);
+        const body = await readBody(req, MAX_BODY_BYTES);
         const { modelId } = JSON.parse(body) as { modelId: string };
         if (!modelId) { sendJson(res, 400, { error: "modelId is required" }); return; }
         await embeddingsAdapter.installModel(modelId);
@@ -179,7 +153,7 @@ async function run(): Promise<void> {
     }
     if (req.method === "POST" && req.url === "/v1/embeddings/models/remove") {
       try {
-        const body = await readBody(req);
+        const body = await readBody(req, MAX_BODY_BYTES);
         const { modelId } = JSON.parse(body) as { modelId: string };
         if (!modelId) { sendJson(res, 400, { error: "modelId is required" }); return; }
         embeddingsAdapter.removeModel(modelId);
@@ -191,7 +165,7 @@ async function run(): Promise<void> {
     }
     if (req.method === "POST" && req.url === "/v1/embeddings/models/setDefault") {
       try {
-        const body = await readBody(req);
+        const body = await readBody(req, MAX_BODY_BYTES);
         const { modelId } = JSON.parse(body) as { modelId: string };
         if (!modelId) { sendJson(res, 400, { error: "modelId is required" }); return; }
         embeddingsAdapter.setDefaultModelId(modelId);
