@@ -7,6 +7,7 @@ import { SessionPane } from "@/components/agent/SessionPane";
 import { PreviewPane } from "./PreviewPane";
 import { cn } from "@/lib/utils";
 import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
+import { useResizableDivider } from "@/hooks/useResizableDivider";
 
 interface UnifiedChatPanelProps {
   prefill?: { text: string; autoSend?: boolean } | null;
@@ -92,69 +93,31 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     return () => ro.disconnect();
   }, [isCenterMode]);
 
-  useEffect(() => {
-    const divider = dividerRef.current;
-    const panel = panelRef.current;
-    if (!divider || !panel) return;
-
-    let dragging = false;
-    let startX = 0;
-    let startW = 0;
-
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging) return;
-      // Panel is on the right; dragging left (lower clientX) makes it wider
-      const next = Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, startW - (e.clientX - startX)));
-      // Write the live width straight to :root so BOTH the fixed panel and the
-      // centered content margin reflow instantly — no React re-render per
-      // mousemove (updating the store per pixel re-renders the whole page tree
-      // and can blow React's nested-update limit).
+  useResizableDivider(dividerRef, {
+    axis: "x",
+    onStart: () => setChatPanelResizing(true),
+    startSize: () => panelRef.current?.offsetWidth ?? 0,
+    onMove: (delta, start) => {
+      // Panel is on the right; dragging left makes it wider. Write the live
+      // width straight to :root so BOTH the fixed panel and the centered
+      // content margin reflow instantly — no React re-render per mousemove
+      // (updating the store per pixel re-renders the whole page tree and can
+      // blow React's nested-update limit).
+      const next = Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, start - delta));
       document.documentElement.style.setProperty("--chat-panel-width", `${next}px`);
-    }
-
-    function onMouseUp() {
-      if (!dragging) return;
-      dragging = false;
+    },
+    onEnd: (interrupted) => {
       setChatPanelResizing(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      const finalWidth = panel!.offsetWidth;
-      setChatPanelWidth(finalWidth);
-    }
-
-    function onMouseDown(e: MouseEvent) {
-      dragging = true;
-      setChatPanelResizing(true);
-      startX = e.clientX;
-      startW = panel!.offsetWidth;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    }
-
-    divider.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
-    return () => {
-      divider.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      // The effect tears down mid-drag when activeView changes (e.g. the user
-      // switches views while resizing) — mouseup never fires. Retain the latest
-      // dragged width, commit it, and clear the resizing flag so the panel
-      // doesn't stay in a half-resized, transition-less state.
-      if (dragging) {
-        dragging = false;
-        setChatPanelResizing(false);
-        const live = document.documentElement.style.getPropertyValue("--chat-panel-width");
-        const parsed = parseInt(live, 10);
-        if (Number.isFinite(parsed)) setChatPanelWidth(parsed);
+      // Interrupted = torn down mid-drag (e.g. the user switched views while
+      // resizing) — the panel may be gone, so commit the last dragged width.
+      if (!interrupted && panelRef.current) {
+        setChatPanelWidth(panelRef.current.offsetWidth);
+        return;
       }
-    };
-  }, [setChatPanelWidth, setChatPanelResizing, activeView]);
+      const parsed = parseInt(document.documentElement.style.getPropertyValue("--chat-panel-width"), 10);
+      if (Number.isFinite(parsed)) setChatPanelWidth(parsed);
+    },
+  }, [activeView]);
 
   // Determine positioning coordinates. Both modes pin explicit left+width so
   // mode switches slide (see above); drawer open/close stays a slide+fade via

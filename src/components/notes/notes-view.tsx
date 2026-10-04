@@ -33,6 +33,7 @@ import { DialogClose } from "@/components/ui/dialog";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { excerptFor } from "@/lib/note-text";
+import { useResizableDivider } from "@/hooks/useResizableDivider";
 
 // ── NotesView orchestrator ──────────────────────────────────────────────────
 
@@ -105,50 +106,15 @@ export function NotesView() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const sidebarDividerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const divider = sidebarDividerRef.current;
-    const panel = sidebarRef.current;
-    if (!divider || !panel) return;
-
-    let dragging = false;
-    let startX = 0;
-    let startW = 0;
-
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging) return;
-      const next = Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, startW + (e.clientX - startX)));
-      panel!.style.width = `${next}px`;
-    }
-
-    function onMouseUp() {
-      if (!dragging) return;
-      dragging = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      setNotesSidebarWidth(panel!.offsetWidth);
-    }
-
-    function onMouseDown(e: MouseEvent) {
-      dragging = true;
-      startX = e.clientX;
-      startW = panel!.offsetWidth;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    }
-
-    divider.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
-    return () => {
-      divider.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [setNotesSidebarWidth]);
+  useResizableDivider(sidebarDividerRef, {
+    axis: "x",
+    startSize: () => sidebarRef.current?.offsetWidth ?? 0,
+    onMove: (delta, start) => {
+      const next = Math.min(MAX_NOTES_SIDEBAR_WIDTH, Math.max(MIN_NOTES_SIDEBAR_WIDTH, start + delta));
+      if (sidebarRef.current) sidebarRef.current.style.width = `${next}px`;
+    },
+    onEnd: () => { if (sidebarRef.current) setNotesSidebarWidth(sidebarRef.current.offsetWidth); },
+  });
 
   // Folder collapse state is persisted per-project in the store (keyed by
   // `${projectId}:${lowercasedPath}`). Derive a plain-path map for the ACTIVE
