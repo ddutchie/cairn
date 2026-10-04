@@ -44,7 +44,7 @@ export function EnvEditor({
   const [reveal, setReveal] = useState(false);
 
   const load = useCallback(async () => {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     setLoading(true);
     setError(null);
     try {
@@ -83,7 +83,7 @@ export function EnvEditor({
   const visible = useMemo(() => rows.filter((r) => !r.removed), [rows]);
 
   const save = async () => {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     setSaving(true);
     setError(null);
     try {

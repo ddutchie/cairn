@@ -24,7 +24,7 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleGenerate = useCallback(async () => {
-    if (!hasElectron()) return;
+    if (!hasElectron("flow")) return;
     setStatus("loading");
     setErrorMsg(null);
 

@@ -262,7 +262,7 @@ function UrlEditor({
   const [fetchError, setFetchError] = useState("");
 
   async function fetchMeta() {
-    if (!url || !hasElectron()) return;
+    if (!url || !hasElectron("flow")) return;
     setFetching(true);
     setFetchError("");
     try {

@@ -8,9 +8,9 @@ import type {
   FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch, IdeaFlowEdge, IdeaFlowNode,
   ResolvedIdeaFlow, UrlMetadata,
 } from "../../../shared/types/flow";
-import { electronCall, persist, type ElectronApi } from "./client";
+import { domainCall, persist, type ElectronApi } from "./client";
 
-const flow = <T>(fn: (api: ElectronApi["flow"]) => Promise<T>) => electronCall((e) => fn(e.flow));
+const flow = <T>(fn: (api: ElectronApi["flow"]) => Promise<T>) => domainCall("flow", fn);
 
 export const flowClient = {
   get: (projectId: string): Promise<ResolvedIdeaFlow> => flow((f) => f.get(projectId)),

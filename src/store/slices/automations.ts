@@ -92,7 +92,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchAutomations(workspaceId) {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     try {
       const rows = await automationsClient.list(workspaceId);
       if (get().activeWorkspaceId && get().activeWorkspaceId !== workspaceId) return;
@@ -103,7 +103,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async createAutomation(input) {
-    if (!hasElectron()) return null;
+    if (!hasElectron("automation")) return null;
     try {
       const saved = await automationsClient.create(input);
       set((s) => ({ automations: [...s.automations, saved] }));
@@ -115,7 +115,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async updateAutomation(automationId, patch) {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     try {
       const saved = await automationsClient.update(automationId, patch);
       if (!saved) return;
@@ -128,7 +128,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async deleteAutomation(automationId) {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     try {
       await automationsClient.delete(automationId);
       set((s) => ({
@@ -141,7 +141,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async runNow(automationId) {
-    if (!hasElectron()) return false;
+    if (!hasElectron("automation")) return false;
     try {
       const res = await automationsClient.runNow(automationId);
       if ("runId" in res) {
@@ -160,7 +160,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchRun(automationId) {
-    if (!hasElectron()) return undefined;
+    if (!hasElectron("automation")) return undefined;
     try {
       const runs = await automationsClient.runs(automationId, 1);
       const run = runs[0];
@@ -173,7 +173,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchRuns(automationId, limit = 20) {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     try {
       const runs = await automationsClient.runs(automationId, limit);
       set((s) => ({ runsById: { ...s.runsById, [automationId]: runs } }));
@@ -183,7 +183,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchRecentProjectRuns(workspaceId, projectId, limit = 8) {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     // Clear the previous project's rows immediately so the Overview never shows
     // stale runs while the new project's fetch is in flight (or if it fails).
     if (get().activeWorkspaceId === workspaceId && get().activeProjectId === projectId) {
@@ -201,7 +201,7 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchRunningCount() {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     try {
       const n = await automationsClient.runningCount();
       set({ runningAutomationCount: n });

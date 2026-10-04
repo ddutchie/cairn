@@ -6,9 +6,9 @@
 import type {
   GitBranchList, GitFileDiff, GitLogEntry, GitPrStatus, GitStashAction, GitStatus,
 } from "../../../shared/types/git";
-import { electronCall, type ElectronApi } from "./client";
+import { domainCall, type ElectronApi } from "./client";
 
-const git = <T>(fn: (api: ElectronApi["git"]) => Promise<T>) => electronCall((e) => fn(e.git));
+const git = <T>(fn: (api: ElectronApi["git"]) => Promise<T>) => domainCall("git", fn);
 
 export const gitClient = {
   status: (cwd: string): Promise<GitStatus> => git((g) => g.status(cwd)),

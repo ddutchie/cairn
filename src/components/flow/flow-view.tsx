@@ -29,7 +29,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType } from "@/types";
 import { flowClient, persistFlow } from "@/lib/ipc/flow";
-import { reportIpcError } from "@/lib/ipc/client";
+import { IpcUnavailableError, reportIpcError } from "@/lib/ipc/client";
 import { historyManager, flowHandlers } from "@/lib/history";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
 import {
@@ -160,7 +160,7 @@ function IdeaFlowCanvas() {
       // Background reloads (change feed, after an edit) retry on the next
       // change; only a failed first load is worth a toast.
       if (isInitial) reportIpcError(err, "Couldn't load the Idea Flow");
-      else console.error("[flow] reload failed", err);
+      else if (!(err instanceof IpcUnavailableError)) console.error("[flow] reload failed", err);
     } finally {
       if (isInitial) setLoading(false);
     }

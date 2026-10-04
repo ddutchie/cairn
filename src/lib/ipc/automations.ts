@@ -8,9 +8,9 @@ import type {
   Automation, AutomationEnvSpec, AutomationInput, AutomationPatch, AutomationRun, AutomationRunEvent,
   AutomationRunWithAutomation, RunLog,
 } from "../../../shared/types/automations";
-import { electronCall, type ElectronApi } from "./client";
+import { domainCall, type ElectronApi } from "./client";
 
-const automation = <T>(fn: (api: ElectronApi["automation"]) => Promise<T>) => electronCall((e) => fn(e.automation));
+const automation = <T>(fn: (api: ElectronApi["automation"]) => Promise<T>) => domainCall("automation", fn);
 
 export const automationsClient = {
   list: (workspaceId: string): Promise<Automation[]> => automation((a) => a.list(workspaceId)),

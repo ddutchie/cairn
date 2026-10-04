@@ -18,9 +18,14 @@ export class IpcUnavailableError extends Error {
   }
 }
 
-/** True when running inside Electron with the preload bridge attached. */
-export function hasElectron(): boolean {
-  return typeof window !== "undefined" && !!window.electron;
+/**
+ * True when running inside Electron with the preload bridge attached — and,
+ * when `domain` is given, when the bridge exposes that namespace (test and
+ * web shims only stub some of them).
+ */
+export function hasElectron(domain?: keyof ElectronApi): boolean {
+  if (typeof window === "undefined" || !window.electron) return false;
+  return domain === undefined || window.electron[domain] != null;
 }
 
 /** The preload bridge, or throws `IpcUnavailableError`. */
@@ -39,6 +44,21 @@ export function electronCall<T>(fn: (api: ElectronApi) => Promise<T>): Promise<T
   } catch (err) {
     return Promise.reject(err);
   }
+}
+
+/**
+ * `electronCall` scoped to one bridge namespace; a bridge without that
+ * namespace counts as unavailable too.
+ */
+export function domainCall<K extends keyof ElectronApi, T>(
+  domain: K,
+  fn: (api: NonNullable<ElectronApi[K]>) => Promise<T>,
+): Promise<T> {
+  return electronCall((e) => {
+    const api = e[domain];
+    if (api == null) throw new IpcUnavailableError();
+    return fn(api as NonNullable<ElectronApi[K]>);
+  });
 }
 
 /** A user-facing message for a rejected IPC call. */

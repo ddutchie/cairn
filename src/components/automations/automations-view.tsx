@@ -277,7 +277,7 @@ export function AutomationsView() {
 
   /** Apply the agent-authored manifest.json (instructions / env schema) to the row. */
   async function syncFromManifest(a: Automation) {
-    if (!hasElectron()) return;
+    if (!hasElectron("automation")) return;
     setSyncing(true);
     setSyncStatus(null);
     try {
