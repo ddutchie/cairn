@@ -55,7 +55,7 @@ const NOTE_TOOLS = new Set([
   "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template", "create_note",
 ]);
 const TASK_TOOLS = new Set([
-  "get_task", "create_task", "update_task", "update_task_status",
+  "get_task", "create_task", "update_task", "update_task_status", "claim_task", "add_task_progress",
 ]);
 
 export function extractCairnRef(
