@@ -12,6 +12,9 @@ import type { SessionProjection } from "../shared/agent/session-projection";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEvents } from "../shared/ipc/contract";
 import type { ChatPopoutPayload } from "../shared/agent/chat-popout";
 import type { NoteCreateInput, NotePatch } from "../shared/types/notes";
+import type {
+  AutomationInput, AutomationPatch, AutomationRequirement, AutomationRunEvent,
+} from "../shared/types/automations";
 import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 
@@ -344,57 +347,41 @@ const api = {
 
   // ── Heartbeat automations ─────────────────────
   automation: {
-    list:   (workspaceId: string) => invoke("db:automation:list", { workspaceId }),
-    get:    (id: string) => invoke("db:automation:get", { id }),
-    create: (args: unknown) => invoke("db:automation:create", args),
-    update: (id: string, patch: unknown) => invoke("db:automation:update", { id, patch }),
-    delete: (id: string) => invoke("db:automation:delete", { id }),
-    runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
-    recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
-    runNow: (id: string) => invoke("db:automation:runNow", { id }),
+    list:   (workspaceId: string) => invokeContract("db:automation:list", { workspaceId }),
+    get:    (id: string) => invokeContract("db:automation:get", { id }),
+    create: (input: AutomationInput) => invokeContract("db:automation:create", input),
+    update: (id: string, patch: AutomationPatch) => invokeContract("db:automation:update", { id, patch }),
+    delete: (id: string) => invokeContract("db:automation:delete", { id }),
+    runs:   (automationId: string, limit?: number) => invokeContract("db:automation:runs", { automationId, limit }),
+    recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) =>
+      invokeContract("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
+    runNow: (id: string) => invokeContract("db:automation:runNow", { id }),
     /** Daily automation budget (USD) + today's recorded automation spend. */
     budget: {
-      get: () => invoke<{ budgetUsd: number | null; spentTodayUsd: number } | { error: string }>("db:automation:budget:get", {}),
-      set: (usd: number | null) => invoke<{ budgetUsd: number | null } | { error: string }>("db:automation:budget:set", { usd }),
+      get: () => invokeContract("db:automation:budget:get"),
+      set: (usd: number | null) => invokeContract("db:automation:budget:set", { usd }),
     },
-    runningCount: () => invoke("db:automation:runningCount"),
+    runningCount: () => invokeContract("db:automation:runningCount"),
     /** Approve/deny a pending tool approval for a running automation (Cordis). */
-    approve: (callId: string, approved: boolean, grant?: "session" | "always") => invoke("automation:approve", { callId, approved, grant }),
-    folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
-    syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
-    files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
-    runLog: (runId: string) => invoke<{ log: unknown } | { error: string }>("db:automation:runLog", { runId }),
+    approve: (callId: string, approved: boolean, grant?: "session" | "always") =>
+      invokeContract("automation:approve", { callId, approved, grant }),
+    folder: (id: string) => invokeContract("db:automation:folder", { id }),
+    syncFromManifest: (id: string) => invokeContract("db:automation:syncFromManifest", { id }),
+    files: (id: string) => invokeContract("db:automation:files", { id }),
+    runLog: (runId: string) => invokeContract("db:automation:runLog", { runId }),
     /** Live run activity (tokens/tools/thought) for the "watch this run" view. */
-    onRunEvent: (cb: (payload: {
-      event: "started" | "token" | "thought" | "tool" | "toolDone" | "toolConfirmRequired" | "approval" | "finished";
-      automationId: string;
-      runId: string;
-      delta?: string;
-      tool?: string;
-      label?: string;
-      args?: Record<string, unknown>;
-      status?: "start" | "end";
-      ok?: boolean;
-      output?: string;
-      error?: string;
-      recipe?: string;
-      content?: string;
-      exhausted?: boolean;
-      callId?: string;
-    }) => void) => {
-      const handler = (_e: unknown, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("automation:run", handler);
-      return () => { ipcRenderer.removeListener("automation:run", handler); };
-    },
+    onRunEvent: (cb: (payload: AutomationRunEvent) => void) => onIpcEvent("automation:run", cb),
     env: {
-      get: (automationId: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env", { automationId }),
-      set: (automationId: string, name: string, value: string, secret: boolean) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:set", { automationId, name, value, secret }),
-      delete: (automationId: string, name: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:delete", { automationId, name }),
+      get: (automationId: string) => invokeContract("db:automation:env", { automationId }),
+      set: (automationId: string, name: string, value: string, secret: boolean) =>
+        invokeContract("db:automation:env:set", { automationId, name, value, secret }),
+      delete: (automationId: string, name: string) => invokeContract("db:automation:env:delete", { automationId, name }),
     },
     /** Installed/attached status per required connector (New Automation browse guard). */
-    checkRequirements: (workspaceId: string, projectId: string, requires: Array<{ kind: "mcp" | "service"; name: string }>) =>
-      invoke<Array<{ kind: "mcp" | "service"; name: string; installed: boolean; attached: boolean }>>("db:automation:checkRequirements", { workspaceId, projectId, requires }),
-    preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) => invoke("db:automation:preview", { scheduleKind, scheduleExpr, timezone }),
+    checkRequirements: (workspaceId: string, projectId: string, requires: AutomationRequirement[]) =>
+      invokeContract("db:automation:checkRequirements", { workspaceId, projectId, requires }),
+    preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) =>
+      invokeContract("db:automation:preview", { scheduleKind, scheduleExpr, timezone }),
   },
 
   // ── Approval inbox ────────────────────────────

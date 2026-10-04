@@ -20,6 +20,10 @@ import type {
   GitBranchList, GitFileDiff, GitLogEntry, GitPathSelection, GitPrStatus, GitStashAction, GitStatus,
 } from "../types/git";
 import type {
+  Automation, AutomationEnvSpec, AutomationFolderFile, AutomationInput, AutomationPatch, AutomationRequirement,
+  AutomationRun, AutomationRunEvent, AutomationRunWithAutomation, RequirementStatus, RunLog,
+} from "../types/automations";
+import type {
   FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch, IdeaFlowEdge, IdeaFlowNode,
   ResolvedIdeaFlow, UrlMetadata,
 } from "../types/flow";
@@ -84,6 +88,56 @@ export interface IpcContract {
   /** OpenGraph title/description for a url node (fetched in main, no CORS). */
   "db:flow:url:fetch": { args: [req: { url: string }]; result: UrlMetadata };
 
+  // ── Heartbeat automations ────────────────────────────────────────────────
+  "db:automation:list": { args: [req: { workspaceId: string }]; result: Automation[] };
+  "db:automation:get": { args: [req: { id: string }]; result: Automation | null };
+  /** Rejects when the schedule is invalid or has no future run. */
+  "db:automation:create": { args: [input: AutomationInput]; result: Automation };
+  "db:automation:update": { args: [req: { id: string; patch: AutomationPatch }]; result: Automation | null };
+  /** Removes the folder and keychain secrets before the row; rejects (keeping the row) if cleanup fails. */
+  "db:automation:delete": { args: [req: { id: string }]; result: { ok: boolean; deleted: boolean } };
+  "db:automation:runs": { args: [req: { automationId: string; limit?: number }]; result: AutomationRun[] };
+  "db:automation:recentRuns": {
+    args: [req: { workspaceId: string; projectId?: string | null; limit?: number }];
+    result: AutomationRunWithAutomation[];
+  };
+  "db:automation:runningCount": { args: []; result: number };
+  "db:automation:checkRequirements": {
+    args: [req: { workspaceId: string; projectId?: string | null; requires: AutomationRequirement[] }];
+    result: RequirementStatus[];
+  };
+  /** Daily budget (USD, null = none) and today's recorded automation spend. */
+  "db:automation:budget:get": { args: []; result: { budgetUsd: number | null; spentTodayUsd: number } };
+  "db:automation:budget:set": { args: [req: { usd: number | null }]; result: { budgetUsd: number | null } };
+  /** `skipped` when the automation is already running. */
+  "db:automation:runNow": { args: [req: { id: string }]; result: { runId: string } | { skipped: true } };
+  /** Approve/deny a tool call a running automation is waiting on. */
+  "automation:approve": {
+    args: [req: { callId: string; approved: boolean; grant?: "session" | "always" }];
+    result: void;
+  };
+  /** The automation's folder, created and populated if needed (Develop cwd). */
+  "db:automation:folder": { args: [req: { id: string }]; result: { folder: string } };
+  "db:automation:files": { args: [req: { id: string }]; result: { files: AutomationFolderFile[] } };
+  "db:automation:runLog": { args: [req: { runId: string }]; result: { log: RunLog } };
+  /** Apply the folder's manifest.json to the row; `dropped` lists rules that were unsafe to keep. */
+  "db:automation:syncFromManifest": {
+    args: [req: { id: string }];
+    result: { automation: Automation; dropped: string[] };
+  };
+  "db:automation:env": { args: [req: { automationId: string }]; result: AutomationEnvSpec[] };
+  /** Secret values go to the keychain only; returns the updated env spec. */
+  "db:automation:env:set": {
+    args: [req: { automationId: string; name: string; value: string; secret: boolean }];
+    result: AutomationEnvSpec[];
+  };
+  "db:automation:env:delete": { args: [req: { automationId: string; name: string }]; result: AutomationEnvSpec[] };
+  /** Next fire time for a proposed schedule (null when there's none). */
+  "db:automation:preview": {
+    args: [req: { scheduleKind?: string; scheduleExpr: string; timezone?: string | null }];
+    result: { nextRunAt: string | null };
+  };
+
   // ── Git (cwd must sit inside a project's code directory) ─────────────────
   "git:status": { args: [req: { cwd: string }]; result: GitStatus };
   "git:branches": { args: [req: { cwd: string }]; result: GitBranchList };
@@ -116,6 +170,7 @@ export interface IpcContract {
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
 export interface IpcEvents {
+  "automation:run": AutomationRunEvent;
   "chat:poppedIn": { sessionId: string };
   "chat:poppedOutClosed": undefined;
   "chat:sessionUpdated": ChatPopoutPayload;
@@ -158,6 +213,27 @@ const CHANNELS: ChannelRecord = {
   "db:flow:edge:create": true,
   "db:flow:edge:delete": true,
   "db:flow:url:fetch": true,
+  "db:automation:list": true,
+  "db:automation:get": true,
+  "db:automation:create": true,
+  "db:automation:update": true,
+  "db:automation:delete": true,
+  "db:automation:runs": true,
+  "db:automation:recentRuns": true,
+  "db:automation:runningCount": true,
+  "db:automation:checkRequirements": true,
+  "db:automation:budget:get": true,
+  "db:automation:budget:set": true,
+  "db:automation:runNow": true,
+  "automation:approve": true,
+  "db:automation:folder": true,
+  "db:automation:files": true,
+  "db:automation:runLog": true,
+  "db:automation:syncFromManifest": true,
+  "db:automation:env": true,
+  "db:automation:env:set": true,
+  "db:automation:env:delete": true,
+  "db:automation:preview": true,
   "git:status": true,
   "git:branches": true,
   "git:checkout": true,

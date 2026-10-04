@@ -8,6 +8,13 @@ import { DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Automation } from "@/store/slices/automations";
+import { automationsClient } from "@/lib/ipc/automations";
+import { persist } from "@/lib/ipc/client";
+
+/** Answer the tool call the run is waiting on; a failure shows a toast. */
+function sendApproval(callId: string, approved: boolean, grant?: "always") {
+  persist(automationsClient.approve(callId, approved, grant), "Couldn't send the approval");
+}
 
 /**
  * RunWatcherModal — "step into" a running automation. Subscribes to the live
@@ -43,9 +50,9 @@ export function RunWatcherModal({
 
   useEffect(() => {
     setRecipe(null); setAssistant(""); setThought(""); setTools([]); setFinished(false); setApproval(null); /* eslint-disable-line react-hooks/set-state-in-effect */
-    if (!runId || !window.electron?.automation.onRunEvent) return;
+    if (!runId) return;
     const toolSeq = { n: 0 };
-    return window.electron.automation.onRunEvent((e) => {
+    return automationsClient.onRunEvent((e) => {
       if (e.runId !== runId) return;
       switch (e.event) {
         case "started": setRecipe(e.recipe ?? ""); break;
@@ -165,13 +172,13 @@ export function RunWatcherModal({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => { window.electron?.automation.approve(approval.callId, true); setApproval(null); }}>
+              <Button size="sm" onClick={() => { sendApproval(approval.callId, true); setApproval(null); }}>
                 Approve
               </Button>
-              <Button size="sm" variant="outline" onClick={() => { window.electron?.automation.approve(approval.callId, true, "always"); setApproval(null); }}>
+              <Button size="sm" variant="outline" onClick={() => { sendApproval(approval.callId, true, "always"); setApproval(null); }}>
                 Always allow
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { window.electron?.automation.approve(approval.callId, false); setApproval(null); }}>
+              <Button size="sm" variant="ghost" onClick={() => { sendApproval(approval.callId, false); setApproval(null); }}>
                 Deny
               </Button>
             </div>

@@ -9,22 +9,14 @@
 
 import type Database from "better-sqlite3";
 import { newId, ts } from "./utils";
+import type {
+  Automation, AutomationEnv, AutomationInput as SharedAutomationInput, AutomationRequirement, AutomationRun,
+  AutomationRunStatus, AutomationRunWithAutomation,
+} from "../../shared/types/automations";
 
-export interface AutomationRequirement {
-  kind: "mcp" | "service";
-  name: string;
-}
-
-/**
- * An automation env var. Non-secret values are stored inline; secret entries
- * keep `value` null and the real value lives in the OS keychain (secure-store,
- * kind "automation"), resolved only in the main process at run time.
- */
-export interface AutomationEnv {
-  name: string;
-  value?: string | null;
-  secret: boolean;
-}
+export type {
+  Automation, AutomationEnv, AutomationRequirement, AutomationRun, AutomationRunStatus, AutomationRunWithAutomation,
+};
 
 /**
  * Normalise env for persistence: a secret's actual value must NEVER reach the
@@ -35,55 +27,6 @@ export interface AutomationEnv {
  */
 export function normalizeEnvForPersistence(env: AutomationEnv[]): AutomationEnv[] {
   return env.map((e) => (e.secret ? { name: e.name, secret: true } : e));
-}
-
-export interface Automation {
-  id: string;
-  workspaceId: string;
-  projectId: string | null;
-  name: string;
-  description: string;
-  instructions: string;
-  scheduleKind: "cron" | "every" | "once";
-  scheduleExpr: string;
-  timezone: string | null;
-  nextRunAt: string;
-  enabled: boolean;
-  maxRuns: number | null;
-  runCount: number;
-  approvalMode: "auto" | "ask";
-  /** Optional "HH:MM" window — the scheduler only fires runs inside it. */
-  activeHoursStart: string | null;
-  activeHoursEnd: string | null;
-  standingRules: Array<{ tool: string; target?: string }>;
-  /**
-   * External connectors (MCP servers / HTTP services) the automation needs in
-   * scope. Empty = data-only automation. Drives the runner's extraTools and the
-   * default external-tool approval gating.
-   */
-  requires: AutomationRequirement[];
-  /** Env vars exposed to scripts; secrets live in the keychain, not here. */
-  env: AutomationEnv[];
-  source: "custom" | "community";
-  communityId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type AutomationRunStatus = "pending" | "running" | "done" | "exhausted" | "denied" | "error" | "skipped";
-
-export interface AutomationRun {
-  id: string;
-  automationId: string;
-  status: AutomationRunStatus;
-  resultNoteId: string | null;
-  startedAt: string;
-  finishedAt: string | null;
-  error: string | null;
-  scratch: string | null;
-  /** Absolute path to this run's working folder (<project>/.automations/<id>/runs/<runId>/). */
-  runDir: string | null;
-  createdAt: string;
 }
 
 type Row = Record<string, unknown>;
@@ -163,28 +106,8 @@ function parseEnv(raw: unknown): AutomationEnv[] {
   return out;
 }
 
-export interface AutomationInput {
-  workspaceId: string;
-  projectId?: string | null;
-  name: string;
-  description?: string;
-  instructions: string;
-  scheduleKind: Automation["scheduleKind"];
-  scheduleExpr: string;
-  nextRunAt: string;
-  timezone?: string | null;
-  enabled?: boolean;
-  maxRuns?: number | null;
-  runCount?: number;
-  approvalMode?: "auto" | "ask";
-  activeHoursStart?: string | null;
-  activeHoursEnd?: string | null;
-  standingRules?: Array<{ tool: string; target?: string }>;
-  requires?: AutomationRequirement[];
-  env?: AutomationEnv[];
-  source?: "custom" | "community";
-  communityId?: string | null;
-}
+/** Create input once main has resolved `nextRunAt` (see `db:automation:create`). */
+export type AutomationInput = Omit<SharedAutomationInput, "nextRunAt"> & { nextRunAt: string; runCount?: number };
 
 export function createAutomation(db: Database.Database, input: AutomationInput): Automation {
   const id = newId();
@@ -340,16 +263,6 @@ export function listAutomationRuns(db: Database.Database, automationId: string, 
   return rows.map(toRun);
 }
 
-/**
- * A run row joined with its parent automation's name + project, for the
- * Overview "Recent run results" feed. The feed lives on the project
- * Overview and needs the automation name to render each row without an
- * N+1 lookup by the renderer.
- */
-export interface AutomationRunWithAutomation extends AutomationRun {
-  automationName: string;
-  automationProjectId: string | null;
-}
 
 /**
  * Recent runs across all automations scoped to `workspaceId` (and an optional

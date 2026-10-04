@@ -23,6 +23,8 @@ describe("typed IPC contract", () => {
     const call = (fn: string) => new RegExp(`\\b${fn}(<[^>]*>)?\\(\\s*"${channel}"`);
     expect(sources).toMatch(call("registerContractHandle"));
     expect(sources).not.toMatch(call("registerIpcHandle"));
+    // preload invokes every contract channel, and an invoke never reaches an ipcMain.on listener.
+    expect(sources).not.toMatch(call("registerIpcOn"));
   });
 
   it.each(IPC_CONTRACT_CHANNELS)("%s is called through invokeContract in preload", (channel) => {

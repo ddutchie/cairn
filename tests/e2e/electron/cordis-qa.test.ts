@@ -311,15 +311,17 @@ test.describe("Cordis loops in the real Electron app", () => {
         name: "QA Heartbeat",
         description: "Automation QA test",
         instructions: "List the notes in this project and summarise their titles in one line.",
-        scheduleKind: "manual",
+        // Not a real schedule kind: nextRunAt is given so it's never parsed,
+        // and the test fires the run itself with runNow.
+        scheduleKind: "manual" as string as "once",
         scheduleExpr: "manual",
         nextRunAt: new Date().toISOString(),
         approvalMode: "auto",
         source: "custom",
-      }).then((res: unknown) => {
-        const data = (res as { data?: { id?: string } }).data;
-        if (!data?.id) throw new Error("Automation create returned no id: " + JSON.stringify(res));
-        return { automationId: data.id };
+      }).then((automation) => {
+        // preload unwraps the { data } envelope, so this is the saved row.
+        if (!automation?.id) throw new Error("Automation create returned no id: " + JSON.stringify(automation));
+        return { automationId: automation.id };
       });
     }, { wsId, projectId });
 
@@ -331,7 +333,7 @@ test.describe("Cordis loops in the real Electron app", () => {
           if (e.event === "finished") {
             clearTimeout(timer);
             unsub();
-            resolve({ ok: true, error: (e as { error?: string }).error });
+            resolve({ ok: true, error: e.error });
           }
         });
         el.automation.runNow(automationId);

@@ -1,6 +1,6 @@
 /** Heartbeat automations: CRUD, runs, folder/manifest, env vars. Split out of db-handlers.ts. */
 
-import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import {
@@ -16,7 +16,6 @@ import {
   setAutomationDailyBudget,
   automationSpendSince,
   type AutomationEnv,
-  type AutomationInput,
 } from "../db/automation-queries";
 import { runAutomationNow, resolveAutomationApproval } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
@@ -29,25 +28,25 @@ import { errMsg } from "../host-shared/errors";
 
 export function registerAutomationHandlers(ctx: DbContext): void {
   // ── Heartbeat automations ─────────────────────────
-  registerIpcHandle("db:automation:list", (_e, { workspaceId }) => handle(() => listAutomations(ctx.db, workspaceId)));
-  registerIpcHandle("db:automation:get", (_e, { id }) => handle(() => getAutomationById(ctx.db, id)));
-  registerIpcHandle("db:automation:create", (_e, args: AutomationInput) => handle(() => {
-    const input = { ...args };
-    if (!input.nextRunAt) {
+  registerContractHandle("db:automation:list", (_e, { workspaceId }) => handle(() => listAutomations(ctx.db, workspaceId)));
+  registerContractHandle("db:automation:get", (_e, { id }) => handle(() => getAutomationById(ctx.db, id)));
+  registerContractHandle("db:automation:create", (_e, input) => handle(() => {
+    let nextRunAt = input.nextRunAt;
+    if (!nextRunAt) {
       try {
         const next = computeNextRun(parseSchedule(input.scheduleExpr), new Date(), input.timezone ?? undefined);
         // A schedule with no future occurrence (e.g. a 'once' in the past) is
         // created disabled rather than "due now" (which would fire once then
         // disable itself).
-        if (!next) return { error: "Schedule has no future run time." };
-        input.nextRunAt = next.toISOString();
+        if (!next) throw new Error("Schedule has no future run time.");
+        nextRunAt = next.toISOString();
       } catch (err) {
-        return { error: err instanceof Error ? err.message : "Invalid schedule expression." };
+        throw new Error(err instanceof Error ? err.message : "Invalid schedule expression.");
       }
     }
-    return createAutomation(ctx.db, input);
+    return createAutomation(ctx.db, { ...input, nextRunAt });
   }));
-  registerIpcHandle("db:automation:update", (_e, { id, patch }: { id: string; patch: Partial<Omit<AutomationInput, "workspaceId">> }) => handle(() => {
+  registerContractHandle("db:automation:update", (_e, { id, patch }) => handle(() => {
     // Recompute next_run_at when the schedule/timezone changes.
     if (patch.scheduleKind !== undefined || patch.scheduleExpr !== undefined || patch.timezone !== undefined) {
       const existing = getAutomationById(ctx.db, id);
@@ -67,7 +66,7 @@ export function registerAutomationHandlers(ctx: DbContext): void {
     }
     return updateAutomation(ctx.db, id, patch);
   }));
-  registerIpcHandle("db:automation:delete", (_e, { id }) => handle(() => {
+  registerContractHandle("db:automation:delete", (_e, { id }) => handle(() => {
     // Retry-safe ordering (issue #133): the DB row is the only handle back to
     // the automation's folder + keychain secrets, so both cleanups must succeed
     // BEFORE the row is removed. A cleanup failure throws (surfaced as
@@ -85,43 +84,44 @@ export function registerAutomationHandlers(ctx: DbContext): void {
       },
     });
   }));
-  registerIpcHandle("db:automation:runs", (_e, { automationId, limit }: { automationId: string; limit?: number }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
-  registerIpcHandle("db:automation:recentRuns", (_e, { workspaceId, projectId, limit }: { workspaceId: string; projectId?: string | null; limit?: number }) => handle(() => listRecentAutomationRuns(ctx.db, workspaceId, projectId ?? null, limit ?? 10)));
-  registerIpcHandle("db:automation:runningCount", () => handle(() => countRunningAutomationRuns(ctx.db)));
-  registerIpcHandle("db:automation:checkRequirements", (_e, { workspaceId, projectId, requires }: { workspaceId: string; projectId?: string | null; requires: Array<{ kind: "mcp" | "service"; name: string }> }) =>
+  registerContractHandle("db:automation:runs", (_e, { automationId, limit }) => handle(() => listAutomationRuns(ctx.db, automationId, limit)));
+  registerContractHandle("db:automation:recentRuns", (_e, { workspaceId, projectId, limit }) => handle(() => listRecentAutomationRuns(ctx.db, workspaceId, projectId ?? null, limit ?? 10)));
+  registerContractHandle("db:automation:runningCount", () => handle(() => countRunningAutomationRuns(ctx.db)));
+  registerContractHandle("db:automation:checkRequirements", (_e, { workspaceId, projectId, requires }) =>
     handle(() => checkRequirements(ctx.db, workspaceId, projectId ?? "", requires)),
   );
-  registerIpcHandle("db:automation:budget:get", () => handle(() => {
+  registerContractHandle("db:automation:budget:get", () => handle(() => {
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
     return { budgetUsd: getAutomationDailyBudget(ctx.db), spentTodayUsd: automationSpendSince(ctx.db, dayStart.getTime()) };
   }));
-  registerIpcHandle("db:automation:budget:set", (_e, { usd }: { usd: number | null }) =>
+  registerContractHandle("db:automation:budget:set", (_e, { usd }) =>
     handle(() => ({ budgetUsd: setAutomationDailyBudget(ctx.db, typeof usd === "number" ? usd : null) })));
-  registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
+  registerContractHandle("db:automation:runNow", (_e, { id }) => handle(() => {
     const runId = runAutomationNow({
       db: ctx.db,
       workspacePath: ctx.workspacePath,
       send: (channel, payload) => broadcastEvent(channel, payload),
     }, id);
-    return runId === null ? { skipped: true } : { runId };
+    return runId === null ? { skipped: true as const } : { runId };
   }));
 
   // Resolve a pending tool approval for a running automation (Cordis engine).
   // The renderer fires this when the user approves/denies a gated tool; it
   // resolves the coding agent's approval seam. grant "session" remembers for
   // the turn; "always" persists an "always allow" standing rule on the automation.
-  registerIpcOn("automation:approve", (_e, { callId, approved, grant }: { callId: string; approved: boolean; grant?: "session" | "always" }) => {
-    resolveAutomationApproval(callId, approved, grant);
-  });
+  // A handle (not ipcMain.on): preload invokes it, and an invoke never reaches
+  // an `on` listener — approvals from the run watcher used to be dropped.
+  registerContractHandle("automation:approve", (_e, { callId, approved, grant }) =>
+    handle(() => resolveAutomationApproval(callId, approved, grant)));
 
   // The automation's folder on disk (<project>/.automations/<id>/) — the dev
   // agent's cwd when building/testing the automation's scripts. The folder is
   // CREATED here (scripts/ + out/ + .env + manifest) so a Develop session on a
   // never-run automation sees a real, populated workspace.
-  registerIpcHandle("db:automation:folder", (_e, { id }: { id: string }) => handle(() => {
+  registerContractHandle("db:automation:folder", (_e, { id }) => handle(() => {
     const a = getAutomationById(ctx.db, id);
-    if (!a) return { error: "Automation not found." };
+    if (!a) throw new Error("Automation not found.");
     const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
     const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
     try {
@@ -134,38 +134,38 @@ export function registerAutomationHandlers(ctx: DbContext): void {
   }));
 
   // File tree of the automation folder — for the Develop modal's "files" panel.
-  registerIpcHandle("db:automation:files", (_e, { id }: { id: string }) => handle(() => {
+  registerContractHandle("db:automation:files", (_e, { id }) => handle(() => {
     const a = getAutomationById(ctx.db, id);
-    if (!a) return { error: "Automation not found." };
+    if (!a) throw new Error("Automation not found.");
     const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
     const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
     return { files: listAutomationFolderFiles(folder) };
   }));
 
   // A run's persisted transcript (run-log.json in its run folder).
-  registerIpcHandle("db:automation:runLog", (_e, { runId }: { runId: string }) => handle(() => {
+  registerContractHandle("db:automation:runLog", (_e, { runId }) => handle(() => {
     const run = getAutomationRunById(ctx.db, runId);
-    if (!run || !run.runDir) return { error: "No run folder for this run." };
+    if (!run || !run.runDir) throw new Error("No run folder for this run.");
     const log = readRunLog(run.runDir);
-    if (!log) return { error: "No run transcript saved for this run." };
+    if (!log) throw new Error("No run transcript saved for this run.");
     return { log };
   }));
 
   // Apply the agent-authored manifest.json (instructions / env schema / standing
   // rules) back onto the automation row — the Develop loop's "write the resulting
   // automation shape" step.
-  registerIpcHandle("db:automation:syncFromManifest", (_e, { id }: { id: string }) => handle(() => {
+  registerContractHandle("db:automation:syncFromManifest", (_e, { id }) => handle(() => {
     const a = getAutomationById(ctx.db, id);
-    if (!a) return { error: "Automation not found." };
+    if (!a) throw new Error("Automation not found.");
     const projectName = a.projectId ? getProjectName(ctx.db, a.projectId) : null;
     const folder = automationFolderDir(ctx.workspacePath, a.id, projectName);
     const manifest = readAutomationManifest(folder);
-    if (!manifest) return { error: "No manifest.json in the automation folder — run Develop first." };
+    if (!manifest) throw new Error("No manifest.json in the automation folder — run Develop first.");
     // Map the manifest onto the row: instructions / env / standing rules
     // (sanitised — target-less run_script/bash rules are dropped) / requires.
     const { patch, dropped } = applyManifestToAutomation(a, manifest);
     const updated = updateAutomation(ctx.db, id, patch);
-    if (!updated) return { error: "Failed to sync automation from manifest." };
+    if (!updated) throw new Error("Failed to sync automation from manifest.");
     return { automation: updated, dropped };
   }));
 
@@ -178,24 +178,24 @@ export function registerAutomationHandlers(ctx: DbContext): void {
       ? { name: e.name, secret: true, set: hasSecret("automation", a.id, e.name) }
       : { name: e.name, secret: false, value: e.value ?? "" });
 
-  registerIpcHandle("db:automation:env", (_e, { automationId }: { automationId: string }) => handle(() => {
+  registerContractHandle("db:automation:env", (_e, { automationId }) => handle(() => {
     const a = getAutomationById(ctx.db, automationId);
-    if (!a) return { error: "Automation not found." };
+    if (!a) throw new Error("Automation not found.");
     return envSpec(a);
   }));
 
-  registerIpcHandle("db:automation:env:set", (_e, { automationId, name, value, secret }: { automationId: string; name: string; value: string; secret: boolean }) => handle(() => {
+  registerContractHandle("db:automation:env:set", (_e, { automationId, name, value, secret }) => handle(() => {
     if (!isValidEnvName(name)) {
-      return { error: `Invalid env var name "${name}" — use only letters, digits and underscores.` };
+      throw new Error(`Invalid env var name "${name}" — use only letters, digits and underscores.`);
     }
     const a = getAutomationById(ctx.db, automationId);
-    if (!a) return { error: "Automation not found." };
+    if (!a) throw new Error("Automation not found.");
     if (secret) {
       // Secret → keychain only; the row keeps the name + flag with a null value.
       try {
         setSecret("automation", automationId, name, value);
       } catch (err) {
-        return { error: err instanceof Error ? err.message : "Failed to store secret." };
+        throw new Error(err instanceof Error ? err.message : "Failed to store secret.");
       }
       updateAutomation(ctx.db, automationId, {
         env: [...a.env.filter((e) => e.name !== name), { name, secret: true }],
@@ -209,9 +209,9 @@ export function registerAutomationHandlers(ctx: DbContext): void {
     return updated ? envSpec(updated) : [];
   }));
 
-  registerIpcHandle("db:automation:env:delete", (_e, { automationId, name }: { automationId: string; name: string }) => handle(() => {
+  registerContractHandle("db:automation:env:delete", (_e, { automationId, name }) => handle(() => {
     const a = getAutomationById(ctx.db, automationId);
-    if (!a) return { error: "Automation not found." };
+    if (!a) throw new Error("Automation not found.");
     deleteSecret("automation", automationId, name);
     updateAutomation(ctx.db, automationId, { env: a.env.filter((e) => e.name !== name) });
     const updated = getAutomationById(ctx.db, automationId);
@@ -220,12 +220,12 @@ export function registerAutomationHandlers(ctx: DbContext): void {
 
   // Friendly schedule preview — compute the next fire time for a proposed
   // schedule expression (used by the Automations schedule builder).
-  registerIpcHandle("db:automation:preview", (_e, { scheduleExpr, timezone }: { scheduleKind?: string; scheduleExpr: string; timezone?: string | null }) => handle(() => {
+  registerContractHandle("db:automation:preview", (_e, { scheduleExpr, timezone }) => handle(() => {
     try {
       const next = computeNextRun(parseSchedule(scheduleExpr), new Date(), timezone ?? undefined);
       return { nextRunAt: next ? next.toISOString() : null };
     } catch (err) {
-      return { error: errMsg(err) };
+      throw new Error(errMsg(err));
     }
   }));
 }

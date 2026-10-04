@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn, id } from "@/lib/utils";
-import type { AutomationEnvSpec } from "@/store/slices/automations";
+import { automationsClient } from "@/lib/ipc/automations";
+import { errorMessage, hasElectron } from "@/lib/ipc/client";
 
 /**
  * Env-var editor for an automation's scripts.
@@ -43,16 +44,11 @@ export function EnvEditor({
   const [reveal, setReveal] = useState(false);
 
   const load = useCallback(async () => {
-    if (!window.electron) return;
+    if (!hasElectron()) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await window.electron.automation.env.get(automationId);
-      if ("error" in (res ?? {})) {
-        setError((res as { error: string }).error);
-        return;
-      }
-      const spec = (res ?? []) as AutomationEnvSpec[];
+      const spec = await automationsClient.env(automationId);
       setRows(spec.map((s) => ({
         key: id(),
         name: s.name,
@@ -64,7 +60,7 @@ export function EnvEditor({
         originalValue: s.secret ? "" : (s.value ?? ""),
       })));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -87,7 +83,7 @@ export function EnvEditor({
   const visible = useMemo(() => rows.filter((r) => !r.removed), [rows]);
 
   const save = async () => {
-    if (!window.electron) return;
+    if (!hasElectron()) return;
     setSaving(true);
     setError(null);
     try {
@@ -111,7 +107,7 @@ export function EnvEditor({
       // Remove first (so a rename + re-add lands cleanly).
       for (const row of rows) {
         if (row.removed && row.name.trim()) {
-          await window.electron.automation.env.delete(automationId, row.name.trim());
+          await automationsClient.deleteEnv(automationId, row.name.trim());
         }
       }
       for (const row of rows) {
@@ -120,11 +116,7 @@ export function EnvEditor({
         if (!name) continue;
         if (row.secret) {
           if (!row.value.trim()) continue; // blank secret keeps existing value
-          const res = await window.electron.automation.env.set(automationId, name, row.value, true);
-          if ("error" in (res ?? {})) {
-            setError((res as { error: string }).error);
-            return;
-          }
+          await automationsClient.setEnv(automationId, name, row.value, true);
           continue;
         }
         // Non-secret row: purge any keychain secret that may linger under the
@@ -132,19 +124,15 @@ export function EnvEditor({
         // value or remove the var entirely when the value is blank — a plain
         // "" is dropped at run time anyway, so persisting it is a silent no-op.
         if (row.originalSecret || row.value === "") {
-          await window.electron.automation.env.delete(automationId, name);
+          await automationsClient.deleteEnv(automationId, name);
         }
         if (row.value === "") continue;
-        const res = await window.electron.automation.env.set(automationId, name, row.value, false);
-        if ("error" in (res ?? {})) {
-          setError((res as { error: string }).error);
-          return;
-        }
+        await automationsClient.setEnv(automationId, name, row.value, false);
       }
       await load();
       onChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -8,11 +8,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
 } from "@/components/ui/dropdown";
-
-interface BudgetState {
-  budgetUsd: number | null;
-  spentTodayUsd: number;
-}
+import { useIpcQuery } from "@/hooks/useIpcQuery";
+import { automationsClient } from "@/lib/ipc/automations";
+import { reportIpcError } from "@/lib/ipc/client";
 
 const fmt = (n: number) => `$${n.toFixed(2)}`;
 
@@ -22,26 +20,16 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
  * scheduled runs (recorded as skipped, with one notification per day).
  */
 export function AutomationBudgetControl() {
-  const [state, setState] = useState<BudgetState | null>(null);
+  const { data: state, reload } = useIpcQuery(() => automationsClient.budget(), [], { pollMs: 60_000 });
   const [draft, setDraft] = useState("");
 
-  // Bumped after a save so the effect re-reads immediately.
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    let alive = true;
-    const fetchBudget = async () => {
-      const res = await window.electron?.automation.budget?.get();
-      if (alive && res && !("error" in res)) setState(res);
-    };
-    void fetchBudget();
-    const t = setInterval(() => void fetchBudget(), 60_000);
-    return () => { alive = false; clearInterval(t); };
-  }, [reloadKey]);
-
   const save = async (usd: number | null) => {
-    await window.electron?.automation.budget?.set(usd);
-    setReloadKey((k) => k + 1);
+    try {
+      await automationsClient.setBudget(usd);
+    } catch (err) {
+      reportIpcError(err, "Couldn't save the automation budget");
+    }
+    await reload({ silent: true });
   };
 
   if (!state) return null;
