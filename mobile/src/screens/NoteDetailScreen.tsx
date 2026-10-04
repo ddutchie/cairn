@@ -6,7 +6,9 @@ import {
   StyleSheet,
   View,
   Alert,
-  Share, type ScrollViewInstance } from "react-native";
+  Share,
+  type ScrollViewInstance,
+} from "react-native";
 import { Pin, List } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote, exportNote } from "@/db/queries";

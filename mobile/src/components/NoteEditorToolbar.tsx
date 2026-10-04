@@ -9,7 +9,9 @@ import {
   StyleSheet,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
-  type NativeScrollEvent, type TextInputInstance } from "react-native";
+  type NativeScrollEvent,
+  type TextInputInstance,
+} from "react-native";
 import Animated, { useAnimatedStyle, interpolate } from "react-native-reanimated";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { ChevronLeft, ChevronRight ,
