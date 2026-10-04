@@ -341,9 +341,10 @@ export function toIdeaFlowNode(row: DbRow): IdeaFlowNode {
     type: row.type as IdeaNodeType,
     x: row.x as number,
     y: row.y as number,
-    width: row.width as number | undefined,
-    height: row.height as number | undefined,
-    parentId: row.parent_id as string | undefined,
+    // Nullable columns: SQLite NULL becomes an absent field, as the type says.
+    width: (row.width as number | null) ?? undefined,
+    height: (row.height as number | null) ?? undefined,
+    parentId: (row.parent_id as string | null) ?? undefined,
     data: (() => {
       try {
         return JSON.parse(row.data as string);
@@ -362,7 +363,7 @@ export function toIdeaFlowEdge(row: DbRow): IdeaFlowEdge {
     flowId: row.flow_id as string,
     sourceNodeId: row.source_node_id as string,
     targetNodeId: row.target_node_id as string,
-    label: row.label as string | undefined,
+    label: (row.label as string | null) ?? undefined,
     createdAt: row.created_at as string,
   };
 }

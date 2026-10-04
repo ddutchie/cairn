@@ -55,6 +55,34 @@ describe("useIpcQuery", () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it("resets to initial data and clears the error when deps change", async () => {
+    const pending = deferred<string>();
+    const { result, rerender } = renderHook(
+      ({ key }) => useIpcQuery(() => (key === "a" ? Promise.reject(new Error("a failed")) : pending.promise), [key], { initialData: "none" }),
+      { initialProps: { key: "a" } },
+    );
+    await waitFor(() => expect(result.current.error).toBe("a failed"));
+    rerender({ key: "b" });
+    expect(result.current.error).toBeNull();
+    expect(result.current.data).toBe("none");
+    await act(async () => { pending.resolve("b-data"); });
+    expect(result.current.data).toBe("b-data");
+  });
+
+  it("drops an older response that lands after a newer one", async () => {
+    const calls = [deferred<string>(), deferred<string>(), deferred<string>()];
+    let n = 0;
+    const { result } = renderHook(() => useIpcQuery(() => calls[n++].promise, []));
+    await act(async () => { calls[0].resolve("first"); });
+    let older!: Promise<void>;
+    let newer!: Promise<void>;
+    act(() => { older = result.current.reload({ silent: true }); newer = result.current.reload(); });
+    await act(async () => { calls[2].resolve("newest"); await newer; });
+    await act(async () => { calls[1].resolve("stale"); await older; });
+    expect(result.current.data).toBe("newest");
+    expect(result.current.loading).toBe(false);
+  });
+
   it("keeps the previous object when isEqual says nothing changed", async () => {
     let n = 0;
     const loader = () => Promise.resolve({ v: 1, call: ++n });

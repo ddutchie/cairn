@@ -157,7 +157,10 @@ function IdeaFlowCanvas() {
         setEdges(flow.edges.map(flowEdgeToRF));
       }
     } catch (err) {
-      reportIpcError(err, "Couldn't load the Idea Flow");
+      // Background reloads (change feed, after an edit) retry on the next
+      // change; only a failed first load is worth a toast.
+      if (isInitial) reportIpcError(err, "Couldn't load the Idea Flow");
+      else console.error("[flow] reload failed", err);
     } finally {
       if (isInitial) setLoading(false);
     }

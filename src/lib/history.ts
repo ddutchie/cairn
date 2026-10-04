@@ -74,7 +74,14 @@ class HistoryManager {
   async undo(): Promise<void> {
     const cmd = this.past.pop();
     if (!cmd) return;
-    await cmd.undo();
+    try {
+      await cmd.undo();
+    } catch (err) {
+      // Keep it undoable rather than silently dropping it from history.
+      this.past.push(cmd);
+      this.notify();
+      throw err;
+    }
     this.future.unshift(cmd);
     this.notify();
   }
@@ -82,7 +89,13 @@ class HistoryManager {
   async redo(): Promise<void> {
     const cmd = this.future.shift();
     if (!cmd) return;
-    await cmd.redo();
+    try {
+      await cmd.redo();
+    } catch (err) {
+      this.future.unshift(cmd);
+      this.notify();
+      throw err;
+    }
     this.past.push(cmd);
     this.notify();
   }

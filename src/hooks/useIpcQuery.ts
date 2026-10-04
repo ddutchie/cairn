@@ -26,9 +26,10 @@ export interface IpcQuery<T> {
 }
 
 /**
- * Load data over IPC with loading / error state. A load that finishes after
- * `deps` changed (or after unmount) is dropped, so a slow response for the old
- * project can't overwrite the new one. Outside Electron the query stays idle
+ * Load data over IPC with loading / error state. When `deps` change the data
+ * resets to `initialData`, and a load that finishes after that (or after
+ * unmount, or after a newer load already landed) is dropped, so a slow
+ * response for the old project can't overwrite the new one. Outside Electron the query stays idle
  * with its initial data.
  */
 export function useIpcQuery<T>(loader: () => Promise<T>, deps: DependencyList, options: IpcQueryOptions<T> & { initialData: T }): IpcQuery<T>;
@@ -47,31 +48,42 @@ export function useIpcQuery<T>(
   // `deps` decides when the query is stale.
   const loaderRef = useRef(loader);
   const isEqualRef = useRef(options.isEqual);
+  const initialDataRef = useRef(initialData);
   useEffect(() => {
     loaderRef.current = loader;
     isEqualRef.current = options.isEqual;
+    initialDataRef.current = initialData;
   });
 
   // Bumped whenever deps change or the component unmounts; a load only
   // commits if the generation it started in is still current.
   const generationRef = useRef(0);
   const pendingLoudRef = useRef(0);
+  // Within a generation, a poll and a reload can overlap: only a response
+  // newer than the last one committed may land.
+  const requestSeqRef = useRef(0);
+  const committedSeqRef = useRef(0);
+  const startedRef = useRef(false);
 
   const run = useCallback(async (generation: number, silent: boolean) => {
+    const seq = ++requestSeqRef.current;
+    const isCurrent = () => generation === generationRef.current && seq > committedSeqRef.current;
     if (!silent) {
       pendingLoudRef.current++;
       setLoading(true);
     }
     try {
       const next = await loaderRef.current();
-      if (generation !== generationRef.current) return;
+      if (!isCurrent()) return;
+      committedSeqRef.current = seq;
       setData((prev) => {
         const isEqual = isEqualRef.current;
         return prev !== undefined && isEqual?.(prev, next) ? prev : next;
       });
       setError((prev) => (prev === null ? prev : null));
     } catch (err) {
-      if (generation !== generationRef.current || err instanceof IpcUnavailableError) return;
+      if (!isCurrent() || err instanceof IpcUnavailableError) return;
+      committedSeqRef.current = seq;
       setError(errorMessage(err));
     } finally {
       // The counter is reset per generation, so only current loads settle it.
@@ -82,8 +94,13 @@ export function useIpcQuery<T>(
   useEffect(() => {
     const generation = ++generationRef.current;
     pendingLoudRef.current = 0;
+    // New inputs: the previous inputs' data and error no longer apply.
+    if (startedRef.current) {
+      setData(initialDataRef.current);
+      setError(null);
+    }
+    startedRef.current = true;
     if (!enabled) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset when the query is switched off
       setLoading(false);
       return;
     }

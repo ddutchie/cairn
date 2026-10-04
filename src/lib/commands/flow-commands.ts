@@ -115,7 +115,7 @@ export function makeDeleteGroupCmd(
         height: (group.style?.height as number | undefined) ?? group.measured?.height,
         data: sanitizeNodeData(group.data),
       })));
-      const groupId = createdGroup?.id ?? group.id;
+      const groupId = createdGroup.id;
       flowHandlers.addNode?.({ ...group, id: groupId });
 
       // Restore children with parentId pointing to the new group id
@@ -128,7 +128,7 @@ export function makeDeleteGroupCmd(
           parentId: groupId,
           data: sanitizeNodeData(child.data as Record<string, unknown>),
         })));
-        const childId = createdChild?.id ?? child.id;
+        const childId = createdChild.id;
         flowHandlers.addNode?.({ ...child, id: childId, parentId: groupId });
       }
     },
