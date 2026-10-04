@@ -95,10 +95,12 @@ InsightsView
 ```
 
 Shared modules:
-- `analyticsUtils.ts` — `PRIORITY_COLOR`, `CANVAS_PAD`, `truncateName`, `HOUR_MS`, `DAY_MS`, etc.
-- `analyticsHooks.ts` — `useContainerDims`, `useScopeSets`, `useScopedData`, `useFontScale`
-- `AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasCallout>`, `<SvgTimeAxis>`
-- `analyticsUtils.ts` — shared constants (`PRIORITY_COLOR`, `CANVAS_PAD`), `resolveCssVar()` for canvas 2D context colour lookups, `truncateName`
+- `src/lib/viz/hooks.ts` — renderer-generic: `useFontScale`, `useContainerDims`, `useResizeObserver`, `useRelativePointer`, `useNow`, `useThemeRepaint` (also used by agent/, usage/ and the Overview radar)
+- `src/lib/viz/color.ts` — `resolveCssVar()` / `createCssVarReader()` for canvas-2D colour lookups, `withAlpha`, `tokenToCssVar`
+- `graph/analyticsHooks.ts` — Insights store selectors: `useScopeSets`, `useScopedData`
+- `graph/analyticsUtils.ts` — `PRIORITY_COLOR`, `PRIORITY_WEIGHT`, `CANVAS_PAD`, `truncateName`, `HOUR_MS`, `DAY_MS`
+- `graph/AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasCallout>`, `<SvgTimeAxis>`
+- Tag colours: `TAG_PALETTE` in `src/lib/constants.ts`
 
 ## Store slices
 

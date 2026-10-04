@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import type { GraphNode } from "@/types";
 import { useScopedData } from "./analyticsHooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
+import { TAG_PALETTE } from "@/lib/constants";
 
 interface Props {
   nodes: GraphNode[];
@@ -24,15 +25,10 @@ function blendHex(a: string, b: string, t: number): string {
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bv.toString(16).padStart(2, "0")}`;
 }
 
-const FALLBACK_COLORS = [
-  "#6366f1", "#8b5cf6", "#a855f7", "#ec4899",
-  "#f43f5e", "#f97316", "#eab308", "#22c55e",
-  "#14b8a6", "#06b6d4", "#3b82f6", "#64748b",
-];
 
 function tagColor(color: string | undefined | null, index: number): string {
   if (color && color.startsWith("#")) return color;
-  return FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+  return TAG_PALETTE[index % TAG_PALETTE.length].color;
 }
 
 export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {

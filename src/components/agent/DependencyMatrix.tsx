@@ -15,9 +15,9 @@
  */
 
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
-import { resolveCssVar, withAlpha } from "../graph/analyticsUtils";
+import { resolveCssVar, withAlpha } from "@/lib/viz/color";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useFontScale } from "../graph/analyticsHooks";
+import { useFontScale, useContainerDims } from "@/lib/viz/hooks";
 
 export interface MatrixNode {
   id: string;
@@ -107,15 +107,7 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
   const selGroup = selectedId != null ? groupOfFile.get(selectedId) ?? null : null;
   const selIdx = selGroup != null ? groupIndex.get(selGroup) ?? -1 : -1;
 
-  const [dims, setDims] = useState({ width: 600, height: 600 });
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setDims({ width: el.clientWidth, height: el.clientHeight }));
-    ro.observe(el);
-    setDims({ width: el.clientWidth, height: el.clientHeight });
-    return () => ro.disconnect();
-  }, []);
+  const dims = useContainerDims(containerRef);
 
   const LABEL_W = 190;
   // Directory-level → far fewer rows, so cells can be big and labelled.

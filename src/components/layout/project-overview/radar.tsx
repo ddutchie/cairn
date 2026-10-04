@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useFontScale } from "@/components/graph/analyticsHooks";
+import { useFontScale } from "@/lib/viz/hooks";
 
 type RadarAxis = { key: string; label: string; short: string; value: number; color: string };
 

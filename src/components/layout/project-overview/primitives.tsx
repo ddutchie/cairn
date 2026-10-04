@@ -110,7 +110,7 @@ export function ProgressRing({ percent, size }: { percent: number; size: number 
         strokeDasharray={circumference} strokeDashoffset={strokeDash} strokeLinecap="round"
         style={{ transition: "stroke-dashoffset 0.5s ease" }} />
       <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle"
-        style={{ transform: "rotate(90deg)", transformOrigin: "50% 50%", fontSize: 11, fontWeight: 700, fill: "var(--text-primary)" }}>
+        style={{ transform: "rotate(90deg)", transformOrigin: "50% 50%", fontSize: "0.786rem", fontWeight: 700, fill: "var(--text-primary)" }}>
         {percent}%
       </text>
     </svg>

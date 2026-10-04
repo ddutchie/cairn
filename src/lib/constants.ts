@@ -15,6 +15,28 @@ export const DEFAULT_COLUMNS = [
   { name: "Done",        type: "done"        as ColumnType, order: 4 },
 ] as const;
 
+/**
+ * Tag colours offered in Settings → Tags. Stored on the tag as a hex value
+ * (tags are user data, synced to mobile), so these are literals, not CSS vars.
+ * The first entry is the default for new tags.
+ */
+export const TAG_PALETTE = [
+  { color: "#6366f1", name: "Indigo" },
+  { color: "#8b5cf6", name: "Violet" },
+  { color: "#a855f7", name: "Purple" },
+  { color: "#ec4899", name: "Pink" },
+  { color: "#f43f5e", name: "Rose" },
+  { color: "#ef4444", name: "Red" },
+  { color: "#f97316", name: "Orange" },
+  { color: "#eab308", name: "Yellow" },
+  { color: "#22c55e", name: "Green" },
+  { color: "#14b8a6", name: "Teal" },
+  { color: "#06b6d4", name: "Cyan" },
+  { color: "#3b82f6", name: "Blue" },
+  { color: "#64748b", name: "Slate" },
+  { color: "#78716c", name: "Stone" },
+] as const;
+
 /** Canonical accent colors per column type. */
 export const COLUMN_COLORS: Record<ColumnType | string, string> = {
   backlog:     "#666360",

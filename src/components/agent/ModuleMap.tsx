@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as d3 from "d3";
 import { ChevronRight, Home, Sparkles } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
-import { useFontScale } from "../graph/analyticsHooks";
+import { useFontScale } from "@/lib/viz/hooks";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 
