@@ -12,6 +12,7 @@ import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { Note, Tag } from "@/types";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
 import { linksToTitle } from "@/lib/wikilink-parser";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 interface SemanticHit {
   noteId: string;
@@ -319,17 +320,7 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
   const pickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-        setNewTagName("");
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [pickerOpen]);
+  useClickOutside(pickerRef, () => { setPickerOpen(false); setNewTagName(""); }, pickerOpen);
 
   useEffect(() => {
     if (pickerOpen) inputRef.current?.focus();

@@ -7,6 +7,7 @@ import { useCairnStore } from "@/store";
 import { cn, formatDateCompact } from "@/lib/utils";
 import { useAgentSessionActions } from "./useAgentSessionActions";
 import type { CodingSessionSummary } from "@/types";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 interface AgentSessionTabProps {
   isActive: boolean;
@@ -33,16 +34,7 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
 
   const { handleResumeSession: _handleResumeSession } = useAgentSessionActions();
 
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [dropdownOpen]);
+  useClickOutside(dropdownRef, () => setDropdownOpen(false), dropdownOpen);
 
   useEffect(() => {
     if (dropdownOpen && activeProjectId) {

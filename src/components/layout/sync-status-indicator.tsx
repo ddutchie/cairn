@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { useSyncStatus, triggerSyncNow, openConflictModal, type SyncState } from "@/lib/sync-client";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn, formatRelative } from "@/lib/utils";
+import { useClickOutside } from "@/hooks/useClickOutside";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 function glyph(state: SyncState, conflicts: number, pending: number) {
   if (conflicts > 0) return { Icon: CloudAlert, color: "var(--warning)", label: `${conflicts} sync conflict${conflicts === 1 ? "" : "s"}` };
@@ -45,19 +47,8 @@ export function SyncStatusIndicator() {
   }, [open]);
 
   // Close the popover on outside click / Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useClickOutside(wrapRef, () => setOpen(false), open);
+  useEscapeKey(() => setOpen(false), open);
 
   // Render only when Device Sync is actually enabled (a folder is connected).
   // With no sync configured there is nothing to show in the title bar.

@@ -10,6 +10,8 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatRelative } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
+import { useClickOutside } from "@/hooks/useClickOutside";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 function toolIcon(tool: string): React.ReactNode {
   if (tool === "automation_run" || tool === "automation_approval") return <Zap size={13} className="text-[var(--accent)]" />;
@@ -48,24 +50,13 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
   }, [fetchNotifications]);
 
   // Close on outside click / Escape (the popover only exists while open).
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      // Clicking the bell itself is a toggle, not an outside click — the bell
-      // button carries data-notification-toggle (TitleBar / sidebar), so ignore
-      // it here and let the button's onClick flip the open state. Without this
-      // the outside mousedown would close the popup and the button's click would
-      // immediately reopen it, making the bell look stuck open.
-      if (e.target instanceof Element && e.target.closest("[data-notification-toggle]")) return;
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  // Clicking the bell itself is a toggle, not an outside click — the bell
+  // button carries data-notification-toggle (TitleBar / sidebar), so it's
+  // ignored here and the button's onClick flips the open state. Without this
+  // the outside mousedown would close the popup and the button's click would
+  // immediately reopen it, making the bell look stuck open.
+  useClickOutside(wrapRef, onClose, true, { ignore: "[data-notification-toggle]" });
+  useEscapeKey(onClose);
 
   const unread = notifications.filter((n) => !n.read);
   const sorted = [...unread, ...notifications.filter((n) => n.read)];

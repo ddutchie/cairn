@@ -38,6 +38,7 @@ import {
   effectiveTemperatureForModel,
 } from "@/lib/models-dev";
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
+import { useClickOutside } from "@/hooks/useClickOutside";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
 import { toConversationMessage } from "@/components/conversation/conversation-message";
 import { toLiveConversationMessage, withLiveTurn } from "@/components/conversation/conversation-live";
@@ -735,16 +736,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   }, [threadId, input, prefill, handleSend]);
 
   // ── Popout mode: close project dropdown on outside click ──
-  useEffect(() => {
-    if (!popoutMode || !projectOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (projectRef.current && !projectRef.current.contains(e.target as Node)) {
-        setProjectOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [popoutMode, projectOpen]);
+  useClickOutside(projectRef, () => setProjectOpen(false), popoutMode && projectOpen);
 
   const handlePopIn = useCallback(async () => {
     const state = useCairnStore.getState();
