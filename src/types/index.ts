@@ -2,7 +2,9 @@
 // Cairn — Core Domain Types
 // ─────────────────────────────────────────────
 
-export type ID = string;
+// Leaf unions shared with Electron and mobile.
+import type { ID, ProjectStatus, Priority, ColumnType } from "../../shared/types/domain";
+export type { ID, ProjectStatus, Priority, ColumnType };
 
 // ── Tags ──────────────────────────────────────
 export interface Tag {
@@ -51,8 +53,6 @@ export interface Workspace {
 }
 
 // ── Project ───────────────────────────────────
-export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
-export type Priority = "low" | "medium" | "high" | "urgent";
 
 export interface ProjectSettings {
   prTemplate?: string;
@@ -115,7 +115,6 @@ export interface Note {
 }
 
 // ── Board Column ──────────────────────────────
-export type ColumnType = "backlog" | "todo" | "in_progress" | "review" | "done" | "custom";
 
 export interface BoardColumn {
   id: ID;
