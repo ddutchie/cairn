@@ -1445,6 +1445,19 @@ const MIGRATIONS: Migration[] = [
       END;
     `);
   },
+
+  // v59: app_kv — small per-workspace settings that belong with the workspace
+  // DB (both the app and the standalone cairn-mcp read it), e.g. the daily
+  // automation budget. Not synced: a spend limit is a per-device decision.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS app_kv (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

@@ -22,6 +22,7 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "ensure_note", "patch_note", "append_to_note", "rename_note",
   "delete_note", "bulk_move_notes", "instantiate_template",
   "create_task", "update_task", "delete_task", "bulk_update_task_status",
+  "claim_task", "add_task_progress",
   "spawn_tasks_from_note", "link_note_to_task", "unlink_note_from_task",
   "tag_note", "tag_task", "create_tag", "upsert_project", "delete_project",
   "create_dashboard", "update_dashboard",

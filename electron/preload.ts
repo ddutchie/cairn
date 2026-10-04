@@ -358,6 +358,11 @@ const api = {
     runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
     recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invoke("db:automation:runNow", { id }),
+    /** Daily automation budget (USD) + today's recorded automation spend. */
+    budget: {
+      get: () => invoke<{ budgetUsd: number | null; spentTodayUsd: number } | { error: string }>("db:automation:budget:get", {}),
+      set: (usd: number | null) => invoke<{ budgetUsd: number | null } | { error: string }>("db:automation:budget:set", { usd }),
+    },
     runningCount: () => invoke("db:automation:runningCount"),
     /** Approve/deny a pending tool approval for a running automation (Cordis). */
     approve: (callId: string, approved: boolean, grant?: "session" | "always") => invoke("automation:approve", { callId, approved, grant }),

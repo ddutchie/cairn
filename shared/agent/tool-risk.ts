@@ -66,6 +66,7 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "ensure_note", "patch_note", "append_to_note", "rename_note",
   "delete_note", "bulk_move_notes", "instantiate_template",
   "create_task", "update_task", "delete_task", "bulk_update_task_status",
+  "claim_task", "add_task_progress",
   "spawn_tasks_from_note", "link_note_to_task", "unlink_note_from_task",
   "tag_note", "tag_task", "create_tag", "upsert_project", "delete_project",
   "create_dashboard", "update_dashboard",
@@ -160,6 +161,8 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
                   ? args.content
                   : name === "create_task" || name === "update_task"
                     ? args.description ?? args.title ?? ""
+                  : name === "add_task_progress"
+                    ? args.message ?? ""
               : name.startsWith("mcp__") || name.startsWith("svc__")
                 // No arguments → no preview (never a bare "{}").
                 ? (Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : "")

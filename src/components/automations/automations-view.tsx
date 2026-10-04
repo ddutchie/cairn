@@ -26,6 +26,7 @@ import { AutomationDevModal } from "./automation-dev-modal";
 import { RunWatcherModal } from "./run-watcher-modal";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
+import { AutomationBudgetControl } from "./budget-control";
 
 /** Run/schedule times: "5m ago" / "3h away", absolute after a month. */
 const RUN_TIME: RelativeTimeOptions = { fallback: "—", future: true, absoluteAfterDays: 30 };
@@ -364,6 +365,7 @@ export function AutomationsView() {
           — background tasks that run while Cairn is open
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <AutomationBudgetControl />
           <Button variant="accent" size="sm" onClick={openCreate}>
             <Plus size={13} /> New Automation
           </Button>
@@ -970,6 +972,13 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                   <div className="flex items-center gap-2">
                     <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
                     <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt, RUN_TIME)}</span>
+                    {r.status === "error" && onRunNow && r.id === runs[0]?.id && (
+                      <Tooltip content="Run this automation again now">
+                        <button type="button" onClick={onRunNow} className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors text-[0.714rem]">
+                          Retry
+                        </button>
+                      </Tooltip>
+                    )}
                     <Tooltip content={logFor === r.id ? "Hide run log" : "Show what happened in this run"}>
                       <button
                         type="button"
