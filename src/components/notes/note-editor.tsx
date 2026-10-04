@@ -3,14 +3,15 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import "katex/dist/katex.min.css";
-import { Pin, PinOff, Calendar, Eye, Pencil, Code, Wand2, CheckCircle2, FileDown, FileText, ChevronLeft, Sparkles, Sun, Moon, Maximize2, Minimize2, ChevronDown as Chevron } from "lucide-react";import { WikilinkPicker } from "./WikilinkPicker";
+import { Pin, PinOff, Calendar, Eye, Pencil, Code, Wand2, CheckCircle2, ChevronLeft, Sparkles, Maximize2, Minimize2 } from "lucide-react";
+import { WikilinkPicker } from "./WikilinkPicker";
 import { Spinner } from "@/components/ui/spinner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, formatRelative, urlTransform } from "@/lib/utils";
-import { prepareNoteHtmlForPdf, pdfSafeTitle } from "./note-pdf-export";
+import { NoteExportMenu } from "./note-export-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import type { Note } from "@/types";
@@ -23,7 +24,6 @@ import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
 import { countWords, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
-import { resolveFontPreset } from "../../../shared/ui/fonts";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
@@ -610,112 +610,6 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
     updateNote(note.id, { tagIds: [...note.tagIds, tag.id] });
   }, [activeWorkspaceId, note.id, note.tagIds, createTag, updateNote]);
 
-  const [exportState, setExportState] = useState<"idle" | "exporting" | "done">("idle");
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const handleExportPdf = useCallback(async (theme: "light" | "dark" = "light") => {
-    if (!proseRef.current) return;
-    setShowExportMenu(false);
-    setExportState("exporting");
-    try {
-      const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-      const isMobile = typeof window !== "undefined" && !!window.electron && !isElectron;
-
-      const raw = proseRef.current.innerHTML;
-      // Post-process HTML to make code blocks print-friendly (light-palette
-      // remap + strip Copy button). See prepareNoteHtmlForPdf.
-      const html = prepareNoteHtmlForPdf(raw, theme);
-
-      // Resolve the user's chosen note font to its CSS stack so the exported
-      // PDF uses the same font as the editor/preview (system stacks only —
-      // bundled webfonts won't load in the print engine).
-      const fontFamily = resolveFontPreset(fontFamilyId).cssFamily;
-
-      if (isElectron && window.electron?.exportNotePdf) {
-        await window.electron.exportNotePdf(note.title, html, { theme, fontFamily });
-      } else if (isMobile && window.electron?.exportNotePdf) {
-        const result = await window.electron.exportNotePdf(note.title, html, { returnBuffer: true, theme, fontFamily });
-        if (result?.pdfBase64) {
-          const binStr = atob(result.pdfBase64);
-          const len = binStr.length;
-          const arr = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            arr[i] = binStr.charCodeAt(i);
-          }
-          const blob = new Blob([arr], { type: "application/pdf" });
-          const safeTitle = pdfSafeTitle(note.title);
-          const file = new File([blob], `${safeTitle}.pdf`, { type: "application/pdf" });
-
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: note.title,
-            });
-          } else {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${safeTitle}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          }
-        }
-      } else {
-        // Fallback to native browser printing (which enables printing/PDF saving on mobile)
-        window.print();
-      }
-      setExportState("done");
-      setTimeout(() => setExportState("idle"), 2000);
-    } catch (err) {
-      console.error("PDF export failed:", err);
-      setExportState("idle");
-    }
-  }, [note.title, fontFamilyId]);
-
-  const handleExportMarkdown = useCallback(async () => {
-    setShowExportMenu(false);
-    setExportState("exporting");
-    try {
-      if (window.electron?.exportMarkdown) {
-        // Desktop: native save dialog. Mobile webview: return text + share/download.
-        const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-        if (isElectron) {
-          const result = await window.electron.exportMarkdown("note", note.id);
-          // Desktop returns null when the save dialog was cancelled — don't
-          // flash a "Saved" state for a no-op.
-          if (!result) {
-            setExportState("idle");
-            return;
-          }
-        } else {
-          const res = await window.electron.exportMarkdown("note", note.id, { returnText: true });
-          if (res?.markdown) {
-            const blob = new Blob([res.markdown], { type: "text/markdown" });
-            const safeTitle = pdfSafeTitle(note.title);
-            const file = new File([blob], `${safeTitle}.md`, { type: "text/markdown" });
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-              await navigator.share({ files: [file], title: note.title });
-            } else {
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `${safeTitle}.md`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            }
-          }
-        }
-      }
-      setExportState("done");
-      setTimeout(() => setExportState("idle"), 2000);
-    } catch (err) {
-      console.error("Markdown export failed:", err);
-      setExportState("idle");
-    }
-  }, [note.id, note.title]);
 
   return (
     <div
@@ -829,56 +723,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             </Tooltip>
           ))}
 
-          {mode === "read" && (
-            <div className="relative">
-              <Tooltip content="Export note">
-                <button
-                  onClick={() => setShowExportMenu((v) => !v)}
-                  disabled={exportState === "exporting"}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors whitespace-nowrap",
-                    exportState === "done"
-                      ? "text-[var(--success)]"
-                      : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] disabled:opacity-50"
-                  )}
-                >
-                  {exportState === "exporting"
-                    ? <Spinner size={12} />
-                    : exportState === "done"
-                      ? <CheckCircle2 size={12} />
-                      : <FileDown size={12} />}
-                  {exportState === "done" ? "Saved" : "PDF"}
-                  {exportState === "idle" && <Chevron size={10} className="opacity-60" />}
-                </button>
-              </Tooltip>
-              {showExportMenu && exportState === "idle" && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] rounded-md border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden">
-                    <button
-                      onClick={() => handleExportPdf("light")}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-                    >
-                      <Sun size={12} /> Light
-                    </button>
-                    <button
-                      onClick={() => handleExportPdf("dark")}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-                    >
-                      <Moon size={12} /> Dark
-                    </button>
-                    <div className="h-px bg-[var(--border)] my-0.5" />
-                    <button
-                      onClick={handleExportMarkdown}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-                    >
-                      <FileText size={12} /> Markdown
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          {mode === "read" && <NoteExportMenu noteId={note.id} title={note.title} proseRef={proseRef} fontFamilyId={fontFamilyId} />}
           <div className="flex items-center gap-1">
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
             <button

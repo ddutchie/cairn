@@ -58,6 +58,9 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
   } = useCairnStore(useShallow((s) => ({
     projects:          s.projects,
     cards:             s.cards,
+    // Subscribed only so note edits re-render the Overview (getProjectNotes
+    // is a stable function and wouldn't trigger one).
+    notes:             s.notes,
     getProjectNotes:   s.getProjectNotes,
     getProjectColumns: s.getProjectColumns,
     getProjectCards:   s.getProjectCards,
