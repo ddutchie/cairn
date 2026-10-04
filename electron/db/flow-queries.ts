@@ -13,6 +13,7 @@ import type Database from "better-sqlite3";
 import { ts, newId } from "./utils";
 import { toIdeaFlow, toIdeaFlowNode, toIdeaFlowEdge, type DbRow } from "../host-shared/db-mappers";
 import { stripMarkdown } from "../host-shared/text-utils";
+import type { ResolvedIdeaFlow, ResolvedIdeaFlowNode } from "../../shared/types/flow";
 
 // ── Idea Flow ─────────────────────────────────
 
@@ -109,7 +110,7 @@ export function deleteFlowEdge(db: Database.Database, id: string) {
  * Returns the full resolved graph for a project — ready for the renderer and AI/MCP.
  * note_ref and task_ref nodes have their linked entity's data merged in as resolved* fields.
  */
-export function getResolvedFlow(db: Database.Database, projectId: string) {
+export function getResolvedFlow(db: Database.Database, projectId: string): ResolvedIdeaFlow {
   const flow = getOrCreateFlow(db, projectId);
   const nodes = getFlowNodes(db, flow.id);
   const edges = getFlowEdges(db, flow.id);
@@ -126,13 +127,13 @@ export function getResolvedFlow(db: Database.Database, projectId: string) {
     const absoluteX = parent ? parent.x + node.x : node.x;
     const absoluteY = parent ? parent.y + node.y : node.y;
 
-    let base = { ...node, absoluteX, absoluteY };
+    let base: ResolvedIdeaFlowNode = { ...node, absoluteX, absoluteY };
 
     if (node.type === "note_ref" && node.data.noteId) {
       const noteRow = db.prepare("SELECT id, title, content FROM notes WHERE id = ?").get(node.data.noteId) as
         | { id: string; title: string; content: string } | undefined;
       if (noteRow) {
-        base = { ...base, resolvedTitle: noteRow.title, resolvedSnippet: stripMarkdown(noteRow.content ?? "").slice(0, 200) } as typeof base & { resolvedTitle: string; resolvedSnippet: string };
+        base = { ...base, resolvedTitle: noteRow.title, resolvedSnippet: stripMarkdown(noteRow.content ?? "").slice(0, 200) };
       }
     }
     if (node.type === "task_ref" && node.data.cardId) {
@@ -144,7 +145,7 @@ export function getResolvedFlow(db: Database.Database, projectId: string) {
       `).get(node.data.cardId) as
         | { id: string; title: string; priority: string; column_name: string } | undefined;
       if (cardRow) {
-        base = { ...base, resolvedTitle: cardRow.title, resolvedPriority: cardRow.priority, resolvedColumnName: cardRow.column_name } as typeof base & { resolvedTitle: string; resolvedPriority: string; resolvedColumnName: string };
+        base = { ...base, resolvedTitle: cardRow.title, resolvedPriority: cardRow.priority, resolvedColumnName: cardRow.column_name };
       }
     }
     return base;

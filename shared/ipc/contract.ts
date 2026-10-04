@@ -19,6 +19,10 @@ import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type {
   GitBranchList, GitFileDiff, GitLogEntry, GitPathSelection, GitPrStatus, GitStashAction, GitStatus,
 } from "../types/git";
+import type {
+  FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch, IdeaFlowEdge, IdeaFlowNode,
+  ResolvedIdeaFlow, UrlMetadata,
+} from "../types/flow";
 import type { Note, NoteBody, NoteCreateInput, NotePatch } from "../types/notes";
 
 /** Why a pop-out handshake call was refused. */
@@ -62,6 +66,23 @@ export interface IpcContract {
   "db:note:backlinks:list": { args: [req: { noteId: string }]; result: string[] };
   /** The user has seen this note's "what's new" changes. */
   "db:note:changeMark:clear": { args: [req: { id: string }]; result: void };
+
+  // ── Idea Flow ────────────────────────────────────────────────────────────
+  /** Resolved graph (absolute positions, linked note/card data, spatial hints); creates the flow if missing. */
+  "db:flow:get": { args: [req: { projectId: string }]; result: ResolvedIdeaFlow };
+  "db:flow:node:create": { args: [node: FlowNodeCreateInput]; result: IdeaFlowNode };
+  "db:flow:node:update": { args: [req: { id: string; patch: FlowNodePatch }]; result: IdeaFlowNode };
+  /** Edges touching the node cascade. */
+  "db:flow:node:delete": { args: [req: { id: string }]; result: void };
+  /** Summarise everything connected to an ai_summary node and store it on the node. */
+  "db:flow:node:summarize": {
+    args: [req: { nodeId: string; config: FlowAiConfig }];
+    result: { nodeId: string; content: string };
+  };
+  "db:flow:edge:create": { args: [edge: FlowEdgeCreateInput]; result: IdeaFlowEdge };
+  "db:flow:edge:delete": { args: [req: { id: string }]; result: void };
+  /** OpenGraph title/description for a url node (fetched in main, no CORS). */
+  "db:flow:url:fetch": { args: [req: { url: string }]; result: UrlMetadata };
 
   // ── Git (cwd must sit inside a project's code directory) ─────────────────
   "git:status": { args: [req: { cwd: string }]; result: GitStatus };
@@ -129,6 +150,14 @@ const CHANNELS: ChannelRecord = {
   "db:note:search": true,
   "db:note:backlinks:list": true,
   "db:note:changeMark:clear": true,
+  "db:flow:get": true,
+  "db:flow:node:create": true,
+  "db:flow:node:update": true,
+  "db:flow:node:delete": true,
+  "db:flow:node:summarize": true,
+  "db:flow:edge:create": true,
+  "db:flow:edge:delete": true,
+  "db:flow:url:fetch": true,
   "git:status": true,
   "git:branches": true,
   "git:checkout": true,

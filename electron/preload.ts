@@ -12,6 +12,7 @@ import type { SessionProjection } from "../shared/agent/session-projection";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEvents } from "../shared/ipc/contract";
 import type { ChatPopoutPayload } from "../shared/agent/chat-popout";
 import type { NoteCreateInput, NotePatch } from "../shared/types/notes";
+import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 
 // Local structural types for the external-tools namespace. The renderer's
@@ -309,19 +310,19 @@ const api = {
 
   // ── Idea Flow ────────────────────────────────
   flow: {
-    get:         (projectId: string) => invoke("db:flow:get", { projectId }),
+    get:         (projectId: string) => invokeContract("db:flow:get", { projectId }),
     node: {
-      create:    (args: unknown) => invoke("db:flow:node:create", args),
-      update:    (id: string, patch: unknown) => invoke("db:flow:node:update", { id, patch }),
-      delete:    (id: string) => invoke("db:flow:node:delete", { id }),
-      summarize: (nodeId: string, config: unknown) => invoke("db:flow:node:summarize", { nodeId, config }),
+      create:    (node: FlowNodeCreateInput) => invokeContract("db:flow:node:create", node),
+      update:    (id: string, patch: FlowNodePatch) => invokeContract("db:flow:node:update", { id, patch }),
+      delete:    (id: string) => invokeContract("db:flow:node:delete", { id }),
+      summarize: (nodeId: string, config: FlowAiConfig) => invokeContract("db:flow:node:summarize", { nodeId, config }),
     },
     edge: {
-      create: (args: unknown) => invoke("db:flow:edge:create", args),
-      delete: (id: string) => invoke("db:flow:edge:delete", { id }),
+      create: (edge: FlowEdgeCreateInput) => invokeContract("db:flow:edge:create", edge),
+      delete: (id: string) => invokeContract("db:flow:edge:delete", { id }),
     },
     url: {
-      fetch: (url: string) => invoke<{ title: string; description: string }>("db:flow:url:fetch", { url }),
+      fetch: (url: string) => invokeContract("db:flow:url:fetch", { url }),
     },
   },
 

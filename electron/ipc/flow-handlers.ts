@@ -15,7 +15,7 @@
  * traversal diverges.
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
@@ -63,51 +63,39 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
 
 export function registerFlowHandlers(ctx: DbContext): void {
   // ── Read ──────────────────────────────────────────
-  registerIpcHandle("db:flow:get", (_e, { projectId }) => handle(() => q.getResolvedFlow(ctx.db, projectId)));
+  registerContractHandle("db:flow:get", (_e, { projectId }) => handle(() => q.getResolvedFlow(ctx.db, projectId)));
 
   // ── Node CRUD ─────────────────────────────────────
-  registerIpcHandle(
-    "db:flow:node:create",
-    (_e, args: { projectId: string } & Partial<Parameters<typeof q.createFlowNode>[1]>) =>
-      handle(() => {
-        const flow = q.getOrCreateFlow(ctx.db, args.projectId);
-        return q.createFlowNode(ctx.db, {
-          ...args,
-          flowId: flow.id,
-          id: q.generateId(),
-        } as Parameters<typeof q.createFlowNode>[1]);
-      })
+  registerContractHandle("db:flow:node:create", (_e, { projectId, ...node }) =>
+    handle(() => {
+      const flow = q.getOrCreateFlow(ctx.db, projectId);
+      return q.createFlowNode(ctx.db, { ...node, flowId: flow.id, id: q.generateId() });
+    })
   );
 
-  registerIpcHandle("db:flow:node:update", (_e, { id, patch }) =>
+  registerContractHandle("db:flow:node:update", (_e, { id, patch }) =>
     handle(() => q.updateFlowNode(ctx.db, id, patch))
   );
 
-  registerIpcHandle("db:flow:node:delete", (_e, { id }) => handle(() => q.deleteFlowNode(ctx.db, id)));
+  registerContractHandle("db:flow:node:delete", (_e, { id }) => handle(() => q.deleteFlowNode(ctx.db, id)));
 
   // ── Edge CRUD ─────────────────────────────────────
-  registerIpcHandle(
-    "db:flow:edge:create",
-    (_e, args: { projectId: string } & Partial<Parameters<typeof q.createFlowEdge>[1]>) =>
-      handle(() => {
-        const flow = q.getOrCreateFlow(ctx.db, args.projectId);
-        return q.createFlowEdge(ctx.db, {
-          ...args,
-          flowId: flow.id,
-          id: q.generateId(),
-        } as Parameters<typeof q.createFlowEdge>[1]);
-      })
+  registerContractHandle("db:flow:edge:create", (_e, { projectId, ...edge }) =>
+    handle(() => {
+      const flow = q.getOrCreateFlow(ctx.db, projectId);
+      return q.createFlowEdge(ctx.db, { ...edge, flowId: flow.id, id: q.generateId() });
+    })
   );
 
-  registerIpcHandle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(ctx.db, id)));
+  registerContractHandle("db:flow:edge:delete", (_e, { id }) => handle(() => q.deleteFlowEdge(ctx.db, id)));
 
   // ── AI summary for an ai_summary node ─────────────
   // Recursively walks the entire connected subgraph (BFS in both edge directions),
   // collecting all ancestor/peer content nodes transitively — not just direct neighbours.
   // Other ai_summary nodes in the graph are skipped to avoid circular self-reference.
-  registerIpcHandle(
+  registerContractHandle(
     "db:flow:node:summarize",
-    (_e, args: { nodeId: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
+    (_e, args) =>
       handle(async () => {
         // Cache the connection (apiKey scrubbed to a ref-or-clear by the cache layer).
         cacheLlmConnection("ai", args.config);

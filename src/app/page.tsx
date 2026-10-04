@@ -40,6 +40,7 @@ import { isView } from "@/lib/views";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
 import { QuickCapture } from "@/components/layout/QuickCapture";
+import { reportIpcError } from "@/lib/ipc/client";
 
 export default function Home() {
   const [pendingTutorial, setPendingTutorial] = useState(false);
@@ -345,11 +346,11 @@ export default function Home() {
       // (those surfaces handle ⌘Z natively via the browser / CodeMirror)
       else if (mod && key === "z" && !e.shiftKey && !inInput) {
         e.preventDefault();
-        void historyManager.undo();
+        historyManager.undo().catch((err: unknown) => reportIpcError(err, "Undo failed"));
       }
       else if (mod && (key === "y" || (key === "z" && e.shiftKey)) && !inInput) {
         e.preventDefault();
-        void historyManager.redo();
+        historyManager.redo().catch((err: unknown) => reportIpcError(err, "Redo failed"));
       }
       // ⌘⇧. — jump to onboarding appearance step (dev only)
       else if (process.env.NODE_ENV === "development" && mod && e.shiftKey && key === ".") {

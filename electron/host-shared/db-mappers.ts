@@ -7,6 +7,7 @@
 import { stripMarkdown } from "./text-utils";
 import { noteExcerpt } from "../../shared/notes/excerpt";
 import type { Note } from "../../shared/types/notes";
+import type { IdeaFlow, IdeaFlowEdge, IdeaFlowNode, IdeaNodeType } from "../../shared/types/flow";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
 export type DbRow = Record<string, unknown>;
@@ -324,7 +325,7 @@ export function toMcpNotification(row: DbRow): McpNotification {
   };
 }
 
-export function toIdeaFlow(row: DbRow) {
+export function toIdeaFlow(row: DbRow): IdeaFlow {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -333,11 +334,11 @@ export function toIdeaFlow(row: DbRow) {
   };
 }
 
-export function toIdeaFlowNode(row: DbRow) {
+export function toIdeaFlowNode(row: DbRow): IdeaFlowNode {
   return {
     id: row.id as string,
     flowId: row.flow_id as string,
-    type: row.type as string,
+    type: row.type as IdeaNodeType,
     x: row.x as number,
     y: row.y as number,
     width: row.width as number | undefined,
@@ -355,7 +356,7 @@ export function toIdeaFlowNode(row: DbRow) {
   };
 }
 
-export function toIdeaFlowEdge(row: DbRow) {
+export function toIdeaFlowEdge(row: DbRow): IdeaFlowEdge {
   return {
     id: row.id as string,
     flowId: row.flow_id as string,

@@ -11,10 +11,9 @@
 
 import { net } from "electron";
 
-export interface UrlMetadata {
-  title: string;
-  description: string;
-}
+import type { UrlMetadata } from "../../shared/types/flow";
+
+export type { UrlMetadata };
 
 const USER_AGENT = "Mozilla/5.0 (compatible; Cairn/1.0)";
 /** Only read up to ~50 KB of the response — enough to capture the <head>. */

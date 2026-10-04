@@ -1,7 +1,7 @@
 /**
  * Cairn — Idea Flow undo/redo commands
  *
- * Flow commands call window.electron.flow.* IPC directly (the flow view
+ * Flow commands call the typed flow IPC client directly (the flow view
  * bypasses Zustand) and also call flowHandlers.* to patch local React Flow
  * state without a full DB re-fetch, preventing canvas flicker.
  */
@@ -10,6 +10,7 @@ import type { Edge, Node } from "@xyflow/react";
 import type { Command } from "@/lib/history";
 import { flowHandlers } from "@/lib/history";
 import type { TaskCard } from "@/types";
+import { flowClient } from "@/lib/ipc/flow";
 
 // Strip resolved/computed fields that are added at read time and are not
 // stored in the DB. Passing them to flow.node.create causes IPC clone errors.
@@ -28,21 +29,19 @@ export function makeAddNodeCmd(
   return {
     label: `Add ${rfNode.type ?? "node"} to flow`,
     async undo() {
-      await window.electron?.flow.node.delete(rfNode.id);
+      await flowClient.deleteNode(rfNode.id);
       flowHandlers.removeNode?.(rfNode.id);
     },
     async redo() {
-      const created = await window.electron?.flow.node.create(JSON.parse(JSON.stringify({
+      const created = await flowClient.createNode(JSON.parse(JSON.stringify({
         projectId,
         type: rfNode.type,
         x: rfNode.position.x,
         y: rfNode.position.y,
         data: sanitizeNodeData(rfNode.data as Record<string, unknown>),
-      }))) as { id: string } | undefined;
-      // If the server reuses the same id (it won't — ids are generated
-      // server-side), fall back to rfNode.id for the local state update.
-      const id = created?.id ?? rfNode.id;
-      flowHandlers.addNode?.({ ...rfNode, id });
+      })));
+      // Ids are generated server-side, so the recreated node has a new one.
+      flowHandlers.addNode?.({ ...rfNode, id: created.id });
     },
   };
 }
@@ -57,11 +56,11 @@ export function makeUpdateNodeCmd(
   return {
     label: `Edit flow node`,
     async undo() {
-      await window.electron?.flow.node.update(nodeId, { data: prevData });
+      await flowClient.updateNode(nodeId, { data: prevData });
       flowHandlers.updateNode?.(nodeId, prevData);
     },
     async redo() {
-      await window.electron?.flow.node.update(nodeId, { data: newData });
+      await flowClient.updateNode(nodeId, { data: newData });
       flowHandlers.updateNode?.(nodeId, newData);
     },
   };
@@ -74,7 +73,7 @@ export function makeDeleteNodeCmd(
   return {
     label: `Delete flow node`,
     async undo() {
-      const created = await window.electron?.flow.node.create(JSON.parse(JSON.stringify({
+      const created = await flowClient.createNode(JSON.parse(JSON.stringify({
         projectId,
         type: rfNode.type,
         x: rfNode.position.x,
@@ -83,12 +82,11 @@ export function makeDeleteNodeCmd(
         height:   (rfNode.style?.height as number | undefined) ?? rfNode.measured?.height,
         parentId: rfNode.parentId,
         data: sanitizeNodeData(rfNode.data as Record<string, unknown>),
-      }))) as { id: string } | undefined;
-      const id = created?.id ?? rfNode.id;
-      flowHandlers.addNode?.({ ...rfNode, id });
+      })));
+      flowHandlers.addNode?.({ ...rfNode, id: created.id });
     },
     async redo() {
-      await window.electron?.flow.node.delete(rfNode.id);
+      await flowClient.deleteNode(rfNode.id);
       flowHandlers.removeNode?.(rfNode.id);
     },
   };
@@ -108,7 +106,7 @@ export function makeDeleteGroupCmd(
     label: `Delete group`,
     async undo() {
       // Restore group first
-      const createdGroup = await window.electron?.flow.node.create(JSON.parse(JSON.stringify({
+      const createdGroup = await flowClient.createNode(JSON.parse(JSON.stringify({
         projectId,
         type: group.type,
         x: group.position.x,
@@ -116,20 +114,20 @@ export function makeDeleteGroupCmd(
         width:  (group.style?.width  as number | undefined) ?? group.measured?.width,
         height: (group.style?.height as number | undefined) ?? group.measured?.height,
         data: sanitizeNodeData(group.data),
-      }))) as { id: string } | undefined;
+      })));
       const groupId = createdGroup?.id ?? group.id;
       flowHandlers.addNode?.({ ...group, id: groupId });
 
       // Restore children with parentId pointing to the new group id
       for (const child of children) {
-        const createdChild = await window.electron?.flow.node.create(JSON.parse(JSON.stringify({
+        const createdChild = await flowClient.createNode(JSON.parse(JSON.stringify({
           projectId,
           type: child.type,
           x: child.position.x,
           y: child.position.y,
           parentId: groupId,
           data: sanitizeNodeData(child.data as Record<string, unknown>),
-        }))) as { id: string } | undefined;
+        })));
         const childId = createdChild?.id ?? child.id;
         flowHandlers.addNode?.({ ...child, id: childId, parentId: groupId });
       }
@@ -137,10 +135,10 @@ export function makeDeleteGroupCmd(
     async redo() {
       // parent_id uses ON DELETE SET NULL, so explicitly delete children first
       for (const child of children) {
-        await window.electron?.flow.node.delete(child.id);
+        await flowClient.deleteNode(child.id);
         flowHandlers.removeNode?.(child.id);
       }
-      await window.electron?.flow.node.delete(group.id);
+      await flowClient.deleteNode(group.id);
       flowHandlers.removeNode?.(group.id);
     },
   };
@@ -153,11 +151,11 @@ export function makeAddEdgeCmd(
   return {
     label: `Connect flow nodes`,
     async undo() {
-      await window.electron?.flow.edge.delete(rfEdge.id);
+      await flowClient.deleteEdge(rfEdge.id);
       flowHandlers.removeEdge?.(rfEdge.id);
     },
     async redo() {
-      await window.electron?.flow.edge.create({
+      await flowClient.createEdge({
         projectId,
         sourceNodeId: rfEdge.source,
         targetNodeId: rfEdge.target,
@@ -175,7 +173,7 @@ export function makeDeleteEdgeCmd(
   return {
     label: `Remove flow connection`,
     async undo() {
-      await window.electron?.flow.edge.create({
+      await flowClient.createEdge({
         projectId,
         sourceNodeId: rfEdge.source,
         targetNodeId: rfEdge.target,
@@ -184,7 +182,7 @@ export function makeDeleteEdgeCmd(
       flowHandlers.addEdge?.(rfEdge);
     },
     async redo() {
-      await window.electron?.flow.edge.delete(rfEdge.id);
+      await flowClient.deleteEdge(rfEdge.id);
       flowHandlers.removeEdge?.(rfEdge.id);
     },
   };
@@ -203,7 +201,7 @@ export function makeMoveNodeCmd(
   return {
     label: `Move flow node`,
     async undo() {
-      await window.electron?.flow.node.update(nodeId, {
+      await flowClient.updateNode(nodeId, {
         x: prevPosition.x,
         y: prevPosition.y,
         parentId: prevParentId ?? null,
@@ -211,7 +209,7 @@ export function makeMoveNodeCmd(
       flowHandlers.moveNode?.(nodeId, prevPosition, prevParentId);
     },
     async redo() {
-      await window.electron?.flow.node.update(nodeId, {
+      await flowClient.updateNode(nodeId, {
         x: newPosition.x,
         y: newPosition.y,
         parentId: newParentId ?? null,
@@ -234,11 +232,11 @@ export function makeResizeGroupCmd(
   return {
     label: `Resize group`,
     async undo() {
-      await window.electron?.flow.node.update(nodeId, { width: prevWidth, height: prevHeight });
+      await flowClient.updateNode(nodeId, { width: prevWidth, height: prevHeight });
       flowHandlers.resizeNode?.(nodeId, prevWidth, prevHeight);
     },
     async redo() {
-      await window.electron?.flow.node.update(nodeId, { width: newWidth, height: newHeight });
+      await flowClient.updateNode(nodeId, { width: newWidth, height: newHeight });
       flowHandlers.resizeNode?.(nodeId, newWidth, newHeight);
     },
   };
@@ -257,7 +255,7 @@ export function makeAutoLayoutCmd(
     label: `Auto-layout`,
     async undo() {
       for (const n of prevNodes) {
-        await window.electron?.flow.node.update(n.id, { x: n.x, y: n.y, ...(n.width ? { width: n.width, height: n.height } : {}) });
+        await flowClient.updateNode(n.id, { x: n.x, y: n.y, ...(n.width ? { width: n.width, height: n.height } : {}) });
       }
       setNodes((ns) => ns.map((n) => {
         const prev = prevNodes.find((p) => p.id === n.id);
@@ -271,7 +269,7 @@ export function makeAutoLayoutCmd(
     },
     async redo() {
       for (const n of newNodes) {
-        await window.electron?.flow.node.update(n.id, { x: n.x, y: n.y, ...(n.width ? { width: n.width, height: n.height } : {}) });
+        await flowClient.updateNode(n.id, { x: n.x, y: n.y, ...(n.width ? { width: n.width, height: n.height } : {}) });
       }
       setNodes((ns) => ns.map((n) => {
         const next = newNodes.find((p) => p.id === n.id);
@@ -302,26 +300,26 @@ export function makePromoteToTaskCmd(
     label: `Promote idea to task`,
     async undo() {
       // Delete the task_ref node and the card
-      await window.electron?.flow.node.delete(newTaskRefNodeId);
+      await flowClient.deleteNode(newTaskRefNodeId);
       await window.electron?.card.delete(createdCard.id);
       flowHandlers.removeNode?.(newTaskRefNodeId);
 
       // Restore the idea node
-      const restored = await window.electron?.flow.node.create(JSON.parse(JSON.stringify({
+      const restored = await flowClient.createNode(JSON.parse(JSON.stringify({
         projectId,
         type: oldIdeaNode.type,
         x: oldIdeaNode.position.x,
         y: oldIdeaNode.position.y,
         data: sanitizeNodeData(oldIdeaNode.data as Record<string, unknown>),
-      }))) as { id: string } | undefined;
-      const restoredId = restored?.id ?? oldIdeaNode.id;
+      })));
+      const restoredId = restored.id;
       flowHandlers.addNode?.({ ...oldIdeaNode, id: restoredId });
 
       // Restore edges (remapped to restored node id)
       for (const e of edgesBefore) {
         const src = e.source === newTaskRefNodeId ? restoredId : e.source;
         const tgt = e.target === newTaskRefNodeId ? restoredId : e.target;
-        await window.electron?.flow.edge.create({ projectId, sourceNodeId: src, targetNodeId: tgt, label: e.label as string | undefined });
+        await flowClient.createEdge({ projectId, sourceNodeId: src, targetNodeId: tgt, label: e.label as string | undefined });
       }
     },
     async redo() {
@@ -337,25 +335,25 @@ export function makePromoteToTaskCmd(
       const cardId = created?.id ?? createdCard.id;
 
       // Delete old idea node if still present
-      await window.electron?.flow.node.delete(oldIdeaNode.id).catch(() => {});
+      await flowClient.deleteNode(oldIdeaNode.id).catch(() => {});
       flowHandlers.removeNode?.(oldIdeaNode.id);
 
       // Create task_ref node
-      const newNode = await window.electron?.flow.node.create(JSON.parse(JSON.stringify({
+      const newNode = await flowClient.createNode(JSON.parse(JSON.stringify({
         projectId,
         type: "task_ref",
         x: oldIdeaNode.position.x,
         y: oldIdeaNode.position.y,
         data: { cardId },
-      }))) as { id: string } | undefined;
-      const newNodeId = newNode?.id ?? newTaskRefNodeId;
+      })));
+      const newNodeId = newNode.id;
       flowHandlers.addNode?.({ ...oldIdeaNode, id: newNodeId, type: "task_ref", data: { cardId } });
 
       // Re-wire edges
       for (const e of edgesBefore) {
         const src = e.source === oldIdeaNode.id ? newNodeId : e.source;
         const tgt = e.target === oldIdeaNode.id ? newNodeId : e.target;
-        await window.electron?.flow.edge.create({ projectId, sourceNodeId: src, targetNodeId: tgt, label: e.label as string | undefined });
+        await flowClient.createEdge({ projectId, sourceNodeId: src, targetNodeId: tgt, label: e.label as string | undefined });
       }
     },
   };

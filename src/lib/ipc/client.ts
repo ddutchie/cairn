@@ -29,6 +29,18 @@ export function requireElectron(): ElectronApi {
   return window.electron;
 }
 
+/**
+ * Run `fn` against the bridge. A missing bridge becomes a rejected promise
+ * (not a synchronous throw), so callers only ever handle rejections.
+ */
+export function electronCall<T>(fn: (api: ElectronApi) => Promise<T>): Promise<T> {
+  try {
+    return fn(requireElectron());
+  } catch (err) {
+    return Promise.reject(err);
+  }
+}
+
 /** A user-facing message for a rejected IPC call. */
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -47,4 +59,12 @@ export function reportIpcError(err: unknown, context?: string): void {
   const message = errorMessage(err);
   console.error(`[cairn:ipc]${context ? ` ${context}:` : ""}`, err);
   window.dispatchEvent(CairnEvents.ipcError(context ? `${context}: ${message}` : message));
+}
+
+/**
+ * Fire-and-forget a write: failures are reported via `reportIpcError` rather
+ * than left as unhandled rejections.
+ */
+export function persist(promise: Promise<unknown>, context: string): void {
+  promise.catch((err: unknown) => reportIpcError(err, context));
 }
