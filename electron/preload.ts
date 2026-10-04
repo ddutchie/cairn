@@ -585,6 +585,13 @@ const api = {
   saveFontScale: (fontScale: number) => invoke<{ ok: true }>("app:saveFontScale", { fontScale }),
   platform: process.platform as "darwin" | "win32" | "linux",
 
+  /** Global quick-capture shortcut / tray item fired — open the capture dialog. */
+  onQuickCapture: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on("app:quick-capture", handler);
+    return () => { ipcRenderer.off("app:quick-capture", handler); };
+  },
+
   // ── Migrations ────────────────────────────────
   checkMigrations: () => invoke<Array<{ id: string; title: string; description: string; needed: boolean }>>("app:checkMigrations"),
   runMigration: (migrationId: string) => invoke<{ ok: true }>("app:runMigration", { migrationId }),

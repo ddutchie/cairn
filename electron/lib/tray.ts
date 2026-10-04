@@ -7,6 +7,7 @@
 
 import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
 import path from "path";
+import { openQuickCapture } from "./quick-capture";
 
 const isDev = !app.isPackaged;
 
@@ -50,6 +51,12 @@ export function createTray(win: BrowserWindow): TrayHandle {
       {
         label: "Open Cairn",
         click: () => { win.show(); win.focus(); },
+      },
+      {
+        label: "Quick capture…",
+        accelerator: "CommandOrControl+Shift+Space",
+        registerAccelerator: false,
+        click: () => openQuickCapture(win),
       },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() },

@@ -51,6 +51,7 @@ import { initUsageRecorder } from "./lib/usage-recorder";
 import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 import { errMsg } from "./host-shared/errors";
+import { registerQuickCapture } from "./lib/quick-capture";
 
 const isDev = !app.isPackaged;
 let shutdownStarted = false;
@@ -540,6 +541,7 @@ app.whenReady().then(async () => {
 
   // ── System tray ───────────────────────────────────────────────────────
   const { updateBadge } = createTray(win);
+  registerQuickCapture(win);
 
   // ── Change-feed attribution ───────────────────────────────────────────
   // Record which renderer window produced each db:* write's feed rows, so the

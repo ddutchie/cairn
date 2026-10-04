@@ -39,6 +39,7 @@ export function ShortcutsSettings() {
         { key: `${mod}N`, action: "New note" },
         ...(hiddenViews.has("chat") ? [] : [{ key: `${mod}/`, action: "Toggle AI chat" }]),
         { key: `${mod}\\`, action: "Toggle sidebar" },
+        { key: `${mod}⇧Space`, action: "Quick capture (works from any app)" },
       ],
     },
     {
