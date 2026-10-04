@@ -43,6 +43,7 @@ import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
 import { ProjectSettingsButton } from "./project-settings";
+import { ReviewButton } from "./review-button";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { useAgentSessionActions } from "@/components/agent/useAgentSessionActions";
 import { CollapsibleSection } from "./primitives";
@@ -528,10 +529,10 @@ export function ProjectOverview() {
                 </div>
               </div>
               <div className="hidden sm:block lg:hidden">
-                <ProjectSettingsButton project={project} />
+                <div className="flex items-center gap-1"><ReviewButton project={project} /><ProjectSettingsButton project={project} /></div>
               </div>
               <div className="hidden lg:flex">
-                <ProjectSettingsButton project={project} />
+                <div className="flex items-center gap-1"><ReviewButton project={project} /><ProjectSettingsButton project={project} /></div>
               </div>
             </div>
 
