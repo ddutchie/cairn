@@ -46,7 +46,7 @@ import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
-import { registerChatPopoutHandlers } from "./chat-popout";
+import { registerChatPopoutHandlers, isChatPopoutWindow } from "./chat-popout";
 import { initUsageRecorder } from "./lib/usage-recorder";
 import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
@@ -540,8 +540,16 @@ app.whenReady().then(async () => {
   }
 
   // ── System tray ───────────────────────────────────────────────────────
-  const { updateBadge } = createTray(win);
-  registerQuickCapture(win);
+  // The first window can be closed on macOS (the app stays alive) and the
+  // dock recreates it via the activate handler — resolve lazily so the tray
+  // and the global shortcut keep reaching a live window.
+  const getMainWindow = (): BrowserWindow | null => {
+    if (!win.isDestroyed()) return win;
+    const open = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && !isChatPopoutWindow(w));
+    return open[0] ?? createWindow();
+  };
+  const { updateBadge } = createTray(getMainWindow);
+  registerQuickCapture(getMainWindow);
 
   // ── Change-feed attribution ───────────────────────────────────────────
   // Record which renderer window produced each db:* write's feed rows, so the

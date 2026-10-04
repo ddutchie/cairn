@@ -54,6 +54,9 @@ export function notifyAgentAttention(
   const prev = lastSent.get(key);
   if (prev !== undefined && now - prev < COOLDOWN_MS) return false;
   lastSent.set(key, now);
+  if (lastSent.size > 200) {
+    for (const [k, t] of lastSent) if (now - t >= COOLDOWN_MS) lastSent.delete(k);
+  }
 
   let name = "Coding session";
   try {

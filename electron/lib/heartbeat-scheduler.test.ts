@@ -232,3 +232,19 @@ describe("HeartbeatScheduler — failure policy and budget", () => {
     expect(runs[0].error).toMatch(/budget of \$1\.00 reached/);
   });
 });
+
+describe("HeartbeatScheduler — failure policy respects max_runs", () => {
+  it("does not schedule a retry when the last allowed run failed", async () => {
+    const { id } = makeAutomation({ maxRuns: 1 });
+    const before = getAutomationById(db, id)!;
+    const s = makeScheduler(async (run) => {
+      updateAutomationRun(db, run.id, { status: "error", finishedAt: T0.toISOString() });
+    });
+    await s.tick();
+    await flush();
+    const after = getAutomationById(db, id)!;
+    // Advanced to the next scheduled slot (1h), not pulled forward to a 5m retry.
+    expect(after.nextRunAt).not.toBe(new Date(T0.getTime() + 5 * 60_000).toISOString());
+    expect(new Date(after.nextRunAt).getTime()).toBeGreaterThan(new Date(before.nextRunAt).getTime());
+  });
+});

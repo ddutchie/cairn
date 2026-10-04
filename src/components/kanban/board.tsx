@@ -247,6 +247,13 @@ export function KanbanBoard() {
   // and the Filters menu (assignee / tags / due / blocked). Saved views apply a
   // whole BoardFilter at once.
   const [filter, setFilter]                 = useState<BoardFilter>(EMPTY_BOARD_FILTER);
+  // Filters are per project: a tag or assignee from another project would
+  // silently hide every card. Reset during render when the project changes.
+  const [filterProjectId, setFilterProjectId] = useState(activeProjectId);
+  if (filterProjectId !== activeProjectId) {
+    setFilterProjectId(activeProjectId);
+    setFilter(EMPTY_BOARD_FILTER);
+  }
   const filterInputRef                      = useRef<HTMLInputElement>(null);
 
   // Archive view

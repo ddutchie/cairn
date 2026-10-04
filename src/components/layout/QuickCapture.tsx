@@ -50,7 +50,8 @@ export function QuickCapture() {
     return window.electron?.onQuickCapture?.(() => {
       setOpen(true);
       setSaved(null);
-      setProjectId((cur) => cur ?? activeProjectId);
+      // Always target the project you're looking at now, not the last capture's.
+      setProjectId(activeProjectId);
       // Focus after the dialog mounts / the window regains focus.
       setTimeout(() => titleRef.current?.focus(), 50);
     });
@@ -62,6 +63,7 @@ export function QuickCapture() {
 
   const close = () => {
     setOpen(false);
+    setProjectId(null);
     setTitle("");
     setBody("");
   };

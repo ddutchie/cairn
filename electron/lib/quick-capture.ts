@@ -10,26 +10,37 @@ import { app, globalShortcut, type BrowserWindow } from "electron";
 export const QUICK_CAPTURE_ACCELERATOR = "CommandOrControl+Shift+Space";
 export const QUICK_CAPTURE_CHANNEL = "app:quick-capture";
 
-export function openQuickCapture(win: BrowserWindow): void {
-  if (win.isDestroyed()) return;
+/** Resolves the live main window (recreating it if the user closed it on macOS). */
+export type MainWindowGetter = () => BrowserWindow | null;
+
+export function openQuickCapture(getWin: MainWindowGetter): void {
+  const win = getWin();
+  if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
-  win.webContents.send(QUICK_CAPTURE_CHANNEL);
+  // A freshly recreated window may still be loading; deliver once it's ready.
+  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", () => win.webContents.send(QUICK_CAPTURE_CHANNEL));
+  else win.webContents.send(QUICK_CAPTURE_CHANNEL);
 }
 
 /**
  * Register the global shortcut for `win`. Returns false when another app owns
  * the accelerator (registration is first-come); the tray item still works.
  */
-export function registerQuickCapture(win: BrowserWindow): boolean {
+let unregisterHooked = false;
+
+export function registerQuickCapture(getWin: MainWindowGetter): boolean {
   let ok = false;
   try {
-    ok = globalShortcut.register(QUICK_CAPTURE_ACCELERATOR, () => openQuickCapture(win));
+    ok = globalShortcut.register(QUICK_CAPTURE_ACCELERATOR, () => openQuickCapture(getWin));
   } catch (e) {
     console.warn("[quick-capture] shortcut registration failed:", e);
   }
   if (!ok) console.warn(`[quick-capture] ${QUICK_CAPTURE_ACCELERATOR} is taken by another app; use the tray menu instead.`);
-  app.once("will-quit", () => globalShortcut.unregister(QUICK_CAPTURE_ACCELERATOR));
+  if (!unregisterHooked) {
+    unregisterHooked = true;
+    app.once("will-quit", () => globalShortcut.unregister(QUICK_CAPTURE_ACCELERATOR));
+  }
   return ok;
 }

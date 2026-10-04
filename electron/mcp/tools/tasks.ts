@@ -392,11 +392,17 @@ function firstColumnOfType(snap: Snapshot, projectId: string, type: string) {
 }
 
 export function claim_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const { cardId, force = false, moveToInProgress = true } = args;
   const agent = String(args.agent ?? "").trim();
   if (!agent) return { error: "agent is required (a short label such as \"Claude Code\")" };
-  const card = snap.cards.find((c) => c.id === cardId);
-  if (!card) return { error: "Task not found (or archived)" };
+  // Read-check-write in one transaction against the live row (not the snapshot)
+  // so two agents claiming at once can't both win, and no progress line is lost.
+  return db.transaction(() => claimTaskTx(db, snap, args, agent))();
+}
+
+function claimTaskTx(db: Database.Database, snap: Snapshot, args: Record<string, any>, agent: string) {
+  const { cardId, force = false, moveToInProgress = true } = args;
+  const card = q.getCardById(db, cardId as string);
+  if (!card || card.archivedAt) return { error: "Task not found (or archived)" };
   const current = (card.assignee as string | undefined)?.trim();
   if (current && current !== agent && !force) {
     return { error: `Task is already claimed by "${current}". Pass force=true to take it over.` };
@@ -417,11 +423,15 @@ export function claim_task(db: Database.Database, snap: Snapshot, args: Record<s
 }
 
 export function add_task_progress(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const { cardId, moveTo } = args;
   const message = String(args.message ?? "").trim();
   if (!message) return { error: "message is required" };
-  const card = snap.cards.find((c) => c.id === cardId);
-  if (!card) return { error: "Task not found (or archived)" };
+  return db.transaction(() => addTaskProgressTx(db, snap, args, message))();
+}
+
+function addTaskProgressTx(db: Database.Database, snap: Snapshot, args: Record<string, any>, message: string) {
+  const { cardId, moveTo } = args;
+  const card = q.getCardById(db, cardId as string);
+  if (!card || card.archivedAt) return { error: "Task not found (or archived)" };
   const who = String(args.agent ?? card.assignee ?? "agent");
   const patch: Parameters<typeof q.updateCard>[2] = { description: appendProgressEntry(card.description, who, message) };
   let target: (typeof snap.columns)[number] | undefined;

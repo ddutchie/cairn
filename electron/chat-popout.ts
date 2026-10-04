@@ -145,6 +145,11 @@ export function createChatPopoutWindow(): BrowserWindow {
   return win;
 }
 
+/** True for the chat pop-out window (not the main app window). */
+export function isChatPopoutWindow(win: BrowserWindow): boolean {
+  return popoutWindow === win;
+}
+
 export function closeChatPopoutWindow(): void {
   // Clean any still-pending generation for this window (e.g. popIn before Ready consumed it).
   if (pendingGenerationForWindow !== null) {

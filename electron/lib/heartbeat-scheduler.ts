@@ -201,6 +201,9 @@ export class HeartbeatScheduler {
     const fails = consecutiveFailedRuns(db, automation.id);
     const current = getAutomationById(db, automation.id);
     if (!current?.enabled) return;
+    // A retry counts as a run; when the last allowed run failed there's nothing
+    // left to retry with (the next tick would just disable it silently).
+    if (current.maxRuns !== null && current.runCount >= current.maxRuns) return;
     if (fails >= PAUSE_AFTER_FAILURES) {
       updateAutomation(db, automation.id, { enabled: false, nextRunAt: current.nextRunAt });
       const last = run.error ? ` Last error: ${run.error.slice(0, 160)}` : "";

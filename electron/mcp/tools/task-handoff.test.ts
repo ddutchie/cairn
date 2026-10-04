@@ -70,6 +70,12 @@ describe("claim_task / add_task_progress", () => {
     expect(getCardById(db, "dep")!.blockedByIds).toEqual([]);
   });
 
+  it("checks the claim against the live row, not a stale snapshot", () => {
+    // Someone else claimed it directly in the DB after the snapshot was taken.
+    db.prepare("UPDATE task_cards SET assignee = 'Cursor' WHERE id = 'c'").run();
+    expect(run("claim_task", { cardId: "c", agent: "Claude Code" }).error).toMatch(/already claimed by "Cursor"/);
+  });
+
   it("validates input", () => {
     expect(run("claim_task", { cardId: "c", agent: " " }).error).toMatch(/agent is required/);
     expect(run("add_task_progress", { cardId: "c", message: "" }).error).toMatch(/message is required/);
