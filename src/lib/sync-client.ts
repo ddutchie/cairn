@@ -13,7 +13,7 @@
  * (matching SyncSettings.tsx) to avoid editing the global electron.d.ts.
  */
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
 export type SyncState = "disabled" | "idle" | "syncing" | "offline";
 
@@ -292,23 +292,6 @@ export async function triggerSyncNow(): Promise<void> {
   } catch {
     /* status event will surface the offline state */
   }
-}
-
-/** Subscribe a callback to status changes outside React (rarely needed). */
-export function onSyncStatus(cb: (s: SyncStatus) => void): () => void {
-  ensureStarted();
-  const wrapped = () => cb(current);
-  listeners.add(wrapped);
-  // Use the shared teardown so unsubscribing the last listener still releases
-  // the IPC subscription (otherwise it would leak).
-  return () => removeListener(wrapped);
-}
-
-/** No-op export kept for symmetry; the hook auto-starts on first mount. */
-export function useEnsureSyncStarted(): void {
-  useEffect(() => {
-    ensureStarted();
-  }, []);
 }
 
 // ── Conflict-modal open state (shared so the title-bar indicator, the banner,
