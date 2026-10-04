@@ -125,7 +125,7 @@ export default function ChatScreen() {
   const keyboard = useReanimatedKeyboardAnimation();
   const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap), [height, insets.bottom]);
   const hostRef = useRef<CairnAttachmentHostHandle>(null);
-  const composerInputRef = useRef<import("react-native").TextInput>(null);
+  const composerInputRef = useRef<import("react-native").TextInputInstance>(null);
   useEffect(() => {
     strip.set(withSpring(attachments.length > 0 ? 1 : 0, SPRING.strip));
   }, [attachments.length, strip]);

@@ -6,8 +6,7 @@ import {
   StyleSheet,
   View,
   Alert,
-  Share,
-} from "react-native";
+  Share, type ScrollViewInstance } from "react-native";
 import { Pin, List } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNote, updateNote, tagsForNote, noteTagIds, setNoteTags, pinNote, softDeleteNote, workspaceIdForNote, exportNote } from "@/db/queries";
@@ -65,7 +64,7 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
   // scroll view, and per-heading y-offsets reported by MarkdownView (relative to
   // its own container) plus that container's offset within the scroll content.
   const [tocOpen, setTocOpen] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const headingY = useRef<Map<string, number>>(new Map());
   const mdOffsetY = useRef(0);
   const headings = useMemo(() => extractHeadings(note?.content ?? ""), [note?.content]);

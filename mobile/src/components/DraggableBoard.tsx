@@ -5,7 +5,7 @@
    worklets / useAnimatedStyle — never during JS render. The plain fields
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
 import { memo, useCallback, useEffect, useMemo } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, type ViewInstance } from "react-native";
 import { Plus, Archive, Trash2 } from "lucide-react-native";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { GestureDetector } from "react-native-gesture-handler";
@@ -228,7 +228,7 @@ function ActionZone({
   });
   return (
     <View
-      ref={(node: View | null) => ctrl.registerZone(zoneId, node, true)}
+      ref={(node: ViewInstance | null) => ctrl.registerZone(zoneId, node, true)}
       style={styles.actionZone}
       collapsable={false}
     >
@@ -310,7 +310,7 @@ const BoardColumn = memo(function BoardColumn({
   const hoverStyle = useZoneHighlight(ctrl, colId);
   const draggingId = ctrl.dragging?.id ?? null;
   return (
-    <View ref={(node: View | null) => ctrl.registerZone(colId, node)} style={styles.column} collapsable={false}>
+    <View ref={(node: ViewInstance | null) => ctrl.registerZone(colId, node)} style={styles.column} collapsable={false}>
       {/* Hover highlight overlay — an absolutely-filled Animated.View so the
           measured column stays a plain View; reanimated animates the opacity. */}
       <Animated.View pointerEvents="none" style={[styles.columnHighlight, hoverStyle]} />

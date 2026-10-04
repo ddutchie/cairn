@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { TextInput, StyleSheet } from "react-native";
+import { TextInput, StyleSheet, type TextInputInstance } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import type { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
@@ -43,7 +43,7 @@ export function NoteEditorBody({
   const t = useTheme();
   const fontId = useFont();
   const fontFamily = resolveRNFontFamily(fontId);
-  const bodyRef = useRef<TextInput>(null);
+  const bodyRef = useRef<TextInputInstance>(null);
 
   return (
     <>

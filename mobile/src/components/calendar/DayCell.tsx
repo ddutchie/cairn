@@ -1,4 +1,4 @@
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, type ViewInstance } from "react-native";
 import Animated from "react-native-reanimated";
 import { useZoneHighlight, type DragController } from "@/dnd";
 import { withAlpha, type Theme } from "@/theme";
@@ -38,7 +38,7 @@ export function DayCell({
   const hoverStyle = useZoneHighlight(ctrl, cell.key);
   return (
     <Pressable
-      ref={dragEnabled ? (node: View | null) => ctrl.registerZone(cell.key, node) : undefined}
+      ref={dragEnabled ? (node: ViewInstance | null) => ctrl.registerZone(cell.key, node) : undefined}
       collapsable={false}
       onPress={() => onSelect(cell.key)}
       style={[
