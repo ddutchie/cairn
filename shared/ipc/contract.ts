@@ -9,14 +9,21 @@
  * still use the untyped `registerIpcHandle` / `invoke`.
  *
  * Preload passes at most one argument per call, so `args` is `[]` or `[x]`.
+ *
+ * The types describe what a well-behaved renderer sends. Renderer content is
+ * untrusted, so handlers must still validate arguments at runtime (e.g.
+ * `bindChatPopoutSession` for chat:popOut) — the contract is not a guard.
  */
 
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 
+/** Why a pop-out handshake call was refused. */
+export type PopoutRefusal = "invalid-payload" | "profile-mismatch" | "not-main-window" | "not-popout";
+
 /** Acknowledgement returned by the pop-out handshake channels. */
 export interface PopoutAck {
   ok: boolean;
-  reason?: string;
+  reason?: PopoutRefusal;
 }
 
 export interface IpcContract {

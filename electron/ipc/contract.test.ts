@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { IpcMainInvokeEvent } from "electron";
-import { IPC_CONTRACT_CHANNELS, type IpcArgs, type IpcReturn } from "../../shared/ipc/contract";
-import type { IpcResult } from "./result-helpers";
+import { IPC_CONTRACT_CHANNELS } from "../../shared/ipc/contract";
+import type { registerContractHandle } from "./registry";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -31,8 +30,8 @@ describe("typed IPC contract", () => {
   });
 
   it("rejects mismatched handler signatures at compile time", () => {
-    type Handler<C extends (typeof IPC_CONTRACT_CHANNELS)[number]> =
-      (event: IpcMainInvokeEvent, ...args: IpcArgs<C>) => Promise<IpcResult<IpcReturn<C>>>;
+    // The real registerContractHandle parameter, so a signature change is caught here too.
+    type Handler<C extends (typeof IPC_CONTRACT_CHANNELS)[number]> = Parameters<typeof registerContractHandle<C>>[1];
     // @ts-expect-error — chat:popIn takes { sessionId }, not a number
     const badArgs: Handler<"chat:popIn"> = async (_e, _p: number) => ({ data: { ok: true } });
     // @ts-expect-error — chat:requestPopIn returns a PopoutAck, not a string
