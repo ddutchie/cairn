@@ -14,6 +14,7 @@ import { ts, newId } from "./utils";
 import { toWorkspace, toProject, j, type DbRow } from "../host-shared/db-mappers";
 import type { SessionProfileId } from "../../shared/agent/session-profile";
 import { getOrCreateFlow } from "./flow-queries";
+import type { MergedNoteMove, ProjectMergeResult as MergeProjectResult } from "../../shared/types/workspace";
 
 export interface SessionProfileRow {
   sessionId: string;
@@ -148,21 +149,7 @@ export function getProjectById(db: Database.Database, id: string) {
 
 /** A note that was repointed by mergeProject — the IPC layer uses this to
  *  relocate the .md file from the source folder into the destination folder. */
-export interface MergedNoteMove {
-  id: string;
-  type: string;
-  folder: string;
-}
-
-export interface MergeProjectResult {
-  /** Notes repointed from source → target (for .md relocation by the caller). */
-  movedNotes: MergedNoteMove[];
-  /** Source project name (for locating/removing its on-disk notes folder). */
-  sourceName: string;
-  /** Target project name (destination folder). */
-  targetName: string;
-  counts: { notes: number; cards: number; columns: number; flowNodes: number };
-}
+export type { MergedNoteMove, MergeProjectResult };
 
 /**
  * Merge every entity owned by `sourceId` into `targetId`, then delete the now

@@ -10,32 +10,18 @@ import { matchesQuery } from "../../shared/notes/text";
 import { stripMarkdown } from "./text-utils";
 import { buildNoteMarkdown, buildProjectMarkdown } from "../../shared/notes/export";
 import { isOverdue, isDueWithin } from "../../shared/notes/due";
+import type { BoardColumn, TaskCard } from "../../shared/types/board";
+import type { Note } from "../../shared/types/notes";
+import type { Project, Tag, Workspace } from "../../shared/types/workspace";
 
+/** The entity snapshot the read tools query (`getFullSnapshot` / MCP `getSnapshot`). */
 export interface CairnSnapshot {
-  workspaces: Array<{ id: string; name: string; [k: string]: unknown }>;
-  projects: Array<{
-    id: string; workspaceId: string; name: string; description?: string;
-    status: string; priority: string; dueDate?: string; archivedAt?: string;
-    tagIds: string[]; projectSettings: Record<string, unknown>; createdAt: string; updatedAt: string;
-  }>;
-  notes: Array<{
-    id: string; projectId: string; workspaceId: string; title: string;
-    content: string; contentText: string; tagIds: string[];
-    linkedNoteIds: string[]; linkedCardIds: string[];
-    isPinned: boolean; type: string; folder?: string;
-    createdAt: string; updatedAt: string; archivedAt?: string;
-  }>;
-  columns: Array<{
-    id: string; projectId: string; workspaceId: string; name: string;
-    type: string; order: number; createdAt: string; updatedAt: string;
-  }>;
-  cards: Array<{
-    id: string; columnId: string; projectId: string; workspaceId: string;
-    title: string; description?: string; priority: string; dueDate?: string;
-    linkedNoteIds: string[]; blockedByIds: string[]; tagIds: string[]; order: number;
-    assignee?: string; createdAt: string; updatedAt: string; archivedAt?: string;
-  }>;
-  tags: Array<{ id: string; workspaceId: string; name: string; color: string }>;
+  workspaces: Workspace[];
+  projects: Project[];
+  notes: Array<Note & { content: string }>;
+  columns: BoardColumn[];
+  cards: TaskCard[];
+  tags: Tag[];
 }
 
 type Args = Record<string, any>;

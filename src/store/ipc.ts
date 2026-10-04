@@ -135,8 +135,30 @@ export function ipcData<T>(
 }
 
 /**
- * Awaitable IPC call that returns the raw IpcResult<T>.
- * Use when the caller needs to inspect { error } (e.g. circular dep check).
+ * Awaitable IPC call as a result object: `{ data }` with the resolved value
+ * (preload's invoke already unwrapped the envelope), or `{ error }` when the
+ * call rejected or Electron is unavailable. Never rejects. Use when the caller
+ * needs the error message inline (e.g. the circular-dependency check).
+ */
+export async function ipcResult<T>(
+  fn: (e: NonNullable<Window["electron"]>) => Promise<T> | undefined
+): Promise<{ data: T } | { error: string }> {
+  if (!isElectron() || !window.electron) return { error: "Not in Electron" };
+  try {
+    const pending = fn(window.electron);
+    if (!pending) return { error: "Not available" };
+    return { data: await pending };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * @deprecated Use `ipcResult`. This expects `fn` to resolve to a raw
+ * `{ data } | { error }` envelope, but preload's invoke already unwraps it, so
+ * a successful call comes back as the bare value with no `data` key. The
+ * remaining (chat) callers compensate by hand; they move to `ipcResult` with
+ * the chat domain's typed-contract migration.
  */
 export async function ipcAwaitResult<T>(
   fn: (e: NonNullable<Window["electron"]>) => Promise<{ data: T } | { error: string } | undefined>

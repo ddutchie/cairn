@@ -7,10 +7,10 @@ import {
 
 function snap(): CairnSnapshot {
   return {
-    workspaces: [{ id: "ws1", name: "WS" }],
+    workspaces: [{ id: "ws1", name: "WS", createdAt: "", updatedAt: "" }],
     projects: [{
       id: "p1", workspaceId: "ws1", name: "Alpha", description: "The alpha project.",
-      status: "active", priority: "high", tagIds: [], projectSettings: {},
+      status: "active", priority: "high", tagIds: [], projectSettings: {}, codeDirectory: null,
       createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
     }],
     notes: [
@@ -18,12 +18,12 @@ function snap(): CairnSnapshot {
         id: "n1", projectId: "p1", workspaceId: "ws1", title: "Design",
         content: "# Design\n\nBody of design.", contentText: "Body of design.",
         tagIds: ["t1"], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
-        type: "note", folder: "specs", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z",
+        type: "note", folder: "specs", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z", version: 1,
       },
       {
         id: "dash", projectId: "p1", workspaceId: "ws1", title: "A Dashboard",
         content: "<html></html>", contentText: "", tagIds: [], linkedNoteIds: [], linkedCardIds: [],
-        isPinned: false, type: "dashboard", folder: "", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+        isPinned: false, type: "dashboard", folder: "", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", version: 1,
       },
     ],
     columns: [
@@ -33,7 +33,7 @@ function snap(): CairnSnapshot {
     cards: [
       { id: "card1", columnId: "c1", projectId: "p1", workspaceId: "ws1", title: "Do the thing",
         description: "with details", priority: "high", linkedNoteIds: [], blockedByIds: [], tagIds: ["t1"],
-        order: 0, createdAt: "", updatedAt: "" },
+        order: 0, createdAt: "", updatedAt: "", version: 1 },
     ],
     tags: [{ id: "t1", workspaceId: "ws1", name: "urgent", color: "#fff" }],
   };

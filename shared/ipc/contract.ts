@@ -24,9 +24,16 @@ import type {
   AutomationRun, AutomationRunEvent, AutomationRunWithAutomation, RequirementStatus, RunLog,
 } from "../types/automations";
 import type {
+  BoardColumn, CardCreateInput, CardPatch, ColumnCreateInput, ColumnPatch, TaskCard,
+} from "../types/board";
+import type {
   FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch, IdeaFlowEdge, IdeaFlowNode,
   ResolvedIdeaFlow, UrlMetadata,
 } from "../types/flow";
+import type {
+  Project, ProjectCreateInput, ProjectMergeResult, ProjectPatch, ProjectSettings, Tag, TagCreateInput, TagPatch,
+  Workspace, WorkspaceCreateInput, WorkspacePatch,
+} from "../types/workspace";
 import type { Note, NoteBody, NoteCreateInput, NotePatch } from "../types/notes";
 
 /** Why a pop-out handshake call was refused. */
@@ -51,6 +58,57 @@ export interface IpcContract {
   "chat:requestPopIn": { args: []; result: PopoutAck };
   /** Pop-out page → close and hand the session back to the main window. */
   "chat:popIn": { args: [payload: { sessionId: string }]; result: PopoutAck };
+
+  // ── Workspaces & projects ────────────────────────────────────────────────
+  "db:workspace:list": { args: []; result: Workspace[] };
+  "db:workspace:create": { args: [input: WorkspaceCreateInput]; result: Workspace };
+  "db:workspace:update": { args: [req: { id: string; patch: WorkspacePatch }]; result: Workspace };
+  /** All projects when workspaceId is omitted. */
+  "db:project:list": { args: [req: { workspaceId?: string }]; result: Project[] };
+  "db:project:create": {
+    args: [input: ProjectCreateInput];
+    result: { project: Project; columns: BoardColumn[] };
+  };
+  /** A rename also moves the project's notes folder on disk. */
+  "db:project:update": { args: [req: { id: string; patch: ProjectPatch }]; result: Project };
+  /** Merged into the stored settings; a null/undefined value removes that key. null if the project is gone. */
+  "db:project:updateSettings": {
+    args: [req: { id: string; settings: Partial<Record<keyof ProjectSettings, unknown>> }];
+    result: Project | null;
+  };
+  "db:project:delete": { args: [req: { id: string }]; result: void };
+  /** Move everything from source into target, then delete source. */
+  "db:project:merge": { args: [req: { sourceId: string; targetId: string }]; result: ProjectMergeResult };
+
+  // ── Board ────────────────────────────────────────────────────────────────
+  "db:column:list": { args: [req: { projectId?: string }]; result: BoardColumn[] };
+  "db:column:create": { args: [input: ColumnCreateInput]; result: BoardColumn };
+  "db:column:update": { args: [req: { id: string; patch: ColumnPatch }]; result: BoardColumn };
+  /** Deletes the column's cards too. */
+  "db:column:delete": { args: [req: { id: string }]; result: void };
+  /** Live (non-tombstoned) cards, by project or column. */
+  "db:card:list": { args: [opts: { projectId?: string; columnId?: string } | undefined]; result: TaskCard[] };
+  /** Rejects an empty title. */
+  "db:card:create": { args: [input: CardCreateInput]; result: TaskCard };
+  "db:card:update": { args: [req: { id: string; patch: CardPatch }]; result: TaskCard };
+  "db:card:moveToProject": {
+    args: [req: { id: string; projectId: string; columnId: string; order: number }];
+    result: TaskCard;
+  };
+  "db:card:delete": { args: [req: { id: string }]; result: void };
+  /** Archive every card in a column. */
+  "db:cards:archive-done": { args: [req: { columnId: string }]; result: { archived: number } };
+  /** Rejects self-blocks, cross-project blockers and cycles. */
+  "db:card:addBlocker": { args: [req: { cardId: string; blockerCardId: string }]; result: TaskCard };
+  "db:card:removeBlocker": { args: [req: { cardId: string; blockerCardId: string }]; result: TaskCard };
+  /** Open, non-done cards whose blockers are all resolved. */
+  "db:card:ready": { args: [req: { projectId?: string }]; result: TaskCard[] };
+
+  // ── Tags ─────────────────────────────────────────────────────────────────
+  "db:tag:list": { args: [req: { workspaceId?: string }]; result: Tag[] };
+  "db:tag:create": { args: [input: TagCreateInput]; result: Tag };
+  "db:tag:update": { args: [req: { id: string; patch: TagPatch }]; result: Tag };
+  "db:tag:delete": { args: [req: { id: string }]; result: void };
 
   // ── Notes ────────────────────────────────────────────────────────────────
   /** Live notes (no tombstones), newest first; all projects when projectId is omitted. */
@@ -195,6 +253,32 @@ const CHANNELS: ChannelRecord = {
   "chat:popoutReady": true,
   "chat:requestPopIn": true,
   "chat:popIn": true,
+  "db:workspace:list": true,
+  "db:workspace:create": true,
+  "db:workspace:update": true,
+  "db:project:list": true,
+  "db:project:create": true,
+  "db:project:update": true,
+  "db:project:updateSettings": true,
+  "db:project:delete": true,
+  "db:project:merge": true,
+  "db:column:list": true,
+  "db:column:create": true,
+  "db:column:update": true,
+  "db:column:delete": true,
+  "db:card:list": true,
+  "db:card:create": true,
+  "db:card:update": true,
+  "db:card:moveToProject": true,
+  "db:card:delete": true,
+  "db:cards:archive-done": true,
+  "db:card:addBlocker": true,
+  "db:card:removeBlocker": true,
+  "db:card:ready": true,
+  "db:tag:list": true,
+  "db:tag:create": true,
+  "db:tag:update": true,
+  "db:tag:delete": true,
   "db:note:list": true,
   "db:note:create": true,
   "db:note:update": true,

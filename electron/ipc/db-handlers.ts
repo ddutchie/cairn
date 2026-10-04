@@ -58,13 +58,13 @@ export function registerDbHandlers(ctx: DbContext): void {
   });
 
   // ── Workspaces ────────────────────────────────────
-  registerIpcHandle("db:workspace:list", () => handle(() => q.getAllWorkspaces(ctx.db)));
-  registerIpcHandle("db:workspace:create", (_e, args: Parameters<typeof q.createWorkspace>[1]) => handle(() => q.createWorkspace(ctx.db, args)));
-  registerIpcHandle("db:workspace:update", (_e, { id, patch }) => handle(() => q.updateWorkspace(ctx.db, id, patch)));
+  registerContractHandle("db:workspace:list", () => handle(() => q.getAllWorkspaces(ctx.db)));
+  registerContractHandle("db:workspace:create", (_e, args) => handle(() => q.createWorkspace(ctx.db, args)));
+  registerContractHandle("db:workspace:update", (_e, { id, patch }) => handle(() => q.updateWorkspace(ctx.db, id, patch)));
 
   // ── Projects ──────────────────────────────────────
-  registerIpcHandle("db:project:list", (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
-  registerIpcHandle("db:project:create", (_e, args: Parameters<typeof q.createProject>[1] & { withDefaultColumns?: boolean }) => handle(() => {
+  registerContractHandle("db:project:list", (_e, { workspaceId }) => handle(() => q.getProjects(ctx.db, workspaceId)));
+  registerContractHandle("db:project:create", (_e, args) => handle(() => {
     // Wrap project + default columns in a transaction so all columns succeed or none do.
     return ctx.db.transaction(() => {
       const project = q.createProject(ctx.db, args);
@@ -84,7 +84,7 @@ export function registerDbHandlers(ctx: DbContext): void {
       return { project, columns: [] };
     })();
   }));
-  registerIpcHandle("db:project:update", (_e, { id, patch }) => handle(() => {
+  registerContractHandle("db:project:update", (_e, { id, patch }) => handle(() => {
     // Capture the old name BEFORE the update so we can relocate the project's
     // on-disk notes directory when the name (and thus its slug) changes —
     // otherwise the .md files stay under the old slug and future writes split
@@ -103,8 +103,8 @@ export function registerDbHandlers(ctx: DbContext): void {
     }
     return project;
   }));
-  registerIpcHandle("db:project:updateSettings", (_e, { id, settings }: { id: string; settings: Record<string, unknown> }) => handle(() => q.updateProjectSettings(ctx.db, id, settings)));
-  registerIpcHandle("db:project:delete", (_e, { id }) => handle(() => {
+  registerContractHandle("db:project:updateSettings", (_e, { id, settings }) => handle(() => q.updateProjectSettings(ctx.db, id, settings)));
+  registerContractHandle("db:project:delete", (_e, { id }) => handle(() => {
     const project = q.getProjectById(ctx.db, id);
     // Delete from DB first so if it fails, the .md files are still intact for recovery.
     q.deleteProject(ctx.db, id);
@@ -127,9 +127,9 @@ export function registerDbHandlers(ctx: DbContext): void {
   // authoritative move already happened in SQLite, and startup
   // reconcileProjectFolders would heal any stragglers, but we do it eagerly so
   // the user doesn't have to restart.
-  registerIpcHandle(
+  registerContractHandle(
     "db:project:merge",
-    (_e, { sourceId, targetId }: { sourceId: string; targetId: string }) =>
+    (_e, { sourceId, targetId }) =>
       handle(() => {
         const result = q.mergeProject(ctx.db, sourceId, targetId);
 
@@ -187,10 +187,10 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerBoardHandlers(ctx);
 
   // ── Tags ──────────────────────────────────────────
-  registerIpcHandle("db:tag:list", (_e, { workspaceId }) => handle(() => q.getTags(ctx.db, workspaceId)));
-  registerIpcHandle("db:tag:create", (_e, args: Parameters<typeof q.createTag>[1]) => handle(() => q.createTag(ctx.db, args)));
-  registerIpcHandle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(ctx.db, id, patch)));
-  registerIpcHandle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
+  registerContractHandle("db:tag:list", (_e, { workspaceId }) => handle(() => q.getTags(ctx.db, workspaceId)));
+  registerContractHandle("db:tag:create", (_e, args) => handle(() => q.createTag(ctx.db, args)));
+  registerContractHandle("db:tag:update", (_e, { id, patch }) => handle(() => q.updateTag(ctx.db, id, patch)));
+  registerContractHandle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
 
   // ── Slash commands ─────────────────────────────────
   registerIpcHandle("db:command:list", (_e, { workspaceId }) => handle(() => q.getSlashCommands(ctx.db, workspaceId)));

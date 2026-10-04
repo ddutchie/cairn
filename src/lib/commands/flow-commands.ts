@@ -11,6 +11,7 @@ import type { Command } from "@/lib/history";
 import { flowHandlers } from "@/lib/history";
 import type { TaskCard } from "@/types";
 import { flowClient } from "@/lib/ipc/flow";
+import { id as newId } from "@/lib/utils";
 
 // Strip resolved/computed fields that are added at read time and are not
 // stored in the DB. Passing them to flow.node.create causes IPC clone errors.
@@ -325,13 +326,14 @@ export function makePromoteToTaskCmd(
     async redo() {
       // Re-create the card
       const created = await window.electron?.card.create({
+        id: newId(),
         projectId: createdCard.projectId,
         workspaceId: createdCard.workspaceId,
         columnId: createdCard.columnId,
         title: createdCard.title,
         description: createdCard.description,
         priority: createdCard.priority,
-      }) as { id: string } | undefined;
+      });
       const cardId = created?.id ?? createdCard.id;
 
       // Delete old idea node if still present

@@ -1,6 +1,6 @@
 /** Board columns and task cards (incl. blockers, archive). Split out of db-handlers.ts. */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { invalidateRelationshipCache, computeAutoRelationships } from "../db/graph-queries";
@@ -8,25 +8,24 @@ import { recomputeCardSemanticEdges } from "./embedding-reindex";
 
 export function registerBoardHandlers(ctx: DbContext): void {
   // ── Board columns ─────────────────────────────────
-  registerIpcHandle("db:column:list", (_e, { projectId }) => handle(() => q.getColumns(ctx.db, projectId)));
-  registerIpcHandle("db:column:create", (_e, args: Parameters<typeof q.createColumn>[1]) => handle(() => q.createColumn(ctx.db, args)));
-  registerIpcHandle("db:column:update", (_e, { id, patch }) => handle(() => q.updateColumn(ctx.db, id, patch)));
-  registerIpcHandle("db:column:delete", (_e, { id }) => handle(() => q.deleteColumn(ctx.db, id)));
+  registerContractHandle("db:column:list", (_e, { projectId }) => handle(() => q.getColumns(ctx.db, projectId)));
+  registerContractHandle("db:column:create", (_e, args) => handle(() => q.createColumn(ctx.db, args)));
+  registerContractHandle("db:column:update", (_e, { id, patch }) => handle(() => q.updateColumn(ctx.db, id, patch)));
+  registerContractHandle("db:column:delete", (_e, { id }) => handle(() => q.deleteColumn(ctx.db, id)));
 
   // ── Task cards ────────────────────────────────────
-  registerIpcHandle("db:card:list", (_e, opts: Parameters<typeof q.getCards>[1]) => handle(() => q.getCards(ctx.db, opts)));
-  registerIpcHandle("db:card:create", (_e, args: Parameters<typeof q.createCard>[1]) => handle(() => {
+  registerContractHandle("db:card:list", (_e, opts) => handle(() => q.getCards(ctx.db, opts)));
+  registerContractHandle("db:card:create", (_e, args) => handle(() => {
     const title = (args?.title as string | null | undefined)?.trim();
     if (!title) throw new Error("Task title is required");
     const card = q.createCard(ctx.db, { ...args, title });
     if (card.workspaceId) recomputeCardSemanticEdges(ctx, card.id, card.workspaceId);
     return card;
   }));
-  registerIpcHandle("db:card:update", (_e, { id, patch }) => handle(() => {
+  registerContractHandle("db:card:update", (_e, { id, patch }) => handle(() => {
+    const { archivedAt, ...rest } = patch;
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
-    if ("archivedAt" in patch && patch.archivedAt === null) {
-      const rest = { ...patch };
-      delete rest.archivedAt;
+    if (archivedAt === null) {
       const card = ctx.db.transaction(() => {
         if (Object.keys(rest).length > 0) {
           q.updateCard(ctx.db, id, rest);
@@ -38,7 +37,7 @@ export function registerBoardHandlers(ctx: DbContext): void {
       if (card.workspaceId) recomputeCardSemanticEdges(ctx, id, card.workspaceId);
       return card;
     }
-    const card = q.updateCard(ctx.db, id, patch);
+    const card = q.updateCard(ctx.db, id, archivedAt === undefined ? rest : { ...rest, archivedAt });
     invalidateRelationshipCache(ctx.db, id);
     // A resolved blocker (archived, or moved to a done column) must leave every
     // other card's blocked_by_ids — otherwise get_task/list_ready_tasks keep
@@ -65,11 +64,11 @@ export function registerBoardHandlers(ctx: DbContext): void {
     }
     return card;
   }));
-  registerIpcHandle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
+  registerContractHandle("db:card:delete", (_e, { id }) => handle(() => q.deleteCard(ctx.db, id)));
 
-  registerIpcHandle(
+  registerContractHandle(
     "db:card:moveToProject",
-    (_e, { id, projectId, columnId, order }: { id: string; projectId: string; columnId: string; order: number }) =>
+    (_e, { id, projectId, columnId, order }) =>
       handle(() => {
         // Cross-project card moves previously went through updateCard(), whose
         // UPDATE has no project_id/workspace_id columns — so the move was
@@ -89,7 +88,7 @@ export function registerBoardHandlers(ctx: DbContext): void {
       }),
   );
 
-  registerIpcHandle("db:cards:archive-done", (_e, { columnId }: { columnId: string }) => handle(() => {
+  registerContractHandle("db:cards:archive-done", (_e, { columnId }) => handle(() => {
     const cards = q.getCards(ctx.db, { columnId });
     const now = new Date().toISOString();
     for (const c of cards) {
@@ -107,7 +106,7 @@ export function registerBoardHandlers(ctx: DbContext): void {
   }));
 
   // Blocker management (circular dep check at the IPC layer; queries.ts handles SQL).
-  registerIpcHandle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
+  registerContractHandle("db:card:addBlocker", (_e, { cardId, blockerCardId }) => handle(() => {
     const card = q.getCardById(ctx.db, cardId);
     if (!card) throw new Error("Card not found");
     const blocker = q.getCardById(ctx.db, blockerCardId);
@@ -131,11 +130,11 @@ export function registerBoardHandlers(ctx: DbContext): void {
     return q.addCardBlocker(ctx.db, cardId, blockerCardId);
   }));
 
-  registerIpcHandle("db:card:removeBlocker", (_e, { cardId, blockerCardId }) => handle(() =>
+  registerContractHandle("db:card:removeBlocker", (_e, { cardId, blockerCardId }) => handle(() =>
     q.removeCardBlocker(ctx.db, cardId, blockerCardId)
   ));
 
-  registerIpcHandle("db:card:ready", (_e, { projectId }) => handle(() =>
+  registerContractHandle("db:card:ready", (_e, { projectId }) => handle(() =>
     q.getReadyCards(ctx.db, projectId)
   ));
 }
