@@ -14,31 +14,7 @@ import type { TaskCard } from "@/types";
 import type { AtRiskCard, RiskReason } from "../../../../shared/overview/delivery";
 import type { AutomationRunWithAutomation } from "@/store/slices/automations";
 import { SectionHeader } from "./primitives";
-
-// Status → text colour, mirroring STATUS_COLOR in the Automations view detail
-// dialog so run rows read consistently across surfaces.
-const RUN_STATUS_COLOR: Record<AutomationRunWithAutomation["status"], string> = {
-  done: "text-[var(--ok)]",
-  running: "text-[var(--accent)]",
-  pending: "text-[var(--text-secondary)]",
-  skipped: "text-[var(--text-tertiary)]",
-  exhausted: "text-[var(--warning)]",
-  error: "text-[var(--danger)]",
-  denied: "text-[var(--danger)]",
-};
-
-interface RunArtifactRef { type: "note" | "task"; id: string; title: string }
-
-/** Notes/tasks a run created, parsed from its scratch JSON (set by the runner). */
-function runArtifacts(run: AutomationRunWithAutomation): RunArtifactRef[] {
-  if (!run.scratch) return [];
-  try {
-    const scratch = JSON.parse(run.scratch) as { artifacts?: RunArtifactRef[] };
-    return Array.isArray(scratch.artifacts) ? scratch.artifacts : [];
-  } catch {
-    return [];
-  }
-}
+import { STATUS_COLOR, runScratchArtifacts } from "@/components/automations/automation-format";
 
 // ── Delivery: shipped / at-risk ─────────────────────────────────────────────
 
@@ -152,7 +128,7 @@ export function RecentAutomationRunsFeed({
   return (
     <div className="space-y-0.5">
       {runs.map((r) => {
-        const artifacts = runArtifacts(r);
+        const artifacts = runScratchArtifacts(r);
         const ts = r.finishedAt ?? r.startedAt;
         return (
           <div
@@ -186,7 +162,7 @@ export function RecentAutomationRunsFeed({
             {r.error && (
               <span className="text-[0.714rem] text-[var(--danger)] flex-shrink-0 truncate max-w-40" title={r.error}>{r.error}</span>
             )}
-            <span className={cn("text-[0.714rem] font-medium flex-shrink-0 capitalize", RUN_STATUS_COLOR[r.status])}>
+            <span className={cn("text-[0.714rem] font-medium flex-shrink-0 capitalize", STATUS_COLOR[r.status])}>
               {r.status}
             </span>
             <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(ts)}</span>
