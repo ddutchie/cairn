@@ -9,7 +9,9 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ContextPanel, ID, AppUIState, SessionPresentation, SettingsSection } from "@/types";
 import { storage } from "@/lib/storage";
-import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
+import { id as newId } from "@/lib/utils";
+import type { BoardFilter, BoardView } from "@/lib/board-filters";
+import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -66,6 +68,12 @@ export interface LayoutSlice extends AppUIState {
   // to localStorage.
   overviewCollapsedSections: Record<string, boolean>;
   toggleOverviewSection: (projectId: ID, sectionId: string) => void;
+
+  // Saved board filter views, per project. Persisted to localStorage (a view
+  // is a personal lens, so it stays on this device rather than syncing).
+  boardViews: Record<ID, BoardView[]>;
+  saveBoardView: (projectId: ID, name: string, filter: BoardFilter) => BoardView;
+  deleteBoardView: (projectId: ID, viewId: string) => void;
 
   // Distraction-free note editing: hides the notes-list sidebar (and app rail)
   // so the editor fills the window. Session-scoped (not persisted).
@@ -177,6 +185,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
   notesCollapsedFolders: {},
   overviewCollapsedSections: {},
+  boardViews: {},
   chatPoppedOut: false,
   notesFullscreen: false,
 
@@ -260,6 +269,27 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
       else next[key] = true;           // expanded → collapsed
       storage.set(OVERVIEW_COLLAPSED_KEY, next);
       return { overviewCollapsedSections: next };
+    });
+  },
+
+  // ── Saved board views ───────────────────────────
+  saveBoardView(projectId, name, filter) {
+    const view: BoardView = { id: newId(), name: name.trim() || "Untitled view", filter };
+    set((s) => {
+      const next = { ...s.boardViews, [projectId]: [...(s.boardViews[projectId] ?? []), view] };
+      storage.set(BOARD_VIEWS_KEY, next);
+      return { boardViews: next };
+    });
+    return view;
+  },
+  deleteBoardView(projectId, viewId) {
+    set((s) => {
+      const remaining = (s.boardViews[projectId] ?? []).filter((v) => v.id !== viewId);
+      const next = { ...s.boardViews };
+      if (remaining.length > 0) next[projectId] = remaining;
+      else delete next[projectId];
+      storage.set(BOARD_VIEWS_KEY, next);
+      return { boardViews: next };
     });
   },
 

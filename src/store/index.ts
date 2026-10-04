@@ -25,7 +25,7 @@ import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite, isElectron } from "./ipc";
 import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
 import { ipcAwaitResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
@@ -65,6 +65,7 @@ import { createUserStyleSlice } from "./slices/user-style";
 import type { UserStyleSlice } from "./slices/user-style";
 import { createTerminalSessionsSlice } from "./slices/terminal-sessions";
 import type { TerminalSessionsSlice } from "./slices/terminal-sessions";
+import { EMPTY_BOARD_FILTER, type BoardView } from "@/lib/board-filters";
 
 // Re-export types used by consumers and constants.ts
 export type { AIConfig, AgentConfig, Theme, FontScale, FontFamilyId };
@@ -467,6 +468,16 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   const savedOverviewSections = storage.get<Record<string, boolean>>(OVERVIEW_COLLAPSED_KEY);
   if (savedOverviewSections && typeof savedOverviewSections === "object") {
     set({ overviewCollapsedSections: savedOverviewSections });
+  }
+
+  const savedBoardViews = storage.get<Record<string, BoardView[]>>(BOARD_VIEWS_KEY);
+  if (savedBoardViews && typeof savedBoardViews === "object") {
+    // Fill in criteria added after a view was saved so older views stay valid.
+    const upgraded: Record<string, BoardView[]> = {};
+    for (const [pid, views] of Object.entries(savedBoardViews)) {
+      if (Array.isArray(views)) upgraded[pid] = views.map((v) => ({ ...v, filter: { ...EMPTY_BOARD_FILTER, ...v.filter } }));
+    }
+    set({ boardViews: upgraded });
   }
 
   const savedWorkspaceCollapsed = storage.get<boolean>(DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY);
