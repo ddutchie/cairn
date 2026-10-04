@@ -6,8 +6,9 @@
  * Lucide component (lucide-react on desktop, lucide-react-native on mobile).
  */
 
-/** Workspace/project icon names (Lucide). Mirrors src/lib/workspace-icons. */
 import type { Priority, ColumnType } from "../types/domain";
+
+/** Workspace/project icon names (Lucide). Mirrors src/lib/workspace-icons. */
 export const WORKSPACE_ICON_NAMES = [
   "Layers",
   "Folder",
