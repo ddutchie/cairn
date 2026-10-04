@@ -16,6 +16,7 @@
  */
 
 import type { ChatPopoutPayload } from "../agent/chat-popout";
+import type { Note, NoteBody, NoteCreateInput, NotePatch } from "../types/notes";
 
 /** Why a pop-out handshake call was refused. */
 export type PopoutRefusal = "invalid-payload" | "profile-mismatch" | "not-main-window" | "not-popout";
@@ -39,6 +40,25 @@ export interface IpcContract {
   "chat:requestPopIn": { args: []; result: PopoutAck };
   /** Pop-out page → close and hand the session back to the main window. */
   "chat:popIn": { args: [payload: { sessionId: string }]; result: PopoutAck };
+
+  // ── Notes ────────────────────────────────────────────────────────────────
+  /** Live notes (no tombstones), newest first; all projects when projectId is omitted. */
+  "db:note:list": { args: [req: { projectId?: string }]; result: Note[] };
+  "db:note:create": { args: [note: NoteCreateInput]; result: Note };
+  /** Title changes also rename the .md file and rewrite inbound [[wikilinks]]. */
+  "db:note:update": { args: [req: { id: string; patch: NotePatch }]; result: Note };
+  /** Soft delete (tombstone) + .md removal. */
+  "db:note:delete": { args: [req: { id: string }]; result: void };
+  "db:note:moveToFolder": { args: [req: { id: string; folder: string }]; result: Note };
+  /** workspaceId is derived from the target project; accepted for older callers. */
+  "db:note:moveToProject": { args: [req: { id: string; projectId: string; workspaceId?: string }]; result: Note };
+  "db:note:bodies:get": { args: [req: { ids: string[] }]; result: NoteBody[] };
+  /** Full-text search; returns matching note ids. */
+  "db:note:search": { args: [req: { query: string; projectId?: string }]; result: string[] };
+  /** Ids of notes whose [[wikilinks]] point at this note. */
+  "db:note:backlinks:list": { args: [req: { noteId: string }]; result: string[] };
+  /** The user has seen this note's "what's new" changes. */
+  "db:note:changeMark:clear": { args: [req: { id: string }]; result: void };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
@@ -67,6 +87,16 @@ const CHANNELS: ChannelRecord = {
   "chat:popoutReady": true,
   "chat:requestPopIn": true,
   "chat:popIn": true,
+  "db:note:list": true,
+  "db:note:create": true,
+  "db:note:update": true,
+  "db:note:delete": true,
+  "db:note:moveToFolder": true,
+  "db:note:moveToProject": true,
+  "db:note:bodies:get": true,
+  "db:note:search": true,
+  "db:note:backlinks:list": true,
+  "db:note:changeMark:clear": true,
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];

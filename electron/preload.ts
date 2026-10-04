@@ -11,6 +11,7 @@ import type { SessionEventEnvelope } from "../shared/agent/session-event";
 import type { SessionProjection } from "../shared/agent/session-projection";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEvents } from "../shared/ipc/contract";
 import type { ChatPopoutPayload } from "../shared/agent/chat-popout";
+import type { NoteCreateInput, NotePatch } from "../shared/types/notes";
 
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
@@ -283,24 +284,21 @@ const api = {
 
   // ── Notes ────────────────────────────────────
   note: {
-    list:         (projectId?: string) => invoke("db:note:list", { projectId }),
-    create:       (args: unknown) => invoke("db:note:create", args),
-    update:       (id: string, patch: unknown) => invoke("db:note:update", { id, patch }),
-    delete:       (id: string) => invoke("db:note:delete", { id }),
-    moveToFolder: (id: string, folder: string) => invoke("db:note:moveToFolder", { id, folder }),
+    list:         (projectId?: string) => invokeContract("db:note:list", { projectId }),
+    create:       (note: NoteCreateInput) => invokeContract("db:note:create", note),
+    update:       (id: string, patch: NotePatch) => invokeContract("db:note:update", { id, patch }),
+    delete:       (id: string) => invokeContract("db:note:delete", { id }),
+    moveToFolder: (id: string, folder: string) => invokeContract("db:note:moveToFolder", { id, folder }),
     // workspaceId is derived from the target project by the handler; accepted for
     // backwards-compatible call sites but no longer required.
     moveToProject: (id: string, projectId: string, _workspaceId?: string) =>
-      invoke("db:note:moveToProject", { id, projectId }),
+      invokeContract("db:note:moveToProject", { id, projectId }),
     // Lazy bodies: the renderer store holds note metadata only (Electron).
-    bodies: (ids: string[]) =>
-      invoke<import("./db/notes-queries").NoteBody[]>("db:note:bodies:get", { ids }),
-    search: (query: string, projectId?: string) =>
-      invoke<string[]>("db:note:search", { query, projectId }),
-    backlinks: (noteId: string) =>
-      invoke<string[]>("db:note:backlinks:list", { noteId }),
+    bodies: (ids: string[]) => invokeContract("db:note:bodies:get", { ids }),
+    search: (query: string, projectId?: string) => invokeContract("db:note:search", { query, projectId }),
+    backlinks: (noteId: string) => invokeContract("db:note:backlinks:list", { noteId }),
     /** The user has seen this note's "what's new" changes. */
-    clearChangeMark: (id: string) => invoke("db:note:changeMark:clear", { id }),
+    clearChangeMark: (id: string) => invokeContract("db:note:changeMark:clear", { id }),
   },
 
   // ── Board columns ─────────────────────────────

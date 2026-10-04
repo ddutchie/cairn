@@ -20,13 +20,14 @@ describe("typed IPC contract", () => {
   const preload = read("electron/preload.ts");
 
   it.each(IPC_CONTRACT_CHANNELS)("%s is registered with registerContractHandle, not the untyped API", (channel) => {
-    expect(sources).toContain(`registerContractHandle("${channel}"`);
-    expect(sources).not.toContain(`registerIpcHandle("${channel}"`);
+    const call = (fn: string) => new RegExp(`\\b${fn}(<[^>]*>)?\\(\\s*"${channel}"`);
+    expect(sources).toMatch(call("registerContractHandle"));
+    expect(sources).not.toMatch(call("registerIpcHandle"));
   });
 
   it.each(IPC_CONTRACT_CHANNELS)("%s is called through invokeContract in preload", (channel) => {
-    expect(preload).toContain(`invokeContract("${channel}"`);
-    expect(preload).not.toMatch(new RegExp(`\\binvoke(<[^>]*>)?\\("${channel}"`));
+    expect(preload).toMatch(new RegExp(`\\binvokeContract\\(\\s*"${channel}"`));
+    expect(preload).not.toMatch(new RegExp(`\\binvoke(<[^>]*>)?\\(\\s*"${channel}"`));
   });
 
   it("rejects mismatched handler signatures at compile time", () => {

@@ -6,6 +6,7 @@
 
 import { stripMarkdown } from "./text-utils";
 import { noteExcerpt } from "../../shared/notes/excerpt";
+import type { Note } from "../../shared/types/notes";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
 export type DbRow = Record<string, unknown>;
@@ -176,7 +177,8 @@ export function toToolAttachment(row: DbRow) {
   };
 }
 
-export function toNote(row: DbRow) {
+/** A note row as read from SQLite: the body is always present ("" when empty). */
+export function toNote(row: DbRow): Note & { content: string } {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
