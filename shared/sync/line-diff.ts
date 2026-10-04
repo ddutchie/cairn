@@ -1,10 +1,8 @@
 /**
  * Unified line diff — pure logic shared by the desktop + mobile conflict UIs.
  *
- * ⚠️ CANONICAL COPY. A byte-identical renderer copy lives at
- * `src/lib/line-diff.ts` because the renderer tsconfig excludes `shared/`.
- * Keep the two in lockstep — the logic is pure and dependency-free. Both are
- * covered by `shared/sync/line-diff.test.ts`.
+ * Imported directly by the desktop renderer (conflict-resolution-modal) and
+ * by mobile. Covered by `shared/sync/line-diff.test.ts`.
  *
  * Produces a git-style unified diff between two texts, line by line:
  *   - "equal"   — line present unchanged in both

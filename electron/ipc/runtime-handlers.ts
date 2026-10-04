@@ -6,6 +6,7 @@ import * as q from "../db/queries";
 import { ts } from "../db/utils";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { getAgentHost } from "../cordis/agent-host";
+import { errMsg } from "../host-shared/errors";
 
 let progressForwarderSetUp = false;
 
@@ -51,7 +52,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
       const list = await getAgentHost().listCommands();
       return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   }));
 
@@ -76,7 +77,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
       }
       return { kind: result.kind, text: result.text };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   }));
 
@@ -101,7 +102,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
     try {
       return await getAgentHost().previewSystemPrompt(req?.cwd ?? "");
     } catch (err) {
-      return { text: "", sections: [], skillCount: 0, error: err instanceof Error ? err.message : String(err) };
+      return { text: "", sections: [], skillCount: 0, error: errMsg(err) };
     }
   }));
 
@@ -124,7 +125,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
       });
       return { text };
     } catch (err) {
-      return { text: "", error: err instanceof Error ? err.message : String(err) };
+      return { text: "", error: errMsg(err) };
     }
   }));
 
@@ -144,7 +145,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
       const surfaces = buildStaticInventory(globalTools);
       return { surfaces };
     } catch (err) {
-      return { surfaces: null, error: err instanceof Error ? err.message : String(err) };
+      return { surfaces: null, error: errMsg(err) };
     }
   }));
 

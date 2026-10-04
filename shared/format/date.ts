@@ -59,17 +59,37 @@ export function formatDateCompact(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+export interface RelativeTimeOptions {
+  /** Returned for a null/empty/unparseable timestamp. Default `""`. */
+  fallback?: string;
+  /** Append " ago" (or " away" for future times). Default true. */
+  suffix?: boolean;
+  /**
+   * Label future timestamps as "5m away". Off by default: a slightly-future
+   * time is usually clock skew between devices and reads better as "just now".
+   */
+  future?: boolean;
+  /** At or beyond this many days, show an absolute date instead. Default 7. */
+  absoluteAfterDays?: number;
+}
+
 /** Relative label: "just now" / "5m ago" / "3h ago" / "2d ago", then absolute. */
-export function formatRelative(iso: string): string {
-  const date = new Date(iso);
-  const diff = Date.now() - date.getTime();
-  const mins = Math.floor(diff / 60000);
+export function formatRelative(iso: string | null | undefined, opts: RelativeTimeOptions = {}): string {
+  const { fallback = "", suffix = true, future = false, absoluteAfterDays = 7 } = opts;
+  if (!iso) return fallback;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return fallback;
+  let diff = Date.now() - t;
+  const isFuture = diff < 0;
+  if (isFuture && !future) diff = 0;
+  const mins = Math.floor(Math.abs(diff) / 60000);
   if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  const tail = suffix ? (isFuture ? " away" : " ago") : "";
+  if (mins < 60) return `${mins}m${tail}`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return `${hrs}h${tail}`;
   const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < absoluteAfterDays) return `${days}d${tail}`;
   return formatDate(iso);
 }
 

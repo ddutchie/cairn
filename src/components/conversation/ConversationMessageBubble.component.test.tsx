@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { ConversationMessageBubble } from "./ConversationMessageBubble";
-import type { ConversationMessage } from "./conversation-message";
+import type { ConversationMessage } from "@/lib/conversation/message";
 
 /**
  * Regression suite for the empty-content bubble.

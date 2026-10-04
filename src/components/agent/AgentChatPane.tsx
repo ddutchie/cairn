@@ -11,8 +11,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
-import type { PendingQuestion } from "@/components/conversation/conversation-message";
-import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
+import type { PendingQuestion } from "@/lib/conversation/message";
+import { unwrapSessionPayload } from "@/lib/conversation/session";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, id } from "@/lib/utils";
@@ -36,7 +36,7 @@ import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatal
 import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
 import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
-import { toConversationMessage } from "@/components/conversation/conversation-message";
+import { toConversationMessage } from "@/lib/conversation/message";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";

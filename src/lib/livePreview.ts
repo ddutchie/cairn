@@ -31,6 +31,7 @@ import { makeMathBlockWidget } from "./math-block-widget";
 import { makeTableBlockWidget, isTableSource } from "./table-block-widget";
 import { makeTaskCheckboxWidget } from "./task-checkbox-widget";
 import { blockWidgetTheme } from "./block-preview-widget";
+import { WIKILINK_RE as SHARED_WIKILINK_RE } from "../../shared/notes/wikilinks";
 
 // Master kill-switch for Tier 2 inline block widgets (callouts + fenced code
 // blocks; tables/mermaid/math later). Block widgets are the finicky part
@@ -74,7 +75,7 @@ const blockquoteLine = Decoration.line({ class: "cm-lp-blockquote" });
 // wikilinks aren't distinct nodes in the base markdown grammar, so we scan
 // text directly (mirrors the remark/rehype passes used by the Read renderer).
 const HIGHLIGHT_RE = /==([^=\n]+?)==/g;
-const WIKILINK_RE = /\[\[([^\][\n]+?)\]\]/g;
+const WIKILINK_RE = new RegExp(SHARED_WIKILINK_RE.source, "g");
 
 // Node types (from @lezer/markdown) whose leading/enclosing marks we hide.
 // We match on the mark child node names the parser emits.

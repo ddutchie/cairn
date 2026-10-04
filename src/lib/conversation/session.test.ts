@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyApprovalProjection, normalizeSessionMessages, unwrapSessionMessages } from "./conversation-session";
+import { applyApprovalProjection, normalizeSessionMessages, unwrapSessionMessages } from "@/lib/conversation/session";
 
 describe("conversation session normalization", () => {
   it("unwraps both direct and data.messages session responses", () => {

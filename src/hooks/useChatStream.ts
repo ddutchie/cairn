@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { useCairnStore } from "@/store";
 import type { SuggestedAction, ChatHistoryEntry } from "@/types";
 import { useSessionConversation } from "./useSessionConversation";
-import type { ConversationLiveToolCall, PendingQuestion as ConversationPendingQuestion, PendingQuestionOption as ConversationPendingQuestionOption } from "@/components/conversation/conversation-message";
+import type { ConversationLiveToolCall, PendingQuestion as ConversationPendingQuestion, PendingQuestionOption as ConversationPendingQuestionOption } from "@/lib/conversation/message";
 
 // These now live in the shared conversation layer so the profile-neutral
 // components no longer import from the chat hook. Re-exported here because

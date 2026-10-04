@@ -31,6 +31,7 @@ import { parseToolArgs } from "../../shared/chat/parse-tool-args";
 import { AUTO_OUTPUT_TOKEN_CAP, resolveMaxOutputTokens } from "../../shared/models/model-catalog";
 import { resolveTemperatureForModel } from "../lib/model-pricing";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "../lib/usage-recorder";
+import { errMsg } from "../host-shared/errors";
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -372,7 +373,7 @@ async function runBuilderLoop(
       send("tool-builder:done", { sessionId: session.id, aborted: true });
       return;
     }
-    send("tool-builder:done", { sessionId: session.id, error: e instanceof Error ? e.message : String(e) });
+    send("tool-builder:done", { sessionId: session.id, error: errMsg(e) });
   }
 }
 

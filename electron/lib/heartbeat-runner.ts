@@ -73,6 +73,7 @@ import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv }
 import { getSecretValue } from "./secure-store";
 import { toSlug } from "../host-shared/text-utils";
 import type { SessionProjection } from "../../shared/agent/session-projection";
+import { errMsg } from "../host-shared/errors";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -217,7 +218,7 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
       // (e.g. a provider/network failure inside the Cordis loop) transition the run
       // out of running so it doesn't block later runs / report a phantom run,
       // persist a run-log.json, and emit `finished` so watchers close cleanly.
-      failRun(ctx, run, err instanceof Error ? err.message : String(err));
+      failRun(ctx, run, errMsg(err));
     }
   })().catch(() => {});
   return runId;
@@ -404,7 +405,7 @@ export async function runAutomation(
         automation.requires,
       )) as unknown as typeof TOOLS;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errMsg(err);
       console.error("[heartbeat] failed to assemble external tools:", err);
       failRun(ctx, run, `Failed to load required connector tools: ${message}`);
       insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, `Failed to load required connector tools: ${message}`);

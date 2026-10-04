@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Clock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 interface TimePickerProps {
   /** "HH:MM" (24-hour). */
@@ -63,18 +64,8 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
     return to12(h, m);
   }, [value]);
 
-  // Close on outside click.
-  useEffect(() => {
-    if (!open) return;
-    function handle(e: MouseEvent) {
-      if (containerRef.current?.contains(e.target as Node)) return;
-      const popoverEl = document.querySelector(".cairn-timepicker-popover");
-      if (popoverEl?.contains(e.target as Node)) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [open]);
+  // Close on outside click (the popover is portaled, so ignore clicks inside it).
+  useClickOutside(containerRef, () => setOpen(false), open, { ignore: ".cairn-timepicker-popover" });
 
   useEscapeKey(() => setOpen(false), open);
 

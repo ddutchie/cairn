@@ -11,6 +11,8 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { Note, Tag } from "@/types";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
+import { linksToTitle } from "@/lib/wikilink-parser";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 interface SemanticHit {
   noteId: string;
@@ -145,19 +147,7 @@ export function BacklinksPanel({
       const ids = new Set(remoteBacklinkIds);
       return notes.filter((n) => ids.has(n.id) && n.id !== note.id && !linked.has(n.id));
     }
-    const titleLower = note.title.toLowerCase();
-    const re = /\[\[([^\][\n]+?)\]\]/g;
-    return notes.filter((n) => {
-      if (n.id === note.id) return false;
-      if (linked.has(n.id)) return false;
-      const content = n.content ?? "";
-      let m: RegExpExecArray | null;
-      re.lastIndex = 0;
-      while ((m = re.exec(content)) !== null) {
-        if (m[1].trim().toLowerCase() === titleLower) return true;
-      }
-      return false;
-    });
+    return notes.filter((n) => n.id !== note.id && !linked.has(n.id) && linksToTitle(n.content ?? "", note.title));
   }, [note.id, note.title, note.linkedNoteIds, notes, remoteBacklinkIds]);
 
   const semanticCount = semanticEnabled ? semanticHits.length + sectionHits.length : 0;
@@ -330,17 +320,7 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
   const pickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-        setNewTagName("");
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [pickerOpen]);
+  useClickOutside(pickerRef, () => { setPickerOpen(false); setNewTagName(""); }, pickerOpen);
 
   useEffect(() => {
     if (pickerOpen) inputRef.current?.focus();

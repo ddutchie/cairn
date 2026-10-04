@@ -9,7 +9,7 @@ import { ContextRing } from "@/components/agent/ContextRing";
 import { ConversationMessageBubble } from "./ConversationMessageBubble";
 import { ConversationToolCall } from "./ConversationToolCall";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
-import type { ConversationSubagent } from "./conversation-message";
+import type { ConversationSubagent } from "@/lib/conversation/message";
 
 interface ConversationSubagentBlockProps {
   subagent: ConversationSubagent;

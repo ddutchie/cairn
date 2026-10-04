@@ -19,8 +19,8 @@
  * back to encoding the title into a `cairn://note/` URL, resolved on tap.
  */
 
-/** Matches `[[Title]]` — group 1 is the (untrimmed) title. */
-export const WIKILINK_RE = /\[\[([^\][\n]+?)\]\]/g;
+import { WIKILINK_RE } from "./wikilinks";
+export { WIKILINK_RE };
 
 /** Matches an Obsidian embed `![[target]]` — group 1 is the target. */
 export const EMBED_RE = /!\[\[([^\][\n]+?)\]\]/g;

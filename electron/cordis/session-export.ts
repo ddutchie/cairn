@@ -46,6 +46,7 @@ import * as path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { getHostStore } from "./host-store";
+import { errMsg } from "../host-shared/errors";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "session-export";
@@ -209,6 +210,6 @@ async function handleExportCommand(ctx: Context, invocation: {
     );
     return { kind: "success", text: `Session log exported to ${filePath} (${bytes} bytes).` };
   } catch (err) {
-    return { kind: "error", text: `Session export failed: ${err instanceof Error ? err.message : String(err)}` };
+    return { kind: "error", text: `Session export failed: ${errMsg(err)}` };
   }
 }

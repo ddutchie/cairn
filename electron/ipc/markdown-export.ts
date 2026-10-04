@@ -12,13 +12,9 @@ import { dialog } from "electron";
 import fs from "fs";
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
+import { sanitizeFilename } from "../host-shared/text-utils";
 import { getSnapshot } from "../mcp/db";
 import { serializeNoteMarkdown, serializeProjectMarkdown } from "../host-shared/read-tools-pure";
-
-/** Strip characters that are invalid in filenames on macOS/Windows. */
-function sanitizeFilename(name: string): string {
-  return name.replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
-}
 
 interface ExportArgs {
   kind: "note" | "project";

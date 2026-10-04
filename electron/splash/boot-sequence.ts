@@ -31,6 +31,7 @@ import { findTombstonedNotes } from "../db/queries";
 import { getProjectName } from "../ipc/result-helpers";
 import { saveCachedConfig } from "../lib/config-cache";
 import * as runtime from "../runtime/client";
+import { errMsg } from "../host-shared/errors";
 
 export interface BootContext {
   db: Database.Database;
@@ -155,7 +156,7 @@ export async function runBootSequence(
       // Network error, update server down, download timeout, etc. —
       // don't block the boot entirely. Better to try launching the app
       // (which may work fine) than to leave the user stuck on splash.
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errMsg(err);
       console.warn("[boot] Update check failed:", msg);
       errors.push(`Update check: ${msg}`);
     }
@@ -187,7 +188,7 @@ export async function runBootSequence(
       );
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     console.error("[boot] Migration failed:", msg);
     errors.push(`Migration: ${msg}`);
   }
@@ -262,7 +263,7 @@ export async function runBootSequence(
         }
       } catch (err) {
         console.warn("[boot] Runtime startup / model install failed:", err instanceof Error ? err.message : err);
-        errors.push(`Runtime startup: ${err instanceof Error ? err.message : String(err)}`);
+        errors.push(`Runtime startup: ${errMsg(err)}`);
       }
 
       // Check for any embedding rows with a mismatched model.
@@ -309,7 +310,7 @@ export async function runBootSequence(
     // the freed pages so the DB file doesn't keep the old model's footprint.
     reclaimFreeSpace(ctx.db);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     console.error("[boot] Embeddings reindex failed:", msg);
     errors.push(`Reindex: ${msg}`);
   }
@@ -379,7 +380,7 @@ export async function runBootSequence(
     });
     notesSynced = 1; // syncNotesFromDisk doesn't return a count
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     console.error("[boot] Notes sync failed:", msg);
     errors.push(`Notes sync: ${msg}`);
   }

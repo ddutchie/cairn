@@ -11,8 +11,14 @@
  * overrides a built-in of the same name).
  */
 
-import type { SlashCommand } from "@/components/chat/ChatInput";
 import type { CustomSlashCommand, SlashCommandScope } from "@/types";
+
+/** A command as offered in the chat input's `/` picker. */
+export interface SlashCommand {
+  name: string;
+  description: string;
+  insertText: string;
+}
 
 /** A built-in command definition (paired with an input pane scope). */
 export interface BuiltinSlashCommand extends SlashCommand {

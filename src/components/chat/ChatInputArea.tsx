@@ -12,7 +12,8 @@
  */
 
 import React, { useState, useCallback } from "react";
-import { ChatInput, type SlashCommand, type SuggestionItem } from "@/components/chat/ChatInput";
+import { ChatInput, type SuggestionItem } from "@/components/chat/ChatInput";
+import type { SlashCommand } from "@/lib/slash-commands";
 import { ProviderModelPicker } from "@/components/ui/provider-model-picker";
 import { PersonalityPicker } from "@/components/ui/personality-picker";
 import { ChatApprovalPicker } from "./ChatApprovalPicker";

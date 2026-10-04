@@ -20,6 +20,33 @@ export function stripMarkdown(md: string): string {
 }
 
 /**
+ * Structural markdown → plain text, preserving line breaks: drops heading
+ * markers, emphasis, code, link targets, list bullets and blockquote markers.
+ * Used for search snippets, embeddings and the knowledge graph (desktop main)
+ * and for card/note previews (renderer). Unlike `stripMarkdown` above this
+ * keeps one newline between blocks.
+ *
+ * ⚠️ Embedding section hashes are computed over this output — changing the
+ * default behaviour re-embeds every note. Add opt-in flags instead.
+ *
+ * `rulesAndTables` additionally removes `---` rules and turns table pipes into
+ * spaces (renderer previews).
+ */
+export function markdownToText(md: string, opts: { rulesAndTables?: boolean } = {}): string {
+  let out = md
+    .replace(/^#{1,6}\s+/gm, "")      // headings
+    .replace(/\*\*(.+?)\*\*/g, "$1")   // bold
+    .replace(/\*(.+?)\*/g, "$1")       // italic
+    .replace(/`{1,3}[^`]*`{1,3}/g, "") // inline + fenced code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links
+    .replace(/^[-*+]\s+/gm, "")        // list bullets
+    .replace(/^\d+\.\s+/gm, "")        // ordered lists
+    .replace(/^>\s+/gm, "");           // blockquotes
+  if (opts.rulesAndTables) out = out.replace(/^---+$/gm, "").replace(/\|/g, " ");
+  return out.replace(/\n{2,}/g, "\n").trim();
+}
+
+/**
  * Split a search query into lowercased terms (whitespace-separated).
  *
  * Used by keyword search so a multi-word query matches records that contain

@@ -3,14 +3,9 @@
 import React, { useRef, useEffect, useState, useMemo } from "react";
 import { Send, Square, Sparkles, FileText, CheckSquare, FileCode, Image, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { SlashCommand } from "@/lib/slash-commands";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CountBadge } from "@/components/ui/count-badge";
-
-export interface SlashCommand {
-  name: string;
-  description: string;
-  insertText: string;
-}
 
 export interface SuggestionItem {
   id: string;

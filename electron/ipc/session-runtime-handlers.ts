@@ -36,6 +36,7 @@ import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { type SessionProjection, makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { runChatPrompt } from "./chat";
+import { errMsg } from "../host-shared/errors";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -970,7 +971,7 @@ export function registerSessionRuntimeHandlers(
       } catch (e) {
         // Do not update or broadcast a requested mode when dsh rejected it.
         // The durable session log remains authoritative and the UI can retry.
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errMsg(e);
         if (msg.includes("while it is live") || msg.includes("already-running")) {
           broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — try again when the agent finishes.", code: "already-running" }));
           broadcastEvent("session:busy", { sessionId, reason: "already-running" });

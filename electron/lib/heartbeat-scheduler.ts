@@ -26,6 +26,7 @@ import {
   type Automation,
   type AutomationRun,
 } from "../db/automation-queries";
+import { errMsg } from "../host-shared/errors";
 
 export interface HeartbeatSchedulerOptions {
   /** Live DB accessor — re-read every tick so workspace reinitialise is transparent. */
@@ -197,7 +198,7 @@ export class HeartbeatScheduler {
         if (db) {
           updateAutomationRun(db, run.id, {
             status: "error",
-            error: err instanceof Error ? err.message : String(err),
+            error: errMsg(err),
             finishedAt: new Date().toISOString(),
           });
         }

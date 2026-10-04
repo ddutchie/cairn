@@ -20,17 +20,7 @@
  * expo/fetch + SQLite app_settings for the browser fetch + localStorage.
  */
 
-import { useSyncExternalStore } from "react";
-import {
-  logoProviderFor,
-  lookupModelInfo,
-  normalizeModelInfo,
-  parseCanonicalCatalog,
-  parseModelCatalog,
-  providerLogoUrl,
-  type ModelInfo,
-  resolveMaxOutputTokens,
-} from "../../shared/models/model-catalog";
+import { logoProviderFor, lookupModelInfo, normalizeModelInfo, parseCanonicalCatalog, parseModelCatalog, providerLogoUrl, type ModelInfo } from "../../shared/models/model-catalog";
 
 const API_URL = "https://models.dev/api.json";
 // v3: bumped when the parsed ModelInfo shape gains a field (cacheRead/cacheWrite)
@@ -395,18 +385,6 @@ export function pushModelPricingToMain(): void {
 }
 
 /**
- * The `max_tokens` to send for a chat request, or `undefined` to omit the field.
- * `userOverride` is the user's explicit "Max output tokens" (undefined/0 = Auto,
- * which omits the cap so the model finishes naturally). Kept async for a stable
- * call site even though it no longer needs the catalog.
- */
-export async function maxOutputTokensForModel(
-  userOverride?: number | null,
-): Promise<number | undefined> {
-  return resolveMaxOutputTokens(userOverride);
-}
-
-/**
  * The provider slug whose logo identifies `modelId`. Prefers the canonical
  * owner from models.json, then the brand heuristic, then the flattened
  * catalog's provider. Best-effort — null when nothing resolves.
@@ -422,24 +400,6 @@ export function modelLogoUrl(modelId: string): string | null {
   return provider ? providerLogoUrl(provider) : null;
 }
 
-/**
- * Fetch a models.dev provider logo as inline SVG markup, cached in memory. The
- * returned string is safe to hand to ConnectorLogo (passes its looksSafeSvg
- * guard): models.dev logos are single-colour `fill="currentColor"` marks.
- * Returns null while the logo hasn't fetched yet (the caller falls back to the
- * generic glyph). Bumps the catalog version on arrival so subscribers re-render.
- */
-export function getLogoSvg(slug: string): string | null {
-  return logoSvgCache.get(slug) ?? null;
-}
-
-const logoSvgSubscribers = new Set<() => void>();
-/** Subscribe to logo-svg availability changes (fires after each new fetch). */
-export function subscribeLogoSvg(listener: () => void): () => void {
-  logoSvgSubscribers.add(listener);
-  return () => { logoSvgSubscribers.delete(listener); };
-}
-
 function fetchLogoSvg(slug: string): void {
   if (logoSvgCache.has(slug) || logoSvgInflight.has(slug)) return;
   const p = (async () => {
@@ -451,7 +411,6 @@ function fetchLogoSvg(slug: string): void {
       logoSvgCache.set(slug, text);
       version += 1;
       emit();
-      for (const l of logoSvgSubscribers) l();
       return text;
     } catch {
       return null;
@@ -466,22 +425,11 @@ function fetchLogoSvg(slug: string): void {
  * Resolve a models.dev provider slug to inline SVG markup (cached, lazy-fetched).
  * When the SVG isn't cached yet, kicks off a fetch and returns null (caller
  * should render the generic glyph meanwhile and re-render once it arrives —
- * subscribe via subscribeLogoSvg/useSyncExternalStore).
+ * subscribe via subscribeModelCatalog/useSyncExternalStore).
  */
 export function getOrFetchLogoSvg(slug: string): string | null {
   const cached = logoSvgCache.get(slug);
   if (cached) return cached;
   fetchLogoSvg(slug);
   return null;
-}
-
-/**
- * React hook: inline SVG markup for a models.dev provider slug, or null while
- * pending/failed. Re-renders when the SVG lands (via the subscribeLogoSvg store).
- */
-export function useLogoSvg(slug: string | null | undefined): string | null {
-  const v = useSyncExternalStore(subscribeLogoSvg, getModelCatalogVersion);
-  void v; // re-render trigger only
-  if (!slug) return null;
-  return getOrFetchLogoSvg(slug);
 }

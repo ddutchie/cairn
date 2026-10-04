@@ -13,6 +13,7 @@ export {
   getDueDateStatus,
   parseIsoLocal,
   type DueDateStatus,
+  type RelativeTimeOptions,
 } from "../../shared/format/date";
 export { prettifyToolLabel } from "../../shared/ui/constants";
 

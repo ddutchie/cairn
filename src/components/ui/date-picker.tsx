@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { DayPicker, type DayPickerProps } from "react-day-picker";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -8,6 +8,7 @@ import { format, parse, isValid, startOfToday } from "date-fns";
 import { Calendar, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 interface DatePickerProps {
   value?: string; // ISO date string "YYYY-MM-DD"
@@ -27,21 +28,8 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
   const selected = value ? parse(value, "yyyy-MM-dd", new Date()) : undefined;
   const isValidDate = selected && isValid(selected);
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    function handle(e: MouseEvent) {
-      // Check both the trigger container AND the portal target (document.body).
-      // The calendar popover is portaled to body, so containerRef won't contain it.
-      if (containerRef.current?.contains(e.target as Node)) return;
-      // The popover itself has class "cairn-datepicker-popover" — check if click was inside it.
-      const popoverEl = document.querySelector(".cairn-datepicker-popover");
-      if (popoverEl?.contains(e.target as Node)) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [open]);
+  // Close on outside click (the calendar is portaled to body, so ignore clicks inside it).
+  useClickOutside(containerRef, () => setOpen(false), open, { ignore: ".cairn-datepicker-popover" });
 
   // Close on Escape (the popover has no focused input, so it had no Escape at all).
   useEscapeKey(() => setOpen(false), open);

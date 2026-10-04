@@ -15,6 +15,7 @@ import { toNote, j, type DbRow } from "../host-shared/db-mappers";
 import { normalizeNoteTitle, stripMarkdown } from "../host-shared/text-utils";
 import { EXCERPT_SOURCE_CHARS } from "../../shared/notes/excerpt";
 import { matchesQuery, queryTerms } from "../../shared/notes/text";
+import { linksToTitle } from "../../shared/notes/wikilinks";
 
 // ── Notes ─────────────────────────────────────
 
@@ -446,17 +447,12 @@ export function wikilinkBacklinkIds(db: Database.Database, noteId: string): stri
   const rows = db
     .prepare(`SELECT id, content FROM notes WHERE deleted_at IS NULL AND id != ? AND instr(content, '[[') > 0`)
     .all(noteId) as Array<{ id: string; content: string | null }>;
-  const re = /\[\[([^\][\n]+?)\]\]/g;
   const out: string[] = [];
   for (const r of rows) {
     const content = r.content ?? "";
     // Cheap reject: a match needs the title's text somewhere in the body.
     if (!content.toLowerCase().includes(titleLower.trim())) continue;
-    re.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(content)) !== null) {
-      if (m[1].trim().toLowerCase() === titleLower) { out.push(r.id); break; }
-    }
+    if (linksToTitle(content, target.title)) out.push(r.id);
   }
   return out;
 }

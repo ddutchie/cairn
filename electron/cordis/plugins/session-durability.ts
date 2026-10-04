@@ -29,6 +29,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Session } from "@deepseek-ai/dsh-session";
 import { dlog } from "../host-store";
+import { errMsg } from "../../host-shared/errors";
 
 const TOOL_ABORTED_BEFORE_DISPATCH = "ABORTED_BEFORE_DISPATCH" as const;
 
@@ -57,7 +58,7 @@ function noteFlushSuccess(): void {
 
 function noteFlushFailure(site: string, err: unknown): void {
   consecutiveFlushFailures += 1;
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errMsg(err);
   lastFlushError = message;
   lastFlushErrorAt = new Date().toISOString();
   // dlog mirrors to console and persists to <userData>/logs/cairn-debug.log,

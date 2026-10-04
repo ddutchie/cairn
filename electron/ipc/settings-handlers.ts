@@ -15,6 +15,7 @@ import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 import { app } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import { errMsg } from "../host-shared/errors";
 
 export function registerSettingsHandlers(): void {
   registerIpcHandle("app:getAiSettings", () => handle(() => getCachedConfig().aiConfig || null));
@@ -92,7 +93,7 @@ export function registerSettingsHandlers(): void {
       try {
         fs.rmSync(dir, { recursive: true, force: true });
       } catch (e) {
-        failures.push(`${dir}: ${e instanceof Error ? e.message : String(e)}`);
+        failures.push(`${dir}: ${errMsg(e)}`);
       }
     }
     if (failures.length > 0) {

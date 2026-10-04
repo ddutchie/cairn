@@ -31,6 +31,7 @@
 import type Database from "better-sqlite3";
 import { stripMarkdown } from "../host-shared/text-utils";
 import { changeFeedHead } from "./change-feed-queries";
+import { parseWikilinks } from "../../shared/notes/wikilinks";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -49,14 +50,7 @@ const STOP = new Set([
 
 /** Extract [[Title]] wikilink targets from markdown content (lowercased). */
 function extractWikilinkTitles(content: string): string[] {
-  const results: string[] = [];
-  const re = /\[\[([^\][\n]+?)\]\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    const title = m[1].trim();
-    if (title.length > 0) results.push(title.toLowerCase());
-  }
-  return results;
+  return parseWikilinks(content).map((l) => l.title.toLowerCase());
 }
 
 /** Tokenise text into lowercase words, filter stop-words, min length 5. */

@@ -14,6 +14,7 @@
 
 import { encode } from "gpt-tokenizer";
 import { isPlaceholder } from "./secure-store";
+import { errMsg } from "../host-shared/errors";
 
 // ── Constants (ported from optimize_service.js) ──────────────────────────────
 
@@ -337,7 +338,7 @@ export async function probeEndpoint(req: ProbeRequest): Promise<ProbeResult> {
     }
     url = u.toString();
   } catch (e) {
-    return { ...empty, error: `Invalid URL: ${e instanceof Error ? e.message : String(e)}` };
+    return { ...empty, error: `Invalid URL: ${errMsg(e)}` };
   }
 
   const headers: Record<string, string> = { ...(req.headers ?? {}) };
@@ -382,7 +383,7 @@ export async function probeEndpoint(req: ProbeRequest): Promise<ProbeResult> {
       authHint: parseAuthHint(res.status, respHeaders, bodySample),
     };
   } catch (e) {
-    return { ...empty, error: e instanceof Error ? e.message : String(e) };
+    return { ...empty, error: errMsg(e) };
   } finally {
     clearTimeout(timer);
   }

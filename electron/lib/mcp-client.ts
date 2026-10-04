@@ -36,6 +36,7 @@ import {
   type OpenAIToolDef,
   type McpToolDef,
 } from "../../shared/chat/mcp-namespace";
+import { errMsg } from "../host-shared/errors";
 
 export { namespaceToolName, parseToolName, isMcpToolName, mcpToolsToOpenAI };
 export type { OpenAIToolDef };
@@ -233,7 +234,7 @@ export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<Li
     const tools = (res.tools ?? []) as McpToolDef[];
     return { ok: true, tools: tools.map((t) => ({ name: t.name, description: t.description })) };
   } catch (e) {
-    return { ok: false, tools: [], error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, tools: [], error: errMsg(e) };
   }
 }
 
@@ -260,7 +261,7 @@ export async function callTool(
     );
     return stringifyToolResult(res);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errMsg(e);
     console.error(`[mcp-client] callTool ${namespaced} failed:`, msg);
     return `Error calling ${namespaced}: ${msg}`;
   }
@@ -280,7 +281,7 @@ export async function testConnection(
     const tools = (res.tools ?? []) as McpToolDef[];
     return { ok: true, toolCount: tools.length, toolNames: tools.map((t) => t.name) };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: errMsg(e) };
   } finally {
     await dispose(cfg.id);
   }

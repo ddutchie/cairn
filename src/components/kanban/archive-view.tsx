@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useConfirmAction } from "@/components/ui/confirm-button";
-import { stripMarkdown } from "@/components/notes/note-editor-utils";
+import { markdownToText } from "../../../shared/notes/text";
 
 interface ArchiveViewProps {
   projectId: string;
@@ -140,7 +140,7 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                             running the full markdown pipeline (code fences, KaTeX,
                             callouts…) per archived card just to truncate it is pure
                             waste. Matches the collapsed-board-card convention. */}
-                        {stripMarkdown(card.description)}
+                        {markdownToText(card.description, { rulesAndTables: true })}
                       </div>
                     )}
                     <div className="flex items-center gap-1.5 mt-auto pt-1">

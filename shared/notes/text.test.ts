@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripMarkdown, queryTerms, matchesQuery } from "./text";
+import { stripMarkdown, markdownToText, queryTerms, matchesQuery } from "./text";
 
 describe("queryTerms", () => {
   it("splits on whitespace and lowercases", () => {
@@ -56,5 +56,15 @@ describe("stripMarkdown", () => {
   });
   it("returns empty string for empty input", () => {
     expect(stripMarkdown("")).toBe("");
+  });
+});
+
+describe("markdownToText", () => {
+  const md = "# Title\n\n**bold** and *it* `code`\n\n- [link](http://x)\n> quote\n\n---\n| a | b |";
+  it("keeps line breaks and strips structural markdown", () => {
+    expect(markdownToText(md)).toBe("Title\nbold and it \nlink\nquote\n---\n| a | b |");
+  });
+  it("optionally drops rules and table pipes", () => {
+    expect(markdownToText(md, { rulesAndTables: true })).toBe("Title\nbold and it \nlink\nquote\n  a   b");
   });
 });

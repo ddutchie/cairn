@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { X, Tag } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
+import { useClickOutside } from "@/hooks/useClickOutside";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 const PALETTE = [
   { color: "#6366f1", name: "Indigo" },
@@ -32,21 +34,8 @@ export function TagsSettings() {
   const [colorPickerId, setColorPickerId] = useState<string | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!colorPickerId) return;
-    function handle(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setColorPickerId(null);
-    }
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setColorPickerId(null);
-    }
-    document.addEventListener("mousedown", handle);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handle);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [colorPickerId]);
+  useClickOutside(pickerRef, () => setColorPickerId(null), !!colorPickerId);
+  useEscapeKey(() => setColorPickerId(null), !!colorPickerId);
 
   return (
     <SettingsGroup title="Tags" description="Manage workspace tags used on notes and tasks">

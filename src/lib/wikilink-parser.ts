@@ -4,44 +4,13 @@
  * Used by:
  *  - The note editor autocomplete (detects `[[` trigger)
  *  - The note renderer (renders wikilinks as clickable spans)
- *  - The graph engine (electron/db/graph-queries.ts has its own inline copy
- *    for the Node/Electron ABI boundary — keep in sync with WIKILINK_RE)
+ *
+ * Core parsing lives in shared/notes/wikilinks.ts (shared with main + mobile).
  */
 
-/** Matches `[[Title]]` — capture group 1 is the title (trimmed) */
-export const WIKILINK_RE = /\[\[([^\][\n]+?)\]\]/g;
+import { parseWikilinks, type WikilinkMatch } from "../../shared/notes/wikilinks";
 
-export interface WikilinkMatch {
-  /** Full raw match including brackets, e.g. `[[My Note]]` */
-  raw: string;
-  /** Inner title text, trimmed */
-  title: string;
-  /** Start index (character offset in the source string) */
-  index: number;
-  /** End index (exclusive) */
-  end: number;
-}
-
-/**
- * Extract all `[[Title]]` wikilinks from a markdown string.
- * Returns matches in source order.
- */
-export function parseWikilinks(content: string): WikilinkMatch[] {
-  const results: WikilinkMatch[] = [];
-  const re = new RegExp(WIKILINK_RE.source, "g");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    const title = m[1].trim();
-    if (title.length === 0) continue;
-    results.push({
-      raw: m[0],
-      title,
-      index: m.index,
-      end: m.index + m[0].length,
-    });
-  }
-  return results;
-}
+export { WIKILINK_RE, parseWikilinks, linksToTitle, type WikilinkMatch } from "../../shared/notes/wikilinks";
 
 export interface ResolvedWikilink extends WikilinkMatch {
   /** Resolved note ID, or null if no note with this title exists */

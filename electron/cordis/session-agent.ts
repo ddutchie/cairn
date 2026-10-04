@@ -2,6 +2,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import type { LLMConfig } from "../lib/llm";
+import { errMsg } from "../host-shared/errors";
 
 export interface OpenCordisSessionAgentOptions {
   sessionId: string;
@@ -114,7 +115,7 @@ export async function openCordisSessionAgent(
     const snap = await ctx.sessionPersistence.stat(stableId, { signal });
     exists = !!snap && (snap.eventCount ?? 1) > 0;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     // zstd-only backend throws encodingMismatch when a legacy plaintext .jsonl exists.
     // Treat that as "exists but wrong encoding" — migrate by removing the conflicting
     // artifact so a fresh zstd log can be created (legacy transcript is best-effort

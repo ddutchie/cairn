@@ -21,6 +21,7 @@ import type Database from "better-sqlite3";
 import { SyncEngine } from "../../shared/sync/engine";
 import { writeOplogFileAsync, readPeerOplogsAsync } from "../../shared/sync/transport";
 import { inspectConflict, cleanConflictTitle } from "../../shared/sync/conflict";
+import { errMsg } from "../host-shared/errors";
 
 export interface DesktopSyncResult {
   drained: number;
@@ -463,7 +464,7 @@ export function restoreDeletedNote(
   try {
     deps.updateNoteBody(id, row?.title ?? "", row?.content ?? "");
   } catch (err) {
-    return { restored: true, fileError: err instanceof Error ? err.message : String(err) };
+    return { restored: true, fileError: errMsg(err) };
   }
   return { restored: true };
 }
@@ -491,7 +492,7 @@ export function repairNoteFile(
   try {
     deps.updateNoteBody(id, row.title ?? "", row.content ?? "");
   } catch (err) {
-    return { repaired: false, fileError: err instanceof Error ? err.message : String(err) };
+    return { repaired: false, fileError: errMsg(err) };
   }
   return { repaired: true };
 }

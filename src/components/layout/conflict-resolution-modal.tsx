@@ -19,8 +19,8 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { fetchConflicts, resolveConflict, type ConflictCopy } from "@/lib/sync-client";
-import { merge3 } from "@/lib/merge3";
-import { diffLines, diffStats } from "@/lib/line-diff";
+import { merge3 } from "../../../shared/sync/merge3";
+import { diffLines, diffStats } from "../../../shared/sync/line-diff";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
 
 export function ConflictResolutionModal({ open, onClose }: { open: boolean; onClose: () => void }) {

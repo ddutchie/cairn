@@ -20,6 +20,7 @@
 
 import type Database from "better-sqlite3";
 import { invalidateRelationshipCache, computeAutoRelationships } from "../../db/graph-queries";
+import { errMsg } from "../../host-shared/errors";
 
 /**
  * Argument keys that carry a note/card entity id. Anything else in an args
@@ -156,7 +157,7 @@ export function refreshRelationshipsFor(
     }
   } catch (err) {
     process.stderr.write(
-      `[cairn:mcp] relationship cache refresh skipped: ${err instanceof Error ? err.message : String(err)}\n`,
+      `[cairn:mcp] relationship cache refresh skipped: ${errMsg(err)}\n`,
     );
   }
 }

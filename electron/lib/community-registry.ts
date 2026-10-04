@@ -30,6 +30,7 @@ import {
   type PersonalitiesManifest,
   type ChatThemesManifest,
 } from "../../shared/chat/registry-schema";
+import { errMsg } from "../host-shared/errors";
 
 // Manifest TYPES + Zod validation now live in shared/chat/registry-schema.ts so
 // desktop and mobile validate the catalog identically. Re-export the types so
@@ -208,13 +209,13 @@ async function fetchGeneric<M>(spec: FetchSpec<M>, opts?: { force?: boolean }): 
         manifest: cache.manifest,
         fromCache: true,
         cachedAt: cache.cachedAt,
-        error: err instanceof Error ? err.message : String(err),
+        error: errMsg(err),
       };
     }
     return {
       manifest: spec.empty,
       fromCache: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errMsg(err),
     };
   }
 }

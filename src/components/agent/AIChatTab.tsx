@@ -7,6 +7,7 @@ import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { useConfirmAction } from "@/components/ui/confirm-button";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 interface AIChatTabProps {
   isActive: boolean;
@@ -67,17 +68,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     (t) => t.workspaceId === activeWorkspaceId && (!activeProjectId || t.projectId === activeProjectId) && runningIds.has(`chat-${t.id}`),
   );
 
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-        setRenamingId(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [dropdownOpen]);
+  useClickOutside(dropdownRef, () => { setDropdownOpen(false); setRenamingId(null); }, dropdownOpen);
 
   function handleSwitchThread(threadId: string) {
     if (process.env.NODE_ENV === "development") {

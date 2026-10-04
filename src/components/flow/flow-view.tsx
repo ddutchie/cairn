@@ -42,6 +42,7 @@ import {
   makeAutoLayoutCmd,
   makePromoteToTaskCmd,
 } from "@/lib/commands/flow-commands";
+import { useClickOutside } from "@/hooks/useClickOutside";
 import { NodeEditModal } from "./NodeEditModal";
 import { applyDagreLayout } from "@/lib/flow-layout";
 import {
@@ -211,16 +212,7 @@ function IdeaFlowCanvas() {
   }, [loadFlow]);
 
   // Close add-menu on outside click
-  useEffect(() => {
-    if (!showAddMenu) return;
-    function handleClick(e: MouseEvent) {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Element)) {
-        setShowAddMenu(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showAddMenu]);
+  useClickOutside(addMenuRef, () => setShowAddMenu(false), showAddMenu);
 
   // ── Connect ───────────────────────────────────────────────────
 

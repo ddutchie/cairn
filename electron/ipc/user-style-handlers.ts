@@ -22,6 +22,7 @@ import { recordLlmUsage } from "../lib/usage-recorder";
 import { TOOLS } from "../lib/tools";
 import * as q from "../db/queries";
 import type { UserStyleSaveInput } from "../db/user-style-queries";
+import { errMsg } from "../host-shared/errors";
 
 /**
  * Read-only tool set for the "analyse my notes & tasks" generation path. The
@@ -288,7 +289,7 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
         send("user-style:done", {
           content: "",
           usable: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: errMsg(err),
         });
       } finally {
         // Only delete the map entry if it still references THIS run's

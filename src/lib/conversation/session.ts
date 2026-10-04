@@ -1,6 +1,6 @@
 import type { AgentMessage, ChatMessage } from "@/types";
-import type { ConversationMessage } from "./conversation-message";
-import { toConversationMessage } from "./conversation-message";
+import type { ConversationMessage } from "./message";
+import { toConversationMessage } from "./message";
 
 export type SessionMessage = ChatMessage | AgentMessage;
 
