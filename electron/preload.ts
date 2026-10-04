@@ -6,16 +6,15 @@
  * to Node.js or Electron internals directly.
  */
 
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { SessionEventEnvelope } from "../shared/agent/session-event";
 import type { SessionProjection } from "../shared/agent/session-projection";
+import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEvents } from "../shared/ipc/contract";
+import type { ChatPopoutPayload } from "../shared/agent/chat-popout";
 
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
 // mirror the shapes here (kept in sync by the IPC return types).
-// Keep SessionPopoutProfile / SessionProfileId in sync with
-// shared/agent/session-profile.ts and shared/agent/chat-popout.ts — any drift
-// breaks pop-out wiring (chat-popout.ts resolveChatPopoutSession).
 interface McpServerConfig {
   id: string; workspaceId: string; name: string; description?: string;
   transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
@@ -243,6 +242,18 @@ function invoke<T>(channel: string, args?: unknown): Promise<T> {
   });
 }
 
+/** {@link invoke} for channels in the typed IPC contract (shared/ipc/contract.ts). */
+function invokeContract<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcReturn<C>> {
+  return invoke<IpcReturn<C>>(channel, args[0]);
+}
+
+/** Subscribe to a contract push event; returns the unsubscribe function. */
+function onIpcEvent<E extends IpcEventChannel>(channel: E, cb: (payload: IpcEvents[E]) => void): () => void {
+  const handler = (_event: IpcRendererEvent, payload: IpcEvents[E]) => cb(payload);
+  ipcRenderer.on(channel, handler);
+  return () => { ipcRenderer.off(channel, handler); };
+}
+
 const api = {
   // ── Full snapshot ────────────────────────────
   snapshot: (opts?: { noteBodies?: boolean }) => invoke("db:snapshot", opts),
@@ -416,39 +427,21 @@ const api = {
     compactThread: (req: unknown) => invoke("chat:compactThread", req),
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
-      popOut: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => invoke<{ ok: boolean; reason?: string }>("chat:popOut", payload),
+    popOut: (payload: ChatPopoutPayload) => invokeContract("chat:popOut", payload),
     /** Called by pop-out page: signals readiness, returns the shared session id. */
-      popoutReady: () => invoke<{ sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null; reason?: string }>("chat:popoutReady"),
+    popoutReady: () => invokeContract("chat:popoutReady"),
     /** Called by pop-out page: closes the window; session state is not copied. */
-    popIn: (payload: { sessionId: string }) => invoke<{ ok: boolean; reason?: string }>("chat:popIn", payload),
+    popIn: (payload: { sessionId: string }) => invokeContract("chat:popIn", payload),
     /** Called by main window: asks the pop-out to return (relayed via main process). */
-    requestPopIn: () => invoke<{ ok: boolean; reason?: string }>("chat:requestPopIn"),
+    requestPopIn: () => invokeContract("chat:requestPopIn"),
     /** Listener on the main window: received when pop-in completes with final state. */
-    onChatPoppedIn: (cb: (payload: { sessionId: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, payload: any) => cb(payload);
-      ipcRenderer.on("chat:poppedIn", handler);
-      return () => ipcRenderer.off("chat:poppedIn", handler);
-    },
+    onChatPoppedIn: (cb: (payload: IpcEvents["chat:poppedIn"]) => void) => onIpcEvent("chat:poppedIn", cb),
     /** Listener on the main window: pop-out closed unexpectedly (e.g. Cmd+W). */
-    onChatPoppedOutClosed: (cb: () => void) => {
-      const handler = () => cb();
-      ipcRenderer.on("chat:poppedOutClosed", handler);
-      return () => ipcRenderer.off("chat:poppedOutClosed", handler);
-    },
+    onChatPoppedOutClosed: (cb: () => void) => onIpcEvent("chat:poppedOutClosed", () => cb()),
     /** Listener on the pop-out page: received when main window requests pop-in. */
-    onChatRequestPopIn: (cb: () => void) => {
-      const handler = () => cb();
-      ipcRenderer.on("chat:requestPopIn", handler);
-      return () => ipcRenderer.off("chat:requestPopIn", handler);
-    },
+    onChatRequestPopIn: (cb: () => void) => onIpcEvent("chat:requestPopIn", () => cb()),
     /** Listener on the pop-out page: received when main window pushes an updated session (C2 race fix). */
-    onChatSessionUpdated: (cb: (payload: { sessionId: string; activeProjectId: string | null; profile: "chat" | "coding" | "automation-dev"; workspaceId: string | null; cwd: string | null }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, payload: any) => cb(payload);
-      ipcRenderer.on("chat:sessionUpdated", handler);
-      return () => ipcRenderer.off("chat:sessionUpdated", handler);
-    },
+    onChatSessionUpdated: (cb: (payload: ChatPopoutPayload) => void) => onIpcEvent("chat:sessionUpdated", cb),
   },
 
   // ── Knowledge Graph ───────────────────────────
