@@ -18,7 +18,7 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { useSyncStatus, triggerSyncNow, openConflictModal, type SyncState } from "@/lib/sync-client";
 import { Tooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, formatRelative } from "@/lib/utils";
 
 function glyph(state: SyncState, conflicts: number, pending: number) {
   if (conflicts > 0) return { Icon: CloudAlert, color: "var(--warning)", label: `${conflicts} sync conflict${conflicts === 1 ? "" : "s"}` };
@@ -27,19 +27,6 @@ function glyph(state: SyncState, conflicts: number, pending: number) {
   if (state === "syncing") return { Icon: RefreshCw, color: "var(--accent)", label: "Syncing…" };
   if (pending > 0) return { Icon: CloudAlert, color: "var(--warning)", label: `${pending} change${pending === 1 ? "" : "s"} pending` };
   return { Icon: CloudCheck, color: "var(--success)", label: "Synced" };
-}
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "never";
-  const then = new Date(iso).getTime();
-  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 10) return "just now";
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
 }
 
 export function SyncStatusIndicator() {
@@ -119,7 +106,7 @@ export function SyncStatusIndicator() {
           </div>
 
           <dl className="space-y-1 text-[0.714rem] text-[var(--text-tertiary)]">
-            <Row label="Last synced" value={relativeTime(status.lastSyncAt)} />
+            <Row label="Last synced" value={formatRelative(status.lastSyncAt, { fallback: "never", absoluteAfterDays: Infinity })} />
             <Row label="Pending changes" value={String(status.pending)} />
             <Row label="Conflicts" value={String(status.conflicts)} highlight={status.conflicts > 0} />
           </dl>

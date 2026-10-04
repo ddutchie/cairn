@@ -5,7 +5,7 @@ import { Play, Pencil, Plus, Trash2, Zap, Clock, RefreshCw, Activity, FileText, 
 import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, id } from "@/lib/utils";
+import { cn, id, formatRelative, type RelativeTimeOptions } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { buildAutomationDevPrompt } from "@/lib/automation-dev-prompt";
 import { Button } from "@/components/ui/button";
@@ -27,22 +27,8 @@ import { RunWatcherModal } from "./run-watcher-modal";
 import type { Automation, AutomationRun, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
-function formatRelative(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "—";
-  const diff = t - Date.now();
-  const abs = Math.abs(diff);
-  const mins = Math.round(abs / 60_000);
-  const hrs = Math.round(abs / 3_600_000);
-  const days = Math.round(abs / 86_400_000);
-  const future = diff >= 0;
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ${future ? "away" : "ago"}`;
-  if (hrs < 24) return `${hrs}h ${future ? "away" : "ago"}`;
-  if (days < 30) return `${days}d ${future ? "away" : "ago"}`;
-  return new Date(iso).toLocaleDateString();
-}
+/** Run/schedule times: "5m ago" / "3h away", absolute after a month. */
+const RUN_TIME: RelativeTimeOptions = { fallback: "—", future: true, absoluteAfterDays: 30 };
 
 const STATUS_COLOR: Record<string, string> = {
   done: "text-[var(--ok)]",
@@ -438,7 +424,7 @@ export function AutomationsView() {
                   )}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[0.714rem] text-[var(--text-tertiary)]">
                     <span className="inline-flex items-center gap-1"><Clock size={11} /> {scheduleLabel(a)}</span>
-                    <span>Next: {formatRelative(a.nextRunAt)}</span>
+                    <span>Next: {formatRelative(a.nextRunAt, RUN_TIME)}</span>
                     <span>{a.runCount} run{a.runCount === 1 ? "" : "s"}</span>
                     {isRunning ? (
                       <span className="inline-flex items-center gap-1.5 text-[var(--accent)] animate-pulse">
@@ -447,7 +433,7 @@ export function AutomationsView() {
                       </span>
                     ) : lastRun && (
                       <span className={cn("inline-flex items-center gap-1 capitalize", STATUS_COLOR[lastRun.status])}>
-                        Last: {lastRun.status} {lastRun.finishedAt ? `· ${formatRelative(lastRun.finishedAt)}` : ""}
+                        Last: {lastRun.status} {lastRun.finishedAt ? `· ${formatRelative(lastRun.finishedAt, RUN_TIME)}` : ""}
                       </span>
                     )}
                   </div>
@@ -933,7 +919,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
             <InfoRow label="Schedule" value={scheduleLabel(automation)} />
             <InfoRow label="Project" value={automation.projectId ? projectName ?? "—" : "Workspace (all projects)"} />
-            <InfoRow label="Next run" value={formatRelative(automation.nextRunAt)} />
+            <InfoRow label="Next run" value={formatRelative(automation.nextRunAt, RUN_TIME)} />
             <InfoRow label="Total runs" value={`${automation.runCount}${automation.maxRuns ? ` / max ${automation.maxRuns}` : ""}`} />
             <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : "Auto"} />
             <InfoRow label="Status" value={automation.enabled ? "Enabled" : "Disabled"} />
@@ -983,7 +969,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                 <div key={r.id} className="rounded-md border border-[var(--border)] px-3 py-2 text-xs">
                   <div className="flex items-center gap-2">
                     <span className={cn("capitalize font-medium", STATUS_COLOR[r.status])}>{r.status}</span>
-                    <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt)}</span>
+                    <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt, RUN_TIME)}</span>
                     <Tooltip content={logFor === r.id ? "Hide run log" : "Show what happened in this run"}>
                       <button
                         type="button"
@@ -995,7 +981,7 @@ function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit, onRunN
                     </Tooltip>
                   </div>
                   {(r.status === "done" || r.status === "exhausted") && r.finishedAt && (
-                    <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt)}</div>
+                    <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt, RUN_TIME)}</div>
                   )}
                   {r.error && (
                     <div className="text-[var(--danger)] mt-0.5 break-words">{r.error}</div>

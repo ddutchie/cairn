@@ -6,6 +6,7 @@ import { listRestorableNotes, restoreDeletedNote } from "@/db/queries";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme, withAlpha } from "@/theme";
 import type { RestorableRow } from "@cairn/shared/sync/engine";
+import { formatRelative } from "@cairn/shared/format/date";
 
 /**
  * Recovery screen for notes another device deleted (plan §4 Phase 4b).
@@ -29,19 +30,6 @@ const REFUSAL_TEXT: Record<string, string> = {
   "no-delete-record": "Sync has no record of that deletion, so it can't be undone from here.",
   "preserved-as-copy": "Your edit is kept as a conflict copy — resolve it from the Conflicts screen instead.",
 };
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "recently";
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return "recently";
-  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 60) return "just now";
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
 
 /** Device ids are opaque, so name the peer generically rather than showing one. */
 function deviceLabel(origin: string | null): string {
@@ -109,7 +97,7 @@ export default function RestoreScreen() {
                 </Text>
               </Pressable>
               <Text style={styles.meta}>
-                deleted {relativeTime(row.deleted_at)} on {deviceLabel(row.delete_origin)}
+                deleted {formatRelative(row.deleted_at, { fallback: "recently", absoluteAfterDays: Infinity })} on {deviceLabel(row.delete_origin)}
               </Text>
               <View style={styles.actions}>
                 <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => onRestore(row)}>

@@ -15,7 +15,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { History, RotateCcw, ChevronDown, ChevronRight, AlertTriangle, ArrowUpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { cn } from "@/lib/utils";
+import { cn, formatRelative } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { revealNote, revealCard } from "@/lib/events";
 import {
@@ -109,18 +109,6 @@ function saveFileFailures(failures: FileFailure[]): void {
 function refusalText(reason?: string): string {
   if (!reason) return "Couldn't restore that note.";
   return REFUSAL_TEXT[reason as RestoreRefusal] ?? reason;
-}
-
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return "";
-  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 60) return "just now";
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
 }
 
 /** Absolute timestamp for the tooltip, so the relative form is never the only truth. */
@@ -392,7 +380,7 @@ export function SyncActivityPanel() {
                     <div className="text-[0.643rem] text-[var(--text-tertiary)]">
                       deleted{" "}
                       <span title={note.deleted_at ? absoluteTime(note.deleted_at) : undefined}>
-                        {note.deleted_at ? relativeTime(note.deleted_at) : "recently"}
+                        {note.deleted_at ? formatRelative(note.deleted_at, { absoluteAfterDays: Infinity }) : "recently"}
                       </span>
                       {note.delete_origin ? ` on ${deviceLabel(note.delete_origin, false)}` : ""}
                     </div>
@@ -504,7 +492,7 @@ export function SyncActivityPanel() {
                         )}
                         <div className="text-[0.643rem] text-[var(--text-tertiary)]">
                           from {deviceLabel(entry.origin, entry.isSelf)} ·{" "}
-                          <span title={absoluteTime(entry.at)}>seen {relativeTime(entry.at)}</span>
+                          <span title={absoluteTime(entry.at)}>seen {formatRelative(entry.at, { absoluteAfterDays: Infinity })}</span>
                           {copyNote}
                         </div>
                       </div>

@@ -8,21 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
+import { cn, formatRelative } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
-
-function formatWhen(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "";
-  const mins = Math.round((Date.now() - t) / 60_000);
-  const hrs = Math.round(mins / 60);
-  const days = Math.round(hrs / 24);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m`;
-  if (hrs < 24) return `${hrs}h`;
-  if (days < 30) return `${days}d`;
-  return new Date(iso).toLocaleDateString();
-}
 
 function toolIcon(tool: string): React.ReactNode {
   if (tool === "automation_run" || tool === "automation_approval") return <Zap size={13} className="text-[var(--accent)]" />;
@@ -140,7 +127,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-[var(--text-primary)] truncate">{n.title}</span>
                     {targetable && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
-                    <span className="text-[0.625rem] text-[var(--text-tertiary)] ml-auto shrink-0">{formatWhen(n.createdAt)}</span>
+                    <span className="text-[0.625rem] text-[var(--text-tertiary)] ml-auto shrink-0">{formatRelative(n.createdAt, { suffix: false, absoluteAfterDays: 30 })}</span>
                   </div>
                   <p className="text-[0.714rem] text-[var(--text-secondary)] mt-0.5 break-words line-clamp-2">{n.body}</p>
                 </div>
