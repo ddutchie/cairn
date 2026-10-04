@@ -7,6 +7,7 @@ import type { Command } from "@/lib/history";
 import { ipc } from "@/store/ipc";
 import { now } from "@/lib/utils";
 import type { CairnStore } from "@/store";
+import { completedAtAfterMove } from "@/lib/card-completion";
 
 type StoreSet = (fn: (s: CairnStore) => Partial<CairnStore>) => void;
 type StoreGet = () => CairnStore;
@@ -89,7 +90,7 @@ export function makeMoveCardCmd(
       const prevColCards = cards
         .filter((c) => c.columnId === prevColumnId && c.id !== cardId)
         .sort((a, b) => a.order - b.order);
-      prevColCards.splice(prevOrder, 0, { ...card, columnId: prevColumnId, updatedAt: now() });
+      prevColCards.splice(prevOrder, 0, { ...card, columnId: prevColumnId, completedAt: completedAtAfterMove(card, prevColumnId, get().columns), updatedAt: now() });
       const reindexedPrev = prevColCards.map((c, i) => ({ ...c, order: i }));
 
       const untouched = cards.filter(
@@ -114,7 +115,7 @@ export function makeMoveCardCmd(
       const newColCards = cards
         .filter((c) => c.columnId === targetColumnId && c.id !== cardId)
         .sort((a, b) => a.order - b.order);
-      newColCards.splice(targetIndex, 0, { ...card, columnId: targetColumnId, updatedAt: now() });
+      newColCards.splice(targetIndex, 0, { ...card, columnId: targetColumnId, completedAt: completedAtAfterMove(card, targetColumnId, get().columns), updatedAt: now() });
       const reindexedNew = newColCards.map((c, i) => ({ ...c, order: i }));
 
       const untouched = cards.filter(

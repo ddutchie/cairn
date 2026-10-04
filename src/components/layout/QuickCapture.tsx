@@ -106,7 +106,7 @@ export function QuickCapture() {
         </div>
       }
     >
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 px-5 pt-1 pb-2">
         <div className="flex items-center gap-2">
           <div role="radiogroup" aria-label="Capture type" className="flex rounded-md border border-[var(--border)] overflow-hidden">
             {(["task", "note"] as const).map((k) => (
