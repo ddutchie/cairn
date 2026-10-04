@@ -66,7 +66,6 @@ if (isDev) {
   });
 }
 
-
 registerDeepLinks(isDev);
 
 app.setName("Cairn");
@@ -87,7 +86,6 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
   },
 ]);
-
 
 // Test/QA isolation hook: when CAIRN_USER_DATA_DIR is set (used by the
 // Playwright Electron e2e harness), redirect the userData dir so the app runs
