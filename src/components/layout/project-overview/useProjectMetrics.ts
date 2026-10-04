@@ -13,6 +13,7 @@ import { getDueDateStatus } from "@/lib/utils";
 import { COLUMN_TYPE_ORDER } from "@/lib/constants";
 import { revealNote, revealCard } from "@/lib/events";
 import type { Note, TaskCard, BoardColumn } from "@/types";
+import { shippedSince, atRiskCards, startOfDayAgo, type AtRiskCard } from "../../../../shared/overview/delivery";
 
 export interface ActivityItem {
   id: string;
@@ -44,6 +45,10 @@ export interface ProjectMetrics {
   recentNotes: Note[];
   projectTags: import("@/types").Tag[];
   activityByDay: ActivityGroup[];
+  /** Cards completed in the last 7 days (incl. archived), newest first. */
+  shippedCards: TaskCard[];
+  /** Open cards that are overdue, blocked near their due date, or stale. */
+  atRisk: AtRiskCard<TaskCard>[];
 }
 
 function dayLabel(iso: string): string {
@@ -60,6 +65,7 @@ function dayLabel(iso: string): string {
 export function useProjectMetrics(projectId: string | null): ProjectMetrics | null {
   const {
     projects,
+    cards,
     getProjectNotes,
     getProjectColumns,
     getProjectCards,
@@ -68,6 +74,7 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
     setView,
   } = useCairnStore(useShallow((s) => ({
     projects:          s.projects,
+    cards:             s.cards,
     getProjectNotes:   s.getProjectNotes,
     getProjectColumns: s.getProjectColumns,
     getProjectCards:   s.getProjectCards,
@@ -146,10 +153,14 @@ export function useProjectMetrics(projectId: string | null): ProjectMetrics | nu
     else activityByDay.push({ label, items: [item] });
   }
 
+  const shippedCards = shippedSince(cards.filter((c) => c.projectId === projectId), startOfDayAgo(6));
+  const atRisk = atRiskCards(allCards, columns);
+
   return {
     notes, columns, allCards, doneCards, openCards,
     completionRate, today, dueCards, overdueCount,
     priorityCounts, hasAnyCategorised,
     pinnedNotes, recentNotes, projectTags, activityByDay,
+    shippedCards, atRisk,
   };
 }

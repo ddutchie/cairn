@@ -4,12 +4,14 @@
 // All are presentational (no local state, no effects, no store deps).
 
 import React from "react";
-import { FileText, Circle, Zap, Kanban } from "lucide-react";
+import { FileText, Circle, Zap, Kanban, CheckCircle2 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import type { AppUIState } from "@/types";
 import type { ActivityGroup } from "./useProjectMetrics";
+import type { TaskCard } from "@/types";
+import type { AtRiskCard, RiskReason } from "../../../../shared/overview/delivery";
 import type { AutomationRunWithAutomation } from "@/store/slices/automations";
 import { SectionHeader } from "./primitives";
 
@@ -36,6 +38,60 @@ function runArtifacts(run: AutomationRunWithAutomation): RunArtifactRef[] {
   } catch {
     return [];
   }
+}
+
+// ── Delivery: shipped / at-risk ─────────────────────────────────────────────
+
+/** Cards completed recently — one row each, newest first. */
+export function ShippedFeed({ cards, columnName, setView }: {
+  cards: TaskCard[];
+  columnName: (id: string) => string | undefined;
+  setView: (v: AppUIState["activeView"]) => void;
+}) {
+  return (
+    <div className="space-y-0.5">
+      {cards.map((c) => (
+        <button key={c.id} onClick={() => revealCard(setView, c.id)}
+          className="flex items-center gap-3 w-full px-2 py-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors group text-left">
+          <CheckCircle2 size={12} className="text-[var(--success)] flex-shrink-0" />
+          <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{c.title}</span>
+          {c.archivedAt
+            ? <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0">archived</span>
+            : <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{columnName(c.columnId)}</span>}
+          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(c.completedAt)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const RISK_LABEL: Record<RiskReason, string> = { overdue: "Overdue", blocked: "Blocked", stale: "Stale" };
+const RISK_COLOR: Record<RiskReason, string> = {
+  overdue: "var(--danger)",
+  blocked: "var(--warning)",
+  stale: "var(--text-tertiary)",
+};
+
+/** Open cards that need attention, with labelled reason pills (not colour alone). */
+export function AtRiskFeed({ items, setView }: { items: AtRiskCard<TaskCard>[]; setView: (v: AppUIState["activeView"]) => void }) {
+  return (
+    <div className="space-y-0.5">
+      {items.map(({ card, reasons, idleDays }) => (
+        <button key={card.id} onClick={() => revealCard(setView, card.id)}
+          className="flex items-center gap-3 w-full px-2 py-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors group text-left">
+          <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{card.title}</span>
+          {reasons.map((r) => (
+            <span key={r}
+              title={r === "stale" ? `No updates for ${idleDays} days` : r === "blocked" ? "Due soon with an open blocker" : `Due ${card.dueDate}`}
+              className="text-[0.643rem] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0"
+              style={{ color: RISK_COLOR[r], background: `color-mix(in srgb, ${RISK_COLOR[r]} 14%, transparent)` }}>
+              {RISK_LABEL[r]}{r === "stale" ? ` · ${idleDays}d` : ""}
+            </span>
+          ))}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // ── Recent activity feed ────────────────────────────────────────────────────

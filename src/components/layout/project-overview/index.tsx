@@ -26,6 +26,7 @@ import {
   Folder,
   FolderCode,
   Wrench,
+  CheckCircle2,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -51,6 +52,8 @@ import { Tooltip } from "@/components/ui/tooltip";
 import {
   RecentActivityFeed,
   RecentAutomationRunsFeed,
+  ShippedFeed,
+  AtRiskFeed,
 } from "./sections";
 import type { TaskCard, ToolType } from "@/types";
 import { ProjectHealthRadar, useRadarAxes } from "./radar";
@@ -1065,6 +1068,50 @@ export function ProjectOverview() {
               )}
             </div>
           </div>
+          {/* ── delivery: shipped this week + at risk ── */}
+          {metrics && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 mb-3.5">
+              <CollapsibleSection
+                title="Shipped this week"
+                icon={<CheckCircle2 size={12} />}
+                collapsed={isCollapsed("shipped")}
+                onToggle={() => toggleSection("shipped")}
+                collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{metrics.shippedCards.length} done in 7 days</span>}
+              >
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]">
+                  {metrics.shippedCards.length === 0 ? (
+                    <EmptyState title="Nothing finished in the last 7 days" className="py-4" />
+                  ) : (
+                    <div className="max-h-[240px] overflow-y-auto pr-1 -mr-1">
+                      <ShippedFeed
+                        cards={metrics.shippedCards}
+                        columnName={(id) => metrics.columns.find((c) => c.id === id)?.name}
+                        setView={setView}
+                      />
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
+              <CollapsibleSection
+                title="At risk"
+                icon={<AlertTriangle size={12} />}
+                collapsed={isCollapsed("atRisk")}
+                onToggle={() => toggleSection("atRisk")}
+                collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{metrics.atRisk.length} need attention</span>}
+              >
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]">
+                  {metrics.atRisk.length === 0 ? (
+                    <EmptyState title="Nothing overdue, blocked or stale" className="py-4" />
+                  ) : (
+                    <div className="max-h-[240px] overflow-y-auto pr-1 -mr-1">
+                      <AtRiskFeed items={metrics.atRisk} setView={setView} />
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
+            </div>
+          )}
+
           {/* ── activity log — full width, trace LLM/MCP changes ── */}
           <div className="mb-3.5">
             <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)", borderLeft: "2px solid color-mix(in srgb, var(--accent) 60%, transparent)" }}>
