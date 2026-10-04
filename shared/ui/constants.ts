@@ -6,6 +6,8 @@
  * Lucide component (lucide-react on desktop, lucide-react-native on mobile).
  */
 
+import type { Priority, ColumnType } from "../types/domain";
+
 /** Workspace/project icon names (Lucide). Mirrors src/lib/workspace-icons. */
 export const WORKSPACE_ICON_NAMES = [
   "Layers",
@@ -49,11 +51,8 @@ export const PRIORITY_COLOR: Record<string, string> = {
 };
 
 /** Task priorities, low → urgent. The canonical order for pickers/chips. */
-export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
-export type Priority = (typeof PRIORITIES)[number];
-
-/** Board column types. Mirrors src/types ColumnType (minus "custom" edge cases). */
-export type ColumnType = "backlog" | "todo" | "in_progress" | "review" | "done" | "custom";
+export const PRIORITIES = ["low", "medium", "high", "urgent"] as const satisfies readonly Priority[];
+export type { Priority, ColumnType };
 
 /**
  * Canonical accent colour per column type. Mirrors desktop src/lib/constants
