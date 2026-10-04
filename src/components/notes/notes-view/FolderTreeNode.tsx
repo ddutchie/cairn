@@ -1,7 +1,7 @@
 "use client";
 
 import React, { memo } from "react";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, FolderInput, FolderOpen, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Note } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -22,6 +22,8 @@ export interface FolderTreeNodeProps {
   onNoteMoveToFolder: (note: Note) => void;
   onNoteReveal: (note: Note) => void;
   onCreateInFolder: (folder: string) => void;
+  /** Move this folder (and its subfolders) to another project. */
+  onMoveFolderToProject: (folder: string) => void;
   dropTarget: string | null;
   onNoteDragStart: (noteId: string) => void;
   onNoteDragEnd: () => void;
@@ -35,7 +37,7 @@ export interface FolderTreeNodeProps {
 export const FolderTreeNode = memo(function FolderTreeNode({
   node, activeNoteId, collapsed, depth = 0,
   onToggle, onNoteClick, onNotePin, onNoteDelete,
-  onNoteArchive, onNoteMove, onNoteMoveToFolder, onNoteReveal, onCreateInFolder,
+  onNoteArchive, onNoteMove, onNoteMoveToFolder, onNoteReveal, onCreateInFolder, onMoveFolderToProject,
   dropTarget, onNoteDragStart, onNoteDragEnd,
   onFolderDragStart, onFolderDragEndSource,
   onFolderDragOver, onFolderDragLeave, onFolderDrop,
@@ -74,6 +76,14 @@ export const FolderTreeNode = memo(function FolderTreeNode({
           <span className="text-[0.786rem] font-medium text-[var(--text-secondary)] flex-1 truncate">{node.name}</span>
         </Tooltip>
         <button
+          onClick={(e) => { e.stopPropagation(); onMoveFolderToProject(node.path); }}
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
+          title={`Move ${node.name} to another project`}
+          aria-label={`Move ${node.name} to another project`}
+        >
+          <FolderInput size={10} />
+        </button>
+        <button
           onClick={(e) => { e.stopPropagation(); onCreateInFolder(node.path); }}
           className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
           title={`New note in ${node.name}`}
@@ -100,6 +110,7 @@ export const FolderTreeNode = memo(function FolderTreeNode({
               onNoteMoveToFolder={onNoteMoveToFolder}
               onNoteReveal={onNoteReveal}
               onCreateInFolder={onCreateInFolder}
+              onMoveFolderToProject={onMoveFolderToProject}
               dropTarget={dropTarget}
               onNoteDragStart={onNoteDragStart}
               onNoteDragEnd={onNoteDragEnd}

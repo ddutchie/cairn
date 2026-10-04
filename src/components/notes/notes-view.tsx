@@ -23,7 +23,6 @@ import { buildFolderTree, type FolderNode } from "./notes-view/buildFolderTree";
 import { NoteListItem } from "./notes-view/NoteListItem";
 import { ArchivedNoteListItem } from "./notes-view/ArchivedNoteListItem";
 import { FolderTreeNode } from "./notes-view/FolderTreeNode";
-import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import { sortTagsByUsage } from "@/lib/tag-utils";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { FolderPickerDialog } from "./notes-view/FolderPickerDialog";
@@ -45,7 +44,7 @@ export function NotesView() {
     activeProjectId, activeWorkspaceId,
     getProjectNotes, getArchivedProjectNotes, getProjectTemplates,
     createNote, updateNote, deleteNote,
-    archiveNote, restoreNote, moveNoteToProject, moveNoteToFolder, moveFolder,
+    archiveNote, restoreNote, moveNoteToProject, moveFolderToProject, moveNoteToFolder, moveFolder,
     revealNote,
     getTagById,
     getWorkspaceProjects,
@@ -72,6 +71,7 @@ export function NotesView() {
     archiveNote:             s.archiveNote,
     restoreNote:             s.restoreNote,
     moveNoteToProject:       s.moveNoteToProject,
+    moveFolderToProject:     s.moveFolderToProject,
     moveNoteToFolder:        s.moveNoteToFolder,
     moveFolder:              s.moveFolder,
     revealNote:              s.revealNote,
@@ -94,6 +94,7 @@ export function NotesView() {
   const [activeTagId, setActiveTagId]           = useState<string | null>(null);
   const [prdModalOpen, setPrdModalOpen]         = useState(false);
   const [moveNoteId, setMoveNoteId]             = useState<string | null>(null);
+  const [moveFolderPath, setMoveFolderPath]     = useState<string | null>(null);
   const [showArchivedNotes, setShowArchivedNotes] = useState(false);
   const [dashboardTemplateOpen, setDashboardTemplateOpen] = useState(false);
   const [deleteNoteId, setDeleteNoteId]         = useState<string | null>(null);
@@ -198,47 +199,24 @@ export function NotesView() {
     dragNoteIdRef.current = noteId;
     dragFolderPathRef.current = null;
     setIsDragging(true);
-    // Also expose the drag to the leftmost project sidebar so a single note can
-    // be dropped onto another project (moves just that note, keeping its folder).
-    if (activeProjectId) {
-      const note = allNotes.find((n) => n.id === noteId);
-      setActiveCrossProjectDrag({
-        kind: "note",
-        noteId,
-        sourceProjectId: activeProjectId,
-        label: note?.title ?? "note",
-      });
-    }
-  }, [activeProjectId, allNotes]);
+  }, []);
 
   const handleNoteDragEnd = useCallback(() => {
     dragNoteIdRef.current = null;
     setDropTarget(null);
     setIsDragging(false);
-    setActiveCrossProjectDrag(null);
   }, []);
 
   const handleFolderDragStart = useCallback((folderPath: string) => {
     dragFolderPathRef.current = folderPath;
     dragNoteIdRef.current = null;
     setIsDragging(true);
-    // Also expose the drag to the leftmost project sidebar so the folder can be
-    // dropped onto another project (moves the whole subtree cross-project).
-    if (activeProjectId) {
-      setActiveCrossProjectDrag({
-        kind: "folder",
-        sourceProjectId: activeProjectId,
-        folderPath,
-        label: folderPath.split("/").pop() ?? folderPath,
-      });
-    }
-  }, [activeProjectId]);
+  }, []);
 
   const handleFolderDragEndSource = useCallback(() => {
     dragFolderPathRef.current = null;
     setDropTarget(null);
     setIsDragging(false);
-    setActiveCrossProjectDrag(null);
   }, []);
 
   const handleFolderDragOver = useCallback((folderPath: string) => {
@@ -547,6 +525,14 @@ export function NotesView() {
     setMoveNoteId(null);
   }
 
+  function handleMoveFolderToProject(folderPath: string, targetProjectId: string) {
+    if (!activeProjectId) return;
+    const inFolder = (n: Note) => n.folder === folderPath || n.folder.startsWith(`${folderPath}/`);
+    moveFolderToProject(activeProjectId, folderPath, targetProjectId);
+    if (activeNote && inFolder(activeNote)) setActiveNoteId(notes.find((n) => !inFolder(n))?.id ?? null);
+    setMoveFolderPath(null);
+  }
+
   // Stable per-note callbacks for NoteListItem — keyed on note.id to keep
   // React.memo effective. These are defined per-note at render time but each
   // callback identity is stable across re-renders of NotesView as long as the
@@ -730,6 +716,7 @@ export function NotesView() {
                   onNoteMoveToFolder={handleNoteMoveToFolder}
                   onNoteReveal={handleNoteReveal}
                   onCreateInFolder={(folder) => handleCreateNote(folder)}
+                  onMoveFolderToProject={setMoveFolderPath}
                   dropTarget={dropTarget}
                   onNoteDragStart={handleNoteDragStart}
                   onNoteDragEnd={handleNoteDragEnd}
@@ -853,6 +840,15 @@ export function NotesView() {
           activeProjectId={activeProjectId}
           onMove={(pid) => handleMoveToProject(moveNoteId, pid)}
           onClose={() => setMoveNoteId(null)}
+        />
+      )}
+
+      {moveFolderPath && activeProjectId && (
+        <MoveNoteModal
+          workspaceProjects={workspaceProjects}
+          activeProjectId={activeProjectId}
+          onMove={(pid) => handleMoveFolderToProject(moveFolderPath, pid)}
+          onClose={() => setMoveFolderPath(null)}
         />
       )}
 

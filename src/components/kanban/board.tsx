@@ -37,49 +37,10 @@ import { KanbanCard } from "./card";
 import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn, Priority } from "@/types";
 import { getZoneHit, resolveCardDrop } from "./board-dnd";
-import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
 import { EMPTY_BOARD_FILTER, cardMatchesFilter, assigneesOf, isFilterActive, type BoardFilter } from "@/lib/board-filters";
 import { BoardFilterMenu, BoardViewsMenu } from "./board-filter-menus";
 import { RunningSessionsContext } from "./card-agent-badge";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
-
-/**
- * Cross-project drag bridge (board → project sidebar).
- *
- * The board uses dnd-kit (pointer sensor), while the leftmost project sidebar
- * uses native drop targets marked with `data-project-drop-id`. dnd-kit's `over`
- * is null outside its DndContext, so we hit-test the raw pointer position
- * against those sidebar rows via the DOM.
- */
-const PROJECT_DROP_ATTR = "data-project-drop-id";
-const SIDEBAR_DROP_CLASS = "cairn-cross-project-drop-active";
-
-/** Returns the project id of the sidebar row under (x, y), or null. */
-function projectDropTargetAt(x: number, y: number): string | null {
-  if (typeof document === "undefined") return null;
-  let el = document.elementFromPoint(x, y) as HTMLElement | null;
-  while (el) {
-    const id = el.getAttribute?.(PROJECT_DROP_ATTR);
-    if (id) return id;
-    el = el.parentElement;
-  }
-  return null;
-}
-
-/** Highlight the sidebar row under the pointer during a cross-project drag. */
-function updateSidebarDropHighlight(x: number, y: number, sourceProjectId: string): void {
-  if (typeof document === "undefined") return;
-  const target = projectDropTargetAt(x, y);
-  document.querySelectorAll(`.${SIDEBAR_DROP_CLASS}`).forEach((n) => n.classList.remove(SIDEBAR_DROP_CLASS));
-  if (!target || target === sourceProjectId) return;
-  const row = document.querySelector(`[${PROJECT_DROP_ATTR}="${target}"]`);
-  row?.classList.add(SIDEBAR_DROP_CLASS);
-}
-
-function clearSidebarDropHighlight(): void {
-  if (typeof document === "undefined") return;
-  document.querySelectorAll(`.${SIDEBAR_DROP_CLASS}`).forEach((n) => n.classList.remove(SIDEBAR_DROP_CLASS));
-}
 
 /**
  * Collision detection for the board.
@@ -212,7 +173,6 @@ export function KanbanBoard() {
     restoreCard,
     archiveAllDoneCards,
     getArchivedProjectCards,
-    moveCardToProject,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:          s.activeProjectId,
     // Subscribe to cards directly so bulk archive/restore triggers a re-render.
@@ -234,7 +194,6 @@ export function KanbanBoard() {
     reorderColumns:           s.reorderColumns,
     restoreCard:              s.restoreCard,
     archiveAllDoneCards:      s.archiveAllDoneCards,
-    moveCardToProject:        s.moveCardToProject,
   })));
 
   const [activeCard, setActiveCard]         = useState<TaskCard | null>(null);
@@ -313,14 +272,6 @@ export function KanbanBoard() {
     if (col)       { setActiveColumn(col); }
     else if (card) {
       setActiveCard(card);
-      // Expose the drag to the project sidebar so it can be dropped onto another
-      // project (cross-project move preserving column state).
-      setActiveCrossProjectDrag({
-        kind: "card",
-        cardId: card.id,
-        sourceProjectId: card.projectId,
-        label: card.title,
-      });
     }
   }
 
@@ -344,9 +295,6 @@ export function KanbanBoard() {
     if (!activeCard) { return; }
     const p = livePointer.current;
     if (!p) return;
-    // Sidebar project-row highlighting is driven solely by the pointermove/
-    // touchmove listeners in the activeCard effect (they have accurate,
-    // auto-scroll-aware coordinates), so we don't duplicate it here.
     const barRect = titleBarRef.current?.getBoundingClientRect() ?? null;
     const archive = archiveBtnRef.current?.getBoundingClientRect() ?? null;
     const del = deleteBtnRef.current?.getBoundingClientRect() ?? null;
@@ -379,8 +327,6 @@ export function KanbanBoard() {
     hoverZoneRef.current = null;
     applyZoneHighlight(null);
     livePointer.current = null;
-    clearSidebarDropHighlight();
-    setActiveCrossProjectDrag(null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -406,16 +352,12 @@ export function KanbanBoard() {
         hoverZoneRef.current = null;
         applyZoneHighlight(null);
         livePointer.current = null;
-        clearSidebarDropHighlight();
-        setActiveCrossProjectDrag(null);
         archiveCard(draggedCard.id);
         return;
       }
       if (zone === "delete") {
         setDeleteFlashing(true);
         applyZoneHighlight("delete");
-        clearSidebarDropHighlight();
-        setActiveCrossProjectDrag(null);
         setTimeout(() => {
           setDeleteFlashing(false);
           setActiveCard(null);
@@ -435,24 +377,6 @@ export function KanbanBoard() {
     setOverId(null);
     hoverZoneRef.current = null;
     applyZoneHighlight(null);
-
-    // ── Cross-project drop ────────────────────────────────────────────────
-    // dnd-kit's `over` is null when the pointer is released outside the board's
-    // DndContext (e.g. over the leftmost project sidebar). Hit-test the last
-    // pointer position for a project row and, if it belongs to a DIFFERENT
-    // project, move the card there (preserving its column state).
-    if (draggedCard) {
-      const targetProjectId = projectDropTargetAt(dropX, dropY);
-      if (targetProjectId && targetProjectId !== draggedCard.projectId) {
-        livePointer.current = null;
-        clearSidebarDropHighlight();
-        setActiveCrossProjectDrag(null);
-        moveCardToProject(draggedCard.id, targetProjectId);
-        return;
-      }
-    }
-    clearSidebarDropHighlight();
-    setActiveCrossProjectDrag(null);
     livePointer.current = null;
 
     if (!over || active.id === over.id) return;
@@ -494,16 +418,13 @@ export function KanbanBoard() {
   // activatorEvent + delta for screen coordinates.
   useEffect(() => {
     if (!activeCard) { livePointer.current = null; return; }
-    const sourceProjectId = activeCard.projectId;
     function onPointerMove(e: PointerEvent) {
       livePointer.current = { x: e.clientX, y: e.clientY };
-      updateSidebarDropHighlight(e.clientX, e.clientY, sourceProjectId);
     }
     function onTouchMove(e: TouchEvent) {
       const t = e.touches[0];
       if (t) {
         livePointer.current = { x: t.clientX, y: t.clientY };
-        updateSidebarDropHighlight(t.clientX, t.clientY, sourceProjectId);
       }
     }
     window.addEventListener("pointermove", onPointerMove);
@@ -511,7 +432,6 @@ export function KanbanBoard() {
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("touchmove", onTouchMove);
-      clearSidebarDropHighlight();
     };
   }, [activeCard]);
   const [highlightedColumnId, setHighlightedColumnId] = useState<string | null>(null);
