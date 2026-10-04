@@ -54,13 +54,8 @@ export interface TagRow {
 
 // ── Knowledge graph ─────────────────────────────────────────────────────────
 
-export type GraphNodeType = "project" | "note" | "card" | "tag";
-export type GraphEdgeType =
-  | "project-member"
-  | "note-note"
-  | "note-card"
-  | "tag-member"
-  | "semantic";
+import type { GraphNodeType, GraphEdgeType } from "@cairn/shared/types/domain";
+export type { GraphNodeType, GraphEdgeType };
 
 export interface GraphNode {
   id: string;

@@ -12,3 +12,12 @@ export type Priority = "low" | "medium" | "high" | "urgent";
 
 /** Board column types. */
 export type ColumnType = "backlog" | "todo" | "in_progress" | "review" | "done" | "custom";
+
+/** Knowledge-graph node kinds. */
+export type GraphNodeType = "project" | "note" | "card" | "tag";
+
+/** Knowledge-graph edge kinds. Mobile's simplified graph uses a subset. */
+export type GraphEdgeType =
+  | "note-note" | "note-card" | "tag-member" | "project-member"
+  | "flow-ref" | "flow-edge" | "co-mention" | "keyword" | "assignee"
+  | "wikilink" | "semantic";

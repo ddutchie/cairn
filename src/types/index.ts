@@ -3,8 +3,8 @@
 // ─────────────────────────────────────────────
 
 // Leaf unions shared with Electron and mobile.
-import type { ID, ProjectStatus, Priority, ColumnType } from "../../shared/types/domain";
-export type { ID, ProjectStatus, Priority, ColumnType };
+import type { ID, ProjectStatus, Priority, ColumnType, GraphNodeType, GraphEdgeType } from "../../shared/types/domain";
+export type { ID, ProjectStatus, Priority, ColumnType, GraphNodeType, GraphEdgeType };
 
 // ── Tags ──────────────────────────────────────
 export interface Tag {
@@ -818,13 +818,6 @@ export interface ResolvedIdeaFlow {
 }
 
 // ── Knowledge Graph ───────────────────────────
-
-export type GraphNodeType = "project" | "note" | "card" | "tag";
-
-export type GraphEdgeType =
-  | "note-note" | "note-card" | "tag-member" | "project-member"
-  | "flow-ref" | "flow-edge" | "co-mention" | "keyword" | "assignee"
-  | "wikilink" | "semantic";
 
 export interface GraphNode {
   id: ID;
