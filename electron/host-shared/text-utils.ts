@@ -37,20 +37,8 @@ export function normalizeNoteTitle(title: string): string {
 }
 
 /**
- * Strip markdown syntax from a string, returning plain text.
- * Used to derive plain text on read for search snippets, embeddings, and the
- * knowledge graph (the dedicated `content_text` column was removed — see schema v44).
+ * Strip markdown syntax, keeping line breaks. Lives in shared/notes/text.ts
+ * (`markdownToText`) so the renderer uses the same implementation; aliased
+ * here to keep the many main-process call sites unchanged.
  */
-export function stripMarkdown(md: string): string {
-  return md
-    .replace(/^#{1,6}\s+/gm, "")      // headings
-    .replace(/\*\*(.+?)\*\*/g, "$1")   // bold
-    .replace(/\*(.+?)\*/g, "$1")       // italic
-    .replace(/`{1,3}[^`]*`{1,3}/g, "") // inline + fenced code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links
-    .replace(/^[-*+]\s+/gm, "")        // list bullets
-    .replace(/^\d+\.\s+/gm, "")        // ordered lists
-    .replace(/^>\s+/gm, "")            // blockquotes
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-}
+export { markdownToText as stripMarkdown } from "../../shared/notes/text";

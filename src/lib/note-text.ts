@@ -9,12 +9,12 @@
  */
 
 import type { Note } from "@/types";
-import { stripMarkdown } from "@/components/notes/note-editor-utils";
+import { markdownToText } from "../../shared/notes/text";
 import { noteExcerpt } from "../../shared/notes/excerpt";
 
 /** Preview excerpt for a note body (what `contentText` should hold). */
 export function excerptFor(content: string, type: Note["type"] = "note"): string {
-  return noteExcerpt(content, type, stripMarkdown);
+  return noteExcerpt(content, type, (md) => markdownToText(md, { rulesAndTables: true }));
 }
 
 const searchTextCache = new WeakMap<Note, string>();
@@ -23,7 +23,7 @@ const searchTextCache = new WeakMap<Note, string>();
 export function noteSearchText(note: Note): string {
   let text = searchTextCache.get(note);
   if (text === undefined) {
-    const body = note.type === "dashboard" ? "" : stripMarkdown(note.content ?? "");
+    const body = note.type === "dashboard" ? "" : markdownToText(note.content ?? "", { rulesAndTables: true });
     text = `${note.title}\n${body}`;
     searchTextCache.set(note, text);
   }
