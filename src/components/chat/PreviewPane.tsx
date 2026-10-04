@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InlineDiff } from "@/components/agent/git/InlineDiff";
 import type { ContextPanel } from "@/types";
+import { useResizableDivider } from "@/hooks/useResizableDivider";
 
 const MIN_PREVIEW_WIDTH = 360;
 const MAX_PREVIEW_WIDTH = 900;
@@ -67,49 +68,12 @@ export function PreviewPane() {
   const panelRef = useRef<HTMLDivElement>(null);
   const dividerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const divider = dividerRef.current;
-    const panel = panelRef.current;
-    if (!divider || !panel) return;
-
-    let dragging = false;
-    let startX = 0;
-    let startW = 0;
-
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging) return;
-      // Panel is on the right; dragging left (lower clientX) makes it wider
-      const next = Math.min(MAX_PREVIEW_WIDTH, Math.max(MIN_PREVIEW_WIDTH, startW - (e.clientX - startX)));
-      setPanelWidth(next);
-    }
-
-    function onMouseUp() {
-      if (!dragging) return;
-      dragging = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-
-    function onMouseDown(e: MouseEvent) {
-      dragging = true;
-      startX = e.clientX;
-      startW = panel!.offsetWidth;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    }
-
-    divider.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
-    return () => {
-      divider.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
+  useResizableDivider(dividerRef, {
+    axis: "x",
+    startSize: () => panelRef.current?.offsetWidth ?? panelWidth,
+    // Panel is on the right; dragging left makes it wider.
+    onMove: (delta, start) =>
+      setPanelWidth(Math.min(MAX_PREVIEW_WIDTH, Math.max(MIN_PREVIEW_WIDTH, start - delta))),
   }, [activePreviewItem, activeContextPanel]);
 
   const panel = (activeContextPanel ?? activePreviewItem) as ContextPanel | null;

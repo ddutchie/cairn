@@ -6,6 +6,12 @@ import crypto from "crypto";
 import QRCode from "qrcode";
 import { getIpcHandler, setMobileBroadcastCallback } from "../ipc/registry";
 import type { DbContext } from "../ipc/handlers";
+import { readBody, sendJson } from "./http-json";
+
+/** A PIN login is a few bytes; cap it well below anything legitimate IPC needs. */
+const MAX_AUTH_BODY_BYTES = 16_384;
+/** IPC calls carry note bodies and attachments — generous, but bounded. */
+const MAX_IPC_BODY_BYTES = 64 * 1024 * 1024;
 
 export interface MobileSettings {
   enabled: boolean;
@@ -81,29 +87,23 @@ export class MobileServer {
 
       // ── 1. API: PIN Authentication ──
       if (pathname === "/api/auth" && req.method === "POST") {
-        let body = "";
-        req.on("data", (chunk) => { body += chunk; });
-        req.on("end", () => {
+        readBody(req, MAX_AUTH_BODY_BYTES).then((body) => {
           try {
             const parsed = JSON.parse(body);
             if (parsed.pin === this.settings.pin) {
               const token = crypto.randomBytes(16).toString("hex");
               this.activeSessions.add(token);
               this.saveSessions();
-              res.writeHead(200, {
-                "Content-Type": "application/json",
+              sendJson(res, 200, { success: true }, {
                 "Set-Cookie": `cairn_session_token=${token}; Path=/; HttpOnly; Max-Age=31536000`,
               });
-              res.end(JSON.stringify({ success: true }));
             } else {
-              res.writeHead(400, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: false, error: "Invalid PIN code" }));
+              sendJson(res, 400, { success: false, error: "Invalid PIN code" });
             }
           } catch {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: false, error: "Malformed request" }));
+            sendJson(res, 400, { success: false, error: "Malformed request" });
           }
-        });
+        }, () => sendJson(res, 413, { success: false, error: "Request too large" }));
         return;
       }
 
@@ -119,8 +119,7 @@ export class MobileServer {
           res.writeHead(200, { "Content-Type": "text/html" });
           res.end(loginHtml);
         } else {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Unauthorized" }));
+          sendJson(res, 401, { error: "Unauthorized" });
         }
         return;
       }
@@ -196,15 +195,12 @@ export class MobileServer {
       // ── 6. API: IPC Handler Bridge ──
       if (pathname === "/api/ipc" && req.method === "POST") {
         const clientId = req.headers["x-client-id"] as string || "anonymous";
-        let body = "";
-        req.on("data", (chunk) => { body += chunk; });
-        req.on("end", async () => {
+        readBody(req, MAX_IPC_BODY_BYTES).then(async (body) => {
           try {
             const { channel, args = [] } = JSON.parse(body);
             const handler = getIpcHandler(channel);
             if (!handler) {
-              res.writeHead(404, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: `Unknown IPC channel: ${channel}` }));
+              sendJson(res, 404, { error: `Unknown IPC channel: ${channel}` });
               return;
             }
 
@@ -233,13 +229,11 @@ export class MobileServer {
             };
 
             const result = await handler(mockEvent, ...args);
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify(result));
+            sendJson(res, 200, result);
           } catch (error) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: (error as Error).message }));
+            sendJson(res, 500, { error: (error as Error).message });
           }
-        });
+        }, () => sendJson(res, 413, { error: "Request too large" }));
         return;
       }
 

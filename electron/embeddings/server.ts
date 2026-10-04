@@ -5,6 +5,7 @@ import * as os from "os";
 import { embed, loadPipeline, setCacheDir, isLoaded, loadedModelId, type EmbedProgress } from "./pipeline";
 import { EmbedRequest, EMBED_MODEL_ID, EMBED_DIM } from "./types";
 import { errMsg } from "../host-shared/errors";
+import { readBody, sendJson } from "../lib/http-json";
 
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log";
@@ -40,33 +41,6 @@ function parseArgs(argv: string[]): { port?: number; cacheDir: string; model: st
 }
 
 const MAX_EMBED_BODY_BYTES = 1_000_000; // 1 MB
-
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    req.on("data", (c: Buffer) => {
-      total += c.length;
-      if (total > MAX_EMBED_BODY_BYTES) {
-        reject(Object.assign(new Error("payload too large"), { statusCode: 413 }));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
-}
-
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body);
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Content-Length": Buffer.byteLength(payload),
-  });
-  res.end(payload);
-}
 
 async function ensurePipelineLoaded(model: string): Promise<void> {
   if (isLoaded() && loadedModelId() === model) return;
@@ -141,7 +115,7 @@ function buildServer(configuredModel: string): http.Server {
     }
     if (req.method === "POST" && req.url === "/embed") {
       try {
-        const body = await readBody(req);
+        const body = await readBody(req, MAX_EMBED_BODY_BYTES);
         await handleEmbed(body, res, configuredModel);
       } catch (e) {
         const msg = errMsg(e);

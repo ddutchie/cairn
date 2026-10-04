@@ -26,6 +26,7 @@ import { TerminalManager } from "./TerminalManager";
 import { Bot, FolderOpen, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProjectSettingsModal } from "./ProjectSettingsModal";
+import { useResizableDivider } from "@/hooks/useResizableDivider";
 
 const MIN_TREE_WIDTH = 160;
 const DEFAULT_TREE_WIDTH = 220;
@@ -77,77 +78,24 @@ export function AgentView() {
   }, [codeDirectory]);
 
   // ── Drag logic ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let dragging: "left" | "bottom" | null = null;
-    let startX = 0;
-    let startY = 0;
-    let startWidth = 0;
-    let startHeight = 0;
-
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging) return;
-
-      if (dragging === "left" && treePaneRef.current) {
-        const next = Math.max(MIN_TREE_WIDTH, startWidth + (e.clientX - startX));
-        treePaneRef.current.style.width = `${next}px`;
-      }
-
-      if (dragging === "bottom") {
-        // Dragging up increases height (mouse moves up = lower clientY)
-        const next = Math.min(MAX_BOTTOM_HEIGHT, Math.max(MIN_BOTTOM_HEIGHT, startHeight - (e.clientY - startY)));
-        setBottomHeight(next);
-      }
-    }
-
-    function onMouseUp() {
-      if (dragging) {
-        TerminalManager.fitAll();
-        dragging = null;
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      }
-    }
-
-    function startLeftDrag(e: MouseEvent) {
-      dragging = "left";
-      startX = e.clientX;
-      startWidth = treePaneRef.current?.offsetWidth ?? DEFAULT_TREE_WIDTH;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    }
-
-    function startBottomDrag(e: MouseEvent) {
-      dragging = "bottom";
-      startY = e.clientY;
-      // Read current height from DOM so subsequent drags start from the right value
-      // rather than the stale React state captured at effect registration time.
-      startHeight = (bottomDividerRef.current?.nextElementSibling as HTMLElement | null)?.offsetHeight
-        ?? DEFAULT_BOTTOM_HEIGHT;
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    }
-
-    const leftDivider   = leftDividerRef.current;
-    const bottomDivider = bottomDividerRef.current;
-
-    leftDivider?.addEventListener("mousedown",   startLeftDrag);
-    bottomDivider?.addEventListener("mousedown", startBottomDrag);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup",   onMouseUp);
-
-    return () => {
-      leftDivider?.removeEventListener("mousedown",   startLeftDrag);
-      bottomDivider?.removeEventListener("mousedown", startBottomDrag);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup",   onMouseUp);
-    };
-    // Re-run when the codebase becomes available: the divider elements only exist
-    // in the DOM once `codeDirectory` is set (the no-codebase branch returns early),
-    // so an empty dep array would register mousedown listeners against null refs and
-    // drag-resize would never work. Keying on codeDirectory re-attaches them once
-    // the resizable layout mounts.
+  // Re-attach when the codebase becomes available: the divider elements only
+  // exist once `codeDirectory` is set (the no-codebase branch returns early).
+  useResizableDivider(leftDividerRef, {
+    axis: "x",
+    startSize: () => treePaneRef.current?.offsetWidth ?? DEFAULT_TREE_WIDTH,
+    onMove: (delta, start) => {
+      if (treePaneRef.current) treePaneRef.current.style.width = `${Math.max(MIN_TREE_WIDTH, start + delta)}px`;
+    },
+    onEnd: () => TerminalManager.fitAll(),
+  }, [codeDirectory]);
+  useResizableDivider(bottomDividerRef, {
+    axis: "y",
+    // Read from the DOM so a drag starts from the rendered height, not stale state.
+    startSize: () =>
+      (bottomDividerRef.current?.nextElementSibling as HTMLElement | null)?.offsetHeight ?? DEFAULT_BOTTOM_HEIGHT,
+    // Dragging up (negative delta) makes the bottom pane taller.
+    onMove: (delta, start) => setBottomHeight(Math.min(MAX_BOTTOM_HEIGHT, Math.max(MIN_BOTTOM_HEIGHT, start - delta))),
+    onEnd: () => TerminalManager.fitAll(),
   }, [codeDirectory]);
 
   // No codebase on this project — show only chat, not the coding-agent workspace.

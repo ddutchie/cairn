@@ -31,7 +31,7 @@ export interface MetricsCard {
   columnId: string;
   title: string;
   priority: string;
-  dueDate: string | null;
+  dueDate?: string | null;
   updatedAt: string;
 }
 
@@ -42,10 +42,18 @@ export interface MetricsColumn {
   type: ColumnType | string;
 }
 
-export interface MetricsInput {
-  columns: MetricsColumn[];
-  cards: MetricsCard[];
-  notes: MetricsNote[];
+/**
+ * Generic over the row types so callers get their own rows back (desktop
+ * passes store `Note` / `TaskCard` / `BoardColumn` objects as-is).
+ */
+export interface MetricsInput<
+  N extends MetricsNote = MetricsNote,
+  C extends MetricsCard = MetricsCard,
+  Col extends MetricsColumn = MetricsColumn,
+> {
+  columns: Col[];
+  cards: C[];
+  notes: N[];
 }
 
 export interface ActivityItem {
@@ -68,20 +76,24 @@ export interface PriorityCounts {
   low: number;
 }
 
-export interface ProjectMetrics {
-  columns: MetricsColumn[];
-  allCards: MetricsCard[];
-  doneCards: MetricsCard[];
-  openCards: MetricsCard[];
+export interface ProjectMetrics<
+  N extends MetricsNote = MetricsNote,
+  C extends MetricsCard = MetricsCard,
+  Col extends MetricsColumn = MetricsColumn,
+> {
+  columns: Col[];
+  allCards: C[];
+  doneCards: C[];
+  openCards: C[];
   /** doneCards / allCards as a 0–100 integer (0 when there are no cards). */
   completionRate: number;
   /** Open, dated cards due within the next 7 days, soonest first. */
-  dueCards: MetricsCard[];
+  dueCards: C[];
   overdueCount: number;
   priorityCounts: PriorityCounts;
   hasAnyCategorised: boolean;
-  pinnedNotes: MetricsNote[];
-  recentNotes: MetricsNote[];
+  pinnedNotes: N[];
+  recentNotes: N[];
   totalNotes: number;
   /** Merged notes + cards, most-recent 20, grouped by day label. */
   activityByDay: ActivityGroup[];
@@ -99,7 +111,11 @@ function dayLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function computeProjectMetrics(input: MetricsInput): ProjectMetrics {
+export function computeProjectMetrics<
+  N extends MetricsNote,
+  C extends MetricsCard,
+  Col extends MetricsColumn,
+>(input: MetricsInput<N, C, Col>): ProjectMetrics<N, C, Col> {
   const notes = input.notes;
   const columns = [...input.columns].sort(
     (a, b) => COLUMN_TYPE_ORDER.indexOf(a.type as ColumnType) - COLUMN_TYPE_ORDER.indexOf(b.type as ColumnType),

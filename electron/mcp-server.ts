@@ -29,6 +29,7 @@ import {
 } from "./mcp/db";
 import type { DbRow } from "./host-shared/db-mappers";
 import { executeTool } from "./mcp/tools";
+import { sendJson } from "./lib/http-json";
 
 export { executeTool };
 export { getSnapshot };
@@ -178,14 +179,13 @@ export function startMcpServer(binding: WorkspaceBinding): http.Server {
 
     if (req.url === "/health") {
       const snap = getSnapshot(binding.getDb());
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
+      sendJson(res, 200, {
         ok: true, source: "sqlite", dbPath: binding.currentDbPath(),
         counts: {
           workspaces: snap.workspaces.length, projects: snap.projects.length,
           notes: snap.notes.length, cards: snap.cards.length
         }
-      }));
+      });
       return;
     }
 
@@ -211,8 +211,7 @@ export function startMcpServer(binding: WorkspaceBinding): http.Server {
       res.end(Buffer.from(await webRes.arrayBuffer()));
     } catch (err) {
       console.error("[cairn:mcp]", err);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Internal MCP server error" }));
+      sendJson(res, 500, { error: "Internal MCP server error" });
     }
   });
 
