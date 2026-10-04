@@ -1079,7 +1079,7 @@ export function ProjectOverview() {
                 onToggle={() => toggleSection("shipped")}
                 collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{metrics.shippedCards.length} done in 7 days</span>}
               >
-                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]">
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                   {metrics.shippedCards.length === 0 ? (
                     <EmptyState title="Nothing finished in the last 7 days" className="py-4" />
                   ) : (
@@ -1100,7 +1100,7 @@ export function ProjectOverview() {
                 onToggle={() => toggleSection("atRisk")}
                 collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{metrics.atRisk.length} need attention</span>}
               >
-                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]">
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                   {metrics.atRisk.length === 0 ? (
                     <EmptyState title="Nothing overdue, blocked or stale" className="py-4" />
                   ) : (

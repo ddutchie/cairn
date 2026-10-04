@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SlidersHorizontal, Bookmark, Trash2 } from "lucide-react";
+import { SlidersHorizontal, Bookmark, Trash2, Check } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -128,6 +128,13 @@ export function BoardFilterMenu({
   );
 }
 
+/** Order-insensitive equality, so a view stays marked active after re-toggling chips. */
+function sameFilter(a: BoardFilter, b: BoardFilter): boolean {
+  const set = (x: readonly string[]) => [...x].sort().join("\u0000");
+  return a.text.trim() === b.text.trim() && a.assignee === b.assignee && a.due === b.due &&
+    a.blockedOnly === b.blockedOnly && set(a.priorities) === set(b.priorities) && set(a.tagIds) === set(b.tagIds);
+}
+
 /** Saved views for this project: apply, save current, delete. */
 export function BoardViewsMenu({
   projectId,
@@ -169,7 +176,10 @@ export function BoardViewsMenu({
         )}
         {list.map((v) => (
           <DropdownMenuItem key={v.id} onSelect={() => onApply(v.filter)} className="group">
-            <span className="flex-1 truncate">{v.name}</span>
+            <span className="w-3 flex-shrink-0 text-[var(--accent)]" aria-hidden="true">
+              {sameFilter(v.filter, filter) && <Check size={12} />}
+            </span>
+            <span className={cn("flex-1 truncate", sameFilter(v.filter, filter) && "text-[var(--text-primary)]")}>{v.name}</span>
             <button
               onClick={(e) => { e.stopPropagation(); e.preventDefault(); deleteBoardView(projectId, v.id); }}
               className="opacity-0 group-hover:opacity-100 group-data-[highlighted]:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)]"

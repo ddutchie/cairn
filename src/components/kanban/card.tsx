@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Archive, Calendar, ChevronDown, ChevronUp, FileText, Lock, Pencil, Trash2, User } from "lucide-react";
-import { cn, formatDate, getDueDateStatus } from "@/lib/utils";
+import { cn, formatDate, getDueDateStatus, parseIsoLocal } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import {
@@ -50,6 +50,17 @@ interface CardContentProps {
   onToggleExpand: (e: React.MouseEvent | React.PointerEvent) => void;
 }
 
+/** Shared state-chip style: compact, never wraps internally. */
+const chip = "inline-flex items-center gap-1 whitespace-nowrap text-[0.714rem] font-medium rounded px-1.5 py-0.5";
+
+/** "Oct 6", or "Oct 6, 2027" when not in the current year. Full date lives in the title tooltip. */
+function shortDate(iso: string): string {
+  const d = parseIsoLocal(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+}
+
 const CardContent = React.memo(function CardContent({ card, expanded, canExpand, descRef, onToggleExpand }: CardContentProps) {
   const getTagById = useCairnStore((s) => s.getTagById);
   const isDone = useCairnStore((s) => s.columns.find((c) => c.id === card.columnId)?.type === "done");
@@ -69,13 +80,10 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
       />
 
       <div className="pl-2 flex flex-col gap-2">
-        {/* Title (+ live agent badge when a session spawned from this card is running) */}
-        <div className="flex items-start gap-2">
-          <p className="flex-1 min-w-0 text-[0.929rem] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
-            {card.title}
-          </p>
-          <CardAgentBadge cardId={card.id} />
-        </div>
+        {/* Title */}
+        <p className="text-[0.929rem] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
+          {card.title}
+        </p>
 
         {/* Description — plain-text preview when collapsed, full markdown only
             when expanded. Rendering the heavy remark/rehype/KaTeX pipeline for
@@ -113,41 +121,52 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
           </button>
         )}
 
-        {/* Footer — due dates / blockers / assignee / linked notes */}
-        {(card.dueDate || card.linkedNoteIds.length > 0 || isBlocked || card.assignee) && (
-          <div className="flex items-center gap-2 pt-1.5 border-t border-[var(--border-subtle)]">
-            {isBlocked && (
-              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--warning)] font-medium">
-                <Lock size={10} />
-                {(card.blockedByIds ?? []).length} blocker{(card.blockedByIds ?? []).length !== 1 ? "s" : ""}
-              </span>
-            )}
-            {card.dueDate && (() => {
-              // A completed task is never "overdue" or "due today" — its due
-              // date has been met, so render it plainly without emphasis.
-              const status = isDone ? "upcoming" : getDueDateStatus(card.dueDate);
-              return (
-                <span className={cn(
-                  "flex items-center gap-1 text-[0.714rem] font-medium rounded px-1 py-0.5",
+        {/* State — blocker / due / live agent. Each chip stays on one line; the
+            row wraps so narrow columns stack chips instead of breaking text.
+            empty:hidden collapses it when there's nothing to show (the agent
+            badge renders null when no session is running). */}
+        <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
+          {isBlocked && (
+            <span className={cn(chip, "text-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)]")}>
+              <Lock size={10} />
+              {(card.blockedByIds ?? []).length} blocker{(card.blockedByIds ?? []).length !== 1 ? "s" : ""}
+            </span>
+          )}
+          {card.dueDate && (() => {
+            // A completed task is never "overdue" or "due today" — its due
+            // date has been met, so render it plainly without emphasis.
+            const status = isDone ? "upcoming" : getDueDateStatus(card.dueDate);
+            return (
+              <span
+                title={`Due ${formatDate(card.dueDate)}`}
+                className={cn(
+                  chip,
                   status === "overdue" && "text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]",
                   status === "today" && "text-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)]",
-                  status === "upcoming" && "text-[var(--text-tertiary)]",
-                )}>
-                  <Calendar size={11} />
-                  {status === "overdue" ? `Overdue · ${formatDate(card.dueDate)}` :
-                   status === "today" ? "Due today" :
-                   formatDate(card.dueDate)}
-                </span>
-              );
-            })()}
+                  status === "upcoming" && "text-[var(--text-tertiary)] bg-[var(--surface)]",
+                )}
+              >
+                <Calendar size={10} />
+                {status === "overdue" ? `Overdue · ${shortDate(card.dueDate)}` :
+                 status === "today" ? "Due today" :
+                 shortDate(card.dueDate)}
+              </span>
+            );
+          })()}
+          <CardAgentBadge cardId={card.id} />
+        </div>
+
+        {/* Meta — assignee / linked notes */}
+        {(card.assignee || card.linkedNoteIds.length > 0) && (
+          <div className="flex items-center gap-2 pt-1.5 border-t border-[var(--border-subtle)] min-w-0">
             {card.assignee && (
-              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]" title={card.assignee}>
-                <User size={10} />
-                <span className="truncate max-w-[4rem]">{card.assignee}</span>
+              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] min-w-0" title={card.assignee}>
+                <User size={10} className="flex-shrink-0" />
+                <span className="truncate">{card.assignee}</span>
               </span>
             )}
             {card.linkedNoteIds.length > 0 && (
-              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] ml-auto">
+              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] ml-auto flex-shrink-0" title={`${card.linkedNoteIds.length} linked note${card.linkedNoteIds.length === 1 ? "" : "s"}`}>
                 <FileText size={11} />
                 {card.linkedNoteIds.length}
               </span>

@@ -5,7 +5,7 @@
 
 import React from "react";
 import { FileText, Circle, Zap, Kanban, CheckCircle2 } from "lucide-react";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn, formatRelative, parseIsoLocal } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import type { AppUIState } from "@/types";
@@ -80,6 +80,11 @@ export function AtRiskFeed({ items, setView }: { items: AtRiskCard<TaskCard>[]; 
         <button key={card.id} onClick={() => revealCard(setView, card.id)}
           className="flex items-center gap-3 w-full px-2 py-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors group text-left">
           <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{card.title}</span>
+          {card.dueDate && (
+            <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">
+              {parseIsoLocal(card.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </span>
+          )}
           {reasons.map((r) => (
             <span key={r}
               title={r === "stale" ? `No updates for ${idleDays} days` : r === "blocked" ? "Due soon with an open blocker" : `Due ${card.dueDate}`}

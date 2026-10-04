@@ -4,7 +4,7 @@
  * expand on it afterwards. Pure; shared by the desktop Overview and MCP.
  */
 
-import { formatDate } from "../format/date";
+import { formatDate, parseIsoLocal } from "../format/date";
 import { PRIORITIES } from "../ui/constants";
 import { atRiskCards, shippedSince, startOfDayAgo, type DeliveryCard, type DeliveryColumn } from "./delivery";
 
@@ -37,6 +37,14 @@ const rank = (p?: string | null) => {
   return i === -1 ? PRIORITIES.length : PRIORITIES.length - 1 - i;
 };
 
+/** "Oct 2" (year added only when it differs from `nowYear`). */
+function shortDate(iso: string, nowYear: number): string {
+  const d = parseIsoLocal(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", ...(d.getFullYear() === nowYear ? {} : { year: "numeric" }) };
+  return d.toLocaleDateString("en-US", opts);
+}
+
 /** Escape characters that would turn a title into markdown/wikilink syntax. */
 const md = (s: string) => s.replace(/([[\]*_`])/g, "\\$1");
 
@@ -64,6 +72,8 @@ export function buildReview<C extends DeliveryCard>(input: ReviewInput<C>): Revi
   const daily = input.days <= 1;
   const colName = new Map(input.columns.map((c) => [c.id, c.name]));
   const today = new Date(now).toISOString().slice(0, 10);
+  const year = new Date(now).getFullYear();
+  const sd = (iso: string) => shortDate(iso, year);
   const title = daily
     ? `Daily brief — ${formatDate(today)}`
     : `Weekly review — ${formatDate(new Date(since).toISOString().slice(0, 10))} to ${formatDate(today)}`;
@@ -86,14 +96,14 @@ export function buildReview<C extends DeliveryCard>(input: ReviewInput<C>): Revi
 
   lines.push(daily ? "## Done today" : "## Shipped", "");
   if (shipped.length === 0) lines.push("_Nothing completed in this period._");
-  for (const c of shipped) lines.push(`- [x] ${md(c.title)}${c.completedAt ? ` — ${formatDate(c.completedAt)}` : ""}`);
+  for (const c of shipped) lines.push(`- [x] ${md(c.title)}${c.completedAt ? ` — ${sd(c.completedAt)}` : ""}`);
   lines.push("");
 
   lines.push("## At risk", "");
   if (risk.length === 0) lines.push("_Nothing overdue, blocked or stale._");
   for (const r of risk) {
     const why = r.reasons
-      .map((k) => (k === "overdue" ? `overdue (due ${r.card.dueDate})` : k === "blocked" ? "blocked, due soon" : `stale ${r.idleDays}d in ${colName.get(r.card.columnId) ?? "progress"}`))
+      .map((k) => (k === "overdue" ? `overdue (due ${sd(r.card.dueDate!)})` : k === "blocked" ? `blocked, due ${sd(r.card.dueDate!)}` : `stale ${r.idleDays}d in ${colName.get(r.card.columnId) ?? "progress"}`))
       .join("; ");
     lines.push(`- ${md(r.card.title)} — ${why}`);
   }
@@ -102,7 +112,7 @@ export function buildReview<C extends DeliveryCard>(input: ReviewInput<C>): Revi
   lines.push("## Up next", "");
   if (next.length === 0) lines.push("_No unblocked open cards._");
   for (const c of next) {
-    const bits = [c.priority, colName.get(c.columnId), c.dueDate ? `due ${c.dueDate}` : null].filter(Boolean);
+    const bits = [c.priority, colName.get(c.columnId), c.dueDate ? `due ${sd(c.dueDate)}` : null].filter(Boolean);
     lines.push(`- [ ] ${md(c.title)}${bits.length ? ` (${bits.join(", ")})` : ""}`);
   }
   lines.push("");

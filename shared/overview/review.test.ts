@@ -37,9 +37,9 @@ describe("buildReview", () => {
     });
     expect(title).toBe("Weekly review — Sep 28, 2026 to Oct 4, 2026");
     expect(content).toContain("> 1 shipped · 1 at risk · 1 new card · 1 note touched");
-    expect(content).toContain("- [x] Ship \\[beta\\] — ");
+    expect(content).toContain("- [x] Ship \\[beta\\] — Oct 3");
     expect(content).not.toContain("Old");
-    expect(content).toContain("- Late — overdue (due 2026-10-01)");
+    expect(content).toContain("- Late — overdue (due Oct 1)");
     expect(content).toContain("- [ ] Urgent (urgent, Todo)");
     expect(content).toContain("- [[Spec]]");
     expect(content).not.toContain("Ancient");

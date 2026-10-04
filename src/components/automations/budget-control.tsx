@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -25,20 +25,23 @@ export function AutomationBudgetControl() {
   const [state, setState] = useState<BudgetState | null>(null);
   const [draft, setDraft] = useState("");
 
-  const load = useCallback(async () => {
-    const res = await window.electron?.automation.budget?.get();
-    if (res && !("error" in res)) setState(res);
-  }, []);
+  // Bumped after a save so the effect re-reads immediately.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), 60_000);
-    return () => clearInterval(t);
-  }, [load]);
+    let alive = true;
+    const fetchBudget = async () => {
+      const res = await window.electron?.automation.budget?.get();
+      if (alive && res && !("error" in res)) setState(res);
+    };
+    void fetchBudget();
+    const t = setInterval(() => void fetchBudget(), 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [reloadKey]);
 
   const save = async (usd: number | null) => {
     await window.electron?.automation.budget?.set(usd);
-    await load();
+    setReloadKey((k) => k + 1);
   };
 
   if (!state) return null;
