@@ -33,7 +33,11 @@ export function ReviewButton({ project }: { project: Project }) {
       notes: notes.filter((n) => n.projectId === project.id && n.folder !== REVIEWS_FOLDER),
       days,
     });
-    const note = createNote(project.id, title, "note", REVIEWS_FOLDER, content);
+    // Same-day reruns get a suffix so wikilinks to each review stay unambiguous.
+    const taken = new Set(notes.filter((n) => n.projectId === project.id).map((n) => n.title.toLowerCase()));
+    let unique = title;
+    for (let i = 2; taken.has(unique.toLowerCase()); i++) unique = `${title} (${i})`;
+    const note = createNote(project.id, unique, "note", REVIEWS_FOLDER, content);
     revealNote(setView, note.id);
   };
 

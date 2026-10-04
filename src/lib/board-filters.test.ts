@@ -34,6 +34,7 @@ describe("cardMatchesFilter", () => {
     expect(match(card({ dueDate: "2026-10-09" }), f({ due: "overdue" }))).toBe(false);
     expect(match(card({ dueDate: "2026-10-09" }), f({ due: "week" }))).toBe(true);
     expect(match(card({ dueDate: "2026-11-09" }), f({ due: "week" }))).toBe(false);
+    expect(match(card({ dueDate: "2026-10-01" }), f({ due: "week" }))).toBe(false);
     expect(match(card({}), f({ due: "none" }))).toBe(true);
     expect(match(card({}), f({ due: "week" }))).toBe(false);
   });

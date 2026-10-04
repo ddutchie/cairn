@@ -266,7 +266,7 @@ export function KanbanBoard() {
         e.preventDefault();
         setTimeout(() => { filterInputRef.current?.focus(); filterInputRef.current?.select(); }, 0);
       }
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.defaultPrevented) {
         setFilter((f) => ({ ...f, text: "" }));
       }
     }

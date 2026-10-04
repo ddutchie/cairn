@@ -65,7 +65,7 @@ import { createUserStyleSlice } from "./slices/user-style";
 import type { UserStyleSlice } from "./slices/user-style";
 import { createTerminalSessionsSlice } from "./slices/terminal-sessions";
 import type { TerminalSessionsSlice } from "./slices/terminal-sessions";
-import { EMPTY_BOARD_FILTER, type BoardView } from "@/lib/board-filters";
+import { EMPTY_BOARD_FILTER, type BoardFilter, type BoardView, type DueFilter } from "@/lib/board-filters";
 
 // Re-export types used by consumers and constants.ts
 export type { AIConfig, AgentConfig, Theme, FontScale, FontFamilyId };
@@ -475,7 +475,26 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
     // Fill in criteria added after a view was saved so older views stay valid.
     const upgraded: Record<string, BoardView[]> = {};
     for (const [pid, views] of Object.entries(savedBoardViews)) {
-      if (Array.isArray(views)) upgraded[pid] = views.map((v) => ({ ...v, filter: { ...EMPTY_BOARD_FILTER, ...v.filter } }));
+      if (!Array.isArray(views)) continue;
+      upgraded[pid] = views
+        .filter((v): v is BoardView => !!v && typeof v === "object" && typeof v.id === "string" && typeof v.name === "string")
+        .map((v) => {
+          const saved = (v.filter && typeof v.filter === "object" ? v.filter : {}) as Partial<BoardFilter>;
+          const strings = (x: unknown) => (Array.isArray(x) ? x.filter((s): s is string => typeof s === "string") : []);
+          return {
+            ...v,
+            filter: {
+              ...EMPTY_BOARD_FILTER,
+              ...saved,
+              text: typeof saved.text === "string" ? saved.text : "",
+              assignee: typeof saved.assignee === "string" ? saved.assignee : null,
+              priorities: strings(saved.priorities) as BoardFilter["priorities"],
+              tagIds: strings(saved.tagIds),
+              due: (["any", "overdue", "week", "none"] as const).includes(saved.due as DueFilter) ? saved.due! : "any",
+              blockedOnly: saved.blockedOnly === true,
+            },
+          };
+        });
     }
     set({ boardViews: upgraded });
   }

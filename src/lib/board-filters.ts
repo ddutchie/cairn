@@ -76,8 +76,11 @@ export function cardMatchesFilter(
     } else if (f.due === "overdue") {
       if (getDueDateStatus(card.dueDate) !== "overdue") return false;
     } else {
+      // Today through the next 7 days; overdue cards have their own option.
       const dueMs = parseIsoLocal(card.dueDate).getTime();
-      if (dueMs - now > 7 * 86_400_000) return false;
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+      if (dueMs < today.getTime() || dueMs - now > 7 * 86_400_000) return false;
     }
   }
   if (f.blockedOnly && !card.blockedByIds.some((id) => openCardIds.has(id))) return false;

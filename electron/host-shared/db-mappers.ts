@@ -294,7 +294,7 @@ export function toChatMessage(row: DbRow) {
 }
 
 /** The complete set of notification navigation-target types. */
-export const NOTIFICATION_TARGET_TYPES = ["note", "task", "automation", "approval"] as const;
+export const NOTIFICATION_TARGET_TYPES = ["note", "task", "automation", "approval", "session"] as const;
 export type NotificationTargetType = (typeof NOTIFICATION_TARGET_TYPES)[number];
 
 export interface McpNotification {

@@ -46,7 +46,7 @@ import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
 import { runBootSequence } from "./splash/boot-sequence";
-import { registerChatPopoutHandlers, isChatPopoutWindow } from "./chat-popout";
+import { registerChatPopoutHandlers } from "./chat-popout";
 import { initUsageRecorder } from "./lib/usage-recorder";
 import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
@@ -158,6 +158,9 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+/** Windows built by createWindow — the only ones the tray and Quick Capture may target. */
+const mainWindows = new WeakSet<BrowserWindow>();
+
 function createWindow(): BrowserWindow {
   const isWin = process.platform === "win32";
   const { surface, bg } = readThemeSurface();
@@ -195,6 +198,7 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   });
+  mainWindows.add(win);
 
   if (isDev) {
     win.loadURL("http://localhost:3000");
@@ -545,7 +549,7 @@ app.whenReady().then(async () => {
   // and the global shortcut keep reaching a live window.
   const getMainWindow = (): BrowserWindow | null => {
     if (!win.isDestroyed()) return win;
-    const open = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && !isChatPopoutWindow(w));
+    const open = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && mainWindows.has(w));
     return open[0] ?? createWindow();
   };
   const { updateBadge } = createTray(getMainWindow);

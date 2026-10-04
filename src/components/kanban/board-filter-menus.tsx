@@ -175,7 +175,17 @@ export function BoardViewsMenu({
           <div className="px-3 py-2 text-xs text-[var(--text-tertiary)]">No saved views yet.</div>
         )}
         {list.map((v) => (
-          <DropdownMenuItem key={v.id} onSelect={() => onApply(v.filter)} className="group">
+          <DropdownMenuItem
+            key={v.id}
+            onSelect={() => onApply(v.filter)}
+            onKeyDown={(e) => {
+              if (e.key === "Delete" || e.key === "Backspace") {
+                e.preventDefault();
+                deleteBoardView(projectId, v.id);
+              }
+            }}
+            className="group"
+          >
             <span className="w-3 flex-shrink-0 text-[var(--accent)]" aria-hidden="true">
               {sameFilter(v.filter, filter) && <Check size={12} />}
             </span>

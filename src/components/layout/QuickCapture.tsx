@@ -142,7 +142,7 @@ export function QuickCapture() {
           autoFocus
           value={title}
           onChange={(e) => { setTitle(e.target.value); setSaved(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(e.shiftKey); } }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); save(e.shiftKey); } }}
           placeholder={kind === "task" ? "What needs doing?" : "Note title"}
           className="w-full px-3 py-2 text-sm rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
         />

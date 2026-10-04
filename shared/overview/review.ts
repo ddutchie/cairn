@@ -71,12 +71,17 @@ export function buildReview<C extends DeliveryCard>(input: ReviewInput<C>): Revi
   const since = startOfDayAgo(Math.max(0, input.days - 1), now);
   const daily = input.days <= 1;
   const colName = new Map(input.columns.map((c) => [c.id, c.name]));
-  const today = new Date(now).toISOString().slice(0, 10);
+  // Local calendar dates — `since` is a local start of day.
+  const ymd = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const today = ymd(now);
   const year = new Date(now).getFullYear();
   const sd = (iso: string) => shortDate(iso, year);
   const title = daily
     ? `Daily brief — ${formatDate(today)}`
-    : `Weekly review — ${formatDate(new Date(since).toISOString().slice(0, 10))} to ${formatDate(today)}`;
+    : `Weekly review — ${formatDate(ymd(since))} to ${formatDate(today)}`;
 
   const shipped = shippedSince(input.cards, since);
   const risk = atRiskCards(input.cards, input.columns, { now });

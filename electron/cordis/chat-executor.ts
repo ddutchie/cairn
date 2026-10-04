@@ -367,7 +367,7 @@ export async function executeTool(
     
     // For task tools, the result contains ID and title.
     const isTask = [
-      "get_task", "create_task", "update_task"
+      "get_task", "create_task", "update_task", "claim_task", "add_task_progress"
     ].includes(name);
     
     if (isNote && typeof resObj.id === "string" && typeof resObj.title === "string") {
