@@ -16,7 +16,7 @@ import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
 import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
 import { KeyedSlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import { useSlotEntries } from "@/lib/plugin-ui/registry";
-import type { ConversationToolCall } from "./conversation-message";
+import type { ConversationToolCall } from "@/lib/conversation/message";
 import { useCairnStore } from "@/store";
 
 registerBuiltinToolViews();

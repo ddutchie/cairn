@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toLiveConversationMessage, withLiveTurn, type LiveTurnState } from "./conversation-live";
-import type { ConversationMessage } from "./conversation-message";
+import type { ConversationMessage } from "@/lib/conversation/message";
 
 /**
  * The live-turn adapter is the single place every surface (chat, coding,

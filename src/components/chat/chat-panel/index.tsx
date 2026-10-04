@@ -40,7 +40,7 @@ import {
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
-import { toConversationMessage } from "@/components/conversation/conversation-message";
+import { toConversationMessage } from "@/lib/conversation/message";
 import { toLiveConversationMessage, withLiveTurn } from "@/components/conversation/conversation-live";
 import { ActionsList } from "./ActionsList";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";

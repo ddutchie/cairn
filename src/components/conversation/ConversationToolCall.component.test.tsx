@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ConversationToolCall } from "./ConversationToolCall";
-import type { ConversationToolCall as ToolCall } from "./conversation-message";
+import type { ConversationToolCall as ToolCall } from "@/lib/conversation/message";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
 /**

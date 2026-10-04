@@ -1,4 +1,4 @@
-import type { ConversationMessage, ConversationLiveToolCall } from "./conversation-message";
+import type { ConversationMessage, ConversationLiveToolCall } from "@/lib/conversation/message";
 
 /**
  * The in-flight turn, rendered as a normal message.

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
-import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
+import { unwrapSessionPayload } from "@/lib/conversation/session";
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";

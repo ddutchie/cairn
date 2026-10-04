@@ -4,7 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { id } from "@/lib/utils";
 import type { AgentMessage, CodingSessionSummary, SessionPresentation, TerminalSession } from "@/types";
-import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
+import { unwrapSessionPayload } from "@/lib/conversation/session";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.

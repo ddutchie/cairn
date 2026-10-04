@@ -9,7 +9,7 @@ import { id, now } from "@/lib/utils";
 import { storage } from "@/lib/storage";
 import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
 import { ipc, ipcAwait, ipcAwaitResult } from "../ipc";
-import { unwrapSessionPayload } from "@/components/conversation/conversation-session";
+import { unwrapSessionPayload } from "@/lib/conversation/session";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
