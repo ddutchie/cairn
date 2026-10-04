@@ -19,6 +19,8 @@ import { AutomationBudgetControl } from "./budget-control";
 import { RUN_TIME, STATUS_COLOR, scheduleLabel, runScratchTool, runScratchArtifacts } from "./automation-format";
 import { AutomationDialog } from "./automation-dialog";
 import { AutomationDetailDialog } from "./automation-detail-dialog";
+import { automationsClient } from "@/lib/ipc/automations";
+import { hasElectron } from "@/lib/ipc/client";
 
 export function AutomationsView() {
   const {
@@ -211,7 +213,7 @@ export function AutomationsView() {
     setDeveloping(true);
     setDevelopError(null);
     try {
-      const res = (await electron.automation.folder(a.id)) as { folder: string };
+      const folder = await automationsClient.folder(a.id);
       if (!forceNew) {
         const existing = automationDevSessions[a.id];
         if (existing && terminalSessions.some((t) => t.sessionId === existing)) {
@@ -241,7 +243,7 @@ export function AutomationsView() {
         projectId,
         taskTitle,
         taskId: a.id,
-        cwd: res.folder,
+        cwd: folder,
         mode: "execute",
         role: "automation-dev",
         spawnedAt: now,
@@ -253,7 +255,7 @@ export function AutomationsView() {
         agentId: "cairn-agent",
         agentName: "Cairn Agent",
         projectId,
-        cwd: res.folder,
+        cwd: folder,
         status: "running",
         exitCode: null,
         spawnedAt: now,
@@ -275,20 +277,12 @@ export function AutomationsView() {
 
   /** Apply the agent-authored manifest.json (instructions / env schema) to the row. */
   async function syncFromManifest(a: Automation) {
-    const electron = window.electron;
-    if (!electron) return;
+    if (!hasElectron("automation")) return;
     setSyncing(true);
     setSyncStatus(null);
     try {
-      const result = (await electron.automation.syncFromManifest(a.id)) as
-        | { automation?: Automation; dropped?: string[]; error?: string }
-        | undefined;
-      if (result?.error) {
-        setSyncStatus(result.error);
-        return;
-      }
+      const { dropped } = await automationsClient.syncFromManifest(a.id);
       if (activeWorkspaceId) await fetchAutomations(activeWorkspaceId);
-      const dropped = result?.dropped ?? [];
       setSyncStatus(
         dropped.length > 0
           ? `Synced the recipe — skipped ${dropped.length} unsafe standing rule${dropped.length === 1 ? "" : "s"}: ${dropped.join("; ")}`

@@ -14,6 +14,8 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { EnvEditor } from "./env-editor";
 import type { Automation, AutomationRun } from "@/store/slices/automations";
 import { RUN_TIME, STATUS_COLOR, scheduleLabel, runScratchArtifacts, type ArtifactRef } from "./automation-format";
+import { automationsClient } from "@/lib/ipc/automations";
+import { errorMessage } from "@/lib/ipc/client";
 
 interface AutomationDetailDialogProps {
   automation: Automation | null;
@@ -51,10 +53,10 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
     setRunLog(null);
     let next: unknown;
     try {
-      const res = await window.electron?.automation.runLog(runId) as { log?: unknown } | { error?: string } | undefined;
-      next = res && "log" in (res ?? {}) ? (res as { log: unknown }).log : (res as { error?: string })?.error ?? null;
+      next = await automationsClient.runLog(runId);
     } catch (err) {
-      next = err instanceof Error ? err.message : String(err);
+      // The log panel shows a string as the reason there's no transcript.
+      next = errorMessage(err);
     }
     if (logForRef.current === runId) setRunLog(next);
   }

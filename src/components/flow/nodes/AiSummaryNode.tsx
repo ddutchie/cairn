@@ -8,6 +8,8 @@ import { FlowNodeShell, FLOW_HANDLE_CLASS } from "./flow-node-shell";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { flowClient } from "@/lib/ipc/flow";
+import { errorMessage, hasElectron } from "@/lib/ipc/client";
 
 export interface AiSummaryNodeData {
   content?: string;
@@ -22,7 +24,7 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleGenerate = useCallback(async () => {
-    if (!window.electron) return;
+    if (!hasElectron("flow")) return;
     setStatus("loading");
     setErrorMsg(null);
 
@@ -33,17 +35,14 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
     };
 
     try {
-      // invoke() unwraps { data } and throws on { error }, so we get the
-      // payload directly: { nodeId, content }
-      const result = await window.electron.flow.node.summarize(id, config) as
-        { nodeId: string; content: string };
+      const result = await flowClient.summarize(id, config);
 
       // Optimistically update local React Flow state so the UI refreshes
       // without waiting for the onDbChanged reload cycle.
       updateNodeData(id, { content: result.content });
       setStatus("idle");
     } catch (e) {
-      setErrorMsg((e as Error).message);
+      setErrorMsg(errorMessage(e));
       setStatus("error");
     }
   }, [id, aiConfig, updateNodeData]);

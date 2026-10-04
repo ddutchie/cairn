@@ -8,7 +8,7 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle, broadcastEvent } from "./registry";
+import { registerContractHandle, registerIpcHandle, broadcastEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders } from "../notes-files";
@@ -27,13 +27,13 @@ export function registerDbHandlers(ctx: DbContext): void {
     handle(() => (opts?.noteBodies === false ? q.getRendererSnapshot(ctx.db) : q.getFullSnapshot(ctx.db))));
 
   // ── Lazy note bodies (renderer keeps metadata, loads bodies on demand) ───
-  registerIpcHandle("db:note:bodies:get", (_e, { ids }: { ids: string[] }) =>
+  registerContractHandle("db:note:bodies:get", (_e, { ids }: { ids: string[] }) =>
     handle(() => q.getNoteBodies(ctx.db, Array.isArray(ids) ? ids : [])));
-  registerIpcHandle("db:note:search", (_e, { query, projectId }: { query: string; projectId?: string }) =>
+  registerContractHandle("db:note:search", (_e, { query, projectId }: { query: string; projectId?: string }) =>
     handle(() => q.searchNoteIds(ctx.db, String(query ?? ""), { projectId })));
-  registerIpcHandle("db:note:changeMark:clear", (_e, { id }: { id: string }) =>
+  registerContractHandle("db:note:changeMark:clear", (_e, { id }: { id: string }) =>
     handle(() => q.clearNoteChangeBase(ctx.db, id)));
-  registerIpcHandle("db:note:backlinks:list", (_e, { noteId }: { noteId: string }) =>
+  registerContractHandle("db:note:backlinks:list", (_e, { noteId }: { noteId: string }) =>
     handle(() => q.wikilinkBacklinkIds(ctx.db, noteId)));
   registerIpcHandle("db:hasData", () => handle(() => q.hasData(ctx.db)));
 

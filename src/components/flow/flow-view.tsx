@@ -27,7 +27,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import type { IdeaNodeType, ResolvedIdeaFlow } from "@/types";
+import type { IdeaNodeType } from "@/types";
+import { flowClient, persistFlow } from "@/lib/ipc/flow";
+import { IpcUnavailableError, reportIpcError } from "@/lib/ipc/client";
 import { historyManager, flowHandlers } from "@/lib/history";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
 import {
@@ -122,10 +124,10 @@ function IdeaFlowCanvas() {
   // ── Load ──────────────────────────────────────────────────────
 
   const loadFlow = useCallback(async (isInitial = false) => {
-    if (!activeProjectId || !window.electron) return;
+    if (!activeProjectId) return;
     if (isInitial) setLoading(true);
     try {
-      const flow = await window.electron.flow.get(activeProjectId) as ResolvedIdeaFlow;
+      const flow = await flowClient.get(activeProjectId);
       nodeCountRef.current = flow.nodes.length;
       // Groups must come before their children in the array for React Flow to parent correctly
       const sorted = [
@@ -154,6 +156,11 @@ function IdeaFlowCanvas() {
         });
         setEdges(flow.edges.map(flowEdgeToRF));
       }
+    } catch (err) {
+      // Background reloads (change feed, after an edit) retry on the next
+      // change; only a failed first load is worth a toast.
+      if (isInitial) reportIpcError(err, "Couldn't load the Idea Flow");
+      else if (!(err instanceof IpcUnavailableError)) console.error("[flow] reload failed", err);
     } finally {
       if (isInitial) setLoading(false);
     }
@@ -218,16 +225,22 @@ function IdeaFlowCanvas() {
 
   const onConnect = useCallback(
     async (params: Connection) => {
+      if (!activeProjectId) return;
       suppressReload();
-      const created = await window.electron?.flow.edge.create({
-        projectId: activeProjectId,
-        sourceNodeId: params.source,
-        targetNodeId: params.target,
-      }) as { id: string } | undefined;
-      const edgeId = created?.id ?? `${params.source}-${params.target}`;
+      let edgeId = `${params.source}-${params.target}`;
+      try {
+        edgeId = (await flowClient.createEdge({
+          projectId: activeProjectId,
+          sourceNodeId: params.source,
+          targetNodeId: params.target,
+        })).id;
+      } catch (err) {
+        reportIpcError(err, "Couldn't connect the nodes");
+        return;
+      }
       const rfEdge: Edge = { id: edgeId, source: params.source!, target: params.target!, type: "flow" };
       setEdges((eds) => addEdge({ ...rfEdge }, eds));
-      historyManager.push(makeAddEdgeCmd(rfEdge, activeProjectId ?? ""));
+      historyManager.push(makeAddEdgeCmd(rfEdge, activeProjectId));
     },
     [setEdges, activeProjectId],
   );
@@ -287,19 +300,19 @@ function IdeaFlowCanvas() {
 
     // Persist membership changes
     for (const change of changes) {
-      window.electron?.flow.node.update(change.nodeId, {
+      persistFlow(flowClient.updateNode(change.nodeId, {
         x: change.x,
         y: change.y,
         parentId: change.parentId ?? null,
-      });
+      }));
     }
     // Persist the forced node (dragged node leaving a group with no membership change detected)
     if (forcedNode && !changedByCompute.has(forcedNode.id)) {
-      window.electron?.flow.node.update(forcedNode.id, {
+      persistFlow(flowClient.updateNode(forcedNode.id, {
         x: forcedNode.position.x,
         y: forcedNode.position.y,
         parentId: forcedNode.parentId ?? null,
-      });
+      }));
     }
     // Persist position for nodes that didn't change membership but were in currentNodes
     // (the dragged node when it stays in the same group or stays ungrouped)
@@ -308,7 +321,7 @@ function IdeaFlowCanvas() {
       if (!changedIds.has(n.id) && n.id !== forcedNodeId && n.type !== "group") {
         const orig = nodesRef.current.find((o) => o.id === n.id);
         if (orig && (orig.position.x !== n.position.x || orig.position.y !== n.position.y)) {
-          window.electron?.flow.node.update(n.id, { x: n.position.x, y: n.position.y });
+          persistFlow(flowClient.updateNode(n.id, { x: n.position.x, y: n.position.y }));
         }
       }
     }
@@ -382,7 +395,7 @@ function IdeaFlowCanvas() {
         const prevHeight = (nodeBeforeResize?.style?.height as number | undefined) ?? 200;
         const timer = setTimeout(() => {
           suppressReload();
-          window.electron?.flow.node.update(id, { width: dimensions.width, height: dimensions.height });
+          persistFlow(flowClient.updateNode(id, { width: dimensions.width, height: dimensions.height }));
           resizeTimers.current.delete(id);
           historyManager.push(makeResizeGroupCmd(id, prevWidth, prevHeight, dimensions.width, dimensions.height));
           // Check if resize caused nodes to fall inside/outside this group
@@ -398,7 +411,7 @@ function IdeaFlowCanvas() {
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
     suppressReload();
     deleted.forEach((e) => {
-      window.electron?.flow.edge.delete(e.id);
+      persistFlow(flowClient.deleteEdge(e.id));
       historyManager.push(makeDeleteEdgeCmd(e, activeProjectId ?? ""));
     });
   }, [activeProjectId]);
@@ -415,9 +428,9 @@ function IdeaFlowCanvas() {
       const children = deletedNonGroups.filter((n) => n.parentId === group.id);
       // parent_id is ON DELETE SET NULL, so delete children explicitly before group
       for (const child of children) {
-        window.electron?.flow.node.delete(child.id);
+        persistFlow(flowClient.deleteNode(child.id));
       }
-      window.electron?.flow.node.delete(group.id);
+      persistFlow(flowClient.deleteNode(group.id));
       historyManager.push(makeDeleteGroupCmd(group, children, activeProjectId ?? ""));
     }
 
@@ -425,7 +438,7 @@ function IdeaFlowCanvas() {
     const deletedGroupIds = new Set(deletedGroups.map((g) => g.id));
     for (const n of deletedNonGroups) {
       if (deletedGroupIds.has(n.parentId ?? "")) continue; // handled by group cmd
-      window.electron?.flow.node.delete(n.id);
+      persistFlow(flowClient.deleteNode(n.id));
       historyManager.push(makeDeleteNodeCmd(n, activeProjectId ?? ""));
     }
   }, [activeProjectId]);
@@ -488,14 +501,20 @@ function IdeaFlowCanvas() {
   // ── Add node ──────────────────────────────────────────────────
 
   async function addNode(type: IdeaNodeType, x = 200, y = 200) {
-    if (!activeProjectId || !window.electron) return;
+    if (!activeProjectId) return;
     const data = defaultData(type);
     // Group nodes get a default size and render behind all other nodes
     const isGroup = type === "group";
     const width  = isGroup ? 320 : undefined;
     const height = isGroup ? 200 : undefined;
     suppressReload();
-    const created = await window.electron.flow.node.create({ projectId: activeProjectId, type, x, y, data, width, height }) as { id: string };
+    let created: { id: string };
+    try {
+      created = await flowClient.createNode({ projectId: activeProjectId, type, x, y, data, width, height });
+    } catch (err) {
+      reportIpcError(err, "Couldn't add the node");
+      return;
+    }
     nodeCountRef.current += 1;
     const rfNode: Node = {
       id: created.id,
@@ -520,7 +539,7 @@ function IdeaFlowCanvas() {
     const prevData = (node?.data ?? {}) as Record<string, unknown>;
     setNodes((ns) => ns.map((n) => n.id === nodeId ? { ...n, data } : n));
     suppressReload();
-    window.electron?.flow.node.update(nodeId, { data });
+    persistFlow(flowClient.updateNode(nodeId, { data }));
     historyManager.push(makeUpdateNodeCmd(nodeId, prevData, data));
     // For ref nodes, reload after save to get resolved title/snippet
     if (node?.type === "note_ref" || node?.type === "task_ref") {
@@ -532,7 +551,7 @@ function IdeaFlowCanvas() {
   // ── Auto-layout ───────────────────────────────────────────────
 
   const handleAutoLayout = useCallback(async () => {
-    if (!activeProjectId || !window.electron) return;
+    if (!activeProjectId) return;
     // Snapshot prev positions for undo
     const prevSnapshot = nodes.map((n) => ({
       id: n.id,
@@ -545,10 +564,10 @@ function IdeaFlowCanvas() {
     setNodes(laidOut);
     suppressReload();
     // Persist positions and (for groups) updated sizes
-    await Promise.all(
+    persistFlow(Promise.all(
       laidOut.map((n) => {
         const isGroup = n.type === "group";
-        return window.electron?.flow.node.update(n.id, {
+        return flowClient.updateNode(n.id, {
           x: n.position.x,
           y: n.position.y,
           ...(isGroup ? {
@@ -557,7 +576,7 @@ function IdeaFlowCanvas() {
           } : {}),
         });
       })
-    );
+    ));
     const newSnapshot = laidOut.map((n) => ({
       id: n.id,
       x: n.position.x,
@@ -588,37 +607,46 @@ function IdeaFlowCanvas() {
 
     suppressReload();
 
-    // Create a new task card
-    const created = await window.electron.card.create({
-      projectId: activeProjectId,
-      workspaceId: activeWorkspaceId,
-      columnId: targetCol.id,
-      title,
-      description: body,
-      priority: "medium",
-    }) as { id: string };
-
     // Snapshot edges connected to the old node before deleting it
     const connectedEdges = edges.filter((e) => e.source === nodeId || e.target === nodeId);
-
-    // Delete the idea node (cascades its DB edges)
     const pos = node.position;
-    await window.electron.flow.node.delete(nodeId);
 
-    // Recreate as task_ref at the same position
-    const newNode = await window.electron.flow.node.create({
-      projectId: activeProjectId,
-      type: "task_ref",
-      x: pos.x,
-      y: pos.y,
-      data: { cardId: created.id },
-    }) as { id: string };
+    let created: { id: string };
+    let newNode: { id: string };
+    try {
+      // Create a new task card
+      created = await window.electron.card.create({
+        projectId: activeProjectId,
+        workspaceId: activeWorkspaceId,
+        columnId: targetCol.id,
+        title,
+        description: body,
+        priority: "medium",
+      }) as { id: string };
 
-    // Re-create the edges that were deleted with the old node
-    for (const e of connectedEdges) {
-      const src = e.source === nodeId ? newNode.id : e.source;
-      const tgt = e.target === nodeId ? newNode.id : e.target;
-      await window.electron.flow.edge.create({ projectId: activeProjectId, sourceNodeId: src, targetNodeId: tgt, label: e.label as string | undefined });
+      // Delete the idea node (cascades its DB edges)
+      await flowClient.deleteNode(nodeId);
+
+      // Recreate as task_ref at the same position
+      newNode = await flowClient.createNode({
+        projectId: activeProjectId,
+        type: "task_ref",
+        x: pos.x,
+        y: pos.y,
+        data: { cardId: created.id },
+      });
+
+      // Re-create the edges that were deleted with the old node
+      for (const e of connectedEdges) {
+        const src = e.source === nodeId ? newNode.id : e.source;
+        const tgt = e.target === nodeId ? newNode.id : e.target;
+        await flowClient.createEdge({ projectId: activeProjectId, sourceNodeId: src, targetNodeId: tgt, label: e.label as string | undefined });
+      }
+    } catch (err) {
+      reportIpcError(err, "Couldn't promote the idea to a task");
+      // Part of it may have landed; resync the canvas with the DB.
+      void loadFlow(false);
+      return;
     }
 
     // Update React Flow state — replace the idea node with a task_ref node
@@ -668,7 +696,7 @@ function IdeaFlowCanvas() {
       version: 0,
     };
     historyManager.push(makePromoteToTaskCmd(node, newNode.id, createdCard, connectedEdges, activeProjectId));
-  }, [nodes, edges, setNodes, setEdges, activeProjectId, activeWorkspaceId, columns]);
+  }, [nodes, edges, setNodes, setEdges, activeProjectId, activeWorkspaceId, columns, loadFlow]);
 
   // Enrich idea nodes with the onPromote callback so IdeaNode can call it
   const nodesWithCallbacks = useMemo(() =>

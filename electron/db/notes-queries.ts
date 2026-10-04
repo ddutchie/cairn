@@ -372,16 +372,8 @@ export function getNoteSummariesByIds(db: Database.Database, ids: string[]) {
   return out;
 }
 
-export interface NoteBody {
-  id: string;
-  content: string;
-  version: number;
-  updatedAt: string;
-  /** Body as it was before unseen external changes ("what's new" baseline). */
-  previousContent?: string;
-  /** When the first unseen change landed (ISO). */
-  changedAt?: string;
-}
+export type { NoteBody } from "../../shared/types/notes";
+import type { NoteBody } from "../../shared/types/notes";
 
 /** Bodies for the given live note ids (missing / deleted ids are omitted). */
 export function getNoteBodies(db: Database.Database, ids: string[]): NoteBody[] {

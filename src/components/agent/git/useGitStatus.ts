@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { CairnEvents } from "@/lib/events";
+import { gitClient } from "@/lib/ipc/git";
+import { useIpcQuery } from "@/hooks/useIpcQuery";
+import type { GitPrStatus } from "../../../../shared/types/git";
 import {
-  type GitStatusData,
   type GitLogData,
   areGitStatusesEqual,
   areBranchesEqual,
@@ -11,93 +13,76 @@ import {
   arePrStatusesEqual,
 } from "./git-helpers";
 
-export interface GitPrStatus { url: string | null; state: string | null; title: string | null }
-
 const STATUS_POLL_MS = 10_000;
+const LOG_COUNT = 15;
+const NO_LOG: GitLogData = [];
+const NO_BRANCHES: Array<{ name: string; current: boolean }> = [];
 
 /**
  * Repository state for the Git panel: status (polled every 10s), recent log,
  * branches and the current branch's PR. Each fetch keeps the previous object
- * when nothing changed, so polling doesn't re-render the panel.
+ * when nothing changed, so polling doesn't re-render the panel. Only a status
+ * failure is reported (`error`); log, branches and PR status are best-effort.
  */
 export function useGitStatus(cwd: string) {
-  const [status, setStatus] = useState<GitStatusData | null>(null);
-  const [log, setLog] = useState<GitLogData>([]);
-  const [branches, setBranches] = useState<Array<{ name: string; current: boolean }>>([]);
-  const [prStatus, setPrStatus] = useState<GitPrStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const statusQ = useIpcQuery(() => gitClient.status(cwd), [cwd], {
+    pollMs: STATUS_POLL_MS,
+    isEqual: areGitStatusesEqual,
+  });
+  const logQ = useIpcQuery(() => gitClient.log(cwd, LOG_COUNT), [cwd], {
+    initialData: NO_LOG,
+    isEqual: areLogEntriesEqual,
+  });
+  const branchesQ = useIpcQuery(async () => (await gitClient.branches(cwd)).branches, [cwd], {
+    initialData: NO_BRANCHES,
+    isEqual: areBranchesEqual,
+  });
+  const prQ = useIpcQuery<GitPrStatus | null>(() => gitClient.prStatus(cwd), [cwd], {
+    initialData: null,
+    isEqual: arePrStatusesEqual,
+  });
+
+  const status = statusQ.data ?? null;
+
   // Signature of the working-tree file set (paths across all sections). When
   // it changes between polls, the FileTree is told to refresh so externally
-  // added/removed files appear without a manual refresh.
+  // added/removed files appear without a manual refresh. Staged ↔ unstaged
+  // moves don't change the directory listing, so they don't count.
   const prevFileSigRef = useRef<string | null>(null);
-
-  const fetchStatus = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const s = await window.electron.git.status(cwd);
-      setStatus((prev) => (areGitStatusesEqual(prev, s) ? prev : s));
-      setError((prev) => (prev !== null ? null : prev));
-      // Only a change to the file SET (added/removed/renamed) alters the
-      // directory listing; staged ↔ unstaged moves don't.
-      const sig = [...s.staged, ...s.unstaged, ...s.untracked]
-        .map((f) => f.path)
-        .sort()
-        .join("|");
-      if (prevFileSigRef.current !== null && prevFileSigRef.current !== sig) {
-        window.dispatchEvent(CairnEvents.agentFilesChanged());
-      }
-      prevFileSigRef.current = sig;
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading((prev) => (prev ? false : prev));
-    }
-  }, [cwd]);
-
-  const fetchBranches = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const res = await window.electron.git.branches(cwd);
-      setBranches((prev) => (areBranchesEqual(prev, res.branches) ? prev : res.branches));
-    } catch { /* best-effort */ }
-  }, [cwd]);
-
-  const fetchLog = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const entries = await window.electron.git.log(cwd, 15);
-      setLog((prev) => (areLogEntriesEqual(prev, entries) ? prev : entries));
-    } catch { /* log fetch is best-effort */ }
-  }, [cwd]);
-
-  const fetchPrStatus = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const next = await window.electron.git.prStatus(cwd);
-      setPrStatus((prev) => (arePrStatusesEqual(prev, next) ? prev : next));
-    } catch {
-      setPrStatus(null);
-    }
-  }, [cwd]);
-
-  const refresh = useCallback(() => {
-    setLoading(true);
-    fetchStatus();
-    fetchLog();
-    fetchPrStatus();
-    fetchBranches();
-  }, [fetchStatus, fetchLog, fetchPrStatus, fetchBranches]);
-
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh();
-    const poll = setInterval(fetchStatus, STATUS_POLL_MS);
-    return () => clearInterval(poll);
-  }, [refresh, fetchStatus]);
+    if (!status) return;
+    const sig = [...status.staged, ...status.unstaged, ...status.untracked]
+      .map((f) => f.path)
+      .sort()
+      .join("|");
+    if (prevFileSigRef.current !== null && prevFileSigRef.current !== sig) {
+      window.dispatchEvent(CairnEvents.agentFilesChanged());
+    }
+    prevFileSigRef.current = sig;
+  }, [status]);
+
+  const { reload: reloadStatus } = statusQ;
+  const { reload: reloadLog } = logQ;
+  const { reload: reloadBranches } = branchesQ;
+  const { reload: reloadPr } = prQ;
+  const fetchStatus = useCallback(() => reloadStatus({ silent: true }), [reloadStatus]);
+  const fetchLog = useCallback(() => reloadLog({ silent: true }), [reloadLog]);
+  const fetchPrStatus = useCallback(() => reloadPr({ silent: true }), [reloadPr]);
+  const refresh = useCallback(
+    () => Promise.all([reloadStatus(), reloadLog(), reloadPr(), reloadBranches()]).then(() => undefined),
+    [reloadStatus, reloadLog, reloadPr, reloadBranches],
+  );
 
   return {
-    status, log, branches, prStatus, loading, setLoading, error, setError,
-    fetchStatus, fetchLog, fetchPrStatus, fetchBranches, refresh,
+    status,
+    log: logQ.data,
+    branches: branchesQ.data,
+    // A failed lookup means "no PR we can show", not a stale one.
+    prStatus: prQ.error ? null : prQ.data,
+    // Status drives the panel; the gh-backed PR lookup can lag well behind it.
+    loading: statusQ.loading,
+    error: statusQ.error,
+    clearError: statusQ.clearError,
+    fetchStatus, fetchLog, fetchPrStatus, refresh,
   };
 }

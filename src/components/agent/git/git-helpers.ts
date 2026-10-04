@@ -4,27 +4,11 @@
  * the status-mapping helpers are unit-testable in isolation.
  */
 
-// Inline types matching the preload's ElectronAPI git return shapes.
-export interface GitFileEntry {
-  path: string;
-  status: string;
-}
-export interface GitStatusData {
-  branch: string;
-  ahead: string;
-  behind: string;
-  hasUpstream: boolean;
-  defaultBranch: string;
-  staged: GitFileEntry[];
-  unstaged: GitFileEntry[];
-  untracked: GitFileEntry[];
-}
-export type GitLogData = Array<{
-  hash: string;
-  author: string;
-  date: string;
-  subject: string;
-}>;
+import type { GitLogEntry, GitPrStatus, GitStatus, GitStatusEntry } from "../../../../shared/types/git";
+
+export type GitFileEntry = GitStatusEntry;
+export type GitStatusData = GitStatus;
+export type GitLogData = GitLogEntry[];
 
 /** Human-readable label for a git two-char status code. */
 export function statusLabel(s: string): string {
@@ -123,8 +107,8 @@ export function areLogEntriesEqual(
 }
 
 export function arePrStatusesEqual(
-  a: { url: string | null; state: string | null; title: string | null } | null,
-  b: { url: string | null; state: string | null; title: string | null } | null
+  a: GitPrStatus | null,
+  b: GitPrStatus | null
 ): boolean {
   if (a === b) return true;
   if (!a || !b) return false;

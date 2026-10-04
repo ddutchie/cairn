@@ -9,105 +9,17 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ID, RegistryRequirement } from "@/types";
-import { id } from "@/lib/utils";
+import type { ID } from "@/types";
+import type {
+  Automation, AutomationInput, AutomationRun, AutomationRunWithAutomation,
+} from "../../../shared/types/automations";
+import { automationsClient } from "@/lib/ipc/automations";
+import { hasElectron, reportIpcError } from "@/lib/ipc/client";
 
-export type ScheduleKind = "cron" | "every" | "once";
-
-/** An automation env var. Non-secret values inline; secrets live in the keychain. */
-export interface AutomationEnv {
-  name: string;
-  value?: string | null;
-  secret: boolean;
-}
-
-/** Env spec as returned by the env IPC (never reveals secret values). */
-export interface AutomationEnvSpec {
-  name: string;
-  secret: boolean;
-  value?: string;
-  set?: boolean;
-}
-
-export interface Automation {
-  id: ID;
-  workspaceId: ID;
-  projectId: ID | null;
-  name: string;
-  description: string;
-  instructions: string;
-  scheduleKind: ScheduleKind;
-  scheduleExpr: string;
-  timezone: string | null;
-  nextRunAt: string;
-  enabled: boolean;
-  maxRuns: number | null;
-  runCount: number;
-  approvalMode: "auto" | "ask";
-  activeHoursStart: string | null;
-  activeHoursEnd: string | null;
-  standingRules: Array<{ tool: string; target?: string }>;
-  /**
-   * External connectors (MCP servers / HTTP services) the automation needs in
-   * scope. Empty = data-only automation.
-   */
-  requires: RegistryRequirement[];
-  /** Env vars exposed to scripts; secrets live in the keychain, not here. */
-  env: AutomationEnv[];
-  source: "custom" | "community";
-  communityId: ID | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type AutomationRunStatus = "pending" | "running" | "done" | "exhausted" | "denied" | "error" | "skipped";
-
-export interface AutomationRun {
-  id: ID;
-  automationId: ID;
-  status: AutomationRunStatus;
-  resultNoteId: ID | null;
-  startedAt: string;
-  finishedAt: string | null;
-  error: string | null;
-  scratch: string | null;
-  createdAt: string;
-}
-
-/**
- * A run joined with its parent automation's name + project (mirrors
- * `AutomationRunWithAutomation` in `electron/db/automation-queries.ts`).
- * Used by the project Overview's "Recent run results" feed so each row can
- * show the automation name without an N+1 lookup.
- */
-export interface AutomationRunWithAutomation extends AutomationRun {
-  automationName: string;
-  automationProjectId: ID | null;
-}
-
-export interface AutomationInput {
-  workspaceId: ID;
-  projectId?: ID | null;
-  name: string;
-  description?: string;
-  instructions: string;
-  scheduleKind: ScheduleKind;
-  scheduleExpr: string;
-  /** Computed main-side from scheduleExpr when omitted. */
-  nextRunAt?: string;
-  timezone?: string | null;
-  enabled?: boolean;
-  maxRuns?: number | null;
-  approvalMode?: "auto" | "ask";
-  activeHoursStart?: string | null;
-  activeHoursEnd?: string | null;
-  standingRules?: Array<{ tool: string; target?: string }>;
-  requires?: RegistryRequirement[];
-  env?: AutomationEnv[];
-  /** Provenance when prefilled from the cairn-community catalog. */
-  source?: "custom" | "community";
-  communityId?: ID | null;
-}
+export type {
+  ScheduleKind, AutomationEnv, AutomationEnvSpec, Automation, AutomationRunStatus, AutomationRun,
+  AutomationRunWithAutomation, AutomationInput,
+} from "../../../shared/types/automations";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -180,9 +92,9 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchAutomations(workspaceId) {
-    if (typeof window === "undefined" || !window.electron?.automation) return;
+    if (!hasElectron("automation")) return;
     try {
-      const rows = (await window.electron.automation.list(workspaceId)) as Automation[];
+      const rows = await automationsClient.list(workspaceId);
       if (get().activeWorkspaceId && get().activeWorkspaceId !== workspaceId) return;
       set({ automations: rows });
     } catch (err) {
@@ -191,54 +103,50 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async createAutomation(input) {
-    if (typeof window === "undefined" || !window.electron?.automation) return null;
+    if (!hasElectron("automation")) return null;
     try {
-      const saved = (await window.electron.automation.create({
-        ...input,
-        id: id(),
-      })) as Automation;
+      const saved = await automationsClient.create(input);
       set((s) => ({ automations: [...s.automations, saved] }));
       return saved;
     } catch (err) {
-      console.error("[automations] createAutomation error", err);
+      reportIpcError(err, "Couldn't create the automation");
       return null;
     }
   },
 
   async updateAutomation(automationId, patch) {
-    if (typeof window === "undefined" || !window.electron?.automation) return;
+    if (!hasElectron("automation")) return;
     try {
-      const saved = (await window.electron.automation.update(automationId, patch)) as Automation;
+      const saved = await automationsClient.update(automationId, patch);
+      if (!saved) return;
       set((s) => ({
         automations: s.automations.map((a) => (a.id === automationId ? saved : a)),
       }));
     } catch (err) {
-      console.error("[automations] updateAutomation error", err);
+      reportIpcError(err, "Couldn't update the automation");
     }
   },
 
   async deleteAutomation(automationId) {
-    if (typeof window === "undefined" || !window.electron?.automation) return;
+    if (!hasElectron("automation")) return;
     try {
-      await window.electron.automation.delete(automationId);
+      await automationsClient.delete(automationId);
       set((s) => ({
         automations: s.automations.filter((a) => a.id !== automationId),
         lastRuns: { ...s.lastRuns, [automationId]: undefined },
       }));
     } catch (err) {
-      console.error("[automations] deleteAutomation error", err);
+      reportIpcError(err, "Couldn't delete the automation");
     }
   },
 
   async runNow(automationId) {
-    if (typeof window === "undefined" || !window.electron?.automation) return false;
+    if (!hasElectron("automation")) return false;
     try {
-      const res = (await window.electron.automation.runNow(automationId)) as
-        | { runId: string }
-        | { skipped: boolean };
+      const res = await automationsClient.runNow(automationId);
       if ("runId" in res) {
         // Refresh runs so the new run row shows immediately.
-        const run = (await window.electron.automation.runs(automationId, 1)) as AutomationRun[];
+        const run = await automationsClient.runs(automationId, 1);
         if (run[0]) {
           set((s) => ({ lastRuns: { ...s.lastRuns, [automationId]: run[0] } }));
         }
@@ -246,15 +154,15 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
       }
       return false;
     } catch (err) {
-      console.error("[automations] runNow error", err);
+      reportIpcError(err, "Couldn't start the automation");
       return false;
     }
   },
 
   async fetchRun(automationId) {
-    if (typeof window === "undefined" || !window.electron?.automation) return undefined;
+    if (!hasElectron("automation")) return undefined;
     try {
-      const runs = (await window.electron.automation.runs(automationId, 1)) as AutomationRun[];
+      const runs = await automationsClient.runs(automationId, 1);
       const run = runs[0];
       set((s) => ({ lastRuns: { ...s.lastRuns, [automationId]: run } }));
       return run;
@@ -265,9 +173,9 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchRuns(automationId, limit = 20) {
-    if (typeof window === "undefined" || !window.electron?.automation) return;
+    if (!hasElectron("automation")) return;
     try {
-      const runs = (await window.electron.automation.runs(automationId, limit)) as AutomationRun[];
+      const runs = await automationsClient.runs(automationId, limit);
       set((s) => ({ runsById: { ...s.runsById, [automationId]: runs } }));
     } catch (err) {
       console.error("[automations] fetchRuns error", err);
@@ -275,14 +183,14 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchRecentProjectRuns(workspaceId, projectId, limit = 8) {
-    if (typeof window === "undefined" || !window.electron?.automation) return;
+    if (!hasElectron("automation")) return;
     // Clear the previous project's rows immediately so the Overview never shows
     // stale runs while the new project's fetch is in flight (or if it fails).
     if (get().activeWorkspaceId === workspaceId && get().activeProjectId === projectId) {
       set({ recentProjectRuns: [] });
     }
     try {
-      const rows = (await window.electron.automation.recentRuns(workspaceId, projectId, limit)) as AutomationRunWithAutomation[];
+      const rows = await automationsClient.recentRuns(workspaceId, projectId, limit);
       // Guard against a stale fetch landing after the user switched projects
       // (or workspaces).
       if (get().activeWorkspaceId !== workspaceId || get().activeProjectId !== projectId) return;
@@ -293,9 +201,9 @@ export const createAutomationsSlice: StateCreator<CairnStore, [], [], Automation
   },
 
   async fetchRunningCount() {
-    if (typeof window === "undefined" || !window.electron?.automation) return;
+    if (!hasElectron("automation")) return;
     try {
-      const n = (await window.electron.automation.runningCount()) as number;
+      const n = await automationsClient.runningCount();
       set({ runningAutomationCount: n });
     } catch (err) {
       console.error("[automations] fetchRunningCount error", err);

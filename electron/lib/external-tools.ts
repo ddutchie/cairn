@@ -22,6 +22,7 @@ import * as q from "../db/queries";
 import * as mcpClient from "./mcp-client";
 import * as services from "./custom-services";
 import * as mcpOauth from "./mcp-oauth";
+import type { RequirementStatus } from "../../shared/types/automations";
 
 /** Mirrors GLOBAL_TOOL_SCOPE in src/types — electron cannot import from src. */
 const GLOBAL_TOOL_SCOPE = "__global__";
@@ -170,14 +171,7 @@ function filterRequiredConfigs(
   };
 }
 
-export interface RequirementStatus {
-  kind: "mcp" | "service";
-  name: string;
-  /** A matching connector is installed in the workspace (by catalog id or name). */
-  installed: boolean;
-  /** Installed AND enabled AND attached to the project (or globally). */
-  attached: boolean;
-}
+export type { RequirementStatus };
 
 /**
  * Resolve a list of recipe `requires` against what's actually installed and in

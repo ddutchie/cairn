@@ -11,6 +11,12 @@ import type { SessionEventEnvelope } from "../shared/agent/session-event";
 import type { SessionProjection } from "../shared/agent/session-projection";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEvents } from "../shared/ipc/contract";
 import type { ChatPopoutPayload } from "../shared/agent/chat-popout";
+import type { NoteCreateInput, NotePatch } from "../shared/types/notes";
+import type {
+  AutomationInput, AutomationPatch, AutomationRequirement, AutomationRunEvent,
+} from "../shared/types/automations";
+import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
+import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
@@ -185,23 +191,6 @@ interface CodebaseModuleGraph {
   nodes: CodebaseModuleNode[];
   edges: CodebaseGraphEdge[];
 }
-// ── Inline types for the git API (not shared with the renderer bundle) ──────
-
-interface GitStatusEntry {
-  path: string;
-  status: string;
-}
-interface GitStatus {
-  branch: string;
-  ahead: string;
-  behind: string;
-  hasUpstream: boolean;
-  defaultBranch: string;
-  staged: GitStatusEntry[];
-  unstaged: GitStatusEntry[];
-  untracked: GitStatusEntry[];
-}
-
 // ── Inline types for the Usage view (usage:overview / usage:recent) ──────────
 type UsageSource =
   | "chat" | "coding-agent" | "chat-subagent" | "coding-subagent" | "automation"
@@ -283,24 +272,21 @@ const api = {
 
   // ── Notes ────────────────────────────────────
   note: {
-    list:         (projectId?: string) => invoke("db:note:list", { projectId }),
-    create:       (args: unknown) => invoke("db:note:create", args),
-    update:       (id: string, patch: unknown) => invoke("db:note:update", { id, patch }),
-    delete:       (id: string) => invoke("db:note:delete", { id }),
-    moveToFolder: (id: string, folder: string) => invoke("db:note:moveToFolder", { id, folder }),
+    list:         (projectId?: string) => invokeContract("db:note:list", { projectId }),
+    create:       (note: NoteCreateInput) => invokeContract("db:note:create", note),
+    update:       (id: string, patch: NotePatch) => invokeContract("db:note:update", { id, patch }),
+    delete:       (id: string) => invokeContract("db:note:delete", { id }),
+    moveToFolder: (id: string, folder: string) => invokeContract("db:note:moveToFolder", { id, folder }),
     // workspaceId is derived from the target project by the handler; accepted for
     // backwards-compatible call sites but no longer required.
     moveToProject: (id: string, projectId: string, _workspaceId?: string) =>
-      invoke("db:note:moveToProject", { id, projectId }),
+      invokeContract("db:note:moveToProject", { id, projectId }),
     // Lazy bodies: the renderer store holds note metadata only (Electron).
-    bodies: (ids: string[]) =>
-      invoke<import("./db/notes-queries").NoteBody[]>("db:note:bodies:get", { ids }),
-    search: (query: string, projectId?: string) =>
-      invoke<string[]>("db:note:search", { query, projectId }),
-    backlinks: (noteId: string) =>
-      invoke<string[]>("db:note:backlinks:list", { noteId }),
+    bodies: (ids: string[]) => invokeContract("db:note:bodies:get", { ids }),
+    search: (query: string, projectId?: string) => invokeContract("db:note:search", { query, projectId }),
+    backlinks: (noteId: string) => invokeContract("db:note:backlinks:list", { noteId }),
     /** The user has seen this note's "what's new" changes. */
-    clearChangeMark: (id: string) => invoke("db:note:changeMark:clear", { id }),
+    clearChangeMark: (id: string) => invokeContract("db:note:changeMark:clear", { id }),
   },
 
   // ── Board columns ─────────────────────────────
@@ -327,19 +313,19 @@ const api = {
 
   // ── Idea Flow ────────────────────────────────
   flow: {
-    get:         (projectId: string) => invoke("db:flow:get", { projectId }),
+    get:         (projectId: string) => invokeContract("db:flow:get", { projectId }),
     node: {
-      create:    (args: unknown) => invoke("db:flow:node:create", args),
-      update:    (id: string, patch: unknown) => invoke("db:flow:node:update", { id, patch }),
-      delete:    (id: string) => invoke("db:flow:node:delete", { id }),
-      summarize: (nodeId: string, config: unknown) => invoke("db:flow:node:summarize", { nodeId, config }),
+      create:    (node: FlowNodeCreateInput) => invokeContract("db:flow:node:create", node),
+      update:    (id: string, patch: FlowNodePatch) => invokeContract("db:flow:node:update", { id, patch }),
+      delete:    (id: string) => invokeContract("db:flow:node:delete", { id }),
+      summarize: (nodeId: string, config: FlowAiConfig) => invokeContract("db:flow:node:summarize", { nodeId, config }),
     },
     edge: {
-      create: (args: unknown) => invoke("db:flow:edge:create", args),
-      delete: (id: string) => invoke("db:flow:edge:delete", { id }),
+      create: (edge: FlowEdgeCreateInput) => invokeContract("db:flow:edge:create", edge),
+      delete: (id: string) => invokeContract("db:flow:edge:delete", { id }),
     },
     url: {
-      fetch: (url: string) => invoke<{ title: string; description: string }>("db:flow:url:fetch", { url }),
+      fetch: (url: string) => invokeContract("db:flow:url:fetch", { url }),
     },
   },
 
@@ -361,57 +347,41 @@ const api = {
 
   // ── Heartbeat automations ─────────────────────
   automation: {
-    list:   (workspaceId: string) => invoke("db:automation:list", { workspaceId }),
-    get:    (id: string) => invoke("db:automation:get", { id }),
-    create: (args: unknown) => invoke("db:automation:create", args),
-    update: (id: string, patch: unknown) => invoke("db:automation:update", { id, patch }),
-    delete: (id: string) => invoke("db:automation:delete", { id }),
-    runs:   (automationId: string, limit?: number) => invoke("db:automation:runs", { automationId, limit }),
-    recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) => invoke("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
-    runNow: (id: string) => invoke("db:automation:runNow", { id }),
+    list:   (workspaceId: string) => invokeContract("db:automation:list", { workspaceId }),
+    get:    (id: string) => invokeContract("db:automation:get", { id }),
+    create: (input: AutomationInput) => invokeContract("db:automation:create", input),
+    update: (id: string, patch: AutomationPatch) => invokeContract("db:automation:update", { id, patch }),
+    delete: (id: string) => invokeContract("db:automation:delete", { id }),
+    runs:   (automationId: string, limit?: number) => invokeContract("db:automation:runs", { automationId, limit }),
+    recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) =>
+      invokeContract("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
+    runNow: (id: string) => invokeContract("db:automation:runNow", { id }),
     /** Daily automation budget (USD) + today's recorded automation spend. */
     budget: {
-      get: () => invoke<{ budgetUsd: number | null; spentTodayUsd: number } | { error: string }>("db:automation:budget:get", {}),
-      set: (usd: number | null) => invoke<{ budgetUsd: number | null } | { error: string }>("db:automation:budget:set", { usd }),
+      get: () => invokeContract("db:automation:budget:get"),
+      set: (usd: number | null) => invokeContract("db:automation:budget:set", { usd }),
     },
-    runningCount: () => invoke("db:automation:runningCount"),
+    runningCount: () => invokeContract("db:automation:runningCount"),
     /** Approve/deny a pending tool approval for a running automation (Cordis). */
-    approve: (callId: string, approved: boolean, grant?: "session" | "always") => invoke("automation:approve", { callId, approved, grant }),
-    folder: (id: string) => invoke<{ folder: string }>("db:automation:folder", { id }),
-    syncFromManifest: (id: string) => invoke("db:automation:syncFromManifest", { id }),
-    files: (id: string) => invoke<{ files: Array<{ path: string; size: number; mtimeMs: number }> }>("db:automation:files", { id }),
-    runLog: (runId: string) => invoke<{ log: unknown } | { error: string }>("db:automation:runLog", { runId }),
+    approve: (callId: string, approved: boolean, grant?: "session" | "always") =>
+      invokeContract("automation:approve", { callId, approved, grant }),
+    folder: (id: string) => invokeContract("db:automation:folder", { id }),
+    syncFromManifest: (id: string) => invokeContract("db:automation:syncFromManifest", { id }),
+    files: (id: string) => invokeContract("db:automation:files", { id }),
+    runLog: (runId: string) => invokeContract("db:automation:runLog", { runId }),
     /** Live run activity (tokens/tools/thought) for the "watch this run" view. */
-    onRunEvent: (cb: (payload: {
-      event: "started" | "token" | "thought" | "tool" | "toolDone" | "toolConfirmRequired" | "approval" | "finished";
-      automationId: string;
-      runId: string;
-      delta?: string;
-      tool?: string;
-      label?: string;
-      args?: Record<string, unknown>;
-      status?: "start" | "end";
-      ok?: boolean;
-      output?: string;
-      error?: string;
-      recipe?: string;
-      content?: string;
-      exhausted?: boolean;
-      callId?: string;
-    }) => void) => {
-      const handler = (_e: unknown, payload: Parameters<typeof cb>[0]) => cb(payload);
-      ipcRenderer.on("automation:run", handler);
-      return () => { ipcRenderer.removeListener("automation:run", handler); };
-    },
+    onRunEvent: (cb: (payload: AutomationRunEvent) => void) => onIpcEvent("automation:run", cb),
     env: {
-      get: (automationId: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env", { automationId }),
-      set: (automationId: string, name: string, value: string, secret: boolean) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:set", { automationId, name, value, secret }),
-      delete: (automationId: string, name: string) => invoke<Array<{ name: string; secret: boolean; value?: string; set?: boolean }> | { error: string }>("db:automation:env:delete", { automationId, name }),
+      get: (automationId: string) => invokeContract("db:automation:env", { automationId }),
+      set: (automationId: string, name: string, value: string, secret: boolean) =>
+        invokeContract("db:automation:env:set", { automationId, name, value, secret }),
+      delete: (automationId: string, name: string) => invokeContract("db:automation:env:delete", { automationId, name }),
     },
     /** Installed/attached status per required connector (New Automation browse guard). */
-    checkRequirements: (workspaceId: string, projectId: string, requires: Array<{ kind: "mcp" | "service"; name: string }>) =>
-      invoke<Array<{ kind: "mcp" | "service"; name: string; installed: boolean; attached: boolean }>>("db:automation:checkRequirements", { workspaceId, projectId, requires }),
-    preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) => invoke("db:automation:preview", { scheduleKind, scheduleExpr, timezone }),
+    checkRequirements: (workspaceId: string, projectId: string, requires: AutomationRequirement[]) =>
+      invokeContract("db:automation:checkRequirements", { workspaceId, projectId, requires }),
+    preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) =>
+      invokeContract("db:automation:preview", { scheduleKind, scheduleExpr, timezone }),
   },
 
   // ── Approval inbox ────────────────────────────
@@ -942,21 +912,21 @@ const api = {
 
   // ── Git operations (Agent Git tab) ────────────
   git: {
-    status:   (cwd: string) => invoke<GitStatus>("git:status", { cwd }),
-    branches: (cwd: string) => invoke<{ current: string; branches: Array<{ name: string; current: boolean }> }>("git:branches", { cwd }),
-    checkout: (cwd: string, branch: string, create?: boolean) => invoke<{ branch: string }>("git:checkout", { cwd, branch, create }),
-    stage:    (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:stage", { cwd, ...opts }),
-    unstage:  (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:unstage", { cwd, ...opts }),
-    commit:   (cwd: string, message: string, body?: string, autoStage?: boolean) => invoke<{ hash: string; message: string }>("git:commit", { cwd, message, body, autoStage }),
-    push:     (cwd: string, setUpstream?: boolean) => invoke<{ branch: string }>("git:push", { cwd, setUpstream }),
-    log:      (cwd: string, count?: number) => invoke<Array<{ hash: string; author: string; date: string; subject: string }>>("git:log", { cwd, count }),
-    diff:     (cwd: string, staged?: boolean) => invoke<string>("git:diff", { cwd, staged }),
-    diffBranch: (cwd: string, baseBranch: string) => invoke<string>("git:diffBranch", { cwd, baseBranch }),
-    diffFile: (cwd: string, filePath: string, staged?: boolean) => invoke<{ stat: { added: number; deleted: number }; diff: string }>("git:diffFile", { cwd, filePath, staged }),
-    stash:    (cwd: string, action: "push" | "pop" | "list") => invoke<unknown>("git:stash", { cwd, action }),
-    createPr: (cwd: string, opts: { title: string; body?: string; base?: string }) => invoke<{ url: string; branch: string }>("git:createPr", { cwd, ...opts }),
-    prStatus: (cwd: string) => invoke<{ url: string | null; state: string | null; title: string | null } | null>("git:prStatus", { cwd }),
-    discard:  (cwd: string, filePath: string) => invoke<{ ok: boolean }>("git:discard", { cwd, filePath }),
+    status:   (cwd: string) => invokeContract("git:status", { cwd }),
+    branches: (cwd: string) => invokeContract("git:branches", { cwd }),
+    checkout: (cwd: string, branch: string, create?: boolean) => invokeContract("git:checkout", { cwd, branch, create }),
+    stage:    (cwd: string, opts?: GitPathSelection) => invokeContract("git:stage", { cwd, ...opts }),
+    unstage:  (cwd: string, opts?: GitPathSelection) => invokeContract("git:unstage", { cwd, ...opts }),
+    commit:   (cwd: string, message: string, body?: string, autoStage?: boolean) => invokeContract("git:commit", { cwd, message, body, autoStage }),
+    push:     (cwd: string, setUpstream?: boolean) => invokeContract("git:push", { cwd, setUpstream }),
+    log:      (cwd: string, count?: number) => invokeContract("git:log", { cwd, count }),
+    diff:     (cwd: string, staged?: boolean) => invokeContract("git:diff", { cwd, staged }),
+    diffBranch: (cwd: string, baseBranch: string) => invokeContract("git:diffBranch", { cwd, baseBranch }),
+    diffFile: (cwd: string, filePath: string, staged?: boolean) => invokeContract("git:diffFile", { cwd, filePath, staged }),
+    stash:    (cwd: string, action: GitStashAction) => invokeContract("git:stash", { cwd, action }),
+    createPr: (cwd: string, opts: { title: string; body?: string; base?: string }) => invokeContract("git:createPr", { cwd, ...opts }),
+    prStatus: (cwd: string) => invokeContract("git:prStatus", { cwd }),
+    discard:  (cwd: string, filePath: string) => invokeContract("git:discard", { cwd, filePath }),
   },
 
   // ── Cairn native agent (pi) ───────────────────

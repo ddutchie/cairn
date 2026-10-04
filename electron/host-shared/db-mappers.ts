@@ -6,6 +6,8 @@
 
 import { stripMarkdown } from "./text-utils";
 import { noteExcerpt } from "../../shared/notes/excerpt";
+import type { Note } from "../../shared/types/notes";
+import type { IdeaFlow, IdeaFlowEdge, IdeaFlowNode, IdeaNodeType } from "../../shared/types/flow";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
 export type DbRow = Record<string, unknown>;
@@ -176,7 +178,8 @@ export function toToolAttachment(row: DbRow) {
   };
 }
 
-export function toNote(row: DbRow) {
+/** A note row as read from SQLite: the body is always present ("" when empty). */
+export function toNote(row: DbRow): Note & { content: string } {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -322,7 +325,7 @@ export function toMcpNotification(row: DbRow): McpNotification {
   };
 }
 
-export function toIdeaFlow(row: DbRow) {
+export function toIdeaFlow(row: DbRow): IdeaFlow {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -331,16 +334,17 @@ export function toIdeaFlow(row: DbRow) {
   };
 }
 
-export function toIdeaFlowNode(row: DbRow) {
+export function toIdeaFlowNode(row: DbRow): IdeaFlowNode {
   return {
     id: row.id as string,
     flowId: row.flow_id as string,
-    type: row.type as string,
+    type: row.type as IdeaNodeType,
     x: row.x as number,
     y: row.y as number,
-    width: row.width as number | undefined,
-    height: row.height as number | undefined,
-    parentId: row.parent_id as string | undefined,
+    // Nullable columns: SQLite NULL becomes an absent field, as the type says.
+    width: (row.width as number | null) ?? undefined,
+    height: (row.height as number | null) ?? undefined,
+    parentId: (row.parent_id as string | null) ?? undefined,
     data: (() => {
       try {
         return JSON.parse(row.data as string);
@@ -353,13 +357,13 @@ export function toIdeaFlowNode(row: DbRow) {
   };
 }
 
-export function toIdeaFlowEdge(row: DbRow) {
+export function toIdeaFlowEdge(row: DbRow): IdeaFlowEdge {
   return {
     id: row.id as string,
     flowId: row.flow_id as string,
     sourceNodeId: row.source_node_id as string,
     targetNodeId: row.target_node_id as string,
-    label: row.label as string | undefined,
+    label: (row.label as string | null) ?? undefined,
     createdAt: row.created_at as string,
   };
 }

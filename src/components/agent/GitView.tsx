@@ -26,6 +26,8 @@ import { FileRow } from "./git/FileRow";
 import { useGitStatus } from "./git/useGitStatus";
 import { discardMessage, readPrTemplate } from "./git/git-actions";
 import { useTwoStepConfirm } from "@/hooks/useTwoStepConfirm";
+import { gitClient } from "@/lib/ipc/git";
+import { errorMessage, requireElectron } from "@/lib/ipc/client";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,9 +71,16 @@ export function GitView({ cwd }: GitViewProps) {
   const prevStagedCountRef = useRef<number | null>(null);
 
   const {
-    status, log, branches, prStatus, loading, setLoading, error, setError,
+    status, log, branches, prStatus, loading: statusLoading, error: statusError, clearError: clearStatusError,
     fetchStatus, fetchLog, fetchPrStatus, refresh,
   } = useGitStatus(cwd);
+  // Checkout / discard block the panel like a reload does.
+  const [busy, setBusy] = useState(false);
+  const loading = statusLoading || busy;
+  // Failed actions show in the same banner as a failed status poll.
+  const [actionError, setError] = useState<string | null>(null);
+  const error = actionError ?? statusError;
+  const dismissError = () => { setError(null); clearStatusError(); };
 
   // Branch switcher states
   const [branchSearch, setBranchSearch] = useState("");
@@ -108,20 +117,19 @@ export function GitView({ cwd }: GitViewProps) {
   }, [status]);
 
   const handleCheckout = useCallback(async (branch: string, create = false): Promise<boolean> => {
-    if (!window.electron?.git) return false;
-    setLoading(true);
+    setBusy(true);
     setError(null);
     try {
-      await window.electron.git.checkout(cwd, branch, create);
+      await gitClient.checkout(cwd, branch, create);
       await refresh();
       return true;
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
       return false;
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }, [cwd, refresh, setError, setLoading]);
+  }, [cwd, refresh]);
 
   const handleCreateBranch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,46 +148,40 @@ export function GitView({ cwd }: GitViewProps) {
   }
 
   async function handleStage(paths?: string[]) {
-    if (!window.electron?.git) return;
     try {
-      await window.electron.git.stage(cwd, paths ? { files: paths } : { all: true });
+      await gitClient.stage(cwd, paths);
       setFileDiffs({});       // clear cached diffs — staging changes them
       setExpandedFiles(new Set());
       await fetchStatus();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     }
   }
 
   async function handleUnstage(paths?: string[]) {
-    if (!window.electron?.git) return;
     try {
-      await window.electron.git.unstage(cwd, paths ? { files: paths } : { all: true });
+      await gitClient.unstage(cwd, paths);
       setFileDiffs({});       // clear cached diffs — unstaging changes them
       setExpandedFiles(new Set());
       await fetchStatus();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     }
   }
 
 
   async function handleDiscard(paths: string[]) {
-    if (!window.electron?.git) return;
-
-    setLoading(true);
+    setBusy(true);
     setError(null);
     try {
-      for (const p of paths) {
-        await window.electron.git.discard(cwd, p);
-      }
+      await gitClient.discard(cwd, paths);
       setFileDiffs({});
       setExpandedFiles(new Set());
       await fetchStatus();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
@@ -193,48 +195,46 @@ export function GitView({ cwd }: GitViewProps) {
   }, [branches, branchSearch]);
 
   async function handleCommit() {
-    if (!commitSubject.trim() || !window.electron?.git) return;
+    if (!commitSubject.trim()) return;
     setCommitting(true);
     setError(null);
     try {
-      await window.electron.git.commit(
-        cwd, commitSubject.trim(),
-        commitBody.trim() || undefined,
-        true,
-      );
+      await gitClient.commit(cwd, {
+        subject: commitSubject.trim(),
+        body: commitBody.trim() || undefined,
+        autoStage: true,
+      });
       clearForm();
       setFileDiffs({});
       setExpandedFiles(new Set());
       await fetchStatus();
       await fetchLog();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setCommitting(false);
     }
   }
 
   async function handlePush() {
-    if (!window.electron?.git) return;
     setPushing(true);
     setError(null);
     try {
-      await window.electron.git.push(cwd, true);
+      await gitClient.push(cwd, { setUpstream: true });
       await fetchStatus();
       await fetchPrStatus();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setPushing(false);
     }
   }
 
   async function handleGenerate() {
-    if (!window.electron?.git || !window.electron?.ai) return;
     setGenerating(true);
     setError(null);
     try {
-      const diff = await window.electron.git.diff(cwd, true);
+      const diff = await gitClient.diff(cwd, { staged: true });
       if (!diff) {
         setError("No staged changes to generate a commit message from. Stage some files first.");
         return;
@@ -244,18 +244,17 @@ export function GitView({ cwd }: GitViewProps) {
         model: agentConfig.model,
         apiKey: agentConfig.apiKey,
       };
-      const msg = await window.electron.ai.generateCommitMessage({ diff, config });
+      const msg = await requireElectron().ai.generateCommitMessage({ diff, config });
       setCommitSubject(msg.subject);
       setCommitBody(msg.body);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setGenerating(false);
     }
   }
 
   async function handleToggleFile(path: string, staged: boolean) {
-    if (!window.electron?.git) return;
     const key = diffKey(path, staged);
     // If collapsing, just remove from expanded set
     if (expandedFiles.has(key)) {
@@ -266,7 +265,7 @@ export function GitView({ cwd }: GitViewProps) {
     setExpandedFiles((prev) => { const n = new Set(prev); n.add(key); return n; });
     setLoadingFile(key);
     try {
-      const result = await window.electron.git.diffFile(cwd, path, staged);
+      const result = await gitClient.diffFile(cwd, path, staged);
       setFileDiffs((prev) => ({ ...prev, [key]: { ...result.stat, diff: result.diff } }));
     } catch {
       setFileDiffs((prev) => ({ ...prev, [key]: { added: 0, deleted: 0, diff: "" } }));
@@ -275,12 +274,12 @@ export function GitView({ cwd }: GitViewProps) {
   }
 
   async function handleGeneratePrDesc() {
-    if (!window.electron?.git || !window.electron?.ai || !status) return;
+    if (!status) return;
     setGeneratingPrDesc(true);
     setError(null);
     try {
       const baseBranch = status.defaultBranch || "main";
-      const diff = await window.electron.git.diffBranch(cwd, baseBranch);
+      const diff = await gitClient.diffBranch(cwd, baseBranch);
       if (!diff) {
         setError(`No committed changes on this branch relative to ${baseBranch} to generate description from.`);
         return;
@@ -295,7 +294,7 @@ export function GitView({ cwd }: GitViewProps) {
       const project = projects.find((p) => p.id === activeProjectId) ?? null;
       const template = await readPrTemplate(cwd, project?.projectSettings as ProjectSettings | undefined);
 
-      const result = await window.electron.ai.generatePrDescription({ 
+      const result = await requireElectron().ai.generatePrDescription({ 
         diff, 
         config, 
         template: template || undefined 
@@ -303,23 +302,22 @@ export function GitView({ cwd }: GitViewProps) {
       setPrTitle(result.title);
       setPrBody(result.description);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setGeneratingPrDesc(false);
     }
   }
 
   async function handleCreatePr() {
-    if (!window.electron?.git) return;
     if (!prTitle.trim()) return;
     setCreatingPr(true);
     setError(null);
     try {
       // Push any pending commits first so the PR includes everything
       try {
-        await window.electron.git.push(cwd, false);
+        await gitClient.push(cwd);
       } catch { /* may already be up to date */ }
-      const result = await window.electron.git.createPr(cwd, {
+      const result = await gitClient.createPr(cwd, {
         title: prTitle.trim(),
         body: prBody.trim() || undefined,
       });
@@ -329,7 +327,7 @@ export function GitView({ cwd }: GitViewProps) {
       setPrBody("");
       fetchPrStatus();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setCreatingPr(false);
     }
@@ -520,7 +518,7 @@ export function GitView({ cwd }: GitViewProps) {
         <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border-b border-[var(--border)] flex-shrink-0">
           <X size={11} className="text-[var(--danger)] flex-shrink-0" />
           <span className="text-[0.714rem] text-[var(--danger)] flex-1">{error}</span>
-          <button onClick={() => setError(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <button onClick={dismissError} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
           </button>
         </div>

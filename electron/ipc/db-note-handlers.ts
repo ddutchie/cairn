@@ -3,7 +3,7 @@
 import { shell } from "electron";
 import fs from "fs";
 import path from "path";
-import { registerIpcHandle, registerIpcOn } from "./registry";
+import { registerContractHandle, registerIpcHandle, registerIpcOn } from "./registry";
 import { resolveWithinRoot } from "./path-safety";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
@@ -15,9 +15,9 @@ import { reindexSingleNoteEmbedding } from "./embedding-reindex";
 export function registerNoteHandlers(ctx: DbContext): void {
   // ── Notes ─────────────────────────────────────────
   // All note mutations also write/update/delete the corresponding .md file.
-  registerIpcHandle("db:note:list", (_e, { projectId }) => handle(() => q.getNotes(ctx.db, projectId)));
+  registerContractHandle("db:note:list", (_e, { projectId }) => handle(() => q.getNotes(ctx.db, projectId)));
 
-  registerIpcHandle("db:note:create", (_e, args: Parameters<typeof q.createNote>[1]) => handle(() => {
+  registerContractHandle("db:note:create", (_e, args: Parameters<typeof q.createNote>[1]) => handle(() => {
     const note = q.createNote(ctx.db, {
       ...args,
     });
@@ -31,11 +31,10 @@ export function registerNoteHandlers(ctx: DbContext): void {
     return note;
   }));
 
-  registerIpcHandle("db:note:update", (_e, { id, patch }) => handle(() => {
+  registerContractHandle("db:note:update", (_e, { id, patch }) => handle(() => {
     // archivedAt: null means "restore" — COALESCE cannot clear to NULL
-    if ("archivedAt" in patch && patch.archivedAt === null) {
-      const rest = { ...patch };
-      delete rest.archivedAt;
+    const { archivedAt, ...rest } = patch;
+    if (archivedAt === null) {
       // Wrap both SQL writes in a transaction so a crash between them leaves
       // the DB in a consistent state (either both applied or neither).
       const note = ctx.db.transaction(() => {
@@ -78,7 +77,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
       oldTargets = [prevTitle, ...(stem ? [stem] : [])];
     }
     const note = ctx.db.transaction(() => {
-      const u = q.updateNote(ctx.db, id, patch);
+      const u = q.updateNote(ctx.db, id, archivedAt === undefined ? rest : { ...rest, archivedAt });
       if (oldTargets.length > 0) {
         relinked = q.rewriteInboundWikilinks(ctx.db, id, oldTargets, patch.title as string);
       }
@@ -124,7 +123,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
     return note;
   }));
 
-  registerIpcHandle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
+  registerContractHandle("db:note:moveToFolder", (_e, { id, folder }: { id: string; folder: string }) => handle(() => {
     // Use moveNoteFolder (direct SET) rather than updateNote (COALESCE) so that
     // moving a note to root (folder="") is never silently ignored.
     suppressNextChange(id);
@@ -135,7 +134,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
     return note;
   }));
 
-  registerIpcHandle(
+  registerContractHandle(
     "db:note:moveToProject",
     (_e, { id, projectId }: { id: string; projectId: string; workspaceId?: string }) =>
       handle(() => {
@@ -202,7 +201,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
       }),
   );
 
-  registerIpcHandle("db:note:delete", (_e, { id }) => handle(() => {
+  registerContractHandle("db:note:delete", (_e, { id }) => handle(() => {
     const note = q.getNoteById(ctx.db, id);
     if (note) {
       const projectName = getProjectName(ctx.db, note.projectId);

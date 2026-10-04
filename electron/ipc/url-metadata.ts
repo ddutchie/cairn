@@ -9,12 +9,12 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle } from "./result-helpers";
 import { fetchUrlMetadata } from "../lib/url-metadata";
 
 export function registerUrlMetadataHandler(): void {
-  registerIpcHandle("db:flow:url:fetch", (_e, { url }: { url: string }) =>
+  registerContractHandle("db:flow:url:fetch", (_e, { url }) =>
     handle(() => fetchUrlMetadata(url))
   );
 }

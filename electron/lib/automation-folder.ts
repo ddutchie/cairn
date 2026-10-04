@@ -22,6 +22,9 @@
 import fs from "fs";
 import path from "path";
 import { toSlug } from "../host-shared/text-utils";
+import type { AutomationFolderFile, RunLog, RunLogTool } from "../../shared/types/automations";
+
+export type { AutomationFolderFile, RunLog, RunLogTool };
 
 export const AUTOMATION_FOLDER_NAME = ".automations";
 export const RUNS_FOLDER_NAME = "runs";
@@ -148,13 +151,6 @@ export function cleanupOldRunDirs(automationDir: string, keep: number = KEEP_RUN
 
 // ── File listing (Develop modal) ─────────────────────────────────────────────
 
-export interface AutomationFolderFile {
-  /** Path relative to the automation folder, posix separators. */
-  path: string;
-  size: number;
-  mtimeMs: number;
-}
-
 const MAX_TREE_DEPTH = 4;
 
 /**
@@ -192,35 +188,6 @@ export function listAutomationFolderFiles(automationDir: string): AutomationFold
 }
 
 // ── Run transcript (what actually happened in a run) ──────────────────────────
-
-/** One tool call as it happened — args, outcome, output. */
-export interface RunLogTool {
-  name: string;
-  label?: string;
-  args?: Record<string, unknown>;
-  ok?: boolean;
-  output?: string;
-  error?: string;
-}
-
-/** A persisted per-run transcript — the inspectable record of a run. */
-export interface RunLog {
-  automationId: string;
-  runId: string;
-  startedAt: string;
-  finishedAt?: string;
-  /** The recipe actually executed (manifest instructions, else the row). */
-  recipe?: string;
-  /** 'done' | 'exhausted' | 'error'. */
-  status?: string;
-  error?: string | null;
-  /** Streaming assistant tokens accumulated during the run. */
-  tokens?: string;
-  /** Streaming reasoning accumulated during the run. */
-  thoughts?: string;
-  /** Every tool call in order. */
-  tools: RunLogTool[];
-}
 
 /**
  * Write the run transcript into the run folder (best-effort).

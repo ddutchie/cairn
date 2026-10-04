@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { PRIORITY_COLORS } from "@/lib/utils";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
+import { flowClient } from "@/lib/ipc/flow";
+import { errorMessage, hasElectron } from "@/lib/ipc/client";
 
 interface NodeEditModalProps {
   nodeId: string;
@@ -260,15 +262,15 @@ function UrlEditor({
   const [fetchError, setFetchError] = useState("");
 
   async function fetchMeta() {
-    if (!url || !window.electron?.flow?.url) return;
+    if (!url || !hasElectron("flow")) return;
     setFetching(true);
     setFetchError("");
     try {
-      const meta = await window.electron.flow.url.fetch(url);
+      const meta = await flowClient.fetchUrlMetadata(url);
       if (meta.title)       onTitleChange(meta.title);
       if (meta.description) onDescriptionChange(meta.description);
     } catch (e) {
-      setFetchError((e as Error).message ?? "Failed to fetch");
+      setFetchError(errorMessage(e));
     } finally {
       setFetching(false);
     }
