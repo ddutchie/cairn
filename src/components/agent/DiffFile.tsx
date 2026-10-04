@@ -9,6 +9,7 @@ import React, { useMemo, useState, useEffect, useRef } from "react";
 import type { File, Change } from "parse-diff";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { ensureLanguage, isLanguageReady, highlightCode, onLanguageReady } from "@/lib/lazy-lowlight";
+import { useResizeObserver } from "@/lib/viz/hooks";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
@@ -284,14 +285,7 @@ export const FileDiff = React.memo(function FileDiff({ file, fileKey, collapsed,
 
   const headerRef = useRef<HTMLButtonElement>(null);
   const [hunkTop, setHunkTop] = useState(32);
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setHunkTop(el.offsetHeight));
-    ro.observe(el);
-    setHunkTop(el.offsetHeight);
-    return () => ro.disconnect();
-  }, []);
+  useResizeObserver(headerRef, (el) => setHunkTop(el.offsetHeight));
 
   return (
     <div className="border-b border-[var(--border)]">

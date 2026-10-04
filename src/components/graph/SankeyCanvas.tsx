@@ -6,7 +6,8 @@ import { sankey, sankeyLinkHorizontal, SankeyNode, SankeyLink } from "d3-sankey"
 import { X } from "lucide-react";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, PRIORITY_WEIGHT, truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopeSets, useFontScale } from "./analyticsHooks";
+import { useScopeSets } from "./analyticsHooks";
+import { useContainerDims, useFontScale } from "@/lib/viz/hooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {

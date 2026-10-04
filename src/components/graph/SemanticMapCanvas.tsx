@@ -9,7 +9,8 @@ import type { GraphNode } from "@/types";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopeSets, useFontScale, useRelativePointer } from "./analyticsHooks";
+import { useScopeSets } from "./analyticsHooks";
+import { useContainerDims, useFontScale, useRelativePointer } from "@/lib/viz/hooks";
 import { CanvasCallout } from "./AnalyticsShared";
 
 interface Props {

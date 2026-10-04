@@ -35,6 +35,7 @@ import { AgentEmptyState } from "./AgentEmptyState";
 import { useAgentSessionActions } from "./useAgentSessionActions";
 import { SessionBrowser } from "./SessionBrowser";
 import { chatSessionId } from "../../../shared/agent/session-identity";
+import { useResizeObserver } from "@/lib/viz/hooks";
 
 function sanitizeAriaId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -162,17 +163,9 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   const persistentSession = terminalSessions.find((t) => t.sessionId === activeCodingSessionId && t.sessionType === "coding");
   const ptySessions = terminalSessions.filter((t) => t.sessionType === "pty");
 
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      // Collapse to hamburger when panel is narrow (<360) — scrollWidth check flickers when we hide content, so use width threshold
-      setHeaderOverflows(el.clientWidth < 360);
-    });
-    ro.observe(el);
-    setHeaderOverflows(el.clientWidth < 360);
-    return () => ro.disconnect();
-  }, [ptySessions.length, activeSessionId]);
+  // Collapse to hamburger when the panel is narrow (<360) — a scrollWidth
+  // check flickers when we hide content, so use a width threshold.
+  useResizeObserver(headerRef, (el) => setHeaderOverflows(el.clientWidth < 360), [ptySessions.length, activeSessionId]);
 
   useEffect(() => {
     if (activeSessionId === null) {

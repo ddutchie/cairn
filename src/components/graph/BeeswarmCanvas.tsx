@@ -5,7 +5,8 @@ import * as d3 from "d3";
 import type { SimulationNodeDatum } from "d3";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName, CANVAS_PAD, DAY_MS } from "./analyticsUtils";
-import { useContainerDims, useScopeSets, useFontScale, useRelativePointer } from "./analyticsHooks";
+import { useScopeSets } from "./analyticsHooks";
+import { useContainerDims, useFontScale, useRelativePointer } from "@/lib/viz/hooks";
 import { CanvasEmptyState, CanvasCallout, SvgTimeAxis } from "./AnalyticsShared";
 
 interface Props {

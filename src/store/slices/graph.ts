@@ -13,6 +13,7 @@ import type {
 } from "@/types";
 import { nodeTypeToken } from "../../../shared/ui/graph";
 import { ipcAwait, ipcData } from "../ipc";
+import { tokenToCssVar } from "@/lib/viz/color";
 
 // A refresh requested while a load is in flight re-runs once on completion
 // (db:changed bursts). Module-level: never rendered, single store instance.
@@ -254,6 +255,5 @@ export function filterGraphEdges(
 
 /** Node type → CSS variable colour token (camelCase token → kebab-case var). */
 export function nodeTypeColor(type: GraphNodeType): string {
-  const token = nodeTypeToken(type).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-  return `var(--${token})`;
+  return `var(${tokenToCssVar(nodeTypeToken(type))})`;
 }

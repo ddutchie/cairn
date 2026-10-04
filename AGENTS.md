@@ -20,7 +20,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **All colours** must use CSS variables: `var(--background)`, `var(--accent)`, `var(--text-primary)`, etc.
 - **Alpha variants**: `color-mix(in srgb, var(--token) X%, transparent)` — never hardcode `rgba()`
 - **Font sizes**: use `rem`-based Tailwind classes (`text-xs`, `text-sm`, `text-[0.714rem]`, etc.). Never use `text-[Npx]` — pixel classes don't scale with the font size setting.
-- **Font scaling**: `--font-scale` CSS variable is set on `<html>` inline by `applyFontScale()`. Root `font-size: calc(14px * var(--font-scale))`. SVG `fontSize` attributes must be multiplied by `useFontScale()` from `analyticsHooks.ts`.
+- **Font scaling**: `--font-scale` CSS variable is set on `<html>` inline by `applyFontScale()`. Root `font-size: calc(14px * var(--font-scale))`. SVG `fontSize` attributes must be multiplied by `useFontScale()` from `src/lib/viz/hooks.ts`.
 - **better-sqlite3 (v13+, N-API)**: better-sqlite3 ≥13 is built on the N-API, so one prebuilt binary (shipped inside the package at `node_modules/better-sqlite3/prebuilds/<platform>-<arch>.node`) is ABI-stable across Electron, the pkg Node 24 runtime, and system Node. `scripts/rebuild-native.js` fans the in-package prebuild out to `electron-native/<arch>/better_sqlite3_electron.node`, `pkg-native/<arch>/better_sqlite3.node`, and `vitest-native/better_sqlite3.node` (arch-separated so a single macOS build ships both arm64 + x64, resolved at runtime via `process.arch`). On macOS it also re-signs each copy ad-hoc with an explicit identifier (`codesign -s - -i cairn-better-sqlite3-<arch>`): the shipped prebuilds are linker-signed, and dyld SIGKILLs an ad-hoc-signed `pkg` binary that dlopens them. The only place a `Database` is constructed is `electron/db/client.ts` (Electron) and the MCP runtime (`mcp-server.ts`, dev) / packaged `cairn-mcp` via `resolveMcpNativeBinding()` — plus the readonly workspace-detection probe in `electron/mcp/db.ts` (`findDbPath`, readonly + closed immediately) — always passing `nativeBinding` for the arch-matched addon. The standalone `cairn-mcp` binary must run independently of the app (so agents can read/write the workspace while Cairn is closed), which is why it bundles its own Node runtime + sqlite rather than reusing the Electron one; `build-mcp-binary.js` stages the addon as a real sidecar next to the executable and re-signs it on macOS. Helper functions in `electron/db/queries.ts` and `electron/db/graph-queries.ts` may be imported from `electron/mcp/tools/*` — they run on the already-constructed `db` handle regardless of which TS file defines them (see `electron/mcp/tools/codebase.ts`, which already does `import * as q from "../../db/queries"`). Never construct a `Database` outside those bootstrap sites in production/runtime code. (Test code is exempt — vitest runs in plain Node via the `vitest-sqlite-shim.cjs` alias, and v13's `exports` map means the shim must import the package main entry, not `better-sqlite3/lib/*`.)
 - **onnxruntime-node is PINNED to 1.23.0 — do not bump.** We ship mac Intel (x64) alongside arm64, and onnxruntime-node dropped the `darwin/x64` prebuild in **1.24.0** (1.24–1.27 are macOS-arm64-only). The loader does a hard `require('../bin/napi-v6/${process.platform}/${process.arch}/onnxruntime_binding.node')` with no fallback, so ≥1.24 cannot start the embeddings server on an Intel Mac. `@huggingface/transformers` is on v4.2.0, which declares an exact `onnxruntime-node@1.24.3`; an npm `override` (`"onnxruntime-node": "1.23.0"` in `package.json`) forces it back. Bumping onnxruntime-node therefore requires either (a) cross-compiling onnxruntime from source for darwin-x64, or (b) an explicit decision to drop mac Intel support.
 
@@ -95,10 +95,12 @@ InsightsView
 ```
 
 Shared modules:
-- `analyticsUtils.ts` — `PRIORITY_COLOR`, `CANVAS_PAD`, `truncateName`, `HOUR_MS`, `DAY_MS`, etc.
-- `analyticsHooks.ts` — `useContainerDims`, `useScopeSets`, `useScopedData`, `useFontScale`
-- `AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasCallout>`, `<SvgTimeAxis>`
-- `analyticsUtils.ts` — shared constants (`PRIORITY_COLOR`, `CANVAS_PAD`), `resolveCssVar()` for canvas 2D context colour lookups, `truncateName`
+- `src/lib/viz/hooks.ts` — renderer-generic: `useFontScale`, `useContainerDims`, `useResizeObserver`, `useRelativePointer`, `useNow`, `useThemeRepaint` (also used by agent/, usage/ and the Overview radar)
+- `src/lib/viz/color.ts` — `resolveCssVar()` / `createCssVarReader()` for canvas-2D colour lookups, `withAlpha`, `tokenToCssVar`
+- `graph/analyticsHooks.ts` — Insights store selectors: `useScopeSets`, `useScopedData`
+- `graph/analyticsUtils.ts` — `PRIORITY_COLOR`, `PRIORITY_WEIGHT`, `CANVAS_PAD`, `truncateName`, `HOUR_MS`, `DAY_MS`
+- `graph/AnalyticsShared.tsx` — `<CanvasEmptyState>`, `<CanvasCallout>`, `<SvgTimeAxis>`
+- Tag colours: `TAG_PALETTE` in `src/lib/constants.ts`
 
 ## Store slices
 

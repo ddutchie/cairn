@@ -4,7 +4,8 @@ import React, { useMemo, useRef, useEffect, useState, useCallback } from "react"
 import * as d3 from "d3";
 import type { GraphNode } from "@/types";
 import { HOUR_MS, DAY_MS, floorHour, floorDay, truncateName, CANVAS_PAD } from "./analyticsUtils";
-import { useContainerDims, useScopeSets, useFontScale, useRelativePointer, useNow } from "./analyticsHooks";
+import { useScopeSets } from "./analyticsHooks";
+import { useContainerDims, useFontScale, useRelativePointer, useNow } from "@/lib/viz/hooks";
 import { CanvasCallout, CanvasEmptyState, SvgTimeAxis } from "./AnalyticsShared";
 
 export type RidgelineMode = "ridgeline" | "overlay" | "iso";
