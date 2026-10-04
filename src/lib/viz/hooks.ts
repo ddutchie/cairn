@@ -29,9 +29,14 @@ export function useFontScale(): number {
 // ── useResizeObserver ─────────────────────────────────────────────────────────
 
 /**
- * Calls `onResize(el)` once on mount and whenever `ref`'s element resizes.
- * The callback is read through a ref, so it may close over fresh state
- * without re-observing. Pass `deps` that change when the element remounts.
+ * Calls `onResize(el)` when `ref`'s element mounts and whenever it resizes.
+ *
+ * The element is re-checked after every render, so a ref that moves to a
+ * different node (an empty state that returns early, a loading branch that
+ * renders its own wrapper) is re-observed without the caller passing deps.
+ * The callback is read through a ref, so it may close over fresh state.
+ * `deps` re-run the callback on the current element when they change, for
+ * measurements that depend on content rather than size.
  */
 export function useResizeObserver<T extends Element>(
   ref: RefObject<T | null>,
@@ -39,27 +44,45 @@ export function useResizeObserver<T extends Element>(
   deps: readonly unknown[] = [],
 ): void {
   const cb = useRef(onResize);
-  useEffect(() => { cb.current = onResize; });
+  const observed = useRef<{ el: T; ro: ResizeObserver } | null>(null);
+  const measuredDeps = useRef(false);
+
   useEffect(() => {
+    cb.current = onResize;
     const el = ref.current;
+    if (observed.current?.el === el) return;
+    observed.current?.ro.disconnect();
+    observed.current = null;
     if (!el) return;
     const ro = new ResizeObserver(() => cb.current(el));
     ro.observe(el);
+    observed.current = { el, ro };
     cb.current(el);
-    return () => ro.disconnect();
+  });
+
+  useEffect(() => {
+    // The attach effect above already measured on mount.
+    if (!measuredDeps.current) { measuredDeps.current = true; return; }
+    if (observed.current) cb.current(observed.current.el);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- caller-supplied deps
-  }, [ref, ...deps]);
+  }, deps);
+
+  useEffect(() => () => {
+    observed.current?.ro.disconnect();
+    observed.current = null;
+  }, []);
 }
 
 // ── useContainerDims ──────────────────────────────────────────────────────────
 
 /**
  * Observes a container element and returns its pixel dimensions,
- * updating whenever it resizes.
+ * updating whenever it resizes or the ref moves to a new element.
  */
 export function useContainerDims(ref: RefObject<HTMLElement | null>) {
   const [dims, setDims] = useState({ width: 800, height: 500 });
-  useResizeObserver(ref, (el) => setDims({ width: el.clientWidth, height: el.clientHeight }));
+  useResizeObserver(ref, (el) => setDims((d) =>
+    d.width === el.clientWidth && d.height === el.clientHeight ? d : { width: el.clientWidth, height: el.clientHeight }));
   return dims;
 }
 
