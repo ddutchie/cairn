@@ -12,6 +12,9 @@ import {
   listAutomationRuns,
   listRecentAutomationRuns,
   countRunningAutomationRuns,
+  getAutomationDailyBudget,
+  setAutomationDailyBudget,
+  automationSpendSince,
   type AutomationEnv,
   type AutomationInput,
 } from "../db/automation-queries";
@@ -88,6 +91,13 @@ export function registerAutomationHandlers(ctx: DbContext): void {
   registerIpcHandle("db:automation:checkRequirements", (_e, { workspaceId, projectId, requires }: { workspaceId: string; projectId?: string | null; requires: Array<{ kind: "mcp" | "service"; name: string }> }) =>
     handle(() => checkRequirements(ctx.db, workspaceId, projectId ?? "", requires)),
   );
+  registerIpcHandle("db:automation:budget:get", () => handle(() => {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    return { budgetUsd: getAutomationDailyBudget(ctx.db), spentTodayUsd: automationSpendSince(ctx.db, dayStart.getTime()) };
+  }));
+  registerIpcHandle("db:automation:budget:set", (_e, { usd }: { usd: number | null }) =>
+    handle(() => ({ budgetUsd: setAutomationDailyBudget(ctx.db, typeof usd === "number" ? usd : null) })));
   registerIpcHandle("db:automation:runNow", (_e, { id }) => handle(() => {
     const runId = runAutomationNow({
       db: ctx.db,

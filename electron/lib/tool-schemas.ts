@@ -204,6 +204,26 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
+  claim_task: {
+    description: "Claim a task before working on it: sets the assignee to your agent label, logs it under the card's '## Progress' section, and moves it from Backlog/To Do to In Progress. Refuses if another agent holds it unless force=true.",
+    schema: z.object({
+      cardId:           sId,
+      agent:            z.string().describe("Short label for who is working on it, e.g. \"Claude Code\""),
+      force:            sBoolOpt.describe("Take over a task claimed by someone else"),
+      moveToInProgress: sBoolOpt.describe("Move Backlog/To Do cards to In Progress (default true)"),
+    }),
+  },
+
+  add_task_progress: {
+    description: "Log a progress update on a task (appended under its '## Progress' section, visible in card detail). Optionally move it to the project's review or done column when you finish — done also unblocks dependent tasks.",
+    schema: z.object({
+      cardId:  sId,
+      message: z.string().describe("One-line update: what changed, what's next, or what's blocking"),
+      agent:   sStrOpt.describe("Who is reporting (defaults to the card's assignee)"),
+      moveTo:  z.enum(["in_progress", "review", "done"]).optional().describe("Also move the card to the first column of this type"),
+    }),
+  },
+
   delete_task: {
     description: "Permanently delete a task card. Cannot be undone.",
     schema: z.object({ cardId: sId }),

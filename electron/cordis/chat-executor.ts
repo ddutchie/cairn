@@ -127,6 +127,8 @@ export async function executeTool(
     case "unlink_note_from_task":
     case "create_task":
     case "list_ready_tasks":
+    case "claim_task":
+    case "add_task_progress":
     case "list_overdue_tasks":
     case "list_tasks_due":
     case "list_folders":
@@ -365,7 +367,7 @@ export async function executeTool(
     
     // For task tools, the result contains ID and title.
     const isTask = [
-      "get_task", "create_task", "update_task"
+      "get_task", "create_task", "update_task", "claim_task", "add_task_progress"
     ].includes(name);
     
     if (isNote && typeof resObj.id === "string" && typeof resObj.title === "string") {

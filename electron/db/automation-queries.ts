@@ -437,3 +437,53 @@ export function recoverInterruptedRuns(
 export function bumpAutomationRunCount(db: Database.Database, id: string): void {
   db.prepare("UPDATE automations SET run_count = run_count + 1, updated_at = ? WHERE id = ?").run(ts(), id);
 }
+
+// ── Reliability: failure streaks, spend, budget ──────────────────────────────
+
+/** Number of most-recent finished runs that ended in "error", newest first, stopping at the first non-error. */
+export function consecutiveFailedRuns(db: Database.Database, automationId: string): number {
+  const rows = db
+    .prepare(`SELECT status FROM automation_runs
+              WHERE automation_id = ? AND status NOT IN ('pending', 'running')
+              ORDER BY created_at DESC, rowid DESC LIMIT 20`)
+    .all(automationId) as Array<{ status: string }>;
+  let n = 0;
+  for (const r of rows) {
+    if (r.status !== "error") break;
+    n++;
+  }
+  return n;
+}
+
+/** Total recorded automation LLM spend (USD) since `sinceMs`. Rows without a cost count as 0. */
+export function automationSpendSince(db: Database.Database, sinceMs: number): number {
+  const row = db
+    .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS total FROM llm_usage WHERE source = 'automation' AND created_at >= ?")
+    .get(sinceMs) as { total: number };
+  return row.total;
+}
+
+const BUDGET_KEY = "automation.dailyBudgetUsd";
+
+/** Daily automation budget in USD, or null when unlimited. */
+export function getAutomationDailyBudget(db: Database.Database): number | null {
+  try {
+    const row = db.prepare("SELECT value FROM app_kv WHERE key = ?").get(BUDGET_KEY) as { value: string } | undefined;
+    const n = row ? Number(row.value) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null; // pre-v59 DB
+  }
+}
+
+/** Set (positive USD) or clear (null / ≤0) the daily automation budget. */
+export function setAutomationDailyBudget(db: Database.Database, usd: number | null): number | null {
+  if (usd === null || !Number.isFinite(usd) || usd <= 0) {
+    db.prepare("DELETE FROM app_kv WHERE key = ?").run(BUDGET_KEY);
+    return null;
+  }
+  db.prepare(`INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+    .run(BUDGET_KEY, String(usd), ts());
+  return usd;
+}

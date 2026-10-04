@@ -233,6 +233,7 @@ export function toCard(row: DbRow) {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
+    completedAt: (row.completed_at ?? undefined) as string | undefined,
     version: (row.version ?? 0) as number,
   };
 }
@@ -293,7 +294,7 @@ export function toChatMessage(row: DbRow) {
 }
 
 /** The complete set of notification navigation-target types. */
-export const NOTIFICATION_TARGET_TYPES = ["note", "task", "automation", "approval"] as const;
+export const NOTIFICATION_TARGET_TYPES = ["note", "task", "automation", "approval", "session"] as const;
 export type NotificationTargetType = (typeof NOTIFICATION_TARGET_TYPES)[number];
 
 export interface McpNotification {

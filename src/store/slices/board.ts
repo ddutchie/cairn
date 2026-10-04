@@ -24,6 +24,7 @@ import {
   makeRestoreCardCmd,
   makeMoveCardToProjectCmd,
 } from "@/lib/commands/card-commands";
+import { completedAtAfterMove } from "@/lib/card-completion";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       version: 0,
       ...(extras?.dueDate ? { dueDate: extras.dueDate } : {}),
       ...(extras?.assignee ? { assignee: extras.assignee } : {}),
+      ...(col?.type === "done" ? { completedAt: now() } : {}),
     };
     set((s) => ({ cards: [...s.cards, card] }));
     get().persist();
@@ -179,7 +181,12 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       : {} as Partial<TaskCard>;
     set((s) => ({
       cards: s.cards.map((c) =>
-        c.id === cardId ? { ...c, ...patch, updatedAt: now() } : c
+        c.id !== cardId ? c : {
+          ...c,
+          ...patch,
+          ...(patch.columnId !== undefined ? { completedAt: completedAtAfterMove(c, patch.columnId, s.columns) } : {}),
+          updatedAt: now(),
+        }
       ),
     }));
     get().persist();
@@ -206,6 +213,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
     newColCards.splice(targetIndex, 0, {
       ...card,
       columnId: targetColumnId,
+      completedAt: completedAtAfterMove(card, targetColumnId, get().columns),
       updatedAt: now(),
     });
 

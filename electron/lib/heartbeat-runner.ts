@@ -482,7 +482,7 @@ export async function runAutomation(
   // must not be listed as artifacts. Persisted on the run row at completion.
   const ARTIFACT_TOOLS = new Set([
     "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template",
-    "create_task", "update_task", "bulk_update_task_status",
+    "create_task", "update_task", "bulk_update_task_status", "claim_task", "add_task_progress",
   ]);
   const artifacts: Array<{ type: "note" | "task"; id: string; title: string }> = [];
   const recordArtifact = (tool: string, ref: { type: "note" | "task"; id: string; title: string } | undefined) => {

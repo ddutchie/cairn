@@ -1408,6 +1408,56 @@ const MIGRATIONS: Migration[] = [
       END;
     `);
   },
+
+  // v58: task_cards.completed_at — when a card entered a `done`-type column
+  // (cleared when it leaves). Maintained by triggers so every writer — renderer
+  // IPC, cairn-mcp, the sync engine applying a peer's move, the file watcher —
+  // stamps it identically. A peer that already carries completed_at keeps its
+  // value (COALESCE); mobile, which doesn't know the column, gets it stamped on
+  // apply. Existing done cards are backfilled from updated_at (best estimate).
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(task_cards)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "completed_at")) {
+      db.exec("ALTER TABLE task_cards ADD COLUMN completed_at TEXT");
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_cards_completed_at ON task_cards(completed_at);
+      UPDATE task_cards SET completed_at = updated_at
+      WHERE completed_at IS NULL
+        AND column_id IN (SELECT id FROM board_columns WHERE type = 'done');
+
+      CREATE TRIGGER IF NOT EXISTS trg_cards_completed_ins AFTER INSERT ON task_cards
+      WHEN NEW.completed_at IS NULL
+        AND (SELECT type FROM board_columns WHERE id = NEW.column_id) = 'done'
+      BEGIN
+        UPDATE task_cards SET completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = NEW.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_cards_completed_upd AFTER UPDATE OF column_id ON task_cards
+      WHEN OLD.column_id IS NOT NEW.column_id
+      BEGIN
+        UPDATE task_cards SET completed_at = CASE
+          WHEN (SELECT type FROM board_columns WHERE id = NEW.column_id) = 'done'
+            THEN COALESCE(NEW.completed_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+          ELSE NULL
+        END
+        WHERE id = NEW.id;
+      END;
+    `);
+  },
+
+  // v59: app_kv — small per-workspace settings that belong with the workspace
+  // DB (both the app and the standalone cairn-mcp read it), e.g. the daily
+  // automation budget. Not synced: a spend limit is a per-device decision.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS app_kv (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

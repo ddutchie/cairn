@@ -26,6 +26,7 @@ export function get_task(db: Database.Database, snap: Snapshot, args: Record<str
     columnId: card.columnId, columnName: col?.name ?? "Unknown", columnType: col?.type ?? "custom",
     linkedNoteIds: card.linkedNoteIds, blockedByIds: card.blockedByIds ?? [],
     blockingCardIds,
+    assignee: card.assignee ?? null, completedAt: card.completedAt ?? null,
     projectId: card.projectId, createdAt: card.createdAt, updatedAt: card.updatedAt,
     version: getCardVersion(db, card.id) ?? 0,
   };
@@ -358,4 +359,95 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     }
   }
   return updated ?? { error: "Task not found after update" };
+}
+
+// ── Agent hand-off: claim + progress log ─────────────────────────────────────
+
+const PROGRESS_HEADING = "## Progress";
+
+/**
+ * Append a `- <stamp> · <who>: <message>` line under the card description's
+ * `## Progress` section, creating the section at the end when missing. The
+ * description stays plain markdown, so humans read the log in card detail.
+ */
+export function appendProgressEntry(description: string | null | undefined, who: string, message: string, now = new Date()): string {
+  const stamp = now.toISOString().slice(0, 16).replace("T", " ");
+  const line = `- ${stamp} · ${who.trim() || "agent"}: ${message.trim().replace(/\s*\n\s*/g, " ")}`;
+  const body = (description ?? "").replace(/\s+$/, "");
+  const lines = body ? body.split("\n") : [];
+  const h = lines.findIndex((l) => l.trim() === PROGRESS_HEADING);
+  if (h === -1) return [...(body ? [body, ""] : []), PROGRESS_HEADING, "", line].join("\n");
+  // Insert after the last line of the progress section (before the next heading).
+  let end = h + 1;
+  while (end < lines.length && !/^#{1,6}\s/.test(lines[end])) end++;
+  while (end > h + 1 && lines[end - 1].trim() === "") end--;
+  lines.splice(end, 0, line);
+  return lines.join("\n");
+}
+
+function firstColumnOfType(snap: Snapshot, projectId: string, type: string) {
+  return snap.columns
+    .filter((c) => c.projectId === projectId && c.type === type)
+    .sort((a, b) => (a.order as number) - (b.order as number))[0];
+}
+
+export function claim_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+  const agent = String(args.agent ?? "").trim();
+  if (!agent) return { error: "agent is required (a short label such as \"Claude Code\")" };
+  // Read-check-write in one transaction against the live row (not the snapshot)
+  // so two agents claiming at once can't both win, and no progress line is lost.
+  return db.transaction(() => claimTaskTx(db, snap, args, agent))();
+}
+
+function claimTaskTx(db: Database.Database, snap: Snapshot, args: Record<string, any>, agent: string) {
+  const { cardId, force = false, moveToInProgress = true } = args;
+  const card = q.getCardById(db, cardId as string);
+  if (!card || card.archivedAt) return { error: "Task not found (or archived)" };
+  const current = (card.assignee as string | undefined)?.trim();
+  if (current && current !== agent && !force) {
+    return { error: `Task is already claimed by "${current}". Pass force=true to take it over.` };
+  }
+  const patch: Parameters<typeof q.updateCard>[2] = {
+    assignee: agent,
+    description: appendProgressEntry(card.description, agent, current && current !== agent ? `took over from ${current}` : "claimed"),
+  };
+  const col = snap.columns.find((c) => c.id === card.columnId);
+  let movedTo: string | null = null;
+  if (moveToInProgress && col && ["backlog", "todo"].includes(col.type as string)) {
+    const target = firstColumnOfType(snap, card.projectId as string, "in_progress");
+    if (target) { patch.columnId = target.id as string; movedTo = target.name as string; }
+  }
+  const updated = q.updateCard(db, cardId as string, patch);
+  insertNotification(db, "claim_task", "Task claimed", `${agent} claimed "${card.title}"${movedTo ? ` → ${movedTo}` : ""}`, { type: "task", id: card.id });
+  return { ...updated, claimedBy: agent, movedTo };
+}
+
+export function add_task_progress(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+  const message = String(args.message ?? "").trim();
+  if (!message) return { error: "message is required" };
+  return db.transaction(() => addTaskProgressTx(db, snap, args, message))();
+}
+
+function addTaskProgressTx(db: Database.Database, snap: Snapshot, args: Record<string, any>, message: string) {
+  const { cardId, moveTo } = args;
+  const card = q.getCardById(db, cardId as string);
+  if (!card || card.archivedAt) return { error: "Task not found (or archived)" };
+  const who = String(args.agent ?? card.assignee ?? "agent");
+  const patch: Parameters<typeof q.updateCard>[2] = { description: appendProgressEntry(card.description, who, message) };
+  let target: (typeof snap.columns)[number] | undefined;
+  if (moveTo !== undefined) {
+    target = firstColumnOfType(snap, card.projectId as string, moveTo as string);
+    if (!target) return { error: `This project has no "${moveTo}" column` };
+    patch.columnId = target.id as string;
+  }
+  const updated = q.updateCard(db, cardId as string, patch);
+  // Finishing a task unblocks its dependents (same rule as bulk_update_task_status).
+  if (target?.type === "done") q.clearBlockersFromAll(db, [cardId as string]);
+  insertNotification(
+    db, "add_task_progress",
+    target ? `Task → ${target.name}` : "Task progress",
+    `${who} on "${card.title}": ${message.length > 120 ? `${message.slice(0, 117)}…` : message}`,
+    { type: "task", id: card.id },
+  );
+  return { ...updated, movedTo: target?.name ?? null };
 }

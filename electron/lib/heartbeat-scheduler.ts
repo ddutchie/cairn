@@ -17,8 +17,13 @@
 import type Database from "better-sqlite3";
 import { computeNextRun, parseSchedule } from "./automation-schedule";
 import {
+  automationSpendSince,
   bumpAutomationRunCount,
+  consecutiveFailedRuns,
   createAutomationRun,
+  getAutomationById,
+  getAutomationDailyBudget,
+  getAutomationRunById,
   hasInFlightRun,
   listDueAutomations,
   updateAutomation,
@@ -27,6 +32,12 @@ import {
   type AutomationRun,
 } from "../db/automation-queries";
 import { errMsg } from "../host-shared/errors";
+import { insertNotification } from "../mcp/db";
+
+/** Pause an automation after this many failed runs in a row. */
+export const PAUSE_AFTER_FAILURES = 3;
+/** First retry delay after a failure; doubles per consecutive failure (5m, 10m). */
+export const RETRY_BASE_MS = 5 * 60_000;
 
 export interface HeartbeatSchedulerOptions {
   /** Live DB accessor — re-read every tick so workspace reinitialise is transparent. */
@@ -46,6 +57,8 @@ export class HeartbeatScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private tickInFlight: Promise<void> | null = null;
   private running = false;
+  /** Local day (YYYY-MM-DD) we last notified "budget reached" for, so it's once a day. */
+  private budgetNotifiedDay: string | null = null;
 
   constructor(opts: HeartbeatSchedulerOptions) {
     this.opts = opts;
@@ -144,9 +157,67 @@ export class HeartbeatScheduler {
       return;
     }
 
+    if (this.overBudget(db, automation, nowIso)) return;
+
     bumpAutomationRunCount(db, automation.id);
     const run = createAutomationRun(db, automation.id, "running");
     this.spawn(run, automation);
+  }
+
+  /**
+   * Daily automation budget gate. When today's recorded automation spend has
+   * reached the workspace budget, record a skipped run (visible in the run
+   * history) instead of firing, and notify once per day.
+   */
+  private overBudget(db: Database.Database, automation: Automation, nowIso: string): boolean {
+    const budget = getAutomationDailyBudget(db);
+    if (budget === null) return false;
+    const now = new Date(nowIso);
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const spent = automationSpendSince(db, dayStart.getTime());
+    if (spent < budget) return false;
+    const reason = `Daily automation budget of $${budget.toFixed(2)} reached ($${spent.toFixed(2)} spent today)`;
+    const run = createAutomationRun(db, automation.id, "skipped");
+    updateAutomationRun(db, run.id, { error: reason, finishedAt: nowIso });
+    this.opts.log?.(`[heartbeat] "${automation.name}" skipped: ${reason}`);
+    const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+    if (this.budgetNotifiedDay !== day) {
+      this.budgetNotifiedDay = day;
+      insertNotification(db, "automation_run", "Automation budget reached", `${reason}. Scheduled runs are skipped until tomorrow or until you raise the budget.`, { type: "automation", id: automation.id });
+    }
+    return true;
+  }
+
+  /**
+   * Failure policy, applied after every scheduled run: pause the automation
+   * after PAUSE_AFTER_FAILURES errors in a row; otherwise pull a recurring
+   * automation's next run forward to a backoff retry (5m, 10m, …) when that
+   * comes before its next scheduled time. 'once' automations are not retried.
+   */
+  private applyFailurePolicy(db: Database.Database, runId: string, automation: Automation): void {
+    const run = getAutomationRunById(db, runId);
+    if (run?.status !== "error") return;
+    const fails = consecutiveFailedRuns(db, automation.id);
+    const current = getAutomationById(db, automation.id);
+    if (!current?.enabled) return;
+    // A retry counts as a run; when the last allowed run failed there's nothing
+    // left to retry with (the next tick would just disable it silently).
+    if (current.maxRuns !== null && current.runCount >= current.maxRuns) return;
+    if (fails >= PAUSE_AFTER_FAILURES) {
+      updateAutomation(db, automation.id, { enabled: false, nextRunAt: current.nextRunAt });
+      const last = run.error ? ` Last error: ${run.error.slice(0, 160)}` : "";
+      insertNotification(db, "automation_run", `Automation paused: "${automation.name}"`, `Paused after ${fails} failed runs in a row. Fix the cause, then turn it back on.${last}`, { type: "automation", id: automation.id });
+      this.opts.log?.(`[heartbeat] "${automation.name}" paused after ${fails} consecutive failures`);
+      return;
+    }
+    if (automation.scheduleKind === "once") return;
+    const now = this.opts.now?.() ?? Date.now();
+    const retryAt = now + RETRY_BASE_MS * 2 ** Math.max(0, fails - 1);
+    if (new Date(current.nextRunAt).getTime() > retryAt) {
+      updateAutomation(db, automation.id, { nextRunAt: new Date(retryAt).toISOString() });
+      this.opts.log?.(`[heartbeat] "${automation.name}" failed; retrying at ${new Date(retryAt).toISOString()}`);
+    }
   }
 
   /**
@@ -201,6 +272,13 @@ export class HeartbeatScheduler {
             error: errMsg(err),
             finishedAt: new Date().toISOString(),
           });
+        }
+      }
+      if (db) {
+        try {
+          this.applyFailurePolicy(db, run.id, automation);
+        } catch (err) {
+          this.opts.log?.(`[heartbeat] failure policy error for "${automation.name}": ${String(err)}`);
         }
       }
     })().catch(() => { /* runner errors already handled above */ });

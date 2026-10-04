@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { isView } from "@/lib/views";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
+import { QuickCapture } from "@/components/layout/QuickCapture";
 
 export default function Home() {
   const [pendingTutorial, setPendingTutorial] = useState(false);
@@ -510,6 +511,7 @@ export default function Home() {
       )}
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />
       <NewFeatureModal onClose={handleNewFeatureModalClose} />
+      <QuickCapture />
       <AppTutorial />
       <AppOverlayLayer activeView={activeView} activeProjectId={activeProjectId} />
       <AppStatusBar activeView={activeView} activeProjectId={activeProjectId} />

@@ -3,7 +3,7 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject } from "../db/queries";
-import { createAutomation, createAutomationRun, getAutomationById, listAutomationRuns, updateAutomationRun, type Automation, type AutomationRun } from "../db/automation-queries";
+import { createAutomation, createAutomationRun, getAutomationById, listAutomationRuns, setAutomationDailyBudget, updateAutomationRun, type Automation, type AutomationRun } from "../db/automation-queries";
 import { HeartbeatScheduler } from "./heartbeat-scheduler";
 
 const T0 = new Date("2026-08-03T12:00:00Z");
@@ -179,5 +179,72 @@ describe("HeartbeatScheduler", () => {
     await flush();
     expect(fired.length).toBe(1);
     expect(listAutomationRuns(db, id).length).toBe(1);
+  });
+});
+
+describe("HeartbeatScheduler — failure policy and budget", () => {
+  const failing = async (run: AutomationRun) => {
+    updateAutomationRun(db, run.id, { status: "error", error: "connector down", finishedAt: T0.toISOString() });
+  };
+
+  it("pulls the next run forward to a 5-minute retry after a failure", async () => {
+    const { id } = makeAutomation();
+    const s = makeScheduler(failing);
+    await s.tick();
+    await flush();
+    expect(getAutomationById(db, id)!.nextRunAt).toBe(new Date(T0.getTime() + 5 * 60_000).toISOString());
+  });
+
+  it("pauses after three failed runs in a row and notifies", async () => {
+    const { id } = makeAutomation();
+    for (let i = 0; i < 2; i++) {
+      const r = createAutomationRun(db, id, "running");
+      updateAutomationRun(db, r.id, { status: "error", finishedAt: T0.toISOString() });
+    }
+    const s = makeScheduler(failing);
+    await s.tick();
+    await flush();
+    expect(getAutomationById(db, id)!.enabled).toBe(false);
+    const n = db.prepare("SELECT title FROM mcp_notifications").all() as Array<{ title: string }>;
+    expect(n.map((x) => x.title)).toContain('Automation paused: "Test automation"');
+  });
+
+  it("does not retry 'once' automations", async () => {
+    const at = new Date(T0.getTime() - 60_000).toISOString();
+    const { id } = makeAutomation({ scheduleKind: "once", scheduleExpr: at, nextRunAt: at });
+    const before = getAutomationById(db, id)!.nextRunAt;
+    const s = makeScheduler(failing);
+    await s.tick();
+    await flush();
+    expect(getAutomationById(db, id)!.nextRunAt).toBe(before);
+  });
+
+  it("skips runs once the daily budget is spent", async () => {
+    const { id } = makeAutomation();
+    setAutomationDailyBudget(db, 1);
+    db.prepare("INSERT INTO llm_usage (id, source, model, cost_usd, created_at) VALUES ('u1', 'automation', 'm', 1.25, ?)").run(T0.getTime());
+    const s = makeScheduler();
+    await s.tick();
+    await flush();
+    expect(fired).toHaveLength(0);
+    const runs = listAutomationRuns(db, id);
+    expect(runs[0].status).toBe("skipped");
+    expect(runs[0].error).toMatch(/budget of \$1\.00 reached/);
+  });
+});
+
+describe("HeartbeatScheduler — failure policy respects max_runs", () => {
+  it("does not schedule a retry when the last allowed run failed", async () => {
+    const { id } = makeAutomation({ maxRuns: 1 });
+    const before = getAutomationById(db, id)!;
+    const s = makeScheduler(async (run) => {
+      updateAutomationRun(db, run.id, { status: "error", finishedAt: T0.toISOString() });
+    });
+    await s.tick();
+    await flush();
+    const after = getAutomationById(db, id)!;
+    // Advanced to the next scheduled slot (1h), not pulled forward to a 5m retry.
+    expect(after.nextRunAt).not.toBe(new Date(T0.getTime() + 5 * 60_000).toISOString());
+    expect(new Date(after.nextRunAt).getTime()).toBeGreaterThan(new Date(before.nextRunAt).getTime());
   });
 });

@@ -184,43 +184,43 @@ const FEATURES = [
     ],
   },
   {
-    id: "v3.0.0-unified-runtime",
-    version: "v3.0.0",
-    title: "Unified Runtime & Shell",
-    category: "Foundations",
-    description:
-      "Cairn 3.0 replaces the fragmented Chat/Coding/Automation stacks with one Cordis + DSH engine, makes every conversation a portable session, and tightens the shell around it — Rail, Instrument Overview, and health radar included.",
+    id: "v3.0.x",
+    version: "v3.0.x",
+    title: "Cairn 3.0 — Highlights",
+    category: "Release Highlights",
+    description: "Everything that shipped across the Cairn 3.0 line: one runtime for chat, coding and automations, durable subagents, and focused graph neighbourhoods.",
     highlights: [
-      "One Engine: Chat, coding, automations, and one-shots share the same Cordis/dsh runtime, tool/command/skill registries, and dsh-native Plan Mode.",
-      "One Session Everywhere: Append-only JSONL history, a single session:* transport, and session-bound pop-outs with a project-aware browser and truthful running state.",
-      "Steerable Conversations: Reasoning-effort pill, per-message throughput/latency, pinned provider protocol, and a context ring that reconciles live.",
-      "Calmer Shell: Rail + dock as default, Instrument Overview with KPIs and horizon flow, 6-axis health radar, Settings 14→8, and a refined ⌘K palette.",
+      "Unified Runtime: Chat, coding, automations and one-shots share one Cordis/dsh engine, with portable sessions, a calmer shell and the Instrument Overview.",
+      "Durable Subagents: Delegate to background subagents you can message mid-run, stop, and browse from the session header, with background jobs to match.",
+      "Graph Neighbourhoods: Focus the Knowledge Graph on one node and its 1–3 hop neighbourhood, with layout running in the background.",
     ],
   },
   {
-    id: "v3.0.3-subagents",
-    version: "v3.0.3",
-    title: "Durable Subagents",
+    id: "v3.1.0-delivery",
+    version: "v3.1.0",
+    title: "Know What Shipped",
+    category: "Planning",
+    description:
+      "Cards now remember when they were finished, so the Overview can answer what shipped this week, what's slipping, and turn it into a review note in one click.",
+    highlights: [
+      "Shipped This Week: Everything that reached Done in the last 7 days, archived cards included.",
+      "At Risk: Overdue cards, blocked cards due soon, and work stuck in progress for a week.",
+      "Review Notes: Generate a weekly review or daily brief as a plain markdown note in your project.",
+      "Saved Board Views: Filter by assignee, tags, due date or blocked, and save the combination as a view.",
+    ],
+  },
+  {
+    id: "v3.1.0-attention",
+    version: "v3.1.0",
+    title: "Agents That Tap You on the Shoulder",
     category: "Agents",
     description:
-      "Agents can now delegate to durable subagents that stick around: start one with delegate, message it mid-run, stop its turn, and browse every child from the session header — with background jobs to match.",
+      "Stop babysitting agent sessions and overnight automations: Cairn tells you when something needs you, and keeps automations from failing quietly or overspending.",
     highlights: [
-      "Delegate: Start a background subagent that keeps its own conversation — message it later with send_message instead of starting over.",
-      "Subagent Catalog: The session header lists every child with live activity; message a running child or stop its turn in one click.",
-      "Background Jobs: Long delegations run as jobs with output collection and kill support, surfaced to the model.",
-    ],
-  },
-  {
-    id: "v3.0.13-graph-neighbourhood",
-    version: "v3.0.13",
-    title: "Graph Neighbourhoods",
-    category: "Knowledge Graph",
-    description:
-      "Focus the Knowledge Graph on one note, task, tag or project and see only what's around it, while large graphs lay themselves out without slowing the rest of the app.",
-    highlights: [
-      "Neighbourhood Mode: Pick a node, choose Show neighbourhood, and see everything within 1, 2 or 3 links of it. Press Esc to return to the whole graph.",
-      "Smooth Layout: The graph's layout runs in the background, so typing, scrolling and panels stay responsive while a big graph settles.",
-      "Picks Up Where You Left Off: Reopening the graph starts from its last layout instead of rebuilding it from scratch.",
+      "Agent Notifications: A system notification when a session finishes, fails, or waits for an approval or answer while Cairn is in the background.",
+      "Live Card Status: Cards show when an agent is working on them, and when it needs you.",
+      "Quick Capture: ⌘⇧Space from any app adds a card or note without leaving what you're doing.",
+      "Self-Healing Automations: Retries with backoff, auto-pause after repeated failures, and a daily spend budget.",
     ],
   },
 ];

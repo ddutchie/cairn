@@ -81,7 +81,7 @@ export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Re
     conventions: {
       notes: "Raw markdown in 'content'. Plain text for search/embeddings is derived automatically — do not set any separate text field.",
       dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",
-      tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks to find work that can start now — it filters out blocked tasks.",
+      tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks to find work that can start now — it filters out blocked tasks. When you work on a task as an external agent, call claim_task first, then add_task_progress as you go (moveTo=\"review\" or \"done\" when finished).",
       dependencies: "Use update_task with blockedBy to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use update_task with unblockFrom to remove a dependency explicitly.",
       priority: ["low", "medium", "high", "urgent"],
       projectStatus: ["active", "on_hold", "completed", "archived"],

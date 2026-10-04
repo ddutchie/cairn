@@ -5,8 +5,9 @@
  * Returns an `updateBadge` function the caller can use to push new unread counts.
  */
 
-import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
+import { app, Tray, Menu, nativeImage } from "electron";
 import path from "path";
+import { openQuickCapture, type MainWindowGetter } from "./quick-capture";
 
 const isDev = !app.isPackaged;
 
@@ -15,7 +16,8 @@ export interface TrayHandle {
   updateBadge: (count: number) => void;
 }
 
-export function createTray(win: BrowserWindow): TrayHandle {
+export function createTray(getWin: MainWindowGetter): TrayHandle {
+  const showMain = () => { const w = getWin(); if (w && !w.isDestroyed()) { w.show(); w.focus(); } };
   const trayIconDir = isDev
     ? path.join(__dirname, "..", "..", "public")
     : path.join(process.resourcesPath, "app.asar", "out");
@@ -49,7 +51,13 @@ export function createTray(win: BrowserWindow): TrayHandle {
       { type: "separator" },
       {
         label: "Open Cairn",
-        click: () => { win.show(); win.focus(); },
+        click: showMain,
+      },
+      {
+        label: "Quick capture…",
+        accelerator: "CommandOrControl+Shift+Space",
+        registerAccelerator: false,
+        click: () => openQuickCapture(getWin),
       },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() },
@@ -58,7 +66,7 @@ export function createTray(win: BrowserWindow): TrayHandle {
 
   tray.setContextMenu(buildMenu(0));
 
-  tray.on("click", () => { win.show(); win.focus(); });
+  tray.on("click", showMain);
 
   /**
    * Set the dock/tray attention badge. This is the COMBINED attention count

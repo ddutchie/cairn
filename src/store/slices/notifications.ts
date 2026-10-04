@@ -20,8 +20,8 @@ export interface McpNotification {
   body: string;
   read: boolean;
   createdAt: string;
-  /** Optional navigation target (note/task/automation) the notification links to. */
-  targetType: "note" | "task" | "automation" | "approval" | null;
+  /** Optional navigation target (note/task/automation/agent session) the notification links to. */
+  targetType: "note" | "task" | "automation" | "approval" | "session" | null;
   targetId: ID | null;
 }
 

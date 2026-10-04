@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -38,6 +38,10 @@ import { CardDetailModal } from "./card-detail";
 import type { TaskCard, BoardColumn, Priority } from "@/types";
 import { getZoneHit, resolveCardDrop } from "./board-dnd";
 import { setActiveCrossProjectDrag } from "@/lib/cross-project-dnd";
+import { EMPTY_BOARD_FILTER, cardMatchesFilter, assigneesOf, isFilterActive, type BoardFilter } from "@/lib/board-filters";
+import { BoardFilterMenu, BoardViewsMenu } from "./board-filter-menus";
+import { RunningSessionsContext } from "./card-agent-badge";
+import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 
 /**
  * Cross-project drag bridge (board → project sidebar).
@@ -186,9 +190,14 @@ function arePropsEqual(prev: BoardColumnItemProps, next: BoardColumnItemProps): 
   );
 }
 
+/** Stable empty list so memoized filters don't recompute with no project open. */
+const NO_COLUMNS: BoardColumn[] = [];
+
 export function KanbanBoard() {
   const {
     activeProjectId,
+    cards: allCards,
+    tags,
     getProjectColumns,
     getColumnCards,
     getArchivedColumnCards,
@@ -210,6 +219,7 @@ export function KanbanBoard() {
     // Selector functions (getColumnCards etc.) read from get() but are stable
     // references — they won't cause a re-render on their own when cards change.
     cards:                    s.cards,
+    tags:                     s.tags,
     getProjectColumns:        s.getProjectColumns,
     getColumnCards:           s.getColumnCards,
     getArchivedColumnCards:   s.getArchivedColumnCards,
@@ -233,9 +243,17 @@ export function KanbanBoard() {
   const [overId, setOverId]                 = useState<string | null>(null);
   const [deleteFlashing, setDeleteFlashing] = useState(false);
 
-  // Board filters — priority toggles + free-text search (⌘F focuses search)
-  const [boardFilter, setBoardFilter]       = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<Priority[]>([]);
+  // Board filters — priority toggles, free-text search (⌘F focuses search),
+  // and the Filters menu (assignee / tags / due / blocked). Saved views apply a
+  // whole BoardFilter at once.
+  const [filter, setFilter]                 = useState<BoardFilter>(EMPTY_BOARD_FILTER);
+  // Filters are per project: a tag or assignee from another project would
+  // silently hide every card. Reset during render when the project changes.
+  const [filterProjectId, setFilterProjectId] = useState(activeProjectId);
+  if (filterProjectId !== activeProjectId) {
+    setFilterProjectId(activeProjectId);
+    setFilter(EMPTY_BOARD_FILTER);
+  }
   const filterInputRef                      = useRef<HTMLInputElement>(null);
 
   // Archive view
@@ -248,29 +266,39 @@ export function KanbanBoard() {
         e.preventDefault();
         setTimeout(() => { filterInputRef.current?.focus(); filterInputRef.current?.select(); }, 0);
       }
-      if (e.key === "Escape") {
-        setBoardFilter("");
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        setFilter((f) => ({ ...f, text: "" }));
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const columns = activeProjectId ? getProjectColumns(activeProjectId) : [];
+  const columns = activeProjectId ? getProjectColumns(activeProjectId) : NO_COLUMNS;
+  // Running coding sessions, shared with every card's agent badge.
+  const runningSessionIds = useSessionRunningIds(true);
 
   function togglePriority(p: Priority) {
-    setPriorityFilter((cur) => cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]);
+    setFilter((f) => ({ ...f, priorities: f.priorities.includes(p) ? f.priorities.filter((x) => x !== p) : [...f.priorities, p] }));
   }
 
-  /** True when a card passes the active priority toggles AND the search query. */
-  const matchesFilters = useCallback((c: TaskCard) => {
-    if (priorityFilter.length > 0 && !priorityFilter.includes(c.priority)) return false;
-    if (boardFilter) {
-      const q = boardFilter.toLowerCase();
-      return c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q);
-    }
-    return true;
-  }, [priorityFilter, boardFilter]);
+  const projectCards = useMemo(
+    () => allCards.filter((c) => c.projectId === activeProjectId && !c.archivedAt),
+    [allCards, activeProjectId],
+  );
+  const assignees = useMemo(() => assigneesOf(projectCards), [projectCards]);
+  const projectWorkspaceId = projectCards[0]?.workspaceId ?? columns[0]?.workspaceId;
+  const workspaceTags = useMemo(() => tags.filter((t) => t.workspaceId === projectWorkspaceId), [tags, projectWorkspaceId]);
+  const openCardIds = useMemo(() => {
+    const doneCols = new Set(columns.filter((c) => c.type === "done").map((c) => c.id));
+    return new Set(projectCards.filter((c) => !doneCols.has(c.columnId)).map((c) => c.id));
+  }, [projectCards, columns]);
+
+  /** True when a card passes every active board filter. */
+  const matchesFilters = useCallback(
+    (c: TaskCard) => cardMatchesFilter(c, filter, openCardIds),
+    [filter, openCardIds],
+  );
 
   const sensors = useSensors(
     // Slight distance increase prevents accidental drags on trackpads
@@ -521,7 +549,7 @@ export function KanbanBoard() {
   // No more portal — action zones are rendered inline in the title bar.
 
   return (
-    <>
+    <RunningSessionsContext.Provider value={runningSessionIds}>
       <DndContext
         sensors={sensors}
         collisionDetection={boardCollision}
@@ -602,7 +630,7 @@ export function KanbanBoard() {
             <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
               <div className="flex items-center gap-1">
                 {PRIORITY_OPTIONS.map((p) => (
-                  <PriorityChip key={p} p={p} active={priorityFilter.includes(p)} onClick={() => togglePriority(p)} />
+                  <PriorityChip key={p} p={p} active={filter.priorities.includes(p)} onClick={() => togglePriority(p)} />
                 ))}
               </div>
               <div className="w-px h-5 bg-[var(--border)]" />
@@ -611,13 +639,15 @@ export function KanbanBoard() {
                 <input
                   ref={filterInputRef}
                   type="text"
-                  value={boardFilter}
-                  onChange={(e) => setBoardFilter(e.target.value)}
+                  value={filter.text}
+                  onChange={(e) => setFilter((f) => ({ ...f, text: e.target.value }))}
                   placeholder="Search cards…"
                   className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
-              {(boardFilter || priorityFilter.length > 0) && (() => {
+              <BoardFilterMenu filter={filter} onChange={setFilter} assignees={assignees} tags={workspaceTags} />
+              {activeProjectId && <BoardViewsMenu projectId={activeProjectId} filter={filter} onApply={setFilter} />}
+              {isFilterActive(filter) && (() => {
                 const matchCount = columns.reduce((n, col) =>
                   n + getColumnCards(col.id).filter(matchesFilters).length, 0);
                 return (
@@ -626,7 +656,7 @@ export function KanbanBoard() {
                       {matchCount} match{matchCount === 1 ? "" : "es"}
                     </span>
                     <button
-                      onClick={() => { setBoardFilter(""); setPriorityFilter([]); }}
+                      onClick={() => setFilter(EMPTY_BOARD_FILTER)}
                       className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
                       aria-label="Clear filters"
                     >
@@ -756,7 +786,7 @@ export function KanbanBoard() {
             </div>
           </form>
       </ModalShell>
-    </>
+    </RunningSessionsContext.Provider>
   );
 }
 

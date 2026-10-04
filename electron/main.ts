@@ -51,6 +51,7 @@ import { initUsageRecorder } from "./lib/usage-recorder";
 import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 import { errMsg } from "./host-shared/errors";
+import { registerQuickCapture } from "./lib/quick-capture";
 
 const isDev = !app.isPackaged;
 let shutdownStarted = false;
@@ -157,6 +158,9 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+/** Windows built by createWindow — the only ones the tray and Quick Capture may target. */
+const mainWindows = new WeakSet<BrowserWindow>();
+
 function createWindow(): BrowserWindow {
   const isWin = process.platform === "win32";
   const { surface, bg } = readThemeSurface();
@@ -194,6 +198,7 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   });
+  mainWindows.add(win);
 
   if (isDev) {
     win.loadURL("http://localhost:3000");
@@ -539,7 +544,16 @@ app.whenReady().then(async () => {
   }
 
   // ── System tray ───────────────────────────────────────────────────────
-  const { updateBadge } = createTray(win);
+  // The first window can be closed on macOS (the app stays alive) and the
+  // dock recreates it via the activate handler — resolve lazily so the tray
+  // and the global shortcut keep reaching a live window.
+  const getMainWindow = (): BrowserWindow | null => {
+    if (!win.isDestroyed()) return win;
+    const open = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && mainWindows.has(w));
+    return open[0] ?? createWindow();
+  };
+  const { updateBadge } = createTray(getMainWindow);
+  registerQuickCapture(getMainWindow);
 
   // ── Change-feed attribution ───────────────────────────────────────────
   // Record which renderer window produced each db:* write's feed rows, so the

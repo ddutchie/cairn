@@ -149,6 +149,8 @@ export interface TaskCard {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
+  /** When the card entered a done-type column (cleared if it leaves). Set by a DB trigger. */
+  completedAt?: string;
   /** Monotonically incrementing write counter for optimistic concurrency. */
   version: number;
 }
