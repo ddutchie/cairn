@@ -49,6 +49,7 @@ import {
   DEEP_LINK_SCHEME,
   type OAuthCallback,
 } from "../../shared/chat/oauth-callback";
+import { errMsg } from "../host-shared/errors";
 
 export { parseOAuthCallback, OAUTH_REDIRECT_URI, DEEP_LINK_SCHEME };
 export type { OAuthCallback };
@@ -290,7 +291,7 @@ export function loopbackPortOf(redirectUri: string): number {
  * its own, so point them at the pre-registered client id / redirect URI fields.
  */
 function oauthErrorHint(e: unknown, cfg: { redirectUri?: string }): string {
-  const raw = e instanceof Error ? e.message : String(e);
+  const raw = errMsg(e);
   if (/does not support dynamic client registration|registration_endpoint/i.test(raw)) {
     return [
       `This server does not support automatic registration (incompatible auth server).`,
@@ -476,7 +477,7 @@ export async function startServerAuth(
       onComplete?.({
         status: "error",
         serverId: cfg.id,
-        error: e instanceof Error ? e.message : String(e),
+        error: errMsg(e),
       });
     } finally {
       // Only clear the map entry if it still points at OUR listener — a newer
@@ -537,7 +538,7 @@ async function startServerAuthDeepLink(
       return { status: "redirected" };
     }
     await client.close().catch(() => {});
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: errMsg(e) };
   }
 }
 
@@ -566,7 +567,7 @@ export async function completeServerAuth(cb: OAuthCallback): Promise<AuthComplet
     return { status: "authorized", serverId: p.serverId };
   } catch (e) {
     await p.client.close().catch(() => {});
-    return { status: "error", serverId: p.serverId, error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", serverId: p.serverId, error: errMsg(e) };
   }
 }
 
@@ -723,7 +724,7 @@ export async function startServiceAuth(
       onComplete?.({
         status: "error",
         serverId: cfg.id,
-        error: e instanceof Error ? e.message : String(e),
+        error: errMsg(e),
       });
     } finally {
       if (activeServiceLoopbacks.get(cfg.id) === listener) {

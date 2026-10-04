@@ -43,6 +43,7 @@ import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, re
 import { deleteAutomationWithCleanup } from "../lib/automation-delete";
 import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
+import { errMsg } from "../host-shared/errors";
 
 const reindexInFlight = new Map<string, Promise<boolean>>();
 
@@ -905,7 +906,7 @@ export function registerDbHandlers(ctx: DbContext): void {
       const next = computeNextRun(parseSchedule(scheduleExpr), new Date(), timezone ?? undefined);
       return { nextRunAt: next ? next.toISOString() : null };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   }));
 

@@ -16,6 +16,7 @@ import type { EmbedTask } from "../../embeddings/types";
 import { EMBED_MODEL_ID, EMBED_DIM } from "../../embeddings/types";
 import { withTaskPrefix } from "../../embeddings/prefix";
 import { verifyModel, verifyOnDisk } from "../model-manager";
+import { errMsg } from "../../host-shared/errors";
 
 export interface EmbedProgress {
   status: string;
@@ -163,7 +164,7 @@ export class EmbeddingsAdapter implements ModelManagingAdapter {
     } catch (err) {
       this.updateManifestEntry(modelId, {
         status: "error",
-        error: err instanceof Error ? err.message : String(err),
+        error: errMsg(err),
       });
       throw err;
     }

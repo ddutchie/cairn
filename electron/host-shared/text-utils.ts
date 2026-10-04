@@ -4,6 +4,11 @@
  * Electron APIs) so they can be imported by both without ABI concerns.
  */
 
+/** Strip characters that are invalid in filenames on macOS/Windows. */
+export function sanitizeFilename(name: string): string {
+  return name.replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
+}
+
 /**
  * Convert a string to a filesystem-safe slug.
  * Preserves spaces as hyphens, strips characters illegal on any major OS.

@@ -12,6 +12,7 @@ import {
   type NeighboursResult,
 } from "../../db/graph-queries";
 import { insertNotification } from "../db";
+import { errMsg } from "../../host-shared/errors";
 
 /**
  * Compact a `GraphNode` for the MCP return surface.
@@ -307,7 +308,7 @@ async function runSemanticSearch(
     insertNotification(db, opts.toolName, opts.notifyTitle, `query="${String(query).slice(0, 60)}" → ${results.length} hits`);
     return { query, model, results };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errMsg(e);
     return { error: msg };
   }
 }

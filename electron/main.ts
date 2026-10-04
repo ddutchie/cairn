@@ -50,6 +50,7 @@ import { registerChatPopoutHandlers } from "./chat-popout";
 import { initUsageRecorder } from "./lib/usage-recorder";
 import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
+import { errMsg } from "./host-shared/errors";
 
 const isDev = !app.isPackaged;
 let shutdownStarted = false;
@@ -296,7 +297,7 @@ app.whenReady().then(async () => {
   } catch (err) {
     dlog("main", "session root is NOT writable — chat history will not persist across restarts", {
       sessionRoot,
-      error: err instanceof Error ? err.message : String(err),
+      error: errMsg(err),
     });
   }
 
@@ -403,7 +404,7 @@ app.whenReady().then(async () => {
     });
     bootErrors = result.errors;
   } catch (err) {
-    bootErrors.push(err instanceof Error ? err.message : String(err));
+    bootErrors.push(errMsg(err));
   }
 
   // ── Create main window ─────────────────────────────────────────────────

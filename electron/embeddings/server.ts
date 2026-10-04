@@ -4,6 +4,7 @@ import * as os from "os";
 
 import { embed, loadPipeline, setCacheDir, isLoaded, loadedModelId, type EmbedProgress } from "./pipeline";
 import { EmbedRequest, EMBED_MODEL_ID, EMBED_DIM } from "./types";
+import { errMsg } from "../host-shared/errors";
 
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log";
@@ -88,7 +89,7 @@ let pipelineLoadPromise: Promise<void> | null = null;
 function loadOnce(model: string): Promise<void> {
   if (!pipelineLoadPromise) {
     pipelineLoadPromise = ensurePipelineLoaded(model).catch((e) => {
-      emit({ kind: "error", msg: e instanceof Error ? e.message : String(e) });
+      emit({ kind: "error", msg: errMsg(e) });
       pipelineLoadPromise = null;
       throw e;
     });
@@ -143,7 +144,7 @@ function buildServer(configuredModel: string): http.Server {
         const body = await readBody(req);
         await handleEmbed(body, res, configuredModel);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errMsg(e);
         emit({ kind: "error", msg });
         const errAny = e as { statusCode?: number };
         const status = e instanceof HttpError ? e.status : errAny.statusCode ?? 500;

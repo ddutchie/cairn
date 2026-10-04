@@ -46,6 +46,7 @@ import {
   onPtySessionExit,
   spawnShellPty,
 } from "./host-store";
+import { errMsg } from "../host-shared/errors";
 
 /** Backend registry type selected by `terminal_open { type }`. */
 export const CAIRN_TERMINAL_BACKEND_TYPE = "shell";
@@ -411,7 +412,7 @@ export class CairnPtySession implements TerminalBackendSession {
     try {
       this.adapter.signal(this.sessionId, signal);
     } catch (error: unknown) {
-      throw new Error(`PTY signal ${signal} failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`PTY signal ${signal} failed: ${errMsg(error)}`);
     }
     // No foreground-pgid verification on the shared manager (gap documented
     // in the file header): the target is the session leader's pid.

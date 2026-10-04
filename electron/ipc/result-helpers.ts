@@ -10,6 +10,7 @@
 
 import { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
+import { errMsg } from "../host-shared/errors";
 
 export function ok<T>(data: T): { data: T } {
   return { data };
@@ -30,7 +31,7 @@ export function handle<T>(fn: () => T | Promise<T>): Promise<IpcResult<T>> {
     .then(() => fn())
     .then(ok)
     .catch((e: unknown) => {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = errMsg(e);
       console.error("[cairn:ipc:error]", msg);
       return err(msg);
     });

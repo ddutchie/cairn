@@ -23,6 +23,7 @@ import { ipcMain, shell, type WebContents } from "electron";
 import * as yaml from "js-yaml";
 import { readEnabledManifest, pluginsDevEnabled } from "../cordis/plugin-loader";
 import { getAgentHost } from "../cordis/agent-host";
+import { errMsg } from "../host-shared/errors";
 // NOTE: readEnabledManifest/pluginsDevEnabled stay direct imports by design —
 // this dev-gated UI surface does main-side file IO (plugins.yml YAML,
 // fs watcher) that stays in main even after a host-process split. Only the
@@ -64,7 +65,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
     try {
       return { data: collectUiPlugins() };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   });
 
@@ -105,7 +106,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
         }));
       return { data: { devEnabled: pluginsDevEnabled(), root: getAgentHost().getPluginsRoot(), plugins: list } };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   });
 
@@ -126,7 +127,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       // reconcile live; the renderer re-pulls on plugins:ui-changed.
       return { data: { ok: true } };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   });
 
@@ -139,7 +140,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       await shell.openPath(root);
       return { data: { ok: true } };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   });
 
@@ -157,7 +158,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       const result = await getAgentHost().installPlugin(req.spec);
       return { data: result };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   });
 
@@ -168,7 +169,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       getAgentHost().uninstallPlugin(req.id);
       return { data: { ok: true } };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   });
 
@@ -183,7 +184,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       const result = await getAgentHost().updatePlugin(req.id);
       return { data: result };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: errMsg(err) };
     }
   });
 

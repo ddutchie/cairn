@@ -7,6 +7,7 @@ import { EmbeddingsAdapter, SUPPORTED_EMBEDDING_MODELS } from "./adapters/embedd
 import { migrateManifest } from "./model-manager";
 import { EmbedRequest, EMBED_DIM } from "../embeddings/types";
 import type { EmbedTask } from "../embeddings/types";
+import { errMsg } from "../host-shared/errors";
 
 interface StdoutEvent {
   kind: "listening" | "ready" | "progress" | "error" | "log" |
@@ -150,7 +151,7 @@ async function run(): Promise<void> {
         const vectors = await embeddingsAdapter.embed(texts, task as EmbedTask, model);
         sendJson(res, 200, { vectors, dim: EMBED_DIM, model: model ?? embeddingsAdapter.getDefaultModelId() });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errMsg(e);
         emit({ kind: "error", msg });
         const errAny = e as { statusCode?: number };
         const status = e instanceof HttpError ? e.status : errAny.statusCode ?? 500;
@@ -172,7 +173,7 @@ async function run(): Promise<void> {
         await embeddingsAdapter.installModel(modelId);
         sendJson(res, 200, { success: true });
       } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        sendJson(res, 500, { error: errMsg(e) });
       }
       return;
     }
@@ -184,7 +185,7 @@ async function run(): Promise<void> {
         embeddingsAdapter.removeModel(modelId);
         sendJson(res, 200, { success: true });
       } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        sendJson(res, 500, { error: errMsg(e) });
       }
       return;
     }
@@ -196,7 +197,7 @@ async function run(): Promise<void> {
         embeddingsAdapter.setDefaultModelId(modelId);
         sendJson(res, 200, { success: true });
       } catch (e) {
-        sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        sendJson(res, 500, { error: errMsg(e) });
       }
       return;
     }

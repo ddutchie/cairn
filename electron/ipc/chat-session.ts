@@ -14,6 +14,7 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
 import { getAgentHost } from "../cordis/agent-host";
 import type { ChatMessage } from "../../src/types";
+import { errMsg } from "../host-shared/errors";
 
 function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessage[] {
   return messages.map((m) => ({
@@ -51,7 +52,7 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
         title: title ?? null,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errMsg(err);
       if (msg.includes("not found") || msg.includes("no such") || msg.includes("ENOENT") || msg.includes("but this backend is configured for compression") || msg.includes("encodingMismatch")) return { messages: [] as ChatMessage[] };
       throw err;
     }

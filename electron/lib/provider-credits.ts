@@ -9,6 +9,7 @@
  */
 
 import { parseCredits, type CreditInfo } from "../../shared/chat/provider-credits";
+import { errMsg } from "../host-shared/errors";
 
 export {
   sameEndpoint,
@@ -52,7 +53,7 @@ export async function probeCredits(
     return {
       status: 0,
       info: null,
-      error: err instanceof Error ? err.message : String(err),
+      error: errMsg(err),
     };
   }
   if (!res.ok) return { status: res.status, info: null };
@@ -62,7 +63,7 @@ export async function probeCredits(
     return {
       status: res.status,
       info: null,
-      error: err instanceof Error ? err.message : String(err),
+      error: errMsg(err),
     };
   }
 }

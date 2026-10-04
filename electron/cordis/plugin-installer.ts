@@ -25,6 +25,7 @@ import * as zlib from "zlib";
 import * as yaml from "js-yaml";
 import { createRequire } from "module";
 import { getPluginsRoot, pluginsDevEnabled } from "./plugin-loader";
+import { errMsg } from "../host-shared/errors";
 
 const INSTALLED_DIR = "installed";
 const MANIFEST = "plugins.yml";
@@ -165,7 +166,7 @@ async function fetchTarball(spec: ParsedSpec): Promise<Buffer> {
       lastErr = err;
     }
   }
-  throw new Error(`could not fetch ${spec.owner}/${spec.repo}: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+  throw new Error(`could not fetch ${spec.owner}/${spec.repo}: ${errMsg(lastErr)}`);
 }
 
 interface DshPackageJson {

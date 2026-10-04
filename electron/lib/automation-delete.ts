@@ -20,6 +20,7 @@ import type Database from "better-sqlite3";
 import { getAutomationById, deleteAutomation } from "../db/automation-queries";
 import { automationFolderDir, removeAutomationDir } from "./automation-folder";
 import { deleteToolSecrets } from "./secure-store";
+import { errMsg } from "../host-shared/errors";
 
 export interface AutomationDeleteDeps {
   /** Purge the automation's keychain secrets. Defaults to deleteToolSecrets("automation", id). */
@@ -73,7 +74,7 @@ export function deleteAutomationWithCleanup(
     removed = remove(folder);
   } catch (err) {
     throw new Error(
-      `failed to remove automation folder ${folder}: ${err instanceof Error ? err.message : String(err)}`,
+      `failed to remove automation folder ${folder}: ${errMsg(err)}`,
     );
   }
   if (!removed) {

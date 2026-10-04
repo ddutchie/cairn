@@ -1,5 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { getContext } from "./cordis-context";
+import { errMsg } from "../host-shared/errors";
 
 /**
  * Guard that prevents pruning while a compaction is in flight for a session.
@@ -84,7 +85,7 @@ export async function tryPruneSession(agent: { session: { id: unknown; surface: 
     // Common benign cases: "outside any open turn" when called at idle after
     // turn/end, or "active compaction" if raced. Never break the turn over
     // pruning.
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     if (msg.includes("outside any open turn") || msg.includes("active compaction") || msg.includes("while compaction")) {
       return null;
     }

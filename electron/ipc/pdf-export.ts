@@ -13,12 +13,8 @@ import { dialog, BrowserWindow } from "electron";
 import fs from "fs";
 import { registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
+import { sanitizeFilename } from "../host-shared/text-utils";
 import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, type PdfTheme } from "../lib/pdf-template";
-
-/** Strip characters that are invalid in filenames on macOS/Windows. */
-function sanitizeFilename(name: string): string {
-  return name.replace(/[\/\\:*?"<>|]/g, "_").trim() || "untitled";
-}
 
 export function registerPdfExportHandler(ctx: DbContext): void {
   registerIpcHandle(

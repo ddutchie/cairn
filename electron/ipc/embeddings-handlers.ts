@@ -17,6 +17,7 @@ import * as client from "../embeddings/client";
 import * as manifest from "../embeddings/manifest";
 import { EMBED_MODEL_ID } from "../embeddings/types";
 import { reclaimFreeSpace } from "../lib/db-hygiene";
+import { errMsg } from "../host-shared/errors";
 
 interface LockSlot {
   current: Promise<unknown> | null;
@@ -77,7 +78,7 @@ async function withLock<T>(
       broadcastProgress(win, {
         modelId: "",
         status: "error",
-        error: failed instanceof Error ? failed.message : String(failed),
+        error: errMsg(failed),
       });
     } else {
       broadcastProgress(win, { modelId: "", status: "done", progress: 100, loaded: 1, total: 1 });
@@ -257,7 +258,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
       manifest.setEmbeddingModelStatus(modelId, "installed", { progress: 100 });
       broadcastProgress(ctx.getWin(), { modelId, status: "installed", progress: 100 });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = errMsg(e);
       const isInstalled = manifest.getEmbeddingModelsManifest().find((m) => m.id === modelId)?.status === "installed";
       if (isInstalled) {
         console.warn("[embeddings] install pipeline failed but files present; marking installed anyway:", msg);

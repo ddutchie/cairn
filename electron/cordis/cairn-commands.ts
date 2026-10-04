@@ -12,6 +12,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { ManualCompactionError } from "@deepseek-ai/dsh-compaction";
 import "./ctx-augment";
+import { errMsg } from "../host-shared/errors";
 
 /**
  * Concise human messages for the expected `ManualCompactionError` codes —
@@ -81,7 +82,7 @@ export async function compactChatSession(
       throw err;
     }
   } catch (err) {
-    return { ok: false, compacted: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, compacted: false, error: errMsg(err) };
   }
 }
 

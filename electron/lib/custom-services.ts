@@ -22,6 +22,7 @@ import {
   type CustomServiceRuntimeConfig,
   type BearerResolver,
 } from "../../shared/chat/service-exec";
+import { errMsg } from "../host-shared/errors";
 
 // Re-export the shared pure surface so existing `import * as services` call
 // sites (external-tools.ts, ipc/tools.ts) keep resolving every symbol here.
@@ -90,7 +91,7 @@ export async function callService(
     const filtered = filterResponse(parsedBody, op.responseKeys);
     return typeof filtered === "string" ? filtered : JSON.stringify(filtered);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errMsg(e);
     console.error(`[custom-services] callService ${namespaced} failed:`, msg);
     return `Error calling ${namespaced}: ${msg}`;
   }
@@ -161,6 +162,6 @@ export async function testService(
     const preview = (typeof filtered === "string" ? filtered : JSON.stringify(filtered)).slice(0, 500);
     return { ok: res.ok, status: res.status, preview };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: errMsg(e) };
   }
 }
