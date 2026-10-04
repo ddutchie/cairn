@@ -5,6 +5,8 @@
  * existing `@/db/queries` imports keep working unchanged.
  */
 
+import type { GraphNodeType, GraphEdgeType } from "@cairn/shared/types/domain";
+
 export interface NoteRow {
   id: string;
   project_id: string;
@@ -54,13 +56,7 @@ export interface TagRow {
 
 // ── Knowledge graph ─────────────────────────────────────────────────────────
 
-export type GraphNodeType = "project" | "note" | "card" | "tag";
-export type GraphEdgeType =
-  | "project-member"
-  | "note-note"
-  | "note-card"
-  | "tag-member"
-  | "semantic";
+export type { GraphNodeType, GraphEdgeType };
 
 export interface GraphNode {
   id: string;
