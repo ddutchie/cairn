@@ -16,6 +16,9 @@
  */
 
 import type { ChatPopoutPayload } from "../agent/chat-popout";
+import type {
+  GitBranchList, GitFileDiff, GitLogEntry, GitPathSelection, GitPrStatus, GitStashAction, GitStatus,
+} from "../types/git";
 import type { Note, NoteBody, NoteCreateInput, NotePatch } from "../types/notes";
 
 /** Why a pop-out handshake call was refused. */
@@ -59,6 +62,35 @@ export interface IpcContract {
   "db:note:backlinks:list": { args: [req: { noteId: string }]; result: string[] };
   /** The user has seen this note's "what's new" changes. */
   "db:note:changeMark:clear": { args: [req: { id: string }]; result: void };
+
+  // ── Git (cwd must sit inside a project's code directory) ─────────────────
+  "git:status": { args: [req: { cwd: string }]; result: GitStatus };
+  "git:branches": { args: [req: { cwd: string }]; result: GitBranchList };
+  "git:checkout": { args: [req: { cwd: string; branch: string; create?: boolean }]; result: { branch: string } };
+  "git:stage": { args: [req: { cwd: string } & GitPathSelection]; result: { ok: boolean } };
+  "git:unstage": { args: [req: { cwd: string } & GitPathSelection]; result: { ok: boolean } };
+  /** `autoStage` runs `git add .` first; returns the short hash. */
+  "git:commit": {
+    args: [req: { cwd: string; message: string; body?: string; autoStage?: boolean }];
+    result: { hash: string; message: string };
+  };
+  "git:push": { args: [req: { cwd: string; setUpstream?: boolean }]; result: { branch: string } };
+  /** `count` is clamped to 1–100 (default 20). */
+  "git:log": { args: [req: { cwd: string; count?: number }]; result: GitLogEntry[] };
+  /** Unified diff of the index (`staged`) or the working tree against HEAD. */
+  "git:diff": { args: [req: { cwd: string; staged?: boolean }]; result: string };
+  "git:diffBranch": { args: [req: { cwd: string; baseBranch: string }]; result: string };
+  "git:diffFile": { args: [req: { cwd: string; filePath: string; staged?: boolean }]; result: GitFileDiff };
+  /** `list` returns the stash entries; `push` / `pop` return `{ ok }`. */
+  "git:stash": { args: [req: { cwd: string; action: GitStashAction }]; result: string[] | { ok: boolean } };
+  "git:createPr": {
+    args: [req: { cwd: string; title: string; body?: string; base?: string }];
+    result: { url: string; branch: string };
+  };
+  /** null when `gh` is missing or the branch has no PR. */
+  "git:prStatus": { args: [req: { cwd: string }]; result: GitPrStatus | null };
+  /** Restores a tracked file or deletes an untracked one. */
+  "git:discard": { args: [req: { cwd: string; filePath: string }]; result: { ok: boolean } };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
@@ -97,6 +129,21 @@ const CHANNELS: ChannelRecord = {
   "db:note:search": true,
   "db:note:backlinks:list": true,
   "db:note:changeMark:clear": true,
+  "git:status": true,
+  "git:branches": true,
+  "git:checkout": true,
+  "git:stage": true,
+  "git:unstage": true,
+  "git:commit": true,
+  "git:push": true,
+  "git:log": true,
+  "git:diff": true,
+  "git:diffBranch": true,
+  "git:diffFile": true,
+  "git:stash": true,
+  "git:createPr": true,
+  "git:prStatus": true,
+  "git:discard": true,
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];

@@ -12,6 +12,7 @@ import type { SessionProjection } from "../shared/agent/session-projection";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEvents } from "../shared/ipc/contract";
 import type { ChatPopoutPayload } from "../shared/agent/chat-popout";
 import type { NoteCreateInput, NotePatch } from "../shared/types/notes";
+import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 
 // Local structural types for the external-tools namespace. The renderer's
 // canonical types live in src/types; electron's rootDir excludes src, so we
@@ -186,23 +187,6 @@ interface CodebaseModuleGraph {
   nodes: CodebaseModuleNode[];
   edges: CodebaseGraphEdge[];
 }
-// ── Inline types for the git API (not shared with the renderer bundle) ──────
-
-interface GitStatusEntry {
-  path: string;
-  status: string;
-}
-interface GitStatus {
-  branch: string;
-  ahead: string;
-  behind: string;
-  hasUpstream: boolean;
-  defaultBranch: string;
-  staged: GitStatusEntry[];
-  unstaged: GitStatusEntry[];
-  untracked: GitStatusEntry[];
-}
-
 // ── Inline types for the Usage view (usage:overview / usage:recent) ──────────
 type UsageSource =
   | "chat" | "coding-agent" | "chat-subagent" | "coding-subagent" | "automation"
@@ -940,21 +924,21 @@ const api = {
 
   // ── Git operations (Agent Git tab) ────────────
   git: {
-    status:   (cwd: string) => invoke<GitStatus>("git:status", { cwd }),
-    branches: (cwd: string) => invoke<{ current: string; branches: Array<{ name: string; current: boolean }> }>("git:branches", { cwd }),
-    checkout: (cwd: string, branch: string, create?: boolean) => invoke<{ branch: string }>("git:checkout", { cwd, branch, create }),
-    stage:    (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:stage", { cwd, ...opts }),
-    unstage:  (cwd: string, opts?: { files?: string[]; all?: boolean }) => invoke<{ ok: boolean }>("git:unstage", { cwd, ...opts }),
-    commit:   (cwd: string, message: string, body?: string, autoStage?: boolean) => invoke<{ hash: string; message: string }>("git:commit", { cwd, message, body, autoStage }),
-    push:     (cwd: string, setUpstream?: boolean) => invoke<{ branch: string }>("git:push", { cwd, setUpstream }),
-    log:      (cwd: string, count?: number) => invoke<Array<{ hash: string; author: string; date: string; subject: string }>>("git:log", { cwd, count }),
-    diff:     (cwd: string, staged?: boolean) => invoke<string>("git:diff", { cwd, staged }),
-    diffBranch: (cwd: string, baseBranch: string) => invoke<string>("git:diffBranch", { cwd, baseBranch }),
-    diffFile: (cwd: string, filePath: string, staged?: boolean) => invoke<{ stat: { added: number; deleted: number }; diff: string }>("git:diffFile", { cwd, filePath, staged }),
-    stash:    (cwd: string, action: "push" | "pop" | "list") => invoke<unknown>("git:stash", { cwd, action }),
-    createPr: (cwd: string, opts: { title: string; body?: string; base?: string }) => invoke<{ url: string; branch: string }>("git:createPr", { cwd, ...opts }),
-    prStatus: (cwd: string) => invoke<{ url: string | null; state: string | null; title: string | null } | null>("git:prStatus", { cwd }),
-    discard:  (cwd: string, filePath: string) => invoke<{ ok: boolean }>("git:discard", { cwd, filePath }),
+    status:   (cwd: string) => invokeContract("git:status", { cwd }),
+    branches: (cwd: string) => invokeContract("git:branches", { cwd }),
+    checkout: (cwd: string, branch: string, create?: boolean) => invokeContract("git:checkout", { cwd, branch, create }),
+    stage:    (cwd: string, opts?: GitPathSelection) => invokeContract("git:stage", { cwd, ...opts }),
+    unstage:  (cwd: string, opts?: GitPathSelection) => invokeContract("git:unstage", { cwd, ...opts }),
+    commit:   (cwd: string, message: string, body?: string, autoStage?: boolean) => invokeContract("git:commit", { cwd, message, body, autoStage }),
+    push:     (cwd: string, setUpstream?: boolean) => invokeContract("git:push", { cwd, setUpstream }),
+    log:      (cwd: string, count?: number) => invokeContract("git:log", { cwd, count }),
+    diff:     (cwd: string, staged?: boolean) => invokeContract("git:diff", { cwd, staged }),
+    diffBranch: (cwd: string, baseBranch: string) => invokeContract("git:diffBranch", { cwd, baseBranch }),
+    diffFile: (cwd: string, filePath: string, staged?: boolean) => invokeContract("git:diffFile", { cwd, filePath, staged }),
+    stash:    (cwd: string, action: GitStashAction) => invokeContract("git:stash", { cwd, action }),
+    createPr: (cwd: string, opts: { title: string; body?: string; base?: string }) => invokeContract("git:createPr", { cwd, ...opts }),
+    prStatus: (cwd: string) => invokeContract("git:prStatus", { cwd }),
+    discard:  (cwd: string, filePath: string) => invokeContract("git:discard", { cwd, filePath }),
   },
 
   // ── Cairn native agent (pi) ───────────────────

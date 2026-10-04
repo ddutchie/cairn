@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import type { Database } from "better-sqlite3";
 
@@ -112,7 +112,7 @@ function gitSafe(args: string[], cwd: string, timeout = 15_000): Promise<{ stdou
 /** Reads `ctx.db` at call time so a workspace swap (`reinitialise`) is transparent. */
 export function registerGitHandlers(ctx: DbContext): void {
   // ── git status ──────────────────────────────────────────────────────────
-  registerIpcHandle("git:status", (_e, { cwd }: { cwd: string }) =>
+  registerContractHandle("git:status", (_e, { cwd }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       const branch = (await gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).stdout || "HEAD";
@@ -158,7 +158,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git branches ─────────────────────────────────────────────────────────
-  registerIpcHandle("git:branches", (_e, { cwd }: { cwd: string }) =>
+  registerContractHandle("git:branches", (_e, { cwd }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       const current = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
@@ -172,7 +172,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git checkout / create branch ─────────────────────────────────────────
-  registerIpcHandle("git:checkout", (_e, { cwd, branch, create }: { cwd: string; branch: string; create?: boolean }) =>
+  registerContractHandle("git:checkout", (_e, { cwd, branch, create }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       if (branch.startsWith("-")) {
@@ -189,7 +189,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git stage ────────────────────────────────────────────────────────────
-  registerIpcHandle("git:stage", (_e, { cwd, files, all }: { cwd: string; files?: string[]; all?: boolean }) =>
+  registerContractHandle("git:stage", (_e, { cwd, files, all }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       if (all) {
@@ -208,7 +208,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git unstage ──────────────────────────────────────────────────────────
-  registerIpcHandle("git:unstage", (_e, { cwd, files, all }: { cwd: string; files?: string[]; all?: boolean }) =>
+  registerContractHandle("git:unstage", (_e, { cwd, files, all }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       if (all) {
@@ -227,7 +227,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git commit ───────────────────────────────────────────────────────────
-  registerIpcHandle("git:commit", (_e, { cwd, message, body, autoStage }: { cwd: string; message: string; body?: string; autoStage?: boolean }) =>
+  registerContractHandle("git:commit", (_e, { cwd, message, body, autoStage }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       if (autoStage) {
@@ -241,7 +241,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git push ─────────────────────────────────────────────────────────────
-  registerIpcHandle("git:push", (_e, { cwd, setUpstream }: { cwd: string; setUpstream?: boolean }) =>
+  registerContractHandle("git:push", (_e, { cwd, setUpstream }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
@@ -254,7 +254,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git log ──────────────────────────────────────────────────────────────
-  registerIpcHandle("git:log", (_e, { cwd, count = 20 }: { cwd: string; count?: number }) =>
+  registerContractHandle("git:log", (_e, { cwd, count = 20 }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       let clampedCount = 20;
@@ -271,7 +271,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git diff (for commit message generation) ───────────────────────────
-  registerIpcHandle("git:diff", (_e, { cwd, staged }: { cwd: string; staged?: boolean }) =>
+  registerContractHandle("git:diff", (_e, { cwd, staged }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       const args = staged ? ["diff", "--cached", "--unified=3"] : ["diff", "HEAD", "--unified=3"];
@@ -285,7 +285,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git diffBranch (diff of current branch against a base branch) ──────
-  registerIpcHandle("git:diffBranch", (_e, { cwd, baseBranch }: { cwd: string; baseBranch: string }) =>
+  registerContractHandle("git:diffBranch", (_e, { cwd, baseBranch }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       if (baseBranch.startsWith("-")) {
@@ -306,7 +306,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git diffFile (stat + full diff for one file) ───────────────────────
-  registerIpcHandle("git:diffFile", (_e, { cwd, filePath, staged }: { cwd: string; filePath: string; staged?: boolean }) =>
+  registerContractHandle("git:diffFile", (_e, { cwd, filePath, staged }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       if (!isSafePathspec(filePath) || !isPathWithinCwd(cwd, filePath)) {
@@ -342,7 +342,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git createPr ─────────────────────────────────────────────────────────
-  registerIpcHandle("git:createPr", (_e, { cwd, title, body, base }: { cwd: string; title: string; body?: string; base?: string }) =>
+  registerContractHandle("git:createPr", (_e, { cwd, title, body, base }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
@@ -384,7 +384,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git prStatus (check if a PR exists for the current branch) ───────────
-  registerIpcHandle("git:prStatus", (_e, { cwd }: { cwd: string }) =>
+  registerContractHandle("git:prStatus", (_e, { cwd }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       let hasGh = false;
@@ -432,7 +432,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git stash / stash pop ───────────────────────────────────────────────
-  registerIpcHandle("git:stash", (_e, { cwd, action }: { cwd: string; action: "push" | "pop" | "list" }) =>
+  registerContractHandle("git:stash", (_e, { cwd, action }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       const allowedActions = ["push", "pop", "list"];
@@ -449,7 +449,7 @@ export function registerGitHandlers(ctx: DbContext): void {
   );
 
   // ── git discard (discard changes in a file) ─────────────────────────────
-  registerIpcHandle("git:discard", (_e, { cwd, filePath }: { cwd: string; filePath: string }) =>
+  registerContractHandle("git:discard", (_e, { cwd, filePath }) =>
     handle(async () => {
       assertWithinCodeDirectory(ctx.db, cwd);
       if (!isSafePathspec(filePath) || !isPathWithinCwd(cwd, filePath)) {
