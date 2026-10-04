@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Pencil, Activity, FileText, Kanban, Sparkles } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
@@ -40,16 +40,23 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
     if (automation) void fetchRuns(automation.id);
   }, [automation, fetchRuns]);
 
+  // The run whose log is being shown; a slower earlier request must not
+  // overwrite the log of a run selected after it.
+  const logForRef = useRef<string | null>(null);
+
   async function toggleLog(runId: string) {
-    if (logFor === runId) { setLogFor(null); setRunLog(null); return; }
+    if (logFor === runId) { logForRef.current = null; setLogFor(null); setRunLog(null); return; }
+    logForRef.current = runId;
     setLogFor(runId);
     setRunLog(null);
+    let next: unknown;
     try {
       const res = await window.electron?.automation.runLog(runId) as { log?: unknown } | { error?: string } | undefined;
-      setRunLog(res && "log" in (res ?? {}) ? (res as { log: unknown }).log : (res as { error?: string })?.error ?? null);
+      next = res && "log" in (res ?? {}) ? (res as { log: unknown }).log : (res as { error?: string })?.error ?? null;
     } catch (err) {
-      setRunLog(err instanceof Error ? err.message : String(err));
+      next = err instanceof Error ? err.message : String(err);
     }
+    if (logForRef.current === runId) setRunLog(next);
   }
 
   async function refresh() {

@@ -72,7 +72,8 @@ export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
     const fontFamily = resolveFontPreset(fontFamilyId).cssFamily;
 
     if (isElectron && window.electron?.exportNotePdf) {
-      await window.electron.exportNotePdf(title, html, { theme, fontFamily });
+      // Desktop returns null when the save dialog was cancelled.
+      return (await window.electron.exportNotePdf(title, html, { theme, fontFamily })) ? undefined : false;
     } else if (isMobile && window.electron?.exportNotePdf) {
       const result = await window.electron.exportNotePdf(title, html, { returnBuffer: true, theme, fontFamily });
       if (result?.pdfBase64) {
