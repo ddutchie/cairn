@@ -1,5 +1,7 @@
 import { ipcMain, BrowserWindow } from "electron";
-import type { IpcMainInvokeEvent, IpcMainEvent } from "electron";
+import type { IpcMainInvokeEvent, IpcMainEvent, WebContents } from "electron";
+import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEventArgs } from "../../shared/ipc/contract";
+import type { IpcResult } from "./result-helpers";
 
 /**
  * Erased storage type for the internal handler/listener maps. Event is `unknown`
@@ -158,6 +160,24 @@ export function registerIpcHandle<T extends unknown[]>(
   };
   handlers.set(channel, wrappedHandler);
   ipcMain.handle(channel, wrappedHandler);
+}
+
+/**
+ * Register a handler for a channel in the typed IPC contract
+ * (`shared/ipc/contract.ts`): its arguments and result are checked against
+ * the contract, which preload's `invokeContract` also uses. Same runtime
+ * behaviour as {@link registerIpcHandle}.
+ */
+export function registerContractHandle<C extends IpcChannel>(
+  channel: C,
+  handler: (event: IpcMainInvokeEvent, ...args: IpcArgs<C>) => Promise<IpcResult<IpcReturn<C>>>,
+): void {
+  registerIpcHandle<IpcArgs<C>>(channel, handler);
+}
+
+/** Send a contract push event to one renderer, payload checked against `IpcEvents`. */
+export function sendIpcEvent<E extends IpcEventChannel>(target: WebContents, channel: E, ...payload: IpcEventArgs<E>): void {
+  target.send(channel, ...payload);
 }
 
 /**

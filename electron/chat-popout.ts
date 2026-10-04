@@ -17,7 +17,7 @@ import { readThemeSurface } from "./lib/theme-surface";
 import { bindChatPopoutSession, chatParticipantIdsExcept, resolveChatPopoutSession, type ChatPopoutPayload } from "../shared/agent/chat-popout";
 import type { DbContext } from "./ipc/result-helpers";
 import { handle } from "./ipc/result-helpers";
-import { registerIpcHandle } from "./ipc/registry";
+import { registerContractHandle, sendIpcEvent } from "./ipc/registry";
 import { getSessionProfile } from "./db/queries";
 
 const isDev = !app.isPackaged;
@@ -136,7 +136,7 @@ export function createChatPopoutWindow(): BrowserWindow {
     // Notify the main window that the pop-out closed unexpectedly (e.g. Cmd+W)
     const mainWin = findMainWindow();
     if (mainWin) {
-      mainWin.webContents.send("chat:poppedOutClosed");
+      sendIpcEvent(mainWin.webContents, "chat:poppedOutClosed");
     }
     popoutWindow = null;
   });
@@ -193,7 +193,7 @@ export function broadcastToChat(channel: string, payload: unknown, excludeId?: n
 
 export function registerChatPopoutHandlers(ctx: DbContext): void {
   // Main window requests a pop-out: stores state, creates pop-out window
-  registerIpcHandle("chat:popOut", (event, rawPayload: unknown) =>
+  registerContractHandle("chat:popOut", (event, rawPayload) =>
     handle(async () => {
       const payload = bindChatPopoutSession(rawPayload);
       if (!payload) return { ok: false, reason: "invalid-payload" } as const;
@@ -225,7 +225,7 @@ export function registerChatPopoutHandlers(ctx: DbContext): void {
         // the pending map will be consumed by the next popoutReady.
         try {
           if (!popoutWindow.webContents.isLoading()) {
-            popoutWindow.webContents.send("chat:sessionUpdated", canonical);
+            sendIpcEvent(popoutWindow.webContents, "chat:sessionUpdated", canonical);
             pendingByGeneration.delete(generation);
             pendingGenerationForWindow = null;
           }
@@ -239,7 +239,7 @@ export function registerChatPopoutHandlers(ctx: DbContext): void {
   );
 
   // Pop-out page signals it is ready — register as participant, return stored state
-  registerIpcHandle("chat:popoutReady", (event) =>
+  registerContractHandle("chat:popoutReady", (event) =>
     handle(async () => {
       if (event.sender.id !== popoutWindow?.webContents.id) {
         return { sessionId: "", activeProjectId: null, profile: "chat" as const, workspaceId: null, cwd: null, reason: "not-popout" as const };
@@ -268,13 +268,13 @@ export function registerChatPopoutHandlers(ctx: DbContext): void {
   );
 
   // Main window requests the pop-out to come back (clicked placeholder button)
-  registerIpcHandle("chat:requestPopIn", (event) =>
+  registerContractHandle("chat:requestPopIn", (event) =>
     handle(async () => {
       if (event.sender.id !== mainWindowWebContentsId) {
         return { ok: false, reason: "not-main-window" } as const;
       }
       if (popoutWindow && !popoutWindow.isDestroyed()) {
-        popoutWindow.webContents.send("chat:requestPopIn");
+        sendIpcEvent(popoutWindow.webContents, "chat:requestPopIn");
       }
       return { ok: true } as const;
     }),
@@ -282,7 +282,7 @@ export function registerChatPopoutHandlers(ctx: DbContext): void {
 
   // Pop-out window requests pop-in. Conversation state is already shared by
   // the session log and the session:event broadcast; no final-state merge.
-  registerIpcHandle("chat:popIn", (event, payload: { sessionId: string }) =>
+  registerContractHandle("chat:popIn", (event, payload) =>
     handle(async () => {
       if (event.sender.id !== popoutWindow?.webContents.id) {
         return { ok: false, reason: "not-popout" } as const;
@@ -291,7 +291,7 @@ export function registerChatPopoutHandlers(ctx: DbContext): void {
       // Find the main window by its tracked webContents ID (not BrowserWindow.id)
       const mainWin = findMainWindow();
       if (mainWin) {
-        mainWin.webContents.send("chat:poppedIn", { sessionId: payload.sessionId });
+        sendIpcEvent(mainWin.webContents, "chat:poppedIn", { sessionId: payload.sessionId });
       }
       closeChatPopoutWindow();
       chatParticipants.delete(senderId);
