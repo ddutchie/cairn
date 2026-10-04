@@ -38,7 +38,6 @@ import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./l
 import { createTray } from "./lib/tray";
 import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
-import { readThemeSurface } from "./lib/theme-surface";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";
 import { getAgentHost } from "./cordis/agent-host";
@@ -49,9 +48,10 @@ import { runBootSequence } from "./splash/boot-sequence";
 import { registerChatPopoutHandlers } from "./chat-popout";
 import { initUsageRecorder } from "./lib/usage-recorder";
 import { isUpdaterQuitRequested } from "./lib/updater-quit";
-import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
 import { errMsg } from "./host-shared/errors";
 import { registerQuickCapture } from "./lib/quick-capture";
+import { createWindow, isMainWindow } from "./main-window";
+import { registerDeepLinks, markRendererReadyForDeepLinks } from "./deep-links";
 
 const isDev = !app.isPackaged;
 let shutdownStarted = false;
@@ -66,78 +66,7 @@ if (isDev) {
   });
 }
 
-// ── Deep-link (cairn://) registration + OAuth callback routing ───────────────
-// Used by the remote-MCP OAuth flow: the authorization server redirects to
-// cairn://oauth/callback?code=…&state=…, which the OS hands back to us as either
-// an open-url event (macOS) or a process argv entry (Windows/Linux).
-if (isDev && process.platform === "win32" && process.argv.length >= 2) {
-  // In dev on Windows the executable is electron.exe with our entry script as
-  // argv[1]; the launcher must be registered with that path so the OS can
-  // re-invoke us for a deep link.
-  app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
-} else {
-  app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
-}
-
-/** Find the first cairn:// deep link in a process argv array, if any. */
-function deepLinkFromArgv(argv: string[]): string | null {
-  return argv.find((a) => typeof a === "string" && a.startsWith(`${DEEP_LINK_SCHEME}://`)) ?? null;
-}
-
-/** Buffer for a deep link that arrives before the renderer is ready. */
-let _pendingDeepLink: string | null = null;
-/** True once the main window's renderer has finished loading (listeners attached). */
-let _rendererReady = false;
-
-/** Route a cairn:// deep link. Currently only OAuth callbacks are handled. */
-async function handleDeepLink(rawUrl: string): Promise<void> {
-  const cb = parseOAuthCallback(rawUrl);
-  if (!cb) return;
-  const win = BrowserWindow.getAllWindows()[0] ?? null;
-  // If the renderer isn't ready to receive the result event yet, buffer the raw
-  // link and let the post-load flush replay it through this same path.
-  if (!win || !_rendererReady) {
-    _pendingDeepLink = rawUrl;
-    return;
-  }
-  if (win.isMinimized()) win.restore();
-  win.focus();
-  const result = await completeServerAuth(cb);
-  // Tell the renderer how it went so Settings can refresh the connection state.
-  win.webContents.send("tools:oauthCallback", result);
-}
-
-/** Flush any buffered deep link once the renderer is ready. */
-function flushPendingDeepLink(): void {
-  const link = _pendingDeepLink ?? deepLinkFromArgv(process.argv);
-  _pendingDeepLink = null;
-  if (link) void handleDeepLink(link);
-}
-
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on("second-instance", (_event, argv) => {
-    // Focus the existing window, and pick up a deep link passed on the relaunch
-    // argv (Windows/Linux delivery path for cairn://…).
-    const allWindows = BrowserWindow.getAllWindows();
-    if (allWindows.length > 0) {
-      if (allWindows[0].isMinimized()) allWindows[0].restore();
-      allWindows[0].focus();
-    }
-    const link = deepLinkFromArgv(argv);
-    if (link) void handleDeepLink(link);
-  });
-}
-
-// macOS delivers deep links via open-url (can fire before whenReady on cold
-// start; handleDeepLink buffers until the renderer is ready).
-app.on("open-url", (event, url) => {
-  event.preventDefault();
-  void handleDeepLink(url);
-});
+registerDeepLinks(isDev);
 
 app.setName("Cairn");
 
@@ -157,90 +86,6 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
   },
 ]);
-
-/** Windows built by createWindow — the only ones the tray and Quick Capture may target. */
-const mainWindows = new WeakSet<BrowserWindow>();
-
-function createWindow(): BrowserWindow {
-  const isWin = process.platform === "win32";
-  const { surface, bg } = readThemeSurface();
-
-  // On macOS: hiddenInset keeps the traffic lights in the title bar area.
-  // On Windows: hidden removes the native title text; titleBarOverlay places
-  // the native min/max/close buttons at the top-right inside our custom bar.
-  const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 900,
-    minHeight: 600,
-    show: false,
-    titleBarStyle: isWin ? "hidden" : "hiddenInset",
-    ...(isWin && {
-      titleBarOverlay: {
-        // Use --surface (not backgroundColor) so the overlay matches the
-        // rendered TitleBar component which uses bg-[var(--surface)].
-        color: surface,
-        symbolColor: "#888888",
-        // 39px not 40px: Windows adds a 1px window border at the top, so
-        // height:40 overshoots by 1px and clips the border-b beneath the bar.
-        height: 39,
-      },
-    }),
-    backgroundColor: bg,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      // H7: sandbox:false widens the renderer blast radius (no OS-level sandbox).
-      // TODO: roadmap to sandbox:true — requires auditing preload exposure and
-      // moving sqlite/native work to a utilityProcess. Tracked separately; don't
-      // flip this flag without that hardening.
-      sandbox: false,
-    },
-  });
-  mainWindows.add(win);
-
-  if (isDev) {
-    win.loadURL("http://localhost:3000");
-    // Keep DevTools closed in headless/recording runs (CAIRN_NO_DEVTOOLS=1, used
-    // by the demo/QA harness) so the detached inspector window doesn't steal the
-    // Playwright video recording or pop a second window during capture.
-    if (process.env.CAIRN_NO_DEVTOOLS !== "1") {
-      win.webContents.openDevTools({ mode: "detach" });
-    }
-  } else {
-    win.loadURL("app://./index.html");
-  }
-
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol === "https:" || parsed.protocol === "http:" || parsed.protocol === "mailto:") {
-        shell.openExternal(url);
-      }
-    } catch { /* malformed URL — deny */ }
-    return { action: "deny" };
-  });
-
-  // Deny any in-page navigation to external origins. Only allow the bundled
-  // app:// scheme, the asset:// scheme, and the localhost dev server.
-  win.webContents.on("will-navigate", (event, url) => {
-    try {
-      const parsed = new URL(url);
-      const allowed =
-        parsed.protocol === "app:" ||
-        parsed.protocol === "asset:" ||
-        (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
-        (parsed.protocol === "ws:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
-        (parsed.protocol === "https:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"));
-      if (!allowed) event.preventDefault();
-    } catch {
-      event.preventDefault();
-    }
-  });
-
-  return win;
-}
 
 // Test/QA isolation hook: when CAIRN_USER_DATA_DIR is set (used by the
 // Playwright Electron e2e harness), redirect the userData dir so the app runs
@@ -413,7 +258,7 @@ app.whenReady().then(async () => {
   }
 
   // ── Create main window ─────────────────────────────────────────────────
-  const win = createWindow();
+  const win = createWindow(isDev);
   _win = win;
 
   // UI plugins (dev-gated): serve renderer-side plugin sources + live-change
@@ -454,8 +299,7 @@ app.whenReady().then(async () => {
     // attached — safe to deliver any deep link that arrived during boot
     // (macOS open-url cold start, or a cairn:// URL in our own launch argv on
     // Windows/Linux).
-    _rendererReady = true;
-    flushPendingDeepLink();
+    markRendererReadyForDeepLinks();
   });
   setTimeout(() => {
     closeSplash();
@@ -549,8 +393,8 @@ app.whenReady().then(async () => {
   // and the global shortcut keep reaching a live window.
   const getMainWindow = (): BrowserWindow | null => {
     if (!win.isDestroyed()) return win;
-    const open = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && mainWindows.has(w));
-    return open[0] ?? createWindow();
+    const open = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && isMainWindow(w));
+    return open[0] ?? createWindow(isDev);
   };
   const { updateBadge } = createTray(getMainWindow);
   registerQuickCapture(getMainWindow);
@@ -865,7 +709,7 @@ app.whenReady().then(async () => {
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(isDev);
   });
 });
 

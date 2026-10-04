@@ -9,31 +9,14 @@ FORM: Grounded #4 control-room console fused with creator-hardware bench — see
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 */
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import {
-  FileText,
-  Kanban,
-  Calendar,
-  AlertTriangle,
-  Clock3,
-  Pin,
-  Zap,
-  Activity,
-  LayoutDashboard,
-  Diamond,
-  MessageSquare,
-  Code2,
-  Folder,
-  FolderCode,
-  Wrench,
-  CheckCircle2,
-} from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { FileText, Kanban, Calendar, AlertTriangle, Clock3, Zap, Activity, Diamond, MessageSquare, Code2, Folder, FolderCode, CheckCircle2 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon } from "@/lib/workspace-icons";
 import { cn, formatDate, STATUS_COLORS, getDueDateStatus, parseIsoLocal, formatRelative } from "@/lib/utils";
-import { COLUMN_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
-import { CairnEvents, revealNote, revealCard } from "@/lib/events";
+import { PRIORITY_CSS_COLORS } from "@/lib/constants";
+import { CairnEvents, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
@@ -47,118 +30,14 @@ import { ReviewButton } from "./review-button";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { useAgentSessionActions } from "@/components/agent/useAgentSessionActions";
 import { CollapsibleSection } from "./primitives";
-import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
-import { useCommunityConnectorMap } from "@/components/chat/chat-panel/connector-context";
-import { Tooltip } from "@/components/ui/tooltip";
-import {
-  RecentActivityFeed,
-  RecentAutomationRunsFeed,
-  ShippedFeed,
-  AtRiskFeed,
-} from "./sections";
-import type { TaskCard, ToolType } from "@/types";
+import { RecentActivityFeed, RecentAutomationRunsFeed, ShippedFeed, AtRiskFeed } from "./sections";
+import type { TaskCard } from "@/types";
 import { ProjectHealthRadar, useRadarAxes } from "./radar";
+import { TiltCard } from "./tilt-card";
+import { TaskFlowPanel, PriorityPanel, NotesSummaryPanel } from "./overview-panels";
+import type { FocusFilter } from "./focus";
+import { HeaderToolIcons } from "./header-tool-icons";
 
-type FocusFilter = "all" | "today" | "overdue" | "pinned";
-
-function useTilt(targetRef: React.RefObject<HTMLDivElement | null>) {
-  const [active, setActive] = useState(false);
-  const [transform, setTransform] = useState<React.CSSProperties>({});
-  const raf = useRef<number | null>(null);
-  const onMove = useCallback((e: React.MouseEvent) => {
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const el = targetRef.current;
-    if (!el) return;
-    const { clientX, clientY } = e;
-    setActive(true);
-    if (raf.current) cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(() => {
-      const r = el.getBoundingClientRect();
-      const rx = ((clientY - r.top - r.height / 2) / (r.height / 2)) * -2.2;
-      const ry = ((clientX - r.left - r.width / 2) / (r.width / 2)) * 2.8;
-      setTransform({ transform: `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) scale(1.012)`, transition: "transform 0.08s linear" });
-    });
-  }, [targetRef]);
-  const onLeave = useCallback(() => {
-    if (raf.current) cancelAnimationFrame(raf.current);
-    setActive(false);
-    setTransform({ transform: "perspective(900px) rotateX(0) rotateY(0) scale(1)", transition: "transform 0.55s cubic-bezier(.23,1,.32,1)" });
-  }, []);
-  useEffect(() => () => { if (raf.current) cancelAnimationFrame(raf.current); }, []);
-  return { transform, onMove, onLeave, active };
-}
-
-function HeaderToolIcons({ projectId, workspaceId }: { projectId: string; workspaceId: string }) {
-  const { mcpServers, customServices, toolAttachments, fetchTools, fetchToolAttachments, setToolAttachment, clearToolAttachment } =
-    useCairnStore(
-      useShallow((s) => ({
-        mcpServers: s.mcpServers,
-        customServices: s.customServices,
-        toolAttachments: s.toolAttachments,
-        fetchTools: s.fetchTools,
-        fetchToolAttachments: s.fetchToolAttachments,
-        setToolAttachment: s.setToolAttachment,
-        clearToolAttachment: s.clearToolAttachment,
-      })),
-    );
-  const connectorMap = useCommunityConnectorMap();
-
-  useEffect(() => {
-    if (workspaceId) void fetchTools(workspaceId);
-  }, [workspaceId, fetchTools]);
-  useEffect(() => {
-    if (projectId) void fetchToolAttachments(projectId);
-  }, [projectId, fetchToolAttachments]);
-
-  const enabledMcp = mcpServers.filter((s) => s.enabled);
-  const enabledSvc = customServices.filter((s) => s.enabled);
-  const total = enabledMcp.length + enabledSvc.length;
-  if (total === 0) return null;
-
-  const isAttached = (toolType: ToolType, toolId: string) =>
-    toolAttachments.some((a) => a.projectId === projectId && a.toolType === toolType && a.toolId === toolId && a.enabled);
-  const toggle = (toolType: ToolType, toolId: string, on: boolean) => {
-    if (on) setToolAttachment(projectId, toolType, toolId, true);
-    else clearToolAttachment(projectId, toolType, toolId);
-  };
-
-  const items: Array<{ key: string; name: string; kind: "mcp" | "service"; id: string; connectorKey: string }> = [
-    ...enabledMcp.map((s) => ({ key: `mcp-${s.id}`, name: s.name, kind: "mcp" as const, id: s.id, connectorKey: `mcp__${s.id}__` })),
-    ...enabledSvc.map((s) => ({ key: `svc-${s.id}`, name: s.name, kind: "service" as const, id: s.id, connectorKey: `svc__${s.id}__` })),
-  ];
-
-  return (
-    <span className="inline-flex items-center gap-1.5 flex-wrap">
-      <span className="inline-flex items-center gap-1 text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">
-        <Wrench size={10} /> Tools
-      </span>
-      <span className="flex items-center gap-1">
-        {items.slice(0, 6).map((it) => {
-          const attached = isAttached(it.kind, it.id);
-          const meta = connectorMap[it.connectorKey];
-          return (
-            <Tooltip key={it.key} content={it.name}>
-              <button
-                type="button"
-                onClick={() => toggle(it.kind, it.id, !attached)}
-                aria-pressed={attached}
-                className={cn(
-                  "w-7 h-7 rounded-full grid place-items-center border transition-all",
-                  attached
-                    ? "bg-[var(--accent-dim)] border-[var(--accent)] shadow-sm ring-1 ring-[var(--accent)]/30"
-                    : "bg-[var(--surface)] border-[var(--border)] hover:border-[var(--muted)] hover:bg-[var(--surface-2)]",
-                )}
-              >
-                <ConnectorLogo iconSvg={meta?.iconSvg} kind={it.kind} color={meta?.brandColor} size={16} />
-              </button>
-            </Tooltip>
-          );
-        })}
-        {items.length > 6 && <span className="text-xs text-[var(--text-tertiary)]">+{items.length - 6}</span>}
-      </span>
-    </span>
-  );
-}
 
 export function ProjectOverview() {
   const {
@@ -386,16 +265,6 @@ export function ProjectOverview() {
     activityByDay,
   });
 
-  const instrumentRef = useRef<HTMLDivElement>(null);
-  const flowRef = useRef<HTMLDivElement>(null);
-  const priorityRef = useRef<HTMLDivElement>(null);
-  const radarRef = useRef<HTMLDivElement>(null);
-  const notesRef = useRef<HTMLDivElement>(null);
-  const tiltInstrument = useTilt(instrumentRef);
-  const tiltFlow = useTilt(flowRef);
-  const tiltPriority = useTilt(priorityRef);
-  const tiltRadar = useTilt(radarRef);
-  const tiltNotes = useTilt(notesRef);
 
   const overviewContentId = "overview-content";
   const focusLabel: Record<FocusFilter, string> = {
@@ -537,12 +406,10 @@ export function ProjectOverview() {
             </div>
 
             {/* instrument — lift + tilt on hover */}
-            <div
-              ref={instrumentRef}
-              onMouseMove={tiltInstrument.onMove}
-              onMouseLeave={tiltInstrument.onLeave}
+            <TiltCard
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0"
-              style={{ willChange: tiltInstrument.active ? "transform" : undefined, boxShadow: tiltInstrument.active ? "0 14px 36px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)" : "0 6px 20px color-mix(in srgb, black 16%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)", ...tiltInstrument.transform }}
+              restShadow="0 6px 20px color-mix(in srgb, black 16%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
+              activeShadow="0 14px 36px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)"
             >
               <div
                 aria-hidden="true"
@@ -642,7 +509,7 @@ export function ProjectOverview() {
                   Insights →
                 </button>
               </div>
-            </div>
+            </TiltCard>
           </div>
 
           {/* sentinel for pin detection */}
@@ -839,235 +706,32 @@ export function ProjectOverview() {
 
           {/* ── bento: task flow + priority ───────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_0.95fr] gap-3.5 mb-3.5">
-            <div
-              ref={flowRef}
-              onMouseMove={tiltFlow.onMove}
-              onMouseLeave={tiltFlow.onLeave}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
-              style={{ willChange: tiltFlow.active ? "transform" : undefined, boxShadow: tiltFlow.active ? "0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)" : "0 8px 24px color-mix(in srgb, black 14%, transparent)", ...tiltFlow.transform }}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-[0.625rem] leading-none">
-                    ▦
-                  </span>
-                  Task flow{" "}
-                  <span className="font-normal text-[var(--text-tertiary)] text-xs">
-                    — {bottleneck ? `${bottleneck.name} is the bottleneck (${bottleneck.count} of ${openCards.length} open)` : `${openCards.length} open`}
-                  </span>
-                </h2>
-              </div>
-              {flowColumns.length === 0 ? (
-                <EmptyState title="No columns yet" className="py-6" />
-              ) : (
-                <div role="list" aria-label="Tasks by column">
-                  {flowColumns.map((col, idx) => {
-                    const sourceCards = focus === "overdue" || focus === "today" ? filteredCards : allCards;
-                    const sourceOpen = focus === "overdue" || focus === "today" ? filteredCards : openCards;
-                    const count = sourceCards.filter((c) => c.columnId === col.id).length;
-                    const isOpen = col.id !== doneColId;
-                    const denom = isOpen ? sourceOpen.length || 1 : sourceCards.length || 1;
-                    const pct = isOpen || focus === "overdue" || focus === "today" ? Math.round((count / denom) * 100) : Math.round((count / (allCards.length || 1)) * 100);
-                    const color = COLUMN_COLORS[col.type] ?? COLUMN_COLORS.custom;
-                    const isBottleneck = bottleneck?.name === col.name && focus === "all";
-                    const hasFiltered = focus !== "all" && count === 0 && focus !== "pinned";
-                    return (
-                      <div
-                        key={col.id}
-                        role="listitem"
-                        className={cn(
-                          "w-full flex items-center gap-2.5 py-2",
-                          idx !== 0 && "border-t border-[var(--border)]/60",
-                          hasFiltered && "opacity-40",
-                        )}
-                      >
-                        <span className="w-24 text-right text-xs font-medium truncate flex-shrink-0 text-[var(--text-secondary)]">
-                          {col.name}
-                        </span>
-                        <span
-                          className={cn(
-                            "flex-1 min-w-0 h-[26px] rounded-full bg-[var(--surface-2)] border overflow-hidden flex items-center p-[3px]",
-                            isBottleneck ? "border-[var(--warning)]/50 ring-1 ring-[var(--warning)]/25" : "border-[var(--border)]",
-                          )}
-                        >
-                          <span
-                            className="h-full rounded-full flex items-center justify-end pr-1.5 text-[0.643rem] font-bold text-white min-w-[22px]"
-                            style={{
-                              width: `${Math.max(pct, count > 0 ? 8 : 0)}%`,
-                              background: color,
-                              transition: "width .7s cubic-bezier(.4,0,.2,1)",
-                              boxShadow: isBottleneck ? "0 0 10px color-mix(in srgb, var(--warning) 35%, transparent)" : undefined,
-                            }}
-                          >
-                            {pct > 16 ? count : ""}
-                          </span>
-                        </span>
-                        <span className="w-7 text-right text-xs font-mono text-[var(--text-tertiary)] tabular-nums">{count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <div className="flex flex-wrap gap-3 mt-3 text-[0.643rem] text-[var(--text-tertiary)]">
-                <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.backlog }} /> Backlog</span>
-                <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.todo }} /> Todo</span>
-                <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.in_progress }} /> In Progress</span>
-                <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.review }} /> Review</span>
-                <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.done }} /> Done</span>
-              </div>
-            </div>
+            <TaskFlowPanel
+              flowColumns={flowColumns}
+              focus={focus}
+              filteredCards={filteredCards}
+              allCards={allCards}
+              openCards={openCards}
+              doneColId={doneColId}
+              bottleneck={bottleneck}
+            />
 
-            <div
-              ref={priorityRef}
-              onMouseMove={tiltPriority.onMove}
-              onMouseLeave={tiltPriority.onLeave}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
-              style={{ willChange: tiltPriority.active ? "transform" : undefined, boxShadow: tiltPriority.active ? "0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)" : "0 8px 24px color-mix(in srgb, black 14%, transparent)", ...tiltPriority.transform }}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
-                    <AlertTriangle size={10} />
-                  </span>
-                  Open by priority
-                </h2>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                {(
-                  [
-                    { key: "urgent", label: "Urgent", color: "var(--danger)", bg: "color-mix(in srgb,var(--danger) 12%, transparent)" },
-                    { key: "high", label: "High", color: "var(--warning)", bg: "color-mix(in srgb,var(--warning) 12%, transparent)" },
-                    { key: "medium", label: "Medium", color: "var(--info)", bg: "color-mix(in srgb,var(--info) 12%, transparent)" },
-                    { key: "low", label: "Low", color: "var(--text-tertiary)", bg: "var(--surface-2)" },
-                  ] as const
-                ).map(({ key, label, color, bg }) => {
-                  const counts = focus === "overdue" || focus === "today" ? filteredPriorityCounts : priorityCounts;
-                  const n = counts[key as keyof typeof counts] ?? 0;
-                  const active = n > 0;
-                  return (
-                    <div
-                      key={key}
-                      className="rounded-xl border p-3.5 text-center"
-                      style={{
-                        background: bg,
-                        borderColor: active ? (color === "var(--text-tertiary)" ? "var(--border)" : color) : "var(--border)",
-                        boxShadow: active && color !== "var(--text-tertiary)" ? `inset 0 1px 0 color-mix(in srgb, white 6%, transparent)` : undefined,
-                      }}
-                    >
-                      <div className="text-[1.35rem] font-bold leading-none tracking-tight" style={{ color: active ? color : "var(--text-tertiary)" }}>
-                        {n}
-                      </div>
-                      <div className="text-[0.625rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mt-1">{label}</div>
-                      <div className="text-[0.688rem] text-[var(--text-tertiary)] mt-0.5">{n ? `${n} open` : "—"}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-3 flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-xs text-[var(--text-tertiary)]">
-                <span>WIP — {inProgressCount} in progress</span>
-                <span className="font-semibold text-[var(--text-primary)]">
-                  {wipLimit ? (
-                    <>
-                      Limit {wipLimit} ·{" "}
-                      <span className={wipStatus === "over" ? "text-[var(--danger)]" : wipStatus === "at limit" ? "text-[var(--warning)]" : "text-[var(--success)]"}>
-                        {wipStatus}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-[var(--text-tertiary)]">No limit</span>
-                  )}
-                </span>
-              </div>
-            </div>
+            <PriorityPanel
+              counts={focus === "overdue" || focus === "today" ? filteredPriorityCounts : priorityCounts}
+              inProgressCount={inProgressCount}
+              wipLimit={wipLimit}
+              wipStatus={wipStatus}
+            />
           </div>
 
           {/* ── project health radar — 6-axis instrument, same data as KPIs but shape reads balance at a glance ── */}
-          <div
-            ref={radarRef}
-            onMouseMove={tiltRadar.onMove}
-            onMouseLeave={tiltRadar.onLeave}
-            className="mb-3.5"
-            style={{ willChange: tiltRadar.active ? "transform" : undefined, ...tiltRadar.transform, filter: tiltRadar.active ? "drop-shadow(0 12px 24px color-mix(in srgb, black 16%, transparent))" : undefined }}
-          >
+          <TiltCard className="mb-3.5" dropShadow="drop-shadow(0 12px 24px color-mix(in srgb, black 16%, transparent))">
             <ProjectHealthRadar axes={radarAxes} size={280} />
-          </div>
+          </TiltCard>
 
           {/* ── notes summary — single CTA, replaces two All notes links ── */}
           <div className="mb-3.5">
-            <div
-              ref={notesRef}
-              onMouseMove={tiltNotes.onMove}
-              onMouseLeave={tiltNotes.onLeave}
-              className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]"
-              style={{ willChange: tiltNotes.active ? "transform" : undefined, boxShadow: tiltNotes.active ? "0 12px 28px color-mix(in srgb, black 18%, transparent)" : "0 4px 14px color-mix(in srgb, black 12%, transparent)", ...tiltNotes.transform }}
-            >
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h2 className="text-[0.813rem] font-semibold flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
-                    <FileText size={10} />
-                  </span>
-                  Notes
-                  <span className="font-normal text-[var(--text-tertiary)] text-xs">
-                    · {notes.length} total{pinnedNotes.length > 0 ? ` · ${pinnedNotes.length} pinned` : ""} · {recentNotes.length} recent
-                  </span>
-                </h2>
-                <button type="button" onClick={() => setView("notes")} className="text-xs font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)]">
-                  Open notes →
-                </button>
-              </div>
-              {notes.length === 0 ? (
-                <EmptyState title="No notes yet — capture ideas to see them here" className="py-6" />
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
-                      <Pin size={10} /> Pinned · keeps focus
-                    </div>
-                    {pinnedNotes.length === 0 ? (
-                      <p className="text-xs text-[var(--text-tertiary)] py-3">No pinned notes</p>
-                    ) : (
-                      <ul className="list-none m-0 p-0">
-                        {pinnedNotes.slice(0, 3).map((note) => (
-                          <li key={note.id} className="flex gap-2.5 items-center py-2 border-b border-[var(--border)]/60 last:border-0">
-                            <span className="w-6 h-6 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] flex-shrink-0">
-                              <Pin size={10} />
-                            </span>
-                            <button type="button" onClick={() => revealNote(setView, note.id)} className="flex-1 min-w-0 text-left group">
-                              <span className="block text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent)] truncate">{note.title}</span>
-                              <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || "Empty note"}</span>
-                            </button>
-                            <span className="text-xs font-mono text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
-                      <FileText size={10} /> Recent
-                    </div>
-                    {recentNotes.length === 0 ? (
-                      <p className="text-xs text-[var(--text-tertiary)] py-3">No recent notes</p>
-                    ) : (
-                      <ul className="list-none m-0 p-0">
-                        {recentNotes.slice(0, 4).map((note) => (
-                          <li key={note.id} className="flex gap-2.5 items-center py-2 border-b border-[var(--border)]/60 last:border-0">
-                            <span className="w-6 h-6 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] flex-shrink-0">
-                              {note.type === "dashboard" ? <LayoutDashboard size={10} /> : <FileText size={10} />}
-                            </span>
-                            <button type="button" onClick={() => revealNote(setView, note.id)} className="flex-1 min-w-0 text-left group">
-                              <span className="block text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] truncate">{note.title}</span>
-                              <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}</span>
-                            </button>
-                            <span className="text-xs font-mono text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <NotesSummaryPanel notesCount={notes.length} pinnedNotes={pinnedNotes} recentNotes={recentNotes} />
           </div>
           {/* ── delivery: shipped this week + at risk ── */}
           {metrics && (

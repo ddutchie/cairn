@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
-import { CairnEvents } from "@/lib/events";
 import type { ProjectSettings } from "@/types";
 import {
   DropdownMenu,
@@ -21,17 +20,12 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MicroLabel } from "@/components/ui/labels";
-import {
-  type GitStatusData,
-  type GitLogData,
-  diffKey,
-  areGitStatusesEqual,
-  areBranchesEqual,
-  areLogEntriesEqual,
-  arePrStatusesEqual,
-} from "./git/git-helpers";
+import { diffKey } from "./git/git-helpers";
 import { FileSection } from "./git/FileSection";
 import { FileRow } from "./git/FileRow";
+import { useGitStatus } from "./git/useGitStatus";
+import { discardMessage, readPrTemplate } from "./git/git-actions";
+import { useTwoStepConfirm } from "@/hooks/useTwoStepConfirm";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,17 +42,12 @@ export function GitView({ cwd }: GitViewProps) {
     projects: s.projects,
   })));
 
-  const [status, setStatus] = useState<GitStatusData | null>(null);
-  const [log, setLog] = useState<GitLogData>([]);
-  const [loading, setLoading] = useState(true);
   const [committing, setCommitting] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generatingPrDesc, setGeneratingPrDesc] = useState(false);
-  const [prStatus, setPrStatus] = useState<{ url: string | null; state: string | null; title: string | null } | null>(null);
   const [commitSubject, setCommitSubject] = useState("");
   const [commitBody, setCommitBody] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     staged: false,
     unstaged: true,
@@ -76,84 +65,19 @@ export function GitView({ cwd }: GitViewProps) {
   const [prBody, setPrBody] = useState("");
   const [showPrForm, setShowPrForm] = useState(false);
   const [prUrl, setPrUrl] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevHasUnstagedRef = useRef<boolean | null>(null);
   const prevStagedCountRef = useRef<number | null>(null);
-  // Signature of the working-tree file set (path+status across all sections).
-  // When it changes between status polls we notify the FileTree to refresh so
-  // externally added/removed files appear without a manual refresh.
-  const prevFileSigRef = useRef<string | null>(null);
+
+  const {
+    status, log, branches, prStatus, loading, setLoading, error, setError,
+    fetchStatus, fetchLog, fetchPrStatus, refresh,
+  } = useGitStatus(cwd);
 
   // Branch switcher states
-  const [branches, setBranches] = useState<Array<{ name: string; current: boolean }>>([]);
   const [branchSearch, setBranchSearch] = useState("");
   const [newBranchOpen, setNewBranchOpen] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
 
-  const fetchStatus = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const s = await window.electron.git.status(cwd);
-      setStatus((prev) => (areGitStatusesEqual(prev, s) ? prev : s));
-      setError((prev) => (prev !== null ? null : prev));
-      // Notify the FileTree only when the working-tree file SET changes (a path
-      // added/removed/renamed), not when an existing path merely changes status
-      // (e.g. staged ↔ unstaged) — that doesn't alter the directory listing.
-      const sig = [...s.staged, ...s.unstaged, ...s.untracked]
-        .map((f) => f.path)
-        .sort()
-        .join("|");
-      if (prevFileSigRef.current !== null && prevFileSigRef.current !== sig) {
-        window.dispatchEvent(CairnEvents.agentFilesChanged());
-      }
-      prevFileSigRef.current = sig;
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading((prev) => (prev ? false : prev));
-    }
-  }, [cwd]);
-
-  const fetchBranches = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const res = await window.electron.git.branches(cwd);
-      setBranches((prev) => (areBranchesEqual(prev, res.branches) ? prev : res.branches));
-    } catch { /* best-effort */ }
-  }, [cwd]);
-
-  const fetchLog = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const entries = await window.electron.git.log(cwd, 15);
-      setLog((prev) => (areLogEntriesEqual(prev, entries) ? prev : entries));
-    } catch { /* log fetch is best-effort */ }
-  }, [cwd]);
-
-  const fetchPrStatus = useCallback(async () => {
-    if (!window.electron?.git) return;
-    try {
-      const status = await window.electron.git.prStatus(cwd);
-      setPrStatus((prev) => (arePrStatusesEqual(prev, status) ? prev : status));
-    } catch {
-      setPrStatus(null);
-    }
-  }, [cwd]);
-
-  const refresh = useCallback(() => {
-    setLoading(true);
-    fetchStatus();
-    fetchLog();
-    fetchPrStatus();
-    fetchBranches();
-  }, [fetchStatus, fetchLog, fetchPrStatus, fetchBranches]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh();
-    pollRef.current = setInterval(fetchStatus, 10_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [refresh, fetchStatus]);
 
   // Auto-expand the staged section when there are staged files but nothing
   // unstaged/untracked — otherwise the user sees an empty unstaged section
@@ -197,7 +121,7 @@ export function GitView({ cwd }: GitViewProps) {
     } finally {
       setLoading(false);
     }
-  }, [cwd, refresh]);
+  }, [cwd, refresh, setError, setLoading]);
 
   const handleCreateBranch = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,60 +163,6 @@ export function GitView({ cwd }: GitViewProps) {
     }
   }
 
-  // Two-step discard confirm, keyed per trigger (per-file rows + the two
-  // bulk buttons). First click arms and shows the consequence message in the
-  // tooltip; second click fires. Auto-disarms after 4s.
-  const [armedDiscardKey, setArmedDiscardKey] = useState<string | null>(null);
-  const discardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (discardTimer.current) clearTimeout(discardTimer.current);
-  }, []);
-  const fireDiscard = (key: string, paths: string[]) => {
-    if (armedDiscardKey === key) {
-      if (discardTimer.current) clearTimeout(discardTimer.current);
-      discardTimer.current = null;
-      setArmedDiscardKey(null);
-      void handleDiscard(paths);
-    } else {
-      if (discardTimer.current) clearTimeout(discardTimer.current);
-      setArmedDiscardKey(key);
-      discardTimer.current = setTimeout(() => {
-        discardTimer.current = null;
-        setArmedDiscardKey(null);
-      }, 4000);
-    }
-  };
-
-  function discardMessage(paths: string[]): string {
-    if (paths.length === 1) {
-      const p = paths[0];
-      const isStaged = status?.staged.some((f) => f.path === p);
-      const isUnstaged = status?.unstaged.some((f) => f.path === p);
-      const isUntracked = status?.untracked.some((f) => f.path === p);
-
-      if (isUntracked) {
-        return `Delete the untracked file ${p}? This cannot be undone.`;
-      } else if (isStaged && isUnstaged) {
-        return `Discard unstaged changes in ${p}? Staged changes will be preserved.`;
-      } else if (isStaged) {
-        return `Discard staged changes in ${p}? This will revert the file to its HEAD state.`;
-      } else {
-        return `Discard changes in ${p}? This cannot be undone.`;
-      }
-    } else {
-      const containsUntracked = paths.some(p => status?.untracked.some(f => f.path === p));
-      const containsStaged = paths.some(p => status?.staged.some(f => f.path === p));
-      const containsUnstaged = paths.some(p => status?.unstaged.some(f => f.path === p));
-
-      if (containsUntracked && !containsStaged && !containsUnstaged) {
-        return `Delete these ${paths.length} untracked files? This cannot be undone.`;
-      } else if (containsStaged && containsUnstaged) {
-        return `Discard unstaged changes in these ${paths.length} files? Staged changes in partially staged files will be preserved.`;
-      } else {
-        return `Discard changes in these ${paths.length} files? This cannot be undone.`;
-      }
-    }
-  }
 
   async function handleDiscard(paths: string[]) {
     if (!window.electron?.git) return;
@@ -312,6 +182,10 @@ export function GitView({ cwd }: GitViewProps) {
       setLoading(false);
     }
   }
+
+  // Two-step confirm per trigger (file rows + the two bulk buttons): the first
+  // click arms and shows the consequence in the tooltip, the second discards.
+  const { armedKey: armedDiscardKey, fire: fireDiscard } = useTwoStepConfirm((paths: string[]) => void handleDiscard(paths));
 
   const filteredBranches = useMemo(() => {
     if (!branchSearch) return branches;
@@ -417,34 +291,9 @@ export function GitView({ cwd }: GitViewProps) {
         apiKey: agentConfig.apiKey,
       };
 
-      const project = projects.find((p) => p.id === activeProjectId) ?? null;
-      const projectSettings = project?.projectSettings as ProjectSettings | undefined;
-      let template = "";
 
-      if (projectSettings?.useRepoPrTemplate) {
-        // Explicitly prefer repository template
-        if (window.electron?.agent) {
-          try {
-            const pathSeparator = window.electron.platform === "win32" ? "\\" : "/";
-            const templatePath = `${cwd}${pathSeparator}.github${pathSeparator}PULL_REQUEST_TEMPLATE.md`;
-            template = await window.electron.agent.readFile(templatePath);
-          } catch {
-            // Fallback to empty if not found
-          }
-        }
-      } else {
-        // Use custom settings template (if set), otherwise fall back to repository template
-        template = projectSettings?.prTemplate || "";
-        if (!template && window.electron?.agent) {
-          try {
-            const pathSeparator = window.electron.platform === "win32" ? "\\" : "/";
-            const templatePath = `${cwd}${pathSeparator}.github${pathSeparator}PULL_REQUEST_TEMPLATE.md`;
-            template = await window.electron.agent.readFile(templatePath);
-          } catch {
-            // Ignore
-          }
-        }
-      }
+      const project = projects.find((p) => p.id === activeProjectId) ?? null;
+      const template = await readPrTemplate(cwd, project?.projectSettings as ProjectSettings | undefined);
 
       const result = await window.electron.ai.generatePrDescription({ 
         diff, 
@@ -742,7 +591,7 @@ export function GitView({ cwd }: GitViewProps) {
                 onToggle={() => toggleSection("unstaged")}
                 action={
                   <div className="flex items-center gap-1.5">
-                    <Tooltip content={armedDiscardKey === "unstaged-all" ? discardMessage(status.unstaged.map((f) => f.path)) : "Discard all unstaged changes in modified files"}>
+                    <Tooltip content={armedDiscardKey === "unstaged-all" ? discardMessage(status, status.unstaged.map((f) => f.path)) : "Discard all unstaged changes in modified files"}>
                       <button
                         onClick={() => fireDiscard("unstaged-all", status.unstaged.map((f) => f.path))}
                         className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
@@ -793,7 +642,7 @@ export function GitView({ cwd }: GitViewProps) {
                 onToggle={() => toggleSection("untracked")}
                 action={
                   <div className="flex items-center gap-1.5">
-                    <Tooltip content={armedDiscardKey === "untracked-all" ? discardMessage(status.untracked.map((f) => f.path)) : "Permanently delete all untracked files"}>
+                    <Tooltip content={armedDiscardKey === "untracked-all" ? discardMessage(status, status.untracked.map((f) => f.path)) : "Permanently delete all untracked files"}>
                       <button
                         onClick={() => fireDiscard("untracked-all", status.untracked.map((f) => f.path))}
                         className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"

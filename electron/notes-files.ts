@@ -1,30 +1,41 @@
 import path from "path";
 import fs from "fs";
-import { createHash } from "crypto";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import * as q from "./db/queries";
 import { newId } from "./db/utils";
 import { toSlug, stripMarkdown } from "./host-shared/text-utils";
-import { DEFAULT_COLUMNS } from "./db/defaults";
+import { readExistingFrontmatter, notesDir, projectNotesDir, noteDir, resolveNoteFilePath, findNoteFilePath, NoteFileData as NoteData, writeNoteFile, deleteNoteFile, hardDeleteNoteFile, deleteProjectNotesDir, renameProjectNotesDir, parseNoteFile, pruneEmptyDirsUpTo, setPathRemover, CAIRN_FRONTMATTER_KEYS } from "./host-shared/notes-io";
 import {
-  readExistingFrontmatter,
-  notesDir,
-  projectNotesDir,
-  noteDir,
-  resolveNoteFilePath,
-  findNoteFilePath,
-  NoteFileData as NoteData,
-  writeNoteFile,
-  deleteNoteFile,
-  hardDeleteNoteFile,
-  deleteProjectNotesDir,
-  renameProjectNotesDir,
-  parseNoteFile,
-  pruneEmptyDirsUpTo,
-  setPathRemover,
-  CAIRN_FRONTMATTER_KEYS
-} from "./host-shared/notes-io";
+  isSkippedMarkdown,
+  isSkippedDirectory,
+  readImportConfig,
+  readImportExclusions,
+  isImportConfigHalted,
+  isImportPathExcluded,
+  writeImportConfig,
+  bodyHash,
+  recordAdoption,
+  touchAdoptedBaseline,
+  flushAdoptedLedger,
+  type ImportConfig,
+  type VaultImportPreview,
+} from "./notes-import-config";
+import { ensureProject, cleanStaleTmpFiles } from "./notes-projects";
+export {
+  readImportConfig,
+  isImportConfigHalted,
+  isImportPathExcluded,
+  saveImportExclusions,
+  touchAdoptedBaseline,
+  flushAdoptedLedger,
+  removeAdoptedEntries,
+  setImportUnmanaged,
+  type ImportAdoptedEntry,
+  type ImportConfig,
+  type VaultImportPreview,
+} from "./notes-import-config";
+export { ensureProject, reconcileProjectFolders } from "./notes-projects";
 
 export {
   toSlug,
@@ -45,262 +56,6 @@ export {
   pruneEmptyDirsUpTo,
   setPathRemover
 };
-
-const IMPORT_CONFIG_FILE = ".cairn-import.json";
-const DEFAULT_SKIP_DIRS = new Set([
-  "assets",
-  "attachments",
-  "templates",
-  "node_modules",
-  "dist",
-  "build",
-  "target",
-  "vendor",
-  "out",
-  "coverage",
-]);
-
-export interface VaultImportPreview {
-  isObsidianVault: boolean;
-  vaultName: string;
-  noteCount: number;
-  skippedCount: number;
-  projects: Array<{ name: string; noteCount: number; root: boolean; projectKey: string }>;
-  excludedFolders: string[];
-}
-
-function isSkippedMarkdown(name: string): boolean {
-  const lower = name.toLowerCase();
-  return !lower.endsWith(".md") || lower.endsWith(".md.tmp") || lower.endsWith(".excalidraw.md");
-}
-
-function isSkippedDirectory(name: string): boolean {
-  return name.startsWith(".") || DEFAULT_SKIP_DIRS.has(name.toLowerCase());
-}
-
-// ── Import configuration (exclusions + adoption ledger + unmanaged flag) ─────
-//
-// `.cairn-import.json` holds the workspace's import state:
-//   { excludedFolders: string[], adopted: { [noteId]: { path, bodyHash } }, unmanaged?: boolean }
-// - `excludedFolders` — top-level folder names never imported (v2.6.1).
-// - `adopted` — the adoption ledger: every note Cairn adopted from disk, keyed by
-//   note id, with the workspace-relative path and the sha256 of its body at
-//   adoption. This is the baseline for the re-import 3-way conflict check.
-// - `unmanaged` — set by import rollback: the vault was un-adopted, so scans and
-//   the watcher leave its files as plain markdown (never re-adopt them).
-//
-// Resilience (unchanged from v2.6.1): the file is written atomically; a
-// malformed/truncated config falls back to the last known-good copy, and a
-// never-valid config HALTS imports until repaired — never failing open.
-
-export interface ImportAdoptedEntry {
-  /** Workspace-relative path of the file (diagnostics / rollback). */
-  path: string;
-  /** sha256 of the note body at adoption — the 3-way conflict baseline. */
-  bodyHash: string;
-}
-
-export interface ImportConfig {
-  excludedFolders: string[];
-  adopted: Record<string, ImportAdoptedEntry>;
-  unmanaged: boolean;
-}
-
-const EMPTY_CONFIG: ImportConfig = { excludedFolders: [], adopted: {}, unmanaged: false };
-
-const lastValidConfigs = new Map<string, ImportConfig>();
-// Workspaces whose config file exists but is currently unreadable/malformed AND
-// was never parsed successfully. Imports HALT for these until the file is
-// repaired — no silent adoption of previously-excluded folders.
-const haltedWorkspaces = new Set<string>();
-
-export function readImportConfig(workspacePath: string): ImportConfig {
-  const configPath = path.join(workspacePath, IMPORT_CONFIG_FILE);
-  let raw: string;
-  try {
-    raw = fs.readFileSync(configPath, "utf-8");
-  } catch (err) {
-    // A genuinely missing config means "no exclusions" — clear the workspace's
-    // cached state. Any OTHER read failure means the file exists but is
-    // currently unreadable: fall back to the last valid set, else halt.
-    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
-      lastValidConfigs.delete(workspacePath);
-      haltedWorkspaces.delete(workspacePath);
-      return { ...EMPTY_CONFIG, adopted: { ...EMPTY_CONFIG.adopted } };
-    }
-    const cached = lastValidConfigs.get(workspacePath);
-    if (cached) return { ...cached, adopted: { ...cached.adopted } };
-    haltedWorkspaces.add(workspacePath);
-    return { ...EMPTY_CONFIG, adopted: { ...EMPTY_CONFIG.adopted } };
-  }
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    // ANY non-string entry (not just some) makes the whole file invalid — a
-    // single bad value means we can't trust the list, so it must fall back/halt
-    // rather than silently dropping entries and importing folders the user
-    // intended to keep out.
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      !Array.isArray((parsed as { excludedFolders?: unknown }).excludedFolders) ||
-      (parsed as { excludedFolders: unknown[] }).excludedFolders.some((v) => typeof v !== "string")
-    ) {
-      throw new Error("invalid shape");
-    }
-    const p = parsed as { excludedFolders: string[]; adopted?: unknown; unmanaged?: unknown };
-    // The ledger is tolerant: a missing/malformed `adopted` just means "no
-    // baselines" (re-import falls back to timestamp logic), never a halt.
-    const adopted: Record<string, ImportAdoptedEntry> = {};
-    if (p.adopted && typeof p.adopted === "object" && !Array.isArray(p.adopted)) {
-      for (const [id, entry] of Object.entries(p.adopted as Record<string, unknown>)) {
-        if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-          const e = entry as { path?: unknown; bodyHash?: unknown };
-          if (typeof e.path === "string" && typeof e.bodyHash === "string") {
-            adopted[id] = { path: e.path, bodyHash: e.bodyHash };
-          }
-        }
-      }
-    }
-    const cfg: ImportConfig = {
-      excludedFolders: [...new Set(p.excludedFolders)].sort(),
-      adopted,
-      unmanaged: p.unmanaged === true,
-    };
-    lastValidConfigs.set(workspacePath, cfg);
-    haltedWorkspaces.delete(workspacePath);
-    // Clone `adopted` so a caller mutating the returned config can never change
-    // the module-level cache entry (which rollbackImport/saveImportExclusions
-    // rely on staying stable across calls).
-    return { ...cfg, adopted: { ...cfg.adopted } };
-  } catch {
-    // Present but malformed/truncated. Never fail open: fall back to the last
-    // valid config we parsed. If we never parsed a valid file, halt imports
-    // for this workspace until the file is repaired.
-    const cached = lastValidConfigs.get(workspacePath);
-    if (cached) return { ...cached, adopted: { ...cached.adopted } };
-    haltedWorkspaces.add(workspacePath);
-    return { ...EMPTY_CONFIG, adopted: { ...EMPTY_CONFIG.adopted } };
-  }
-}
-
-/** True when the workspace's import config is present but broken beyond the last-known-good copy. */
-export function isImportConfigHalted(workspacePath: string): boolean {
-  return haltedWorkspaces.has(workspacePath);
-}
-
-function readImportExclusions(workspacePath: string): Set<string> {
-  return new Set(readImportConfig(workspacePath).excludedFolders);
-}
-
-/** Shared watcher/scanner boundary: true when a path must never be imported. */
-export function isImportPathExcluded(workspacePath: string, filePath: string): boolean {
-  const rel = path.relative(notesDir(workspacePath), filePath);
-  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return true;
-  const segments = rel.split(path.sep);
-  if (segments.some((segment) => isSkippedDirectory(segment))) return true;
-  if (isSkippedMarkdown(segments[segments.length - 1])) return true;
-  // Load/parse the config (which REGISTERS the halted state for a malformed
-  // newly-encountered file) after the cheap lexical checks, then evaluate the
-  // refreshed halt state. Checking halt before reading would miss a config that
-  // just turned malformed, letting root notes and nested files through.
-  const config = readImportConfig(workspacePath);
-  if (isImportConfigHalted(workspacePath)) return true;
-  // A rolled-back (un-managed) vault is never re-adopted.
-  if (config.unmanaged) return true;
-  return segments.length > 1 && config.excludedFolders.includes(segments[0]);
-}
-
-/** Atomically persist the workspace's import config (never a truncated file). */
-function writeImportConfig(workspacePath: string, cfg: ImportConfig): void {
-  const clean = [...new Set(cfg.excludedFolders.filter((name) => name && !name.startsWith(".")))].sort();
-  const body = JSON.stringify({
-    excludedFolders: clean,
-    ...(Object.keys(cfg.adopted).length > 0 ? { adopted: cfg.adopted } : {}),
-    ...(cfg.unmanaged ? { unmanaged: true } : {}),
-  }, null, 2) + "\n";
-  const target = path.join(workspacePath, IMPORT_CONFIG_FILE);
-  // Write via a temp file + atomic rename so a crash mid-write can never leave a
-  // truncated config that readImportConfig would then reject.
-  const tmp = path.join(workspacePath, `${IMPORT_CONFIG_FILE}.${process.pid}.${Date.now()}.tmp`);
-  fs.writeFileSync(tmp, body, "utf-8");
-  try {
-    fs.renameSync(tmp, target);
-  } catch {
-    // Cross-device or locked-target fallback — write in place, clean up the temp.
-    fs.writeFileSync(target, body, "utf-8");
-    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
-  }
-  // Refresh the cached copy so a subsequent read in the same process sees it.
-  lastValidConfigs.set(workspacePath, { excludedFolders: clean, adopted: { ...cfg.adopted }, unmanaged: cfg.unmanaged });
-  haltedWorkspaces.delete(workspacePath);
-}
-
-export function saveImportExclusions(workspacePath: string, excludedFolders: string[]): void {
-  const current = readImportConfig(workspacePath);
-  writeImportConfig(workspacePath, { ...current, excludedFolders });
-}
-
-// ── Adoption ledger (3-way re-import baseline) ────────────────────────────────
-
-function bodyHash(content: string): string {
-  // Normalise trailing whitespace so the same note hashes identically whether
-  // it came from the DB row (raw body) or a file (matter.stringify adds a
-  // trailing newline) — otherwise every re-scan looks like an "external edit".
-  return createHash("sha256").update((content ?? "").replace(/\s+$/, "")).digest("hex");
-}
-
-/** Pending ledger entries, merged into the config file once per scan (avoids a
- *  config rewrite for every adopted note during a bulk vault import). */
-const pendingAdopted = new Map<string, Record<string, ImportAdoptedEntry>>();
-
-function recordAdoption(workspacePath: string, id: string, relPath: string, content: string): void {
-  let map = pendingAdopted.get(workspacePath);
-  if (!map) { map = {}; pendingAdopted.set(workspacePath, map); }
-  map[id] = { path: relPath, bodyHash: bodyHash(content) };
-}
-
-/** Refresh an adopted note's baseline to its current content — the row and file
- *  are now in sync (a Cairn/MCP write echoed by the watcher, or an external
- *  edit just adopted). Keeps the 3-way check measuring "since the last time
- *  both sides agreed", so a later external edit isn't mistaken for a
- *  both-changed conflict. Pending-flushed like recordAdoption. */
-export function touchAdoptedBaseline(workspacePath: string, id: string, content: string): void {
-  let map = pendingAdopted.get(workspacePath);
-  if (!map) { map = {}; pendingAdopted.set(workspacePath, map); }
-  const existing = map[id] ?? readImportConfig(workspacePath).adopted[id];
-  if (!existing) return; // not an adopted note (e.g. a Cairn-created note)
-  map[id] = { path: existing.path ?? "", bodyHash: bodyHash(content) };
-}
-
-/** Merge pending adoption entries into the config file. Idempotent; no-op when
- *  nothing was recorded. Exported so the file watcher flushes single-note
- *  adoptions too. */
-export function flushAdoptedLedger(workspacePath: string): void {
-  const pending = pendingAdopted.get(workspacePath);
-  if (!pending || Object.keys(pending).length === 0) return;
-  pendingAdopted.delete(workspacePath);
-  const cfg = readImportConfig(workspacePath);
-  writeImportConfig(workspacePath, { ...cfg, adopted: { ...cfg.adopted, ...pending } });
-}
-
-/** Drop ledger entries for note ids no longer managed (rollback / delete). */
-export function removeAdoptedEntries(workspacePath: string, ids: string[]): void {
-  if (ids.length === 0) return;
-  const cfg = readImportConfig(workspacePath);
-  let changed = false;
-  for (const id of ids) {
-    if (id in cfg.adopted) { delete cfg.adopted[id]; changed = true; }
-  }
-  if (changed) writeImportConfig(workspacePath, cfg);
-}
-
-/** Mark the vault un-managed (import rollback): scans and the watcher then leave
- *  its files as plain markdown — never re-adopt them. */
-export function setImportUnmanaged(workspacePath: string, unmanaged: boolean): void {
-  const cfg = readImportConfig(workspacePath);
-  if (cfg.unmanaged === unmanaged) return;
-  writeImportConfig(workspacePath, { ...cfg, unmanaged });
-}
 
 /** Set/unset the sync capture-trigger suppression flag (see migration v26).
  *  Wrapped in try/catch so a sync-less setup can never break a rollback. */
@@ -470,7 +225,6 @@ export function previewVaultImport(workspacePath: string): VaultImportPreview {
   result.noteCount = result.projects.reduce((sum, project) => sum + project.noteCount, 0);
   return result;
 }
-
 
 // ── Startup sync ──────────────────────────────
 //
@@ -700,158 +454,6 @@ function dirHasMarkdown(dir: string): boolean {
     }
   }
   return false;
-}
-
-/**
- * Create a project (plus the default board columns) named `name` in `workspaceId`.
- * Returns the new project id. Callers are responsible for slug-uniqueness checks.
- *
- * The project row + all default columns are created in a single transaction, so
- * a failure partway through can never leave a project with a partial/empty board
- * (mirrors the db:project:create handler).
- */
-export function ensureProject(db: Database.Database, workspaceId: string, name: string): string {
-  const projectId = newId();
-  db.transaction(() => {
-    q.createProject(db, { id: projectId, workspaceId, name });
-    for (const col of DEFAULT_COLUMNS) {
-      q.createColumn(db, {
-        id: newId(),
-        projectId,
-        workspaceId,
-        name: col.name,
-        type: col.type,
-        order: col.order,
-      });
-    }
-  })();
-  console.log(`[sync] Auto-created project "${name}" from vault folder.`);
-  return projectId;
-}
-
-/**
- * Reconcile project note directories on disk with current project names.
- *
- * A project's on-disk folder is derived from `toSlug(project.name)`. Renaming a
- * project used to update only the DB, leaving the `.md` files stranded under the
- * OLD slug (e.g. "Test Project" renamed to "Misc" but files still in
- * `<ws>/Test Project/`). Going forward, renames relocate the folder live (see
- * renameProjectNotesDir wired into the project-update handlers), but this heals
- * workspaces where a rename already happened before that fix.
- *
- * Strategy (name-agnostic — we don't need to know the old name):
- *   1. Map each top-level directory to the project that owns its notes, by
- *      reading the `projectId` from the first Cairn `.md` file found inside.
- *   2. If that directory's name != the project's expected slug, move it to the
- *      expected directory (merging if one already exists). Runs before
- *      syncNotesFromDisk so the relocated files are then imported/updated
- *      from their correct location.
- *
- * Idempotent and best-effort: a workspace already in sync is a no-op, and any
- * per-project failure is logged and skipped without aborting the others.
- * Returns the number of directories relocated.
- */
-export function reconcileProjectFolders(db: Database.Database, workspacePath: string): number {
-  const root = notesDir(workspacePath);
-  if (!fs.existsSync(root)) return 0;
-
-  // Expected slug → project name, for every project in the DB.
-  const projects = q.getProjects(db) as { id: string; name: string }[];
-  const expectedSlugById = new Map(projects.map((p) => [p.id, toSlug(p.name)]));
-  const nameById = new Map(projects.map((p) => [p.id, p.name]));
-
-  let moved = 0;
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(root);
-  } catch {
-    return 0;
-  }
-
-  for (const entry of entries) {
-    if (entry.startsWith(".")) continue; // .obsidian, .git, .cairn-migrations.json
-    const dir = path.join(root, entry);
-    let stat: fs.Stats;
-    try {
-      stat = fs.lstatSync(dir);
-    } catch {
-      continue;
-    }
-    if (!stat.isDirectory()) continue;
-
-    // Identify which project this directory belongs to via a contained note.
-    const ownerProjectId = firstNoteProjectId(dir);
-    if (!ownerProjectId) continue; // no Cairn notes here — not a project folder
-    const expectedSlug = expectedSlugById.get(ownerProjectId);
-    if (!expectedSlug || expectedSlug === entry) continue; // already correct
-
-    const projectName = nameById.get(ownerProjectId)!;
-    try {
-      // renameProjectNotesDir works in terms of project NAMES → slugs; feed it
-      // this directory's literal name as the "old name" and the project's real
-      // name as the "new name" so it computes old=<entry> → new=<expectedSlug>.
-      if (renameProjectNotesDir(workspacePath, entry, projectName)) {
-        moved++;
-        console.log(`[reconcile] Moved project notes "${entry}" → "${expectedSlug}" (project "${projectName}").`);
-      }
-    } catch (err) {
-      console.error(`[reconcile] Failed to relocate "${entry}":`, err);
-    }
-  }
-  return moved;
-}
-
-/** Read the `projectId` from the first Cairn `.md` file found under `dir` (recursive). */
-function firstNoteProjectId(dir: string): string | null {
-  let found: string | null = null;
-  const walk = (d: string) => {
-    if (found) return;
-    let items: string[];
-    try {
-      items = fs.readdirSync(d);
-    } catch {
-      return;
-    }
-    for (const item of items) {
-      if (found) return;
-      if (item.startsWith(".")) continue;
-      const fp = path.join(d, item);
-      let st: fs.Stats;
-      try {
-        st = fs.lstatSync(fp);
-      } catch {
-        continue;
-      }
-      if (st.isDirectory()) {
-        walk(fp);
-      } else if (item.endsWith(".md")) {
-        const note = parseNoteFile(fp);
-        if (note?.projectId) {
-          found = note.projectId;
-          return;
-        }
-      }
-    }
-  };
-  walk(dir);
-  return found;
-}
-
-/** Remove any *.md.tmp files left by a crash during an atomic write. */
-function cleanStaleTmpFiles(dir: string): void {
-  try {
-    for (const entry of fs.readdirSync(dir)) {
-      const fp = path.join(dir, entry);
-      try {
-        const stat = fs.lstatSync(fp);
-        if (stat.isDirectory()) {
-          cleanStaleTmpFiles(fp);
-        } else if (entry.endsWith(".md.tmp")) {
-          fs.unlinkSync(fp);
-        }
-      } catch { /* skip unreadable entries */ }
-    }
-  } catch { /* root unreadable */ }
 }
 
 function syncDir(db: Database.Database, dir: string, workspacePath: string, config: ImportConfig): void {
