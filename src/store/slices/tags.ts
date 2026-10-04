@@ -7,6 +7,7 @@ import type { CairnStore } from "../index";
 import type { Tag, ID } from "@/types";
 import { id } from "@/lib/utils";
 import { ipc } from "../ipc";
+import { TAG_PALETTE } from "@/lib/constants";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ export const createTagsSlice: StateCreator<CairnStore, [], [], TagsSlice> = (
 ) => ({
   tags: [],
 
-  createTag(workspaceId, name, color = "#6366f1") {
+  createTag(workspaceId, name, color = TAG_PALETTE[0].color) {
     const tag: Tag = { id: id(), workspaceId, name, color };
     set((s) => ({ tags: [...s.tags, tag] }));
     get().persist();

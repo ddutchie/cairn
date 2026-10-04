@@ -13,8 +13,8 @@
 
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import * as d3 from "d3";
-import { useContainerDims, useFontScale, useThemeRepaint } from "../graph/analyticsHooks";
-import { resolveCssVar, withAlpha } from "../graph/analyticsUtils";
+import { useContainerDims, useFontScale, useThemeRepaint } from "@/lib/viz/hooks";
+import { resolveCssVar, withAlpha } from "@/lib/viz/color";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 

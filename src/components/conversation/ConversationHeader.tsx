@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { ContextRing } from "@/components/agent/ContextRing";
 import { SchedulePill } from "@/components/conversation/SchedulePill";
 import type { TokenBreakdown } from "@/types";
@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
+import { useResizeObserver } from "@/lib/viz/hooks";
 
 export interface ConversationUsage {
   promptTokens: number;
@@ -34,14 +35,7 @@ interface ConversationHeaderProps {
 export function ConversationHeader({ title, usage, contextLimit, actions, schedule }: ConversationHeaderProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setOverflows(el.clientWidth < 300));
-    ro.observe(el);
-    setOverflows(el.clientWidth < 300);
-    return () => ro.disconnect();
-  }, [title, usage, actions]);
+  useResizeObserver(ref, (el) => setOverflows(el.clientWidth < 300), [title, usage, actions]);
 
   return (
     <div ref={ref} className="flex items-center gap-1.5 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0 overflow-hidden min-w-0">

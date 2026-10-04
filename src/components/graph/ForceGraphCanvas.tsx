@@ -4,8 +4,8 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from "react"
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
-import { createCssVarReader, createAlphaCache, tokenToCssVar } from "./analyticsUtils";
-import { useFontScale, useThemeRepaint, useContainerDims } from "./analyticsHooks";
+import { createCssVarReader, createAlphaCache, tokenToCssVar } from "@/lib/viz/color";
+import { useFontScale, useThemeRepaint, useContainerDims } from "@/lib/viz/hooks";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   nodeTypeToken,

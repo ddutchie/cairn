@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState, useCallback } from "react";
-import { useContainerDims, useFontScale } from "@/components/graph/analyticsHooks";
+import { useContainerDims, useFontScale } from "@/lib/viz/hooks";
 import { EmptyState } from "@/components/ui/empty-state";
 import { fmtFull, fmtCompact, fmtDay } from "./usage-format";
 import { formatUsd } from "../../../shared/chat/provider-credits";

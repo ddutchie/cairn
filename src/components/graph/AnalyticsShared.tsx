@@ -6,7 +6,7 @@
 import React from "react";
 import * as d3 from "d3";
 import { DAY_MS } from "./analyticsUtils";
-import { useFontScale } from "./analyticsHooks";
+import { useFontScale } from "@/lib/viz/hooks";
 import { EmptyState } from "@/components/ui/empty-state";
 
 // ── CanvasEmptyState ──────────────────────────────────────────────────────────

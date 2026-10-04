@@ -3,7 +3,8 @@
 import React, { useMemo, useRef, useState } from "react";
 import type { GraphNode } from "@/types";
 import { PRIORITY_COLOR, truncateName } from "./analyticsUtils";
-import { useContainerDims, useScopeSets, useFontScale, useNow } from "./analyticsHooks";
+import { useScopeSets } from "./analyticsHooks";
+import { useContainerDims, useFontScale, useNow } from "@/lib/viz/hooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
 
 interface Props {
