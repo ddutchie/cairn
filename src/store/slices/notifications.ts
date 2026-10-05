@@ -12,18 +12,11 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { ID } from "@/types";
+import type { McpNotification } from "../../../shared/types/notifications";
+import { hasElectron, reportIpcError } from "@/lib/ipc/client";
+import { notificationsClient } from "@/lib/ipc/tools";
 
-export interface McpNotification {
-  id: ID;
-  tool: string;
-  title: string;
-  body: string;
-  read: boolean;
-  createdAt: string;
-  /** Optional navigation target (note/task/automation/agent session) the notification links to. */
-  targetType: "note" | "task" | "automation" | "approval" | "session" | null;
-  targetId: ID | null;
-}
+export type { McpNotification };
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -54,29 +47,27 @@ export const createNotificationsSlice: StateCreator<CairnStore, [], [], Notifica
   notificationUnreadCount: 0,
 
   async fetchNotifications(limit = 100) {
-    if (typeof window === "undefined" || !window.electron?.notification) return;
+    if (!hasElectron("notification")) return;
     try {
-      const rows = (await window.electron.notification.list(limit)) as McpNotification[];
-      set({ notifications: rows });
+      set({ notifications: await notificationsClient.list(limit) });
     } catch (err) {
       console.error("[notifications] fetchNotifications error", err);
     }
   },
 
   async fetchNotificationUnread() {
-    if (typeof window === "undefined" || !window.electron?.notification) return;
+    if (!hasElectron("notification")) return;
     try {
-      const n = (await window.electron.notification.count()) as number;
-      set({ notificationUnreadCount: n });
+      set({ notificationUnreadCount: await notificationsClient.unreadCount() });
     } catch (err) {
       console.error("[notifications] fetchNotificationUnread error", err);
     }
   },
 
   async markNotificationRead(id) {
-    if (typeof window === "undefined" || !window.electron?.notification) return;
+    if (!hasElectron("notification")) return;
     try {
-      await window.electron.notification.markRead(id);
+      await notificationsClient.markRead(id);
       set((s) => ({
         notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
         // Decrement only when this notification was previously unread.
@@ -85,37 +76,36 @@ export const createNotificationsSlice: StateCreator<CairnStore, [], [], Notifica
           : s.notificationUnreadCount,
       }));
     } catch (err) {
-      console.error("[notifications] markNotificationRead error", err);
+      reportIpcError(err, "Couldn't mark the notification read");
     }
   },
 
   async markAllNotificationsRead() {
-    if (typeof window === "undefined" || !window.electron?.notification) return;
+    if (!hasElectron("notification")) return;
     try {
-      await window.electron.notification.markAllRead();
+      await notificationsClient.markAllRead();
       set((s) => ({
         notifications: s.notifications.map((n) => ({ ...n, read: true })),
         notificationUnreadCount: 0,
       }));
     } catch (err) {
-      console.error("[notifications] markAllNotificationsRead error", err);
+      reportIpcError(err, "Couldn't mark notifications read");
     }
   },
 
   async clearNotifications() {
-    if (typeof window === "undefined" || !window.electron?.notification) return;
+    if (!hasElectron("notification")) return;
     try {
-      await window.electron.notification.clear();
+      await notificationsClient.clear();
       set({ notifications: [], notificationUnreadCount: 0 });
     } catch (err) {
-      console.error("[notifications] clearNotifications error", err);
+      reportIpcError(err, "Couldn't clear notifications");
     }
   },
 
   startNotificationPolling() {
-    const electron = typeof window !== "undefined" ? window.electron : undefined;
-    if (electron?.notification && electron.onMcpUnreadCount && !unsubUnread) {
-      unsubUnread = electron.onMcpUnreadCount((count) => {
+    if (hasElectron("notification") && !unsubUnread) {
+      unsubUnread = notificationsClient.onUnreadCount((count) => {
         set({ notificationUnreadCount: count });
       });
     }

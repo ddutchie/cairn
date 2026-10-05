@@ -7,6 +7,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "path";
 import { DEEP_LINK_SCHEME, parseOAuthCallback, completeServerAuth } from "./lib/mcp-oauth";
+import { sendIpcEvent } from "./ipc/registry";
 
 /** Find the first cairn:// deep link in a process argv array, if any. */
 function deepLinkFromArgv(argv: string[]): string | null {
@@ -33,7 +34,7 @@ async function handleDeepLink(rawUrl: string): Promise<void> {
   win.focus();
   const result = await completeServerAuth(cb);
   // Tell the renderer how it went so Settings can refresh the connection state.
-  win.webContents.send("tools:oauthCallback", result);
+  sendIpcEvent(win.webContents, "tools:oauthCallback", result);
 }
 
 /** Flush any buffered deep link once the renderer is ready. */

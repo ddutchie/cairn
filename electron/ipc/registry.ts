@@ -233,6 +233,11 @@ function stripNonceForMobile(payload: unknown): unknown {
   return clone;
 }
 
+/** {@link broadcastEvent} for a contract push event, payload checked against `IpcEvents`. */
+export function broadcastIpcEvent<E extends IpcEventChannel>(channel: E, ...payload: IpcEventArgs<E>): void {
+  broadcastEvent(channel, payload[0]);
+}
+
 /**
  * Broadcast an event to all Electron windows and all active mobile clients.
  */

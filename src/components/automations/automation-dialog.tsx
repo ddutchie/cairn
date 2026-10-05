@@ -11,6 +11,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { ScheduleBuilder } from "./schedule-builder";
 import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
+import { toolsClient } from "@/lib/ipc/tools";
 import type { Automation, ScheduleKind } from "@/store/slices/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
@@ -67,8 +68,8 @@ export function AutomationDialog({
     if (!activeWorkspaceId) return;
     let cancelled = false;
     void Promise.all([
-      window.electron?.tools.listMcpServers(activeWorkspaceId).catch(() => []) as Promise<McpServerConfig[]>,
-      window.electron?.tools.listServices(activeWorkspaceId).catch(() => []) as Promise<CustomServiceConfig[]>,
+      toolsClient.listMcpServers(activeWorkspaceId).catch((): McpServerConfig[] => []),
+      toolsClient.listServices(activeWorkspaceId).catch((): CustomServiceConfig[] => []),
     ]).then(([mcps, svcs]) => {
       if (cancelled) return;
       setConnectors([

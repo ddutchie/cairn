@@ -20,7 +20,7 @@ import { autoUpdater } from "electron-updater";
 import { loadMobileSettings, startMobileServer, stopMobileServer } from "./lib/mobile-server";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
-import { broadcastEvent, setWriteObserver } from "./ipc/registry";
+import { broadcastEvent, sendIpcEvent, setWriteObserver } from "./ipc/registry";
 import { registerAgentHandlers } from "./ipc/agent";
 import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
@@ -490,7 +490,7 @@ app.whenReady().then(async () => {
     markMcpNotificationsRead(ctx.db);
     updateBadge(0);
     poller.resetCount();
-    if (!win.isDestroyed()) win.webContents.send("mcp:unread-count", 0);
+    if (!win.isDestroyed()) sendIpcEvent(win.webContents, "mcp:unread-count", 0);
   }
 
   // Register app:* and mcp:* IPC handlers (now that updateBadge is available)

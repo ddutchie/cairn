@@ -7,12 +7,12 @@
  * stored as "secret://<toolId>/<header>" refs here; the real values live in
  * the OS keychain via the secure store (separate card).
  *
- * All handlers use the handle() wrapper for { data } | { error } responses.
+ * Channels and payloads are typed by `shared/ipc/contract.ts`; every handler
+ * uses handle(), so failures throw and reach the renderer as rejections.
  */
 
-import { registerIpcHandle } from "./registry";
+import { broadcastIpcEvent, registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
-import { broadcastEvent } from "./registry";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
 import * as secrets from "../lib/secure-store";
@@ -125,11 +125,11 @@ function serviceOAuthConfigChanged(
 /** Reads `ctx.db` at call time so a workspace swap (`reinitialise`) is transparent. */
 export function registerToolsHandlers(ctx: DbContext): void {
   // ── MCP servers ──────────────────────────────────────────────────────────
-  registerIpcHandle("tools:listMcpServers", (_e, { workspaceId }: { workspaceId: string }) =>
+  registerContractHandle("tools:listMcpServers", (_e, { workspaceId }) =>
     handle(() => q.getMcpServers(ctx.db, workspaceId))
   );
 
-  registerIpcHandle("tools:saveMcpServer", (_e, server: SaveMcpArgs) =>
+  registerContractHandle("tools:saveMcpServer", (_e, server) =>
     handle(() => {
       const id = server.id ?? newId();
       // On edit, if any connection/auth-relevant field changed, the stored OAuth
@@ -144,11 +144,12 @@ export function registerToolsHandlers(ctx: DbContext): void {
           void mcpClient.dispose(id);
         }
       }
-      return q.saveMcpServer(ctx.db, { ...server, id, headers: sanitizeHeaders(server.headers) });
+      // SQLite NOT NULL constraints reject a row missing its required fields.
+      return q.saveMcpServer(ctx.db, { ...(server as SaveMcpArgs), id, headers: sanitizeHeaders(server.headers) });
     })
   );
 
-  registerIpcHandle("tools:deleteMcpServer", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:deleteMcpServer", (_e, { id }) =>
     handle(() => {
       q.deleteMcpServer(ctx.db, id);
       mcpOauth.cancelServerAuth(id); // drop any in-flight OAuth attempt (loopback + deep-link)
@@ -158,7 +159,7 @@ export function registerToolsHandlers(ctx: DbContext): void {
   );
 
   // Settings "test connection": connect + listTools, then disconnect.
-  registerIpcHandle("tools:testMcp", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:testMcp", (_e, { id }) =>
     handle(() => {
       const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
@@ -178,7 +179,7 @@ export function registerToolsHandlers(ctx: DbContext): void {
 
   // List a server's individual tools (raw name + description) for the per-tool
   // enable/disable checklist in Settings. Keeps the cached connection alive.
-  registerIpcHandle("tools:listMcpTools", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:listMcpTools", (_e, { id }) =>
     handle(() => {
       const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
@@ -201,7 +202,7 @@ export function registerToolsHandlers(ctx: DbContext): void {
   // triggered. Completion arrives via either the loopback listener (default) or
   // the cairn://oauth/callback deep link; both forward a tools:oauthCallback
   // event to the renderer so Settings can refresh the connection state.
-  registerIpcHandle("tools:startMcpAuth", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:startMcpAuth", (_e, { id }) =>
     handle(() => {
       const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
@@ -216,18 +217,18 @@ export function registerToolsHandlers(ctx: DbContext): void {
           redirectUri: server.oauthRedirectUri,
         },
         server.name,
-        (result) => broadcastEvent("tools:oauthCallback", result),
+        (result) => broadcastIpcEvent("tools:oauthCallback", result),
       );
     })
   );
 
   // Whether the server currently holds OAuth tokens (i.e. is "connected").
-  registerIpcHandle("tools:mcpAuthStatus", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:mcpAuthStatus", (_e, { id }) =>
     handle(() => ({ connected: mcpOauth.hasTokens(id) }))
   );
 
   // Sign out: forget tokens/registration and drop any live connection.
-  registerIpcHandle("tools:signOutMcp", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:signOutMcp", (_e, { id }) =>
     handle(() => {
       mcpOauth.signOut(id);
       mcpOauth.cancelServerAuth(id); // tear down loopback listener + deep-link attempt
@@ -237,16 +238,16 @@ export function registerToolsHandlers(ctx: DbContext): void {
 
   // Cancel an in-flight sign-in (user abandoned the browser step). Tears down
   // the waiting loopback listener → the flow reports a cancelled completion.
-  registerIpcHandle("tools:cancelMcpAuth", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:cancelMcpAuth", (_e, { id }) =>
     handle(() => ({ cancelled: mcpOauth.cancelServerAuth(id) }))
   );
 
   // ── Custom HTTP services ─────────────────────────────────────────────────
-  registerIpcHandle("tools:listServices", (_e, { workspaceId }: { workspaceId: string }) =>
+  registerContractHandle("tools:listServices", (_e, { workspaceId }) =>
     handle(() => q.getCustomServices(ctx.db, workspaceId))
   );
 
-  registerIpcHandle("tools:saveService", (_e, service: SaveServiceArgs) =>
+  registerContractHandle("tools:saveService", (_e, service) =>
     handle(() => {
       const id = service.id ?? newId();
       // On edit, if any auth-relevant field changed, previously-issued OAuth
@@ -259,11 +260,11 @@ export function registerToolsHandlers(ctx: DbContext): void {
           mcpOauth.cancelServiceAuth(id);
         }
       }
-      return q.saveCustomService(ctx.db, { ...service, id, headers: sanitizeHeaders(service.headers) });
+      return q.saveCustomService(ctx.db, { ...(service as SaveServiceArgs), id, headers: sanitizeHeaders(service.headers) });
     })
   );
 
-  registerIpcHandle("tools:deleteService", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:deleteService", (_e, { id }) =>
     handle(() => {
       q.deleteCustomService(ctx.db, id);
       mcpOauth.signOut(id, "service"); // purge keychain OAuth tokens/registration
@@ -274,9 +275,9 @@ export function registerToolsHandlers(ctx: DbContext): void {
 
   // Settings dry-run for a service. Injects the OAuth bearer resolver so an
   // "oauth" service is tested with a live access token, mirroring a real call.
-  registerIpcHandle(
+  registerContractHandle(
     "tools:testService",
-    (_e, { id, sampleArgs }: { id: string; sampleArgs?: Record<string, unknown> }) =>
+    (_e, { id, sampleArgs }) =>
       handle(() => {
         const svc = q.getCustomServiceById(ctx.db, id);
         if (!svc) throw new Error("Service not found");
@@ -300,7 +301,7 @@ export function registerToolsHandlers(ctx: DbContext): void {
   // Begin sign-in for an OAuth service: opens the system browser via the SDK
   // auth() orchestrator (loopback redirect). Completion forwards a
   // tools:oauthCallback event, same as MCP servers.
-  registerIpcHandle("tools:startServiceAuth", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:startServiceAuth", (_e, { id }) =>
     handle(() => {
       const svc = q.getCustomServiceById(ctx.db, id);
       if (!svc) throw new Error("Service not found");
@@ -314,18 +315,18 @@ export function registerToolsHandlers(ctx: DbContext): void {
           redirectUri: svc.oauth?.redirectUri,
         },
         svc.name,
-        (result) => broadcastEvent("tools:oauthCallback", result),
+        (result) => broadcastIpcEvent("tools:oauthCallback", result),
       );
     })
   );
 
   // Whether the service currently holds OAuth tokens (i.e. is "connected").
-  registerIpcHandle("tools:serviceAuthStatus", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:serviceAuthStatus", (_e, { id }) =>
     handle(() => ({ connected: mcpOauth.hasTokens(id, "service") }))
   );
 
   // Sign out: forget tokens/registration.
-  registerIpcHandle("tools:signOutService", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:signOutService", (_e, { id }) =>
     handle(() => {
       mcpOauth.signOut(id, "service");
       mcpOauth.cancelServiceAuth(id);
@@ -333,20 +334,20 @@ export function registerToolsHandlers(ctx: DbContext): void {
   );
 
   // Cancel an in-flight service sign-in.
-  registerIpcHandle("tools:cancelServiceAuth", (_e, { id }: { id: string }) =>
+  registerContractHandle("tools:cancelServiceAuth", (_e, { id }) =>
     handle(() => ({ cancelled: mcpOauth.cancelServiceAuth(id) }))
   );
 
   // ── Per-project attachments ──────────────────────────────────────────────
-  registerIpcHandle("tools:listAttachments", (_e, { projectId }: { projectId: string }) =>
+  registerContractHandle("tools:listAttachments", (_e, { projectId }) =>
     handle(() => q.getToolAttachments(ctx.db, projectId))
   );
 
-  registerIpcHandle("tools:setAttachment", (_e, a: Parameters<typeof q.setToolAttachment>[1]) =>
+  registerContractHandle("tools:setAttachment", (_e, a) =>
     handle(() => q.setToolAttachment(ctx.db, a))
   );
 
-  registerIpcHandle("tools:clearAttachment", (_e, a: Parameters<typeof q.clearToolAttachment>[1]) =>
+  registerContractHandle("tools:clearAttachment", (_e, a) =>
     handle(() => q.clearToolAttachment(ctx.db, a))
   );
 
@@ -354,29 +355,29 @@ export function registerToolsHandlers(ctx: DbContext): void {
   // NOTE: there is intentionally NO "secrets:get" — the renderer can only learn
   // whether a secret is set, set a new value, or delete one. Decryption happens
   // only in the main process at tool-execution time (resolveSecrets).
-  registerIpcHandle("secrets:available", () => handle(() => secrets.isAvailable()));
+  registerContractHandle("secrets:available", () => handle(() => secrets.isAvailable()));
 
-  registerIpcHandle(
+  registerContractHandle(
     "secrets:set",
-    (_e, { toolType, toolId, key, value }: { toolType: secrets.ToolKind; toolId: string; key: string; value: string }) =>
+    (_e, { toolType, toolId, key, value }) =>
       handle(() => {
         assertSecretIdentity(toolType, toolId, key);
         return secrets.setSecret(toolType, toolId, key, value);
       })
   );
 
-  registerIpcHandle(
+  registerContractHandle(
     "secrets:has",
-    (_e, { toolType, toolId, key }: { toolType: secrets.ToolKind; toolId: string; key: string }) =>
+    (_e, { toolType, toolId, key }) =>
       handle(() => {
         assertSecretIdentity(toolType, toolId, key);
         return secrets.hasSecret(toolType, toolId, key);
       })
   );
 
-  registerIpcHandle(
+  registerContractHandle(
     "secrets:delete",
-    (_e, { toolType, toolId, key }: { toolType: secrets.ToolKind; toolId: string; key: string }) =>
+    (_e, { toolType, toolId, key }) =>
       handle(() => {
         assertSecretIdentity(toolType, toolId, key);
         return secrets.deleteSecret(toolType, toolId, key);

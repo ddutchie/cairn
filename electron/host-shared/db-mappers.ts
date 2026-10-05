@@ -12,6 +12,8 @@ import type { BoardColumn, TaskCard } from "../../shared/types/board";
 import type { ColumnType, Priority, ProjectStatus } from "../../shared/types/domain";
 import type { Project, ProjectSettings, Tag, Workspace } from "../../shared/types/workspace";
 import type { IdeaFlow, IdeaFlowEdge, IdeaFlowNode, IdeaNodeType } from "../../shared/types/flow";
+import { NOTIFICATION_TARGET_TYPES, type McpNotification, type NotificationTargetType } from "../../shared/types/notifications";
+import type { CustomServiceConfig, McpServerConfig, ServiceOperationConfig, ToolAttachment } from "../../shared/types/tools";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
 export type DbRow = Record<string, unknown>;
@@ -122,7 +124,7 @@ function parseOAuthConfig(v: unknown):
   }
 }
 
-export function toMcpServer(row: DbRow) {
+export function toMcpServer(row: DbRow): McpServerConfig {
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,
@@ -148,7 +150,10 @@ export function toMcpServer(row: DbRow) {
   };
 }
 
-export function toCustomService(row: DbRow) {
+/** Stored rows always carry the legacy single-op columns (NOT NULL, "" when unused). */
+export type StoredCustomService = CustomServiceConfig & Required<Pick<CustomServiceConfig, "apiUrl" | "method" | "toolDefinition">>;
+
+export function toCustomService(row: DbRow): StoredCustomService {
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,
@@ -159,7 +164,7 @@ export function toCustomService(row: DbRow) {
     headers: pObj(row.headers),
     toolDefinition: row.tool_definition as string,
     baseUrl: (row.base_url ?? undefined) as string | undefined,
-    operations: row.operations ? (j2(row.operations) as unknown[]) : undefined,
+    operations: row.operations ? (j2(row.operations) as unknown as ServiceOperationConfig[]) : undefined,
     responseKeys: j2(row.response_keys),
     apiKeyUrl: (row.api_key_url ?? undefined) as string | undefined,
     authMode: (row.auth_mode ?? "none") as "none" | "oauth",
@@ -173,7 +178,7 @@ export function toCustomService(row: DbRow) {
   };
 }
 
-export function toToolAttachment(row: DbRow) {
+export function toToolAttachment(row: DbRow): ToolAttachment {
   return {
     projectId: row.project_id as string,
     toolType: row.tool_type as "mcp" | "service",
@@ -300,21 +305,8 @@ export function toChatMessage(row: DbRow) {
   };
 }
 
-/** The complete set of notification navigation-target types. */
-export const NOTIFICATION_TARGET_TYPES = ["note", "task", "automation", "approval", "session"] as const;
-export type NotificationTargetType = (typeof NOTIFICATION_TARGET_TYPES)[number];
-
-export interface McpNotification {
-  id: string;
-  tool: string;
-  title: string;
-  body: string;
-  read: boolean;
-  createdAt: string;
-  /** Optional navigation target (note/task/automation/approval) the notification links to. */
-  targetType: NotificationTargetType | null;
-  targetId: string | null;
-}
+export { NOTIFICATION_TARGET_TYPES };
+export type { McpNotification, NotificationTargetType };
 
 export function toMcpNotification(row: DbRow): McpNotification {
   return {

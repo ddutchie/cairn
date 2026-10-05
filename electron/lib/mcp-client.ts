@@ -37,6 +37,7 @@ import {
   type McpToolDef,
 } from "../../shared/chat/mcp-namespace";
 import { errMsg } from "../host-shared/errors";
+import type { ListMcpToolsResult, McpTestResult, McpToolInfo } from "../../shared/types/tools";
 
 export { namespaceToolName, parseToolName, isMcpToolName, mcpToolsToOpenAI };
 export type { OpenAIToolDef };
@@ -209,17 +210,7 @@ export async function listTools(cfg: McpServerRuntimeConfig): Promise<OpenAITool
   }
 }
 
-/** A server's individual tool, with its raw (un-namespaced) name + description. */
-export interface McpToolInfo {
-  name: string;
-  description?: string;
-}
-
-export interface ListMcpToolsResult {
-  ok: boolean;
-  tools: McpToolInfo[];
-  error?: string;
-}
+export type { McpToolInfo, ListMcpToolsResult };
 
 /**
  * List a server's tools with raw names + descriptions, for the Settings
@@ -274,7 +265,7 @@ export async function callTool(
  */
 export async function testConnection(
   cfg: McpServerRuntimeConfig
-): Promise<{ ok: boolean; toolCount?: number; toolNames?: string[]; error?: string }> {
+): Promise<McpTestResult> {
   try {
     const conn = await connect(cfg);
     const res = await withTimeout(conn.client.listTools(), CONNECT_TIMEOUT_MS, `MCP test ${cfg.id}`);

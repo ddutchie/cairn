@@ -5,6 +5,8 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Check, X, Server, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { persist } from "@/lib/ipc/client";
+import { secretsClient } from "@/lib/ipc/tools";
 import type { SavedProvider, ApiMode } from "@/store/slices/ui";
 import { dedupeProviders } from "@/store/slices/ui";
 import { SettingsRow } from "./shared";
@@ -226,7 +228,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
               </button>
               <button
                 onClick={() => {
-                  window.electron?.secrets?.delete("llm", active.id, "apiKey");
+                  persist(secretsClient.delete("llm", active.id, "apiKey"), "Couldn't remove the API key");
                   deleteSavedProvider(active.id);
                 }}
                 className="px-2 py-1 text-[0.714rem] rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--danger)] hover:text-[var(--danger)] transition-colors flex items-center gap-1 cursor-pointer"

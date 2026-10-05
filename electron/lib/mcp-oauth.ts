@@ -50,6 +50,7 @@ import {
   type OAuthCallback,
 } from "../../shared/chat/oauth-callback";
 import { errMsg } from "../host-shared/errors";
+import type { AuthCompleteResult, AuthStartResult } from "../../shared/types/tools";
 
 export { parseOAuthCallback, OAUTH_REDIRECT_URI, DEEP_LINK_SCHEME };
 export type { OAuthCallback };
@@ -355,10 +356,7 @@ function sweepPending(): void {
   }
 }
 
-export type AuthStartResult =
-  | { status: "redirected" }
-  | { status: "already_authorized" }
-  | { status: "error"; error: string };
+export type { AuthStartResult, AuthCompleteResult };
 
 /** Notified when a loopback-completed sign-in finishes (success or failure). */
 export type AuthCompletionListener = (result: AuthCompleteResult) => void;
@@ -542,10 +540,6 @@ async function startServerAuthDeepLink(
   }
 }
 
-export type AuthCompleteResult =
-  | { status: "authorized"; serverId: string }
-  | { status: "unknown_state" }
-  | { status: "error"; serverId?: string; error: string };
 
 /**
  * Complete an OAuth sign-in from a `cairn://oauth/callback` deep link. Looks up

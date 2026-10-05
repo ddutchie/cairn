@@ -23,6 +23,7 @@ import type {
   RegistryServiceEntry,
 } from "@/types";
 import { headerNeedsSecret } from "@/store/slices/tools";
+import { toolsClient } from "@/lib/ipc/tools";
 import { ConnectorLogo } from "./ConnectorLogo";
 
 type Kind = "mcp" | "service";
@@ -178,13 +179,11 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
           // OAuth connectors need an interactive connect (browser sign-in) —
           // ask for it right after install so the user isn't left wondering
           // why the connector is "Installed" but unusable.
-          const status =
-            e.kind === "mcp"
-              ? await window.electron?.tools.mcpAuthStatus(toolId)
-              : await window.electron?.tools.serviceAuthStatus(toolId);
+          // The install already succeeded; an unknown status just shows "Connect".
+          const status = await toolsClient.authStatus(e.kind, toolId).catch(() => ({ connected: false }));
           setJustInstalled({
             entry: e, toolId, kind: e.kind, oauth: true,
-            connected: status?.connected ?? false,
+            connected: status.connected,
             secretCount: Object.keys(secrets).length,
           });
         } else {
@@ -208,16 +207,13 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
     setConnecting(true);
     setConnectError(null);
     try {
-      const r =
-        justInstalled.kind === "mcp"
-          ? await window.electron?.tools.startMcpAuth(justInstalled.toolId)
-          : await window.electron?.tools.startServiceAuth(justInstalled.toolId);
-      if (r?.status === "already_authorized") {
+      const r = await toolsClient.startAuth(justInstalled.kind, justInstalled.toolId);
+      if (r.status === "already_authorized") {
         setConnecting(false);
         setJustInstalled((j) => (j ? { ...j, connected: true } : j));
-      } else if (r?.status === "error") {
+      } else if (r.status === "error") {
         setConnecting(false);
-        setConnectError(r.error ?? "Sign-in failed");
+        setConnectError(r.error);
       }
       // "redirected": browser opened — onOauthCallback flips busy off.
     } catch (err) {
@@ -228,17 +224,16 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
 
   // Track completion of the OAuth flow started from the post-install prompt.
   useEffect(() => {
-    const off = window.electron?.tools.onOauthCallback((e) => {
+    return toolsClient.onOauthCallback((e) => {
       if (!justInstalled || e.serverId !== justInstalled.toolId) return;
       setConnecting(false);
       if (e.status === "authorized") {
         setConnectError(null);
         setJustInstalled((j) => (j ? { ...j, connected: true } : j));
       } else if (e.status === "error") {
-        setConnectError(e.error ?? "Sign-in failed");
+        setConnectError(e.error);
       }
     });
-    return () => { off?.(); };
   }, [justInstalled]);
 
   const onInstallClick = useCallback(
