@@ -739,8 +739,11 @@ export interface IpcEvents {
   "embeddings:download-progress": EmbeddingDownloadProgress;
   "runtime:download-progress": EmbeddingDownloadProgress;
   "mobile:status-changed": MobileStatus;
-  /** Workspace data changed (a write channel completed, or an MCP / sync write landed). */
-  "db:changed": undefined;
+  /**
+   * Workspace data changed (a write channel completed, or an MCP / sync write
+   * landed). The registry broadcasts it with a `null` payload; listeners ignore it.
+   */
+  "db:changed": null;
   /** The in-app AI started / finished writing a note (editor goes read-only meanwhile). */
   "note:aiWriteStarted": { noteId: string };
   "note:aiWriteEnded": { noteId: string };

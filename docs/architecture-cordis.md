@@ -342,7 +342,7 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Replay / session-as-truth | `electron/ipc/chat-session.ts`, `session-handlers.ts`, `cordis/session-replay.ts` |
 | Tools bridge | `electron/cordis/cairn-tools.ts` |
 | Plugin runtime (backend) | `electron/cordis/plugin-loader.ts`, `plugin-installer.ts` |
-| Plugin IPC + service | `electron/ipc/ui-plugin-handlers.ts`, `electron/preload.ts` |
+| Plugin IPC + service | `electron/ipc/ui-plugin-handlers.ts`, `electron/preload/runtime.ts` |
 | Plugin UI (renderer) | `src/lib/plugin-ui/{loader,platform-modules,dsh-client-ctx,dsh-slot-map,slot-matrix,registry}.ts`, `SlotOutlet.tsx` |
 | Toolview dispatch | `src/lib/dsh-toolview/{contract,adapter}.ts`, `src/components/conversation/ConversationMessageBubble.tsx` (+ `conversation-live.ts`) |
 | Attachment store | `electron/cordis/cairn-attachment-store.ts` |
