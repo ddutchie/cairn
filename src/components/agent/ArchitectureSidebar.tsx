@@ -28,17 +28,7 @@ import {
 } from "lucide-react";
 import { CairnEvents } from "@/lib/events";
 import { MicroLabel, SectionLabel } from "@/components/ui/labels";
-
-interface CodebaseSymbol {
-  id: string; file_id: string; name: string; kind: string; line: number;
-  signature: string; docstring: string | null; file_path: string; root_path: string;
-}
-interface CodebaseRelationEdge {
-  type: string; target_name: string; source_name: string; source_file: string;
-}
-interface CodebaseRelations {
-  incoming: CodebaseRelationEdge[]; outgoing: CodebaseRelationEdge[];
-}
+import type { CodebaseRelationEdge, CodebaseRelations, CodebaseSymbol } from "../../../shared/types/codebase";
 
 const KIND_COLOR: Record<string, string> = {
   class: "var(--accent)",

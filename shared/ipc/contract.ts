@@ -47,6 +47,13 @@ import type {
   UpdateAvailableInfo, VaultImportPreview, WorkspaceRescanResult,
 } from "../types/app";
 import type { CreditInfo } from "../chat/provider-credits";
+import type {
+  CodebaseGraph, CodebaseModuleGraph, CodebaseOverview, CodebaseRelations, CodebaseSymbol,
+} from "../types/codebase";
+import type {
+  AgentSpawnInput, CodingAgent, CodingAgentInput, DirEntry, FileSearchResult, ModelPtyEvent, ModelTerminal,
+  PtyDataEvent, PtyExitEvent,
+} from "../types/coding-agent";
 import type { PdfTheme } from "../notes/pdf-template";
 import type {
   AuthCompleteResult, AuthStartResult, CustomServiceConfig, ListMcpToolsResult, McpServerConfig, McpTestResult,
@@ -456,6 +463,50 @@ export interface IpcContract {
   // ── Auto-updater ─────────────────────────────────────────────────────────
   /** Quits and installs the downloaded update. */
   "updater:install": { args: []; result: void };
+
+  // ── Coding agents (CLI binaries run in a PTY) ────────────────────────────
+  "agent:getCodingAgents": { args: []; result: CodingAgent[] };
+  "agent:saveCodingAgent": { args: [agent: CodingAgentInput]; result: CodingAgent };
+  "agent:deleteCodingAgent": { args: [req: { id: string }]; result: void };
+  "agent:setDefaultAgent": { args: [req: { id: string }]; result: void };
+
+  // ── Agent file browser (paths must sit inside a project's code directory) ─
+  "agent:readDir": { args: [req: { dirPath: string }]; result: DirEntry[] };
+  /** Filename substring match, at most 50 results. */
+  "agent:searchFiles": { args: [req: { dirPath: string; query: string }]; result: FileSearchResult[] };
+  "agent:readFile": { args: [req: { filePath: string }]; result: string };
+  /** The file as a `data:` URL. */
+  "agent:readFileBase64": { args: [req: { filePath: string }]; result: string };
+  "agent:writeFile": { args: [req: { filePath: string; content: string }]; result: void };
+  /** False (never rejects) for unsafe or missing paths. */
+  "agent:validateDirectory": { args: [req: { dirPath: string }]; result: boolean };
+  /** Tracked changes vs HEAD plus untracked files as synthesised new-file hunks. */
+  "agent:gitDiff": { args: [req: { cwd: string }]; result: string };
+  /** null when the dialog is cancelled or no window is focused. */
+  "agent:pickDirectory": { args: []; result: string | null };
+  "agent:pickFile": { args: []; result: string | null };
+
+  // ── Codebase index (Architecture tab) ────────────────────────────────────
+  "agent:codebaseOverview": { args: [req: { folder: string }]; result: CodebaseOverview };
+  "agent:codebaseGraph": { args: [req: { folder: string }]; result: CodebaseGraph };
+  /** `depth` defaults to 1. */
+  "agent:codebaseModuleGraph": { args: [req: { folder: string; depth?: number }]; result: CodebaseModuleGraph };
+  "agent:codebaseFileSymbols": { args: [req: { filePath: string }]; result: CodebaseSymbol[] };
+  "agent:codebaseRelations": { args: [req: { name: string; folder?: string }]; result: CodebaseRelations };
+  /** Re-indexes the folder and returns the fresh overview. */
+  "agent:codebaseReindex": { args: [req: { folder: string }]; result: CodebaseOverview };
+  /** False when the file isn't indexable. */
+  "agent:codebaseReindexFile": { args: [req: { folder: string; filePath: string }]; result: boolean };
+
+  // ── Terminals (output arrives on `agent:data` / `agent:exit`) ─────────────
+  "agent:spawn": { args: [input: AgentSpawnInput]; result: { sessionId: string } };
+  /** The user's login shell in `cwd` (bottom terminal pane). */
+  "agent:spawnShell": { args: [req: { cwd: string }]; result: { sessionId: string } };
+  "agent:input": { args: [req: { sessionId: string; data: string }]; result: void };
+  "agent:resize": { args: [req: { sessionId: string; cols: number; rows: number }]; result: void };
+  "agent:kill": { args: [req: { sessionId: string }]; result: void };
+  /** Live agent-owned terminals with scrollback, for windows that open late. */
+  "agent:modelTerminals": { args: []; result: ModelTerminal[] };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
@@ -470,6 +521,11 @@ export interface IpcEvents {
   "app:migrationProgress": MigrationProgress;
   "updater:update-available": UpdateAvailableInfo;
   "updater:update-downloaded": undefined;
+  /** Output from a PTY this renderer spawned (agent run or shell). */
+  "agent:data": PtyDataEvent;
+  "agent:exit": PtyExitEvent;
+  /** Agent-owned terminals, broadcast to every window (observe only). */
+  "agent:model-terminal": ModelPtyEvent;
   "chat:poppedIn": { sessionId: string };
   "chat:poppedOutClosed": undefined;
   "chat:sessionUpdated": ChatPopoutPayload;
@@ -674,6 +730,32 @@ const CHANNELS: ChannelRecord = {
   "ai:fetchModels": true,
   "ai:fetchKeyInfo": true,
   "updater:install": true,
+  "agent:getCodingAgents": true,
+  "agent:saveCodingAgent": true,
+  "agent:deleteCodingAgent": true,
+  "agent:setDefaultAgent": true,
+  "agent:readDir": true,
+  "agent:searchFiles": true,
+  "agent:readFile": true,
+  "agent:readFileBase64": true,
+  "agent:writeFile": true,
+  "agent:validateDirectory": true,
+  "agent:gitDiff": true,
+  "agent:pickDirectory": true,
+  "agent:pickFile": true,
+  "agent:codebaseOverview": true,
+  "agent:codebaseGraph": true,
+  "agent:codebaseModuleGraph": true,
+  "agent:codebaseFileSymbols": true,
+  "agent:codebaseRelations": true,
+  "agent:codebaseReindex": true,
+  "agent:codebaseReindexFile": true,
+  "agent:spawn": true,
+  "agent:spawnShell": true,
+  "agent:input": true,
+  "agent:resize": true,
+  "agent:kill": true,
+  "agent:modelTerminals": true,
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];

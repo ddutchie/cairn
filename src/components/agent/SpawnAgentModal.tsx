@@ -235,8 +235,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
                   className="underline"
                   onClick={async () => {
                     if (!project) return;
-                    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
-                    if (result?.data) updateProject(project.id, { codeDirectory: result.data });
+                    const picked = await window.electron?.agent.pickDirectory();
+                    if (picked) updateProject(project.id, { codeDirectory: picked });
                   }}
                 >
                   Choose folder

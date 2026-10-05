@@ -105,7 +105,7 @@ export function AgentEditor() {
     });
     // Load current content for preview if not cached
     if (!previewContent[path] && window.electron) {
-      const content = await window.electron.agent.readFile(path) as string;
+      const content = await window.electron.agent.readFile(path);
       setPreviewContent((prev) => ({ ...prev, [path]: content ?? "" }));
     }
   }, [previewContent]);

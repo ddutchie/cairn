@@ -1,14 +1,15 @@
 /**
  * Agent IPC — coding agent PTY session management.
  *
- * Registers all agent:* registerIpcHandle channels. PTY child processes are
+ * Registers all agent:* channels on the typed IPC contract. PTY child processes are
  * owned by the shared manager in `electron/lib/pty-sessions.ts` (one spawn /
  * validation / kill implementation and one live session table for UI shells,
  * agent runs, and model-owned PTYs) — this file only wires the UI-facing IPC
- * around it. Streams PTY data to the renderer via webContents.send.
+ * around it. Streams PTY data to the renderer as `agent:data` / `agent:exit`
+ * contract events.
  *
- * All handlers use the existing handle() wrapper from handlers.ts for
- * consistent { data } | { error } responses.
+ * Handlers use the shared handle() wrapper, so failures throw and reach the
+ * renderer as rejections.
  *
  * Security:
  *   - binaryPath is validated (absolute, no shell metacharacters) before spawn.
@@ -19,12 +20,12 @@
  */
 
 import { dialog, BrowserWindow } from "electron";
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle, sendIpcEvent } from "./registry";
 
 import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
-import type { DbContext } from "./result-helpers";
+import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
 import { indexCodebase, reindexFile } from "../lib/codebase-index";
@@ -46,15 +47,6 @@ import {
 // Kept as a re-export: unit tests (and any external caller) import the guard
 // from here; the implementation lives in the shared PTY manager.
 export { isSafePath };
-
-// ── IPC result wrapper (matches handlers.ts pattern) ─────────────────────────
-
-function handle<T>(fn: () => T | Promise<T>): Promise<{ data: T } | { error: string }> {
-  return Promise.resolve()
-    .then(() => fn())
-    .then((data) => ({ data }))
-    .catch((err: unknown) => ({ error: String(err) }));
-}
 
 function execGit(args: string[], cwd: string, timeout = 10_000): Promise<{ stdout: string; stderr: string; error?: Error | null; status: number }> {
   return new Promise((resolve) => {
@@ -86,19 +78,19 @@ function isVisibleInTree(name: string): boolean {
 export function registerAgentHandlers(ctx: DbContext): void {
   // ── Coding agent CRUD ────────────────────────────────────────────────────
 
-  registerIpcHandle("agent:getCodingAgents", () =>
+  registerContractHandle("agent:getCodingAgents", () =>
     handle(() => q.getCodingAgents(ctx.db))
   );
 
-  registerIpcHandle("agent:saveCodingAgent", (_e, agent: Parameters<typeof q.saveCodingAgent>[1]) =>
+  registerContractHandle("agent:saveCodingAgent", (_e, agent) =>
     handle(() => q.saveCodingAgent(ctx.db, agent))
   );
 
-  registerIpcHandle("agent:deleteCodingAgent", (_e, { id }: { id: string }) =>
+  registerContractHandle("agent:deleteCodingAgent", (_e, { id }) =>
     handle(() => q.deleteCodingAgent(ctx.db, id))
   );
 
-  registerIpcHandle("agent:setDefaultAgent", (_e, { id }: { id: string }) =>
+  registerContractHandle("agent:setDefaultAgent", (_e, { id }) =>
     handle(() => q.setDefaultCodingAgent(ctx.db, id))
   );
 
@@ -107,7 +99,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
 
   // ── File system ──────────────────────────────────────────────────────────
 
-  registerIpcHandle("agent:readDir", (_e, { dirPath }: { dirPath: string }) =>
+  registerContractHandle("agent:readDir", (_e, { dirPath }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, dirPath);
       const entries = await fs.promises.readdir(realPath, { withFileTypes: true });
@@ -126,7 +118,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
     })
   );
 
-  registerIpcHandle("agent:searchFiles", (_e, { dirPath, query }: { dirPath: string; query: string }) =>
+  registerContractHandle("agent:searchFiles", (_e, { dirPath, query }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, dirPath);
       const q = query.toLowerCase();
@@ -159,14 +151,14 @@ export function registerAgentHandlers(ctx: DbContext): void {
     })
   );
 
-  registerIpcHandle("agent:readFile", (_e, { filePath }: { filePath: string }) =>
+  registerContractHandle("agent:readFile", (_e, { filePath }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, filePath);
       return fs.promises.readFile(realPath, "utf-8");
     })
   );
 
-  registerIpcHandle("agent:readFileBase64", (_e, { filePath }: { filePath: string }) =>
+  registerContractHandle("agent:readFileBase64", (_e, { filePath }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, filePath);
       const buf = await fs.promises.readFile(realPath);
@@ -186,14 +178,14 @@ export function registerAgentHandlers(ctx: DbContext): void {
     })
   );
 
-  registerIpcHandle("agent:writeFile", (_e, { filePath, content }: { filePath: string; content: string }) =>
+  registerContractHandle("agent:writeFile", (_e, { filePath, content }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, filePath, true);
       await fs.promises.writeFile(realPath, content, "utf-8");
     })
   );
 
-  registerIpcHandle("agent:validateDirectory", (_e, { dirPath }: { dirPath: string }) =>
+  registerContractHandle("agent:validateDirectory", (_e, { dirPath }) =>
     handle(async () => {
       if (!isSafePath(dirPath)) return false;
       try {
@@ -210,42 +202,42 @@ export function registerAgentHandlers(ctx: DbContext): void {
   // relations) so the renderer can visualise what the agent has indexed. The
   // folder is validated against the project's code_directory before use.
 
-  registerIpcHandle("agent:codebaseOverview", (_e, { folder }: { folder: string }) =>
+  registerContractHandle("agent:codebaseOverview", (_e, { folder }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, folder);
       return q.getCodebaseOverview(ctx.db, realPath);
     })
   );
 
-  registerIpcHandle("agent:codebaseGraph", (_e, { folder }: { folder: string }) =>
+  registerContractHandle("agent:codebaseGraph", (_e, { folder }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, folder);
       return q.getCodebaseGraph(ctx.db, realPath);
     })
   );
 
-  registerIpcHandle("agent:codebaseModuleGraph", (_e, { folder, depth }: { folder: string; depth?: number }) =>
+  registerContractHandle("agent:codebaseModuleGraph", (_e, { folder, depth }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, folder);
       return q.getCodebaseModuleGraph(ctx.db, realPath, depth ?? 1);
     })
   );
 
-  registerIpcHandle("agent:codebaseFileSymbols", (_e, { filePath }: { filePath: string }) =>
+  registerContractHandle("agent:codebaseFileSymbols", (_e, { filePath }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, filePath);
       return q.getCodebaseFileSymbols(ctx.db, realPath);
     })
   );
 
-  registerIpcHandle("agent:codebaseRelations", (_e, { name, folder }: { name: string; folder?: string }) =>
+  registerContractHandle("agent:codebaseRelations", (_e, { name, folder }) =>
     handle(async () => {
       const scoped = folder ? await assertWithinCodeDirectory(ctx.db, folder) : undefined;
       return q.getCodebaseRelations(ctx.db, name, scoped);
     })
   );
 
-  registerIpcHandle("agent:codebaseReindex", (_e, { folder }: { folder: string }) =>
+  registerContractHandle("agent:codebaseReindex", (_e, { folder }) =>
     handle(async () => {
       const realPath = await assertWithinCodeDirectory(ctx.db, folder);
       await indexCodebase(ctx.db, realPath);
@@ -253,7 +245,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
     })
   );
 
-  registerIpcHandle("agent:codebaseReindexFile", (_e, { folder, filePath }: { folder: string; filePath: string }) =>
+  registerContractHandle("agent:codebaseReindexFile", (_e, { folder, filePath }) =>
     handle(async () => {
       const realFolder = await assertWithinCodeDirectory(ctx.db, folder);
       const realFile = await assertWithinCodeDirectory(ctx.db, filePath);
@@ -263,7 +255,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
 
   // ── Git diff ─────────────────────────────────────────────────────────────
 
-  registerIpcHandle("agent:gitDiff", (_e, { cwd }: { cwd: string }) =>
+  registerContractHandle("agent:gitDiff", (_e, { cwd }) =>
     handle(async () => {
       // Validate cwd is within project code directory boundaries and get real path
       const realPath = await assertWithinCodeDirectory(ctx.db, cwd);
@@ -364,34 +356,18 @@ export function registerAgentHandlers(ctx: DbContext): void {
 
   // ── Native pickers ───────────────────────────────────────────────────────
 
-  registerIpcHandle("agent:pickDirectory", async () => {
+  const pick = async (properties: Electron.OpenDialogOptions["properties"]): Promise<string | null> => {
     const win = BrowserWindow.getFocusedWindow();
-    if (!win) return { data: null };
-    const result = await dialog.showOpenDialog(win, {
-      properties: ["openDirectory", "createDirectory"],
-    });
-    return { data: result.canceled ? null : result.filePaths[0] };
-  });
-
-  registerIpcHandle("agent:pickFile", async () => {
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return { data: null };
-    const result = await dialog.showOpenDialog(win, {
-      properties: ["openFile"],
-    });
-    return { data: result.canceled ? null : result.filePaths[0] };
-  });
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, { properties });
+    return result.canceled ? null : result.filePaths[0];
+  };
+  registerContractHandle("agent:pickDirectory", () => handle(() => pick(["openDirectory", "createDirectory"])));
+  registerContractHandle("agent:pickFile", () => handle(() => pick(["openFile"])));
 
   // ── PTY spawn ────────────────────────────────────────────────────────────
 
-  registerIpcHandle("agent:spawn", async (event, payload: {
-    agentId: string;
-    projectId: string;
-    cwd: string;
-    prompt: string;
-    taskId: string;
-    taskTitle: string;
-  }) => {
+  registerContractHandle("agent:spawn", async (event, payload) => {
     return handle(async () => {
       // Security: assert project code directory boundaries and validate cwd
       const realCwd = await assertWithinCodeDirectory(ctx.db, payload.cwd);
@@ -499,14 +475,14 @@ export function registerAgentHandlers(ctx: DbContext): void {
 
       pty.onData((data: string) => {
         if (!webContents.isDestroyed()) {
-          webContents.send("agent:data", { sessionId, data });
+          sendIpcEvent(webContents, "agent:data", { sessionId, data });
         }
       });
 
       pty.onExit(({ exitCode }: { exitCode: number }) => {
         unregisterPtySession(sessionId);
         if (!webContents.isDestroyed()) {
-          webContents.send("agent:exit", { sessionId, exitCode });
+          sendIpcEvent(webContents, "agent:exit", { sessionId, exitCode });
         }
       });
 
@@ -527,7 +503,7 @@ export function registerAgentHandlers(ctx: DbContext): void {
   // as agent runs, so agent:input / agent:resize / agent:kill / agent:data /
   // agent:exit all work identically).
 
-  registerIpcHandle("agent:spawnShell", async (event, payload: { cwd: string }) => {
+  registerContractHandle("agent:spawnShell", async (event, payload) => {
     return handle(async () => {
       const { sessionId } = await spawnShellPty(ctx.db, payload.cwd, { kind: "shell" });
       const session = getPtySession(sessionId);
@@ -537,12 +513,12 @@ export function registerAgentHandlers(ctx: DbContext): void {
       const webContents = event.sender;
 
       pty.onData((data: string) => {
-        if (!webContents.isDestroyed()) webContents.send("agent:data", { sessionId, data });
+        if (!webContents.isDestroyed()) sendIpcEvent(webContents, "agent:data", { sessionId, data });
       });
 
       pty.onExit(({ exitCode }: { exitCode: number }) => {
         unregisterPtySession(sessionId);
-        if (!webContents.isDestroyed()) webContents.send("agent:exit", { sessionId, exitCode });
+        if (!webContents.isDestroyed()) sendIpcEvent(webContents, "agent:exit", { sessionId, exitCode });
       });
 
       webContents.once("destroyed", () => {
@@ -560,27 +536,27 @@ export function registerAgentHandlers(ctx: DbContext): void {
   // Windows opening late fetch the live list + scrollback via agent:modelTerminals.
   observeModelPtys((e) => {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send("agent:model-terminal", e);
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) sendIpcEvent(win.webContents, "agent:model-terminal", e);
     }
   });
 
-  registerIpcHandle("agent:modelTerminals", () => handle(() => listModelPtySessions()));
+  registerContractHandle("agent:modelTerminals", () => handle(() => listModelPtySessions()));
 
   // ── PTY input / resize / kill ────────────────────────────────────────────
 
-  registerIpcHandle("agent:input", (_e, { sessionId, data }: { sessionId: string; data: string }) =>
+  registerContractHandle("agent:input", (_e, { sessionId, data }) =>
     handle(() => {
       writePtySession(sessionId, data);
     })
   );
 
-  registerIpcHandle("agent:resize", (_e, { sessionId, cols, rows }: { sessionId: string; cols: number; rows: number }) =>
+  registerContractHandle("agent:resize", (_e, { sessionId, cols, rows }) =>
     handle(() => {
       resizePtySession(sessionId, cols, rows);
     })
   );
 
-  registerIpcHandle("agent:kill", (_e, { sessionId }: { sessionId: string }) =>
+  registerContractHandle("agent:kill", (_e, { sessionId }) =>
     handle(() => {
       killPtySession(sessionId);
     })

@@ -36,8 +36,8 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
   const valid = name.trim().length > 0 && binaryPath.trim().length > 0;
 
   async function pickBinary() {
-    const result = await window.electron?.agent.pickFile() as { data: string | null } | undefined;
-    if (result?.data) setBinaryPath(result.data);
+    const picked = await window.electron?.agent.pickFile();
+    if (picked) setBinaryPath(picked);
   }
 
   function submit() {

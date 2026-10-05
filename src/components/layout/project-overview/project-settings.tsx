@@ -53,9 +53,9 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
   }, [open]);
 
   async function handlePickCodeDir() {
-    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
-    if (result?.data) {
-      setCodeDirInput(result.data);
+    const picked = await window.electron?.agent.pickDirectory();
+    if (picked) {
+      setCodeDirInput(picked);
     }
   }
 

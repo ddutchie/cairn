@@ -25,6 +25,7 @@ import { createRequire } from "node:module";
 import type { Database } from "better-sqlite3";
 import type * as nodePty from "node-pty";
 import { newId } from "../db/utils";
+import type { ModelPtyEvent, ModelTerminal } from "../../shared/types/coding-agent";
 
 /** Structural subset of node-pty's IPty used by every consumer here. */
 export interface PtyHandle {
@@ -92,10 +93,7 @@ const sessions = new Map<string, PtySessionEntry>();
 // layer, which fans out to windows) subscribe here; raw output is also kept in
 // a bounded per-session ring so a late-opened tab can replay it.
 
-export type ModelPtyEvent =
-  | { type: "spawn"; sessionId: string; cwd: string }
-  | { type: "data"; sessionId: string; data: string }
-  | { type: "exit"; sessionId: string; exitCode: number };
+export type { ModelPtyEvent };
 
 const MODEL_SCROLLBACK_MAX_CHARS = 256 * 1024;
 const modelObservers = new Set<(e: ModelPtyEvent) => void>();
@@ -115,8 +113,8 @@ function emitModelPty(e: ModelPtyEvent): void {
 }
 
 /** Model PTYs still alive, with their raw (ANSI-preserving) scrollback tail. */
-export function listModelPtySessions(): Array<{ sessionId: string; cwd: string; scrollback: string }> {
-  const out: Array<{ sessionId: string; cwd: string; scrollback: string }> = [];
+export function listModelPtySessions(): ModelTerminal[] {
+  const out: ModelTerminal[] = [];
   for (const [sessionId, entry] of sessions) {
     if (entry.kind !== "model") continue;
     out.push({ sessionId, cwd: modelCwds.get(sessionId) ?? entry.cwd, scrollback: modelScrollback.get(sessionId) ?? "" });

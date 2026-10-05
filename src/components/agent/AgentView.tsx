@@ -44,8 +44,8 @@ export function AgentView() {
 
   async function handlePickCodeDir() {
     if (!project) return;
-    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
-    if (result?.data) updateProject(project.id, { codeDirectory: result.data });
+    const picked = await window.electron?.agent.pickDirectory();
+    if (picked) updateProject(project.id, { codeDirectory: picked });
   }
 
   const [centreTab, setCentreTab] = useState<CentreTab>("editor");
