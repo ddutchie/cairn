@@ -41,6 +41,11 @@ import type {
   Workspace, WorkspaceCreateInput, WorkspacePatch,
 } from "../types/workspace";
 import type { Note, NoteBody, NoteCreateInput, NotePatch } from "../types/notes";
+import type { McpNotification } from "../types/notifications";
+import type {
+  AuthCompleteResult, AuthStartResult, CustomServiceConfig, ListMcpToolsResult, McpServerConfig, McpTestResult,
+  SecretToolType, ServiceTestResult, ToolAttachment,
+} from "../types/tools";
 
 /** Why a pop-out handshake call was refused. */
 export type PopoutRefusal = "invalid-payload" | "profile-mismatch" | "not-main-window" | "not-popout";
@@ -308,11 +313,62 @@ export interface IpcContract {
   "git:prStatus": { args: [req: { cwd: string }]; result: GitPrStatus | null };
   /** Restores a tracked file or deletes an untracked one. */
   "git:discard": { args: [req: { cwd: string; filePath: string }]; result: { ok: boolean } };
+
+  // ── External tools: MCP servers ──────────────────────────────────────────
+  "tools:listMcpServers": { args: [req: { workspaceId: string }]; result: McpServerConfig[] };
+  /** Upsert; a missing `id` creates. Changing the endpoint/auth config clears stored OAuth state. */
+  "tools:saveMcpServer": { args: [server: Partial<McpServerConfig>]; result: McpServerConfig };
+  "tools:deleteMcpServer": { args: [req: { id: string }]; result: void };
+  "tools:testMcp": { args: [req: { id: string }]; result: McpTestResult };
+  "tools:listMcpTools": { args: [req: { id: string }]; result: ListMcpToolsResult };
+  /** Opens the browser; completion arrives on the `tools:oauthCallback` event. */
+  "tools:startMcpAuth": { args: [req: { id: string }]; result: AuthStartResult };
+  "tools:mcpAuthStatus": { args: [req: { id: string }]; result: { connected: boolean } };
+  "tools:signOutMcp": { args: [req: { id: string }]; result: void };
+  "tools:cancelMcpAuth": { args: [req: { id: string }]; result: { cancelled: boolean } };
+
+  // ── External tools: custom HTTP services ─────────────────────────────────
+  "tools:listServices": { args: [req: { workspaceId: string }]; result: CustomServiceConfig[] };
+  "tools:saveService": { args: [service: Partial<CustomServiceConfig>]; result: CustomServiceConfig };
+  "tools:deleteService": { args: [req: { id: string }]; result: void };
+  "tools:testService": {
+    args: [req: { id: string; sampleArgs?: Record<string, unknown> }];
+    result: ServiceTestResult;
+  };
+  "tools:startServiceAuth": { args: [req: { id: string }]; result: AuthStartResult };
+  "tools:serviceAuthStatus": { args: [req: { id: string }]; result: { connected: boolean } };
+  "tools:signOutService": { args: [req: { id: string }]; result: void };
+  "tools:cancelServiceAuth": { args: [req: { id: string }]; result: { cancelled: boolean } };
+
+  // ── External tools: per-project attachments ──────────────────────────────
+  "tools:listAttachments": { args: [req: { projectId: string }]; result: ToolAttachment[] };
+  "tools:setAttachment": { args: [attachment: ToolAttachment]; result: ToolAttachment };
+  "tools:clearAttachment": { args: [attachment: Omit<ToolAttachment, "enabled">]; result: void };
+
+  // ── Secrets (OS keychain) — no get: the renderer only learns set/not-set ──
+  "secrets:available": { args: []; result: boolean };
+  /** Returns the `secret://` ref to store in place of the value. */
+  "secrets:set": { args: [req: { toolType: SecretToolType; toolId: string; key: string; value: string }]; result: string };
+  "secrets:has": { args: [req: { toolType: SecretToolType; toolId: string; key: string }]; result: boolean };
+  "secrets:delete": { args: [req: { toolType: SecretToolType; toolId: string; key: string }]; result: void };
+
+  // ── In-app notification center ───────────────────────────────────────────
+  "db:notification:list": { args: [req: { limit?: number }]; result: McpNotification[] };
+  "db:notification:count": { args: []; result: number };
+  "db:notification:markRead": { args: [req: { id: string }]; result: true };
+  /** Returns the number of notifications deleted. */
+  "db:notification:clear": { args: []; result: number };
+  /** Marks every notification read and clears the dock/tray badge. */
+  "mcp:markNotificationsRead": { args: []; result: void };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
 export interface IpcEvents {
   "automation:run": AutomationRunEvent;
+  /** Unread notification count changed (bell + badge). */
+  "mcp:unread-count": number;
+  /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
+  "tools:oauthCallback": AuthCompleteResult;
   "chat:poppedIn": { sessionId: string };
   "chat:poppedOutClosed": undefined;
   "chat:sessionUpdated": ChatPopoutPayload;
@@ -446,6 +502,35 @@ const CHANNELS: ChannelRecord = {
   "git:createPr": true,
   "git:prStatus": true,
   "git:discard": true,
+  "tools:listMcpServers": true,
+  "tools:saveMcpServer": true,
+  "tools:deleteMcpServer": true,
+  "tools:testMcp": true,
+  "tools:listMcpTools": true,
+  "tools:startMcpAuth": true,
+  "tools:mcpAuthStatus": true,
+  "tools:signOutMcp": true,
+  "tools:cancelMcpAuth": true,
+  "tools:listServices": true,
+  "tools:saveService": true,
+  "tools:deleteService": true,
+  "tools:testService": true,
+  "tools:startServiceAuth": true,
+  "tools:serviceAuthStatus": true,
+  "tools:signOutService": true,
+  "tools:cancelServiceAuth": true,
+  "tools:listAttachments": true,
+  "tools:setAttachment": true,
+  "tools:clearAttachment": true,
+  "secrets:available": true,
+  "secrets:set": true,
+  "secrets:has": true,
+  "secrets:delete": true,
+  "db:notification:list": true,
+  "db:notification:count": true,
+  "db:notification:markRead": true,
+  "db:notification:clear": true,
+  "mcp:markNotificationsRead": true,
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];

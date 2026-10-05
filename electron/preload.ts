@@ -23,30 +23,8 @@ import type { CodingSessionCreateInput, PutMessageFeedbackInput } from "../share
 import type { ChatThreadUpsertInput } from "../shared/types/chat";
 import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
+import type { CustomServiceConfig, McpServerConfig, SecretToolType, ToolAttachment } from "../shared/types/tools";
 
-// Local structural types for the external-tools namespace. The renderer's
-// canonical types live in src/types; electron's rootDir excludes src, so we
-// mirror the shapes here (kept in sync by the IPC return types).
-interface McpServerConfig {
-  id: string; workspaceId: string; name: string; description?: string;
-  transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
-  authMode?: "none" | "oauth"; oauthScope?: string;
-  enabled: boolean; source: string; communityId?: string; version?: string;
-  disabledTools?: string[];
-  createdAt: string; updatedAt: string;
-}
-interface CustomServiceConfig {
-  id: string; workspaceId: string; name: string; description?: string;
-  apiUrl: string; method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
-  toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
-  authMode?: "none" | "oauth";
-  oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
-  enabled: boolean; source: string; communityId?: string; version?: string;
-  createdAt: string; updatedAt: string;
-}
-interface ToolAttachment {
-  projectId: string; toolType: "mcp" | "service"; toolId: string; enabled: boolean;
-}
 // ── User writing style (persona + full guide + cheat sheet) ──────────────────
 interface UserStylePersona {
   name?: string; role?: string; context?: string; audiences?: string;
@@ -728,21 +706,16 @@ const api = {
   mcpQuery: (tool: string, args: Record<string, unknown>) => invoke<unknown>("db:mcpQuery", { tool, args }),
 
   // ── MCP notification badge ─────────────────────
-  onMcpUnreadCount: (cb: (count: number) => void) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = (_: any, count: number) => cb(count);
-    ipcRenderer.on("mcp:unread-count", handler);
-    return () => ipcRenderer.off("mcp:unread-count", handler);
-  },
-  markMcpNotificationsRead: () => ipcRenderer.invoke("mcp:markNotificationsRead"),
+  onMcpUnreadCount: (cb: (count: number) => void) => onIpcEvent("mcp:unread-count", cb),
+  markMcpNotificationsRead: () => invokeContract("mcp:markNotificationsRead"),
 
   // ── In-app notification center ─────────────────
   notification: {
-    list: (limit?: number) => invoke("db:notification:list", { limit }),
-    count: () => invoke("db:notification:count"),
-    markRead: (id: string) => invoke("db:notification:markRead", { id }),
-    markAllRead: () => invoke("mcp:markNotificationsRead"),
-    clear: () => invoke("db:notification:clear"),
+    list: (limit?: number) => invokeContract("db:notification:list", { limit }),
+    count: () => invokeContract("db:notification:count"),
+    markRead: (id: string) => invokeContract("db:notification:markRead", { id }),
+    markAllRead: () => invokeContract("mcp:markNotificationsRead"),
+    clear: () => invokeContract("db:notification:clear"),
   },
 
   // ── Agent / coding sessions ───────────────────
@@ -818,80 +791,47 @@ const api = {
 
   // ── External tools (MCP servers + custom HTTP services) ───────
   tools: {
-    listMcpServers: (workspaceId: string) =>
-      invoke<McpServerConfig[]>("tools:listMcpServers", { workspaceId }),
-    saveMcpServer: (server: Partial<McpServerConfig>) =>
-      invoke<McpServerConfig>("tools:saveMcpServer", server),
-    deleteMcpServer: (id: string) => invoke("tools:deleteMcpServer", { id }),
-    testMcp: (id: string) =>
-      invoke<{ ok: boolean; toolCount?: number; toolNames?: string[]; error?: string }>(
-        "tools:testMcp",
-        { id }
-      ),
-    listMcpTools: (id: string) =>
-      invoke<{ ok: boolean; tools: Array<{ name: string; description?: string }>; error?: string }>(
-        "tools:listMcpTools",
-        { id }
-      ),
+    listMcpServers: (workspaceId: string) => invokeContract("tools:listMcpServers", { workspaceId }),
+    saveMcpServer: (server: Partial<McpServerConfig>) => invokeContract("tools:saveMcpServer", server),
+    deleteMcpServer: (id: string) => invokeContract("tools:deleteMcpServer", { id }),
+    testMcp: (id: string) => invokeContract("tools:testMcp", { id }),
+    listMcpTools: (id: string) => invokeContract("tools:listMcpTools", { id }),
 
-    listServices: (workspaceId: string) =>
-      invoke<CustomServiceConfig[]>("tools:listServices", { workspaceId }),
-    saveService: (service: Partial<CustomServiceConfig>) =>
-      invoke<CustomServiceConfig>("tools:saveService", service),
-    deleteService: (id: string) => invoke("tools:deleteService", { id }),
+    listServices: (workspaceId: string) => invokeContract("tools:listServices", { workspaceId }),
+    saveService: (service: Partial<CustomServiceConfig>) => invokeContract("tools:saveService", service),
+    deleteService: (id: string) => invokeContract("tools:deleteService", { id }),
     testService: (id: string, sampleArgs?: Record<string, unknown>) =>
-      invoke<{ ok: boolean; status?: number; preview?: string; error?: string }>(
-        "tools:testService",
-        { id, sampleArgs }
-      ),
+      invokeContract("tools:testService", { id, sampleArgs }),
 
-    listAttachments: (projectId: string) =>
-      invoke<ToolAttachment[]>("tools:listAttachments", { projectId }),
-    setAttachment: (a: ToolAttachment) => invoke<ToolAttachment>("tools:setAttachment", a),
-    clearAttachment: (a: Omit<ToolAttachment, "enabled">) => invoke("tools:clearAttachment", a),
+    listAttachments: (projectId: string) => invokeContract("tools:listAttachments", { projectId }),
+    setAttachment: (a: ToolAttachment) => invokeContract("tools:setAttachment", a),
+    clearAttachment: (a: Omit<ToolAttachment, "enabled">) => invokeContract("tools:clearAttachment", a),
 
     // OAuth (remote MCP servers gated behind an authorization page).
-    startMcpAuth: (id: string) =>
-      invoke<{ status: "redirected" | "already_authorized" | "error"; error?: string }>(
-        "tools:startMcpAuth",
-        { id }
-      ),
-    mcpAuthStatus: (id: string) => invoke<{ connected: boolean }>("tools:mcpAuthStatus", { id }),
-    signOutMcp: (id: string) => invoke("tools:signOutMcp", { id }),
+    startMcpAuth: (id: string) => invokeContract("tools:startMcpAuth", { id }),
+    mcpAuthStatus: (id: string) => invokeContract("tools:mcpAuthStatus", { id }),
+    signOutMcp: (id: string) => invokeContract("tools:signOutMcp", { id }),
     /** Cancel an in-flight OAuth sign-in (user abandoned the browser step). */
-    cancelMcpAuth: (id: string) => invoke<{ cancelled: boolean }>("tools:cancelMcpAuth", { id }),
+    cancelMcpAuth: (id: string) => invokeContract("tools:cancelMcpAuth", { id }),
 
     // OAuth for custom HTTP services (same flow as MCP, no transport).
-    startServiceAuth: (id: string) =>
-      invoke<{ status: "redirected" | "already_authorized" | "error"; error?: string }>(
-        "tools:startServiceAuth",
-        { id }
-      ),
-    serviceAuthStatus: (id: string) =>
-      invoke<{ connected: boolean }>("tools:serviceAuthStatus", { id }),
-    signOutService: (id: string) => invoke("tools:signOutService", { id }),
-    cancelServiceAuth: (id: string) =>
-      invoke<{ cancelled: boolean }>("tools:cancelServiceAuth", { id }),
-    /** Fires when a cairn://oauth/callback deep link finishes a sign-in. */
-    onOauthCallback: (
-      cb: (e: { status: string; serverId?: string; error?: string }) => void
-    ) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: { status: string; serverId?: string; error?: string }) => cb(e);
-      ipcRenderer.on("tools:oauthCallback", handler);
-      return () => ipcRenderer.off("tools:oauthCallback", handler);
-    },
+    startServiceAuth: (id: string) => invokeContract("tools:startServiceAuth", { id }),
+    serviceAuthStatus: (id: string) => invokeContract("tools:serviceAuthStatus", { id }),
+    signOutService: (id: string) => invokeContract("tools:signOutService", { id }),
+    cancelServiceAuth: (id: string) => invokeContract("tools:cancelServiceAuth", { id }),
+    /** Fires when a sign-in finishes (loopback listener or cairn://oauth/callback deep link). */
+    onOauthCallback: (cb: (e: IpcEvents["tools:oauthCallback"]) => void) => onIpcEvent("tools:oauthCallback", cb),
   },
 
   // ── Secrets (OS keychain). No get() by design — renderer only learns set/not-set.
   secrets: {
-    available: () => invoke<boolean>("secrets:available"),
-    set: (toolType: "mcp" | "service" | "llm", toolId: string, key: string, value: string) =>
-      invoke<string>("secrets:set", { toolType, toolId, key, value }),
-    has: (toolType: "mcp" | "service" | "llm", toolId: string, key: string) =>
-      invoke<boolean>("secrets:has", { toolType, toolId, key }),
-    delete: (toolType: "mcp" | "service" | "llm", toolId: string, key: string) =>
-      invoke("secrets:delete", { toolType, toolId, key }),
+    available: () => invokeContract("secrets:available"),
+    set: (toolType: SecretToolType, toolId: string, key: string, value: string) =>
+      invokeContract("secrets:set", { toolType, toolId, key, value }),
+    has: (toolType: SecretToolType, toolId: string, key: string) =>
+      invokeContract("secrets:has", { toolType, toolId, key }),
+    delete: (toolType: SecretToolType, toolId: string, key: string) =>
+      invokeContract("secrets:delete", { toolType, toolId, key }),
   },
 
   // ── Community registry (cairn-community catalog) ──────────────

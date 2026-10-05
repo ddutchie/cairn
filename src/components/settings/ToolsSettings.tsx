@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { id } from "@/lib/utils";
+import { secretsClient, toolsClient } from "@/lib/ipc/tools";
 import type { McpServerConfig, CustomServiceConfig } from "@/types";
 import { SettingsGroup } from "./shared";
 import { ToolBuilderModal } from "./ToolBuilderModal";
@@ -100,9 +101,9 @@ export function ToolsSettings() {
         if (isSecretValue && row.value) {
           // Store in the keychain and keep ONLY the ref. If storage fails, do
           // not fall back to persisting the plaintext value — surface the error.
-          const ref = await window.electron?.secrets.set(toolType, toolId, name, row.value);
+          const ref = await secretsClient.set(toolType, toolId, name, row.value);
           if (!ref) throw new Error(`Could not securely store the secret for "${name}". It was not saved.`);
-          out[name] = ref as string;
+          out[name] = ref;
         } else {
           out[name] = row.value;
         }
@@ -244,9 +245,9 @@ export function ToolsSettings() {
                 ) : (
                   <TestButton
                     onTest={async () => {
-                      const r = await window.electron?.tools.testMcp(server.id);
-                      if (r?.ok) return { status: "ok", detail: `${r.toolCount ?? 0} tools` };
-                      return { status: "error", detail: r?.error ?? "Failed" };
+                      const r = await toolsClient.testMcp(server.id);
+                      if (r.ok) return { status: "ok", detail: `${r.toolCount ?? 0} tools` };
+                      return { status: "error", detail: r.error ?? "Failed" };
                     }}
                   />
                 )}
@@ -300,9 +301,9 @@ export function ToolsSettings() {
                 {svc.authMode === "oauth" && <AuthButton toolId={svc.id} toolType="service" />}
                 <TestButton
                   onTest={async () => {
-                    const r = await window.electron?.tools.testService(svc.id);
-                    if (r?.ok) return { status: "ok", detail: `HTTP ${r.status ?? 200}` };
-                    return { status: "error", detail: r?.error ?? `HTTP ${r?.status ?? "?"}` };
+                    const r = await toolsClient.testService(svc.id);
+                    if (r.ok) return { status: "ok", detail: `HTTP ${r.status ?? 200}` };
+                    return { status: "error", detail: r.error ?? `HTTP ${r.status ?? "?"}` };
                   }}
                 />
               </div>

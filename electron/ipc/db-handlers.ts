@@ -8,7 +8,7 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerContractHandle, registerIpcHandle, broadcastEvent } from "./registry";
+import { registerContractHandle, registerIpcHandle, broadcastIpcEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders } from "../notes-files";
@@ -203,16 +203,16 @@ export function registerDbHandlers(ctx: DbContext): void {
   // ── Approval inbox ──────────────────────────────
 
   // ── In-app notification center ─────────────────
-  registerIpcHandle("db:notification:list", (_e, { limit }: { limit?: number }) => handle(() => q.listMcpNotifications(ctx.db, limit)));
-  registerIpcHandle("db:notification:count", () => handle(() => q.countUnreadMcpNotifications(ctx.db)));
-  registerIpcHandle("db:notification:markRead", (_e, { id }: { id: string }) => handle(() => {
+  registerContractHandle("db:notification:list", (_e, { limit }) => handle(() => q.listMcpNotifications(ctx.db, limit)));
+  registerContractHandle("db:notification:count", () => handle(() => q.countUnreadMcpNotifications(ctx.db)));
+  registerContractHandle("db:notification:markRead", (_e, { id }) => handle(() => {
     q.markMcpNotificationRead(ctx.db, id);
-    broadcastEvent("mcp:unread-count", q.countUnreadMcpNotifications(ctx.db));
-    return true;
+    broadcastIpcEvent("mcp:unread-count", q.countUnreadMcpNotifications(ctx.db));
+    return true as const;
   }));
-  registerIpcHandle("db:notification:clear", () => handle(() => {
+  registerContractHandle("db:notification:clear", () => handle(() => {
     const n = q.clearMcpNotifications(ctx.db);
-    broadcastEvent("mcp:unread-count", 0);
+    broadcastIpcEvent("mcp:unread-count", 0);
     return n;
   }));
 }

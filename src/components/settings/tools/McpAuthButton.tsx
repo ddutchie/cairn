@@ -4,33 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import { CheckCircle, XCircle, LogIn, LogOut } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
-
-type ToolType = "mcp" | "service";
-
-/** The IPC method set differs only by tool type; pick the right one. */
-function api(toolType: ToolType) {
-  const t = window.electron?.tools;
-  if (!t) return null;
-  return toolType === "mcp"
-    ? {
-        status: t.mcpAuthStatus,
-        start: t.startMcpAuth,
-        signOut: t.signOutMcp,
-        cancel: t.cancelMcpAuth,
-      }
-    : {
-        status: t.serviceAuthStatus,
-        start: t.startServiceAuth,
-        signOut: t.signOutService,
-        cancel: t.cancelServiceAuth,
-      };
-}
+import type { ToolType } from "@/types";
+import { reportIpcError } from "@/lib/ipc/client";
+import { toolsClient } from "@/lib/ipc/tools";
 
 /**
  * OAuth sign-in / sign-out control for an MCP server OR custom HTTP service that
  * uses OAuth. Both share the exact same browser flow (loopback redirect +
- * `tools:oauthCallback` completion event); only the four IPC method names differ,
- * selected by {@link toolType}.
+ * `tools:oauthCallback` completion event); `toolsClient` picks the channel by
+ * {@link toolType}.
  *
  * When {@link requiresClientId} is set (the provider forbids dynamic client
  * registration) and the tool has no stored client id yet, "Sign in" routes to
@@ -53,8 +35,8 @@ export function AuthButton({
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const r = await api(toolType)?.status(toolId);
-    setConnected(r?.connected ?? false);
+    const r = await toolsClient.authStatus(toolType, toolId).catch(() => ({ connected: false }));
+    setConnected(r.connected);
   }, [toolId, toolType]);
 
   useEffect(() => {
@@ -62,17 +44,17 @@ export function AuthButton({
     void refresh();
     // Refresh when an OAuth callback for this tool completes. Both MCP and
     // service flows emit the same event keyed by the tool id (as serverId).
-    const off = window.electron?.tools.onOauthCallback((e) => {
+    const off = toolsClient.onOauthCallback((e) => {
       if (e.serverId && e.serverId !== toolId) return;
       setBusy(false);
       if (e.status === "authorized") {
         setError(null);
         void refresh();
       } else if (e.status === "error") {
-        setError(e.error ?? "Sign-in failed");
+        setError(e.error);
       }
     });
-    return () => { off?.(); };
+    return off;
   }, [toolId, refresh]);
 
   const signIn = useCallback(async () => {
@@ -87,13 +69,13 @@ export function AuthButton({
     setBusy(true);
     setError(null);
     try {
-      const r = await api(toolType)?.start(toolId);
-      if (r?.status === "already_authorized") {
+      const r = await toolsClient.startAuth(toolType, toolId);
+      if (r.status === "already_authorized") {
         setBusy(false);
         void refresh();
-      } else if (r?.status === "error") {
+      } else if (r.status === "error") {
         setBusy(false);
-        setError(r.error ?? "Sign-in failed");
+        setError(r.error);
       }
       // "redirected": browser opened; wait for onOauthCallback to flip busy off.
     } catch (err) {
@@ -103,13 +85,17 @@ export function AuthButton({
   }, [toolId, toolType, refresh, requiresClientId, onEdit]);
 
   const signOut = useCallback(async () => {
-    await api(toolType)?.signOut(toolId);
-    setError(null);
+    try {
+      await toolsClient.signOut(toolType, toolId);
+      setError(null);
+    } catch (err) {
+      reportIpcError(err, "Couldn't sign out");
+    }
     void refresh();
   }, [toolId, toolType, refresh]);
 
   const cancel = useCallback(async () => {
-    await api(toolType)?.cancel(toolId);
+    await toolsClient.cancelAuth(toolType, toolId).catch((err: unknown) => reportIpcError(err, "Couldn't cancel sign-in"));
     // The completion listener will flip busy off with a "cancelled" error;
     // clear busy eagerly so the button is responsive even if that races.
     setBusy(false);

@@ -23,7 +23,7 @@ import { app, dialog } from "electron";
 import fs from "fs";
 import path from "path";
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle, registerIpcHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 export { type DbContext } from "./result-helpers";
 
@@ -306,7 +306,7 @@ export function registerAppHandlers(
   }));
 
   // ── MCP notification handler ───────────────────────
-  registerIpcHandle("mcp:markNotificationsRead", () => handle(() => {
+  registerContractHandle("mcp:markNotificationsRead", () => handle(() => {
     markMcpNotificationsRead(ctx.db);
     updateTrayBadge(0);
     onBadgeClear?.();

@@ -2,8 +2,8 @@
  * External Tools slice.
  *
  * Workspace-scoped MCP servers + custom HTTP services the AI chat/agent can
- * use, plus per-project attachment flags. Persisted via the tools:* IPC
- * channels (SQLite tables mcp_servers / custom_services / tool_attachments).
+ * use, plus per-project attachment flags. Persisted via `toolsClient` (tools:*
+ * IPC channels, (SQLite tables mcp_servers / custom_services / tool_attachments).
  *
  * This slice owns CRUD + local cache only. Tool execution happens in the
  * Electron main process during the chat/agent loop.
@@ -16,16 +16,15 @@ import type {
   CustomServiceConfig,
   ToolAttachment,
   ToolType,
+  McpToolInfo,
   RegistryMcpEntry,
   RegistryServiceEntry,
 } from "@/types";
 import { id } from "@/lib/utils";
+import { hasElectron, reportIpcError } from "@/lib/ipc/client";
+import { secretsClient, toolsClient } from "@/lib/ipc/tools";
 
-/** A single tool exposed by an MCP server (raw name + description). */
-export interface McpToolInfo {
-  name: string;
-  description?: string;
-}
+export type { McpToolInfo };
 
 /** Per-server tool-listing state for the Settings checklist. */
 export interface McpToolsState {
@@ -81,11 +80,11 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   mcpTools: {},
 
   async fetchTools(workspaceId) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
+    if (!hasElectron("tools")) return;
     try {
       const [mcpServers, customServices] = await Promise.all([
-        window.electron.tools.listMcpServers(workspaceId) as Promise<McpServerConfig[]>,
-        window.electron.tools.listServices(workspaceId) as Promise<CustomServiceConfig[]>,
+        toolsClient.listMcpServers(workspaceId),
+        toolsClient.listServices(workspaceId),
       ]);
       // Guard against a late response overwriting a newer active workspace.
       if (get().activeWorkspaceId && get().activeWorkspaceId !== workspaceId) return;
@@ -96,8 +95,8 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async saveMcpServer(server) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
-    const saved = await window.electron.tools.saveMcpServer(server) as McpServerConfig;
+    if (!hasElectron("tools")) return;
+    const saved = await toolsClient.saveMcpServer(server);
     set((s) => ({
       mcpServers: s.mcpServers.some((m) => m.id === saved.id)
         ? s.mcpServers.map((m) => (m.id === saved.id ? saved : m))
@@ -106,24 +105,24 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async deleteMcpServer(id) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
+    if (!hasElectron("tools")) return;
     const prev = get().mcpServers;
     set({ mcpServers: prev.filter((m) => m.id !== id) });
     try {
-      await window.electron.tools.deleteMcpServer(id);
+      await toolsClient.deleteMcpServer(id);
     } catch (err) {
-      console.error("[tools] deleteMcpServer error", err);
+      reportIpcError(err, "Couldn't delete the MCP server");
       set({ mcpServers: prev }); // rollback so the UI stays consistent + retryable
     }
   },
 
   async fetchMcpTools(serverId) {
-    if (typeof window === "undefined" || !window.electron?.tools?.listMcpTools) return;
+    if (!hasElectron("tools")) return;
     set((s) => ({
       mcpTools: { ...s.mcpTools, [serverId]: { loading: true, tools: s.mcpTools[serverId]?.tools ?? [] } },
     }));
     try {
-      const res = await window.electron.tools.listMcpTools(serverId);
+      const res = await toolsClient.listMcpTools(serverId);
       set((s) => ({
         mcpTools: {
           ...s.mcpTools,
@@ -140,7 +139,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async setMcpToolEnabled(serverId, toolName, enabled) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
+    if (!hasElectron("tools")) return;
     const server = get().mcpServers.find((m) => m.id === serverId);
     if (!server) return;
     // Derive from the latest in-memory disabledTools and update state
@@ -154,16 +153,16 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
     // Persist directly (not via saveMcpServer, whose resolve replaces the whole
     // record) so a slow/out-of-order response can't clobber a newer toggle.
     try {
-      await window.electron.tools.saveMcpServer(next);
+      await toolsClient.saveMcpServer(next);
     } catch (err) {
-      console.error("[tools] setMcpToolEnabled error", err);
+      reportIpcError(err, "Couldn't update the server's tools");
       if (get().activeWorkspaceId) get().fetchTools(get().activeWorkspaceId!);
     }
   },
 
   async saveCustomService(service) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
-    const saved = await window.electron.tools.saveService(service) as CustomServiceConfig;
+    if (!hasElectron("tools")) return;
+    const saved = await toolsClient.saveService(service);
     set((s) => ({
       customServices: s.customServices.some((c) => c.id === saved.id)
         ? s.customServices.map((c) => (c.id === saved.id ? saved : c))
@@ -172,21 +171,21 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async deleteCustomService(id) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
+    if (!hasElectron("tools")) return;
     const prev = get().customServices;
     set({ customServices: prev.filter((c) => c.id !== id) });
     try {
-      await window.electron.tools.deleteService(id);
+      await toolsClient.deleteService(id);
     } catch (err) {
-      console.error("[tools] deleteCustomService error", err);
+      reportIpcError(err, "Couldn't delete the service");
       set({ customServices: prev }); // rollback
     }
   },
 
   async fetchToolAttachments(projectId) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
+    if (!hasElectron("tools")) return;
     try {
-      const toolAttachments = await window.electron.tools.listAttachments(projectId) as ToolAttachment[];
+      const toolAttachments = await toolsClient.listAttachments(projectId);
       // Guard against a late response overwriting a newer active project.
       if (get().activeProjectId && get().activeProjectId !== projectId) return;
       set({ toolAttachments });
@@ -196,7 +195,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async setToolAttachment(projectId, toolType, toolId, enabled) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
+    if (!hasElectron("tools")) return;
     const next: ToolAttachment = { projectId, toolType, toolId, enabled };
     set((s) => ({
       toolAttachments: s.toolAttachments.some((a) => a.toolType === toolType && a.toolId === toolId && a.projectId === projectId)
@@ -204,30 +203,30 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
         : [...s.toolAttachments, next],
     }));
     try {
-      await window.electron.tools.setAttachment(next);
+      await toolsClient.setAttachment(next);
     } catch (err) {
-      console.error("[tools] setToolAttachment error", err);
+      reportIpcError(err, "Couldn't attach the tool");
       get().fetchToolAttachments(projectId);
     }
   },
 
   async clearToolAttachment(projectId, toolType, toolId) {
-    if (typeof window === "undefined" || !window.electron?.tools) return;
+    if (!hasElectron("tools")) return;
     set((s) => ({
       toolAttachments: s.toolAttachments.filter(
         (a) => !(a.toolType === toolType && a.toolId === toolId && a.projectId === projectId),
       ),
     }));
     try {
-      await window.electron.tools.clearAttachment({ projectId, toolType, toolId });
+      await toolsClient.clearAttachment({ projectId, toolType, toolId });
     } catch (err) {
-      console.error("[tools] clearToolAttachment error", err);
+      reportIpcError(err, "Couldn't detach the tool");
       get().fetchToolAttachments(projectId);
     }
   },
 
   async installCommunityMcp(entry, secrets = {}) {
-    if (typeof window === "undefined" || !window.electron?.tools) throw new Error("Unavailable");
+    if (!hasElectron("tools")) throw new Error("Unavailable");
     const workspaceId = get().activeWorkspaceId;
     if (!workspaceId) throw new Error("No active workspace");
     // Re-install onto the SAME row when this community item is already present,
@@ -264,7 +263,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
   },
 
   async installCommunityService(entry, secrets = {}) {
-    if (typeof window === "undefined" || !window.electron?.tools) throw new Error("Unavailable");
+    if (!hasElectron("tools")) throw new Error("Unavailable");
     const workspaceId = get().activeWorkspaceId;
     if (!workspaceId) throw new Error("No active workspace");
     const existing = get().customServices.find((c) => c.communityId === entry.definition.name);
@@ -313,9 +312,9 @@ async function resolveInstallHeaders(
     if (headerNeedsSecret(value)) {
       const supplied = secrets[name];
       if (supplied) {
-        const ref = await window.electron?.secrets.set(toolType, toolId, name, supplied);
+        const ref = await secretsClient.set(toolType, toolId, name, supplied);
         if (!ref) throw new Error(`Could not securely store the secret for "${name}".`);
-        out[name] = ref as string;
+        out[name] = ref;
       }
       // else: drop the unfilled placeholder — never persist a raw placeholder.
     } else {

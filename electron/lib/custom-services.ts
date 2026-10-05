@@ -23,6 +23,7 @@ import {
   type BearerResolver,
 } from "../../shared/chat/service-exec";
 import { errMsg } from "../host-shared/errors";
+import type { ServiceTestResult } from "../../shared/types/tools";
 
 // Re-export the shared pure surface so existing `import * as services` call
 // sites (external-tools.ts, ipc/tools.ts) keep resolving every symbol here.
@@ -140,7 +141,7 @@ export async function testService(
   resolveBearer?: BearerResolver,
   /** Which operation to test (namespaced tool name); defaults to the first. */
   namespaced?: string,
-): Promise<{ ok: boolean; status?: number; preview?: string; error?: string }> {
+): Promise<ServiceTestResult> {
   try {
     const op = namespaced
       ? resolveOperation(cfg, namespaced)
