@@ -1,4 +1,4 @@
-import { registerIpcHandle, broadcastEvent } from "./registry";
+import { registerIpcHandle, registerContractHandle, broadcastEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
@@ -47,13 +47,9 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // ── Command execution (dsh commands runtime) ────────────────────────
   // List registry commands (name + description) so host UIs can render their
   // palettes from the same namespace plugins register into.
-  registerIpcHandle("cordis:listCommands", () => handle(async () => {
-    try {
-      const list = await getAgentHost().listCommands();
-      return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
-    } catch (err) {
-      return { error: errMsg(err) };
-    }
+  registerContractHandle("cordis:listCommands", () => handle(async () => {
+    const list = await getAgentHost().listCommands();
+    return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
   }));
 
   // Generic executor for registry commands (/plan, /compact, plugin commands)

@@ -11,29 +11,9 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
+import type { CodingSessionRow, SessionTodo } from "../../shared/agent/session-wire";
 
-// ── Coding Agent Sessions ───────────────────────────────────────────────────────────────
-
-export interface CodingSessionRow {
-  id: string;
-  projectId: string;
-  taskTitle: string;
-  taskId: string | null;
-  cwd: string;
-  mode: "plan" | "execute";
-  planNoteId: string | null;
-  /**
-   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
-   * tool for this session. Cached so the execute-mode system prompt can
-   * carry the approved plan forward without folding the entire session log.
-   * NULL when the session never called exit_plan_mode.
-   */
-  planContent: string | null;
-  status: "running" | "exited";
-  spawnedAt: string;
-  updatedAt: string;
-  role: "default" | "automation-dev";
-}
+export type { CodingSessionRow, SessionTodo };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toCodingSession(row: any): CodingSessionRow {
@@ -131,14 +111,6 @@ export function reconcileInterruptedCodingSessions(db: Database.Database): numbe
 // ── Coding Agent Messages ───────────────────────────────────────────────────────────────
 
 
-
-// ── Coding Agent Session Todos ─────────────────────────────────────────────────
-
-export interface SessionTodo {
-  content: string;
-  status: "pending" | "in_progress" | "completed" | "cancelled";
-  priority: "high" | "medium" | "low";
-}
 
 interface SessionTodoRow {
   content: string;

@@ -397,7 +397,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       else if (projection.kind === "compact-result") {
         void (async () => {
           try {
-            const result = await (electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(sessionId);
+            const result = await electron.session.getSessionMessages(sessionId);
             const rows = unwrapSessionPayload(result).messages;
             if (rows.length) useCairnStore.setState((s) => ({ terminalSessions: s.terminalSessions.map((t) => t.sessionId === sessionId ? { ...t, messages: rows as never } : t) }));
           } catch (err) { console.warn("[AgentChatPane] compact reload failed", err); }

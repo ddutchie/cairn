@@ -113,7 +113,7 @@ describe("db:* channel classification coverage", () => {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) walk(full);
         else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
-          for (const m of fs.readFileSync(full, "utf8").matchAll(/registerIpcHandle\(\s*"(db:[^"]+)"/g)) channels.add(m[1]);
+          for (const m of fs.readFileSync(full, "utf8").matchAll(/register(?:Ipc|Contract)Handle(?:<[^>]*>)?\(\s*"(db:[^"]+)"/g)) channels.add(m[1]);
         }
       }
     };

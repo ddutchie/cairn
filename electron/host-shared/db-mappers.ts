@@ -7,6 +7,7 @@
 import { stripMarkdown } from "./text-utils";
 import { noteExcerpt } from "../../shared/notes/excerpt";
 import type { Note } from "../../shared/types/notes";
+import type { ChatThread, ChatThreadScope } from "../../shared/types/chat";
 import type { BoardColumn, TaskCard } from "../../shared/types/board";
 import type { ColumnType, Priority, ProjectStatus } from "../../shared/types/domain";
 import type { Project, ProjectSettings, Tag, Workspace } from "../../shared/types/workspace";
@@ -268,10 +269,10 @@ export function toSlashCommand(row: DbRow) {
   };
 }
 
-export function toChatThread(row: DbRow) {
+export function toChatThread(row: DbRow): ChatThread {
   return {
     id: row.id as string,
-    scope: row.scope as string,
+    scope: row.scope as ChatThreadScope,
     workspaceId: row.workspace_id as string,
     projectId: row.project_id as string | undefined,
     title: row.title as string | undefined,

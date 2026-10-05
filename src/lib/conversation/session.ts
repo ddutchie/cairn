@@ -16,15 +16,11 @@ export interface SessionPayload {
  * Unwrap a session-history response into its parts.
  *
  * Both history channels (`db:chat:sessionMessages`, `db:session:messages`) return
- * one of three shapes — a bare array, `{messages, usage, todos}`, or either of
- * those behind an ipc `{data}` envelope. Four call sites each open-coded this
- * ladder, and they had drifted: some handled the `{data}` wrapper, some didn't,
- * and only two recovered `usage`. One unwrapper keeps them honest.
+ * `{ messages, usage?, todos?, title? }` (preload has already stripped the IPC
+ * envelope); a bare array is still accepted. One reader keeps the four call
+ * sites recovering the same fields.
  */
-export function unwrapSessionPayload(value: unknown): SessionPayload {
-  const raw = value && typeof value === "object" && "data" in value && (value as { data?: unknown }).data !== undefined
-    ? (value as { data: unknown }).data
-    : value;
+export function unwrapSessionPayload(raw: unknown): SessionPayload {
   if (Array.isArray(raw)) return { messages: raw as SessionMessage[] };
   if (raw && typeof raw === "object") {
     const record = raw as { messages?: unknown; usage?: unknown; todos?: unknown; title?: unknown };

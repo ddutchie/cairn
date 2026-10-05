@@ -8,12 +8,12 @@
  * stay in lockstep (session-as-truth, not the duplicated SQLite tables).
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
 import { getAgentHost } from "../cordis/agent-host";
-import type { ChatMessage } from "../../src/types";
+import type { ChatMessage } from "../../shared/types/chat";
 import { errMsg } from "../host-shared/errors";
 
 function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessage[] {
@@ -35,7 +35,7 @@ function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessag
 }
 
 export function registerChatSessionHandlers(ctxDb: DbContext): void {
-  registerIpcHandle("db:chat:sessionMessages", (_e, { threadId }: { threadId: string }) => handle(async () => {
+  registerContractHandle("db:chat:sessionMessages", (_e, { threadId }) => handle(async () => {
     if (!threadId) return { messages: [] as ChatMessage[] };
     try {
       const stableId = String(SessionId(`chat-${threadId}`));
@@ -61,7 +61,7 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
   // ── Session title (chat-only, phase 1) ───────────────────────────────────
   // Direct read of the latest folded title for one chat thread (session:projection
   // is the live push path; this is the cold read / reload path).
-  registerIpcHandle("session:title", (_e, { threadId, sessionId }: { threadId?: string; sessionId?: string }) => handle(async () => {
+  registerContractHandle("session:title", (_e, { threadId, sessionId }) => handle(async () => {
     const sid = sessionId ?? (threadId ? String(SessionId(`chat-${threadId}`)) : "");
     if (!sid || !sid.startsWith("chat-")) return { title: null as string | null };
     try {
@@ -72,7 +72,7 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
   }));
 
   // Manual rename — pins the title (kind:'user'). Chat-only.
-  registerIpcHandle("session:renameTitle", (_e, { threadId, sessionId, title }: { threadId?: string; sessionId?: string; title: string }) => handle(async () => {
+  registerContractHandle("session:renameTitle", (_e, { threadId, sessionId, title }) => handle(async () => {
     const sid = sessionId ?? (threadId ? String(SessionId(`chat-${threadId}`)) : "");
     if (!sid || !sid.startsWith("chat-")) throw new Error("renameTitle: only chat threads can be renamed");
     if (typeof title !== "string" || !title.trim()) throw new Error("renameTitle: title must be non-empty");

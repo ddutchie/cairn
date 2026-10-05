@@ -19,6 +19,8 @@ import type { CardCreateInput, CardPatch, ColumnCreateInput, ColumnPatch } from 
 import type {
   ProjectCreateInput, ProjectPatch, ProjectSettings, TagCreateInput, TagPatch, WorkspaceCreateInput, WorkspacePatch,
 } from "../shared/types/workspace";
+import type { CodingSessionCreateInput, PutMessageFeedbackInput } from "../shared/agent/session-wire";
+import type { ChatThreadUpsertInput } from "../shared/types/chat";
 import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 
@@ -393,13 +395,14 @@ const api = {
 
   // ── Chat ─────────────────────────────────────
   chat: {
-    threads:       (workspaceId: string) => invoke("db:chat:threads", { workspaceId }),
-    sessionMessages: (threadId: string) => invoke("db:chat:sessionMessages", { threadId }),
-    upsertThread:  (args: unknown) => invoke("db:chat:upsertThread", args),
-    deleteThread:  (threadId: string) => invoke("db:chat:deleteThread", { threadId }),
-    clearThreadMessages: (threadId: string) => invoke("db:chat:clearThreadMessages", { threadId }),
-    clearAllThreads: (workspaceId: string, projectId?: string) => invoke("db:chat:clearAllThreads", { workspaceId, projectId }),
-    compactThread: (req: unknown) => invoke("chat:compactThread", req),
+    threads:       (workspaceId: string) => invokeContract("db:chat:threads", { workspaceId }),
+    sessionMessages: (threadId: string) => invokeContract("db:chat:sessionMessages", { threadId }),
+    upsertThread:  (input: ChatThreadUpsertInput) => invokeContract("db:chat:upsertThread", input),
+    deleteThread:  (threadId: string) => invokeContract("db:chat:deleteThread", { threadId }),
+    clearThreadMessages: (threadId: string) => invokeContract("db:chat:clearThreadMessages", { threadId }),
+    clearAllThreads: (workspaceId: string, projectId?: string) => invokeContract("db:chat:clearAllThreads", { workspaceId, projectId }),
+    compactThread: (req: IpcArgs<"chat:compactThread">[0]) => invokeContract("chat:compactThread", req),
+    summarizeTranscript: (req: IpcArgs<"chat:summarizeTranscript">[0]) => invokeContract("chat:summarizeTranscript", req),
     // ── Pop-out window ──────────────────────────
     /** Called by main window: sends current chat state, triggers window creation. */
     popOut: (payload: ChatPopoutPayload) => invokeContract("chat:popOut", payload),
@@ -945,17 +948,10 @@ const api = {
       return () => ipcRenderer.off("session:event", handler);
     },
     /** Reasoning-provenance snapshot for the agent panel's Context Ring badge */
-    contextRing: (sessionId: string) => invoke<{ available: boolean; ring?: { currentModel: string | null; byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }> } }>("session:context-ring", { sessionId }),
-    isRunning: (sessionId: string) => invoke<{
-      running: boolean;
-      pendingAsks: Array<{ sessionId: string; name: string; label: string; callId: string; nonce?: string; reason?: string }>;
-      /** Outstanding question asks (ask_questions / plan-review). The
-       *  renderer surfaces these into pendingQuestions after a reload so a
-       *  plan under review isn't lost. */
-      pendingQuestions?: Array<{ callId: string; questions: Array<{ id: string; [k: string]: unknown }>; nonce?: string }>;
-    }>("session:is-running", { sessionId }),
+    contextRing: (sessionId: string) => invokeContract("session:context-ring", { sessionId }),
+    isRunning: (sessionId: string) => invokeContract("session:is-running", { sessionId }),
     /** Bulk snapshot of session ids whose loop is in flight right now. */
-    runningIds: () => invoke<{ ids: string[] }>("session:running-ids", {}),
+    runningIds: () => invokeContract("session:running-ids"),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => ipcRenderer.send("session:abort", { sessionId }),
     /** Clear message history for a session (start fresh). */
@@ -971,9 +967,9 @@ const api = {
       return () => ipcRenderer.off("session:projection", handler);
     },
     /** Latest folded session title (chat-only). Null before first eligible title. */
-    title: (threadId: string) => invoke<{ title: string | null }>("session:title", { threadId }),
+    title: (threadId: string) => invokeContract("session:title", { threadId }),
     /** Pin a manual title (kind:'user' — stops auto-titling). Chat-only. */
-    renameTitle: (threadId: string, title: string) => invoke<{ title: string }>("session:renameTitle", { threadId, title }),
+    renameTitle: (threadId: string, title: string) => invokeContract("session:renameTitle", { threadId, title }),
     /** Fired when the agent calls ensure_note in plan mode — carries the PRD note ID */
     /**
      * Fired when the agent produces a plan for user review. Two shapes carry
@@ -992,15 +988,15 @@ const api = {
     /** Answer a blocked ask_questions call — the text is fed back to the model as the tool result */
     respondQuestions: (sessionId: string, callId: string, answers: string, nonce?: string) => ipcRenderer.send("session:respond-questions", { sessionId, callId, answers, nonce }),
     /** List all persisted coding sessions for a project (project-scoped history) */
-    listSessions:   (projectId: string) => invoke("db:session:list", { projectId }),
+    listSessions:   (projectId: string) => invokeContract("db:session:list", { projectId }),
     /** Persist a new coding session row to SQLite */
-    createSession:  (args: unknown) => invoke("db:session:create", args),
+    createSession:  (input: CodingSessionCreateInput) => invokeContract("db:session:create", input),
     /** Delete a coding session and all its messages from SQLite */
-    deleteSession:  (id: string) => invoke("db:session:delete", { id }),
+    deleteSession:  (id: string) => invokeContract("db:session:delete", { id }),
     /** Fetch session transcript from the dsh JSONL log (session-as-truth), SQLite fallback */
-    getSessionMessages: (sessionId: string) => invoke("db:session:messages", { sessionId }),
+    getSessionMessages: (sessionId: string) => invokeContract("db:session:messages", { sessionId }),
     /** Fetch the persisted todo list for a session */
-    getTodos:       (sessionId: string) => invoke<Array<{ content: string; status: "pending" | "in_progress" | "completed" | "cancelled"; priority: "high" | "medium" | "low" }>>("db:session:todos", { sessionId }),
+    getTodos:       (sessionId: string) => invokeContract("db:session:todos", { sessionId }),
     /** Restore LLM context for a session (loads history into main-process Map) — fire-and-forget */
     restoreContext: (sessionId: string) => ipcRenderer.send("session:restore-context", { sessionId }),
     /**
@@ -1011,24 +1007,24 @@ const api = {
     respondTool: (sessionId: string, callId: string, approved: boolean, grant?: "session" | "command" | "workspace", command?: string, nonce?: string) =>
       ipcRenderer.send("session:respond-tool", { sessionId, callId, approved, grant, command, nonce }),
     /** Continuable-child catalog for a parent session (durable + live activity). Scope defaults to direct children; "descendants" lists the full subtree. */
-    listSubagents: (parentSessionId: string, scope?: "children" | "descendants") => invoke<{ ok: true; value: { entries: unknown[]; parentAvailable: boolean } } | { ok: false; code: string; message: string }>("subagent:list", { parentSessionId, scope: scope ?? "children" }),
+    listSubagents: (parentSessionId: string, scope?: "children" | "descendants") => invokeContract("subagent:list", { parentSessionId, scope: scope ?? "children" }),
     /** Stop a live continuable child's current turn (fire-and-return; absent targets are a no-op) */
-    interruptSubagent: (parentSessionId: string, childId: string) => invoke<{ ok: true; value: { accepted: boolean } } | { ok: false; code: string; message: string }>("subagent:interrupt", { parentSessionId, childId }),
+    interruptSubagent: (parentSessionId: string, childId: string) => invokeContract("subagent:interrupt", { parentSessionId, childId }),
     /** Deliver a human message to a continuable child (needs the live parent agent; parent-unavailable otherwise) */
-    messageSubagent: (parentSessionId: string, childId: string, text: string) => invoke<{ ok: true; value: { messageId: string } } | { ok: false; code: string; message: string }>("subagent:message", { parentSessionId, childId, text }),
+    messageSubagent: (parentSessionId: string, childId: string, text: string) => invokeContract("subagent:message", { parentSessionId, childId, text }),
     /** Kill a dsh background job (jobs dock; owner-unavailable when the owner turn ended) */
-    killJob: (jobId: string, sessionId: string) => invoke<{ ok: true; value: unknown } | { ok: false; code: string; message: string }>("session:job-kill", { jobId, sessionId }),
+    killJob: (jobId: string, sessionId: string) => invokeContract("session:job-kill", { jobId, sessionId }),
     /** Current same-session goal snapshot (null when no goal); live changes arrive via onProjection kind:"goal" */
-    goal: (sessionId: string) => invoke<{ ok: true; value: { id: string; revision: number; objective: string; phase: string; blockedReason?: { code: string; message: string }; roundsStarted: number; maxGoalRounds: number; createdAt: number; updatedAt: number } | null } | { ok: false; code: string; message: string }>("session:goal", { sessionId }),
+    goal: (sessionId: string) => invokeContract("session:goal", { sessionId }),
     /** Current permission-preset select ({options, currentValue}); live changes arrive via onProjection kind:"permissions". ok:false while the presets service is unavailable (switcher hides) */
-    permissions: (sessionId: string) => invoke<{ ok: true; value: { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } } | { ok: false; code: string; message: string }>("session:permissions", { sessionId }),
-    setPermissionPreset: (sessionId: string, preset: string) => invoke<{ ok: true; value: { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } } | { ok: false; code: string; message: string }>("session:permissions:set", { sessionId, preset }),
+    permissions: (sessionId: string) => invokeContract("session:permissions", { sessionId }),
+    setPermissionPreset: (sessionId: string, preset: string) => invokeContract("session:permissions:set", { sessionId, preset }),
     /** Rate an assistant message (thumbs + optional note); preserves a stored note unless replaced */
-    feedback: (req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } } | { ok: false; code: string; message: string }>("session:feedback", req),
+    feedback: (req: PutMessageFeedbackInput) => invokeContract("session:feedback", req),
     /** Current rating for one message (null when unrated) */
-    feedbackGet: (sessionId: string, messageId: string) => invoke<{ ok: true; value: { messageId: string; rating: string; note?: string; version: string } | null } | { ok: false; code: string; message: string }>("session:feedback-get", { sessionId, messageId }),
+    feedbackGet: (sessionId: string, messageId: string) => invokeContract("session:feedback-get", { sessionId, messageId }),
     /** Active session-local reminders (empty when the schedule overlay is off or none) */
-    scheduleList: (sessionId: string) => invoke<{ ok: true; value: Array<{ id: string; prompt: string; scheduledAt: string; kind: string; state: string }> } | { ok: false; code: string; message: string }>("session:schedule-list", { sessionId }),
+    scheduleList: (sessionId: string) => invokeContract("session:schedule-list", { sessionId }),
     /** Workspace-persistent "Always allow" grants */
     listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
     deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),
@@ -1167,7 +1163,7 @@ const api = {
     }>("runtime:status"),
     stop: () => invoke<{ ok: boolean }>("runtime:stop"),
     /** List dsh registry commands (name + description) — palette source. */
-    listCommands: () => invoke<Array<{ name: string; description: string }>>("cordis:listCommands"),
+    listCommands: () => invokeContract("cordis:listCommands"),
     /** Execute a dsh registry command (/plan, /compact, …) on a session's agent. */
     executeCommand: (req: { sessionId: string; line: string }) => invoke<{ kind?: string; text?: string }>(
       "cordis:executeCommand", req

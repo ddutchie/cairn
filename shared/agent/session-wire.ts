@@ -321,3 +321,84 @@ export interface PendingQuestionRecord {
   callId: string;
   questions: Array<{ id: string; [key: string]: unknown }>;
 }
+
+// ── from sessions-queries.ts ─────────────────────────────────────────────
+// ── Coding Agent Sessions ───────────────────────────────────────────────────────────────
+
+export interface CodingSessionRow {
+  id: string;
+  projectId: string;
+  taskTitle: string;
+  taskId: string | null;
+  cwd: string;
+  mode: "plan" | "execute";
+  planNoteId: string | null;
+  /**
+   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
+   * tool for this session. Cached so the execute-mode system prompt can
+   * carry the approved plan forward without folding the entire session log.
+   * NULL when the session never called exit_plan_mode.
+   */
+  planContent: string | null;
+  status: "running" | "exited";
+  spawnedAt: string;
+  updatedAt: string;
+  role: "default" | "automation-dev";
+}
+
+// ── Coding Agent Session Todos ─────────────────────────────────────────────────
+
+export interface SessionTodo {
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  priority: "high" | "medium" | "low";
+}
+
+// ── IPC payloads ─────────────────────────────────────────────────────────
+/** A coding-session transcript message as `db:session:messages` returns it. */
+export interface AgentSessionMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  reasoning: string | null;
+  toolCalls: Array<{
+    callId?: string;
+    name: string;
+    label: string;
+    args?: string;
+    output?: string;
+    ok: boolean;
+    running: false;
+  }> | null;
+  subagents: ReplaySubagent[] | null;
+  stats: TurnStats | null;
+  /** Empty: replay doesn't keep event timestamps (the renderer omits the label). */
+  timestamp: string;
+}
+
+/** What a session-log load returns alongside the messages (all optional for a new session). */
+export interface SessionLoadExtras {
+  usage?: SessionUsageMetrics;
+  contextRing?: ContextRingState;
+  todos?: SessionTodoItem[];
+  stats?: SessionStats;
+}
+
+/** `session:is-running`: loop state plus the asks a reload may have missed. */
+export interface SessionRunningState {
+  running: boolean;
+  pendingAsks: PendingAskMeta[];
+  /** Outstanding ask_questions / plan-review asks. */
+  pendingQuestions: Array<{ callId: string; questions: PendingQuestionRecord["questions"]; nonce?: string }>;
+}
+
+export interface CodingSessionCreateInput {
+  id: string;
+  projectId: string;
+  taskTitle: string;
+  taskId?: string | null;
+  cwd: string;
+  mode: "plan" | "execute";
+  spawnedAt: string;
+  role?: "default" | "automation-dev";
+}
