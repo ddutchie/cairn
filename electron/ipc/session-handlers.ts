@@ -11,6 +11,7 @@
  */
 
 import { registerContractHandle } from "./registry";
+import { isMobileCaller } from "./mobile-caller";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
@@ -52,7 +53,16 @@ function isMissingSessionError(err: unknown): boolean {
 
 export function registerSessionHandlers(ctx: DbContext): void {
   registerContractHandle("db:session:list", (_e, { projectId }) => handle(() => q.getCodingSessions(ctx.db, projectId)));
-  registerContractHandle("db:session:create", (_e, args) => handle(() => q.createCodingSession(ctx.db, args)));
+  registerContractHandle("db:session:create", (e, args) => handle(() => {
+    // A paired phone may only start sessions in the project's own code directory.
+    if (isMobileCaller(e)) {
+      const codeDirectory = q.getProjectById(ctx.db, args?.projectId)?.codeDirectory;
+      if (!codeDirectory || args.cwd !== codeDirectory || (args.role && args.role !== "default")) {
+        throw new Error("From Mobile Access, sessions can only run in the project's code directory.");
+      }
+    }
+    return q.createCodingSession(ctx.db, args);
+  }));
   registerContractHandle("db:session:delete", (_e, { id }) => handle(() => q.deleteCodingSession(ctx.db, id)));
   registerContractHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 

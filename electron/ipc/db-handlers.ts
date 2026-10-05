@@ -9,6 +9,7 @@
  */
 
 import { registerContractHandle, broadcastIpcEvent } from "./registry";
+import { isMobileCaller } from "./mobile-caller";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders } from "../notes-files";
@@ -83,7 +84,12 @@ export function registerDbHandlers(ctx: DbContext): void {
       return { project, columns: [] };
     })();
   }));
-  registerContractHandle("db:project:update", (_e, { id, patch }) => handle(() => {
+  registerContractHandle("db:project:update", (e, { id, patch }) => handle(() => {
+    // The code directory is where coding sessions run; a paired phone may not move it.
+    if (isMobileCaller(e) && patch && Object.prototype.hasOwnProperty.call(patch, "codeDirectory")
+        && (patch.codeDirectory ?? null) !== (q.getProjectById(ctx.db, id)?.codeDirectory ?? null)) {
+      throw new Error("The code directory can only be changed from the desktop app.");
+    }
     // Capture the old name BEFORE the update so we can relocate the project's
     // on-disk notes directory when the name (and thus its slug) changes —
     // otherwise the .md files stay under the old slug and future writes split
