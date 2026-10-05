@@ -73,9 +73,11 @@ describe("text primary keys", () => {
         .toThrow(/NOT NULL constraint failed: task_cards\.id/);
     });
 
-    it("drops only the NULL-key rows and keeps the rest", () => {
-      expect(db.prepare("SELECT key FROM app_kv").all()).toEqual([{ key: "kept" }]);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("dropped 1 app_kv row"));
+    it("gives a NULL-key row a new id instead of dropping it", () => {
+      const rows = db.prepare("SELECT key, value FROM app_kv ORDER BY value").all() as Array<{ key: string; value: string }>;
+      expect(rows.map((r) => r.value)).toEqual(["orphan", "v"]);
+      expect(rows[0].key).toMatch(/^[0-9a-f]{32}$/);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("gave 1 app_kv row(s) with a NULL primary key a new id"));
       expect(getCards(db, { projectId: "p1" }).map((c) => c.id)).toEqual(["k1"]);
       expect((db.prepare("SELECT COUNT(*) AS n FROM notes").get() as { n: number }).n).toBe(2);
     });
@@ -115,11 +117,43 @@ describe("text primary keys", () => {
     db.pragma("foreign_keys = OFF");
     const result = db.transaction(() => rebuildWithNotNullPrimaryKey(db, "parent", ["id"]))();
     db.pragma("foreign_keys = ON");
-    expect(result).toEqual({ dropped: 1 });
+    expect(result).toEqual({ repaired: 1, dropped: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM parent WHERE name = 'ghost' AND id IS NOT NULL").get()).toEqual({ n: 1 });
     expect(db.prepare("SELECT * FROM child").all()).toEqual([{ id: "x", parent_id: "a" }]);
     expect(nullablePrimaryKeys(db)).toEqual([]);
     expect(dependents(db)).toContain("idx_parent_name");
     db.exec("DELETE FROM parent WHERE id = 'a'");
     expect(db.prepare("SELECT COUNT(*) AS n FROM child").get()).toEqual({ n: 0 }); // cascade still wired
+  });
+
+  it("drops a row whose composite key has a NULL, since there's no id to invent", () => {
+    const db = new BetterSqlite3(":memory:");
+    db.exec(`
+      CREATE TABLE pair (a TEXT, b TEXT, v TEXT, PRIMARY KEY (a, b));
+      INSERT INTO pair VALUES ('x', 'y', 'kept'), ('x', NULL, 'gone');
+    `);
+    db.pragma("foreign_keys = OFF");
+    const result = db.transaction(() => rebuildWithNotNullPrimaryKey(db, "pair", ["a", "b"]))();
+    expect(result).toEqual({ repaired: 0, dropped: 1 });
+    expect(db.prepare("SELECT v FROM pair").all()).toEqual([{ v: "kept" }]);
+    expect(nullablePrimaryKeys(db)).toEqual([]);
+  });
+
+  it("refuses to rebuild with foreign keys on, which would cascade-delete children", () => {
+    const db = new BetterSqlite3(":memory:");
+    db.exec("CREATE TABLE parent (id TEXT PRIMARY KEY); INSERT INTO parent VALUES ('a');");
+    expect(db.pragma("foreign_keys", { simple: true })).toBe(1); // better-sqlite3's default
+    expect(() => rebuildWithNotNullPrimaryKey(db, "parent", ["id"])).toThrow(/foreign keys on/);
+  });
+
+  it("refuses to run v60 inside a transaction, where foreign keys can't be turned off", () => {
+    const db = new BetterSqlite3(":memory:");
+    db.exec(SCHEMA_SQL.replace(/TEXT NOT NULL PRIMARY KEY/g, "TEXT PRIMARY KEY"));
+    applySchemaThrough(db, V59);
+    createWorkspace(db, { id: "ws1", name: "WS" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "Proj" });
+    expect(() => db.transaction(() => applySchema(db))()).toThrow(/needs foreign keys off/);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 1 });
+    expect(db.pragma("user_version", { simple: true })).toBe(V59);
   });
 });

@@ -215,12 +215,19 @@ export function nullablePrimaryKeys(db: Database.Database): Array<{ table: strin
 /**
  * Rebuild `table` with NOT NULL on its primary-key `columns` (SQLite can't add
  * the constraint with ALTER TABLE), following SQLite's 12-step procedure. The
- * caller must have foreign keys off. Rows with a NULL key are dropped. Rowids
+ * caller must have foreign keys off. A row with a NULL single-column key gets
+ * a generated id so its content survives; with a composite key it's dropped,
+ * since there's no sensible value to invent. Rowids
  * are copied so external-content FTS (notes_fts) stays aligned, and the
  * table's indexes and triggers are recreated after the copy, so the copy
  * itself writes nothing to the change feed or the sync oplog.
  */
-export function rebuildWithNotNullPrimaryKey(db: Database.Database, table: string, columns: string[]): { dropped: number } {
+export function rebuildWithNotNullPrimaryKey(
+  db: Database.Database, table: string, columns: string[],
+): { repaired: number; dropped: number } {
+  if (db.pragma("foreign_keys", { simple: true }) !== 0) {
+    throw new Error(`refusing to rebuild ${table} with foreign keys on: dropping it would cascade-delete its children`);
+  }
   const { sql } = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string };
   const tmp = `${table}__notnull_pk`;
   let createSql = sql.replace(/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"[^"]+"|`[^`]+`|\[[^\]]+\]|'[^']+'|\w+)/i, `CREATE TABLE "${tmp}"`);
@@ -236,12 +243,20 @@ export function rebuildWithNotNullPrimaryKey(db: Database.Database, table: strin
     "SELECT sql FROM sqlite_master WHERE type IN ('index', 'trigger') AND tbl_name = ? AND sql IS NOT NULL",
   ).all(table) as Array<{ sql: string }>;
   const cols = before.map((c) => `"${c.name}"`).join(", ");
-  const keyed = columns.map((c) => `"${c}" IS NOT NULL`).join(" AND ");
+  const pkCount = before.filter((c) => c.pk > 0).length;
+  const nullKey = columns.map((c) => `"${c}" IS NULL`).join(" OR ");
   const total = (db.prepare(`SELECT COUNT(*) AS n FROM "${table}"`).get() as { n: number }).n;
+  const nullRows = (db.prepare(`SELECT COUNT(*) AS n FROM "${table}" WHERE ${nullKey}`).get() as { n: number }).n;
+  // Repair in the copy, not with an UPDATE: the old table's triggers would
+  // write the invented id to the change feed and sync oplog.
+  const repair = pkCount === 1;
+  const selected = before
+    .map((c) => (repair && c.name === columns[0] ? `COALESCE("${c.name}", lower(hex(randomblob(16))))` : `"${c.name}"`))
+    .join(", ");
 
   db.exec(createSql);
   const copied = db.prepare(
-    `INSERT INTO "${tmp}" (rowid, ${cols}) SELECT rowid, ${cols} FROM "${table}" WHERE ${keyed}`,
+    `INSERT INTO "${tmp}" (rowid, ${cols}) SELECT rowid, ${selected} FROM "${table}"${repair ? "" : ` WHERE NOT (${nullKey})`}`,
   ).run().changes;
   db.exec(`DROP TABLE "${table}"`);
   // Legacy rename: don't re-parse other tables' triggers and views, which can
@@ -261,7 +276,7 @@ export function rebuildWithNotNullPrimaryKey(db: Database.Database, table: strin
   if (!same || after.some((c) => columns.includes(c.name) && !c.notnull)) {
     throw new Error(`${table} rebuilt with a different shape`);
   }
-  return { dropped: total - copied };
+  return { repaired: repair ? nullRows : 0, dropped: total - copied };
 }
 
 function tableExists(db: Database.Database, name: string): boolean {
@@ -1551,8 +1566,9 @@ const MIGRATIONS: Migration[] = [
   withForeignKeysOff((db) => {
     for (const { table, columns } of nullablePrimaryKeys(db)) {
       try {
-        const { dropped } = db.transaction(() => rebuildWithNotNullPrimaryKey(db, table, columns))();
-        if (dropped > 0) console.warn(`[schema] v60: dropped ${dropped} ${table} row(s) with a NULL primary key`);
+        const { repaired, dropped } = db.transaction(() => rebuildWithNotNullPrimaryKey(db, table, columns))();
+        if (repaired > 0) console.warn(`[schema] v60: gave ${repaired} ${table} row(s) with a NULL primary key a new id`);
+        if (dropped > 0) console.warn(`[schema] v60: dropped ${dropped} ${table} row(s) with a NULL composite key`);
       } catch (err) {
         console.warn(`[schema] v60: left ${table} unchanged:`, err);
       }
@@ -1638,14 +1654,24 @@ function runMigrations(db: Database.Database, through = MIGRATIONS.length): void
     const migrate = MIGRATIONS[i];
     const nextVersion = i + 1;
     const runMigration = db.transaction(() => {
+      // With foreign keys off nothing stops a migration from orphaning rows, so
+      // report any violations it adds (older ones, e.g. orphaned notes, predate it).
+      const violations = () => (db.pragma("foreign_key_check") as unknown[]).length;
+      const before = migrate.foreignKeysOff ? violations() : 0;
       migrate(db);
       if (migrate.foreignKeysOff) {
-        const violations = db.pragma("foreign_key_check") as unknown[];
-        if (violations.length > 0) console.warn(`[schema] v${nextVersion}: ${violations.length} foreign key violation(s) after migrating`);
+        const added = violations() - before;
+        if (added > 0) console.warn(`[schema] v${nextVersion}: added ${added} foreign key violation(s)`);
       }
       db.pragma(`user_version = ${nextVersion}`);
     });
-    if (migrate.foreignKeysOff) db.pragma("foreign_keys = OFF");
+    if (migrate.foreignKeysOff) {
+      db.pragma("foreign_keys = OFF");
+      // The pragma is a silent no-op inside an open transaction.
+      if (db.pragma("foreign_keys", { simple: true }) !== 0) {
+        throw new Error(`migration v${nextVersion} needs foreign keys off; run applySchema outside a transaction`);
+      }
+    }
     try {
       runMigration();
     } finally {
