@@ -80,7 +80,13 @@ export function CardDetailScreen() {
       // non-done one (mirrors the board drag-to-done reward).
       const fromCol = columns.find((c) => c.id === card.column_id);
       const toCol = columns.find((c) => c.id === columnId);
-      moveCardToColumn(card.id, columnId);
+      try {
+        moveCardToColumn(card.id, columnId);
+      } catch (e) {
+        // The column can vanish while this screen is open (deleted on another device).
+        Alert.alert("Couldn't move the task", e instanceof Error ? e.message : String(e));
+        return;
+      }
       if (isDoneColumn(toCol) && !isDoneColumn(fromCol)) {
         const doneColIds = new Set(columns.filter((c) => isDoneColumn(c)).map((c) => c.id));
         const remainingOpen = listCards(card.project_id).filter(

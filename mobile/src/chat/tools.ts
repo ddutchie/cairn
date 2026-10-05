@@ -351,8 +351,10 @@ export const TOOLS: ToolDef[] = [
       if (a.priority !== undefined) patch.priority = str(a.priority);
       if (a.due_date !== undefined) patch.dueDate = str(a.due_date) || null;
       if (a.assignee !== undefined) patch.assignee = str(a.assignee) || null;
-      if (Object.keys(patch).length > 0) q.updateTask(str(a.id), patch);
+      // Move first: it throws for a column outside the task's project, and the
+      // field edits shouldn't land when the tool reports an error.
       if (a.column_id !== undefined && str(a.column_id)) q.moveCardToColumn(str(a.id), str(a.column_id));
+      if (Object.keys(patch).length > 0) q.updateTask(str(a.id), patch);
       return { ok: true };
     },
   },

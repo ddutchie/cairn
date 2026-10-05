@@ -16,9 +16,11 @@ import { toColumn, toCard, j, p, type DbRow } from "../host-shared/db-mappers";
 // ── Board Columns ─────────────────────────────
 
 export function getColumns(db: Database.Database, projectId?: string) {
+  // Skip tombstones, as getCards does: a column deleted on a peer keeps a
+  // tombstone row that must not show on the board or in the MCP snapshot.
   const rows = projectId
-    ? db.prepare(`SELECT * FROM board_columns WHERE project_id = ? ORDER BY "order"`).all(projectId)
-    : db.prepare(`SELECT * FROM board_columns ORDER BY "order"`).all();
+    ? db.prepare(`SELECT * FROM board_columns WHERE project_id = ? AND deleted_at IS NULL ORDER BY "order"`).all(projectId)
+    : db.prepare(`SELECT * FROM board_columns WHERE deleted_at IS NULL ORDER BY "order"`).all();
   return rows.map((row) => toColumn(row as DbRow));
 }
 

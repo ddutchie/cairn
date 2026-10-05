@@ -1578,14 +1578,16 @@ const MIGRATIONS: Migration[] = [
   // create_task (MCP) accepted a column from another project, which filed a
   // card under one project while it sat in another's column, so neither board
   // showed it. Move each such live card into its own project's column of the
-  // same type (else the first column), at the end. A plain UPDATE, so the
+  // same type (else the first column), at the end. A card whose column row is
+  // missing entirely is left alone: that can be a sync still in progress, and
+  // moving it would overwrite its real column. A plain UPDATE, so the
   // change feed and Device Sync carry the fix to other windows and devices.
   (db) => {
     const stray = db.prepare(`
       SELECT c.id, c.project_id, col.type AS column_type
       FROM task_cards c
-      LEFT JOIN board_columns col ON col.id = c.column_id AND col.deleted_at IS NULL
-      WHERE c.deleted_at IS NULL AND (col.id IS NULL OR col.project_id <> c.project_id)
+      JOIN board_columns col ON col.id = c.column_id
+      WHERE c.deleted_at IS NULL AND (col.deleted_at IS NOT NULL OR col.project_id <> c.project_id)
     `).all() as Array<{ id: string; project_id: string; column_type: string | null }>;
     const columnsOf = db.prepare(
       `SELECT id, type FROM board_columns WHERE project_id = ? AND deleted_at IS NULL ORDER BY "order", created_at`,

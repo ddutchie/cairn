@@ -11,7 +11,9 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { applySchema, applySchemaThrough } from "./schema";
-import { changeFeedHead, createCard, createColumn, createProject, createWorkspace, getCardById, getCards, updateCard } from "./queries";
+import {
+  changeFeedHead, createCard, createColumn, createProject, createWorkspace, getCardById, getCards, getColumns, updateCard,
+} from "./queries";
 import { executeTool } from "../mcp-server";
 
 function seed(db: Database.Database) {
@@ -51,6 +53,13 @@ describe("card column guard", () => {
     const run = (name: string, args: Record<string, unknown>) => executeTool(db, wp, name, args) as Record<string, unknown>;
     beforeEach(() => { wp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-colproj-")); });
     afterEach(() => fs.rmSync(wp, { recursive: true, force: true }));
+
+    it("treats a tombstoned column as missing (hidden from the board and the tools)", () => {
+      db.prepare("UPDATE board_columns SET deleted_at = 'now' WHERE id = 'a-done'").run();
+      expect(getColumns(db, "a").map((c) => c.id)).toEqual(["a-todo", "a-in_progress"]);
+      expect(run("update_task", { cardId: "k", columnId: "a-done" }).error).toBe("Column not found");
+      expect(run("create_task", { columnId: "a-done", projectId: "a", title: "x" }).error).toBe("Column not found");
+    });
 
     it("update_task refuses a column from another project", () => {
       expect(run("update_task", { cardId: "k", columnId: "b-done" }).error).toMatch(/different project/);
@@ -100,6 +109,21 @@ describe("v61 repair", () => {
     applySchema(db);
     expect((db.prepare("SELECT column_id FROM task_cards WHERE id = 'gone'").get() as { column_id: string }).column_id).toBe("b-todo");
     expect(getCardById(db, "home")?.order).toBe(0);
+  });
+
+  it("moves a card out of a tombstoned column", () => {
+    db.prepare("UPDATE task_cards SET column_id = 'a-done' WHERE id = 'stray'").run();
+    db.prepare("UPDATE board_columns SET deleted_at = 'now' WHERE id = 'a-done'").run();
+    applySchema(db);
+    expect(getCardById(db, "stray")?.columnId).toBe("a-todo"); // no live done column → first column
+  });
+
+  it("leaves a card alone when its column row hasn't arrived (a sync in progress)", () => {
+    db.pragma("foreign_keys = OFF");
+    db.prepare("UPDATE task_cards SET column_id = 'not-synced-yet' WHERE id = 'stray'").run();
+    db.pragma("foreign_keys = ON");
+    applySchema(db);
+    expect(getCardById(db, "stray")?.columnId).toBe("not-synced-yet");
   });
 
   it("falls back to the first column when the project has no column of that type", () => {
