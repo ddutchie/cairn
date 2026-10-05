@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { isUsableGuide, countHeadings, buildUserStylePromptPair } from "./user-style-handlers";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const { runOneShotMock } = vi.hoisted(() => ({ runOneShotMock: vi.fn() }));
+vi.mock("../cordis/one-shot", () => ({ runOneShot: runOneShotMock }));
+
+import { isUsableGuide, countHeadings, buildUserStylePromptPair, generateUserStyleMarkdown } from "./user-style-handlers";
 import { buildUserStyleFullGuidePrompt, buildUserStyleOptimizePrompt } from "../lib/user-style-prompt";
 
 describe("writing-style generation guards", () => {
@@ -52,5 +56,29 @@ describe("writing-style generation guards", () => {
     const p = buildUserStyleOptimizePrompt("source text");
     expect(p).toContain("## 12. Preserve These Voice Tells");
     expect(p).toContain("source text");
+  });
+});
+
+describe("generateUserStyleMarkdown retry", () => {
+  const cfg = { baseUrl: "http://127.0.0.1:9", model: "m", apiKey: "" };
+  const input: Parameters<typeof generateUserStyleMarkdown>[2] = { persona: {}, samples: [], answers: [] };
+  const guide = Array.from({ length: 12 }, (_, i) => `## ${i + 1}. Section ${i}`).join("\n\n");
+
+  beforeEach(() => { runOneShotMock.mockReset(); });
+
+  it("retries once when the first call fails (e.g. an empty completion)", async () => {
+    runOneShotMock
+      .mockImplementationOnce(async () => { throw new Error("returned a completed response with no content"); })
+      .mockImplementationOnce(async () => guide);
+    await expect(generateUserStyleMarkdown(cfg, "full", input)).resolves.toBe(guide);
+    expect(runOneShotMock).toHaveBeenCalledTimes(2);
+    expect(runOneShotMock.mock.calls[1][0]).toMatchObject({ temperature: 0.1 });
+  });
+
+  it("propagates the error when the retry fails too", async () => {
+    runOneShotMock
+      .mockImplementationOnce(async () => { throw new Error("first"); })
+      .mockImplementationOnce(async () => { throw new Error("Connection error."); });
+    await expect(generateUserStyleMarkdown(cfg, "full", input)).rejects.toThrow("Connection error.");
   });
 });

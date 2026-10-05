@@ -43,7 +43,8 @@ export interface OneShotOptions {
  * transport/provider failure (unreachable endpoint, auth, quota, an empty
  * completion classified as EMPTY_RESPONSE) arrives as a terminal `finish`
  * chunk with `reason.kind` "error" or "aborted". A caller-initiated abort
- * (`signal`) still resolves with whatever text arrived.
+ * (`signal`) stops reading before that chunk, so it still resolves with
+ * whatever text arrived.
  */
 export async function runOneShotWithContext(ctx: Context, opts: OneShotOptions): Promise<string> {
   const { systemPrompt, userPrompt, config, source, projectId, workspaceId, sessionId, maxTokens, temperature, signal } = opts;
@@ -117,7 +118,7 @@ export async function runOneShotWithContext(ctx: Context, opts: OneShotOptions):
     });
   } catch { /* best-effort */ }
 
-  if (failure && !signal?.aborted) {
+  if (failure) {
     throw new Error(failure.message || (failure.kind === "aborted" ? "The model request was aborted." : `Model request failed (${failure.code}).`));
   }
   return text;

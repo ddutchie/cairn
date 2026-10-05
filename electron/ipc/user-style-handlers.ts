@@ -106,9 +106,9 @@ export function buildUserStylePromptPair(
 
 /**
  * Run a style-guide generation with the handler's exact resilience: build the
- * prompt, call the LLM (bounded output, lower temperature), and if the result
- * fails the coherence gate retry once at temp 0.1. Throws a clear error if both
- * attempts are unusable. Exported so the live test drives the same code path
+ * prompt, call the LLM (bounded output, lower temperature), and if the call
+ * fails or the result fails the coherence gate retry once at temp 0.1. Throws
+ * the second call's error, or a clear error if both attempts are unusable. Exported so the live test drives the same code path
  * the wizard uses.
  */
 export async function generateUserStyleMarkdown(
@@ -125,12 +125,18 @@ export async function generateUserStyleMarkdown(
 
   // One-shot via Cordis (single-turn, no tools) on the configured provider.
   const { runOneShot } = await import("../cordis/one-shot");
+  // A failed first attempt (e.g. a degenerate empty completion, which
+  // runOneShot rejects as EMPTY_RESPONSE) gets the same single retry as an
+  // unusable one; a second failure propagates.
   let markdown = await runOneShot({
     systemPrompt, userPrompt,
     config: cfg,
     source: "writing-style",
     maxTokens: 8192,
     temperature: 0.3,
+  }).catch((err: unknown) => {
+    console.warn("[user-style] first attempt failed, retrying", err);
+    return "";
   });
   if (!isUsableGuide(markdown, step)) {
     markdown = await runOneShot({
