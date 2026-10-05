@@ -30,7 +30,7 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS workspaces (
-  id          TEXT PRIMARY KEY,
+  id          TEXT NOT NULL PRIMARY KEY,
   name        TEXT NOT NULL,
   description TEXT,
   icon        TEXT,
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
 );
 
 CREATE TABLE IF NOT EXISTS projects (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   name         TEXT NOT NULL,
   description  TEXT,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE TABLE IF NOT EXISTS notes (
-  id               TEXT PRIMARY KEY,
+  id               TEXT NOT NULL PRIMARY KEY,
   project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   title            TEXT NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 
 CREATE TABLE IF NOT EXISTS board_columns (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL PRIMARY KEY,
   project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   name         TEXT NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS board_columns (
 );
 
 CREATE TABLE IF NOT EXISTS task_cards (
-  id               TEXT PRIMARY KEY,
+  id               TEXT NOT NULL PRIMARY KEY,
   column_id        TEXT NOT NULL REFERENCES board_columns(id) ON DELETE CASCADE,
   project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -101,14 +101,14 @@ CREATE TABLE IF NOT EXISTS task_cards (
 );
 
 CREATE TABLE IF NOT EXISTS tags (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   name         TEXT NOT NULL,
   color        TEXT NOT NULL DEFAULT '#6366f1'
 );
 
 CREATE TABLE IF NOT EXISTS chat_threads (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL PRIMARY KEY,
   scope        TEXT NOT NULL DEFAULT 'workspace',
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   project_id   TEXT,
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS chat_threads (
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL PRIMARY KEY,
   thread_id    TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
   role         TEXT NOT NULL,
   content      TEXT NOT NULL,
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 
 CREATE TABLE IF NOT EXISTS mcp_notifications (
-  id         TEXT PRIMARY KEY,
+  id         TEXT NOT NULL PRIMARY KEY,
   tool       TEXT NOT NULL,
   title      TEXT NOT NULL,
   body       TEXT NOT NULL,
@@ -178,7 +178,106 @@ END;
 //   - Each migration runs inside an implicit transaction via SQLite's
 //     BEGIN IMMEDIATE / COMMIT wrapping.
 
-type Migration = (db: Database.Database) => void;
+/**
+ * A migration may set `foreignKeysOff` when it rebuilds tables: dropping a
+ * parent table with foreign keys enforced would cascade-delete its children,
+ * and PRAGMA foreign_keys can't change inside the migration's transaction.
+ */
+type Migration = ((db: Database.Database) => void) & { foreignKeysOff?: true };
+
+function withForeignKeysOff(migrate: (db: Database.Database) => void): Migration {
+  return Object.assign(migrate, { foreignKeysOff: true as const });
+}
+
+interface ColumnInfo { name: string; type: string; notnull: number; pk: number }
+
+/**
+ * Primary-key columns of ordinary tables that still accept NULL. SQLite only
+ * implies NOT NULL for an INTEGER PRIMARY KEY (a rowid alias) or a WITHOUT
+ * ROWID table; any other `id TEXT PRIMARY KEY` lets a NULL key through.
+ */
+export function nullablePrimaryKeys(db: Database.Database): Array<{ table: string; columns: string[] }> {
+  const tables = db.prepare(
+    `SELECT name, sql FROM sqlite_master
+     WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND sql NOT LIKE 'CREATE VIRTUAL%'`,
+  ).all() as Array<{ name: string; sql: string }>;
+  const found: Array<{ table: string; columns: string[] }> = [];
+  for (const { name, sql } of tables) {
+    if (/\bWITHOUT\s+ROWID\b/i.test(sql)) continue;
+    const pks = (db.prepare(`PRAGMA table_info("${name}")`).all() as ColumnInfo[]).filter((c) => c.pk > 0);
+    if (pks.length === 1 && pks[0].type.toUpperCase() === "INTEGER") continue;
+    const columns = pks.filter((c) => !c.notnull).map((c) => c.name);
+    if (columns.length > 0) found.push({ table: name, columns });
+  }
+  return found;
+}
+
+/**
+ * Rebuild `table` with NOT NULL on its primary-key `columns` (SQLite can't add
+ * the constraint with ALTER TABLE), following SQLite's 12-step procedure. The
+ * caller must have foreign keys off. A row with a NULL single-column key gets
+ * a generated id so its content survives; with a composite key it's dropped,
+ * since there's no sensible value to invent. Rowids
+ * are copied so external-content FTS (notes_fts) stays aligned, and the
+ * table's indexes and triggers are recreated after the copy, so the copy
+ * itself writes nothing to the change feed or the sync oplog.
+ */
+export function rebuildWithNotNullPrimaryKey(
+  db: Database.Database, table: string, columns: string[],
+): { repaired: number; dropped: number } {
+  if (db.pragma("foreign_keys", { simple: true }) !== 0) {
+    throw new Error(`refusing to rebuild ${table} with foreign keys on: dropping it would cascade-delete its children`);
+  }
+  const { sql } = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string };
+  const tmp = `${table}__notnull_pk`;
+  let createSql = sql.replace(/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"[^"]+"|`[^`]+`|\[[^\]]+\]|'[^']+'|\w+)/i, `CREATE TABLE "${tmp}"`);
+  for (const col of columns) {
+    const def = new RegExp(`((?:^|[(,])\\s*["\`\\[]?${col}["\`\\]]?\\s+TEXT)\\b(?![^,]*\\bNOT\\s+NULL\\b)`, "i");
+    if (!def.test(createSql)) throw new Error(`can't find the ${table}.${col} column definition`);
+    createSql = createSql.replace(def, "$1 NOT NULL");
+  }
+  if (!createSql.startsWith(`CREATE TABLE "${tmp}"`)) throw new Error(`can't rename ${table} in its CREATE statement`);
+
+  const before = db.prepare(`PRAGMA table_info("${table}")`).all() as ColumnInfo[];
+  const dependents = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type IN ('index', 'trigger') AND tbl_name = ? AND sql IS NOT NULL",
+  ).all(table) as Array<{ sql: string }>;
+  const cols = before.map((c) => `"${c.name}"`).join(", ");
+  const pkCount = before.filter((c) => c.pk > 0).length;
+  const nullKey = columns.map((c) => `"${c}" IS NULL`).join(" OR ");
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM "${table}"`).get() as { n: number }).n;
+  const nullRows = (db.prepare(`SELECT COUNT(*) AS n FROM "${table}" WHERE ${nullKey}`).get() as { n: number }).n;
+  // Repair in the copy, not with an UPDATE: the old table's triggers would
+  // write the invented id to the change feed and sync oplog.
+  const repair = pkCount === 1;
+  const selected = before
+    .map((c) => (repair && c.name === columns[0] ? `COALESCE("${c.name}", lower(hex(randomblob(16))))` : `"${c.name}"`))
+    .join(", ");
+
+  db.exec(createSql);
+  const copied = db.prepare(
+    `INSERT INTO "${tmp}" (rowid, ${cols}) SELECT rowid, ${selected} FROM "${table}"${repair ? "" : ` WHERE NOT (${nullKey})`}`,
+  ).run().changes;
+  db.exec(`DROP TABLE "${table}"`);
+  // Legacy rename: don't re-parse other tables' triggers and views, which can
+  // reference `table` by name while it is briefly missing.
+  db.pragma("legacy_alter_table = ON");
+  try {
+    db.exec(`ALTER TABLE "${tmp}" RENAME TO "${table}"`);
+  } finally {
+    db.pragma("legacy_alter_table = OFF");
+  }
+  for (const { sql: dep } of dependents) db.exec(dep);
+
+  const after = db.prepare(`PRAGMA table_info("${table}")`).all() as ColumnInfo[];
+  const same = after.length === before.length && after.every((c, i) =>
+    c.name === before[i].name && c.type === before[i].type && c.pk === before[i].pk
+    && (c.notnull === before[i].notnull || columns.includes(c.name)));
+  if (!same || after.some((c) => columns.includes(c.name) && !c.notnull)) {
+    throw new Error(`${table} rebuilt with a different shape`);
+  }
+  return { repaired: repair ? nullRows : 0, dropped: total - copied };
+}
 
 function tableExists(db: Database.Database, name: string): boolean {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
@@ -1458,6 +1557,23 @@ const MIGRATIONS: Migration[] = [
       );
     `);
   },
+
+  // v60: NOT NULL on every text primary key. SQLite lets NULL into a
+  // non-INTEGER primary key, so a create that forgot its id (Idea Flow's
+  // promote-to-task, fixed in #194) could save a row nobody can address.
+  // Each table is rebuilt in its own savepoint; one that can't be rebuilt is
+  // left as it was rather than blocking startup.
+  withForeignKeysOff((db) => {
+    for (const { table, columns } of nullablePrimaryKeys(db)) {
+      try {
+        const { repaired, dropped } = db.transaction(() => rebuildWithNotNullPrimaryKey(db, table, columns))();
+        if (repaired > 0) console.warn(`[schema] v60: gave ${repaired} ${table} row(s) with a NULL primary key a new id`);
+        if (dropped > 0) console.warn(`[schema] v60: dropped ${dropped} ${table} row(s) with a NULL composite key`);
+      } catch (err) {
+        console.warn(`[schema] v60: left ${table} unchanged:`, err);
+      }
+    }
+  }),
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1524,16 +1640,42 @@ function ensureColumns(db: Database.Database): void {
   ensure("llm_usage", "cache_creation_tokens", "cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
 }
 
-function runMigrations(db: Database.Database): void {
+/** Test hook: apply the base schema and migrations up to `version` only, to build an older DB. */
+export function applySchemaThrough(db: Database.Database, version: number): void {
+  db.pragma("foreign_keys = ON");
+  db.exec(SCHEMA_SQL);
+  runMigrations(db, version);
+}
+
+function runMigrations(db: Database.Database, through = MIGRATIONS.length): void {
   const currentVersion = (db.pragma("user_version", { simple: true }) as number) ?? 0;
 
-  for (let i = currentVersion; i < MIGRATIONS.length; i++) {
+  for (let i = currentVersion; i < through; i++) {
     const migrate = MIGRATIONS[i];
     const nextVersion = i + 1;
     const runMigration = db.transaction(() => {
+      // With foreign keys off nothing stops a migration from orphaning rows, so
+      // report any violations it adds (older ones, e.g. orphaned notes, predate it).
+      const violations = () => (db.pragma("foreign_key_check") as unknown[]).length;
+      const before = migrate.foreignKeysOff ? violations() : 0;
       migrate(db);
+      if (migrate.foreignKeysOff) {
+        const added = violations() - before;
+        if (added > 0) console.warn(`[schema] v${nextVersion}: added ${added} foreign key violation(s)`);
+      }
       db.pragma(`user_version = ${nextVersion}`);
     });
-    runMigration();
+    if (migrate.foreignKeysOff) {
+      db.pragma("foreign_keys = OFF");
+      // The pragma is a silent no-op inside an open transaction.
+      if (db.pragma("foreign_keys", { simple: true }) !== 0) {
+        throw new Error(`migration v${nextVersion} needs foreign keys off; run applySchema outside a transaction`);
+      }
+    }
+    try {
+      runMigration();
+    } finally {
+      if (migrate.foreignKeysOff) db.pragma("foreign_keys = ON");
+    }
   }
 }
