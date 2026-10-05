@@ -38,6 +38,13 @@ export interface OneShotOptions {
 /**
  * Run a single-turn LLM call via the Cordis pi-ai route and return the
  * accumulated text.
+ *
+ * Rejects when the model call fails. `ctx.llm.stream()` never throws: a
+ * transport/provider failure (unreachable endpoint, auth, quota, an empty
+ * completion classified as EMPTY_RESPONSE) arrives as a terminal `finish`
+ * chunk with `reason.kind` "error" or "aborted". A caller-initiated abort
+ * (`signal`) stops reading before that chunk, so it still resolves with
+ * whatever text arrived.
  */
 export async function runOneShotWithContext(ctx: Context, opts: OneShotOptions): Promise<string> {
   const { systemPrompt, userPrompt, config, source, projectId, workspaceId, sessionId, maxTokens, temperature, signal } = opts;
@@ -63,6 +70,7 @@ export async function runOneShotWithContext(ctx: Context, opts: OneShotOptions):
   let text = "";
   let promptTokens = 0, completionTokens = 0, reasoningTokens = 0;
   const seenTypes: Record<string, number> = {};
+  let failure: { kind: string; message: string; code: string } | null = null;
 
   for await (const chunk of ctx.llm.stream({
     provider: "cairn",
@@ -91,8 +99,11 @@ export async function runOneShotWithContext(ctx: Context, opts: OneShotOptions):
       completionTokens = chunk.usage.outputTokens ?? completionTokens;
       reasoningTokens = chunk.usage.reasoningTokens ?? reasoningTokens;
     }
+    if (chunk.type === "finish" && (chunk.reason.kind === "error" || chunk.reason.kind === "aborted")) {
+      failure = { kind: chunk.reason.kind, message: chunk.reason.failure.message, code: chunk.reason.failure.code };
+    }
   }
-  console.log("[one-shot] stream done", { source, textLen: text.length, seenTypes });
+  console.log("[one-shot] stream done", { source, textLen: text.length, seenTypes, ...(failure ? { failure } : {}) });
 
   // Record usage for the Usage view — same shape as callLLM's recordLlmUsage.
   try {
@@ -107,6 +118,9 @@ export async function runOneShotWithContext(ctx: Context, opts: OneShotOptions):
     });
   } catch { /* best-effort */ }
 
+  if (failure) {
+    throw new Error(failure.message || (failure.kind === "aborted" ? "The model request was aborted." : `Model request failed (${failure.code}).`));
+  }
   return text;
 }
 
