@@ -92,6 +92,11 @@ export interface PopoutAck {
   reason?: PopoutRefusal;
 }
 
+/**
+ * Every invoke channel: its argument tuple and result. An entry that changes
+ * workspace data sets `writes: true`, which makes the registry broadcast
+ * `db:changed` after it completes (see IPC_WRITE_CHANNELS).
+ */
 export interface IpcContract {
   // ── Chat pop-out window ──────────────────────────────────────────────────
   /** Main window → open (or refocus) the pop-out for this session. */
@@ -113,11 +118,12 @@ export interface IpcContract {
     args: [req: { threadId: string }];
     result: SessionLoadExtras & { messages: ChatMessage[]; title?: string | null };
   };
-  "db:chat:upsertThread": { args: [input: ChatThreadUpsertInput]; result: ChatThread };
-  "db:chat:deleteThread": { args: [req: { threadId: string }]; result: void };
+  "db:chat:upsertThread": { writes: true; args: [input: ChatThreadUpsertInput]; result: ChatThread };
+  "db:chat:deleteThread": { writes: true; args: [req: { threadId: string }]; result: void };
   /** Wipes the thread's session logs (incl. subagent children) and cached agent. */
-  "db:chat:clearThreadMessages": { args: [req: { threadId: string }]; result: void };
+  "db:chat:clearThreadMessages": { writes: true; args: [req: { threadId: string }]; result: void };
   "db:chat:clearAllThreads": {
+    writes: true;
     args: [req: { workspaceId: string; projectId?: string | null }];
     result: { deletedThreads: number; deletedMessages: number };
   };
@@ -144,8 +150,8 @@ export interface IpcContract {
 
   // ── Coding sessions ──────────────────────────────────────────────────────
   "db:session:list": { args: [req: { projectId: string }]; result: CodingSessionRow[] };
-  "db:session:create": { args: [input: CodingSessionCreateInput]; result: CodingSessionRow };
-  "db:session:delete": { args: [req: { id: string }]; result: void };
+  "db:session:create": { writes: true; args: [input: CodingSessionCreateInput]; result: CodingSessionRow };
+  "db:session:delete": { writes: true; args: [req: { id: string }]; result: void };
   "db:session:todos": { args: [req: { sessionId: string }]; result: SessionTodo[] };
   /** Transcript from the session's dsh log; rejects on corrupt/unsupported logs, empty when missing. */
   "db:session:messages": {
@@ -186,88 +192,96 @@ export interface IpcContract {
 
   // ── Workspaces & projects ────────────────────────────────────────────────
   "db:workspace:list": { args: []; result: Workspace[] };
-  "db:workspace:create": { args: [input: WorkspaceCreateInput]; result: Workspace };
-  "db:workspace:update": { args: [req: { id: string; patch: WorkspacePatch }]; result: Workspace };
+  "db:workspace:create": { writes: true; args: [input: WorkspaceCreateInput]; result: Workspace };
+  "db:workspace:update": { writes: true; args: [req: { id: string; patch: WorkspacePatch }]; result: Workspace };
   /** All projects when workspaceId is omitted. */
   "db:project:list": { args: [req: { workspaceId?: string }]; result: Project[] };
   "db:project:create": {
+    writes: true;
     args: [input: ProjectCreateInput];
     result: { project: Project; columns: BoardColumn[] };
   };
   /** A rename also moves the project's notes folder on disk. */
-  "db:project:update": { args: [req: { id: string; patch: ProjectPatch }]; result: Project };
+  "db:project:update": { writes: true; args: [req: { id: string; patch: ProjectPatch }]; result: Project };
   /** Merged into the stored settings; a null/undefined value removes that key. null if the project is gone. */
   "db:project:updateSettings": {
+    writes: true;
     args: [req: { id: string; settings: Partial<Record<keyof ProjectSettings, unknown>> }];
     result: Project | null;
   };
-  "db:project:delete": { args: [req: { id: string }]; result: void };
+  "db:project:delete": { writes: true; args: [req: { id: string }]; result: void };
   /** Move everything from source into target, then delete source. */
-  "db:project:merge": { args: [req: { sourceId: string; targetId: string }]; result: ProjectMergeResult };
+  "db:project:merge": { writes: true; args: [req: { sourceId: string; targetId: string }]; result: ProjectMergeResult };
 
   // ── Board ────────────────────────────────────────────────────────────────
   "db:column:list": { args: [req: { projectId?: string }]; result: BoardColumn[] };
-  "db:column:create": { args: [input: ColumnCreateInput]; result: BoardColumn };
-  "db:column:update": { args: [req: { id: string; patch: ColumnPatch }]; result: BoardColumn };
+  "db:column:create": { writes: true; args: [input: ColumnCreateInput]; result: BoardColumn };
+  "db:column:update": { writes: true; args: [req: { id: string; patch: ColumnPatch }]; result: BoardColumn };
   /** Deletes the column's cards too. */
-  "db:column:delete": { args: [req: { id: string }]; result: void };
+  "db:column:delete": { writes: true; args: [req: { id: string }]; result: void };
   /** Live (non-tombstoned) cards, by project or column. */
   "db:card:list": { args: [opts: { projectId?: string; columnId?: string } | undefined]; result: TaskCard[] };
   /** Rejects an empty title. */
-  "db:card:create": { args: [input: CardCreateInput]; result: TaskCard };
-  "db:card:update": { args: [req: { id: string; patch: CardPatch }]; result: TaskCard };
+  "db:card:create": { writes: true; args: [input: CardCreateInput]; result: TaskCard };
+  "db:card:update": { writes: true; args: [req: { id: string; patch: CardPatch }]; result: TaskCard };
   "db:card:moveToProject": {
+    writes: true;
     args: [req: { id: string; projectId: string; columnId: string; order: number }];
     result: TaskCard;
   };
-  "db:card:delete": { args: [req: { id: string }]; result: void };
+  "db:card:delete": { writes: true; args: [req: { id: string }]; result: void };
   /** Archive every card in a column. */
-  "db:cards:archive-done": { args: [req: { columnId: string }]; result: { archived: number } };
+  "db:cards:archive-done": { writes: true; args: [req: { columnId: string }]; result: { archived: number } };
   /** Rejects self-blocks, cross-project blockers and cycles. */
-  "db:card:addBlocker": { args: [req: { cardId: string; blockerCardId: string }]; result: TaskCard };
-  "db:card:removeBlocker": { args: [req: { cardId: string; blockerCardId: string }]; result: TaskCard };
+  "db:card:addBlocker": { writes: true; args: [req: { cardId: string; blockerCardId: string }]; result: TaskCard };
+  "db:card:removeBlocker": { writes: true; args: [req: { cardId: string; blockerCardId: string }]; result: TaskCard };
   /** Open, non-done cards whose blockers are all resolved. */
   "db:card:ready": { args: [req: { projectId?: string }]; result: TaskCard[] };
 
   // ── Tags ─────────────────────────────────────────────────────────────────
   "db:tag:list": { args: [req: { workspaceId?: string }]; result: Tag[] };
-  "db:tag:create": { args: [input: TagCreateInput]; result: Tag };
-  "db:tag:update": { args: [req: { id: string; patch: TagPatch }]; result: Tag };
-  "db:tag:delete": { args: [req: { id: string }]; result: void };
+  "db:tag:create": { writes: true; args: [input: TagCreateInput]; result: Tag };
+  "db:tag:update": { writes: true; args: [req: { id: string; patch: TagPatch }]; result: Tag };
+  "db:tag:delete": { writes: true; args: [req: { id: string }]; result: void };
 
   // ── Notes ────────────────────────────────────────────────────────────────
   /** Live notes (no tombstones), newest first; all projects when projectId is omitted. */
   "db:note:list": { args: [req: { projectId?: string }]; result: Note[] };
-  "db:note:create": { args: [note: NoteCreateInput]; result: Note };
+  "db:note:create": { writes: true; args: [note: NoteCreateInput]; result: Note };
   /** Title changes also rename the .md file and rewrite inbound [[wikilinks]]. */
-  "db:note:update": { args: [req: { id: string; patch: NotePatch }]; result: Note };
+  "db:note:update": { writes: true; args: [req: { id: string; patch: NotePatch }]; result: Note };
   /** Soft delete (tombstone) + .md removal. */
-  "db:note:delete": { args: [req: { id: string }]; result: void };
-  "db:note:moveToFolder": { args: [req: { id: string; folder: string }]; result: Note };
+  "db:note:delete": { writes: true; args: [req: { id: string }]; result: void };
+  "db:note:moveToFolder": { writes: true; args: [req: { id: string; folder: string }]; result: Note };
   /** workspaceId is derived from the target project; accepted for older callers. */
-  "db:note:moveToProject": { args: [req: { id: string; projectId: string; workspaceId?: string }]; result: Note };
+  "db:note:moveToProject": { writes: true; args: [req: { id: string; projectId: string; workspaceId?: string }]; result: Note };
   "db:note:bodies:get": { args: [req: { ids: string[] }]; result: NoteBody[] };
   /** Full-text search; returns matching note ids. */
   "db:note:search": { args: [req: { query: string; projectId?: string }]; result: string[] };
   /** Ids of notes whose [[wikilinks]] point at this note. */
   "db:note:backlinks:list": { args: [req: { noteId: string }]; result: string[] };
   /** The user has seen this note's "what's new" changes. */
-  "db:note:changeMark:clear": { args: [req: { id: string }]; result: void };
+  "db:note:changeMark:clear": { writes: true; args: [req: { id: string }]; result: void };
 
   // ── Idea Flow ────────────────────────────────────────────────────────────
-  /** Resolved graph (absolute positions, linked note/card data, spatial hints); creates the flow if missing. */
+  /**
+   * Resolved graph (absolute positions, linked note/card data, spatial hints); creates the flow if missing.
+   * Not a write: the lazy create only fills in a project's empty flow, and a broadcast would re-hydrate
+   * every window each time a flow opens.
+   */
   "db:flow:get": { args: [req: { projectId: string }]; result: ResolvedIdeaFlow };
-  "db:flow:node:create": { args: [node: FlowNodeCreateInput]; result: IdeaFlowNode };
-  "db:flow:node:update": { args: [req: { id: string; patch: FlowNodePatch }]; result: IdeaFlowNode };
+  "db:flow:node:create": { writes: true; args: [node: FlowNodeCreateInput]; result: IdeaFlowNode };
+  "db:flow:node:update": { writes: true; args: [req: { id: string; patch: FlowNodePatch }]; result: IdeaFlowNode };
   /** Edges touching the node cascade. */
-  "db:flow:node:delete": { args: [req: { id: string }]; result: void };
+  "db:flow:node:delete": { writes: true; args: [req: { id: string }]; result: void };
   /** Summarise everything connected to an ai_summary node and store it on the node. */
   "db:flow:node:summarize": {
+    writes: true;
     args: [req: { nodeId: string; config: FlowAiConfig }];
     result: { nodeId: string; content: string };
   };
-  "db:flow:edge:create": { args: [edge: FlowEdgeCreateInput]; result: IdeaFlowEdge };
-  "db:flow:edge:delete": { args: [req: { id: string }]; result: void };
+  "db:flow:edge:create": { writes: true; args: [edge: FlowEdgeCreateInput]; result: IdeaFlowEdge };
+  "db:flow:edge:delete": { writes: true; args: [req: { id: string }]; result: void };
   /** OpenGraph title/description for a url node (fetched in main, no CORS). */
   "db:flow:url:fetch": { args: [req: { url: string }]; result: UrlMetadata };
 
@@ -275,10 +289,10 @@ export interface IpcContract {
   "db:automation:list": { args: [req: { workspaceId: string }]; result: Automation[] };
   "db:automation:get": { args: [req: { id: string }]; result: Automation | null };
   /** Rejects when the schedule is invalid or has no future run. */
-  "db:automation:create": { args: [input: AutomationInput]; result: Automation };
-  "db:automation:update": { args: [req: { id: string; patch: AutomationPatch }]; result: Automation | null };
+  "db:automation:create": { writes: true; args: [input: AutomationInput]; result: Automation };
+  "db:automation:update": { writes: true; args: [req: { id: string; patch: AutomationPatch }]; result: Automation | null };
   /** Removes the folder and keychain secrets before the row; rejects (keeping the row) if cleanup fails. */
-  "db:automation:delete": { args: [req: { id: string }]; result: { ok: boolean; deleted: boolean } };
+  "db:automation:delete": { writes: true; args: [req: { id: string }]; result: { ok: boolean; deleted: boolean } };
   "db:automation:runs": { args: [req: { automationId: string; limit?: number }]; result: AutomationRun[] };
   "db:automation:recentRuns": {
     args: [req: { workspaceId: string; projectId?: string | null; limit?: number }];
@@ -291,9 +305,9 @@ export interface IpcContract {
   };
   /** Daily budget (USD, null = none) and today's recorded automation spend. */
   "db:automation:budget:get": { args: []; result: { budgetUsd: number | null; spentTodayUsd: number } };
-  "db:automation:budget:set": { args: [req: { usd: number | null }]; result: { budgetUsd: number | null } };
+  "db:automation:budget:set": { writes: true; args: [req: { usd: number | null }]; result: { budgetUsd: number | null } };
   /** `skipped` when the automation is already running. */
-  "db:automation:runNow": { args: [req: { id: string }]; result: { runId: string } | { skipped: true } };
+  "db:automation:runNow": { writes: true; args: [req: { id: string }]; result: { runId: string } | { skipped: true } };
   /** Approve/deny a tool call a running automation is waiting on. */
   "automation:approve": {
     args: [req: { callId: string; approved: boolean; grant?: "session" | "always" }];
@@ -305,16 +319,18 @@ export interface IpcContract {
   "db:automation:runLog": { args: [req: { runId: string }]; result: { log: RunLog } };
   /** Apply the folder's manifest.json to the row; `dropped` lists rules that were unsafe to keep. */
   "db:automation:syncFromManifest": {
+    writes: true;
     args: [req: { id: string }];
     result: { automation: Automation; dropped: string[] };
   };
   "db:automation:env": { args: [req: { automationId: string }]; result: AutomationEnvSpec[] };
   /** Secret values go to the keychain only; returns the updated env spec. */
   "db:automation:env:set": {
+    writes: true;
     args: [req: { automationId: string; name: string; value: string; secret: boolean }];
     result: AutomationEnvSpec[];
   };
-  "db:automation:env:delete": { args: [req: { automationId: string; name: string }]; result: AutomationEnvSpec[] };
+  "db:automation:env:delete": { writes: true; args: [req: { automationId: string; name: string }]; result: AutomationEnvSpec[] };
   /** Next fire time for a proposed schedule (null when there's none). */
   "db:automation:preview": {
     args: [req: { scheduleKind?: string; scheduleExpr: string; timezone?: string | null }];
@@ -391,9 +407,9 @@ export interface IpcContract {
   // ── In-app notification center ───────────────────────────────────────────
   "db:notification:list": { args: [req: { limit?: number }]; result: McpNotification[] };
   "db:notification:count": { args: []; result: number };
-  "db:notification:markRead": { args: [req: { id: string }]; result: true };
+  "db:notification:markRead": { writes: true; args: [req: { id: string }]; result: true };
   /** Returns the number of notifications deleted. */
-  "db:notification:clear": { args: []; result: number };
+  "db:notification:clear": { writes: true; args: []; result: number };
   /** Marks every notification read and clears the dock/tray badge. */
   "mcp:markNotificationsRead": { args: []; result: void };
 
@@ -543,9 +559,9 @@ export interface IpcContract {
 
   // ── Slash commands ───────────────────────────────────────────────────────
   "db:command:list": { args: [req: { workspaceId?: string }]; result: CustomSlashCommand[] };
-  "db:command:create": { args: [input: SlashCommandCreateInput]; result: CustomSlashCommand };
-  "db:command:update": { args: [req: { id: string; patch: SlashCommandPatch }]; result: CustomSlashCommand };
-  "db:command:delete": { args: [req: { id: string }]; result: void };
+  "db:command:create": { writes: true; args: [input: SlashCommandCreateInput]; result: CustomSlashCommand };
+  "db:command:update": { writes: true; args: [req: { id: string; patch: SlashCommandPatch }]; result: CustomSlashCommand };
+  "db:command:delete": { writes: true; args: [req: { id: string }]; result: void };
 
   // ── Knowledge graph ──────────────────────────────────────────────────────
   "db:graph:get": { args: [req: { workspaceId: string; filters?: GraphQueryFilters }]; result: KnowledgeGraph };
@@ -555,7 +571,7 @@ export interface IpcContract {
     result: NeighboursResult;
   };
   /** Recomputes auto relationships (all entities, or just `entityIds`). */
-  "db:graph:recompute": { args: [req: { workspaceId: string; entityIds?: string[] }]; result: { ok: true } };
+  "db:graph:recompute": { writes: true; args: [req: { workspaceId: string; entityIds?: string[] }]; result: { ok: true } };
 
   // ── Usage log (Usage view) ───────────────────────────────────────────────
   /** Headline totals, the previous window, a per-day series and source/model breakdowns. */
@@ -641,13 +657,13 @@ export interface IpcContract {
     result: { rows: NoteProjectionRow[]; anyStale: boolean; model: string };
   };
   /** Re-embeds the given notes (or the whole workspace, plus task cards). */
-  "db:embeddings:reindex": { args: [req: { workspaceId: string; noteIds?: string[]; model?: string }]; result: ReindexResult };
+  "db:embeddings:reindex": { writes: true; args: [req: { workspaceId: string; noteIds?: string[]; model?: string }]; result: ReindexResult };
   /** `k` defaults to 5; `queryNoteId` is excluded from the results. */
   "db:embeddings:search": {
     args: [req: { workspaceId: string; queryText: string; queryNoteId?: string; k?: number; excludeIds?: string[]; model?: string }];
     result: AdjacentNote[];
   };
-  "db:embeddings:recomputeProjections": { args: [req: { workspaceId: string; model?: string }]; result: ProjectionResult };
+  "db:embeddings:recomputeProjections": { writes: true; args: [req: { workspaceId: string; model?: string }]; result: ProjectionResult };
   "embeddings:models:list": { args: []; result: EmbeddingModelManifestEntry[] };
   /** Downloads + warms the model; progress arrives on `embeddings:download-progress`. */
   "embeddings:models:install": { args: [req: { modelId: string }]; result: { ok: true } };
@@ -726,301 +742,317 @@ export type IpcEventChannel = keyof IpcEvents;
 /** Arguments after the channel for sending event `E`: none when it has no payload. */
 export type IpcEventArgs<E extends IpcEventChannel> = IpcEvents[E] extends undefined ? [] : [payload: IpcEvents[E]];
 
+/** Channels whose contract entry sets `writes: true`. */
+type WriteChannel = { [C in IpcChannel]: IpcContract[C] extends { writes: true } ? C : never }[IpcChannel];
+
 /**
- * Runtime list of contract channels (tests check each one is registered). The
- * mapped type makes adding a channel to IpcContract without listing it here a
- * build error, and rejects any channel taking more than one argument.
+ * Runtime list of contract channels (tests check each one is registered), each
+ * marked "write" (broadcasts `db:changed`) or "read" (anything else, including
+ * actions such as git:commit that don't change workspace data). The mapped type makes adding a channel to
+ * IpcContract without listing it here a build error, rejects any channel taking
+ * more than one argument, and requires "write" exactly when the entry sets
+ * `writes: true`.
  */
-type ChannelRecord = { [C in IpcChannel]: IpcArgs<C> extends [] | [unknown] ? true : never };
+type ChannelRecord = {
+  [C in IpcChannel]: IpcArgs<C> extends [] | [unknown] ? (C extends WriteChannel ? "write" : "read") : never;
+};
 const CHANNELS: ChannelRecord = {
-  "chat:popOut": true,
-  "chat:popoutReady": true,
-  "chat:requestPopIn": true,
-  "chat:popIn": true,
-  "db:chat:threads": true,
-  "db:chat:sessionMessages": true,
-  "db:chat:upsertThread": true,
-  "db:chat:deleteThread": true,
-  "db:chat:clearThreadMessages": true,
-  "db:chat:clearAllThreads": true,
-  "chat:compactThread": true,
-  "chat:summarizeTranscript": true,
-  "db:session:list": true,
-  "db:session:create": true,
-  "db:session:delete": true,
-  "db:session:todos": true,
-  "db:session:messages": true,
-  "session:is-running": true,
-  "session:running-ids": true,
-  "session:context-ring": true,
-  "session:title": true,
-  "session:renameTitle": true,
-  "session:permissions": true,
-  "session:permissions:set": true,
-  "subagent:list": true,
-  "subagent:interrupt": true,
-  "subagent:message": true,
-  "session:job-kill": true,
-  "session:goal": true,
-  "session:feedback": true,
-  "session:feedback-get": true,
-  "session:schedule-list": true,
-  "cordis:listCommands": true,
-  "db:workspace:list": true,
-  "db:workspace:create": true,
-  "db:workspace:update": true,
-  "db:project:list": true,
-  "db:project:create": true,
-  "db:project:update": true,
-  "db:project:updateSettings": true,
-  "db:project:delete": true,
-  "db:project:merge": true,
-  "db:column:list": true,
-  "db:column:create": true,
-  "db:column:update": true,
-  "db:column:delete": true,
-  "db:card:list": true,
-  "db:card:create": true,
-  "db:card:update": true,
-  "db:card:moveToProject": true,
-  "db:card:delete": true,
-  "db:cards:archive-done": true,
-  "db:card:addBlocker": true,
-  "db:card:removeBlocker": true,
-  "db:card:ready": true,
-  "db:tag:list": true,
-  "db:tag:create": true,
-  "db:tag:update": true,
-  "db:tag:delete": true,
-  "db:note:list": true,
-  "db:note:create": true,
-  "db:note:update": true,
-  "db:note:delete": true,
-  "db:note:moveToFolder": true,
-  "db:note:moveToProject": true,
-  "db:note:bodies:get": true,
-  "db:note:search": true,
-  "db:note:backlinks:list": true,
-  "db:note:changeMark:clear": true,
-  "db:flow:get": true,
-  "db:flow:node:create": true,
-  "db:flow:node:update": true,
-  "db:flow:node:delete": true,
-  "db:flow:node:summarize": true,
-  "db:flow:edge:create": true,
-  "db:flow:edge:delete": true,
-  "db:flow:url:fetch": true,
-  "db:automation:list": true,
-  "db:automation:get": true,
-  "db:automation:create": true,
-  "db:automation:update": true,
-  "db:automation:delete": true,
-  "db:automation:runs": true,
-  "db:automation:recentRuns": true,
-  "db:automation:runningCount": true,
-  "db:automation:checkRequirements": true,
-  "db:automation:budget:get": true,
-  "db:automation:budget:set": true,
-  "db:automation:runNow": true,
-  "automation:approve": true,
-  "db:automation:folder": true,
-  "db:automation:files": true,
-  "db:automation:runLog": true,
-  "db:automation:syncFromManifest": true,
-  "db:automation:env": true,
-  "db:automation:env:set": true,
-  "db:automation:env:delete": true,
-  "db:automation:preview": true,
-  "git:status": true,
-  "git:branches": true,
-  "git:checkout": true,
-  "git:stage": true,
-  "git:unstage": true,
-  "git:commit": true,
-  "git:push": true,
-  "git:log": true,
-  "git:diff": true,
-  "git:diffBranch": true,
-  "git:diffFile": true,
-  "git:stash": true,
-  "git:createPr": true,
-  "git:prStatus": true,
-  "git:discard": true,
-  "tools:listMcpServers": true,
-  "tools:saveMcpServer": true,
-  "tools:deleteMcpServer": true,
-  "tools:testMcp": true,
-  "tools:listMcpTools": true,
-  "tools:startMcpAuth": true,
-  "tools:mcpAuthStatus": true,
-  "tools:signOutMcp": true,
-  "tools:cancelMcpAuth": true,
-  "tools:listServices": true,
-  "tools:saveService": true,
-  "tools:deleteService": true,
-  "tools:testService": true,
-  "tools:startServiceAuth": true,
-  "tools:serviceAuthStatus": true,
-  "tools:signOutService": true,
-  "tools:cancelServiceAuth": true,
-  "tools:listAttachments": true,
-  "tools:setAttachment": true,
-  "tools:clearAttachment": true,
-  "secrets:available": true,
-  "secrets:set": true,
-  "secrets:has": true,
-  "secrets:delete": true,
-  "db:notification:list": true,
-  "db:notification:count": true,
-  "db:notification:markRead": true,
-  "db:notification:clear": true,
-  "mcp:markNotificationsRead": true,
-  "app:selectWorkspaceFolder": true,
-  "app:getWorkspacePath": true,
-  "app:needsWorkspaceSetup": true,
-  "app:initWorkspace": true,
-  "app:rescanWorkspace": true,
-  "app:rollbackImport": true,
-  "app:probeWorkspaceFolder": true,
-  "app:checkMigrations": true,
-  "app:runMigration": true,
-  "app:reset": true,
-  "app:relaunch": true,
-  "app:isDev": true,
-  "app:mcpServerPath": true,
-  "app:latestChangelog": true,
-  "app:setTheme": true,
-  "app:setAccent": true,
-  "app:revealNote": true,
-  "app:revealAssets": true,
-  "app:uploadAsset": true,
-  "app:exportNotePdf": true,
-  "app:exportMarkdown": true,
-  "app:llmLeftovers": true,
-  "app:clearLlmLeftovers": true,
-  "app:getAiSettings": true,
-  "app:saveAiSettings": true,
-  "app:getAgentSettings": true,
-  "app:saveAgentSettings": true,
-  "app:getTheme": true,
-  "app:saveTheme": true,
-  "app:getFontScale": true,
-  "app:saveFontScale": true,
-  "app:getEmbeddingsSettings": true,
-  "app:saveEmbeddingsSettings": true,
-  "app:modelPricing": true,
-  "app:noTemperatureModels": true,
-  "ai:generatePrd": true,
-  "ai:generateCommitMessage": true,
-  "ai:generatePrDescription": true,
-  "ai:explainArchitecture": true,
-  "ai:fetchModels": true,
-  "ai:fetchKeyInfo": true,
-  "updater:install": true,
-  "agent:getCodingAgents": true,
-  "agent:saveCodingAgent": true,
-  "agent:deleteCodingAgent": true,
-  "agent:setDefaultAgent": true,
-  "agent:readDir": true,
-  "agent:searchFiles": true,
-  "agent:readFile": true,
-  "agent:readFileBase64": true,
-  "agent:writeFile": true,
-  "agent:validateDirectory": true,
-  "agent:gitDiff": true,
-  "agent:pickDirectory": true,
-  "agent:pickFile": true,
-  "agent:codebaseOverview": true,
-  "agent:codebaseGraph": true,
-  "agent:codebaseModuleGraph": true,
-  "agent:codebaseFileSymbols": true,
-  "agent:codebaseRelations": true,
-  "agent:codebaseReindex": true,
-  "agent:codebaseReindexFile": true,
-  "agent:spawn": true,
-  "agent:spawnShell": true,
-  "agent:input": true,
-  "agent:resize": true,
-  "agent:kill": true,
-  "agent:modelTerminals": true,
-  "db:snapshot": true,
-  "db:changes:get": true,
-  "db:hasData": true,
-  "db:mcpQuery": true,
-  "db:command:list": true,
-  "db:command:create": true,
-  "db:command:update": true,
-  "db:command:delete": true,
-  "db:graph:get": true,
-  "db:graph:neighbors": true,
-  "db:graph:recompute": true,
-  "usage:overview": true,
-  "usage:recent": true,
-  "usage:threads": true,
-  "usage:clear": true,
-  "user-style:get": true,
-  "user-style:save": true,
-  "user-style:clear": true,
-  "user-style:generate": true,
-  "approval-grants:list": true,
-  "approval-grants:delete": true,
-  "approval-grants:clear-workspace": true,
-  "sync:getFolder": true,
-  "sync:selectFolder": true,
-  "sync:clearFolder": true,
-  "sync:now": true,
-  "sync:status": true,
-  "sync:pendingBreakdown": true,
-  "sync:listConflicts": true,
-  "sync:resolveConflict": true,
-  "sync:activity": true,
-  "sync:peerProtocols": true,
-  "sync:listRestorable": true,
-  "sync:restoreNote": true,
-  "sync:repairNoteFile": true,
-  "registry:fetch": true,
-  "registry:refresh": true,
-  "registry:fetchProviders": true,
-  "registry:refreshProviders": true,
-  "registry:fetchAutomations": true,
-  "registry:refreshAutomations": true,
-  "registry:fetchPersonalities": true,
-  "registry:refreshPersonalities": true,
-  "registry:fetchChatThemes": true,
-  "registry:refreshChatThemes": true,
-  "plugins:listUi": true,
-  "plugins:list": true,
-  "plugins:setEnabled": true,
-  "plugins:openFolder": true,
-  "plugins:install": true,
-  "plugins:update": true,
-  "plugins:uninstall": true,
-  "embeddings:status": true,
-  "embeddings:stop": true,
-  "embeddings:needsReindex": true,
-  "embeddings:projections": true,
-  "db:embeddings:reindex": true,
-  "db:embeddings:search": true,
-  "db:embeddings:recomputeProjections": true,
-  "embeddings:models:list": true,
-  "embeddings:models:install": true,
-  "embeddings:models:remove": true,
-  "embeddings:models:setDefault": true,
-  "runtime:status": true,
-  "runtime:stop": true,
-  "runtime:embeddings:status": true,
-  "runtime:embeddings:ensureStarted": true,
-  "runtime:embeddings:models": true,
-  "runtime:embeddings:install": true,
-  "runtime:embeddings:remove": true,
-  "runtime:embeddings:setDefault": true,
-  "cordis:executeCommand": true,
-  "runtime:systemPrompt:preview": true,
-  "runtime:codingPrompt:preview": true,
-  "runtime:tools:inventory": true,
-  "mobile:status": true,
-  "mobile:saveSettings": true,
-  "mobile:regeneratePin": true,
+  "chat:popOut": "read",
+  "chat:popoutReady": "read",
+  "chat:requestPopIn": "read",
+  "chat:popIn": "read",
+  "db:chat:threads": "read",
+  "db:chat:sessionMessages": "read",
+  "db:chat:upsertThread": "write",
+  "db:chat:deleteThread": "write",
+  "db:chat:clearThreadMessages": "write",
+  "db:chat:clearAllThreads": "write",
+  "chat:compactThread": "read",
+  "chat:summarizeTranscript": "read",
+  "db:session:list": "read",
+  "db:session:create": "write",
+  "db:session:delete": "write",
+  "db:session:todos": "read",
+  "db:session:messages": "read",
+  "session:is-running": "read",
+  "session:running-ids": "read",
+  "session:context-ring": "read",
+  "session:title": "read",
+  "session:renameTitle": "read",
+  "session:permissions": "read",
+  "session:permissions:set": "read",
+  "subagent:list": "read",
+  "subagent:interrupt": "read",
+  "subagent:message": "read",
+  "session:job-kill": "read",
+  "session:goal": "read",
+  "session:feedback": "read",
+  "session:feedback-get": "read",
+  "session:schedule-list": "read",
+  "cordis:listCommands": "read",
+  "db:workspace:list": "read",
+  "db:workspace:create": "write",
+  "db:workspace:update": "write",
+  "db:project:list": "read",
+  "db:project:create": "write",
+  "db:project:update": "write",
+  "db:project:updateSettings": "write",
+  "db:project:delete": "write",
+  "db:project:merge": "write",
+  "db:column:list": "read",
+  "db:column:create": "write",
+  "db:column:update": "write",
+  "db:column:delete": "write",
+  "db:card:list": "read",
+  "db:card:create": "write",
+  "db:card:update": "write",
+  "db:card:moveToProject": "write",
+  "db:card:delete": "write",
+  "db:cards:archive-done": "write",
+  "db:card:addBlocker": "write",
+  "db:card:removeBlocker": "write",
+  "db:card:ready": "read",
+  "db:tag:list": "read",
+  "db:tag:create": "write",
+  "db:tag:update": "write",
+  "db:tag:delete": "write",
+  "db:note:list": "read",
+  "db:note:create": "write",
+  "db:note:update": "write",
+  "db:note:delete": "write",
+  "db:note:moveToFolder": "write",
+  "db:note:moveToProject": "write",
+  "db:note:bodies:get": "read",
+  "db:note:search": "read",
+  "db:note:backlinks:list": "read",
+  "db:note:changeMark:clear": "write",
+  "db:flow:get": "read",
+  "db:flow:node:create": "write",
+  "db:flow:node:update": "write",
+  "db:flow:node:delete": "write",
+  "db:flow:node:summarize": "write",
+  "db:flow:edge:create": "write",
+  "db:flow:edge:delete": "write",
+  "db:flow:url:fetch": "read",
+  "db:automation:list": "read",
+  "db:automation:get": "read",
+  "db:automation:create": "write",
+  "db:automation:update": "write",
+  "db:automation:delete": "write",
+  "db:automation:runs": "read",
+  "db:automation:recentRuns": "read",
+  "db:automation:runningCount": "read",
+  "db:automation:checkRequirements": "read",
+  "db:automation:budget:get": "read",
+  "db:automation:budget:set": "write",
+  "db:automation:runNow": "write",
+  "automation:approve": "read",
+  "db:automation:folder": "read",
+  "db:automation:files": "read",
+  "db:automation:runLog": "read",
+  "db:automation:syncFromManifest": "write",
+  "db:automation:env": "read",
+  "db:automation:env:set": "write",
+  "db:automation:env:delete": "write",
+  "db:automation:preview": "read",
+  "git:status": "read",
+  "git:branches": "read",
+  "git:checkout": "read",
+  "git:stage": "read",
+  "git:unstage": "read",
+  "git:commit": "read",
+  "git:push": "read",
+  "git:log": "read",
+  "git:diff": "read",
+  "git:diffBranch": "read",
+  "git:diffFile": "read",
+  "git:stash": "read",
+  "git:createPr": "read",
+  "git:prStatus": "read",
+  "git:discard": "read",
+  "tools:listMcpServers": "read",
+  "tools:saveMcpServer": "read",
+  "tools:deleteMcpServer": "read",
+  "tools:testMcp": "read",
+  "tools:listMcpTools": "read",
+  "tools:startMcpAuth": "read",
+  "tools:mcpAuthStatus": "read",
+  "tools:signOutMcp": "read",
+  "tools:cancelMcpAuth": "read",
+  "tools:listServices": "read",
+  "tools:saveService": "read",
+  "tools:deleteService": "read",
+  "tools:testService": "read",
+  "tools:startServiceAuth": "read",
+  "tools:serviceAuthStatus": "read",
+  "tools:signOutService": "read",
+  "tools:cancelServiceAuth": "read",
+  "tools:listAttachments": "read",
+  "tools:setAttachment": "read",
+  "tools:clearAttachment": "read",
+  "secrets:available": "read",
+  "secrets:set": "read",
+  "secrets:has": "read",
+  "secrets:delete": "read",
+  "db:notification:list": "read",
+  "db:notification:count": "read",
+  "db:notification:markRead": "write",
+  "db:notification:clear": "write",
+  "mcp:markNotificationsRead": "read",
+  "app:selectWorkspaceFolder": "read",
+  "app:getWorkspacePath": "read",
+  "app:needsWorkspaceSetup": "read",
+  "app:initWorkspace": "read",
+  "app:rescanWorkspace": "read",
+  "app:rollbackImport": "read",
+  "app:probeWorkspaceFolder": "read",
+  "app:checkMigrations": "read",
+  "app:runMigration": "read",
+  "app:reset": "read",
+  "app:relaunch": "read",
+  "app:isDev": "read",
+  "app:mcpServerPath": "read",
+  "app:latestChangelog": "read",
+  "app:setTheme": "read",
+  "app:setAccent": "read",
+  "app:revealNote": "read",
+  "app:revealAssets": "read",
+  "app:uploadAsset": "read",
+  "app:exportNotePdf": "read",
+  "app:exportMarkdown": "read",
+  "app:llmLeftovers": "read",
+  "app:clearLlmLeftovers": "read",
+  "app:getAiSettings": "read",
+  "app:saveAiSettings": "read",
+  "app:getAgentSettings": "read",
+  "app:saveAgentSettings": "read",
+  "app:getTheme": "read",
+  "app:saveTheme": "read",
+  "app:getFontScale": "read",
+  "app:saveFontScale": "read",
+  "app:getEmbeddingsSettings": "read",
+  "app:saveEmbeddingsSettings": "read",
+  "app:modelPricing": "read",
+  "app:noTemperatureModels": "read",
+  "ai:generatePrd": "read",
+  "ai:generateCommitMessage": "read",
+  "ai:generatePrDescription": "read",
+  "ai:explainArchitecture": "read",
+  "ai:fetchModels": "read",
+  "ai:fetchKeyInfo": "read",
+  "updater:install": "read",
+  "agent:getCodingAgents": "read",
+  "agent:saveCodingAgent": "read",
+  "agent:deleteCodingAgent": "read",
+  "agent:setDefaultAgent": "read",
+  "agent:readDir": "read",
+  "agent:searchFiles": "read",
+  "agent:readFile": "read",
+  "agent:readFileBase64": "read",
+  "agent:writeFile": "read",
+  "agent:validateDirectory": "read",
+  "agent:gitDiff": "read",
+  "agent:pickDirectory": "read",
+  "agent:pickFile": "read",
+  "agent:codebaseOverview": "read",
+  "agent:codebaseGraph": "read",
+  "agent:codebaseModuleGraph": "read",
+  "agent:codebaseFileSymbols": "read",
+  "agent:codebaseRelations": "read",
+  "agent:codebaseReindex": "read",
+  "agent:codebaseReindexFile": "read",
+  "agent:spawn": "read",
+  "agent:spawnShell": "read",
+  "agent:input": "read",
+  "agent:resize": "read",
+  "agent:kill": "read",
+  "agent:modelTerminals": "read",
+  "db:snapshot": "read",
+  "db:changes:get": "read",
+  "db:hasData": "read",
+  "db:mcpQuery": "read",
+  "db:command:list": "read",
+  "db:command:create": "write",
+  "db:command:update": "write",
+  "db:command:delete": "write",
+  "db:graph:get": "read",
+  "db:graph:neighbors": "read",
+  "db:graph:recompute": "write",
+  "usage:overview": "read",
+  "usage:recent": "read",
+  "usage:threads": "read",
+  "usage:clear": "read",
+  "user-style:get": "read",
+  "user-style:save": "read",
+  "user-style:clear": "read",
+  "user-style:generate": "read",
+  "approval-grants:list": "read",
+  "approval-grants:delete": "read",
+  "approval-grants:clear-workspace": "read",
+  "sync:getFolder": "read",
+  "sync:selectFolder": "read",
+  "sync:clearFolder": "read",
+  "sync:now": "read",
+  "sync:status": "read",
+  "sync:pendingBreakdown": "read",
+  "sync:listConflicts": "read",
+  "sync:resolveConflict": "read",
+  "sync:activity": "read",
+  "sync:peerProtocols": "read",
+  "sync:listRestorable": "read",
+  "sync:restoreNote": "read",
+  "sync:repairNoteFile": "read",
+  "registry:fetch": "read",
+  "registry:refresh": "read",
+  "registry:fetchProviders": "read",
+  "registry:refreshProviders": "read",
+  "registry:fetchAutomations": "read",
+  "registry:refreshAutomations": "read",
+  "registry:fetchPersonalities": "read",
+  "registry:refreshPersonalities": "read",
+  "registry:fetchChatThemes": "read",
+  "registry:refreshChatThemes": "read",
+  "plugins:listUi": "read",
+  "plugins:list": "read",
+  "plugins:setEnabled": "read",
+  "plugins:openFolder": "read",
+  "plugins:install": "read",
+  "plugins:update": "read",
+  "plugins:uninstall": "read",
+  "embeddings:status": "read",
+  "embeddings:stop": "read",
+  "embeddings:needsReindex": "read",
+  "embeddings:projections": "read",
+  "db:embeddings:reindex": "write",
+  "db:embeddings:search": "read",
+  "db:embeddings:recomputeProjections": "write",
+  "embeddings:models:list": "read",
+  "embeddings:models:install": "read",
+  "embeddings:models:remove": "read",
+  "embeddings:models:setDefault": "read",
+  "runtime:status": "read",
+  "runtime:stop": "read",
+  "runtime:embeddings:status": "read",
+  "runtime:embeddings:ensureStarted": "read",
+  "runtime:embeddings:models": "read",
+  "runtime:embeddings:install": "read",
+  "runtime:embeddings:remove": "read",
+  "runtime:embeddings:setDefault": "read",
+  "cordis:executeCommand": "read",
+  "runtime:systemPrompt:preview": "read",
+  "runtime:codingPrompt:preview": "read",
+  "runtime:tools:inventory": "read",
+  "mobile:status": "read",
+  "mobile:saveSettings": "read",
+  "mobile:regeneratePin": "read",
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];
+
+/**
+ * Channels that change workspace data. The registry broadcasts `db:changed`
+ * after each one completes, so every window and paired phone refreshes.
+ */
+export const IPC_WRITE_CHANNELS: ReadonlySet<IpcChannel> = new Set(
+  IPC_CONTRACT_CHANNELS.filter((c) => CHANNELS[c] === "write"),
+);

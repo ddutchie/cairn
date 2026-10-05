@@ -122,7 +122,7 @@ cairn/
 │   │   ├── agent.ts        # agent:* IPC channels — PTY spawn, file I/O, git diff
 │   │   ├── chat.ts         # AI chat turn runner (Cordis) + compact-thread helper
 │   │   ├── chat-session.ts # db:chat:sessionMessages replay reads (session-as-truth)
-│   │   └── registry.ts     # registerIpcHandle/registerIpcOn, isWriteChannel whitelist
+│   │   └── registry.ts     # registerContractHandle/registerIpcOn; db:changed after `writes: true` channels
 │   ├── lib/
 │   │   ├── llm.ts          # callLLM, streamCompletion
 │   │   ├── tools.ts        # TOOLS definitions, buildSystemPrompt
