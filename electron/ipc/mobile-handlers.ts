@@ -8,16 +8,16 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle, broadcastEvent } from "./registry";
+import { registerContractHandle, broadcastIpcEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as mobileServer from "../lib/mobile-server";
 
 export function registerMobileHandlers(ctx: DbContext, userDataPath: string): void {
-  registerIpcHandle("mobile:status", () => handle(() => {
+  registerContractHandle("mobile:status", () => handle(() => {
     return mobileServer.getMobileStatus(userDataPath);
   }));
 
-  registerIpcHandle("mobile:saveSettings", (_e, newSettings: Record<string, unknown>) => handle(async () => {
+  registerContractHandle("mobile:saveSettings", (_e, newSettings) => handle(async () => {
     const s = mobileServer.saveMobileSettings(userDataPath, newSettings);
     if (s.enabled) {
       mobileServer.startMobileServer(userDataPath, ctx);
@@ -25,15 +25,15 @@ export function registerMobileHandlers(ctx: DbContext, userDataPath: string): vo
       mobileServer.stopMobileServer();
     }
     const status = await mobileServer.getMobileStatus(userDataPath);
-    broadcastEvent("mobile:status-changed", status);
+    broadcastIpcEvent("mobile:status-changed", status);
     return status;
   }));
 
-  registerIpcHandle("mobile:regeneratePin", () => handle(async () => {
+  registerContractHandle("mobile:regeneratePin", () => handle(async () => {
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
     mobileServer.saveMobileSettings(userDataPath, { pin });
     const status = await mobileServer.getMobileStatus(userDataPath);
-    broadcastEvent("mobile:status-changed", status);
+    broadcastIpcEvent("mobile:status-changed", status);
     return status;
   }));
 }

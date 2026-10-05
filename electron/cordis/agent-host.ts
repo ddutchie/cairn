@@ -62,6 +62,8 @@ import {
   setConfirmTransport,
 } from "./approval-transports";
 import { killJob } from "./jobs-bridge";
+import type { CommandExecutionResult, SystemPromptPreview } from "../../shared/types/runtime";
+export type { CommandExecutionResult, SystemPromptPreview };
 
 type SessionApiMode = "responses" | "completions" | "anthropic-messages";
 
@@ -94,22 +96,7 @@ export interface ExecuteCommandInput extends AgentSessionModel {
   line: string;
 }
 
-export interface CommandExecutionResult {
-  kind?: string;
-  text?: string;
-  mode?: "plan" | "execute";
-}
 
-export interface SystemPromptPreview {
-  text: string;
-  sections: Array<{ name: string; order: number; text: string; index: number }>;
-  contexts: Array<{ name: string; order: number; text: string }>;
-  skills: Array<{ name: string; description: string }>;
-  tools: Array<{ name: string; description?: string }>;
-  variables: Record<string, string | undefined>;
-  cairnSystemLive?: boolean;
-  error?: string;
-}
 
 export interface AgentHost {
   readGoalSnapshot(sessionId: string): Promise<GoalWire | null>;

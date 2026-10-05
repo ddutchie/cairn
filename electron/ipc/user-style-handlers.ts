@@ -7,7 +7,9 @@
  * The tool (get_user_writing_style) reads the same table in the main process.
  */
 
-import { registerIpcHandle, registerIpcOn } from "./registry";
+import { registerContractHandle, registerIpcOn, sendIpcEvent } from "./registry";
+import type { IpcEventArgs, IpcEvents } from "../../shared/ipc/contract";
+import type { UserStyleStreamRequest } from "../../shared/types/user-style";
 import { handle, type DbContext } from "./result-helpers";
 import { getCachedConfig } from "../lib/config-cache";
 import { isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
@@ -21,7 +23,6 @@ import {
 import { recordLlmUsage } from "../lib/usage-recorder";
 import { TOOLS } from "../lib/tools";
 import * as q from "../db/queries";
-import type { UserStyleSaveInput } from "../db/user-style-queries";
 import { errMsg } from "../host-shared/errors";
 
 /**
@@ -75,7 +76,8 @@ export function countHeadings(markdown: string): number {
 }
 
 /** Exported for tests. */
-export type UserStyleStep = "full" | "cheatsheet" | "optimize";
+export type { UserStyleStep } from "../../shared/types/user-style";
+import type { UserStyleStep } from "../../shared/types/user-style";
 
 export function isUsableGuide(markdown: string, step: UserStyleStep): boolean {
   const headings = countHeadings(markdown);
@@ -156,14 +158,14 @@ export async function generateUserStyleMarkdown(
 }
 
 export function registerUserStyleHandlers(ctx: DbContext): void {
-  registerIpcHandle("user-style:get", () => handle(() => q.getUserStyle(ctx.db)));
-  registerIpcHandle("user-style:save", (_e, { input }: { input: UserStyleSaveInput }) => handle(() => q.saveUserStyle(ctx.db, input)));
-  registerIpcHandle("user-style:clear", () => handle(() => {
+  registerContractHandle("user-style:get", () => handle(() => q.getUserStyle(ctx.db)));
+  registerContractHandle("user-style:save", (_e, { input }) => handle(() => q.saveUserStyle(ctx.db, input)));
+  registerContractHandle("user-style:clear", () => handle(() => {
     q.clearUserStyle(ctx.db);
-    return { ok: true };
+    return { ok: true as const };
   }));
 
-  registerIpcHandle("user-style:generate", (_e, { step, input }: { step: UserStyleStep; input: UserStyleGenerationInput }) =>
+  registerContractHandle("user-style:generate", (_e, { step, input }) =>
     handle(async () => {
       const cfg = resolveChatConfig();
       if ("error" in cfg) throw new Error(cfg.error);
@@ -178,20 +180,15 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
   //   user-style:token        { delta }            — one content chunk
   //   user-style:tool-call    { tool, label, args } — a note/task read (analyse path)
   //   user-style:done         { content, usable, error? }
-  registerIpcOn("user-style:generateStream", (event, req: {
-    workspaceId?: string;
-    projectId?: string;
-    projectName?: string;
-    step: UserStyleStep;
-    analyseNotes: boolean;
-    input: UserStyleGenerationInput;
-  }) => {
+  registerIpcOn("user-style:generateStream", (event, req: UserStyleStreamRequest) => {
     abortControllers.get(event.sender.id)?.abort();
     const abortCtrl = new AbortController();
     abortControllers.set(event.sender.id, abortCtrl);
 
-    const send = (ch: string, payload: unknown) => {
-      if (!event.sender.isDestroyed()) event.sender.send(ch, payload);
+    const send = <E extends "user-style:token" | "user-style:tool-call" | "user-style:tool-call-done" | "user-style:done">(
+      ch: E, payload: IpcEvents[E],
+    ) => {
+      if (!event.sender.isDestroyed()) sendIpcEvent(event.sender, ch, ...([payload] as IpcEventArgs<E>));
     };
 
     void (async () => {

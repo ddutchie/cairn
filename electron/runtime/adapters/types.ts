@@ -1,4 +1,7 @@
-/**
+
+import type { RuntimeEmbeddingModel } from "../../../shared/types/embeddings";
+/** A model as an adapter reports it (shared with the IPC contract). */
+export type AdapterModelEntry = RuntimeEmbeddingModel;/**
  * Adapter interface — the contract every inference runtime implements.
  *
  * Each adapter (llama, onnx, future MLX) implements this interface.
@@ -125,15 +128,3 @@ export interface ModelManagingAdapter extends RuntimeAdapter {
   isModelInstalled(modelId: string): boolean;
 }
 
-export interface AdapterModelEntry {
-  id: string;
-  name: string;
-  repo: string;
-  sizeBytes: number;
-  status: "not_downloaded" | "downloading" | "installed" | "error";
-  downloadProgress: number;
-  downloadSpeed?: string;
-  error?: string;
-  /** Adapter-specific metadata (e.g. quant, filename, dim, maxTokens) */
-  meta?: Record<string, unknown>;
-}

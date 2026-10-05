@@ -23,7 +23,7 @@ import { app, dialog } from "electron";
 import fs from "fs";
 import path from "path";
 
-import { registerContractHandle, registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 export { type DbContext } from "./result-helpers";
 
@@ -363,7 +363,7 @@ export function registerAppHandlers(
       },
       broadcastDbChanged: () => broadcastEvent("db:changed", null),
     },
-    registerIpcHandle,
+    registerContractHandle,
     handle,
   );
 }

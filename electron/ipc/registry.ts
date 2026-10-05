@@ -131,7 +131,7 @@ export function setWriteObserver(observer: WriteObserver | null): void {
 /**
  * Register a handler that maps to ipcMain.handle.
  */
-export function registerIpcHandle<T extends unknown[]>(
+function registerIpcHandle<T extends unknown[]>(
   channel: string,
   handler: IpcHandleHandler<T>
 ): void {

@@ -26,16 +26,13 @@ import * as yaml from "js-yaml";
 import { createRequire } from "module";
 import { getPluginsRoot, pluginsDevEnabled } from "./plugin-loader";
 import { errMsg } from "../host-shared/errors";
+import type { InstalledPlugin } from "../../shared/types/plugins";
 
 const INSTALLED_DIR = "installed";
 const MANIFEST = "plugins.yml";
 
-export interface InstallResult {
-  id: string;
-  name: string | null; // backend entry (relative to pluginsRoot) or null
-  ui: string | null; // ui entry (relative to pluginsRoot) or null
-  kind: "ui" | "backend" | "both";
-}
+/** Install/update result (shared with the IPC contract). */
+export type InstallResult = InstalledPlugin;
 
 interface ParsedSpec {
   kind: "github" | "local";

@@ -22,6 +22,8 @@ import { splitIntoSections, type NoteSection } from "./sections";
 import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
 import type { EmbedTask } from "./types";
 import { stripMarkdown } from "../host-shared/text-utils";
+import type { AdjacentNote, ProjectionResult, ReindexResult } from "../../shared/types/embeddings";
+export type { AdjacentNote, ProjectionResult, ReindexResult };
 
 export type EmbedFn = (texts: string[], task: EmbedTask, model?: string) => Promise<number[][]>;
 
@@ -143,11 +145,6 @@ function fetchNotes(db: Database.Database, workspaceId: string, noteIds?: string
   ).all(workspaceId) as NoteStub[];
 }
 
-export interface ReindexResult {
-  indexed: number;
-  skipped: number;
-  total: number;
-}
 
 interface SectionToEmbed {
   noteId: string;
@@ -237,12 +234,6 @@ export async function reindexNotes(
   return { indexed, skipped, total };
 }
 
-export interface AdjacentNote {
-  noteId: string;
-  title: string;
-  score: number;
-  sectionTitle: string;
-}
 
 export async function searchAdjacent(
   db: Database.Database,
@@ -445,10 +436,6 @@ export async function searchAdjacentTasks(
     }));
 }
 
-export interface ProjectionResult {
-  projected: number;
-  total: number;
-}
 
 export async function recomputeProjections(
   db: Database.Database,

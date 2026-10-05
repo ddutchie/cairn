@@ -49,6 +49,7 @@ import { registerChatPopoutHandlers } from "./chat-popout";
 import { initUsageRecorder } from "./lib/usage-recorder";
 import { isUpdaterQuitRequested } from "./lib/updater-quit";
 import { errMsg } from "./host-shared/errors";
+import type { SyncStatus } from "../shared/types/sync";
 import { registerQuickCapture } from "./lib/quick-capture";
 import { createWindow, isMainWindow } from "./main-window";
 import { registerDeepLinks, markRendererReadyForDeepLinks } from "./deep-links";
@@ -517,13 +518,13 @@ app.whenReady().then(async () => {
   const drainDesktop: (db: unknown) => number = desktopSync.drainDesktop;
   const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => Promise<{ seeded: number; drained: number; peerOpsApplied: number; peerOpsRead: number; conflictCopies: number; connected: boolean }> = desktopSync.syncDesktop;
   const getSyncFolder: (db: unknown) => string | null = desktopSync.getSyncFolder;
-  const setSyncStatusListener: (fn: ((s: unknown) => void) | null) => void = desktopSync.setSyncStatusListener;
+  const setSyncStatusListener: (fn: ((s: SyncStatus) => void) | null) => void = desktopSync.setSyncStatusListener;
   const refreshSyncStatus: (db: unknown) => void = desktopSync.refreshSyncStatus;
 
   // Push every sync-status transition (idle/syncing/offline + pending/conflict
   // counts) to the renderer so the title-bar indicator stays live.
-  setSyncStatusListener((status: unknown) => {
-    if (!win.isDestroyed()) win.webContents.send("sync:status", status);
+  setSyncStatusListener((status) => {
+    if (!win.isDestroyed()) sendIpcEvent(win.webContents, "sync:status", status);
   });
 
   // Project an inbound (synced) note change onto disk so the .md file stays in

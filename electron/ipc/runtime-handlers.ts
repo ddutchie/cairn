@@ -1,4 +1,4 @@
-import { registerIpcHandle, registerContractHandle, broadcastEvent } from "./registry";
+import { registerContractHandle, broadcastEvent, sendIpcEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
@@ -17,7 +17,7 @@ function ensureProgressForwarder(getWin: () => BrowserWindow | null): void {
     const win = getWin();
     if (!win || win.isDestroyed()) return;
     if (ev.kind === "progress") {
-      win.webContents.send("runtime:download-progress", {
+      sendIpcEvent(win.webContents, "runtime:download-progress", {
         modelId: ev.modelId,
         status: ev.status,
         file: ev.file,
@@ -26,7 +26,7 @@ function ensureProgressForwarder(getWin: () => BrowserWindow | null): void {
         total: ev.total,
       });
     } else if (ev.kind === "ready") {
-      win.webContents.send("runtime:download-progress", {
+      sendIpcEvent(win.webContents, "runtime:download-progress", {
         modelId: ev.modelId,
         status: "ready",
         progress: 100,
@@ -54,37 +54,33 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
 
   // Generic executor for registry commands (/plan, /compact, plugin commands)
   // on a session's resumed agent. Returns the command result {kind, text}.
-  registerIpcHandle("cordis:executeCommand", (_e, req: { sessionId: string; line: string }) => handle(async () => {
-    try {
-      const agentConfig = (await import("../lib/config-cache")).getCachedConfig().agentConfig;
-      const result = await getAgentHost().executeCommand({
-        sessionId: req.sessionId,
-        cwd: ctx.workspacePath || process.cwd(),
-        baseUrl: agentConfig?.baseUrl ?? "",
-        model: agentConfig?.model ?? "",
-        apiKey: agentConfig?.apiKey ?? "",
-        line: req.line,
-      });
-      if (result.mode) {
-        try {
-          q.updateCodingSession(ctx.db, req.sessionId, { mode: result.mode, updatedAt: ts() });
-        } catch { }
-        broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "mode-change", { mode: result.mode }));
-      }
-      return { kind: result.kind, text: result.text };
-    } catch (err) {
-      return { error: errMsg(err) };
+  registerContractHandle("cordis:executeCommand", (_e, req) => handle(async () => {
+    const agentConfig = (await import("../lib/config-cache")).getCachedConfig().agentConfig;
+    const result = await getAgentHost().executeCommand({
+      sessionId: req.sessionId,
+      cwd: ctx.workspacePath || process.cwd(),
+      baseUrl: agentConfig?.baseUrl ?? "",
+      model: agentConfig?.model ?? "",
+      apiKey: agentConfig?.apiKey ?? "",
+      line: req.line,
+    });
+    if (result.mode) {
+      try {
+        q.updateCodingSession(ctx.db, req.sessionId, { mode: result.mode, updatedAt: ts() });
+      } catch { }
+      broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "mode-change", { mode: result.mode }));
     }
+    return { kind: result.kind, text: result.text };
   }));
 
   // ── Runtime health & lifecycle ─────────────────────────────
-  registerIpcHandle("runtime:status", () => handle(async () => {
+  registerContractHandle("runtime:status", () => handle(async () => {
     return runtime.getRuntimeStatus();
   }));
 
-  registerIpcHandle("runtime:stop", () => handle(async () => {
+  registerContractHandle("runtime:stop", () => handle(async () => {
     await runtime.stopRuntime({ force: true });
-    return { ok: true };
+    return { ok: true as const };
   }));
 
   // ── System-prompt introspection (Cordis) ─────────────────────────────
@@ -94,11 +90,11 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // turn we temporarily mount it here, assemble, then remove it. The coding
   // agent prompt (buildAgentSystemPrompt — the board-tracking workflow) is a
   // plain string (no dsh sections), returned alongside so Settings shows both.
-  registerIpcHandle("runtime:systemPrompt:preview", (_e, req: { cwd?: string; projectName?: string }) => handle(async () => {
+  registerContractHandle("runtime:systemPrompt:preview", (_e, req) => handle(async () => {
     try {
       return await getAgentHost().previewSystemPrompt(req?.cwd ?? "");
     } catch (err) {
-      return { text: "", sections: [], skillCount: 0, error: errMsg(err) };
+      return { text: "", sections: [], contexts: [], skills: [], tools: [], variables: {}, error: errMsg(err) };
     }
   }));
 
@@ -108,7 +104,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // workflow: board tracking, PRD checklists, session summaries). The 3.0
   // Cordis cutover moved it out of the assembled dsh prompt, so the preview
   // above no longer shows it. Return it here so Settings can display it.
-  registerIpcHandle("runtime:codingPrompt:preview", (_e, req: { cwd?: string; projectName?: string; taskTitle?: string }) => handle(async () => {
+  registerContractHandle("runtime:codingPrompt:preview", (_e, req) => handle(async () => {
     try {
       const { buildAgentSystemPrompt } = await import("../lib/coding-session-prompt");
       const cwd = req?.cwd ?? ctx.workspacePath ?? process.cwd();
@@ -132,7 +128,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // lib/tool-inventory (same sources the loops use); global dsh tools
   // (subagent/delegate/jobs/skill/web_fetch/…) are read live from the
   // registry and merged in.
-  registerIpcHandle("runtime:tools:inventory", () => handle(async () => {
+  registerContractHandle("runtime:tools:inventory", () => handle(async () => {
     try {
       const [{ buildStaticInventory }] = await Promise.all([
         import("../lib/tool-inventory"),
@@ -146,32 +142,32 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   }));
 
   // ── Embedding model management (via unified runtime) ────────
-  registerIpcHandle("runtime:embeddings:status", () => handle(() => {
+  registerContractHandle("runtime:embeddings:status", () => handle(() => {
     return runtime.getEmbeddingsStatus();
   }));
 
-  registerIpcHandle("runtime:embeddings:ensureStarted", () => handle(async () => {
+  registerContractHandle("runtime:embeddings:ensureStarted", () => handle(async () => {
     await runtime.ensureStarted();
-    return { ok: true };
+    return { ok: true as const };
   }));
 
-  registerIpcHandle("runtime:embeddings:models", () => handle(async () => {
+  registerContractHandle("runtime:embeddings:models", () => handle(async () => {
     return { models: await runtime.listEmbeddingModels() };
   }));
 
-  registerIpcHandle("runtime:embeddings:install", (_e, { modelId }: { modelId: string }) => handle(async () => {
+  registerContractHandle("runtime:embeddings:install", (_e, { modelId }) => handle(async () => {
     await runtime.installEmbeddingModel(modelId);
-    return { ok: true };
+    return { ok: true as const };
   }));
 
-  registerIpcHandle("runtime:embeddings:remove", (_e, { modelId }: { modelId: string }) => handle(async () => {
+  registerContractHandle("runtime:embeddings:remove", (_e, { modelId }) => handle(async () => {
     await runtime.removeEmbeddingModel(modelId);
-    return { ok: true };
+    return { ok: true as const };
   }));
 
-  registerIpcHandle("runtime:embeddings:setDefault", (_e, { modelId }: { modelId: string }) => handle(async () => {
+  registerContractHandle("runtime:embeddings:setDefault", (_e, { modelId }) => handle(async () => {
     await runtime.setDefaultEmbeddingModel(modelId);
-    return { ok: true };
+    return { ok: true as const };
   }));
 
 }

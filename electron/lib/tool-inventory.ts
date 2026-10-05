@@ -22,21 +22,11 @@
  */
 
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS } from "./tool-schemas";
+import type { InventoryCategory, InventorySource, InventorySurface, InventoryTool } from "../../shared/types/runtime";
+export type { InventoryCategory, InventorySource, InventorySurface, InventoryTool };
 
-export type InventoryCategory = "read" | "write" | "delete" | "exec";
-export type InventorySource = "cairn" | "coding" | "global";
 
-export interface InventoryTool {
-  name: string;
-  description: string;
-  category: InventoryCategory;
-  source: InventorySource;
-  /** True when the tool registers but is approval-gated on that surface
-   *  (chat's delete_note/delete_task/delete_project via askFilter). */
-  gated?: boolean;
-}
 
-export type InventorySurface = "chat" | "coding" | "automation-dev" | "mcp";
 
 /**
  * Mirror of `CHAT_FORBIDDEN_TOOLS` in `../cordis/cairn-tools.ts`.

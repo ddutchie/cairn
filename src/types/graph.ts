@@ -1,42 +1,10 @@
 /** Knowledge graph. */
 
-import type { ID, GraphNodeType, GraphEdgeType } from "../../shared/types/domain";
+import type { GraphNodeType, GraphEdgeType } from "../../shared/types/domain";
 
 // ── Knowledge Graph ───────────────────────────
-
-export interface GraphNode {
-  id: ID;
-  type: GraphNodeType;
-  title: string;
-  projectId?: ID;
-  workspaceId: string;
-  meta?: {
-    status?: string;
-    priority?: string;
-    assignee?: string;
-    tagIds?: string[];
-    isPinned?: boolean;
-    snippet?: string;
-    color?: string;
-    isArchived?: boolean;
-  };
-}
-
-export interface GraphEdge {
-  id: ID;
-  source: ID;
-  target: ID;
-  type: GraphEdgeType;
-  label?: string;
-  weight?: number;
-  sourceSectionTitle?: string;
-  targetSectionTitle?: string;
-}
-
-export interface KnowledgeGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
+// Node/edge payloads are shared with the main process (shared/types/graph.ts).
+export type { GraphNode, GraphEdge, KnowledgeGraph } from "../../shared/types/graph";
 
 export type GraphLayoutMode = "force" | "radial";
 

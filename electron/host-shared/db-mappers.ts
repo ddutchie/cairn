@@ -14,6 +14,7 @@ import type { Project, ProjectSettings, Tag, Workspace } from "../../shared/type
 import type { IdeaFlow, IdeaFlowEdge, IdeaFlowNode, IdeaNodeType } from "../../shared/types/flow";
 import { NOTIFICATION_TARGET_TYPES, type McpNotification, type NotificationTargetType } from "../../shared/types/notifications";
 import type { CodingAgent } from "../../shared/types/coding-agent";
+import type { CustomSlashCommand } from "../../shared/types/workspace";
 import type { CustomServiceConfig, McpServerConfig, ServiceOperationConfig, ToolAttachment } from "../../shared/types/tools";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
@@ -260,7 +261,7 @@ export function toTag(row: DbRow): Tag {
   };
 }
 
-export function toSlashCommand(row: DbRow) {
+export function toSlashCommand(row: DbRow): CustomSlashCommand {
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,

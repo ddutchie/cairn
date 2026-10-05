@@ -9,39 +9,12 @@
 
 import type Database from "better-sqlite3";
 import { newId } from "./utils";
+import type { UsageSource, UsageTotals, UsageDayBucket, UsageModelBucket, UsageSourceBucket, UsageOverview, UsageRecentRow, UsageThreadGroup } from "../../shared/types/usage";
+export type { UsageSource, UsageTotals, UsageDayBucket, UsageModelBucket, UsageSourceBucket, UsageOverview, UsageRecentRow, UsageThreadGroup };
+export { USAGE_SOURCE_LABELS } from "../../shared/types/usage";
 
 /** Where an LLM request originated — drives the "source" breakdown in the UI. */
-export type UsageSource =
-  | "chat"
-  | "coding-agent"
-  | "chat-subagent"
-  | "coding-subagent"
-  | "automation"
-  | "prd"
-  | "commit-message"
-  | "pr-description"
-  | "explain"
-  | "flow-ai-summary"
-  | "summary"
-  | "tool-builder"
-  | "writing-style";
 
-/** Human label for a source, used by the renderer (kept here so it never drifts). */
-export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
-  chat: "Chat",
-  "coding-agent": "Agent",
-  "chat-subagent": "Chat subagent",
-  "coding-subagent": "Agent subagent",
-  automation: "Automation",
-  prd: "PRD",
-  "commit-message": "Commit message",
-  "pr-description": "PR description",
-  explain: "Explain code",
-  "flow-ai-summary": "Idea Flow summary",
-  summary: "Compaction",
-  "tool-builder": "Tool builder",
-  "writing-style": "Writing style",
-};
 
 export interface LlmUsageRecord {
   id: string;
@@ -144,37 +117,10 @@ function whereClause(f: UsageQueryFilter): { sql: string; params: unknown[] } {
   return { sql: conds.length > 0 ? ` WHERE ${conds.join(" AND ")}` : "", params };
 }
 
-export interface UsageTotals {
-  promptTokens: number;
-  completionTokens: number;
-  reasoningTokens: number;
-  /** Prompt tokens served from the provider's cache across the window. */
-  cacheReadTokens: number;
-  costUsd: number;
-  requests: number;
-}
 
-export interface UsageDayBucket extends UsageTotals {
-  /** Local YYYY-MM-DD (bucketed via SQLite localtime). */
-  day: string;
-}
 
-export interface UsageModelBucket extends UsageTotals {
-  model: string;
-}
 
-export interface UsageSourceBucket extends UsageTotals {
-  source: UsageSource;
-}
 
-export interface UsageOverview {
-  totals: UsageTotals;
-  /** Same window immediately before the requested range (for delta chips). */
-  previous: UsageTotals | null;
-  series: UsageDayBucket[];
-  bySource: UsageSourceBucket[];
-  byModel: UsageModelBucket[];
-}
 
 /**
  * Aggregate columns for one bucket. Token/request/cache sums always include
@@ -266,42 +212,7 @@ export function queryUsageOverview(db: Database.Database, filter: UsageQueryFilt
   return { totals, previous, series, bySource, byModel };
 }
 
-export interface UsageRecentRow {
-  id: string;
-  workspaceId: string | null;
-  projectId: string | null;
-  source: UsageSource;
-  sessionId: string | null;
-  provider: string | null;
-  model: string;
-  baseUrl: string | null;
-  promptTokens: number;
-  completionTokens: number;
-  reasoningTokens: number;
-  /** Prompt tokens served from the provider's cache. */
-  cacheReadTokens: number;
-  /** Prompt tokens written to the provider's cache. */
-  cacheCreationTokens: number;
-  costUsd: number | null;
-  costEstimated: boolean;
-  finishReason: string | null;
-  createdAt: number;
-}
 
-/** One chat thread / agent session / automation run, rolled up across its requests. */
-export interface UsageThreadGroup extends UsageTotals {
-  sessionId: string;
-  /** Source of the group's first request. */
-  source: UsageSource;
-  /** Thread / session title when it still exists; null for deleted threads and automation runs. */
-  title: string | null;
-  /** Distinct models used (unordered). */
-  models: string[];
-  firstAt: number;
-  lastAt: number;
-  /** Any request in the group has an estimated (models.dev) cost. */
-  hasEstimated: boolean;
-}
 
 /**
  * Per-thread rollup for the history table, newest activity first. Honours the

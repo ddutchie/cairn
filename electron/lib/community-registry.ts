@@ -51,40 +51,12 @@ export type {
 } from "../../shared/chat/registry-schema";
 export { parseManifest, parseProvidersManifest, parseAutomationsManifest, parsePersonalitiesManifest, parseChatThemesManifest } from "../../shared/chat/registry-schema";
 
-export interface RegistryFetchResult {
-  manifest: CommunityManifest;
-  fromCache: boolean;
-  cachedAt?: string;
-  error?: string;
-}
-
-export interface ProvidersFetchResult {
-  manifest: ProvidersManifest;
-  fromCache: boolean;
-  cachedAt?: string;
-  error?: string;
-}
-
-export interface AutomationsFetchResult {
-  manifest: AutomationsManifest;
-  fromCache: boolean;
-  cachedAt?: string;
-  error?: string;
-}
-
-export interface PersonalitiesFetchResult {
-  manifest: PersonalitiesManifest;
-  fromCache: boolean;
-  cachedAt?: string;
-  error?: string;
-}
-
-export interface ChatThemesFetchResult {
-  manifest: ChatThemesManifest;
-  fromCache: boolean;
-  cachedAt?: string;
-  error?: string;
-}
+export type {
+  RegistryFetchResult, ProvidersFetchResult, AutomationsFetchResult, PersonalitiesFetchResult, ChatThemesFetchResult,
+} from "../../shared/chat/registry-schema";
+import type {
+  RegistryFetchResult, ProvidersFetchResult, AutomationsFetchResult, PersonalitiesFetchResult, ChatThemesFetchResult,
+} from "../../shared/chat/registry-schema";
 
 const MANIFEST_URL =
   "https://raw.githubusercontent.com/ddutchie/cairn-community/main/manifest.json";

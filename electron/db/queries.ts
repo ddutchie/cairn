@@ -48,13 +48,14 @@ import { getAllWorkspaces, getProjects } from "./workspace-queries";
 import { getNotes, getNoteSummaries } from "./notes-queries";
 import { getColumns, getCards } from "./board-queries";
 import { getTags } from "./tags-queries";
+import type { EntitySnapshot } from "../../shared/types/snapshot";
 
 /** Re-export for callers that only need a new ID without importing utils directly. */
 export { newId as generateId };
 
 // ── Full snapshot (for MCP / AI chat) ────────
 
-export function getFullSnapshot(db: Database.Database) {
+export function getFullSnapshot(db: Database.Database): EntitySnapshot & { notes: Array<EntitySnapshot["notes"][number] & { content: string }> } {
   return {
     workspaces: getAllWorkspaces(db),
     projects: getProjects(db),
@@ -70,7 +71,7 @@ export function getFullSnapshot(db: Database.Database) {
  * (the renderer loads bodies on demand), which keeps the IPC payload and the
  * renderer heap proportional to note COUNT rather than note size.
  */
-export function getRendererSnapshot(db: Database.Database) {
+export function getRendererSnapshot(db: Database.Database): EntitySnapshot {
   return {
     workspaces: getAllWorkspaces(db),
     projects: getProjects(db),

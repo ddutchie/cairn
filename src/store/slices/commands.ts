@@ -53,7 +53,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   async fetchCommands(workspaceId) {
     if (typeof window === "undefined" || !window.electron?.command) return;
     try {
-      const rows = (await window.electron.command.list(workspaceId)) as CustomSlashCommand[];
+      const rows = await window.electron.command.list(workspaceId);
       // Guard against a stale response after the workspace changed mid-flight.
       if (get().activeWorkspaceId && get().activeWorkspaceId !== workspaceId) return;
       set({ customCommands: rows });
@@ -65,7 +65,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   async createCommand(input) {
     if (typeof window === "undefined" || !window.electron?.command) return;
     try {
-      const saved = (await window.electron.command.create({
+      const saved = await window.electron.command.create({
         id: id(),
         workspaceId: input.workspaceId,
         name: input.name,
@@ -74,7 +74,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
         scope: input.scope,
         source: input.source ?? "custom",
         communityId: input.communityId,
-      })) as CustomSlashCommand;
+      });
       set((s) => ({ customCommands: [...s.customCommands, saved] }));
     } catch (err) {
       console.error("[commands] createCommand error", err);
@@ -84,7 +84,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   async updateCommand(commandId, patch) {
     if (typeof window === "undefined" || !window.electron?.command) return;
     try {
-      const saved = (await window.electron.command.update(commandId, patch)) as CustomSlashCommand;
+      const saved = await window.electron.command.update(commandId, patch);
       set((s) => ({
         customCommands: s.customCommands.map((c) => (c.id === commandId ? saved : c)),
       }));
@@ -124,19 +124,19 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
       commands.find((c) => c.name === def.name);
 
     if (existing) {
-      const saved = (await window.electron.command.update(existing.id, {
+      const saved = await window.electron.command.update(existing.id, {
         name: def.name,
         description: def.description ?? "",
         insertText: def.insertText,
         scope: def.scope,
-      })) as CustomSlashCommand;
+      });
       set((s) => ({
         customCommands: s.customCommands.map((c) => (c.id === existing.id ? saved : c)),
       }));
       return existing.id;
     }
 
-    const saved = (await window.electron.command.create({
+    const saved = await window.electron.command.create({
       id: id(),
       workspaceId,
       name: def.name,
@@ -145,7 +145,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
       scope: def.scope,
       source: "community",
       communityId: entry.id,
-    })) as CustomSlashCommand;
+    });
     set((s) => ({ customCommands: [...s.customCommands, saved] }));
     return saved.id;
   },

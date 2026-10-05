@@ -9,30 +9,25 @@
  * code-exec surface — acceptable ONLY behind the dev flag; untrusted-plugin
  * sandboxing is Tier 3 (see docs/plans §10.8 / plugin architecture note).
  *
- * IPC envelope note: this module uses ipcMain.handle directly and returns
- * { data } / { error } manually instead of the shared handle() helper from
- * ./result-helpers. That's intentional for now — every channel already
- * normalises to the same shape, and handle() would double-wrap. Dev-gated
- * (CAIRN_PLUGINS_DEV=1) so the inconsistency is low-risk.
- * TODO: migrate to handle() / registerIpcHandle when the plugin surface
- * stabilises, so error logging is uniform with the rest of electron/ipc/.
+ * Channels are typed by `shared/ipc/contract.ts` and wrapped in the shared
+ * handle(), so failures (including the dev-flag gate) throw and reach the
+ * renderer as rejections.
  */
 import * as fs from "fs";
 import * as path from "path";
-import { ipcMain, shell, type WebContents } from "electron";
+import { shell, type WebContents } from "electron";
 import * as yaml from "js-yaml";
 import { readEnabledManifest, pluginsDevEnabled } from "../cordis/plugin-loader";
 import { getAgentHost } from "../cordis/agent-host";
-import { errMsg } from "../host-shared/errors";
+import { registerContractHandle, sendIpcEvent } from "./registry";
+import { handle } from "./result-helpers";
+import type { PluginEntry, UiPluginSource } from "../../shared/types/plugins";
 // NOTE: readEnabledManifest/pluginsDevEnabled stay direct imports by design —
 // this dev-gated UI surface does main-side file IO (plugins.yml YAML,
 // fs watcher) that stays in main even after a host-process split. Only the
 // configured root round-trips through AgentHost (configure/getPluginsRoot).
 
-export interface UiPluginPayload {
-  id: string;
-  source: string;
-}
+export type UiPluginPayload = UiPluginSource;
 
 function collectUiPlugins(): UiPluginPayload[] {
   if (!pluginsDevEnabled()) return [];
@@ -61,13 +56,7 @@ let watcher: fs.FSWatcher | null = null;
 let debounce: NodeJS.Timeout | null = null;
 
 export function registerUiPluginHandlers(getWebContents: () => WebContents | undefined): void {
-  ipcMain.handle("plugins:listUi", () => {
-    try {
-      return { data: collectUiPlugins() };
-    } catch (err) {
-      return { error: errMsg(err) };
-    }
-  });
+  registerContractHandle("plugins:listUi", () => handle(() => collectUiPlugins()));
 
   // ── Plugins settings section: list all entries (enabled + disabled), toggle,
   // open the folder. Reads/writes plugins.yml as a plain YAML array.
@@ -85,108 +74,79 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
     }
   }
 
-  ipcMain.handle("plugins:list", () => {
-    try {
-      if (!pluginsDevEnabled()) {
-        // In prod, still return the list (settings UI reads it) but mark devEnabled
-        // so the renderer can hide enable/install controls. No data filtered.
-      }
-      const rows = readAllRows();
-      const list = rows
-        .filter((r) => typeof r.id === "string")
-        .map((r) => ({
-          id: r.id as string,
-          kind: typeof r.ui === "string" && typeof r.name === "string" ? "both"
-            : typeof r.ui === "string" ? "ui"
-            : "backend",
-          name: (r.name as string) ?? null,
-          ui: (r.ui as string) ?? null,
-          source: typeof r.source === "string" ? r.source : null,
-          disabled: r.disabled === true,
-        }));
-      return { data: { devEnabled: pluginsDevEnabled(), root: getAgentHost().getPluginsRoot(), plugins: list } };
-    } catch (err) {
-      return { error: errMsg(err) };
-    }
-  });
+  const DEV_GATE = "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1";
+  const requireRoot = (action: string): string => {
+    if (!pluginsDevEnabled()) throw new Error(`${DEV_GATE} to ${action}.`);
+    const root = getAgentHost().getPluginsRoot();
+    if (!root) throw new Error("no plugins directory configured");
+    return root;
+  };
 
-  ipcMain.handle("plugins:setEnabled", (_e, req: { id: string; enabled: boolean }) => {
-    try {
-      if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to toggle plugins" };
-      const root = getAgentHost().getPluginsRoot();
-      if (!root) return { error: "no plugins directory configured" };
-      const rows = readAllRows();
-      const row = rows.find((r) => r.id === req.id);
-      if (!row) return { error: `plugin '${req.id}' not found in ${MANIFEST}` };
-      if (req.enabled) delete row.disabled;
-      else row.disabled = true;
-      // Re-dump the whole array (plain data; comments in the file are not
-      // preserved — acceptable for a managed manifest).
-      fs.writeFileSync(manifestPath(), yaml.dump(rows, { lineWidth: 100 }));
-      // The plugin-dir watcher (both backend loader + this module) will fire and
-      // reconcile live; the renderer re-pulls on plugins:ui-changed.
-      return { data: { ok: true } };
-    } catch (err) {
-      return { error: errMsg(err) };
-    }
-  });
+  // In prod the list is still returned (the settings UI reads it); devEnabled
+  // lets the renderer hide the enable/install controls.
+  registerContractHandle("plugins:list", () => handle(() => {
+    const plugins: PluginEntry[] = readAllRows()
+      .filter((r) => typeof r.id === "string")
+      .map((r) => ({
+        id: r.id as string,
+        kind: typeof r.ui === "string" && typeof r.name === "string" ? "both"
+          : typeof r.ui === "string" ? "ui"
+          : "backend",
+        name: (r.name as string) ?? null,
+        ui: (r.ui as string) ?? null,
+        source: typeof r.source === "string" ? r.source : null,
+        disabled: r.disabled === true,
+      }));
+    return { devEnabled: pluginsDevEnabled(), root: getAgentHost().getPluginsRoot(), plugins };
+  }));
 
-  ipcMain.handle("plugins:openFolder", async () => {
-    try {
-      if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1" };
-      const root = getAgentHost().getPluginsRoot();
-      if (!root) return { error: "no plugins directory configured" };
-      fs.mkdirSync(root, { recursive: true });
-      await shell.openPath(root);
-      return { data: { ok: true } };
-    } catch (err) {
-      return { error: errMsg(err) };
-    }
-  });
+  registerContractHandle("plugins:setEnabled", (_e, req) => handle(() => {
+    requireRoot("toggle plugins");
+    const rows = readAllRows();
+    const row = rows.find((r) => r.id === req.id);
+    if (!row) throw new Error(`plugin '${req.id}' not found in ${MANIFEST}`);
+    if (req.enabled) delete row.disabled;
+    else row.disabled = true;
+    // Re-dump the whole array (plain data; comments in the file are not
+    // preserved — acceptable for a managed manifest). The plugin-dir watcher
+    // (both backend loader + this module) reconciles live; the renderer
+    // re-pulls on plugins:ui-changed.
+    fs.writeFileSync(manifestPath(), yaml.dump(rows, { lineWidth: 100 }));
+    return { ok: true as const };
+  }));
+
+  registerContractHandle("plugins:openFolder", () => handle(async () => {
+    const root = requireRoot("open the plugins folder");
+    fs.mkdirSync(root, { recursive: true });
+    await shell.openPath(root);
+    return { ok: true as const };
+  }));
 
   // ── Install / uninstall (C2, §20). Fetching + running third-party code is a
   // code-exec surface, so install is only permitted under the dev flag until the
   // Tier-3 sandbox exists. The plugin-dir watcher reconciles the new entry live.
-  ipcMain.handle("plugins:install", async (_e, req: { spec: string }) => {
-    try {
-      if (!pluginsDevEnabled()) {
-        return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to install." };
-      }
-      if (!req || typeof req.spec !== "string" || !req.spec.trim()) {
-        return { error: "provide a plugin spec (github:owner/repo or a local path)" };
-      }
-      const result = await getAgentHost().installPlugin(req.spec);
-      return { data: result };
-    } catch (err) {
-      return { error: errMsg(err) };
+  registerContractHandle("plugins:install", (_e, req) => handle(() => {
+    if (!pluginsDevEnabled()) throw new Error(`${DEV_GATE} to install.`);
+    if (!req || typeof req.spec !== "string" || !req.spec.trim()) {
+      throw new Error("provide a plugin spec (github:owner/repo or a local path)");
     }
-  });
+    return getAgentHost().installPlugin(req.spec);
+  }));
 
-  ipcMain.handle("plugins:uninstall", (_e, req: { id: string }) => {
-    try {
-      if (!pluginsDevEnabled()) return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to uninstall" };
-      if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
-      getAgentHost().uninstallPlugin(req.id);
-      return { data: { ok: true } };
-    } catch (err) {
-      return { error: errMsg(err) };
-    }
-  });
+  registerContractHandle("plugins:uninstall", (_e, req) => handle(() => {
+    if (!pluginsDevEnabled()) throw new Error(`${DEV_GATE} to uninstall.`);
+    if (!req || typeof req.id !== "string") throw new Error("missing plugin id");
+    getAgentHost().uninstallPlugin(req.id);
+    return { ok: true as const };
+  }));
 
   // Update: re-run an installed plugin's recorded source spec (re-fetch github /
   // re-copy local) to pull the latest build. Dev-gated like install.
-  ipcMain.handle("plugins:update", async (_e, req: { id: string }) => {
-    try {
-      if (!pluginsDevEnabled()) {
-        return { error: "Plugins are in developer preview — launch with CAIRN_PLUGINS_DEV=1 to update." };
-      }
-      if (!req || typeof req.id !== "string") return { error: "missing plugin id" };
-      const result = await getAgentHost().updatePlugin(req.id);
-      return { data: result };
-    } catch (err) {
-      return { error: errMsg(err) };
-    }
-  });
+  registerContractHandle("plugins:update", (_e, req) => handle(() => {
+    if (!pluginsDevEnabled()) throw new Error(`${DEV_GATE} to update.`);
+    if (!req || typeof req.id !== "string") throw new Error("missing plugin id");
+    return getAgentHost().updatePlugin(req.id);
+  }));
 
   if (!pluginsDevEnabled()) return;
   const root = getAgentHost().getPluginsRoot();
@@ -197,7 +157,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => {
         const wc = getWebContents();
-        if (wc && !wc.isDestroyed()) wc.send("plugins:ui-changed");
+        if (wc && !wc.isDestroyed()) sendIpcEvent(wc, "plugins:ui-changed");
       }, 200);
     });
   } catch (err) {

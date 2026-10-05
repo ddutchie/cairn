@@ -16,14 +16,8 @@ import type Database from "better-sqlite3";
 import { newId } from "./utils";
 
 /** One grant, as returned by list/get. */
-export interface ApprovalGrant {
-  id: string;
-  workspaceId: string;
-  tool: string;
-  /** Canonicalized bash command, or the tool's primary target, when the grant is target-scoped. */
-  target: string | null;
-  createdAt: string;
-}
+export type { ApprovalGrant } from "../../shared/types/approval";
+import type { ApprovalGrant } from "../../shared/types/approval";
 
 /**
  * True for the two tools where a target-less "always allow" would be a

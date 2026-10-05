@@ -23,167 +23,33 @@ import type { CodingSessionCreateInput, PutMessageFeedbackInput } from "../share
 import type { ChatThreadUpsertInput } from "../shared/types/chat";
 import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
+import type { GraphQueryFilters } from "../shared/types/graph";
+import type { GraphEdgeType } from "../shared/types/domain";
+import type { SlashCommandCreateInput, SlashCommandPatch } from "../shared/types/workspace";
 import type { CustomServiceConfig, McpServerConfig, SecretToolType, ToolAttachment } from "../shared/types/tools";
 import type {
   AgentSpawnInput, CodingAgentInput, ModelPtyEvent, PtyDataEvent, PtyExitEvent,
 } from "../shared/types/coding-agent";
+import type { UsageRangeArgs } from "../shared/types/usage";
+import type { ConflictResolution, SyncStatus } from "../shared/types/sync";
+import type { EmbeddingDownloadProgress } from "../shared/types/embeddings";
+import type { MobileStatus } from "../shared/types/runtime";
+import type {
+  UserStyleDoneEvent, UserStyleGenerationInput, UserStyleSaveInput, UserStyleStep, UserStyleStreamRequest,
+  UserStyleToolCallDoneEvent, UserStyleToolCallEvent,
+} from "../shared/types/user-style";
 import type { AiEndpoint, AiRequestConfig, MigrationProgress, ModelPrice, UpdateAvailableInfo } from "../shared/types/app";
 
-// ── User writing style (persona + full guide + cheat sheet) ──────────────────
-interface UserStylePersona {
-  name?: string; role?: string; context?: string; audiences?: string;
-}
-interface UserStyleRow {
-  id: string; persona: UserStylePersona | null;
-  fullGuide: string; cheatsheet: string;
-  source: "none" | "guided" | "manual" | "analyzed"; updatedAt: string;
-}
-interface UserStyleSaveInput {
-  persona?: UserStylePersona; fullGuide?: string; cheatsheet?: string;
-  source: "none" | "guided" | "manual" | "analyzed";
-}
-interface UserStyleGenerationInput {
-  persona: UserStylePersona;
-  samples: Array<{ context: string; text: string }>;
-  answers: Array<{ question: string; answer: string }>;
-  fullGuide?: string;
-}
-// ── Community registry (cairn-community manifest) ───────────────────────────
-interface RegistryEntryMeta {
-  id: string; author: string; version: string; category?: string; tags: string[]; blurb: string;
-  brandColor?: string; homepage?: string; iconSvg?: string;
-}
-interface RegistryMcpEntry extends RegistryEntryMeta {
-  definition: {
-    name: string; description?: string; transport: "sse" | "http"; baseUrl: string;
-    headers?: Record<string, string>; authMode?: "none" | "oauth"; oauthScope?: string;
-    disabledTools?: string[]; enabled: boolean;
-  };
-}
-interface RegistryServiceEntry extends RegistryEntryMeta {
-  definition: {
-    name: string; description?: string; apiUrl: string;
-    method: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
-    toolDefinition: string; responseKeys?: string[]; apiKeyUrl?: string;
-    authMode?: "none" | "oauth";
-    oauth?: { serverUrl?: string; scope?: string; clientId?: string; authorizationUrl?: string; tokenUrl?: string };
-    enabled: boolean;
-  };
-}
-interface RegistryCommandEntry extends RegistryEntryMeta {
-  definition: {
-    name: string; description?: string; insertText: string; scope: "chat" | "agent" | "both";
-  };
-}
-interface CommunityManifest {
-  version: number; updatedAt: string;
-  mcpServers: RegistryMcpEntry[]; services: RegistryServiceEntry[]; commands: RegistryCommandEntry[];
-}
-interface RegistryFetchResult {
-  manifest: CommunityManifest; fromCache: boolean; cachedAt?: string; error?: string;
-}
-// Canonical, Zod-validated definitions live in shared/chat/registry-schema.ts.
-// These interfaces are hand-mirrored here (like the MCP/service/command ones
-// above) because preload is a separate esbuild target that can't import the
-// shared module's runtime; keep them in sync with the shared source.
-interface RegistryProviderEntry extends RegistryEntryMeta {
-  definition: {
-    name: string; baseUrl: string; defaultModel?: string; needsApiKey: boolean;
-    apiKeyUrl?: string; models?: string[];
-  };
-}
-interface ProvidersManifest {
-  version: number; updatedAt: string; providers: RegistryProviderEntry[];
-}
-interface ProvidersFetchResult {
-  manifest: ProvidersManifest; fromCache: boolean; cachedAt?: string; error?: string;
-}
-interface RegistryAutomationEntry extends RegistryEntryMeta {
-  definition: {
-    name: string; description?: string; instructions: string;
-    schedule: { kind: "cron" | "every" | "once"; expr: string; timezone?: string };
-    approvalMode?: "auto" | "ask"; maxRuns?: number;
-  };
-}
-interface AutomationsManifest {
-  version: number; updatedAt: string; automations: RegistryAutomationEntry[];
-}
-interface AutomationsFetchResult {
-  manifest: AutomationsManifest; fromCache: boolean; cachedAt?: string; error?: string;
-}
-interface RegistryPersonalityEntry extends RegistryEntryMeta {
-  definition: { name: string; description?: string; prompt: string };
-}
-interface PersonalitiesManifest {
-  version: number; updatedAt: string; personalities: RegistryPersonalityEntry[];
-}
-interface PersonalitiesFetchResult {
-  manifest: PersonalitiesManifest; fromCache: boolean; cachedAt?: string; error?: string;
-}
-interface RegistryThemeMode {
-  bg: string; stops: string[]; userBubble: string; userBubbleFg: string;
-  aiBubble: string; aiText: string;
-}
-interface RegistryThemeEntry extends RegistryEntryMeta {
-  definition: {
-    name: string; description?: string; font: "sans" | "serif" | "mono";
-    fontWeight: "regular" | "medium"; tracking: number; lineHeight: number;
-    bgType: "solid" | "gradient" | "pattern";
-    pattern: "none" | "scanlines" | "dots" | "grid" | "crosshatch" | "diagonal" | "noise";
-    bubbleStyle: "filled" | "glass" | "outlined";
-    radius: "sm" | "md" | "pill"; shadow: "none" | "subtle" | "strong";
-    dark: RegistryThemeMode; light: RegistryThemeMode;
-  };
-}
-interface ChatThemesManifest {
-  version: number; updatedAt: string; themes: RegistryThemeEntry[];
-}
-interface ChatThemesFetchResult {
-  manifest: ChatThemesManifest; fromCache: boolean; cachedAt?: string; error?: string;
-}
-// ── Inline types for the Usage view (usage:overview / usage:recent) ──────────
-type UsageSource =
-  | "chat" | "coding-agent" | "chat-subagent" | "coding-subagent" | "automation"
-  | "prd" | "commit-message" | "pr-description" | "explain" | "flow-ai-summary"
-  | "summary" | "tool-builder";
-interface UsageTotals {
-  promptTokens: number; completionTokens: number; reasoningTokens: number;
-  cacheReadTokens: number; costUsd: number; requests: number;
-}
-interface UsageOverviewData {
-  totals: UsageTotals;
-  previous: UsageTotals | null;
-  series: Array<UsageTotals & { day: string }>;
-  bySource: Array<UsageTotals & { source: UsageSource }>;
-  byModel: Array<UsageTotals & { model: string }>;
-}
-interface UsageRecentRow {
-  id: string; workspaceId: string | null; projectId: string | null; source: UsageSource;
-  sessionId: string | null; provider: string | null; model: string; baseUrl: string | null;
-  promptTokens: number; completionTokens: number; reasoningTokens: number;
-  cacheReadTokens: number; cacheCreationTokens: number;
-  costUsd: number | null; costEstimated: boolean; finishReason: string | null; createdAt: number;
-}
-interface UsageThreadGroup extends UsageTotals {
-  sessionId: string; source: UsageSource; title: string | null; models: string[];
-  firstAt: number; lastAt: number; hasEstimated: boolean;
-}
-
-// Helper: invoke an IPC channel and unwrap the IpcResult<T> wrapper.
-// All handlers return { data: T } | { error: string } via the handle() helper.
-// We unwrap here so callers receive T directly (or a rejected promise on error).
-function invoke<T>(channel: string, args?: unknown): Promise<T> {
-  return ipcRenderer.invoke(channel, args).then((result: { data: T } | { error: string }) => {
-    if (result && typeof result === "object" && "error" in result) {
-      throw new Error((result as { error: string }).error);
-    }
-    return (result as { data: T }).data;
-  });
-}
-
-/** {@link invoke} for channels in the typed IPC contract (shared/ipc/contract.ts). */
+/**
+ * Invoke a channel in the typed IPC contract (shared/ipc/contract.ts) and
+ * unwrap its envelope: every handler returns { data } | { error } via handle(),
+ * so callers receive the typed result directly or a rejection on error.
+ */
 function invokeContract<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcReturn<C>> {
-  return invoke<IpcReturn<C>>(channel, args[0]);
+  return ipcRenderer.invoke(channel, args[0]).then((result: { data: IpcReturn<C> } | { error: string }) => {
+    if (result && typeof result === "object" && "error" in result) throw new Error(result.error);
+    return result.data;
+  });
 }
 
 /** Subscribe to a contract push event; returns the unsubscribe function. */
@@ -195,13 +61,12 @@ function onIpcEvent<E extends IpcEventChannel>(channel: E, cb: (payload: IpcEven
 
 const api = {
   // ── Full snapshot ────────────────────────────
-  snapshot: (opts?: { noteBodies?: boolean }) => invoke("db:snapshot", opts),
+  snapshot: (opts?: { noteBodies?: boolean }) => invokeContract("db:snapshot", opts),
   // ── Change feed (cursor-based incremental refresh) ──
   changes: {
-    get: (args: { since: number | null; feedId: string | null }) =>
-      invoke<import("./db/change-feed-queries").ChangeSet>("db:changes:get", args),
+    get: (args: { since: number | null; feedId: string | null }) => invokeContract("db:changes:get", args),
   },
-  hasData:  () => invoke<boolean>("db:hasData"),
+  hasData:  () => invokeContract("db:hasData"),
 
   // ── Workspaces ───────────────────────────────
   workspace: {
@@ -290,10 +155,10 @@ const api = {
 
   // ── Slash commands ───────────────────────────
   command: {
-    list:   (workspaceId?: string) => invoke("db:command:list", { workspaceId }),
-    create: (args: unknown) => invoke("db:command:create", args),
-    update: (id: string, patch: unknown) => invoke("db:command:update", { id, patch }),
-    delete: (id: string) => invoke("db:command:delete", { id }),
+    list:   (workspaceId?: string) => invokeContract("db:command:list", { workspaceId }),
+    create: (input: SlashCommandCreateInput) => invokeContract("db:command:create", input),
+    update: (id: string, patch: SlashCommandPatch) => invokeContract("db:command:update", { id, patch }),
+    delete: (id: string) => invokeContract("db:command:delete", { id }),
   },
 
   // ── Heartbeat automations ─────────────────────
@@ -368,10 +233,10 @@ const api = {
 
   // ── Knowledge Graph ───────────────────────────
   graph: {
-    get:       (workspaceId: string, filters?: unknown) => invoke("db:graph:get", { workspaceId, filters }),
-    neighbors: (workspaceId: string, nodeId: string, depth?: number, edgeTypes?: string[]) =>
-                 invoke("db:graph:neighbors", { workspaceId, nodeId, depth, edgeTypes }),
-    recompute: (workspaceId: string, entityIds?: string[]) => invoke("db:graph:recompute", { workspaceId, entityIds }),
+    get:       (workspaceId: string, filters?: GraphQueryFilters) => invokeContract("db:graph:get", { workspaceId, filters }),
+    neighbors: (workspaceId: string, nodeId: string, depth?: number, edgeTypes?: GraphEdgeType[]) =>
+                 invokeContract("db:graph:neighbors", { workspaceId, nodeId, depth, edgeTypes }),
+    recompute: (workspaceId: string, entityIds?: string[]) => invokeContract("db:graph:recompute", { workspaceId, entityIds }),
   },
 
   // ── AI helpers ────────────────────────────────
@@ -389,15 +254,11 @@ const api = {
 
   // ── Usage statistics (LLM/agent usage log) ─────
   usage: {
-    overview: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; excludeEstimated?: boolean }) =>
-      invoke<UsageOverviewData>("usage:overview", args),
-    recent: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean; sessionId?: string; noSession?: boolean }) =>
-      invoke<UsageRecentRow[]>("usage:recent", args),
-    threads: (args: { workspaceId?: string; source?: UsageSource; from?: number; to?: number; limit?: number; excludeEstimated?: boolean }) =>
-      invoke<UsageThreadGroup[]>("usage:threads", args),
+    overview: (args: UsageRangeArgs) => invokeContract("usage:overview", args),
+    recent: (args: UsageRangeArgs & { limit?: number }) => invokeContract("usage:recent", args),
+    threads: (args: UsageRangeArgs & { limit?: number }) => invokeContract("usage:threads", args),
     /** Destructive — delete recorded usage rows scoped to the workspace filter. */
-    clear: (args: { workspaceId?: string }) =>
-      invoke<{ deleted: number; ok: boolean }>("usage:clear", args),
+    clear: (args: UsageRangeArgs) => invokeContract("usage:clear", args),
     /** Push the models.dev per-1M pricing map (used for cost estimation). */
     setPricing: (map: Record<string, ModelPrice>) => invokeContract("app:modelPricing", map),
     /** Push model ids that declare they don't support temperature control. */
@@ -450,42 +311,19 @@ const api = {
   getAiSettings: () => invokeContract("app:getAiSettings"),
   saveAiSettings: (config: Record<string, unknown>) => invokeContract("app:saveAiSettings", { config }),
   // User writing style (persona + full guide + cheat sheet) — Settings → Writing Style.
-  getUserStyle: () => invoke<UserStyleRow | null>("user-style:get"),
-  saveUserStyle: (input: UserStyleSaveInput) => invoke<UserStyleRow>("user-style:save", { input }),
-  clearUserStyle: () => invoke<{ ok: true }>("user-style:clear"),
-  generateUserStyle: (step: "full" | "cheatsheet" | "optimize", input: UserStyleGenerationInput) =>
-    invoke<{ markdown: string }>("user-style:generate", { step, input }),
+  getUserStyle: () => invokeContract("user-style:get"),
+  saveUserStyle: (input: UserStyleSaveInput) => invokeContract("user-style:save", { input }),
+  clearUserStyle: () => invokeContract("user-style:clear"),
+  generateUserStyle: (step: UserStyleStep, input: UserStyleGenerationInput) =>
+    invokeContract("user-style:generate", { step, input }),
   // Streaming generation (wizard) — fire-and-forget; listen via onUserStyle*.
   // Credentials are resolved main-side (resolveChatConfig), never sent here.
-  generateUserStyleStream: (req: {
-    workspaceId?: string;
-    projectId?: string;
-    projectName?: string;
-    step: "full" | "cheatsheet" | "optimize";
-    analyseNotes: boolean;
-    input: UserStyleGenerationInput;
-  }) => ipcRenderer.send("user-style:generateStream", req),
+  generateUserStyleStream: (req: UserStyleStreamRequest) => ipcRenderer.send("user-style:generateStream", req),
   abortUserStyleStream: () => ipcRenderer.send("user-style:abort"),
-  onUserStyleToken: (cb: (e: { delta: string }) => void) => {
-    const handler = (_: unknown, e: { delta: string }) => cb(e);
-    ipcRenderer.on("user-style:token", handler);
-    return () => ipcRenderer.off("user-style:token", handler);
-  },
-  onUserStyleToolCall: (cb: (e: { tool: string; label: string; args: Record<string, unknown> }) => void) => {
-    const handler = (_: unknown, e: { tool: string; label: string; args: Record<string, unknown> }) => cb(e);
-    ipcRenderer.on("user-style:tool-call", handler);
-    return () => ipcRenderer.off("user-style:tool-call", handler);
-  },
-  onUserStyleToolCallDone: (cb: (e: { tool: string; ok?: boolean; error?: string }) => void) => {
-    const handler = (_: unknown, e: { tool: string; ok?: boolean; error?: string }) => cb(e);
-    ipcRenderer.on("user-style:tool-call-done", handler);
-    return () => ipcRenderer.off("user-style:tool-call-done", handler);
-  },
-  onUserStyleDone: (cb: (e: { content: string; usable: boolean; error?: string }) => void) => {
-    const handler = (_: unknown, e: { content: string; usable: boolean; error?: string }) => cb(e);
-    ipcRenderer.on("user-style:done", handler);
-    return () => ipcRenderer.off("user-style:done", handler);
-  },
+  onUserStyleToken: (cb: (e: { delta: string }) => void) => onIpcEvent("user-style:token", cb),
+  onUserStyleToolCall: (cb: (e: UserStyleToolCallEvent) => void) => onIpcEvent("user-style:tool-call", cb),
+  onUserStyleToolCallDone: (cb: (e: UserStyleToolCallDoneEvent) => void) => onIpcEvent("user-style:tool-call-done", cb),
+  onUserStyleDone: (cb: (e: UserStyleDoneEvent) => void) => onIpcEvent("user-style:done", cb),
   getAgentSettings: () => invokeContract("app:getAgentSettings"),
   saveAgentSettings: (config: Record<string, unknown>) => invokeContract("app:saveAgentSettings", { config }),
   getTheme: () => invokeContract("app:getTheme"),
@@ -518,108 +356,30 @@ const api = {
 
   // ── Desktop sync (synced-folder oplog: connect folder + manual sync) ──
   sync: {
-    getFolder: () => invoke<string | null>("sync:getFolder"),
-    selectFolder: () => invoke<string | null>("sync:selectFolder"),
-    clearFolder: () => invoke<{ ok: true }>("sync:clearFolder"),
-    now: () =>
-      invoke<{
-        drained: number;
-        seeded: number;
-        peerOpsApplied: number;
-        peerOpsRead: number;
-        conflictCopies: number;
-        connected: boolean;
-      }>("sync:now"),
+    getFolder: () => invokeContract("sync:getFolder"),
+    selectFolder: () => invokeContract("sync:selectFolder"),
+    clearFolder: () => invokeContract("sync:clearFolder"),
+    now: () => invokeContract("sync:now"),
     // Current live status snapshot (state + pending/conflict counts + lastSyncAt).
-    status: () =>
-      invoke<{
-        state: "disabled" | "idle" | "syncing" | "offline";
-        pending: number;
-        conflicts: number;
-        lastSyncAt: string | null;
-        connected: boolean;
-      }>("sync:status"),
+    status: () => invokeContract("sync:status"),
     // Diagnostic: what's staged in sync_pending (entity/op/count + sample ids).
-    pendingBreakdown: () =>
-      invoke<{
-        total: number;
-        groups: { entity: string; op: string; count: number }[];
-        sampleIds: Record<string, string[]>;
-      }>("sync:pendingBreakdown"),
+    pendingBreakdown: () => invokeContract("sync:pendingBreakdown"),
     // Subscribe to pushed status transitions. Returns an unsubscribe fn.
-    onStatus: (cb: (status: {
-      state: "disabled" | "idle" | "syncing" | "offline";
-      pending: number;
-      conflicts: number;
-      lastSyncAt: string | null;
-      connected: boolean;
-    }) => void) => {
-      const handler = (_e: unknown, status: {
-        state: "disabled" | "idle" | "syncing" | "offline";
-        pending: number;
-        conflicts: number;
-        lastSyncAt: string | null;
-        connected: boolean;
-      }) => cb(status);
-      ipcRenderer.on("sync:status", handler as (event: unknown, ...args: unknown[]) => void);
-      return () => ipcRenderer.off("sync:status", handler as (event: unknown, ...args: unknown[]) => void);
-    },
+    onStatus: (cb: (status: SyncStatus) => void) => onIpcEvent("sync:status", cb),
     // Conflict copies awaiting manual resolution.
-    listConflicts: () =>
-      invoke<Array<{
-        id: string;
-        title: string;
-        content: string | null;
-        projectId: string;
-        folder: string;
-        updatedAt: string;
-        deviceId: string | null;
-        originalId: string | null;
-        original: { id: string; title: string; content: string | null; updatedAt: string } | null;
-        baseBody: string | null;
-      }>>("sync:listConflicts"),
-    resolveConflict: (
-      copyId: string,
-      action: "keepCopy" | "keepOriginal" | "keepMerged",
-      mergedContent?: string,
-    ) => invoke<{ resolvedOriginalId: string | null }>("sync:resolveConflict", { copyId, action, mergedContent }),
+    listConflicts: () => invokeContract("sync:listConflicts"),
+    resolveConflict: (copyId: string, action: ConflictResolution, mergedContent?: string) =>
+      invokeContract("sync:resolveConflict", { copyId, action, mergedContent }),
     // Recent reconcile decisions — why a row was applied, skipped or deleted.
-    activity: (limit?: number) =>
-      invoke<Array<{
-        seq: number;
-        at: string;
-        entity: string;
-        entity_id: string;
-        op: "put" | "delete";
-        hlc: string;
-        origin: string;
-        outcome: "applied" | "conflict-copy" | "delete-won" | "skipped-stale";
-        conflict_copy_id: string | null;
-        title: string | null;
-        isSelf: boolean;
-        conflict_side: "local" | "remote" | null;
-      }>>("sync:activity", { limit }),
+    activity: (limit?: number) => invokeContract("sync:activity", { limit }),
     // Notes deleted by another device that can still be restored. `total` may
     // exceed `rows.length` — never present the page size as the count.
-    listRestorable: (limit?: number) =>
-      invoke<{
-        rows: Array<{
-          entity: string;
-          entity_id: string;
-          title: string | null;
-          deleted_at: string | null;
-          delete_origin: string | null;
-        }>;
-        total: number;
-      }>("sync:listRestorable", { limit }),
-    restoreNote: (id: string) =>
-      invoke<{ restored: boolean; reason?: string; fileError?: string }>("sync:restoreNote", { id }),
+    listRestorable: (limit?: number) => invokeContract("sync:listRestorable", { limit }),
+    restoreNote: (id: string) => invokeContract("sync:restoreNote", { id }),
     // Retry the .md write for a restore whose DB half already succeeded.
-    repairNoteFile: (id: string) =>
-      invoke<{ repaired: boolean; reason?: string; fileError?: string }>("sync:repairNoteFile", { id }),
+    repairNoteFile: (id: string) => invokeContract("sync:repairNoteFile", { id }),
     // Peer devices on a different sync protocol version (behind = too old to honour deletes).
-    peerProtocols: () =>
-      invoke<Array<{ deviceId: string; version: number; behind: boolean }>>("sync:peerProtocols"),
+    peerProtocols: () => invokeContract("sync:peerProtocols"),
   },
 
   // ── AI write lock events ──────────────────────
@@ -640,7 +400,7 @@ const api = {
   },
 
   // ── Dashboard live query bridge ───────────────
-  mcpQuery: (tool: string, args: Record<string, unknown>) => invoke<unknown>("db:mcpQuery", { tool, args }),
+  mcpQuery: (tool: string, args: Record<string, unknown>) => invokeContract("db:mcpQuery", { tool, args }),
 
   // ── MCP notification badge ─────────────────────
   onMcpUnreadCount: (cb: (count: number) => void) => onIpcEvent("mcp:unread-count", cb),
@@ -656,8 +416,6 @@ const api = {
   },
 
   // ── Agent / coding sessions ───────────────────
-  // All methods go through invoke() so callers receive T directly and errors
-  // are thrown (matching every other namespace in this file).
   agent: {
     getCodingAgents: () => invokeContract("agent:getCodingAgents"),
     saveCodingAgent: (agent: CodingAgentInput) => invokeContract("agent:saveCodingAgent", agent),
@@ -746,25 +504,25 @@ const api = {
   // ── Community registry (cairn-community catalog) ──────────────
   registry: {
     /** Cache-first: instant/offline, background-revalidates. */
-    fetch: () => invoke<RegistryFetchResult>("registry:fetch"),
+    fetch: () => invokeContract("registry:fetch"),
     /** Force a network refresh (explicit Refresh button). */
-    refresh: () => invoke<RegistryFetchResult>("registry:refresh"),
+    refresh: () => invokeContract("registry:refresh"),
     /** Community AI providers (separate providers.json manifest). Cache-first. */
-    fetchProviders: () => invoke<ProvidersFetchResult>("registry:fetchProviders"),
+    fetchProviders: () => invokeContract("registry:fetchProviders"),
     /** Force a network refresh of the providers manifest. */
-    refreshProviders: () => invoke<ProvidersFetchResult>("registry:refreshProviders"),
+    refreshProviders: () => invokeContract("registry:refreshProviders"),
     /** Community automation recipes (separate automations.json manifest). Cache-first. */
-    fetchAutomations: () => invoke<AutomationsFetchResult>("registry:fetchAutomations"),
+    fetchAutomations: () => invokeContract("registry:fetchAutomations"),
     /** Force a network refresh of the automations manifest. */
-    refreshAutomations: () => invoke<AutomationsFetchResult>("registry:refreshAutomations"),
+    refreshAutomations: () => invokeContract("registry:refreshAutomations"),
     /** Community personalities (separate personalities.json manifest). Cache-first. */
-    fetchPersonalities: () => invoke<PersonalitiesFetchResult>("registry:fetchPersonalities"),
+    fetchPersonalities: () => invokeContract("registry:fetchPersonalities"),
     /** Force a network refresh of the personalities manifest. */
-    refreshPersonalities: () => invoke<PersonalitiesFetchResult>("registry:refreshPersonalities"),
+    refreshPersonalities: () => invokeContract("registry:refreshPersonalities"),
     /** Community chat themes (separate themes.json manifest). Cache-first. */
-    fetchChatThemes: () => invoke<ChatThemesFetchResult>("registry:fetchChatThemes"),
+    fetchChatThemes: () => invokeContract("registry:fetchChatThemes"),
     /** Force a network refresh of the chat themes manifest. */
-    refreshChatThemes: () => invoke<ChatThemesFetchResult>("registry:refreshChatThemes"),
+    refreshChatThemes: () => invokeContract("registry:refreshChatThemes"),
   },
 
   // ── Git operations (Agent Git tab) ────────────
@@ -875,9 +633,9 @@ const api = {
     /** Active session-local reminders (empty when the schedule overlay is off or none) */
     scheduleList: (sessionId: string) => invokeContract("session:schedule-list", { sessionId }),
     /** Workspace-persistent "Always allow" grants */
-    listApprovalGrants: (workspaceId: string) => invoke("approval-grants:list", { workspaceId }),
-    deleteApprovalGrant: (id: string) => invoke("approval-grants:delete", { id }),
-    clearApprovalGrants: (workspaceId: string) => invoke("approval-grants:clear-workspace", { workspaceId }),
+    listApprovalGrants: (workspaceId: string) => invokeContract("approval-grants:list", { workspaceId }),
+    deleteApprovalGrant: (id: string) => invokeContract("approval-grants:delete", { id }),
+    clearApprovalGrants: (workspaceId: string) => invokeContract("approval-grants:clear-workspace", { workspaceId }),
 
   },
 
@@ -925,77 +683,26 @@ const api = {
 
   // ── Embeddings (local semantic search + knowledge graph) ────
   embeddings: {
-    status: () => invoke<{
-      running: boolean;
-      port: number | null;
-      activeModelId: string | null;
-      defaultModelId: string | null;
-      installed: boolean;
-      error: string | null;
-      reindexInProgress: boolean;
-      recomputeInProgress: boolean;
-      lastReindexDone: number;
-      lastReindexTotal: number;
-      lastRecomputeDone: number;
-      lastRecomputeTotal: number;
-    }>("embeddings:status"),
-    stop: () => invoke<void>("embeddings:stop"),
-    needsReindex: () => invoke<{ needed: boolean; reason: string | null }>("embeddings:needsReindex"),
-    projections: (workspaceId: string) => invoke<{
-      rows: Array<{ noteId: string; dimX: number; dimY: number; projStale: number; embeddedAt: string; model: string }>;
-      anyStale: boolean;
-      model: string;
-    }>("embeddings:projections", { workspaceId }),
-    reindex: (workspaceId: string, noteIds?: string[], model?: string) => invoke<{
-      indexed: number;
-      skipped: number;
-      total: number;
-    }>("db:embeddings:reindex", { workspaceId, noteIds, model }),
+    status: () => invokeContract("embeddings:status"),
+    stop: () => invokeContract("embeddings:stop"),
+    needsReindex: () => invokeContract("embeddings:needsReindex"),
+    projections: (workspaceId: string) => invokeContract("embeddings:projections", { workspaceId }),
+    reindex: (workspaceId: string, noteIds?: string[], model?: string) =>
+      invokeContract("db:embeddings:reindex", { workspaceId, noteIds, model }),
     search: (workspaceId: string, queryText: string, opts?: {
       queryNoteId?: string;
       k?: number;
       excludeIds?: string[];
       model?: string;
-    }) => invoke<Array<{ noteId: string; title: string; score: number; sectionTitle: string }>>(
-      "db:embeddings:search",
-      { workspaceId, queryText, ...opts },
-    ),
-    recomputeProjections: (workspaceId: string, model?: string) => invoke<{
-      projected: number;
-      total: number;
-    }>("db:embeddings:recomputeProjections", { workspaceId, model }),
+    }) => invokeContract("db:embeddings:search", { workspaceId, queryText, ...opts }),
+    recomputeProjections: (workspaceId: string, model?: string) =>
+      invokeContract("db:embeddings:recomputeProjections", { workspaceId, model }),
     models: {
-      list: () => invoke<Array<{
-        id: string;
-        name: string;
-        repo: string;
-        dim: number;
-        maxTokens: number;
-        sizeBytes: number;
-        status: "not_downloaded" | "downloading" | "installed" | "error";
-        downloadProgress: number;
-        downloadSpeed?: string;
-        error?: string;
-      }>>("embeddings:models:list"),
-      install: (modelId: string) => invoke<{ ok: boolean }>("embeddings:models:install", { modelId }),
-      remove: (modelId: string) => invoke<{ ok: boolean }>("embeddings:models:remove", { modelId }),
-      setDefault: (modelId: string) => invoke<{ ok: boolean }>("embeddings:models:setDefault", { modelId }),
-      onProgress: (cb: (e: {
-        modelId: string;
-        status: string;
-        file?: string;
-        progress?: number;
-        loaded?: number;
-        total?: number;
-        error?: string;
-      }) => void) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const handler = (_: any, e: any) => cb(e);
-        ipcRenderer.on("embeddings:download-progress", handler);
-        return () => {
-          ipcRenderer.off("embeddings:download-progress", handler);
-        };
-      },
+      list: () => invokeContract("embeddings:models:list"),
+      install: (modelId: string) => invokeContract("embeddings:models:install", { modelId }),
+      remove: (modelId: string) => invokeContract("embeddings:models:remove", { modelId }),
+      setDefault: (modelId: string) => invokeContract("embeddings:models:setDefault", { modelId }),
+      onProgress: (cb: (e: EmbeddingDownloadProgress) => void) => onIpcEvent("embeddings:download-progress", cb),
     },
     getSettings: () => invokeContract("app:getEmbeddingsSettings"),
     saveSettings: (config: { enabled?: boolean; modelId?: string }) => invokeContract("app:saveEmbeddingsSettings", { config }),
@@ -1004,145 +711,51 @@ const api = {
   // LLM inference is user-provided: point a saved provider at Ollama,
   // LM Studio, or any OpenAI-compatible local server.
   runtime: {
-    status: () => invoke<{
-      embeddings: { healthy: boolean; model: string | null; loaded: boolean };
-    }>("runtime:status"),
-    stop: () => invoke<{ ok: boolean }>("runtime:stop"),
+    status: () => invokeContract("runtime:status"),
+    stop: () => invokeContract("runtime:stop"),
     /** List dsh registry commands (name + description) — palette source. */
     listCommands: () => invokeContract("cordis:listCommands"),
     /** Execute a dsh registry command (/plan, /compact, …) on a session's agent. */
-    executeCommand: (req: { sessionId: string; line: string }) => invoke<{ kind?: string; text?: string }>(
-      "cordis:executeCommand", req
-    ),
+    executeCommand: (req: { sessionId: string; line: string }) => invokeContract("cordis:executeCommand", req),
     /** Assemble the real dsh system prompt (Cordis engine) + breakdown. */
-    systemPromptPreview: (req: { cwd?: string; projectName?: string }) => invoke<{
-      text: string;
-      sections: Array<{ name: string; order: number; text: string; index: number }>;
-      contexts: Array<{ name: string; order: number; text: string }>;
-      skills: Array<{ name: string; description: string }>;
-      tools: Array<{ name: string; description?: string }>;
-      variables: Record<string, string | undefined>;
-      cairnSystemLive?: boolean;
-      error?: string;
-    }>("runtime:systemPrompt:preview", req),
+    systemPromptPreview: (req: { cwd?: string; projectName?: string }) =>
+      invokeContract("runtime:systemPrompt:preview", req),
     /** The coding agent's plain-string system prompt (board-tracking workflow). */
-    codingPromptPreview: (req: { cwd?: string; projectName?: string; taskTitle?: string }) => invoke<{
-      text: string;
-      error?: string;
-    }>("runtime:codingPrompt:preview", req),
+    codingPromptPreview: (req: { cwd?: string; projectName?: string; taskTitle?: string }) =>
+      invokeContract("runtime:codingPrompt:preview", req),
     /** Per-surface tool inventory (chat/coding/automation-dev/mcp + live global tools). */
-    toolsInventory: () => invoke<{
-      surfaces: Record<string, Array<{ name: string; description: string; category: string; source: string; gated?: boolean }>> | null;
-      error?: string;
-    }>("runtime:tools:inventory"),
-    onProgress: (cb: (e: {
-      modelId: string;
-      status: string;
-      file?: string;
-      progress?: number;
-      loaded?: number;
-      total?: number;
-    }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("runtime:download-progress", handler);
-      return () => {
-        ipcRenderer.off("runtime:download-progress", handler);
-      };
-    },
+    toolsInventory: () => invokeContract("runtime:tools:inventory"),
+    onProgress: (cb: (e: EmbeddingDownloadProgress) => void) => onIpcEvent("runtime:download-progress", cb),
     embeddings: {
-      status: () => invoke<{
-        running: boolean;
-        port: number | null;
-        activeModelId: string | null;
-        defaultModelId: string | null;
-        installed: boolean;
-        error: string | null;
-        reindexInProgress: boolean;
-        recomputeInProgress: boolean;
-        lastReindexDone: number;
-        lastReindexTotal: number;
-        lastRecomputeDone: number;
-        lastRecomputeTotal: number;
-      }>("runtime:embeddings:status"),
-      ensureStarted: () => invoke<{ ok: boolean }>("runtime:embeddings:ensureStarted"),
-      models: () => invoke<{ models: Array<Record<string, unknown>> }>("runtime:embeddings:models"),
-      install: (modelId: string) => invoke<{ ok: boolean }>("runtime:embeddings:install", { modelId }),
-      remove: (modelId: string) => invoke<{ ok: boolean }>("runtime:embeddings:remove", { modelId }),
-      setDefault: (modelId: string) => invoke<{ ok: boolean }>("runtime:embeddings:setDefault", { modelId }),
-      onProgress: (cb: (e: {
-        modelId: string;
-        status: string;
-        file?: string;
-        progress?: number;
-        loaded?: number;
-        total?: number;
-        error?: string;
-      }) => void) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const handler = (_: any, e: any) => cb(e);
-        ipcRenderer.on("runtime:download-progress", handler);
-        return () => {
-          ipcRenderer.off("runtime:download-progress", handler);
-        };
-      },
+      status: () => invokeContract("runtime:embeddings:status"),
+      ensureStarted: () => invokeContract("runtime:embeddings:ensureStarted"),
+      models: () => invokeContract("runtime:embeddings:models"),
+      install: (modelId: string) => invokeContract("runtime:embeddings:install", { modelId }),
+      remove: (modelId: string) => invokeContract("runtime:embeddings:remove", { modelId }),
+      setDefault: (modelId: string) => invokeContract("runtime:embeddings:setDefault", { modelId }),
+      onProgress: (cb: (e: EmbeddingDownloadProgress) => void) => onIpcEvent("runtime:download-progress", cb),
     },
   },
   // ── Mobile Access ────────────────────────────────
   mobile: {
-    status: () => invoke<{
-      running: boolean;
-      url: string;
-      qrCode: string;
-      pin: string;
-    }>("mobile:status"),
-    saveSettings: (newSettings: Record<string, unknown>) => invoke<{
-      running: boolean;
-      url: string;
-      qrCode: string;
-      pin: string;
-    }>("mobile:saveSettings", newSettings),
-    regeneratePin: () => invoke<{
-      running: boolean;
-      url: string;
-      qrCode: string;
-      pin: string;
-    }>("mobile:regeneratePin"),
-    onStatusChanged: (cb: (status: {
-      running: boolean;
-      url: string;
-      qrCode: string;
-      pin: string;
-    }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, status: any) => cb(status);
-      ipcRenderer.on("mobile:status-changed", handler);
-      return () => ipcRenderer.off("mobile:status-changed", handler);
-    }
+    status: () => invokeContract("mobile:status"),
+    saveSettings: (newSettings: Record<string, unknown>) => invokeContract("mobile:saveSettings", newSettings),
+    regeneratePin: () => invokeContract("mobile:regeneratePin"),
+    onStatusChanged: (cb: (status: MobileStatus) => void) => onIpcEvent("mobile:status-changed", cb),
   },
   /** UI plugins (dev-gated): pull renderer-side plugin sources + live-change events. */
   plugins: {
-    listUi: () => invoke<Array<{ id: string; source: string }>>("plugins:listUi"),
-    onUiChanged: (cb: () => void) => {
-      const handler = () => cb();
-      ipcRenderer.on("plugins:ui-changed", handler);
-      return () => ipcRenderer.off("plugins:ui-changed", handler);
-    },
+    listUi: () => invokeContract("plugins:listUi"),
+    onUiChanged: (cb: () => void) => onIpcEvent("plugins:ui-changed", cb),
     /** Settings section: full manifest (enabled + disabled), toggle, open folder. */
-    list: () => invoke<{
-      devEnabled: boolean;
-      root: string;
-      plugins: Array<{ id: string; kind: "ui" | "backend" | "both"; name: string | null; ui: string | null; source: string | null; disabled: boolean }>;
-    }>("plugins:list"),
-    setEnabled: (id: string, enabled: boolean) => invoke<{ ok: boolean }>("plugins:setEnabled", { id, enabled }),
-    openFolder: () => invoke<{ ok: boolean }>("plugins:openFolder"),
+    list: () => invokeContract("plugins:list"),
+    setEnabled: (id: string, enabled: boolean) => invokeContract("plugins:setEnabled", { id, enabled }),
+    openFolder: () => invokeContract("plugins:openFolder"),
     /** Install from a spec (github:owner/repo | owner/repo | local path). Dev-gated. */
-    install: (spec: string) =>
-      invoke<{ id: string; name: string | null; ui: string | null; kind: "ui" | "backend" | "both" }>("plugins:install", { spec }),
+    install: (spec: string) => invokeContract("plugins:install", { spec }),
     /** Update an installed plugin by re-running its recorded source spec. Dev-gated. */
-    update: (id: string) =>
-      invoke<{ id: string; name: string | null; ui: string | null; kind: "ui" | "backend" | "both" }>("plugins:update", { id }),
-    uninstall: (id: string) => invoke<{ ok: boolean }>("plugins:uninstall", { id }),
+    update: (id: string) => invokeContract("plugins:update", { id }),
+    uninstall: (id: string) => invokeContract("plugins:uninstall", { id }),
   }
 } as const;
 

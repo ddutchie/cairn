@@ -6,28 +6,16 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { getKnowledgeGraph, getNeighbours, computeAutoRelationships } from "../db/graph-queries";
-import type { GraphFilters, EdgeType } from "../db/graph-queries";
 
 export function registerGraphHandlers(ctx: DbContext): void {
-  registerIpcHandle("db:graph:get", (_e, args: {
-    workspaceId: string;
-    filters?: GraphFilters;
-  }) => handle(() => getKnowledgeGraph(ctx.db, args.workspaceId, args.filters ?? {})));
+  registerContractHandle("db:graph:get", (_e, args) => handle(() => getKnowledgeGraph(ctx.db, args.workspaceId, args.filters ?? {})));
 
-  registerIpcHandle("db:graph:neighbors", (_e, args: {
-    workspaceId: string;
-    nodeId: string;
-    depth?: number;
-    edgeTypes?: EdgeType[];
-  }) => handle(() => getNeighbours(ctx.db, args.workspaceId, args.nodeId, args.depth ?? 1, args.edgeTypes)));
+  registerContractHandle("db:graph:neighbors", (_e, args) => handle(() => getNeighbours(ctx.db, args.workspaceId, args.nodeId, args.depth ?? 1, args.edgeTypes)));
 
-  registerIpcHandle("db:graph:recompute", (_e, args: {
-    workspaceId: string;
-    entityIds?: string[];
-  }) => handle(() => {
+  registerContractHandle("db:graph:recompute", (_e, args) => handle(() => {
     computeAutoRelationships(ctx.db, args.workspaceId, args.entityIds);
     return { ok: true };
   }));
