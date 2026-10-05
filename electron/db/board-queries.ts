@@ -69,11 +69,26 @@ export function getCards(db: Database.Database, opts?: { projectId?: string; col
   return rows.map((row) => toCard(row as DbRow));
 }
 
+/**
+ * A card's column must belong to the card's own project; otherwise the card
+ * is filed under one project but sits in another's column, and neither board
+ * shows it. Cross-project moves go through moveCardToProject.
+ */
+function assertColumnInProject(db: Database.Database, columnId: string, projectId: string): void {
+  const col = db.prepare("SELECT project_id FROM board_columns WHERE id = ? AND deleted_at IS NULL").get(columnId) as
+    | { project_id: string } | undefined;
+  if (!col) throw new Error(`Column not found: ${columnId}`);
+  if (col.project_id !== projectId) {
+    throw new Error(`Column ${columnId} belongs to a different project than the card; move the card to that project instead`);
+  }
+}
+
 export function createCard(db: Database.Database, c: {
   id: string; columnId: string; projectId: string; workspaceId: string;
   title: string; description?: string; priority?: string; dueDate?: string;
   order?: number; tagIds?: string[]; assignee?: string;
 }) {
+  assertColumnInProject(db, c.columnId, c.projectId);
   const now = ts();
   const tagIds = JSON.stringify(c.tagIds ?? []);
   db.prepare(`
@@ -92,6 +107,10 @@ export function updateCard(db: Database.Database, id: string, patch: Partial<{
   dueDate: string; tagIds: string[]; linkedNoteIds: string[]; blockedByIds: string[];
   order: number; assignee: string | null; archivedAt: string;
 }>) {
+  if (patch.columnId) {
+    const card = db.prepare("SELECT project_id FROM task_cards WHERE id = ?").get(id) as { project_id: string } | undefined;
+    if (card) assertColumnInProject(db, patch.columnId, card.project_id);
+  }
   const now = ts();
   // assignee uses CASE WHEN instead of COALESCE so it can be explicitly cleared to NULL.
   // Pass (1, null) when explicitly setting assignee; pass (0, null) when not touching it.
