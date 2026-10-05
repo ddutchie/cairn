@@ -7,17 +7,17 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle, sendIpcEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { checkMigrations, runMigration } from "../migrations";
 import { pauseFileWatcher, resumeFileWatcher } from "../file-watcher";
 
 export function registerMigrationHandlers(ctx: DbContext): void {
-  registerIpcHandle("app:checkMigrations", () => handle(() =>
+  registerContractHandle("app:checkMigrations", () => handle(() =>
     checkMigrations(ctx.workspacePath)
   ));
 
-  registerIpcHandle("app:runMigration", (_e, { migrationId }: { migrationId: string }) =>
+  registerContractHandle("app:runMigration", (_e, { migrationId }) =>
     handle(async () => {
       pauseFileWatcher();
       try {
@@ -25,7 +25,7 @@ export function registerMigrationHandlers(ctx: DbContext): void {
           // Send progress events to the renderer
           const activeWin = ctx.getWin();
           if (activeWin && !activeWin.isDestroyed()) {
-            activeWin.webContents.send("app:migrationProgress", { migrationId, pct, msg });
+            sendIpcEvent(activeWin.webContents, "app:migrationProgress", { migrationId, pct, msg });
           }
         });
         return { ok: true };

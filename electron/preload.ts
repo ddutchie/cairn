@@ -24,6 +24,7 @@ import type { ChatThreadUpsertInput } from "../shared/types/chat";
 import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 import type { CustomServiceConfig, McpServerConfig, SecretToolType, ToolAttachment } from "../shared/types/tools";
+import type { AiEndpoint, AiRequestConfig, MigrationProgress, ModelPrice, UpdateAvailableInfo } from "../shared/types/app";
 
 // ── User writing style (persona + full guide + cheat sheet) ──────────────────
 interface UserStylePersona {
@@ -410,23 +411,15 @@ const api = {
 
   // ── AI helpers ────────────────────────────────
   ai: {
-    generatePrd: (args: unknown) => invoke<{ id: string; title: string; projectId: string }>("ai:generatePrd", args),
-    generateCommitMessage: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
-      invoke<{ subject: string; body: string }>("ai:generateCommitMessage", args),
-    generatePrDescription: (args: { diff: string; config: { baseUrl: string; model: string; apiKey: string }; template?: string }) =>
-      invoke<{ title: string; description: string }>("ai:generatePrDescription", args),
-    explainArchitecture: (args: { summary: string; config: { baseUrl: string; model: string; apiKey: string } }) =>
-      invoke<{ overview: string; modules: string }>("ai:explainArchitecture", args),
-    fetchModels: (args: { baseUrl?: string; apiKey?: string }) =>
-      invoke<string[]>("ai:fetchModels", args),
-    fetchKeyInfo: (args: { baseUrl?: string; apiKey?: string }) =>
-      invoke<{
-        remaining: number | null;
-        usage: number | null;
-        limit: number | null;
-        isFreeTier: boolean | null;
-        currency: "USD" | "CNY";
-      } | null>("ai:fetchKeyInfo", args),
+    generatePrd: (args: IpcArgs<"ai:generatePrd">[0]) => invokeContract("ai:generatePrd", args),
+    generateCommitMessage: (args: { diff: string; config: AiRequestConfig }) =>
+      invokeContract("ai:generateCommitMessage", args),
+    generatePrDescription: (args: { diff: string; config: AiRequestConfig; template?: string }) =>
+      invokeContract("ai:generatePrDescription", args),
+    explainArchitecture: (args: { summary: string; config: AiRequestConfig }) =>
+      invokeContract("ai:explainArchitecture", args),
+    fetchModels: (args: AiEndpoint) => invokeContract("ai:fetchModels", args),
+    fetchKeyInfo: (args: AiEndpoint) => invokeContract("ai:fetchKeyInfo", args),
   },
 
   // ── Usage statistics (LLM/agent usage log) ─────
@@ -441,29 +434,25 @@ const api = {
     clear: (args: { workspaceId?: string }) =>
       invoke<{ deleted: number; ok: boolean }>("usage:clear", args),
     /** Push the models.dev per-1M pricing map (used for cost estimation). */
-    setPricing: (map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }>) =>
-      invoke<{ ok: boolean }>("app:modelPricing", map),
+    setPricing: (map: Record<string, ModelPrice>) => invokeContract("app:modelPricing", map),
     /** Push model ids that declare they don't support temperature control. */
-    setNoTemperatureModels: (ids: string[]) =>
-      invoke<{ ok: boolean }>("app:noTemperatureModels", ids),
+    setNoTemperatureModels: (ids: string[]) => invokeContract("app:noTemperatureModels", ids),
   },
 
   // ── App paths ─────────────────────────────────
-  mcpServerPath: () => invoke<string>("app:mcpServerPath"),
-  latestChangelog: () => invoke<string | null>("app:latestChangelog"),
+  mcpServerPath: () => invokeContract("app:mcpServerPath"),
+  latestChangelog: () => invokeContract("app:latestChangelog"),
 
   // ── Reveal note in Finder / Explorer ─────────
-  revealNote: (noteId: string, projectId: string) => invoke("app:revealNote", { noteId, projectId }),
+  revealNote: (noteId: string, projectId: string) => invokeContract("app:revealNote", { noteId, projectId }),
 
   // ── Export note as PDF ────────────────────────
   exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean; theme?: "light" | "dark"; fontFamily?: string }) =>
-    invoke<{ filePath?: string; pdfBase64?: string } | null>("app:exportNotePdf", { title, html, options }),
+    invokeContract("app:exportNotePdf", { title, html, options }),
 
   // ── Export note / project as Markdown ─────────
   exportMarkdown: (kind: "note" | "project", id: string, options?: { returnText?: boolean }) =>
-    invoke<{ filePath?: string; markdown?: string; title?: string } | null>(
-      "app:exportMarkdown", { kind, id, returnText: options?.returnText },
-    ),
+    invokeContract("app:exportMarkdown", { kind, id, returnText: options?.returnText }),
 
   // ── Open a URL in the system default browser ──
   openExternal: (url: string) => ipcRenderer.send("app:openExternal", url),
@@ -471,29 +460,30 @@ const api = {
   // ── Asset upload (pasted images) ──────────────
   // data is an ArrayBuffer — Electron's structured-clone transfers it
   // natively without serialising to a JSON number array.
-  uploadAsset: (filename: string, data: ArrayBuffer) =>
-    invoke<{ assetUrl: string }>("app:uploadAsset", { filename, data }),
-  revealAssets: () => invoke("app:revealAssets"),
+  uploadAsset: (filename: string, data: ArrayBuffer) => invokeContract("app:uploadAsset", { filename, data }),
+  revealAssets: () => invokeContract("app:revealAssets"),
   /** Orphaned GGUFs/binaries from the retired built-in engine (Settings → Data). */
-  llmLeftovers: () => invoke<{ bytes: number; files: Array<{ name: string; bytes: number }> }>("app:llmLeftovers"),
-  clearLlmLeftovers: () => invoke<{ reclaimedBytes: number }>("app:clearLlmLeftovers"),
+  llmLeftovers: () => invokeContract("app:llmLeftovers"),
+  clearLlmLeftovers: () => invokeContract("app:clearLlmLeftovers"),
 
   // ── Workspace folder ──────────────────────────
-  selectWorkspaceFolder: () => invoke<string | null>("app:selectWorkspaceFolder"),
-  getWorkspacePath: () => invoke<string | null>("app:getWorkspacePath"),
-  needsWorkspaceSetup: () => invoke<boolean>("app:needsWorkspaceSetup"),
+  selectWorkspaceFolder: () => invokeContract("app:selectWorkspaceFolder"),
+  getWorkspacePath: () => invokeContract("app:getWorkspacePath"),
+  needsWorkspaceSetup: () => invokeContract("app:needsWorkspaceSetup"),
   /** True when running unpackaged — gates dev-only UI (MCP dsh-path toggle). */
-  isDev: () => invoke<boolean>("app:isDev"),
-  setTheme: (theme: string) => invoke("app:setTheme", theme),
-  setAccent: (accent: string) => invoke("app:setAccent", accent),
-  initWorkspace: (workspacePath: string, excludedFolders?: string[]) => invoke<{ ok: true }>("app:initWorkspace", { workspacePath, excludedFolders }),
-  rescanWorkspace: (workspaceId?: string, excludedFolders?: string[]) => invoke<{ projectsCreated: number; createdProjects: { id: string; name: string; noteCount: number }[] }>("app:rescanWorkspace", { workspaceId, excludedFolders }),
-  rollbackImport: (projectIds: string[]) => invoke<{ removedNotes: number; ok: boolean }>("app:rollbackImport", { projectIds }),
-  probeWorkspaceFolder: (folder: string) => invoke<{ isObsidianVault: boolean; vaultName: string; noteCount: number; skippedCount: number; projects: { name: string; noteCount: number; root: boolean; projectKey: string }[]; excludedFolders: string[] }>("app:probeWorkspaceFolder", { folder }),
-  relaunch: () => invoke("app:relaunch"),
-  resetAllData: () => invoke("app:reset"),
-  getAiSettings: () => invoke<Record<string, unknown> | null>("app:getAiSettings"),
-  saveAiSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAiSettings", { config }),
+  isDev: () => invokeContract("app:isDev"),
+  setTheme: (theme: string) => invokeContract("app:setTheme", theme),
+  setAccent: (accent: string) => invokeContract("app:setAccent", accent),
+  initWorkspace: (workspacePath: string, excludedFolders?: string[]) =>
+    invokeContract("app:initWorkspace", { workspacePath, excludedFolders }),
+  rescanWorkspace: (workspaceId?: string, excludedFolders?: string[]) =>
+    invokeContract("app:rescanWorkspace", { workspaceId, excludedFolders }),
+  rollbackImport: (projectIds: string[]) => invokeContract("app:rollbackImport", { projectIds }),
+  probeWorkspaceFolder: (folder: string) => invokeContract("app:probeWorkspaceFolder", { folder }),
+  relaunch: () => invokeContract("app:relaunch"),
+  resetAllData: () => invokeContract("app:reset"),
+  getAiSettings: () => invokeContract("app:getAiSettings"),
+  saveAiSettings: (config: Record<string, unknown>) => invokeContract("app:saveAiSettings", { config }),
   // User writing style (persona + full guide + cheat sheet) — Settings → Writing Style.
   getUserStyle: () => invoke<UserStyleRow | null>("user-style:get"),
   saveUserStyle: (input: UserStyleSaveInput) => invoke<UserStyleRow>("user-style:save", { input }),
@@ -531,45 +521,27 @@ const api = {
     ipcRenderer.on("user-style:done", handler);
     return () => ipcRenderer.off("user-style:done", handler);
   },
-  getAgentSettings: () => invoke<Record<string, unknown> | null>("app:getAgentSettings"),
-  saveAgentSettings: (config: Record<string, unknown>) => invoke<{ ok: true }>("app:saveAgentSettings", { config }),
-  getTheme: () => invoke<string | null>("app:getTheme"),
-  saveTheme: (theme: string) => invoke<{ ok: true }>("app:saveTheme", { theme }),
-  getFontScale: () => invoke<number | null>("app:getFontScale"),
-  saveFontScale: (fontScale: number) => invoke<{ ok: true }>("app:saveFontScale", { fontScale }),
+  getAgentSettings: () => invokeContract("app:getAgentSettings"),
+  saveAgentSettings: (config: Record<string, unknown>) => invokeContract("app:saveAgentSettings", { config }),
+  getTheme: () => invokeContract("app:getTheme"),
+  saveTheme: (theme: string) => invokeContract("app:saveTheme", { theme }),
+  getFontScale: () => invokeContract("app:getFontScale"),
+  saveFontScale: (fontScale: number) => invokeContract("app:saveFontScale", { fontScale }),
   platform: process.platform as "darwin" | "win32" | "linux",
 
   /** Global quick-capture shortcut / tray item fired — open the capture dialog. */
-  onQuickCapture: (cb: () => void) => {
-    const handler = () => cb();
-    ipcRenderer.on("app:quick-capture", handler);
-    return () => { ipcRenderer.off("app:quick-capture", handler); };
-  },
+  onQuickCapture: (cb: () => void) => onIpcEvent("app:quick-capture", cb),
 
   // ── Migrations ────────────────────────────────
-  checkMigrations: () => invoke<Array<{ id: string; title: string; description: string; needed: boolean }>>("app:checkMigrations"),
-  runMigration: (migrationId: string) => invoke<{ ok: true }>("app:runMigration", { migrationId }),
-  onMigrationProgress: (cb: (e: { migrationId: string; pct: number; msg: string }) => void) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = (_: any, e: { migrationId: string; pct: number; msg: string }) => cb(e);
-    ipcRenderer.on("app:migrationProgress", handler);
-    return () => ipcRenderer.off("app:migrationProgress", handler);
-  },
+  checkMigrations: () => invokeContract("app:checkMigrations"),
+  runMigration: (migrationId: string) => invokeContract("app:runMigration", { migrationId }),
+  onMigrationProgress: (cb: (e: MigrationProgress) => void) => onIpcEvent("app:migrationProgress", cb),
 
   // ── Auto-updater ──────────────────────────────
   updater: {
-    onUpdateAvailable: (cb: (info: { version: string; releaseNotes: string | null }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, info: { version: string; releaseNotes: string | null }) => cb(info);
-      ipcRenderer.on("updater:update-available", handler);
-      return () => ipcRenderer.off("updater:update-available", handler);
-    },
-    onUpdateDownloaded: (cb: () => void) => {
-      const handler = () => cb();
-      ipcRenderer.on("updater:update-downloaded", handler);
-      return () => ipcRenderer.off("updater:update-downloaded", handler);
-    },
-    install: () => ipcRenderer.invoke("updater:install"),
+    onUpdateAvailable: (cb: (info: UpdateAvailableInfo) => void) => onIpcEvent("updater:update-available", cb),
+    onUpdateDownloaded: (cb: () => void) => onIpcEvent("updater:update-downloaded", cb),
+    install: () => invokeContract("updater:install"),
   },
 
   // ── DB change notifications (from MCP writes) ─
@@ -1088,11 +1060,8 @@ const api = {
         };
       },
     },
-    getSettings: () => invoke<{ enabled?: boolean; modelId?: string } | null>("app:getEmbeddingsSettings"),
-    saveSettings: (config: { enabled?: boolean; modelId?: string }) => invoke<{ ok: boolean }>(
-      "app:saveEmbeddingsSettings",
-      { config },
-    ),
+    getSettings: () => invokeContract("app:getEmbeddingsSettings"),
+    saveSettings: (config: { enabled?: boolean; modelId?: string }) => invokeContract("app:saveEmbeddingsSettings", { config }),
   },
   // ── Unified Runtime (local embeddings for semantic search) ───────────
   // LLM inference is user-provided: point a saved provider at Ollama,

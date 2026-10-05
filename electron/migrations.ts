@@ -29,12 +29,8 @@ export interface Migration {
   run: (workspacePath: string, onProgress: (pct: number, msg: string) => void) => Promise<void>;
 }
 
-export interface MigrationStatus {
-  id: string;
-  title: string;
-  description: string;
-  needed: boolean;
-}
+export type { MigrationStatus } from "../shared/types/app";
+import type { MigrationStatus } from "../shared/types/app";
 
 // ── Tracking ──────────────────────────────────────────────────────────────
 

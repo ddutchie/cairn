@@ -97,7 +97,7 @@ export function registerAppHandlers(
   onBadgeClear?: () => void,
 ): void {
   // ── Workspace folder selection / setup ────────────
-  registerIpcHandle("app:selectWorkspaceFolder", async () => {
+  registerContractHandle("app:selectWorkspaceFolder", async () => {
     return handle(async () => {
       const result = await dialog.showOpenDialog({
         // title renders on all platforms; message is macOS-only and silently ignored on Windows
@@ -110,17 +110,17 @@ export function registerAppHandlers(
     });
   });
 
-  registerIpcHandle("app:getWorkspacePath", () => handle(() =>
+  registerContractHandle("app:getWorkspacePath", () => handle(() =>
     readWorkspaceConfig(userDataPath)?.workspacePath ?? null
   ));
 
-  registerIpcHandle("app:needsWorkspaceSetup", () => handle(() =>
+  registerContractHandle("app:needsWorkspaceSetup", () => handle(() =>
     readWorkspaceConfig(userDataPath) === null
   ));
 
   // Dev-mode flag for dev-gated UI (MCP dsh-path spike toggle). True when
   // running unpackaged (local dev / dev build); always false in the release.
-  registerIpcHandle("app:isDev", () => handle(() => !app.isPackaged));
+  registerContractHandle("app:isDev", () => handle(() => !app.isPackaged));
 
   // Merge a partial update into theme.json without clobbering the other keys.
   // theme.json holds BOTH `theme` and `accent` so the boot splash can restore
@@ -137,7 +137,7 @@ export function registerAppHandlers(
     fs.writeFileSync(themeFile, JSON.stringify({ ...existing, ...patch }), "utf8");
   };
 
-  registerIpcHandle("app:setTheme", (_e, theme: string) => handle(() => {
+  registerContractHandle("app:setTheme", (_e, theme) => handle(() => {
     mergeThemeFile({ theme });
     // On Windows, update the native title bar overlay to match the new theme.
     // Use --surface values (not backgroundColor) to match TitleBar's bg-[var(--surface)].
@@ -151,13 +151,13 @@ export function registerAppHandlers(
     }
   }));
 
-  registerIpcHandle("app:setAccent", (_e, accent: string) => handle(() => {
+  registerContractHandle("app:setAccent", (_e, accent) => handle(() => {
     // Persist the accent id alongside the theme so the next boot's splash can
     // render the right accent. Merge into the existing theme.json.
     mergeThemeFile({ accent });
   }));
 
-  registerIpcHandle("app:initWorkspace", (_e, { workspacePath: newPath, excludedFolders }: { workspacePath: string; excludedFolders?: string[] }) => handle(async () => {
+  registerContractHandle("app:initWorkspace", (_e, { workspacePath: newPath, excludedFolders }) => handle(async () => {
     // Complete the filesystem setup BEFORE persisting the workspace path: if
     // mkdir / exclusion config / re-init fails, the old workspace stays the
     // active one rather than committing a half-initialised path.
@@ -181,7 +181,7 @@ export function registerAppHandlers(
   // discovered projects attach to it — the caller (onboarding) knows the id of
   // the workspace it just created. When omitted, importVaultProjects falls back
   // to the oldest workspace.
-  registerIpcHandle("app:rescanWorkspace", (_e, { workspaceId, excludedFolders }: { workspaceId?: string; excludedFolders?: string[] } = {}) => handle(() => {
+  registerContractHandle("app:rescanWorkspace", (_e, { workspaceId, excludedFolders }: { workspaceId?: string; excludedFolders?: string[] } = {}) => handle(() => {
     if (Array.isArray(excludedFolders)) saveImportExclusions(ctx.workspacePath, excludedFolders);
     // Snapshot the live project ids BEFORE the scan so we can report exactly
     // which projects the import newly created (for the onboarding summary).
@@ -223,7 +223,7 @@ export function registerAppHandlers(
   // tombstoning them to sync peers, strip Cairn frontmatter from the adopted
   // files (preserving the user's own), and mark the vault un-managed so nothing
   // is re-adopted. Offered on the rescan result, immediately after import.
-  registerIpcHandle("app:rollbackImport", (_e, { projectIds }: { projectIds?: string[] } = {}) => handle(() => {
+  registerContractHandle("app:rollbackImport", (_e, { projectIds }: { projectIds?: string[] } = {}) => handle(() => {
     const removedNotes = rollbackImport(ctx.db, ctx.workspacePath, projectIds ?? []);
     const activeWin = ctx.getWin();
     if (activeWin && !activeWin.isDestroyed()) {
@@ -234,7 +234,7 @@ export function registerAppHandlers(
 
   // Read-only recursive preview of a folder before onboarding adopts it. No
   // frontmatter or config is written until rescanWorkspace is confirmed.
-  registerIpcHandle("app:probeWorkspaceFolder", (_e, { folder }: { folder: string }) => handle(() => {
+  registerContractHandle("app:probeWorkspaceFolder", (_e, { folder }) => handle(() => {
     // A blank/non-string folder must not reach previewVaultImport — its
     // path.join("", ".obsidian") would resolve against the process CWD and could
     // misreport an unrelated directory as a vault. Return a literal empty preview.
@@ -245,7 +245,7 @@ export function registerAppHandlers(
   }));
 
   // ── App paths (for MCP config generation) ─────────
-  registerIpcHandle("app:mcpServerPath", () => handle(() => {
+  registerContractHandle("app:mcpServerPath", () => handle(() => {
     const appPath = app.getAppPath();
     const unpackedPath = appPath.replace(/\.asar$/, ".asar.unpacked");
     // Every packaged app ships exactly ONE MCP binary for its arch, named
@@ -258,7 +258,7 @@ export function registerAppHandlers(
   }));
 
   // ── Latest changelog ───────────────────────────────
-  registerIpcHandle("app:latestChangelog", () => handle(() => {
+  registerContractHandle("app:latestChangelog", () => handle(() => {
     // In dev, app.getAppPath() points to dist-electron/ — walk up to repo root instead.
     // In packaged builds, changelogs/ is bundled inside the asar alongside dist-electron/.
     const changelogsDir = app.isPackaged
@@ -279,7 +279,7 @@ export function registerAppHandlers(
   }));
 
   // ── Reset all data — wipe every table then relaunch ──────────────────────
-  registerIpcHandle("app:reset", () => handle(() => {
+  registerContractHandle("app:reset", () => handle(() => {
     const tables = ["chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
     for (const t of tables) {
       ctx.db.prepare(`DELETE FROM ${t}`).run();
@@ -289,13 +289,13 @@ export function registerAppHandlers(
   }));
 
   // ── Relaunch (used after workspace init to re-open DB at correct path) ──
-  registerIpcHandle("app:relaunch", () => handle(() => {
+  registerContractHandle("app:relaunch", () => handle(() => {
     app.relaunch();
     app.quit();
   }));
 
   // ── Auto-updater install ───────────────────────────
-  registerIpcHandle("updater:install", () => handle(() => {
+  registerContractHandle("updater:install", () => handle(() => {
     // Dynamically require to avoid issues in dev where autoUpdater isn't active.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { autoUpdater } = require("electron-updater");

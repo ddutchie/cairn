@@ -10,23 +10,16 @@
 
 import { dialog } from "electron";
 import fs from "fs";
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { sanitizeFilename } from "../host-shared/text-utils";
 import { getSnapshot } from "../mcp/db";
 import { serializeNoteMarkdown, serializeProjectMarkdown } from "../host-shared/read-tools-pure";
 
-interface ExportArgs {
-  kind: "note" | "project";
-  id: string;
-  /** When true, return the markdown string instead of showing a save dialog. */
-  returnText?: boolean;
-}
-
 export function registerMarkdownExportHandler(ctx: DbContext): void {
-  registerIpcHandle(
+  registerContractHandle(
     "app:exportMarkdown",
-    (_e, { kind, id, returnText }: ExportArgs) =>
+    (_e, { kind, id, returnText }) =>
       handle(async () => {
         const snap = getSnapshot(ctx.db);
         const result = kind === "note"

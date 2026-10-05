@@ -40,7 +40,7 @@ import { isView } from "@/lib/views";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
 import { QuickCapture } from "@/components/layout/QuickCapture";
-import { reportIpcError } from "@/lib/ipc/client";
+import { persist, reportIpcError } from "@/lib/ipc/client";
 
 export default function Home() {
   const [pendingTutorial, setPendingTutorial] = useState(false);
@@ -485,7 +485,7 @@ export default function Home() {
       <UpdateBanner
         version={updateVersion}
         downloaded={updateDownloaded}
-        onInstall={() => window.electron?.updater.install()}
+        onInstall={() => { if (window.electron) persist(window.electron.updater.install(), "Couldn't install the update"); }}
         onDismiss={() => { setUpdateVersion(null); setUpdateDownloaded(false); }}
       />
       <ConflictBanner />

@@ -43,6 +43,12 @@ import type {
 import type { Note, NoteBody, NoteCreateInput, NotePatch } from "../types/notes";
 import type { McpNotification } from "../types/notifications";
 import type {
+  AiEndpoint, AiRequestConfig, LlmLeftovers, MigrationProgress, MigrationStatus, ModelPrice, PrdResult,
+  UpdateAvailableInfo, VaultImportPreview, WorkspaceRescanResult,
+} from "../types/app";
+import type { CreditInfo } from "../chat/provider-credits";
+import type { PdfTheme } from "../notes/pdf-template";
+import type {
   AuthCompleteResult, AuthStartResult, CustomServiceConfig, ListMcpToolsResult, McpServerConfig, McpTestResult,
   SecretToolType, ServiceTestResult, ToolAttachment,
 } from "../types/tools";
@@ -360,6 +366,96 @@ export interface IpcContract {
   "db:notification:clear": { args: []; result: number };
   /** Marks every notification read and clears the dock/tray badge. */
   "mcp:markNotificationsRead": { args: []; result: void };
+
+  // ── Workspace setup ──────────────────────────────────────────────────────
+  /** null when the dialog is cancelled. */
+  "app:selectWorkspaceFolder": { args: []; result: string | null };
+  "app:getWorkspacePath": { args: []; result: string | null };
+  "app:needsWorkspaceSetup": { args: []; result: boolean };
+  /** Creates the folder, re-initialises on it, then persists it as the workspace. */
+  "app:initWorkspace": { args: [req: { workspacePath: string; excludedFolders?: string[] }]; result: { ok: true } };
+  "app:rescanWorkspace": {
+    args: [req: { workspaceId?: string; excludedFolders?: string[] }];
+    result: WorkspaceRescanResult;
+  };
+  /** Removes the projects an import created without tombstoning them to sync peers. */
+  "app:rollbackImport": { args: [req: { projectIds: string[] }]; result: { removedNotes: number; ok: boolean } };
+  "app:probeWorkspaceFolder": { args: [req: { folder: string }]; result: VaultImportPreview };
+  "app:checkMigrations": { args: []; result: MigrationStatus[] };
+  /** Progress arrives on the `app:migrationProgress` event. */
+  "app:runMigration": { args: [req: { migrationId: string }]; result: { ok: true } };
+  /** Wipes every table, then relaunches. */
+  "app:reset": { args: []; result: void };
+  "app:relaunch": { args: []; result: void };
+
+  // ── App info, appearance and files ───────────────────────────────────────
+  /** True when running unpackaged; gates dev-only UI. */
+  "app:isDev": { args: []; result: boolean };
+  "app:mcpServerPath": { args: []; result: string };
+  /** The highest-versioned bundled changelog, or null when none ship. */
+  "app:latestChangelog": { args: []; result: string | null };
+  /** Persists the theme for the boot splash (and the Windows title bar). */
+  "app:setTheme": { args: [theme: string]; result: void };
+  "app:setAccent": { args: [accent: string]; result: void };
+  "app:revealNote": { args: [req: { noteId: string; projectId: string }]; result: void };
+  "app:revealAssets": { args: []; result: void };
+  /** Saves a pasted file to the attachments folder; returns its `![[name]]` embed. */
+  "app:uploadAsset": { args: [req: { filename: string; data: ArrayBuffer }]; result: { assetUrl: string } };
+  /** null when the save dialog is cancelled; `pdfBase64` when `returnBuffer` is set. */
+  "app:exportNotePdf": {
+    args: [req: { title: string; html: string; options?: { returnBuffer?: boolean; theme?: PdfTheme; fontFamily?: string } }];
+    result: { filePath?: string; pdfBase64?: string } | null;
+  };
+  /** null when the save dialog is cancelled; `markdown` + `title` when `returnText` is set. */
+  "app:exportMarkdown": {
+    args: [req: { kind: "note" | "project"; id: string; returnText?: boolean }];
+    result: { filePath?: string; markdown?: string; title?: string } | null;
+  };
+  "app:llmLeftovers": { args: []; result: LlmLeftovers };
+  "app:clearLlmLeftovers": { args: []; result: { reclaimedBytes: number } };
+
+  // ── Cached settings (read by main before the renderer loads) ─────────────
+  "app:getAiSettings": { args: []; result: Record<string, unknown> | null };
+  "app:saveAiSettings": { args: [req: { config: Record<string, unknown> }]; result: { ok: true } };
+  "app:getAgentSettings": { args: []; result: Record<string, unknown> | null };
+  "app:saveAgentSettings": { args: [req: { config: Record<string, unknown> }]; result: { ok: true } };
+  "app:getTheme": { args: []; result: string | null };
+  "app:saveTheme": { args: [req: { theme: string }]; result: { ok: true } };
+  "app:getFontScale": { args: []; result: number | null };
+  "app:saveFontScale": { args: [req: { fontScale: number }]; result: { ok: true } };
+  "app:getEmbeddingsSettings": { args: []; result: { enabled?: boolean; modelId?: string } | null };
+  "app:saveEmbeddingsSettings": { args: [req: { config: { enabled?: boolean; modelId?: string } }]; result: { ok: true } };
+  /** models.dev pricing map, used to estimate cost when a provider reports none. */
+  "app:modelPricing": { args: [map: Record<string, ModelPrice> | null]; result: { ok: true } };
+  /** Model ids that must never be sent a temperature. */
+  "app:noTemperatureModels": { args: [ids: string[] | null]; result: { ok: true } };
+
+  // ── AI helpers (reject when AI isn't configured or the model call fails) ──
+  /** Generates a PRD and saves it as a note in the project. */
+  "ai:generatePrd": {
+    args: [req: { projectId: string; title: string; requirements: string; config: AiRequestConfig }];
+    result: PrdResult;
+  };
+  "ai:generateCommitMessage": {
+    args: [req: { diff: string; config: AiRequestConfig }];
+    result: { subject: string; body: string };
+  };
+  "ai:generatePrDescription": {
+    args: [req: { diff: string; config: AiRequestConfig; template?: string }];
+    result: { title: string; description: string };
+  };
+  "ai:explainArchitecture": {
+    args: [req: { summary: string; config: AiRequestConfig }];
+    result: { overview: string; modules: string };
+  };
+  /** Model ids from `{baseUrl}/models` (embedding/audio/image models filtered out). */
+  "ai:fetchModels": { args: [endpoint: AiEndpoint]; result: string[] };
+  /** Remaining credits, or null when the provider doesn't expose them (never rejects for that). */
+  "ai:fetchKeyInfo": { args: [endpoint: AiEndpoint]; result: CreditInfo | null };
+
+  // ── Auto-updater ─────────────────────────────────────────────────────────
+  /** Quits and installs the downloaded update. */
+  "updater:install": { args: []; result: void };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
@@ -369,6 +465,11 @@ export interface IpcEvents {
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
   "tools:oauthCallback": AuthCompleteResult;
+  /** Global quick-capture shortcut / tray item fired. */
+  "app:quick-capture": undefined;
+  "app:migrationProgress": MigrationProgress;
+  "updater:update-available": UpdateAvailableInfo;
+  "updater:update-downloaded": undefined;
   "chat:poppedIn": { sessionId: string };
   "chat:poppedOutClosed": undefined;
   "chat:sessionUpdated": ChatPopoutPayload;
@@ -531,6 +632,48 @@ const CHANNELS: ChannelRecord = {
   "db:notification:markRead": true,
   "db:notification:clear": true,
   "mcp:markNotificationsRead": true,
+  "app:selectWorkspaceFolder": true,
+  "app:getWorkspacePath": true,
+  "app:needsWorkspaceSetup": true,
+  "app:initWorkspace": true,
+  "app:rescanWorkspace": true,
+  "app:rollbackImport": true,
+  "app:probeWorkspaceFolder": true,
+  "app:checkMigrations": true,
+  "app:runMigration": true,
+  "app:reset": true,
+  "app:relaunch": true,
+  "app:isDev": true,
+  "app:mcpServerPath": true,
+  "app:latestChangelog": true,
+  "app:setTheme": true,
+  "app:setAccent": true,
+  "app:revealNote": true,
+  "app:revealAssets": true,
+  "app:uploadAsset": true,
+  "app:exportNotePdf": true,
+  "app:exportMarkdown": true,
+  "app:llmLeftovers": true,
+  "app:clearLlmLeftovers": true,
+  "app:getAiSettings": true,
+  "app:saveAiSettings": true,
+  "app:getAgentSettings": true,
+  "app:saveAgentSettings": true,
+  "app:getTheme": true,
+  "app:saveTheme": true,
+  "app:getFontScale": true,
+  "app:saveFontScale": true,
+  "app:getEmbeddingsSettings": true,
+  "app:saveEmbeddingsSettings": true,
+  "app:modelPricing": true,
+  "app:noTemperatureModels": true,
+  "ai:generatePrd": true,
+  "ai:generateCommitMessage": true,
+  "ai:generatePrDescription": true,
+  "ai:explainArchitecture": true,
+  "ai:fetchModels": true,
+  "ai:fetchKeyInfo": true,
+  "updater:install": true,
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];

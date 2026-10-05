@@ -9,7 +9,7 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle } from "./result-helpers";
 import { saveCachedConfig, getCachedConfig } from "../lib/config-cache";
 import { app } from "electron";
@@ -18,28 +18,28 @@ import * as path from "path";
 import { errMsg } from "../host-shared/errors";
 
 export function registerSettingsHandlers(): void {
-  registerIpcHandle("app:getAiSettings", () => handle(() => getCachedConfig().aiConfig || null));
-  registerIpcHandle("app:saveAiSettings", (_e, { config }: { config: Record<string, unknown> }) => handle(() => {
+  registerContractHandle("app:getAiSettings", () => handle(() => getCachedConfig().aiConfig || null));
+  registerContractHandle("app:saveAiSettings", (_e, { config }) => handle(() => {
     saveCachedConfig("ai", config);
     return { ok: true };
   }));
-  registerIpcHandle("app:getAgentSettings", () => handle(() => getCachedConfig().agentConfig || null));
-  registerIpcHandle("app:saveAgentSettings", (_e, { config }: { config: Record<string, unknown> }) => handle(() => {
+  registerContractHandle("app:getAgentSettings", () => handle(() => getCachedConfig().agentConfig || null));
+  registerContractHandle("app:saveAgentSettings", (_e, { config }) => handle(() => {
     saveCachedConfig("agent", config);
     return { ok: true };
   }));
-  registerIpcHandle("app:getTheme", () => handle(() => getCachedConfig().theme || null));
-  registerIpcHandle("app:saveTheme", (_e, { theme }: { theme: string }) => handle(() => {
+  registerContractHandle("app:getTheme", () => handle(() => getCachedConfig().theme || null));
+  registerContractHandle("app:saveTheme", (_e, { theme }) => handle(() => {
     saveCachedConfig("theme", theme);
     return { ok: true };
   }));
-  registerIpcHandle("app:getFontScale", () => handle(() => getCachedConfig().fontScale ?? null));
-  registerIpcHandle("app:saveFontScale", (_e, { fontScale }: { fontScale: number }) => handle(() => {
+  registerContractHandle("app:getFontScale", () => handle(() => getCachedConfig().fontScale ?? null));
+  registerContractHandle("app:saveFontScale", (_e, { fontScale }) => handle(() => {
     saveCachedConfig("fontScale", fontScale);
     return { ok: true };
   }));
-  registerIpcHandle("app:getEmbeddingsSettings", () => handle(() => getCachedConfig().embeddingsConfig ?? null));
-  registerIpcHandle("app:saveEmbeddingsSettings", (_e, { config }: { config: Record<string, unknown> }) => handle(() => {
+  registerContractHandle("app:getEmbeddingsSettings", () => handle(() => getCachedConfig().embeddingsConfig ?? null));
+  registerContractHandle("app:saveEmbeddingsSettings", (_e, { config }) => handle(() => {
     saveCachedConfig("embeddings", config);
     return { ok: true };
   }));
@@ -74,14 +74,14 @@ export function registerSettingsHandlers(): void {
     }
     return total;
   };
-  registerIpcHandle("app:llmLeftovers", () => handle(() => {
+  registerContractHandle("app:llmLeftovers", () => handle(() => {
     const files: Array<{ name: string; bytes: number }> = [];
     let bytes = 0;
     for (const dir of llmLeftoverDirs()) bytes += walkSize(dir, files);
     files.sort((a, b) => b.bytes - a.bytes);
     return { bytes, files };
   }));
-  registerIpcHandle("app:clearLlmLeftovers", () => handle(() => {
+  registerContractHandle("app:clearLlmLeftovers", () => handle(() => {
     const files: Array<{ name: string; bytes: number }> = [];
     let bytes = 0;
     for (const dir of llmLeftoverDirs()) bytes += walkSize(dir, files);

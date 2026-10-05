@@ -10,6 +10,7 @@ import { storage } from "@/lib/storage";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
+import { persist } from "@/lib/ipc/client";
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -252,7 +253,7 @@ export const createAppearanceSlice: StateCreator<CairnStore, [], [], AppearanceS
     storage.set(THEME_KEY, theme);
     applyTheme(theme);
     if (typeof window !== "undefined" && window.electron) {
-      window.electron.setTheme(theme);
+      persist(window.electron.setTheme(theme), "Couldn't save the theme");
     }
   },
 
@@ -262,7 +263,7 @@ export const createAppearanceSlice: StateCreator<CairnStore, [], [], AppearanceS
     storage.set(ACCENT_KEY, accentId);
     applyAccent(accentId);
     if (typeof window !== "undefined" && window.electron?.setAccent) {
-      window.electron.setAccent(accentId);
+      persist(window.electron.setAccent(accentId), "Couldn't save the accent colour");
     }
   },
 

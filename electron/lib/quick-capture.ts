@@ -5,10 +5,12 @@
  */
 
 import { app, globalShortcut, type BrowserWindow } from "electron";
+import type { IpcEventChannel } from "../../shared/ipc/contract";
 
 /** Default accelerator. ⌘⇧Space / Ctrl⇧Space rarely collides with OS shortcuts. */
 export const QUICK_CAPTURE_ACCELERATOR = "CommandOrControl+Shift+Space";
-export const QUICK_CAPTURE_CHANNEL = "app:quick-capture";
+/** Payload-less contract event (`IpcEvents`). */
+export const QUICK_CAPTURE_CHANNEL = "app:quick-capture" satisfies IpcEventChannel;
 
 /** Resolves the live main window (recreating it if the user closed it on macOS). */
 export type MainWindowGetter = () => BrowserWindow | null;
