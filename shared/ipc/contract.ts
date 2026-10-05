@@ -65,7 +65,7 @@ import type { GraphEdgeType } from "../types/domain";
 import type { CustomSlashCommand, SlashCommandCreateInput, SlashCommandPatch } from "../types/workspace";
 import type { UsageOverview, UsageRangeArgs, UsageRecentRow, UsageThreadGroup } from "../types/usage";
 import type {
-  UserStyleDoneEvent, UserStyleGenerationInput, UserStyleRow, UserStyleSaveInput, UserStyleStep,
+  UserStyleDoneEvent, UserStyleGenerationInput, UserStyleRow, UserStyleSaveInput, UserStyleStep, UserStyleStreamRequest,
   UserStyleToolCallDoneEvent, UserStyleToolCallEvent,
 } from "../types/user-style";
 import type { ApprovalGrant } from "../types/approval";
@@ -82,6 +82,12 @@ import type {
   ProjectionResult, ReindexResult, RuntimeEmbeddingModel, RuntimeStatus,
 } from "../types/embeddings";
 import type { MobileStatus, SystemPromptPreview, ToolInventory } from "../types/runtime";
+import type { SessionEventEnvelope } from "../agent/session-event";
+import type { SessionProjection } from "../agent/session-projection";
+import type {
+  ToolBuilderDoneEvent, ToolBuilderProbeHostEvent, ToolBuilderPromptRequest, ToolBuilderProposalEvent,
+  ToolBuilderStepEvent, ToolBuilderTokenEvent,
+} from "../types/tool-builder";
 
 /** Why a pop-out handshake call was refused. */
 export type PopoutRefusal = "invalid-payload" | "profile-mismatch" | "not-main-window" | "not-popout";
@@ -733,7 +739,80 @@ export interface IpcEvents {
   "embeddings:download-progress": EmbeddingDownloadProgress;
   "runtime:download-progress": EmbeddingDownloadProgress;
   "mobile:status-changed": MobileStatus;
+  /**
+   * Workspace data changed (a write channel completed, or an MCP / sync write
+   * landed). The registry broadcasts it with a `null` payload; listeners ignore it.
+   */
+  "db:changed": null;
+  /** The in-app AI started / finished writing a note (editor goes read-only meanwhile). */
+  "note:aiWriteStarted": { noteId: string };
+  "note:aiWriteEnded": { noteId: string };
+  /** Canonical raw DSH session/event stream shared by Chat and Coding. */
+  "session:event": SessionEventEnvelope;
+  "session:projection": SessionProjection;
+  /** AI Tool Builder stream (`tool-builder:prompt`). */
+  "tool-builder:token": ToolBuilderTokenEvent;
+  "tool-builder:step": ToolBuilderStepEvent;
+  "tool-builder:probe-host": ToolBuilderProbeHostEvent;
+  "tool-builder:proposal": ToolBuilderProposalEvent;
+  "tool-builder:done": ToolBuilderDoneEvent;
 }
+
+/**
+ * Renderer → main fire-and-forget messages (ipcRenderer.send / registerIpcOn)
+ * and their payloads. `unknown` marks a request whose shape is still defined
+ * main-side only.
+ */
+export interface IpcSends {
+  "app:openExternal": string;
+  "user-style:generateStream": UserStyleStreamRequest;
+  "user-style:abort": undefined;
+  "session:prompt": unknown;
+  "session:abort": { sessionId: string };
+  "session:clear": { sessionId: string };
+  "session:destroy": { sessionId: string };
+  "session:compact-now": unknown;
+  "session:approve-plan": unknown;
+  "session:respond-questions": { sessionId: string; callId: string; answers: string; nonce?: string };
+  "session:restore-context": { sessionId: string };
+  "session:set-mode": { sessionId: string; mode: "plan" | "execute" };
+  "session:respond-tool": {
+    sessionId: string;
+    callId: string;
+    approved: boolean;
+    grant?: "session" | "command" | "workspace";
+    command?: string;
+    nonce?: string;
+  };
+  "tool-builder:prompt": ToolBuilderPromptRequest;
+  "tool-builder:abort": { sessionId: string };
+  "tool-builder:end": { sessionId: string };
+}
+
+export type IpcSendChannel = keyof IpcSends;
+/** Arguments after the channel for sending message `S`: none when it has no payload. */
+export type IpcSendArgs<S extends IpcSendChannel> = IpcSends[S] extends undefined ? [] : [payload: IpcSends[S]];
+
+/** Runtime list of send channels (tests check each one is registered with registerIpcOn). */
+const SEND_CHANNELS: { [S in IpcSendChannel]: true } = {
+  "app:openExternal": true,
+  "user-style:generateStream": true,
+  "user-style:abort": true,
+  "session:prompt": true,
+  "session:abort": true,
+  "session:clear": true,
+  "session:destroy": true,
+  "session:compact-now": true,
+  "session:approve-plan": true,
+  "session:respond-questions": true,
+  "session:restore-context": true,
+  "session:set-mode": true,
+  "session:respond-tool": true,
+  "tool-builder:prompt": true,
+  "tool-builder:abort": true,
+  "tool-builder:end": true,
+};
+export const IPC_SEND_CHANNELS = Object.keys(SEND_CHANNELS) as IpcSendChannel[];
 
 export type IpcChannel = keyof IpcContract;
 export type IpcArgs<C extends IpcChannel> = IpcContract[C]["args"];

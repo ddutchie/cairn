@@ -92,7 +92,8 @@ Not sure where to start? Open a [GitHub Discussion](https://github.com/ddutchie/
 cairn/
 ├── electron/               # Electron main process (Node.js, runs in Electron)
 │   ├── main.ts             # Startup: BrowserWindow, IPC registration, file watcher
-│   ├── preload.ts          # contextBridge: window.electron API exposed to renderer
+│   ├── preload.ts          # contextBridge: composes window.electron from preload/<domain>.ts
+│   ├── preload/            # One slice of window.electron per domain; ipc.ts holds the typed helpers
 │   ├── mcp-server.ts       # Standalone MCP binary entry point (imports queries.ts helpers)
 │   ├── notes-files.ts      # Note file I/O: read/write/parse .md files
 │   ├── file-watcher.ts     # chokidar watcher → SQLite sync on external .md edits
@@ -197,7 +198,7 @@ cairn/
 
 Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
-**Renderer** (Next.js + React) — everything in `src/`. Never touches the filesystem or database directly. All data operations go through `window.electron.*` calls, defined in `electron/preload.ts` and handled in `electron/ipc/handlers.ts`.
+**Renderer** (Next.js + React) — everything in `src/`. Never touches the filesystem or database directly. All data operations go through `window.electron.*` calls, defined in `electron/preload/<domain>.ts` (composed by `electron/preload.ts`), typed by `shared/ipc/contract.ts`, and handled in `electron/ipc/handlers.ts`.
 
 **Main process** (Node.js) — everything in `electron/`. Owns the SQLite database, the filesystem, and the AI chat loop. Returns `{ data: T } | { error: string }` from every IPC handler.
 
@@ -645,7 +646,7 @@ Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is 
 1. Add a migration to `electron/db/schema.ts` (new entry in `MIGRATIONS`, increment `SCHEMA_VERSION`)
 2. Add typed query helpers to `electron/db/queries.ts`
 3. Add IPC handlers to the appropriate per-domain registrar in `electron/ipc/` (e.g. `db-handlers.ts` for `db:*`)
-4. Expose via `window.electron.*` in `electron/preload.ts`
+4. Add the channel to `IpcContract` in `shared/ipc/contract.ts` (set `writes: true` if it changes data), then expose it via `window.electron.*` in the matching `electron/preload/<domain>.ts`
 5. Add corresponding store slice actions in `src/store/slices/`
 
 </details>

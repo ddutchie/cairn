@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { IPC_CONTRACT_CHANNELS } from "../../shared/ipc/contract";
+import { IPC_CONTRACT_CHANNELS, IPC_SEND_CHANNELS } from "../../shared/ipc/contract";
 import type { registerContractHandle } from "./registry";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -17,7 +17,10 @@ function electronSources(dir = path.join(ROOT, "electron")): string[] {
 
 describe("typed IPC contract", () => {
   const sources = electronSources().map((p) => fs.readFileSync(p, "utf8")).join("\n");
-  const preload = read("electron/preload.ts");
+  // preload.ts composes the electron/preload/<domain>.ts slices.
+  const preloadDir = path.join(ROOT, "electron/preload");
+  const preloadFiles = fs.readdirSync(preloadDir).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
+  const preload = [read("electron/preload.ts"), ...preloadFiles.map((f) => read(`electron/preload/${f}`))].join("\n");
 
   // electron/sync/ is shared-tsconfig-scoped, so it receives registerContractHandle
   // as an injected, contract-typed `register` parameter (see registerSyncHandlers).
@@ -37,10 +40,20 @@ describe("typed IPC contract", () => {
     expect(preload).not.toMatch(new RegExp(`\\binvoke(<[^>]*>)?\\(\\s*"${channel}"`));
   });
 
-  it("leaves no untyped invoke in preload", () => {
-    // Every invoke goes through invokeContract; the untyped helper is gone.
+  it.each(IPC_SEND_CHANNELS)("%s is sent through sendContract and has a registerIpcOn listener", (channel) => {
+    expect(preload).toMatch(new RegExp(`\\bsendContract\\(\\s*"${channel}"`));
+    expect(sources).toMatch(new RegExp(`\\bregisterIpcOn(<[^>]*>)?\\(\\s*"${channel}"`));
+  });
+
+  it("builds preload only from the typed helpers in preload/ipc.ts", () => {
     expect(preload).not.toMatch(/(?<![.\w])invoke(<[^>]*>)?\(/);
-    expect(preload.match(/ipcRenderer\.invoke\(/g)).toHaveLength(1); // inside invokeContract
+    // ipcRenderer appears only in preload/ipc.ts: one invoke, on/off, one send.
+    const outside = preloadFiles.filter((f) => f !== "ipc.ts" && /\bipcRenderer\b/.test(read(`electron/preload/${f}`)));
+    expect(outside).toEqual([]);
+    expect(read("electron/preload.ts")).not.toMatch(/\bipcRenderer\b/);
+    const helpers = read("electron/preload/ipc.ts");
+    expect(helpers.match(/ipcRenderer\.invoke\(/g)).toHaveLength(1);
+    expect(helpers.match(/ipcRenderer\.send\(/g)).toHaveLength(1);
   });
 
   it("keeps the untyped ipcMain.handle path private to the registry", () => {
