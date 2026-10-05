@@ -3,6 +3,7 @@ import type { IpcMainInvokeEvent, IpcMainEvent, WebContents } from "electron";
 import { IPC_WRITE_CHANNELS } from "../../shared/ipc/contract";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEventArgs } from "../../shared/ipc/contract";
 import type { IpcResult } from "./result-helpers";
+import { isMobileChannel } from "./mobile-access";
 
 /**
  * Erased storage type for the internal handler/listener maps. Event is `unknown`
@@ -96,19 +97,9 @@ function registerIpcHandle<T extends unknown[]>(
 export function registerContractHandle<C extends IpcChannel>(
   channel: C,
   handler: (event: IpcMainInvokeEvent, ...args: IpcArgs<C>) => Promise<IpcResult<IpcReturn<C>>>,
-  opts?: { localOnly?: boolean },
 ): void {
-  if (opts?.localOnly) localOnlyChannels.add(channel);
-  else localOnlyChannels.delete(channel);
   registerIpcHandle<IpcArgs<C>>(channel, handler, IPC_WRITE_CHANNELS.has(channel));
 }
-
-/**
- * Channels only the desktop window may call: {@link getIpcHandler} (the Mobile
- * Access `/api/ipc` bridge) never returns them. For code-exec surfaces such as
- * plugin install, which a paired phone must not be able to trigger.
- */
-const localOnlyChannels = new Set<string>();
 
 /** Send a contract push event to one renderer, payload checked against `IpcEvents`. */
 export function sendIpcEvent<E extends IpcEventChannel>(target: WebContents, channel: E, ...payload: IpcEventArgs<E>): void {
@@ -133,10 +124,11 @@ export function registerIpcOn<T extends unknown[]>(
 
 /**
  * Retrieve a registered handler or listener by channel name for a remote
- * caller (the Mobile Access bridge). Local-only channels are not exposed.
+ * caller (the Mobile Access bridge). Only channels on the Mobile Access
+ * allowlist (`mobile-access.ts`) are exposed; everything else is desktop-only.
  */
 export function getIpcHandler(channel: string): IpcHandler | undefined {
-  if (localOnlyChannels.has(channel)) return undefined;
+  if (!isMobileChannel(channel)) return undefined;
   return handlers.get(channel) || listeners.get(channel);
 }
 

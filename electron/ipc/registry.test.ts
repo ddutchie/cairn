@@ -13,6 +13,7 @@ import fs from "fs";
 import path from "path";
 import { IPC_CONTRACT_CHANNELS, IPC_WRITE_CHANNELS } from "../../shared/ipc/contract";
 import type { IpcChannel } from "../../shared/ipc/contract";
+import { isMobileChannel, MOBILE_INVOKE, MOBILE_SEND_CHANNELS } from "./mobile-access";
 
 // registry.ts imports `electron` at module load; stub the bits it touches.
 vi.mock("electron", () => ({
@@ -131,22 +132,85 @@ describe("write broadcast", () => {
   });
 });
 
-describe("local-only channels", () => {
-  it("are registered for the desktop window but hidden from the Mobile Access bridge", async () => {
+describe("Mobile Access allowlist", () => {
+  const sendChannels = (() => {
+    const root = path.resolve(__dirname, "..");
+    const found = new Set<string>();
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+          for (const m of fs.readFileSync(full, "utf8").matchAll(/registerIpcOn(?:<[^>]*>)?\(\s*"([^"]+)"/g)) found.add(m[1]);
+        }
+      }
+    };
+    walk(root);
+    return found;
+  })();
+
+  it("hides desktop-only invoke channels from the bridge but keeps them on ipcMain", async () => {
     const { registerContractHandle, getIpcHandler } = await import("./registry");
     const { ipcMain } = await import("electron");
     const ok = async () => ({ data: { ok: true as const } });
-    registerContractHandle("plugins:openFolder", ok, { localOnly: true });
-    registerContractHandle("runtime:stop", ok);
+    registerContractHandle("plugins:openFolder", ok);
+    registerContractHandle("runtime:status", ok as never);
     expect(ipcMain.handle).toHaveBeenCalledWith("plugins:openFolder", expect.any(Function));
     expect(getIpcHandler("plugins:openFolder")).toBeUndefined();
-    expect(getIpcHandler("runtime:stop")).toBeTypeOf("function");
+    expect(getIpcHandler("runtime:status")).toBeTypeOf("function");
   });
 
-  it("registers every plugins:* channel as local-only", () => {
-    const src = fs.readFileSync(path.join(__dirname, "ui-plugin-handlers.ts"), "utf8");
-    const calls = src.match(/registerContractHandle\("plugins:[^"]+"/g) ?? [];
-    expect(calls.length).toBeGreaterThan(0);
-    expect((src.match(/, LOCAL_ONLY\);/g) ?? []).length).toBe(calls.length);
+  it("hides desktop-only send channels from the bridge but keeps them on ipcMain", async () => {
+    const { registerIpcOn, getIpcHandler } = await import("./registry");
+    const { ipcMain } = await import("electron");
+    registerIpcOn("app:openExternal", () => {});
+    registerIpcOn("session:abort", () => {});
+    expect(ipcMain.on).toHaveBeenCalledWith("app:openExternal", expect.any(Function));
+    expect(getIpcHandler("app:openExternal")).toBeUndefined();
+    expect(getIpcHandler("session:abort")).toBeTypeOf("function");
+  });
+
+  it("refuses channels it has never heard of", async () => {
+    const { registerIpcOn, getIpcHandler } = await import("./registry");
+    registerIpcOn("brand-new:channel", () => {});
+    expect(isMobileChannel("brand-new:channel")).toBe(false);
+    expect(getIpcHandler("brand-new:channel")).toBeUndefined();
+    expect(isMobileChannel("constructor")).toBe(false);
+    expect(isMobileChannel("__proto__")).toBe(false);
+  });
+
+  it.each([
+    "agent:writeFile", "agent:spawn", "agent:spawnShell", "agent:input",
+    "secrets:set", "secrets:delete",
+    "app:reset", "app:relaunch", "app:initWorkspace", "app:saveAiSettings",
+    "usage:clear", "session:permissions:set", "automation:approve", "ai:fetchModels",
+    "git:commit", "git:push", "git:discard", "mobile:regeneratePin",
+  ])("keeps %s desktop-only", (channel) => {
+    expect(isMobileChannel(channel)).toBe(false);
+  });
+
+  it.each(IPC_CONTRACT_CHANNELS.filter((c) => /^(sync|tools|approval-grants|plugins):/.test(c)))(
+    "keeps %s desktop-only", (channel) => {
+      expect(isMobileChannel(channel)).toBe(false);
+    },
+  );
+
+  it("lists every contract channel and only contract channels", () => {
+    expect(Object.keys(MOBILE_INVOKE).sort()).toEqual([...IPC_CONTRACT_CHANNELS].sort());
+  });
+
+  it("only allows send channels that are actually registered", () => {
+    expect(sendChannels.size).toBeGreaterThan(5);
+    expect([...MOBILE_SEND_CHANNELS].filter((c) => !sendChannels.has(c))).toEqual([]);
+  });
+
+  it("keeps the workspace and agent chat reachable from the phone", () => {
+    for (const ch of [
+      "db:snapshot", "db:changes:get", "db:note:update", "db:card:update", "db:flow:node:create",
+      "db:chat:threads", "app:exportNotePdf", "agent:readFile", "git:status",
+      "session:prompt", "session:respond-tool",
+    ]) {
+      expect(isMobileChannel(ch), ch).toBe(true);
+    }
   });
 });

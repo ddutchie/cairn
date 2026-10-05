@@ -56,11 +56,7 @@ let watcher: fs.FSWatcher | null = null;
 let debounce: NodeJS.Timeout | null = null;
 
 export function registerUiPluginHandlers(getWebContents: () => WebContents | undefined): void {
-  // Plugin channels drive a code-exec surface (install/update fetch and run
-  // third-party code), so they are never exposed to the Mobile Access bridge.
-  const LOCAL_ONLY = { localOnly: true };
-
-  registerContractHandle("plugins:listUi", () => handle(() => collectUiPlugins()), LOCAL_ONLY);
+  registerContractHandle("plugins:listUi", () => handle(() => collectUiPlugins()));
 
   // ── Plugins settings section: list all entries (enabled + disabled), toggle,
   // open the folder. Reads/writes plugins.yml as a plain YAML array.
@@ -102,7 +98,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
         disabled: r.disabled === true,
       }));
     return { devEnabled: pluginsDevEnabled(), root: getAgentHost().getPluginsRoot(), plugins };
-  }), LOCAL_ONLY);
+  }));
 
   registerContractHandle("plugins:setEnabled", (_e, req) => handle(() => {
     requireRoot("toggle plugins");
@@ -117,14 +113,14 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
     // re-pulls on plugins:ui-changed.
     fs.writeFileSync(manifestPath(), yaml.dump(rows, { lineWidth: 100 }));
     return { ok: true as const };
-  }), LOCAL_ONLY);
+  }));
 
   registerContractHandle("plugins:openFolder", () => handle(async () => {
     const root = requireRoot("open the plugins folder");
     fs.mkdirSync(root, { recursive: true });
     await shell.openPath(root);
     return { ok: true as const };
-  }), LOCAL_ONLY);
+  }));
 
   // ── Install / uninstall (C2, §20). Fetching + running third-party code is a
   // code-exec surface, so install is only permitted under the dev flag until the
@@ -135,14 +131,14 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
       throw new Error("provide a plugin spec (github:owner/repo or a local path)");
     }
     return getAgentHost().installPlugin(req.spec);
-  }), LOCAL_ONLY);
+  }));
 
   registerContractHandle("plugins:uninstall", (_e, req) => handle(() => {
     if (!pluginsDevEnabled()) throw new Error(`${DEV_GATE} to uninstall.`);
     if (!req || typeof req.id !== "string") throw new Error("missing plugin id");
     getAgentHost().uninstallPlugin(req.id);
     return { ok: true as const };
-  }), LOCAL_ONLY);
+  }));
 
   // Update: re-run an installed plugin's recorded source spec (re-fetch github /
   // re-copy local) to pull the latest build. Dev-gated like install.
@@ -150,7 +146,7 @@ export function registerUiPluginHandlers(getWebContents: () => WebContents | und
     if (!pluginsDevEnabled()) throw new Error(`${DEV_GATE} to update.`);
     if (!req || typeof req.id !== "string") throw new Error("missing plugin id");
     return getAgentHost().updatePlugin(req.id);
-  }), LOCAL_ONLY);
+  }));
 
   if (!pluginsDevEnabled()) return;
   const root = getAgentHost().getPluginsRoot();

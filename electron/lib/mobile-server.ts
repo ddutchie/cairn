@@ -196,7 +196,8 @@ export class MobileServer {
             const { channel, args = [] } = JSON.parse(body);
             const handler = getIpcHandler(channel);
             if (!handler) {
-              sendJson(res, 404, { error: `Unknown IPC channel: ${channel}` });
+              // Unregistered, or desktop-only (see ipc/mobile-access.ts).
+              sendJson(res, 404, { error: `IPC channel not available over Mobile Access: ${channel}` });
               return;
             }
 
