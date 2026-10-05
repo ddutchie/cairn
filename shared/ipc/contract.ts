@@ -264,7 +264,11 @@ export interface IpcContract {
   "db:note:changeMark:clear": { writes: true; args: [req: { id: string }]; result: void };
 
   // ── Idea Flow ────────────────────────────────────────────────────────────
-  /** Resolved graph (absolute positions, linked note/card data, spatial hints); creates the flow if missing. */
+  /**
+   * Resolved graph (absolute positions, linked note/card data, spatial hints); creates the flow if missing.
+   * Not a write: the lazy create only fills in a project's empty flow, and a broadcast would re-hydrate
+   * every window each time a flow opens.
+   */
   "db:flow:get": { args: [req: { projectId: string }]; result: ResolvedIdeaFlow };
   "db:flow:node:create": { writes: true; args: [node: FlowNodeCreateInput]; result: IdeaFlowNode };
   "db:flow:node:update": { writes: true; args: [req: { id: string; patch: FlowNodePatch }]; result: IdeaFlowNode };
@@ -743,7 +747,8 @@ type WriteChannel = { [C in IpcChannel]: IpcContract[C] extends { writes: true }
 
 /**
  * Runtime list of contract channels (tests check each one is registered), each
- * marked "write" or "read". The mapped type makes adding a channel to
+ * marked "write" (broadcasts `db:changed`) or "read" (anything else, including
+ * actions such as git:commit that don't change workspace data). The mapped type makes adding a channel to
  * IpcContract without listing it here a build error, rejects any channel taking
  * more than one argument, and requires "write" exactly when the entry sets
  * `writes: true`.

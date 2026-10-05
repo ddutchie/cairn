@@ -8,7 +8,7 @@
  * write leaves other windows stale.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import { IPC_CONTRACT_CHANNELS, IPC_WRITE_CHANNELS } from "../../shared/ipc/contract";
@@ -94,37 +94,40 @@ describe("contract write flags", () => {
 });
 
 describe("write broadcast", () => {
+  afterEach(async () => {
+    const registry = await import("./registry");
+    registry.setMobileBroadcastCallback(null);
+    registry.setWriteObserver(null);
+  });
+
   const registered = async () => {
     const registry = await import("./registry");
     const { ipcMain } = await import("electron");
+    vi.mocked(ipcMain.handle).mockClear();
     const broadcasts: string[] = [];
     registry.setMobileBroadcastCallback((channel) => broadcasts.push(channel));
     const observer = { begin: vi.fn(() => "token"), end: vi.fn() };
     registry.setWriteObserver(observer);
     const invoke = async (channel: IpcChannel) => {
       registry.registerContractHandle(channel, async () => ({ data: undefined as never }));
-      const call = vi.mocked(ipcMain.handle).mock.calls.filter(([c]) => c === channel).at(-1)!;
+      const call = vi.mocked(ipcMain.handle).mock.calls.find(([c]) => c === channel)!;
       await (call[1] as (e: unknown) => Promise<unknown>)({ sender: { id: 7 } });
     };
-    return { invoke, broadcasts, observer, registry };
+    return { invoke, broadcasts, observer };
   };
 
   it("broadcasts db:changed and runs the write observer after a write channel", async () => {
-    const { invoke, broadcasts, observer, registry } = await registered();
+    const { invoke, broadcasts, observer } = await registered();
     await invoke("db:note:delete");
     expect(broadcasts).toEqual(["db:changed"]);
     expect(observer.end).toHaveBeenCalledWith("token", 7, expect.any(Number));
-    registry.setMobileBroadcastCallback(null);
-    registry.setWriteObserver(null);
   });
 
   it("stays quiet after a read channel", async () => {
-    const { invoke, broadcasts, observer, registry } = await registered();
+    const { invoke, broadcasts, observer } = await registered();
     await invoke("db:flow:url:fetch");
     expect(broadcasts).toEqual([]);
     expect(observer.begin).not.toHaveBeenCalled();
-    registry.setMobileBroadcastCallback(null);
-    registry.setWriteObserver(null);
   });
 });
 
