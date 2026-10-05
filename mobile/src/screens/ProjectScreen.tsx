@@ -421,7 +421,14 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
             const fromCol = card ? columns.find((c) => c.id === card.column_id) : undefined;
             const completing = isDoneColumn(targetCol) && !isDoneColumn(fromCol);
 
-            moveCardToColumn(cardId, colId);
+            try {
+              moveCardToColumn(cardId, colId);
+            } catch (e) {
+              // The column can vanish under an open board (deleted on another device).
+              Alert.alert("Couldn't move the task", e instanceof Error ? e.message : String(e));
+              load();
+              return;
+            }
             load();
 
             if (completing) {

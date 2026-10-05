@@ -101,7 +101,7 @@ describe("text primary keys", () => {
     it("re-enables foreign keys and leaves no violations", () => {
       expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
       expect(db.pragma("foreign_key_check")).toEqual([]);
-      expect(db.pragma("user_version", { simple: true })).toBe(V59 + 1);
+      expect(db.pragma("user_version", { simple: true })).toBeGreaterThan(V59);
     });
   });
 

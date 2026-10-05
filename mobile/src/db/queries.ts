@@ -580,10 +580,28 @@ export function listUnscheduledCards(projectId?: string): CalendarCard[] {
 }
 
 /**
+ * A card's column must belong to the card's own project; otherwise the card is
+ * filed under one project but sits in another's column, and neither board shows
+ * it. Mirrors the desktop guard in electron/db/board-queries.ts.
+ */
+function assertColumnInProject(columnId: string, projectId: string): void {
+  const col = getDb().getFirstSync<{ project_id: string }>(
+    "SELECT project_id FROM board_columns WHERE id = ? AND deleted_at IS NULL",
+    columnId,
+  );
+  if (!col) throw new Error(`Column not found: ${columnId}`);
+  if (col.project_id !== projectId) {
+    throw new Error(`Column ${columnId} belongs to a different project than the card`);
+  }
+}
+
+/**
  * Move a card to a different column. Plain UPDATE so capture triggers stage it
  * for sync. Mirrors the desktop moveCard's column change (order left as-is).
  */
 export function moveCardToColumn(cardId: string, columnId: string): void {
+  const card = getDb().getFirstSync<{ project_id: string }>("SELECT project_id FROM task_cards WHERE id = ?", cardId);
+  if (card) assertColumnInProject(columnId, card.project_id);
   const now = new Date().toISOString();
   getDb().runSync(
     `UPDATE task_cards SET column_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
@@ -789,6 +807,7 @@ export function patchNote(
 
 /** Create a task card in a column. Returns its id. */
 export function createTask(projectId: string, columnId: string, title: string, opts?: { description?: string; priority?: string }): string {
+  assertColumnInProject(columnId, projectId);
   const id = genId();
   const now = new Date().toISOString();
   // Append to the end of the target column: next order = max(order)+1 among the

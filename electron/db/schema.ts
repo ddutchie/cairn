@@ -1574,6 +1574,40 @@ const MIGRATIONS: Migration[] = [
       }
     }
   }),
+  // v61: put cards back on their own project's board. update_task and
+  // create_task (MCP) accepted a column from another project, which filed a
+  // card under one project while it sat in another's column, so neither board
+  // showed it. Move each such live card into its own project's column of the
+  // same type (else the first column), at the end. A card whose column row is
+  // missing entirely is left alone: that can be a sync still in progress, and
+  // moving it would overwrite its real column. A plain UPDATE, so the
+  // change feed and Device Sync carry the fix to other windows and devices.
+  (db) => {
+    const stray = db.prepare(`
+      SELECT c.id, c.project_id, col.type AS column_type
+      FROM task_cards c
+      JOIN board_columns col ON col.id = c.column_id
+      WHERE c.deleted_at IS NULL AND (col.deleted_at IS NOT NULL OR col.project_id <> c.project_id)
+    `).all() as Array<{ id: string; project_id: string; column_type: string | null }>;
+    const columnsOf = db.prepare(
+      `SELECT id, type FROM board_columns WHERE project_id = ? AND deleted_at IS NULL ORDER BY "order", created_at`,
+    );
+    const lastOrder = db.prepare(`SELECT MAX("order") AS n FROM task_cards WHERE column_id = ? AND deleted_at IS NULL`);
+    const move = db.prepare(
+      `UPDATE task_cards SET column_id = ?, "order" = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
+    );
+    let moved = 0;
+    for (const card of stray) {
+      const columns = columnsOf.all(card.project_id) as Array<{ id: string; type: string }>;
+      const target = columns.find((c) => c.type === card.column_type) ?? columns[0];
+      if (!target) continue; // the card's project has no board; nothing to put it in
+      const { n } = lastOrder.get(target.id) as { n: number | null };
+      move.run(target.id, (n ?? -1) + 1, new Date().toISOString(), card.id);
+      moved++;
+    }
+    if (moved > 0) console.warn(`[schema] v61: moved ${moved} card(s) back onto their own project's board`);
+    if (moved < stray.length) console.warn(`[schema] v61: ${stray.length - moved} card(s) have no column in their own project`);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

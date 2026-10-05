@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Text, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
+import { Text, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { createTask, listColumns, type ColumnRow } from "@/db/queries";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
@@ -30,7 +30,14 @@ export default function NewCard() {
 
   const save = () => {
     if (!project || !canSave) return;
-    const id = createTask(project, columnId, title.trim(), { description, priority });
+    let id: string;
+    try {
+      id = createTask(project, columnId, title.trim(), { description, priority });
+    } catch (e) {
+      // The column can vanish while this form is open (deleted on another device).
+      Alert.alert("Couldn't create the task", e instanceof Error ? e.message : String(e));
+      return;
+    }
     // Replace this modal with the new card's detail. Forward `back` (the project
     // name) so the card's header shows "< {Project}" instead of the raw route
     // group name ("(tabs)") — the root-stack card route can't infer the

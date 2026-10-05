@@ -42,6 +42,11 @@ export function create_task(db: Database.Database, snap: Snapshot, args: Record<
   if (!title) return { error: "Task title is required" };
   const col = snap.columns.find((c) => c.id === columnId);
   if (!col) return { error: "Column not found" };
+  // The column decides the project: a projectId naming another project would
+  // file the card under one project while it sits in another's column.
+  if (projectId !== undefined && projectId !== col.projectId) {
+    return { error: `Column ${columnId as string} belongs to project ${col.projectId as string}, not ${projectId as string}. Pass a column from the target project (get_cairn_context lists them).` };
+  }
   const cardId = newId();
   const order = snap.cards.filter((c) => c.columnId === columnId).length;
 
@@ -53,7 +58,7 @@ export function create_task(db: Database.Database, snap: Snapshot, args: Record<
   const card = q.createCard(db, {
     id: cardId,
     columnId: columnId as string,
-    projectId: projectId as string,
+    projectId: col.projectId as string,
     workspaceId: col.workspaceId as string,
     title: title as string,
     description: description,
@@ -228,6 +233,13 @@ export function update_task(db: Database.Database, snap: Snapshot, args: Record<
     ?? q.getCardById(db, cardId as string);
   const card = _rawCard;
   if (!card) return { error: "Task not found" };
+  if (columnId !== undefined) {
+    const col = snap.columns.find((c) => c.id === columnId);
+    if (!col) return { error: "Column not found" };
+    if (col.projectId !== card.projectId) {
+      return { error: "That column belongs to a different project than the task. Pass a column from the task's own project; moving a task between projects isn't supported here." };
+    }
+  }
 
   if (taskExpectedVersion !== undefined) {
     const currentVersion = getCardVersion(db, cardId as string);
