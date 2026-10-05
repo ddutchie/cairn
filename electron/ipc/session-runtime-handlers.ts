@@ -35,6 +35,7 @@ import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { runChatPrompt } from "./chat";
+import { agentFallback, isMobileCaller, sanitizeMobileRequest } from "./mobile-caller";
 import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { isShellTool } from "../../shared/agent/tool-risk";
@@ -76,6 +77,13 @@ const clearingSessions = new Set<string>();
  */
 
 /** Drop every pending resolver + approval grant belonging to one session. */
+/** A phone asked to run a coding session that has no stored working directory. */
+function rejectMobileRequest(sessionId: string): void {
+  const message = "This session can't be started from Mobile Access. Start it on the desktop first.";
+  broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message, code: "mobile-refused" }));
+  broadcastEvent("session:busy", { sessionId, reason: "mobile-refused", message });
+}
+
 function sweepSessionPendings(sessionId: string): void {
   getAgentHost().clearSessionApprovalState(sessionId);
   getAgentHost().clearApprovalState(sessionId);
@@ -288,6 +296,16 @@ export function registerSessionRuntimeHandlers(
       return;
     }
     const profile = selected.profile;
+    const mobile = isMobileCaller(event);
+    if (mobile) {
+      const storedCwd = q.getCodingSessionById(ctx.db, req.sessionId)?.cwd;
+      if (profile !== "chat" && !storedCwd) {
+        rejectMobileRequest(req.sessionId);
+        return;
+      }
+      const config = getCachedConfig();
+      req = sanitizeMobileRequest(req, { config, fallback: profile === "chat" ? config.aiConfig : agentFallback(config), storedCwd });
+    }
     if (profile === "chat") {
       const chatReq = {
         message: req.prompt,
@@ -350,7 +368,7 @@ export function registerSessionRuntimeHandlers(
     // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
     // by the cache layer, never a raw key). Mode + autoApprove are co-persisted
     // so old renderers reading `autoApprove` and new code reading `mode` stay aligned.
-    cacheLlmConnection("agent", {
+    if (!mobile) cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
       apiKey: req.config?.apiKey,
@@ -480,13 +498,23 @@ export function registerSessionRuntimeHandlers(
   // ── session:approve-plan ─────────────────────────────────────────────────
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
-  registerIpcOn("session:approve-plan", async (_event, req: AgentApprovePlanRequest) => {
+  registerIpcOn("session:approve-plan", async (event, req: AgentApprovePlanRequest) => {
     try {
       assertSafeId(req.sessionId, "sessionId");
     } catch {
       broadcastEvent("session:projection", makeSessionProjection(String(req.sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
       broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
       return;
+    }
+    const mobile = isMobileCaller(event);
+    if (mobile) {
+      const storedCwd = q.getCodingSessionById(ctx.db, req.sessionId)?.cwd;
+      if (!storedCwd) {
+        rejectMobileRequest(req.sessionId);
+        return;
+      }
+      const config = getCachedConfig();
+      req = sanitizeMobileRequest(req, { config, fallback: agentFallback(config), storedCwd });
     }
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
@@ -510,7 +538,7 @@ export function registerSessionRuntimeHandlers(
 
     // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
     // by the cache layer, never a raw key). Mode + autoApprove are co-persisted.
-    cacheLlmConnection("agent", {
+    if (!mobile) cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
       apiKey: req.config?.apiKey,
@@ -624,7 +652,7 @@ export function registerSessionRuntimeHandlers(
   // thresholdRatio 0.8) runs between steps automatically; this is the explicit
   // user-triggered variant. It opens the session's agent from its persisted jsonl
   // (idle), runs ctx.compaction.compactNow(agent), then disposes it.
-  registerIpcOn("session:compact-now", async (_event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number; apiMode?: "responses" | "completions" | "anthropic-messages" } }) => {
+  registerIpcOn("session:compact-now", async (event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number; apiMode?: "responses" | "completions" | "anthropic-messages" } }) => {
     try {
       assertSafeId(req.sessionId, "sessionId");
     } catch {
@@ -642,6 +670,10 @@ export function registerSessionRuntimeHandlers(
     }
     const sessionRow = q.getCodingSessionById(ctx.db, sessionId) as { cwd?: string } | undefined;
     const cwd = sessionRow?.cwd ?? "/";
+    if (isMobileCaller(event)) {
+      const config = getCachedConfig();
+      req = sanitizeMobileRequest(req, { config, fallback: agentFallback(config), storedCwd: cwd });
+    }
     const llmConfig: AgentLLMConfig = {
       baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
       model: req.config?.model || "gpt-5.6-luna",

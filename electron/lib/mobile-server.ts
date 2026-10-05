@@ -5,6 +5,8 @@ import os from "os";
 import crypto from "crypto";
 import QRCode from "qrcode";
 import { getIpcHandler, setMobileBroadcastCallback } from "../ipc/registry";
+import { MOBILE_CALLER, pinMobileArgs } from "../ipc/mobile-caller";
+import { getCachedConfig } from "./config-cache";
 import type { DbContext } from "../ipc/handlers";
 import { readBody, sendJson } from "./http-json";
 import type { MobileStatus } from "../../shared/types/runtime";
@@ -204,6 +206,8 @@ export class MobileServer {
             // Create a mock Event object with custom sender pointing to the specific SSE client connection
             const client = this.sseClients.get(clientId);
             const mockEvent = {
+              // Handlers use this to limit what a phone request may ask for (ipc/mobile-caller.ts).
+              [MOBILE_CALLER]: true,
               sender: {
                 id: clientId,
                 isDestroyed: () => !this.sseClients.has(clientId),
@@ -225,7 +229,7 @@ export class MobileServer {
               }
             };
 
-            const result = await handler(mockEvent, ...args);
+            const result = await handler(mockEvent, ...pinMobileArgs(Array.isArray(args) ? args : [], getCachedConfig()));
             sendJson(res, 200, result);
           } catch (error) {
             sendJson(res, 500, { error: (error as Error).message });
