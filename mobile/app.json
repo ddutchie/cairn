@@ -2,7 +2,7 @@
   "expo": {
     "name": "Cairn",
     "slug": "cairn-mobile",
-    "version": "0.1.7",
+    "version": "0.1.8",
     "orientation": "portrait",
     "scheme": "cairn",
     "userInterfaceStyle": "automatic",
@@ -42,7 +42,9 @@
           "photosPermission": "Cairn uses your photos to attach images to chat messages.",
           "savePhotosPermission": "Cairn saves photos you capture in chat.",
           "isAccessMediaLocationEnabled": false,
-          "granularPermissions": ["photo"]
+          "granularPermissions": [
+            "photo"
+          ]
         }
       ],
       "./plugins/withAppleSigning",
