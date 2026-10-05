@@ -35,19 +35,9 @@ import {
   makeSessionProjection,
   type SessionProjectionKind,
 } from "../../shared/agent/session-projection";
+import type { PermissionsOption, PermissionsSelect } from "../../shared/agent/session-wire";
 
-/** One preset row in the permissions select. */
-export interface PermissionsOption {
-  value: string;
-  name: string;
-  description?: string;
-}
-
-/** Renderer-safe `permissions` select view (mirrors the upstream wire view). */
-export interface PermissionsSelect {
-  options: PermissionsOption[];
-  currentValue: string;
-}
+export type { PermissionsOption, PermissionsSelect };
 
 /** Upstream's derived not-a-preset marker — shown, never a switch target. */
 export const PERMISSIONS_CUSTOM_VALUE = "custom";

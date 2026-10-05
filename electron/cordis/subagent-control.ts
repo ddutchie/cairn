@@ -25,13 +25,9 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import { queueHostSubagentPrompt } from "@deepseek-ai/dsh-subagent/internal";
 import { getContext } from "./cordis-context";
 import "./ctx-augment";
+import type { SubagentChildMode, SubagentChildActivity, SubagentScope, SubagentChildView, SubagentDiagnosticView, SubagentCatalogEntry, SubagentCatalogView, SubagentControlCode } from "../../shared/agent/session-wire";
 
-export type SubagentChildMode = "one-shot" | "continuable";
-export type SubagentChildActivity = "running" | "inactive";
-
-/** Listing breadth for the human catalog. `children` = direct children only;
- *  `descendants` = the full session-backed subtree (dsh `listDescendants`). */
-export type SubagentScope = "children" | "descendants";
+export type { SubagentChildMode, SubagentChildActivity, SubagentScope, SubagentChildView, SubagentDiagnosticView, SubagentCatalogEntry, SubagentCatalogView, SubagentControlCode };
 
 /**
  * Lenient scope coercion for the IPC boundary — anything that is not exactly
@@ -41,44 +37,6 @@ export type SubagentScope = "children" | "descendants";
 export function normalizeSubagentScope(value: unknown): SubagentScope {
   return value === "descendants" ? "descendants" : "children";
 }
-
-export interface SubagentChildView {
-  id: string;
-  mode: SubagentChildMode;
-  label?: string;
-  activity: SubagentChildActivity;
-  /** Exact agent live in this process right now (running or idle). */
-  live: boolean;
-  hasChildren: boolean;
-  /** Descendants scope only: durable direct parent of this candidate. */
-  parentId?: string;
-  /** Descendants scope only: edge distance from the requested root (direct children are 1). */
-  depth?: number;
-}
-
-export interface SubagentDiagnosticView {
-  kind: "diagnostic";
-  id: string;
-  reason: "corrupt" | "unsupported" | "unavailable";
-}
-
-export type SubagentCatalogEntry = SubagentChildView | SubagentDiagnosticView;
-
-export interface SubagentCatalogView {
-  entries: SubagentCatalogEntry[];
-  /** Whether the exact parent agent is live (host messaging possible). */
-  parentAvailable: boolean;
-}
-
-export type SubagentControlCode =
-  | "parent-unavailable"
-  | "not-resumable"
-  | "unauthorized"
-  | "delivery-unavailable"
-  | "attachment-invalid"
-  | "bad-request"
-  | "cancelled"
-  | "internal";
 
 export class SubagentControlError extends Error {
   readonly code: SubagentControlCode;

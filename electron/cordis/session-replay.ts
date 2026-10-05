@@ -16,17 +16,15 @@
  */
 
 import { foldSurface, deriveEventMessage, type SessionEvent } from "@deepseek-ai/dsh-session";
-import {
-  foldContextRing,
-  foldSessionTodos,
-  type ContextRingState,
-  type SessionTodoItem,
-} from "./plugins/context-ring";
+import { foldContextRing, foldSessionTodos } from "./plugins/context-ring";
 import type { SessionUsageMetrics } from "./context-usage";
-import { foldSessionStats, sessionStatsFromSnapshot, type SessionStats, type SessionStatsSnapshot, type TurnStats } from "./session-stats";
+import { foldSessionStats, sessionStatsFromSnapshot, type SessionStatsSnapshot } from "./session-stats";
 import { inspectSession, type InspectablePersistence } from "./session-inspect";
 import { isToolResultMessage, readToolResults } from "./tool-result-message";
 import { cairnRefFromMeta } from "../../shared/agent/session-event-fold";
+import type { ReplayToolCall, ReplayMessage, ReplaySubagent, LoadSessionMessagesResult } from "../../shared/agent/session-wire";
+
+export type { ReplayToolCall, ReplayMessage, ReplaySubagent, LoadSessionMessagesResult };
 
 /** One `SessionPersistence.list()` row — legacy flat shape or dsh 0.1.5 `{ header }` snapshot. */
 type StoredSessionListing = { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number; meta?: { origin?: string; parentSession?: unknown; createdAt?: number }; header?: { id?: unknown; origin?: string; parentSession?: unknown; createdAt?: number } };
@@ -35,21 +33,6 @@ type StoredSessionListing = { id?: unknown; origin?: string; parentSession?: unk
 /** A generic derived message block (post foldSurface + deriveEventMessage). */
 type DerivedBlock = { type: string; text?: string; id?: string; name?: string; arguments?: string; toolCallId?: string; isError?: boolean; content?: Array<{ type: string; text?: string }> };
 type DerivedMessage = { id: string; role: string; content: DerivedBlock[]; source?: { kind?: string; form?: string; model?: string } };
-
-export interface ReplayToolCall {
-  tool: string;
-  label: string;
-  callId?: string;
-  args?: string;
-  output?: string;
-  ok?: boolean;
-  error?: string;
-  cairnRef?: { type: "note" | "task"; id: string; title: string };
-  /** presentationMeta persisted on the tool/result event (dsh writes it at
-   *  event.data.meta). Rich toolviews (dsh-visualize) render their card from
-   *  this; absent → generic text rendering. */
-  meta?: Record<string, unknown>;
-}
 
 const NOTE_TOOLS = new Set([
   "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template", "create_note",
@@ -78,33 +61,6 @@ export function extractCairnRef(
   }
 }
 
-
-/** A UI-agnostic replayed message (both chat + coding session map from this). */
-export interface ReplayMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  reasoning?: string;
-  reasoningSummary?: string;
-  reasoningItems?: Array<Record<string, unknown>>;
-  reasoningModel?: string;
-  toolCalls?: ReplayToolCall[];
-  /** Per-turn throughput/latency (TTFT, tok/s, output tokens) — assistant only,
-   *  when derivable from the session log. Attached in loadSessionMessages. */
-  stats?: TurnStats;
-}
-
-/** A replayed subagent trace (child session). */
-export interface ReplaySubagent {
-  childId: string;
-  role: string;
-  instruction: string;
-  content: string;
-  reasoning?: string;
-  toolCalls?: ReplayToolCall[];
-  running: false;
-  result?: string;
-}
 
 function getMessageSource(msg: { source?: unknown }): { kind?: string; form?: string; model?: string } | undefined {
   return msg.source as { kind?: string; form?: string; model?: string } | undefined;
@@ -313,24 +269,6 @@ export function descriptorLabelFromEvents(events: readonly SessionEvent[]): stri
     if (ev.type === "subagent/descriptor" && ev.data?.label) return ev.data.label;
   }
   return "";
-}
-
-/**
- * Given a persistence backend + a parent session id, load the parent's derived
- * messages and any subagent children (origin==='subagent', parentSession===id),
- * returning the collapsed messages with the most-recent subagent attached to the
- * dispatching assistant. Shared by chat + coding session load paths.
- */
-export interface LoadSessionMessagesResult {
-  messages: ReplayMessage[];
-  subagents: ReplaySubagent[];
-  usage?: SessionUsageMetrics;
-  contextRing?: ContextRingState;
-  todos?: SessionTodoItem[];
-  /** Whole-session throughput/latency aggregate (for the composer stats line). */
-  stats?: SessionStats;
-  /** Latest folded session title (chat-only, null before first eligible title). */
-  title?: string | null;
 }
 
 export async function loadSessionMessages(

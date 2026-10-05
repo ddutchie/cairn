@@ -32,6 +32,9 @@
  * over the turn's usage-reporting steps) so the renderer can show a compact
  * per-assistant-message stats line, matching upstream `deriveTurnMetrics`.
  */
+import type { SessionStatsTotals, TurnStats, SessionStats, SessionStatsSnapshot } from "../../shared/agent/session-wire";
+
+export type { SessionStatsTotals, TurnStats, SessionStats, SessionStatsSnapshot };
 
 /**
  * Inlined `isTokenDelta` (was `import { isTokenDelta } from
@@ -51,43 +54,6 @@ function isTokenDelta(chunk: unknown): boolean {
     default:
       return false;
   }
-}
-
-export interface SessionStatsTotals {
-  /** Distinct turns with ≥1 closed step. */
-  turns: number;
-  /** Closed steps. */
-  steps: number;
-  /** Summed model wall time over message-assembling steps, ms. */
-  llmMs: number;
-  /** Summed matched tool call→result wall time, ms. */
-  toolMs: number;
-  /** Summed first-token latency over ttftSteps, ms. */
-  ttftMs: number;
-  /** Steps carrying a recorded first token. */
-  ttftSteps: number;
-  /** Summed decode wall time over usage-reporting steps, ms. */
-  decodeMs: number;
-  /** Summed provider output tokens over the same steps. */
-  decodeTokens: number;
-}
-
-/** Per-turn latency/throughput reading for a single assistant bubble. */
-export interface TurnStats {
-  /** First-step TTFT in ms (absent when unrecorded). */
-  ttftMs?: number;
-  /** Decode throughput (output tokens / decode seconds) over usage-reporting steps. */
-  tokensPerSecond?: number;
-  /** Summed provider output tokens across the turn's usage-reporting steps. */
-  outputTokens?: number;
-}
-
-export interface SessionStats {
-  totals: SessionStatsTotals;
-  /** turn number → per-turn metrics (turns with no derivable metric are absent). */
-  byTurn: Record<number, TurnStats>;
-  /** Session aggregate throughput (decodeTokens / decodeMs), for the composer line. */
-  tokensPerSecond?: number;
 }
 
 type Ev = { type: string; time?: unknown; data?: unknown };
@@ -227,21 +193,6 @@ export function foldSessionStats(events: readonly Ev[]): SessionStats | undefine
 
   const tokensPerSecond = totals.decodeMs > 0 ? totals.decodeTokens / (totals.decodeMs / 1000) : undefined;
   return { totals, byTurn, tokensPerSecond };
-}
-
-/**
- * Upstream `sessionStats` wire view: the 8 whole-log totals served through
- * the session-projection seam. No per-turn state — see the module header.
- */
-export interface SessionStatsSnapshot {
-  turns: number;
-  steps: number;
-  llmMs: number;
-  toolMs: number;
-  ttftMs: number;
-  ttftSteps: number;
-  decodeMs: number;
-  decodeTokens: number;
 }
 
 const SNAPSHOT_FIELDS = [

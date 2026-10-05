@@ -23,26 +23,9 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { estimateCostUsd } from "./host-store";
+import type { SessionUsageBreakdown, SessionUsageMetrics } from "../../shared/agent/session-wire";
 
-export interface SessionUsageBreakdown {
-  systemPrompt: number;
-  tools: number;
-  skills: number;
-  toolOutputs: number;
-  conversation: number;
-}
-
-export interface SessionUsageMetrics {
-  promptTokens: number;
-  completionTokens: number;
-  reasoningTokens?: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
-  costUsd?: number;
-  contextLimit?: number;
-  contextWindow?: number;
-  breakdown?: SessionUsageBreakdown;
-}
+export type { SessionUsageBreakdown, SessionUsageMetrics };
 
 type AnyEvent = { type: string; seq?: number; data?: unknown };
 

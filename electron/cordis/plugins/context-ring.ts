@@ -20,6 +20,10 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import * as z from "zod";
+import type { ContextRingState as ContextRingWire } from "../../../shared/agent/session-wire";
+import type { SessionTodoItem } from "../../../shared/agent/session-wire";
+
+export type { SessionTodoItem };
 
 export const CONTEXT_RING_KEY = "contextRing";
 
@@ -44,6 +48,11 @@ const ContextRingStateSchema = z.object({
 
 export type ContextRingState = z.infer<typeof ContextRingStateSchema>;
 export type ContextRingModelBucket = z.infer<typeof ModelBucketSchema>;
+
+// The renderer-facing copy in shared/ must stay identical to the schema.
+type SameShape<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const contextRingWireMatches: SameShape<ContextRingState, ContextRingWire> = true;
+void contextRingWireMatches;
 
 const zeroBucket = (): ContextRingModelBucket => ({
   turns: 0, reasoningBlocks: 0, reasoningChars: 0, replayedBlocks: 0, degradedBlocks: 0,
@@ -135,14 +144,6 @@ export function mountContextRing(ctx: Context): void {
 /** Latest known ring for a session (undefined when never seen this process). */
 export function cachedContextRing(sessionId: string): ContextRingState | undefined {
   return ringCache.get(sessionId);
-}
-
-// ── Session folds (reasoning provenance, todos) ──────────────────────────────────────────
-
-export interface SessionTodoItem {
-  id: string;
-  title: string;
-  status: "pending" | "in_progress" | "completed";
 }
 
 /** Fold complete ContextRing state across all session events. */

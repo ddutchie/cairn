@@ -15,15 +15,9 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { scheduleView, type ScheduleRecord } from "@deepseek-ai/dsh-schedule";
 import { SessionId } from "@deepseek-ai/dsh-session";
+import type { ScheduleWire } from "../../shared/agent/session-wire";
 
-/** Renderer-safe reminder summary (schedule_list view subset). */
-export interface ScheduleWire {
-  id: string;
-  prompt: string;
-  scheduledAt: string;
-  kind: string;
-  state: "scheduled" | "overdue";
-}
+export type { ScheduleWire };
 
 interface CordisLike {
   schedule?: { list?: (request: { sessionId: SessionId }) => Promise<ScheduleRecord[]> };
