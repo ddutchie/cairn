@@ -7,6 +7,8 @@ import QRCode from "qrcode";
 import { getIpcHandler, setMobileBroadcastCallback } from "../ipc/registry";
 import type { DbContext } from "../ipc/handlers";
 import { readBody, sendJson } from "./http-json";
+import type { MobileStatus } from "../../shared/types/runtime";
+export type { MobileStatus };
 
 /** A PIN login is a few bytes; cap it well below anything legitimate IPC needs. */
 const MAX_AUTH_BODY_BYTES = 16_384;
@@ -20,12 +22,6 @@ export interface MobileSettings {
   pin: string;
 }
 
-export interface MobileStatus {
-  running: boolean;
-  url: string;
-  qrCode: string;
-  pin: string;
-}
 
 const CONFIG_FILE = "mobile-config.json";
 const SESSIONS_FILE = "mobile-sessions.json";

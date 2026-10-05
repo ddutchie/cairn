@@ -672,3 +672,43 @@ export function parseChatThemesManifest(raw: unknown): ChatThemesManifest {
     }),
   } as ChatThemesManifest;
 }
+
+// ── Fetch results (manifest plus cache provenance) ──────────────────────────
+// `fromCache` is true when served from the local cache (offline / 304);
+// `cachedAt` is when the cache was last populated; `error` is set when the
+// network fetch failed and no cache was available.
+
+export interface RegistryFetchResult {
+  manifest: CommunityManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
+export interface ProvidersFetchResult {
+  manifest: ProvidersManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
+export interface AutomationsFetchResult {
+  manifest: AutomationsManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
+export interface PersonalitiesFetchResult {
+  manifest: PersonalitiesManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}
+
+export interface ChatThemesFetchResult {
+  manifest: ChatThemesManifest;
+  fromCache: boolean;
+  cachedAt?: string;
+  error?: string;
+}

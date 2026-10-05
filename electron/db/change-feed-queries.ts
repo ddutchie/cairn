@@ -30,6 +30,7 @@
 import type Database from "better-sqlite3";
 import { toWorkspace, toProject, toColumn, toCard, toTag, type DbRow } from "../host-shared/db-mappers";
 import { getNoteSummariesByIds } from "./notes-queries";
+import type { ChangeSet } from "../../shared/types/snapshot";
 
 /** Store key → table + snapshot filter + mapper. Filters MUST match getFullSnapshot's queries. */
 const SNAPSHOT_ENTITIES = {
@@ -60,22 +61,7 @@ const FEED_RETAIN = 10_000;
 /** Prune only once the feed exceeds this many rows. */
 const FEED_PRUNE_AT = 12_000;
 
-export interface ChangeSet {
-  /** Identifies the DB handle; a mismatch (workspace swap) forces a reset. */
-  feedId: string;
-  /** New cursor. */
-  head: number;
-  /** True when the caller must fall back to a full snapshot. */
-  reset: boolean;
-  /** Tables with any change in the range. */
-  touched: string[];
-  /** Tables with a change NOT made by the calling window. */
-  externalTouched: string[];
-  /** External changes that still pass the snapshot filters (upsert these). */
-  upserts: Partial<Record<ChangeFeedEntity, unknown[]>>;
-  /** External changes whose row no longer passes the snapshot filters (remove). */
-  removed: Partial<Record<ChangeFeedEntity, string[]>>;
-}
+export type { ChangeSet } from "../../shared/types/snapshot";
 
 interface FeedMeta {
   id: string;

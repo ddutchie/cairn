@@ -18,65 +18,16 @@ import { getAllEmbeddingsForWorkspace, getAllTaskEmbeddingsForWorkspace } from "
 import type { NoteEmbeddingRecord, TaskEmbeddingRecord } from "./queries";
 import { cosine, toFloat32 } from "../embeddings/cosine";
 import { stripMarkdown } from "../host-shared/text-utils";
+import type { GraphEdge, GraphNode, KnowledgeGraph, NeighbourNode, NeighboursResult } from "../../shared/types/graph";
+import type { GraphQueryFilters } from "../../shared/types/graph";
+import type { GraphEdgeType as EdgeType, GraphNodeType } from "../../shared/types/domain";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export type GraphNodeType = "project" | "note" | "card" | "tag";
-
-export interface GraphNode {
-  id: string;
-  type: GraphNodeType;
-  title: string;
-  projectId?: string;
-  workspaceId: string;
-  /** Extra metadata for the detail panel */
-  meta?: {
-    status?: string;
-    priority?: string;
-    assignee?: string;
-    tagIds?: string[];
-    isPinned?: boolean;
-    snippet?: string;
-    color?: string; // for tags
-    isArchived?: boolean;
-  };
-}
-
-export type EdgeType =
-  | "note-note"
-  | "note-card"
-  | "tag-member"
-  | "project-member"
-  | "flow-ref"
-  | "flow-edge"
-  | "co-mention"
-  | "keyword"
-  | "assignee"
-  | "wikilink"
-  | "semantic";
-
-export interface GraphEdge {
-  id: string;
-  source: string;
-  target: string;
-  type: EdgeType;
-  label?: string;
-  weight?: number;
-  sourceSectionTitle?: string;
-  targetSectionTitle?: string;
-}
-
-export interface KnowledgeGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-
-export interface GraphFilters {
-  projectIds?: string[];   // empty = all projects
-  includeAuto?: boolean;   // include relationship_cache edges
-  nodeTypes?: GraphNodeType[];
-  edgeTypes?: EdgeType[];
-}
+export type { GraphNode, GraphEdge, KnowledgeGraph, NeighbourNode, NeighboursResult } from "../../shared/types/graph";
+export type { GraphNodeType, GraphEdgeType as EdgeType } from "../../shared/types/domain";
+/** `db:graph:get` filters (see GraphQueryFilters). */
+export type GraphFilters = GraphQueryFilters;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -416,16 +367,6 @@ export function getKnowledgeGraph(
 
 // ── Neighbour traversal ───────────────────────────────────────────────────────
 
-export interface NeighbourNode {
-  node: GraphNode;
-  edge: GraphEdge;
-  distance: number;
-}
-
-export interface NeighboursResult {
-  center: GraphNode | null;
-  neighbours: NeighbourNode[];
-}
 
 export function getNeighbours(
   db: Database.Database,

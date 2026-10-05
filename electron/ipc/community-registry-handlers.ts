@@ -8,7 +8,7 @@
  * chosen entry into mcp_servers / custom_services) is Registry 2.
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle } from "./result-helpers";
 import {
   fetchManifest,
@@ -24,20 +24,20 @@ import {
 } from "../lib/community-registry";
 
 export function registerCommunityRegistryHandlers(): void {
-  registerIpcHandle("registry:fetch", () => handle(() => fetchManifest()));
-  registerIpcHandle("registry:refresh", () => handle(() => refreshManifest()));
+  registerContractHandle("registry:fetch", () => handle(() => fetchManifest()));
+  registerContractHandle("registry:refresh", () => handle(() => refreshManifest()));
   // Providers live in a SEPARATE manifest (providers.json) so the catalogs can
   // evolve independently.
-  registerIpcHandle("registry:fetchProviders", () => handle(() => fetchProvidersManifest()));
-  registerIpcHandle("registry:refreshProviders", () => handle(() => refreshProvidersManifest()));
+  registerContractHandle("registry:fetchProviders", () => handle(() => fetchProvidersManifest()));
+  registerContractHandle("registry:refreshProviders", () => handle(() => refreshProvidersManifest()));
   // Automations live in a SEPARATE manifest (automations.json), same rationale.
-  registerIpcHandle("registry:fetchAutomations", () => handle(() => fetchAutomationsManifest()));
-  registerIpcHandle("registry:refreshAutomations", () => handle(() => refreshAutomationsManifest()));
+  registerContractHandle("registry:fetchAutomations", () => handle(() => fetchAutomationsManifest()));
+  registerContractHandle("registry:refreshAutomations", () => handle(() => refreshAutomationsManifest()));
   // Personalities live in a SEPARATE manifest (personalities.json), same rationale.
-  registerIpcHandle("registry:fetchPersonalities", () => handle(() => fetchPersonalitiesManifest()));
-  registerIpcHandle("registry:refreshPersonalities", () => handle(() => refreshPersonalitiesManifest()));
+  registerContractHandle("registry:fetchPersonalities", () => handle(() => fetchPersonalitiesManifest()));
+  registerContractHandle("registry:refreshPersonalities", () => handle(() => refreshPersonalitiesManifest()));
   // Chat themes live in a SEPARATE manifest (themes.json), same rationale — new
   // themes ship without an app update.
-  registerIpcHandle("registry:fetchChatThemes", () => handle(() => fetchChatThemesManifest()));
-  registerIpcHandle("registry:refreshChatThemes", () => handle(() => refreshChatThemesManifest()));
+  registerContractHandle("registry:fetchChatThemes", () => handle(() => fetchChatThemesManifest()));
+  registerContractHandle("registry:refreshChatThemes", () => handle(() => refreshChatThemesManifest()));
 }

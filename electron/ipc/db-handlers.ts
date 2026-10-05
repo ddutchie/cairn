@@ -8,7 +8,7 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerContractHandle, registerIpcHandle, broadcastIpcEvent } from "./registry";
+import { registerContractHandle, broadcastIpcEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders } from "../notes-files";
@@ -23,7 +23,7 @@ import { registerAutomationHandlers } from "./db-automation-handlers";
 
 export function registerDbHandlers(ctx: DbContext): void {
   // ── Full snapshot (hydrate store on app launch) ───
-  registerIpcHandle("db:snapshot", (_e, opts?: { noteBodies?: boolean }) =>
+  registerContractHandle("db:snapshot", (_e, opts) =>
     handle(() => (opts?.noteBodies === false ? q.getRendererSnapshot(ctx.db) : q.getFullSnapshot(ctx.db))));
 
   // ── Lazy note bodies (renderer keeps metadata, loads bodies on demand) ───
@@ -35,17 +35,16 @@ export function registerDbHandlers(ctx: DbContext): void {
     handle(() => q.clearNoteChangeBase(ctx.db, id)));
   registerContractHandle("db:note:backlinks:list", (_e, { noteId }: { noteId: string }) =>
     handle(() => q.wikilinkBacklinkIds(ctx.db, noteId)));
-  registerIpcHandle("db:hasData", () => handle(() => q.hasData(ctx.db)));
+  registerContractHandle("db:hasData", () => handle(() => q.hasData(ctx.db)));
 
   // ── Change feed (incremental refresh on db:changed) ───
   // `get` is a read verb, so the registry never re-broadcasts db:changed for it.
-  registerIpcHandle("db:changes:get", (e, args: { since: number | null; feedId: string | null }) =>
+  registerContractHandle("db:changes:get", (e, args) =>
     handle(() => q.getChangesSince(ctx.db, args?.since ?? null, args?.feedId ?? null, e?.sender?.id)));
 
   // ── Dashboard live query bridge ───────────────────
   // Executes read-only MCP-style tool calls from dashboard iframes.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerIpcHandle("db:mcpQuery", (_e, { tool, args }: { tool: string; args: Record<string, any> }) => {
+  registerContractHandle("db:mcpQuery", (_e, { tool, args }) => {
     return handle(() => {
       if (tool === "get_cairn_context") {
         return executeMcpTool(ctx.db, ctx.workspacePath, tool, args);
@@ -193,10 +192,10 @@ export function registerDbHandlers(ctx: DbContext): void {
   registerContractHandle("db:tag:delete", (_e, { id }) => handle(() => q.deleteTag(ctx.db, id)));
 
   // ── Slash commands ─────────────────────────────────
-  registerIpcHandle("db:command:list", (_e, { workspaceId }) => handle(() => q.getSlashCommands(ctx.db, workspaceId)));
-  registerIpcHandle("db:command:create", (_e, args: Parameters<typeof q.createSlashCommand>[1]) => handle(() => q.createSlashCommand(ctx.db, args)));
-  registerIpcHandle("db:command:update", (_e, { id, patch }) => handle(() => q.updateSlashCommand(ctx.db, id, patch)));
-  registerIpcHandle("db:command:delete", (_e, { id }) => handle(() => q.deleteSlashCommand(ctx.db, id)));
+  registerContractHandle("db:command:list", (_e, { workspaceId }) => handle(() => q.getSlashCommands(ctx.db, workspaceId)));
+  registerContractHandle("db:command:create", (_e, args) => handle(() => q.createSlashCommand(ctx.db, args)));
+  registerContractHandle("db:command:update", (_e, { id, patch }) => handle(() => q.updateSlashCommand(ctx.db, id, patch)));
+  registerContractHandle("db:command:delete", (_e, { id }) => handle(() => q.deleteSlashCommand(ctx.db, id)));
 
   registerAutomationHandlers(ctx);
 

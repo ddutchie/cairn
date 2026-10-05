@@ -6,25 +6,14 @@
  * this module only aggregates.
  */
 
-import { registerIpcHandle, registerContractHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
-import { queryUsageOverview, queryRecentUsage, queryUsageThreads, clearLlmUsage, type UsageQueryFilter, type UsageSource } from "../db/usage-queries";
+import { queryUsageOverview, queryRecentUsage, queryUsageThreads, clearLlmUsage, type UsageQueryFilter } from "../db/usage-queries";
 import { getAgentHost } from "../cordis/agent-host";
 import { setModelPricing, setNoTemperatureModels } from "../lib/model-pricing";
 
-export interface UsageRangeArgs {
-  workspaceId?: string;
-  source?: UsageSource;
-  /** Epoch ms, inclusive. Omit for all time. */
-  from?: number;
-  to?: number;
-  /** Restrict to one thread/session (expanding a thread group). */
-  sessionId?: string;
-  /** Only rows with no session id (flat rows shown beside thread groups). */
-  noSession?: boolean;
-  /** Drop rows whose cost is a models.dev estimate (provider reported none). */
-  excludeEstimated?: boolean;
-}
+export type { UsageRangeArgs } from "../../shared/types/usage";
+import type { UsageRangeArgs } from "../../shared/types/usage";
 
 export function registerUsageHandlers(ctx: DbContext): void {
   // models.dev per-1M pricing map pushed by the renderer once its catalog loads,
@@ -57,14 +46,14 @@ export function registerUsageHandlers(ctx: DbContext): void {
 
   // Everything the view needs for a range: headline totals, previous window
   // (delta chips), per-day series, and source + model breakdowns.
-  registerIpcHandle("usage:overview", async (_e, args: UsageRangeArgs) => {
+  registerContractHandle("usage:overview", async (_e, args) => {
     return handle(() => {
       return queryUsageOverview(ctx.db, toFilter(args));
     });
   });
 
   // Most recent per-call rows for the history table.
-  registerIpcHandle("usage:recent", async (_e, args: UsageRangeArgs & { limit?: number }) => {
+  registerContractHandle("usage:recent", async (_e, args) => {
     return handle(() => {
       return queryRecentUsage(ctx.db, toFilter(args), args?.limit ?? 50);
     });
@@ -72,7 +61,7 @@ export function registerUsageHandlers(ctx: DbContext): void {
 
   // Per-thread rollups (chat threads, agent sessions, automation runs) for the
   // grouped history table; expand a group with usage:recent + sessionId.
-  registerIpcHandle("usage:threads", async (_e, args: UsageRangeArgs & { limit?: number }) => {
+  registerContractHandle("usage:threads", async (_e, args) => {
     return handle(async () => {
       const groups = queryUsageThreads(ctx.db, toFilter(args), args?.limit ?? 50);
       // Chat titles live in the session log (chat_threads.title is mostly empty),
@@ -88,10 +77,10 @@ export function registerUsageHandlers(ctx: DbContext): void {
 
   // Destructive: delete recorded usage rows (scoped to the workspace filter, so
   // it clears what the view shows — the workspace's rows plus global one-shots).
-  registerIpcHandle("usage:clear", async (_e, args: UsageRangeArgs) => {
+  registerContractHandle("usage:clear", async (_e, args) => {
     return handle(() => {
       const deleted = clearLlmUsage(ctx.db, toFilter(args ?? {}));
-      return { deleted, ok: true };
+      return { deleted, ok: true as const };
     });
   });
 }

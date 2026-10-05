@@ -123,3 +123,23 @@ describe("db:* channel classification coverage", () => {
     expect(unknown).toEqual([]);
   });
 });
+
+describe("local-only channels", () => {
+  it("are registered for the desktop window but hidden from the Mobile Access bridge", async () => {
+    const { registerContractHandle, getIpcHandler } = await import("./registry");
+    const { ipcMain } = await import("electron");
+    const ok = async () => ({ data: { ok: true as const } });
+    registerContractHandle("plugins:openFolder", ok, { localOnly: true });
+    registerContractHandle("runtime:stop", ok);
+    expect(ipcMain.handle).toHaveBeenCalledWith("plugins:openFolder", expect.any(Function));
+    expect(getIpcHandler("plugins:openFolder")).toBeUndefined();
+    expect(getIpcHandler("runtime:stop")).toBeTypeOf("function");
+  });
+
+  it("registers every plugins:* channel as local-only", () => {
+    const src = fs.readFileSync(path.join(__dirname, "ui-plugin-handlers.ts"), "utf8");
+    const calls = src.match(/registerContractHandle\("plugins:[^"]+"/g) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    expect((src.match(/, LOCAL_ONLY\);/g) ?? []).length).toBe(calls.length);
+  });
+});

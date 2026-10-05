@@ -45,6 +45,21 @@ export interface CustomSlashCommand {
   updatedAt: string;
 }
 
+/** `db:command:create` input; omitted text fields default to "", scope to "both". */
+export interface SlashCommandCreateInput {
+  id: ID;
+  workspaceId: ID;
+  name: string;
+  description?: string;
+  insertText?: string;
+  scope?: SlashCommandScope;
+  source?: Exclude<SlashCommandSource, "builtin">;
+  communityId?: string;
+}
+
+/** `db:command:update` patch; omitted fields are left unchanged. */
+export type SlashCommandPatch = Partial<Pick<CustomSlashCommand, "name" | "description" | "insertText" | "scope">>;
+
 // ── Workspace ─────────────────────────────────
 export interface Workspace {
   id: ID;

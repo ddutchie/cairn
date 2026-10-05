@@ -59,6 +59,29 @@ import type {
   AuthCompleteResult, AuthStartResult, CustomServiceConfig, ListMcpToolsResult, McpServerConfig, McpTestResult,
   SecretToolType, ServiceTestResult, ToolAttachment,
 } from "../types/tools";
+import type { ChangeSet, EntitySnapshot } from "../types/snapshot";
+import type { GraphQueryFilters, KnowledgeGraph, NeighboursResult } from "../types/graph";
+import type { GraphEdgeType } from "../types/domain";
+import type { CustomSlashCommand, SlashCommandCreateInput, SlashCommandPatch } from "../types/workspace";
+import type { UsageOverview, UsageRangeArgs, UsageRecentRow, UsageThreadGroup } from "../types/usage";
+import type {
+  UserStyleDoneEvent, UserStyleGenerationInput, UserStyleRow, UserStyleSaveInput, UserStyleStep,
+  UserStyleToolCallDoneEvent, UserStyleToolCallEvent,
+} from "../types/user-style";
+import type { ApprovalGrant } from "../types/approval";
+import type {
+  ConflictCopy, ConflictResolution, DesktopSyncResult, PeerProtocol, RestorableRow, SyncActivityRow,
+  SyncPendingBreakdown, SyncStatus,
+} from "../types/sync";
+import type {
+  AutomationsFetchResult, ChatThemesFetchResult, PersonalitiesFetchResult, ProvidersFetchResult, RegistryFetchResult,
+} from "../chat/registry-schema";
+import type { InstalledPlugin, PluginList, UiPluginSource } from "../types/plugins";
+import type {
+  AdjacentNote, EmbeddingDownloadProgress, EmbeddingModelManifestEntry, EmbeddingsStatus, NoteProjectionRow,
+  ProjectionResult, ReindexResult, RuntimeEmbeddingModel, RuntimeStatus,
+} from "../types/embeddings";
+import type { MobileStatus, SystemPromptPreview, ToolInventory } from "../types/runtime";
 
 /** Why a pop-out handshake call was refused. */
 export type PopoutRefusal = "invalid-payload" | "profile-mismatch" | "not-main-window" | "not-popout";
@@ -507,6 +530,158 @@ export interface IpcContract {
   "agent:kill": { args: [req: { sessionId: string }]; result: void };
   /** Live agent-owned terminals with scrollback, for windows that open late. */
   "agent:modelTerminals": { args: []; result: ModelTerminal[] };
+
+  // ── Snapshot + change feed ───────────────────────────────────────────────
+  /** Every live entity; `noteBodies: false` omits note content (the renderer loads bodies lazily). */
+  "db:snapshot": { args: [opts: { noteBodies?: boolean } | undefined]; result: EntitySnapshot };
+  /** Rows changed since `since` (null = just return the head cursor). */
+  "db:changes:get": { args: [req: { since: number | null; feedId: string | null }]; result: ChangeSet };
+  /** True once any workspace exists. */
+  "db:hasData": { args: []; result: boolean };
+  /** Read-only MCP-style tool call from a dashboard iframe. */
+  "db:mcpQuery": { args: [req: { tool: string; args: Record<string, unknown> }]; result: unknown };
+
+  // ── Slash commands ───────────────────────────────────────────────────────
+  "db:command:list": { args: [req: { workspaceId?: string }]; result: CustomSlashCommand[] };
+  "db:command:create": { args: [input: SlashCommandCreateInput]; result: CustomSlashCommand };
+  "db:command:update": { args: [req: { id: string; patch: SlashCommandPatch }]; result: CustomSlashCommand };
+  "db:command:delete": { args: [req: { id: string }]; result: void };
+
+  // ── Knowledge graph ──────────────────────────────────────────────────────
+  "db:graph:get": { args: [req: { workspaceId: string; filters?: GraphQueryFilters }]; result: KnowledgeGraph };
+  /** `depth` defaults to 1. */
+  "db:graph:neighbors": {
+    args: [req: { workspaceId: string; nodeId: string; depth?: number; edgeTypes?: GraphEdgeType[] }];
+    result: NeighboursResult;
+  };
+  /** Recomputes auto relationships (all entities, or just `entityIds`). */
+  "db:graph:recompute": { args: [req: { workspaceId: string; entityIds?: string[] }]; result: { ok: true } };
+
+  // ── Usage log (Usage view) ───────────────────────────────────────────────
+  /** Headline totals, the previous window, a per-day series and source/model breakdowns. */
+  "usage:overview": { args: [req: UsageRangeArgs]; result: UsageOverview };
+  /** Most recent per-call rows; `limit` defaults to 50. */
+  "usage:recent": { args: [req: UsageRangeArgs & { limit?: number }]; result: UsageRecentRow[] };
+  /** Per-thread rollups; `limit` defaults to 50. */
+  "usage:threads": { args: [req: UsageRangeArgs & { limit?: number }]; result: UsageThreadGroup[] };
+  /** Deletes the rows the filter selects. */
+  "usage:clear": { args: [req: UsageRangeArgs]; result: { deleted: number; ok: true } };
+
+  // ── Writing style ────────────────────────────────────────────────────────
+  "user-style:get": { args: []; result: UserStyleRow | null };
+  "user-style:save": { args: [req: { input: UserStyleSaveInput }]; result: UserStyleRow };
+  "user-style:clear": { args: []; result: { ok: true } };
+  /** One-shot generation (retries once at a lower temperature when unusable). */
+  "user-style:generate": {
+    args: [req: { step: UserStyleStep; input: UserStyleGenerationInput }];
+    result: { markdown: string };
+  };
+
+  // ── "Always allow" grants ────────────────────────────────────────────────
+  "approval-grants:list": { args: [req: { workspaceId: string }]; result: ApprovalGrant[] };
+  "approval-grants:delete": { args: [req: { id: string }]; result: { deleted: boolean } };
+  "approval-grants:clear-workspace": { args: [req: { workspaceId: string }]; result: { deleted: number } };
+
+  // ── Desktop sync (synced-folder oplog) ───────────────────────────────────
+  "sync:getFolder": { args: []; result: string | null };
+  /** null when the dialog is cancelled. */
+  "sync:selectFolder": { args: []; result: string | null };
+  "sync:clearFolder": { args: []; result: { ok: true } };
+  "sync:now": { args: []; result: DesktopSyncResult };
+  /** Initial status; transitions are pushed on the `sync:status` event. */
+  "sync:status": { args: []; result: SyncStatus };
+  "sync:pendingBreakdown": { args: []; result: SyncPendingBreakdown };
+  "sync:listConflicts": { args: []; result: ConflictCopy[] };
+  /** `keepMerged` requires `mergedContent`. */
+  "sync:resolveConflict": {
+    args: [req: { copyId: string; action: ConflictResolution; mergedContent?: string }];
+    result: { resolvedOriginalId: string | null };
+  };
+  /** Recent reconcile decisions; `limit` defaults to 100. */
+  "sync:activity": { args: [req: { limit?: number }]; result: SyncActivityRow[] };
+  /** Peers on a different sync protocol version. */
+  "sync:peerProtocols": { args: []; result: PeerProtocol[] };
+  /** Notes a peer deleted that can be restored; `total` may exceed `rows.length`. */
+  "sync:listRestorable": { args: [req: { limit?: number }]; result: { rows: RestorableRow[]; total: number } };
+  "sync:restoreNote": { args: [req: { id: string }]; result: { restored: boolean; reason?: string; fileError?: string } };
+  /** Retries the .md write for a restore whose DB half already landed. */
+  "sync:repairNoteFile": { args: [req: { id: string }]; result: { repaired: boolean; reason?: string; fileError?: string } };
+
+  // ── Community catalog (cache-first; `refresh*` forces a network fetch) ───
+  "registry:fetch": { args: []; result: RegistryFetchResult };
+  "registry:refresh": { args: []; result: RegistryFetchResult };
+  "registry:fetchProviders": { args: []; result: ProvidersFetchResult };
+  "registry:refreshProviders": { args: []; result: ProvidersFetchResult };
+  "registry:fetchAutomations": { args: []; result: AutomationsFetchResult };
+  "registry:refreshAutomations": { args: []; result: AutomationsFetchResult };
+  "registry:fetchPersonalities": { args: []; result: PersonalitiesFetchResult };
+  "registry:refreshPersonalities": { args: []; result: PersonalitiesFetchResult };
+  "registry:fetchChatThemes": { args: []; result: ChatThemesFetchResult };
+  "registry:refreshChatThemes": { args: []; result: ChatThemesFetchResult };
+
+  // ── Plugins (writes are gated behind CAIRN_PLUGINS_DEV=1 and reject otherwise) ─
+  /** Enabled UI plugins and their bundled source. */
+  "plugins:listUi": { args: []; result: UiPluginSource[] };
+  "plugins:list": { args: []; result: PluginList };
+  "plugins:setEnabled": { args: [req: { id: string; enabled: boolean }]; result: { ok: true } };
+  "plugins:openFolder": { args: []; result: { ok: true } };
+  /** `spec` is `github:owner/repo` or a local path. */
+  "plugins:install": { args: [req: { spec: string }]; result: InstalledPlugin };
+  /** Re-runs the plugin's recorded source spec. */
+  "plugins:update": { args: [req: { id: string }]; result: InstalledPlugin };
+  "plugins:uninstall": { args: [req: { id: string }]; result: { ok: true } };
+
+  // ── Embeddings (semantic search + note map) ──────────────────────────────
+  "embeddings:status": { args: []; result: EmbeddingsStatus };
+  "embeddings:stop": { args: []; result: void };
+  /** `needed` when stored vectors came from a different model than the configured one. */
+  "embeddings:needsReindex": { args: []; result: { needed: boolean; reason: "model_changed" | null } };
+  "embeddings:projections": {
+    args: [req: { workspaceId: string }];
+    result: { rows: NoteProjectionRow[]; anyStale: boolean; model: string };
+  };
+  /** Re-embeds the given notes (or the whole workspace, plus task cards). */
+  "db:embeddings:reindex": { args: [req: { workspaceId: string; noteIds?: string[]; model?: string }]; result: ReindexResult };
+  /** `k` defaults to 5; `queryNoteId` is excluded from the results. */
+  "db:embeddings:search": {
+    args: [req: { workspaceId: string; queryText: string; queryNoteId?: string; k?: number; excludeIds?: string[]; model?: string }];
+    result: AdjacentNote[];
+  };
+  "db:embeddings:recomputeProjections": { args: [req: { workspaceId: string; model?: string }]; result: ProjectionResult };
+  "embeddings:models:list": { args: []; result: EmbeddingModelManifestEntry[] };
+  /** Downloads + warms the model; progress arrives on `embeddings:download-progress`. */
+  "embeddings:models:install": { args: [req: { modelId: string }]; result: { ok: true } };
+  "embeddings:models:remove": { args: [req: { modelId: string }]; result: { ok: true } };
+  "embeddings:models:setDefault": { args: [req: { modelId: string }]; result: { ok: true } };
+
+  // ── Unified runtime ──────────────────────────────────────────────────────
+  "runtime:status": { args: []; result: RuntimeStatus };
+  "runtime:stop": { args: []; result: { ok: true } };
+  "runtime:embeddings:status": { args: []; result: EmbeddingsStatus };
+  "runtime:embeddings:ensureStarted": { args: []; result: { ok: true } };
+  "runtime:embeddings:models": { args: []; result: { models: RuntimeEmbeddingModel[] } };
+  /** Progress arrives on `runtime:download-progress`. */
+  "runtime:embeddings:install": { args: [req: { modelId: string }]; result: { ok: true } };
+  "runtime:embeddings:remove": { args: [req: { modelId: string }]; result: { ok: true } };
+  "runtime:embeddings:setDefault": { args: [req: { modelId: string }]; result: { ok: true } };
+
+  // ── Agent runtime introspection (Settings → AI) ──────────────────────────
+  /** Runs a dsh registry command (/plan, /compact, …) on the session's agent. */
+  "cordis:executeCommand": { args: [req: { sessionId: string; line: string }]; result: { kind?: string; text?: string } };
+  /** The assembled dsh system prompt; `error` is set (not thrown) when assembly fails. */
+  "runtime:systemPrompt:preview": { args: [req: { cwd?: string; projectName?: string }]; result: SystemPromptPreview };
+  /** The coding agent's plain-string prompt; `error` is set (not thrown) on failure. */
+  "runtime:codingPrompt:preview": {
+    args: [req: { cwd?: string; projectName?: string; taskTitle?: string }];
+    result: { text: string; error?: string };
+  };
+  "runtime:tools:inventory": { args: []; result: ToolInventory };
+
+  // ── Mobile Access ────────────────────────────────────────────────────────
+  "mobile:status": { args: []; result: MobileStatus };
+  /** Starts or stops the server per `enabled`; also pushed on `mobile:status-changed`. */
+  "mobile:saveSettings": { args: [settings: Record<string, unknown>]; result: MobileStatus };
+  "mobile:regeneratePin": { args: []; result: MobileStatus };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
@@ -530,6 +705,18 @@ export interface IpcEvents {
   "chat:poppedOutClosed": undefined;
   "chat:sessionUpdated": ChatPopoutPayload;
   "chat:requestPopIn": undefined;
+  /** Streaming writing-style generation (`user-style:generateStream`). */
+  "user-style:token": { delta: string };
+  "user-style:tool-call": UserStyleToolCallEvent;
+  "user-style:tool-call-done": UserStyleToolCallDoneEvent;
+  "user-style:done": UserStyleDoneEvent;
+  /** Desktop sync status transitions. */
+  "sync:status": SyncStatus;
+  /** The plugins folder changed; re-pull `plugins:listUi`. */
+  "plugins:ui-changed": undefined;
+  "embeddings:download-progress": EmbeddingDownloadProgress;
+  "runtime:download-progress": EmbeddingDownloadProgress;
+  "mobile:status-changed": MobileStatus;
 }
 
 export type IpcChannel = keyof IpcContract;
@@ -756,6 +943,84 @@ const CHANNELS: ChannelRecord = {
   "agent:resize": true,
   "agent:kill": true,
   "agent:modelTerminals": true,
+  "db:snapshot": true,
+  "db:changes:get": true,
+  "db:hasData": true,
+  "db:mcpQuery": true,
+  "db:command:list": true,
+  "db:command:create": true,
+  "db:command:update": true,
+  "db:command:delete": true,
+  "db:graph:get": true,
+  "db:graph:neighbors": true,
+  "db:graph:recompute": true,
+  "usage:overview": true,
+  "usage:recent": true,
+  "usage:threads": true,
+  "usage:clear": true,
+  "user-style:get": true,
+  "user-style:save": true,
+  "user-style:clear": true,
+  "user-style:generate": true,
+  "approval-grants:list": true,
+  "approval-grants:delete": true,
+  "approval-grants:clear-workspace": true,
+  "sync:getFolder": true,
+  "sync:selectFolder": true,
+  "sync:clearFolder": true,
+  "sync:now": true,
+  "sync:status": true,
+  "sync:pendingBreakdown": true,
+  "sync:listConflicts": true,
+  "sync:resolveConflict": true,
+  "sync:activity": true,
+  "sync:peerProtocols": true,
+  "sync:listRestorable": true,
+  "sync:restoreNote": true,
+  "sync:repairNoteFile": true,
+  "registry:fetch": true,
+  "registry:refresh": true,
+  "registry:fetchProviders": true,
+  "registry:refreshProviders": true,
+  "registry:fetchAutomations": true,
+  "registry:refreshAutomations": true,
+  "registry:fetchPersonalities": true,
+  "registry:refreshPersonalities": true,
+  "registry:fetchChatThemes": true,
+  "registry:refreshChatThemes": true,
+  "plugins:listUi": true,
+  "plugins:list": true,
+  "plugins:setEnabled": true,
+  "plugins:openFolder": true,
+  "plugins:install": true,
+  "plugins:update": true,
+  "plugins:uninstall": true,
+  "embeddings:status": true,
+  "embeddings:stop": true,
+  "embeddings:needsReindex": true,
+  "embeddings:projections": true,
+  "db:embeddings:reindex": true,
+  "db:embeddings:search": true,
+  "db:embeddings:recomputeProjections": true,
+  "embeddings:models:list": true,
+  "embeddings:models:install": true,
+  "embeddings:models:remove": true,
+  "embeddings:models:setDefault": true,
+  "runtime:status": true,
+  "runtime:stop": true,
+  "runtime:embeddings:status": true,
+  "runtime:embeddings:ensureStarted": true,
+  "runtime:embeddings:models": true,
+  "runtime:embeddings:install": true,
+  "runtime:embeddings:remove": true,
+  "runtime:embeddings:setDefault": true,
+  "cordis:executeCommand": true,
+  "runtime:systemPrompt:preview": true,
+  "runtime:codingPrompt:preview": true,
+  "runtime:tools:inventory": true,
+  "mobile:status": true,
+  "mobile:saveSettings": true,
+  "mobile:regeneratePin": true,
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];

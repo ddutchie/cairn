@@ -1,6 +1,6 @@
 import type { BrowserWindow } from "electron";
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle, sendIpcEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import {
   reindexNotes,
@@ -18,6 +18,7 @@ import * as manifest from "../embeddings/manifest";
 import { EMBED_MODEL_ID } from "../embeddings/types";
 import { reclaimFreeSpace } from "../lib/db-hygiene";
 import { errMsg } from "../host-shared/errors";
+import type { EmbeddingDownloadProgress } from "../../shared/types/embeddings";
 
 interface LockSlot {
   current: Promise<unknown> | null;
@@ -122,7 +123,7 @@ function resolveModelId(explicit?: string | null): string {
 }
 
 export function registerEmbeddingsHandlers(ctx: DbContext): void {
-  registerIpcHandle("embeddings:needsReindex", () => handle(async () => {
+  registerContractHandle("embeddings:needsReindex", () => handle(async () => {
     const settings = getEmbeddingsSettingsCached();
     if (!settings.enabled) return { needed: false, reason: null };
     // Self-heal so a stale cached modelId can't mask a real mismatch.
@@ -143,11 +144,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     return { needed: false, reason: null };
   }));
 
-  registerIpcHandle("db:embeddings:reindex", (_e, args: {
-    workspaceId: string;
-    noteIds?: string[];
-    model?: string;
-  }) => handle(async () => {
+  registerContractHandle("db:embeddings:reindex", (_e, args) => handle(async () => {
     const model = resolveModelId(args.model);
     const result = await withLock(
       reindexSlot,
@@ -180,14 +177,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     return result;
   }));
 
-  registerIpcHandle("db:embeddings:search", (_e, args: {
-    workspaceId: string;
-    queryText: string;
-    queryNoteId?: string;
-    k?: number;
-    excludeIds?: string[];
-    model?: string;
-  }) => handle(async () => {
+  registerContractHandle("db:embeddings:search", (_e, args) => handle(async () => {
     const model = resolveModelId(args.model);
     const exclude = [
       ...(args.excludeIds ?? []),
@@ -203,10 +193,7 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     );
   }));
 
-  registerIpcHandle("db:embeddings:recomputeProjections", (_e, args: {
-    workspaceId: string;
-    model?: string;
-  }) => handle(async () => {
+  registerContractHandle("db:embeddings:recomputeProjections", (_e, args) => handle(async () => {
     const model = resolveModelId(args.model);
     const result = await withLock(
       recomputeSlot,
@@ -217,19 +204,19 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     return result;
   }));
 
-  registerIpcHandle("embeddings:status", () => handle(() => client.getStatus()));
+  registerContractHandle("embeddings:status", () => handle(() => client.getStatus()));
 
-  registerIpcHandle("embeddings:projections", (_e, args: { workspaceId: string }) => handle(() => {
+  registerContractHandle("embeddings:projections", (_e, args) => handle(() => {
     const { rows, anyStale } = getNoteProjections(ctx.db, args.workspaceId);
     const model = resolveModelId();
     return { rows, anyStale, model };
   }));
 
-  registerIpcHandle("embeddings:stop", () => handle(() => client.stopWorker({ force: true })));
+  registerContractHandle("embeddings:stop", () => handle(() => client.stopWorker({ force: true })));
 
-  registerIpcHandle("embeddings:models:list", () => handle(() => manifest.getEmbeddingModelsManifest()));
+  registerContractHandle("embeddings:models:list", () => handle(() => manifest.getEmbeddingModelsManifest()));
 
-  registerIpcHandle("embeddings:models:install", (_e, args: { modelId: string }) => handle(async () => {
+  registerContractHandle("embeddings:models:install", (_e, args) => handle(async () => {
     const modelId = args.modelId ?? EMBED_MODEL_ID;
     manifest.setEmbeddingModelStatus(modelId, "downloading", { progress: 0 });
     broadcastProgress(ctx.getWin(), { modelId, status: "downloading", progress: 0 });
@@ -272,32 +259,24 @@ export function registerEmbeddingsHandlers(ctx: DbContext): void {
     } finally {
       off();
     }
-    return { ok: true };
+    return { ok: true as const };
   }));
 
-  registerIpcHandle("embeddings:models:remove", (_e, args: { modelId: string }) => handle(() => {
+  registerContractHandle("embeddings:models:remove", (_e, args) => handle(() => {
     manifest.removeEmbeddingModel(args.modelId);
-    return { ok: true };
+    return { ok: true as const };
   }));
 
-  registerIpcHandle("embeddings:models:setDefault", (_e, args: { modelId: string }) => handle(() => {
+  registerContractHandle("embeddings:models:setDefault", (_e, args) => handle(() => {
     manifest.writeDefaultModelId(args.modelId);
-    return { ok: true };
+    return { ok: true as const };
   }));
 }
 
-interface ProgressBroadcast {
-  modelId: string;
-  status: string;
-  file?: string;
-  progress?: number;
-  loaded?: number;
-  total?: number;
-  error?: string;
-}
+type ProgressBroadcast = EmbeddingDownloadProgress;
 
 function broadcastProgress(win: BrowserWindow | null, payload: ProgressBroadcast): void {
   if (win && !win.isDestroyed()) {
-    win.webContents.send("embeddings:download-progress", payload);
+    sendIpcEvent(win.webContents, "embeddings:download-progress", payload);
   }
 }

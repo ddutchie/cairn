@@ -9,7 +9,7 @@
  */
 
 import type { Workspace, Project, Note, BoardColumn, TaskCard, Tag } from "@/types";
-import type { ChangeSet, ChangeFeedEntity } from "../../electron/db/change-feed-queries";
+import type { ChangeSet, ChangeFeedEntity } from "../../shared/types/snapshot";
 
 export type { ChangeSet };
 

@@ -22,15 +22,10 @@ import { SyncEngine } from "../../shared/sync/engine";
 import { writeOplogFileAsync, readPeerOplogsAsync } from "../../shared/sync/transport";
 import { inspectConflict, cleanConflictTitle } from "../../shared/sync/conflict";
 import { errMsg } from "../host-shared/errors";
+import type { ConflictCopy, DesktopSyncResult, SyncPendingBreakdown, SyncState, SyncStatus } from "../../shared/types/sync";
 
-export interface DesktopSyncResult {
-  drained: number;
-  seeded: number; // rows seeded by first-run backfill
-  peerOpsApplied: number; // ops that actually changed our DB (0 when converged)
-  peerOpsRead: number; // ops read from the peer snapshot (steady-state size)
-  conflictCopies: number;
-  connected: boolean;
-}
+export type { ConflictCopy, DesktopSyncResult, SyncState, SyncStatus };
+
 
 /**
  * Callback that projects a synced note change back onto disk (.md dual-write).
@@ -49,22 +44,6 @@ export function setNoteFileProjector(fn: NoteFileProjector | null): void {
 }
 
 // ── live status (pushed to the renderer title-bar indicator) ────────────────
-
-/** Coarse sync lifecycle state, mirroring mobile's controller model. */
-export type SyncState = "disabled" | "idle" | "syncing" | "offline";
-
-/** A snapshot the renderer renders as a status glyph + popover. */
-export interface SyncStatus {
-  state: SyncState;
-  /** Local writes staged but not yet published (sync_pending rows). */
-  pending: number;
-  /** Unresolved conflict copies awaiting the user's decision. */
-  conflicts: number;
-  /** ISO timestamp of the last successful full sync (null if never). */
-  lastSyncAt: string | null;
-  /** Whether a sync folder is connected. */
-  connected: boolean;
-}
 
 let _status: SyncStatus = {
   state: "disabled",
@@ -128,11 +107,7 @@ export function pendingCount(db: Database.Database): number {
  * re-importing .md files on a cloud-backed folder). Also returns the distinct
  * entity_ids per entity (capped) so a specific note/card can be traced.
  */
-export function pendingBreakdown(db: Database.Database): {
-  total: number;
-  groups: { entity: string; op: string; count: number }[];
-  sampleIds: Record<string, string[]>;
-} {
+export function pendingBreakdown(db: Database.Database): SyncPendingBreakdown {
   const groups = db
     .prepare(
       `SELECT entity, op, COUNT(*) AS count
@@ -248,28 +223,6 @@ export function clearSyncFolder(db: Database.Database): void {
 }
 
 // ── conflict copies (surfaced for manual resolution) ────────────────────────
-
-/**
- * A conflict-copy note: the losing side of a 3-way body conflict, kept as a
- * cloned row (id `<originalId>_conflict_<deviceId>_<suffix>`) so nothing is
- * lost. Mirrors mobile's ConflictCopy shape so both platforms share the UI
- * model. `original` is the current live note this conflicts with (null if it
- * was since deleted).
- */
-export interface ConflictCopy {
-  id: string;
-  /** Clean title with the " (conflicted copy — …)" suffix stripped. */
-  title: string;
-  content: string | null;
-  projectId: string;
-  folder: string;
-  updatedAt: string;
-  deviceId: string | null;
-  originalId: string | null;
-  original: { id: string; title: string; content: string | null; updatedAt: string } | null;
-  /** The common-ancestor body (sync_row_base) for a true 3-way merge, if known. */
-  baseBody: string | null;
-}
 
 interface RawNoteRow {
   id: string;

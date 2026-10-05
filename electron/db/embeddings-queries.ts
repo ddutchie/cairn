@@ -13,6 +13,8 @@
 
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
+import type { NoteProjectionRow } from "../../shared/types/embeddings";
+export type { NoteProjectionRow };
 
 // ── Note Embeddings ───────────────────────────
 // Vectors are stored as JSON-in-TEXT (sqlite-vec-bridge shape).
@@ -114,14 +116,6 @@ export function markAllProjectionsStale(db: Database.Database, workspaceId: stri
   db.prepare("UPDATE note_embeddings SET proj_stale = 1 WHERE workspace_id = ?").run(workspaceId);
 }
 
-export interface NoteProjectionRow {
-  noteId: string;
-  dimX: number;
-  dimY: number;
-  projStale: number;
-  embeddedAt: string;
-  model: string;
-}
 
 export function getNoteProjections(
   db: Database.Database,

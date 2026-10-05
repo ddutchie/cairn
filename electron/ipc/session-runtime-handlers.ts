@@ -12,7 +12,7 @@
  * session:projection (typed presentation updates).
  */
 
-import { registerIpcHandle, registerContractHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { registerContractHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import type { AgentSession, AgentLLMConfig, AgentToolContext } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/tools";
@@ -964,21 +964,21 @@ export function registerSessionRuntimeHandlers(
   // Device-local, not synced: a trust decision on this machine must not
   // silently apply on another. One row per (workspace, tool, target) — target
   // is the exact command for "bash"/"pwsh", otherwise null (whole tool).
-  registerIpcHandle("approval-grants:list", (_event, { workspaceId }: { workspaceId: string }) =>
+  registerContractHandle("approval-grants:list", (_event, { workspaceId }) =>
     handle(async () => {
       assertSafeId(workspaceId, "workspaceId");
       const { getWorkspaceApprovalGrants } = await import("../db/approval-grant-queries");
       return getWorkspaceApprovalGrants(ctx.db, workspaceId);
     }),
   );
-  registerIpcHandle("approval-grants:delete", (_event, { id }: { id: string }) =>
+  registerContractHandle("approval-grants:delete", (_event, { id }) =>
     handle(async () => {
       assertSafeId(id, "id");
       const { deleteWorkspaceApprovalGrant } = await import("../db/approval-grant-queries");
       return { deleted: deleteWorkspaceApprovalGrant(ctx.db, id) };
     }),
   );
-  registerIpcHandle("approval-grants:clear-workspace", (_event, { workspaceId }: { workspaceId: string }) =>
+  registerContractHandle("approval-grants:clear-workspace", (_event, { workspaceId }) =>
     handle(async () => {
       assertSafeId(workspaceId, "workspaceId");
       const { clearWorkspaceApprovalGrants } = await import("../db/approval-grant-queries");

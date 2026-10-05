@@ -1,4 +1,6 @@
 import * as z from "zod";
+import type { EmbeddingModelManifestEntry, EmbeddingsStatus } from "../../shared/types/embeddings";
+export type { EmbeddingModelManifestEntry, EmbeddingsStatus };
 
 export type EmbedTask = "search_document" | "search_query" | "clustering";
 
@@ -48,33 +50,7 @@ export type EmbeddedVector = {
   vector: Float32Array;
 };
 
-export interface EmbeddingModelManifestEntry {
-  id: string;
-  name: string;
-  repo: string;
-  dim: number;
-  maxTokens: number;
-  sizeBytes: number;
-  status: "not_downloaded" | "downloading" | "installed" | "error";
-  downloadProgress: number;
-  downloadSpeed?: string;
-  error?: string;
-}
 
-export interface EmbeddingsStatus {
-  running: boolean;
-  port: number | null;
-  activeModelId: string | null;
-  defaultModelId: string | null;
-  installed: boolean;
-  error: string | null;
-  reindexInProgress: boolean;
-  recomputeInProgress: boolean;
-  lastReindexDone: number;
-  lastReindexTotal: number;
-  lastRecomputeDone: number;
-  lastRecomputeTotal: number;
-}
 
 export interface EmbeddingsConfig {
   enabled: boolean;

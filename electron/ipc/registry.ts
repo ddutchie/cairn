@@ -131,7 +131,7 @@ export function setWriteObserver(observer: WriteObserver | null): void {
 /**
  * Register a handler that maps to ipcMain.handle.
  */
-export function registerIpcHandle<T extends unknown[]>(
+function registerIpcHandle<T extends unknown[]>(
   channel: string,
   handler: IpcHandleHandler<T>
 ): void {
@@ -171,9 +171,19 @@ export function registerIpcHandle<T extends unknown[]>(
 export function registerContractHandle<C extends IpcChannel>(
   channel: C,
   handler: (event: IpcMainInvokeEvent, ...args: IpcArgs<C>) => Promise<IpcResult<IpcReturn<C>>>,
+  opts?: { localOnly?: boolean },
 ): void {
+  if (opts?.localOnly) localOnlyChannels.add(channel);
+  else localOnlyChannels.delete(channel);
   registerIpcHandle<IpcArgs<C>>(channel, handler);
 }
+
+/**
+ * Channels only the desktop window may call: {@link getIpcHandler} (the Mobile
+ * Access `/api/ipc` bridge) never returns them. For code-exec surfaces such as
+ * plugin install, which a paired phone must not be able to trigger.
+ */
+const localOnlyChannels = new Set<string>();
 
 /** Send a contract push event to one renderer, payload checked against `IpcEvents`. */
 export function sendIpcEvent<E extends IpcEventChannel>(target: WebContents, channel: E, ...payload: IpcEventArgs<E>): void {
@@ -197,9 +207,11 @@ export function registerIpcOn<T extends unknown[]>(
 }
 
 /**
- * Retrieve a registered handler or listener by channel name.
+ * Retrieve a registered handler or listener by channel name for a remote
+ * caller (the Mobile Access bridge). Local-only channels are not exposed.
  */
 export function getIpcHandler(channel: string): IpcHandler | undefined {
+  if (localOnlyChannels.has(channel)) return undefined;
   return handlers.get(channel) || listeners.get(channel);
 }
 

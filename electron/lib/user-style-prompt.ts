@@ -13,20 +13,8 @@
  * signal: it is the canonical "AI tell" the whole feature exists to prevent.
  */
 
-export interface UserStyleGenerationInput {
-  persona: {
-    name?: string;
-    role?: string;
-    context?: string;
-    audiences?: string;
-  };
-  /** Sample messages pasted by the user, tagged by context. */
-  samples: Array<{ context: string; text: string }>;
-  /** Answers to the gap questions. */
-  answers: Array<{ question: string; answer: string }>;
-  /** Existing full guide — required for the "cheatsheet" step. */
-  fullGuide?: string;
-}
+export type { UserStyleGenerationInput } from "../../shared/types/user-style";
+import type { UserStyleGenerationInput } from "../../shared/types/user-style";
 
 const PERSONA_BLOCK = (p: UserStyleGenerationInput["persona"]) => {
   const parts = [

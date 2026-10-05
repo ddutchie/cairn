@@ -8,30 +8,13 @@
 import type Database from "better-sqlite3";
 import { ts } from "./utils";
 import { appendToStyleGuide } from "../../shared/user-style";
+import type { UserStylePersona, UserStyleRow, UserStyleSaveInput, UserStyleSource } from "../../shared/types/user-style";
+export type { UserStylePersona, UserStyleRow, UserStyleSaveInput, UserStyleSource };
 
 export const USER_STYLE_ID = "global";
 
-export type UserStyleSource = "none" | "guided" | "manual" | "analyzed";
 
-export interface UserStylePersona {
-  name?: string;
-  role?: string;
-  context?: string;
-  audiences?: string;
-}
 
-export interface UserStyleRow {
-  id: string;
-  /** Serialized UserStylePersona JSON (parse defensively; absent = null). */
-  persona: UserStylePersona | null;
-  /** The long, section-structured writing style guide (markdown). */
-  fullGuide: string;
-  /** The condensed one-page cheat sheet (markdown). */
-  cheatsheet: string;
-  /** How the guide was produced: guided wizard / manual / analyzed / none. */
-  source: UserStyleSource;
-  updatedAt: string;
-}
 
 interface UserStyleRowRaw {
   id: string;
@@ -66,12 +49,6 @@ export function getUserStyle(db: Database.Database): UserStyleRow | null {
   return row ? toUserStyle(row) : null;
 }
 
-export interface UserStyleSaveInput {
-  persona?: UserStylePersona;
-  fullGuide?: string;
-  cheatsheet?: string;
-  source: UserStyleSource;
-}
 
 /** Upsert the single global row. Absent fields preserve the existing value. */
 export function saveUserStyle(db: Database.Database, input: UserStyleSaveInput): UserStyleRow {
