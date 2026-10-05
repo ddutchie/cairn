@@ -40,35 +40,12 @@ import { CairnEvents } from "@/lib/events";
 import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
 import { DependencyMatrix } from "./DependencyMatrix";
 import { ModuleMap } from "./ModuleMap";
+import type {
+  CodebaseGraph, CodebaseOverview, CodebaseOverviewFile, CodebaseRelationEdge, CodebaseRelations, CodebaseSymbol,
+} from "../../../shared/types/codebase";
 
 interface ArchitectureViewProps {
   cwd: string;
-}
-
-interface CodebaseSymbol {
-  id: string; file_id: string; name: string; kind: string; line: number;
-  signature: string; docstring: string | null; file_path: string; root_path: string;
-}
-interface CodebaseOverviewFile {
-  id: string; file_path: string; root_path: string; indexed_at: string;
-  symbol_count: number; relation_count: number;
-}
-interface CodebaseOverview {
-  folder: string; roots: string[]; fileCount: number; totalSymbols: number;
-  totalRelations: number; lastIndexedAt: string | null;
-  kinds: { kind: string; count: number }[];
-  files: CodebaseOverviewFile[];
-}
-interface CodebaseRelationEdge {
-  type: string; target_name: string; source_name: string; source_file: string;
-}
-interface CodebaseRelations {
-  incoming: CodebaseRelationEdge[]; outgoing: CodebaseRelationEdge[];
-}
-interface CodebaseGraph {
-  folder: string;
-  nodes: { id: string; file_path: string; root_path: string; symbol_count: number }[];
-  edges: { source: string; target: string; weight: number }[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

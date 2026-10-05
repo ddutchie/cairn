@@ -20,14 +20,10 @@ import { useCairnStore } from "@/store";
 import { modKey } from "@/components/layout/sidebar-utils";
 import { useShallow } from "zustand/react/shallow";
 import type { Project } from "@/types";
+import type { DirEntry, FileSearchResult } from "../../../shared/types/coding-agent";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface DirEntry {
-  name: string;
-  type: "file" | "dir";
-  path: string;
-}
 
 interface TreeNodeProps {
   entry: DirEntry;
@@ -64,7 +60,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
       setLoading(true);
       setLoadError(null);
       try {
-        const entries = await window.electron?.agent.readDir(entry.path) as DirEntry[] | undefined;
+        const entries = await window.electron?.agent.readDir(entry.path);
         if (entries) setChildren(entries);
       } catch (e) {
         setLoadError(String(e));
@@ -141,12 +137,6 @@ interface FileTreeProps {
   project: Project | null;
 }
 
-interface SearchResult {
-  name: string;
-  path: string;
-  relativePath: string;
-}
-
 export function FileTree({ project }: FileTreeProps) {
   const { activeEditorFile, openEditorFile, updateProject } = useCairnStore(useShallow((s) => ({ activeEditorFile: s.activeEditorFile, openEditorFile: s.openEditorFile, updateProject: s.updateProject })));
   const [rootEntries, setRootEntries] = useState<DirEntry[] | null>(null);
@@ -160,7 +150,7 @@ export function FileTree({ project }: FileTreeProps) {
   // File search mode
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery]   = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [searching, setSearching]       = useState(false);
   const searchInputRef                  = useRef<HTMLInputElement>(null);
 
@@ -170,7 +160,7 @@ export function FileTree({ project }: FileTreeProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!codeDirectory) { setRootEntries(null); return; }
     setError(null);
-    (window.electron?.agent.readDir(codeDirectory) as Promise<DirEntry[]> | undefined)
+    window.electron?.agent.readDir(codeDirectory)
       ?.then((entries) => setRootEntries(entries))
       .catch((e: unknown) => setError(String(e)));
   }, [codeDirectory]);
@@ -183,7 +173,7 @@ export function FileTree({ project }: FileTreeProps) {
     setRefreshing(true);
     setError(null);
     try {
-      const entries = await window.electron?.agent.readDir(codeDirectory) as DirEntry[] | undefined;
+      const entries = await window.electron?.agent.readDir(codeDirectory);
       if (entries) setRootEntries(entries);
       setRefreshKey((k) => k + 1);
     } catch (e) {
@@ -240,7 +230,7 @@ export function FileTree({ project }: FileTreeProps) {
     }
     const q = searchQuery.trim();
     setSearching(true);
-    (window.electron?.agent.searchFiles(codeDirectory, q) as Promise<SearchResult[]> | undefined)
+    window.electron?.agent.searchFiles(codeDirectory, q)
       ?.then((results) => setSearchResults(results ?? []))
       .catch(() => setSearchResults([]))
       .finally(() => setSearching(false));
@@ -248,8 +238,8 @@ export function FileTree({ project }: FileTreeProps) {
 
   async function handlePickCodeDir() {
     if (!project) return;
-    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
-    if (result?.data) updateProject(project.id, { codeDirectory: result.data });
+    const picked = await window.electron?.agent.pickDirectory();
+    if (picked) updateProject(project.id, { codeDirectory: picked });
   }
 
   if (!codeDirectory) {

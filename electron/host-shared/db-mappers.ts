@@ -13,6 +13,7 @@ import type { ColumnType, Priority, ProjectStatus } from "../../shared/types/dom
 import type { Project, ProjectSettings, Tag, Workspace } from "../../shared/types/workspace";
 import type { IdeaFlow, IdeaFlowEdge, IdeaFlowNode, IdeaNodeType } from "../../shared/types/flow";
 import { NOTIFICATION_TARGET_TYPES, type McpNotification, type NotificationTargetType } from "../../shared/types/notifications";
+import type { CodingAgent } from "../../shared/types/coding-agent";
 import type { CustomServiceConfig, McpServerConfig, ServiceOperationConfig, ToolAttachment } from "../../shared/types/tools";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
@@ -84,7 +85,7 @@ export function toProject(row: DbRow): Project {
   };
 }
 
-export function toCodingAgent(row: DbRow) {
+export function toCodingAgent(row: DbRow): CodingAgent {
   return {
     id: row.id as string,
     name: row.name as string,

@@ -16,6 +16,7 @@
 import type Database from "better-sqlite3";
 import * as path from "path";
 import { ts } from "./utils";
+import type { CodebaseGraph, CodebaseModuleGraph, CodebaseOverview, CodebaseRelations, CodebaseSymbol } from "../../shared/types/codebase";
 
 // ── Codebase Semantic Indexing ─────────────────────────
 
@@ -165,7 +166,7 @@ export function getCodebaseSymbolDefinition(db: Database.Database, name: string,
   }>;
 }
 
-export function getCodebaseRelations(db: Database.Database, name: string, folder?: string) {
+export function getCodebaseRelations(db: Database.Database, name: string, folder?: string): CodebaseRelations {
   let sql1 = `
     SELECT r.type, r.target_name, s.name as source_name, f.file_path as source_file
     FROM codebase_relations r
@@ -209,7 +210,7 @@ export function getCodebaseRelations(db: Database.Database, name: string, folder
   return { incoming, outgoing };
 }
 
-export function getCodebaseFileSymbols(db: Database.Database, filePath: string) {
+export function getCodebaseFileSymbols(db: Database.Database, filePath: string): CodebaseSymbol[] {
   return db.prepare(`
     SELECT s.*, f.file_path, f.root_path
     FROM codebase_symbols s
@@ -255,7 +256,7 @@ export function deleteCodebaseFile(db: Database.Database, fileId: string) {
  * indexed sub-tree is picked up regardless of the exact root string. All reads
  * hit the already-constructed db handle (no new Database).
  */
-export function getCodebaseOverview(db: Database.Database, folder: string) {
+export function getCodebaseOverview(db: Database.Database, folder: string): CodebaseOverview {
   const normalized = path.resolve(folder);
   const { sql: scope, params: scopeParams } = codebaseScope(folder);
 
@@ -318,7 +319,7 @@ export function getCodebaseOverview(db: Database.Database, folder: string) {
  * so the renderer can lay out a module-dependency diagram, plus a lightweight
  * per-file symbol list for expand-in-place. Scoped like getCodebaseOverview.
  */
-export function getCodebaseGraph(db: Database.Database, folder: string) {
+export function getCodebaseGraph(db: Database.Database, folder: string): CodebaseGraph {
   const normalized = path.resolve(folder);
   const { sql: scope, params: scopeParams } = codebaseScope(folder);
 
@@ -384,7 +385,7 @@ export function getCodebaseModuleGraph(
   db: Database.Database,
   folder: string,
   depth = 1,
-) {
+): CodebaseModuleGraph {
   const { folder: normalized, nodes: files, edges: fileEdges } = getCodebaseGraph(db, folder);
   const d = Math.max(1, Math.floor(depth));
 

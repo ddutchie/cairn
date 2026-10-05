@@ -24,6 +24,9 @@ import type { ChatThreadUpsertInput } from "../shared/types/chat";
 import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 import type { CustomServiceConfig, McpServerConfig, SecretToolType, ToolAttachment } from "../shared/types/tools";
+import type {
+  AgentSpawnInput, CodingAgentInput, ModelPtyEvent, PtyDataEvent, PtyExitEvent,
+} from "../shared/types/coding-agent";
 import type { AiEndpoint, AiRequestConfig, MigrationProgress, ModelPrice, UpdateAvailableInfo } from "../shared/types/app";
 
 // ── User writing style (persona + full guide + cheat sheet) ──────────────────
@@ -137,44 +140,6 @@ interface ChatThemesManifest {
 }
 interface ChatThemesFetchResult {
   manifest: ChatThemesManifest; fromCache: boolean; cachedAt?: string; error?: string;
-}
-// ── Inline types for the codebase index / Architecture tab ──────────────────
-interface CodebaseSymbol {
-  id: string; file_id: string; name: string; kind: string; line: number;
-  signature: string; docstring: string | null; file_path: string; root_path: string;
-}
-interface CodebaseOverviewFile {
-  id: string; file_path: string; root_path: string; indexed_at: string;
-  symbol_count: number; relation_count: number;
-}
-interface CodebaseOverview {
-  folder: string; roots: string[]; fileCount: number; totalSymbols: number;
-  totalRelations: number; lastIndexedAt: string | null;
-  kinds: { kind: string; count: number }[];
-  files: CodebaseOverviewFile[];
-}
-interface CodebaseRelationEdge {
-  type: string; target_name: string; source_name: string; source_file: string;
-}
-interface CodebaseRelations {
-  incoming: CodebaseRelationEdge[]; outgoing: CodebaseRelationEdge[];
-}
-interface CodebaseGraphNode {
-  id: string; file_path: string; root_path: string; symbol_count: number;
-}
-interface CodebaseGraphEdge {
-  source: string; target: string; weight: number;
-}
-interface CodebaseGraph {
-  folder: string; nodes: CodebaseGraphNode[]; edges: CodebaseGraphEdge[];
-}
-interface CodebaseModuleNode {
-  id: string; label: string; fileCount: number; symbolCount: number; internalRefs: number;
-}
-interface CodebaseModuleGraph {
-  folder: string; depth: number; grouping: "directory";
-  nodes: CodebaseModuleNode[];
-  edges: CodebaseGraphEdge[];
 }
 // ── Inline types for the Usage view (usage:overview / usage:recent) ──────────
 type UsageSource =
@@ -694,71 +659,43 @@ const api = {
   // All methods go through invoke() so callers receive T directly and errors
   // are thrown (matching every other namespace in this file).
   agent: {
-    getCodingAgents: () => invoke("agent:getCodingAgents"),
-    saveCodingAgent: (agent: unknown) => invoke("agent:saveCodingAgent", agent),
-    deleteCodingAgent: (id: string) => invoke("agent:deleteCodingAgent", { id }),
-    setDefaultAgent: (id: string) => invoke("agent:setDefaultAgent", { id }),
+    getCodingAgents: () => invokeContract("agent:getCodingAgents"),
+    saveCodingAgent: (agent: CodingAgentInput) => invokeContract("agent:saveCodingAgent", agent),
+    deleteCodingAgent: (id: string) => invokeContract("agent:deleteCodingAgent", { id }),
+    setDefaultAgent: (id: string) => invokeContract("agent:setDefaultAgent", { id }),
 
-    readDir: (dirPath: string) => invoke("agent:readDir", { dirPath }),
-    searchFiles: (dirPath: string, query: string) => invoke<{ name: string; path: string; relativePath: string }[]>("agent:searchFiles", { dirPath, query }),
-    readFile: (filePath: string) => invoke<string>("agent:readFile", { filePath }),
-    readFileBase64: (filePath: string) => invoke<string>("agent:readFileBase64", { filePath }),
-    writeFile: (filePath: string, content: string) =>
-      invoke("agent:writeFile", { filePath, content }),
-    validateDirectory: (dirPath: string) =>
-      invoke<boolean>("agent:validateDirectory", { dirPath }),
-    gitDiff: (cwd: string) => invoke<string>("agent:gitDiff", { cwd }),
+    readDir: (dirPath: string) => invokeContract("agent:readDir", { dirPath }),
+    searchFiles: (dirPath: string, query: string) => invokeContract("agent:searchFiles", { dirPath, query }),
+    readFile: (filePath: string) => invokeContract("agent:readFile", { filePath }),
+    readFileBase64: (filePath: string) => invokeContract("agent:readFileBase64", { filePath }),
+    writeFile: (filePath: string, content: string) => invokeContract("agent:writeFile", { filePath, content }),
+    validateDirectory: (dirPath: string) => invokeContract("agent:validateDirectory", { dirPath }),
+    gitDiff: (cwd: string) => invokeContract("agent:gitDiff", { cwd }),
     // Codebase index (Architecture tab) — read-only views over the semantic index.
-    codebaseOverview: (folder: string) => invoke<CodebaseOverview>("agent:codebaseOverview", { folder }),
-    codebaseGraph: (folder: string) => invoke<CodebaseGraph>("agent:codebaseGraph", { folder }),
-    codebaseModuleGraph: (folder: string, depth?: number) =>
-      invoke<CodebaseModuleGraph>("agent:codebaseModuleGraph", { folder, depth }),
-    codebaseFileSymbols: (filePath: string) =>
-      invoke<CodebaseSymbol[]>("agent:codebaseFileSymbols", { filePath }),
-    codebaseRelations: (name: string, folder?: string) =>
-      invoke<CodebaseRelations>("agent:codebaseRelations", { name, folder }),
-    codebaseReindex: (folder: string) => invoke<CodebaseOverview>("agent:codebaseReindex", { folder }),
+    codebaseOverview: (folder: string) => invokeContract("agent:codebaseOverview", { folder }),
+    codebaseGraph: (folder: string) => invokeContract("agent:codebaseGraph", { folder }),
+    codebaseModuleGraph: (folder: string, depth?: number) => invokeContract("agent:codebaseModuleGraph", { folder, depth }),
+    codebaseFileSymbols: (filePath: string) => invokeContract("agent:codebaseFileSymbols", { filePath }),
+    codebaseRelations: (name: string, folder?: string) => invokeContract("agent:codebaseRelations", { name, folder }),
+    codebaseReindex: (folder: string) => invokeContract("agent:codebaseReindex", { folder }),
     codebaseReindexFile: (folder: string, filePath: string) =>
-      invoke<boolean>("agent:codebaseReindexFile", { folder, filePath }),
-    // Pickers bypass invoke() — they return { data: T } directly from the handler
-    // and are not wrapped via handle(), so we keep them as raw invokes.
-    pickDirectory: () => ipcRenderer.invoke("agent:pickDirectory"),
-    pickFile: () => ipcRenderer.invoke("agent:pickFile"),
+      invokeContract("agent:codebaseReindexFile", { folder, filePath }),
+    /** null when cancelled. */
+    pickDirectory: () => invokeContract("agent:pickDirectory"),
+    pickFile: () => invokeContract("agent:pickFile"),
 
-    spawn:      (payload: unknown) => invoke<{ sessionId: string }>("agent:spawn",      payload),
-    spawnShell: (cwd: string)      => invoke<{ sessionId: string }>("agent:spawnShell", { cwd }),
-    input: (sessionId: string, data: string) =>
-      invoke("agent:input", { sessionId, data }),
-    resize: (sessionId: string, cols: number, rows: number) =>
-      invoke("agent:resize", { sessionId, cols, rows }),
-    kill: (sessionId: string) => invoke("agent:kill", { sessionId }),
+    spawn: (input: AgentSpawnInput) => invokeContract("agent:spawn", input),
+    spawnShell: (cwd: string) => invokeContract("agent:spawnShell", { cwd }),
+    input: (sessionId: string, data: string) => invokeContract("agent:input", { sessionId, data }),
+    resize: (sessionId: string, cols: number, rows: number) => invokeContract("agent:resize", { sessionId, cols, rows }),
+    kill: (sessionId: string) => invokeContract("agent:kill", { sessionId }),
 
     // Agent-owned (model) terminals — observe only.
-    modelTerminals: () =>
-      invoke<Array<{ sessionId: string; cwd: string; scrollback: string }>>("agent:modelTerminals"),
-    onModelTerminal: (cb: (e:
-      | { type: "spawn"; sessionId: string; cwd: string }
-      | { type: "data"; sessionId: string; data: string }
-      | { type: "exit"; sessionId: string; exitCode: number }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, e: any) => cb(e);
-      ipcRenderer.on("agent:model-terminal", handler);
-      return () => ipcRenderer.off("agent:model-terminal", handler);
-    },
+    modelTerminals: () => invokeContract("agent:modelTerminals"),
+    onModelTerminal: (cb: (e: ModelPtyEvent) => void) => onIpcEvent("agent:model-terminal", cb),
 
-    onData: (cb: (payload: { sessionId: string; data: string }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, payload: { sessionId: string; data: string }) => cb(payload);
-      ipcRenderer.on("agent:data", handler);
-      return () => ipcRenderer.off("agent:data", handler);
-    },
-
-    onExit: (cb: (payload: { sessionId: string; exitCode: number }) => void) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handler = (_: any, payload: { sessionId: string; exitCode: number }) => cb(payload);
-      ipcRenderer.on("agent:exit", handler);
-      return () => ipcRenderer.off("agent:exit", handler);
-    },
+    onData: (cb: (payload: PtyDataEvent) => void) => onIpcEvent("agent:data", cb),
+    onExit: (cb: (payload: PtyExitEvent) => void) => onIpcEvent("agent:exit", cb),
   },
 
   // ── External tools (MCP servers + custom HTTP services) ───────

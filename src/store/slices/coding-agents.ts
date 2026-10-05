@@ -9,24 +9,17 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import { ipcData } from "../ipc";
+import type { CodingAgent, CodingAgentInput } from "../../../shared/types/coding-agent";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export interface CodingAgent {
-  id: string;
-  name: string;
-  binaryPath: string;
-  args: string;
-  isDefault: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { CodingAgent };
 
 export interface CodingAgentsSlice {
   agents: CodingAgent[];
 
   fetchAgents: () => Promise<void>;
-  saveAgent: (agent: Omit<CodingAgent, "createdAt" | "updatedAt">) => Promise<void>;
+  saveAgent: (agent: CodingAgentInput) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
   setDefaultAgent: (id: string) => Promise<void>;
 }
@@ -41,7 +34,7 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
 
   async fetchAgents() {
     try {
-      const agents = await ipcData((e) => e.agent.getCodingAgents() as Promise<CodingAgent[]>);
+      const agents = await ipcData((e) => e.agent.getCodingAgents());
       if (agents) set({ agents });
     } catch (err) {
       console.error("[coding-agents] fetchAgents error", err);
@@ -50,7 +43,7 @@ export const createCodingAgentsSlice: StateCreator<CairnStore, [], [], CodingAge
 
   async saveAgent(agent) {
     try {
-      const saved = await ipcData((e) => e.agent.saveCodingAgent(agent) as Promise<CodingAgent>);
+      const saved = await ipcData((e) => e.agent.saveCodingAgent(agent));
       if (!saved) return;
       set((s) => ({
         agents: s.agents.some((a) => a.id === saved.id)

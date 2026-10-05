@@ -80,10 +80,10 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
 
   async function pickCodeDir() {
     if (!activeProject) return;
-    const result = await window.electron?.agent.pickDirectory() as { data: string | null } | undefined;
-    if (result?.data) {
-      setCodeDirInput(result.data);
-      updateProject(activeProject.id, { codeDirectory: result.data });
+    const picked = await window.electron?.agent.pickDirectory();
+    if (picked) {
+      setCodeDirInput(picked);
+      updateProject(activeProject.id, { codeDirectory: picked });
     }
   }
 
