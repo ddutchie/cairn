@@ -1,7 +1,4 @@
-
-import type { RuntimeEmbeddingModel } from "../../../shared/types/embeddings";
-/** A model as an adapter reports it (shared with the IPC contract). */
-export type AdapterModelEntry = RuntimeEmbeddingModel;/**
+/**
  * Adapter interface — the contract every inference runtime implements.
  *
  * Each adapter (llama, onnx, future MLX) implements this interface.
@@ -14,6 +11,10 @@ export type AdapterModelEntry = RuntimeEmbeddingModel;/**
  *   3. `handleRequest()` — called for each HTTP request to /v1/<kind>/...
  *   4. `stop()` — graceful shutdown
  */
+
+import type { RuntimeEmbeddingModel } from "../../../shared/types/embeddings";
+/** A model as an adapter reports it (shared with the IPC contract). */
+export type AdapterModelEntry = RuntimeEmbeddingModel;
 
 export type AdapterKind = "llm" | "embedding";
 
