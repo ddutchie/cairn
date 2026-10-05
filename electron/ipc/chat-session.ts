@@ -81,13 +81,14 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
       const q = await import("../db/queries");
       const db = ctxDb.db;
       const targetId = threadId ?? sid.replace(/^chat-/, "");
-      const row = db.prepare("SELECT workspace_id, scope, project_id FROM chat_threads WHERE id = ?").get(targetId) as
-        | { workspace_id: string; scope: string; project_id: string | null }
+      const row = db.prepare("SELECT workspace_id, scope, project_id, use_subagents FROM chat_threads WHERE id = ?").get(targetId) as
+        | { workspace_id: string; scope: string; project_id: string | null; use_subagents: number | null }
         | undefined;
       const wsId = row?.workspace_id ?? "";
       const scope = row?.scope ?? "workspace";
       const pid = row?.project_id ?? undefined;
-      if (wsId) q.upsertChatThread(db, { id: targetId, scope, workspaceId: wsId, projectId: pid ?? undefined, title: renamedTitle });
+      // upsertChatThread rewrites use_subagents too — carry the stored value.
+      if (wsId) q.upsertChatThread(db, { id: targetId, scope, workspaceId: wsId, projectId: pid ?? undefined, title: renamedTitle, useSubagents: !!row?.use_subagents });
     } catch { }
     return { title: renamedTitle };
   }));

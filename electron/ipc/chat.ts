@@ -96,14 +96,22 @@ export function registerChatHandler(_ctx: DbContext): void {
   // the session log alone.
   registerContractHandle("chat:summarizeTranscript", (_event, req) => handle(async () => {
     const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
-    const transcript = req.messages
+    const turns = req.messages
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-      .join("\n\n");
-    if (!transcript.trim()) throw new Error("Nothing to summarise.");
-    // Keep the most recent part of very long threads within a sane prompt size.
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`);
+    if (!turns.join("").trim()) throw new Error("Nothing to summarise.");
+    // Keep the most recent whole messages of very long threads within a sane
+    // prompt size, and tell the model when the start was dropped.
     const MAX_CHARS = 60_000;
-    const clipped = transcript.length > MAX_CHARS ? transcript.slice(-MAX_CHARS) : transcript;
+    const kept: string[] = [];
+    let size = 0;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (kept.length > 0 && size + turns[i].length > MAX_CHARS) break;
+      kept.unshift(turns[i]);
+      size += turns[i].length;
+    }
+    const dropped = turns.length - kept.length;
+    const clipped = (dropped > 0 ? `[${dropped} earlier messages omitted]\n\n` : "") + kept.join("\n\n");
     const summary = await getAgentHost().runOneShot({
       systemPrompt: "You summarise conversations for a project notebook. Write clear markdown: a short overview paragraph, then bullet points for decisions, findings and open questions. No preamble.",
       userPrompt: `Summarise this conversation:\n\n${clipped}`,
