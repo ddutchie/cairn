@@ -118,16 +118,15 @@ export const createWorkspaceSlice: StateCreator<
     // On success, replace optimistic columns with authoritative server rows.
     if (typeof window !== "undefined" && window.electron) {
       try {
-        const result = await window.electron.project.create({
+        const { columns } = await window.electron.project.create({
           ...proj, workspaceId, withDefaultColumns: true,
-        }) as unknown as { data?: { project: Project; columns: BoardColumn[] }; error?: string } | undefined;
-        const payload = result && "data" in result ? result.data : undefined;
-        if (payload?.columns?.length) {
+        });
+        if (columns.length > 0) {
           set((s) => ({
             // Replace placeholder columns for this project with server columns
             columns: [
               ...s.columns.filter((c) => c.projectId !== proj.id),
-              ...payload.columns,
+              ...columns,
             ],
           }));
           get().persist();

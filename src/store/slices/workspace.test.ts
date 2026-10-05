@@ -117,7 +117,8 @@ describe("createProject — Electron path", () => {
       createArg = arg;
       // Server stamps the real project id onto its columns.
       const columns = serverColumns.map((c) => ({ ...c, projectId: arg.id }));
-      return Promise.resolve({ data: { project: arg, columns } });
+      // preload's invoke has already unwrapped the { data } envelope
+      return Promise.resolve({ project: arg, columns });
     };
     (globalThis as any).window = { electron: { project: { create: projectCreate } } };
 
@@ -138,7 +139,7 @@ describe("createProject — Electron path", () => {
 
   it("keeps the optimistic placeholders when the server returns no columns", async () => {
     (globalThis as any).window = {
-      electron: { project: { create: () => Promise.resolve({ data: { columns: [] } }) } },
+      electron: { project: { create: () => Promise.resolve({ project: {}, columns: [] }) } },
     };
 
     const { get } = setup();
