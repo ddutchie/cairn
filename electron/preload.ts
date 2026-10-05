@@ -15,6 +15,10 @@ import type { NoteCreateInput, NotePatch } from "../shared/types/notes";
 import type {
   AutomationInput, AutomationPatch, AutomationRequirement, AutomationRunEvent,
 } from "../shared/types/automations";
+import type { CardCreateInput, CardPatch, ColumnCreateInput, ColumnPatch } from "../shared/types/board";
+import type {
+  ProjectCreateInput, ProjectPatch, ProjectSettings, TagCreateInput, TagPatch, WorkspaceCreateInput, WorkspacePatch,
+} from "../shared/types/workspace";
 import type { FlowAiConfig, FlowEdgeCreateInput, FlowNodeCreateInput, FlowNodePatch } from "../shared/types/flow";
 import type { GitPathSelection, GitStashAction } from "../shared/types/git";
 
@@ -255,19 +259,20 @@ const api = {
 
   // ── Workspaces ───────────────────────────────
   workspace: {
-    list:   () => invoke("db:workspace:list"),
-    create: (args: unknown) => invoke("db:workspace:create", args),
-    update: (id: string, patch: unknown) => invoke("db:workspace:update", { id, patch }),
+    list:   () => invokeContract("db:workspace:list"),
+    create: (input: WorkspaceCreateInput) => invokeContract("db:workspace:create", input),
+    update: (id: string, patch: WorkspacePatch) => invokeContract("db:workspace:update", { id, patch }),
   },
 
   // ── Projects ─────────────────────────────────
   project: {
-    list:   (workspaceId?: string) => invoke("db:project:list", { workspaceId }),
-    create: (args: unknown) => invoke("db:project:create", args),
-    update: (id: string, patch: unknown) => invoke("db:project:update", { id, patch }),
-    updateSettings: (id: string, settings: unknown) => invoke("db:project:updateSettings", { id, settings }),
-    delete: (id: string) => invoke("db:project:delete", { id }),
-    merge:  (sourceId: string, targetId: string) => invoke("db:project:merge", { sourceId, targetId }),
+    list:   (workspaceId?: string) => invokeContract("db:project:list", { workspaceId }),
+    create: (input: ProjectCreateInput) => invokeContract("db:project:create", input),
+    update: (id: string, patch: ProjectPatch) => invokeContract("db:project:update", { id, patch }),
+    updateSettings: (id: string, settings: Partial<Record<keyof ProjectSettings, unknown>>) =>
+      invokeContract("db:project:updateSettings", { id, settings }),
+    delete: (id: string) => invokeContract("db:project:delete", { id }),
+    merge:  (sourceId: string, targetId: string) => invokeContract("db:project:merge", { sourceId, targetId }),
   },
 
   // ── Notes ────────────────────────────────────
@@ -291,24 +296,24 @@ const api = {
 
   // ── Board columns ─────────────────────────────
   column: {
-    list:   (projectId?: string) => invoke("db:column:list", { projectId }),
-    create: (args: unknown) => invoke("db:column:create", args),
-    update: (id: string, patch: unknown) => invoke("db:column:update", { id, patch }),
-    delete: (id: string) => invoke("db:column:delete", { id }),
+    list:   (projectId?: string) => invokeContract("db:column:list", { projectId }),
+    create: (input: ColumnCreateInput) => invokeContract("db:column:create", input),
+    update: (id: string, patch: ColumnPatch) => invokeContract("db:column:update", { id, patch }),
+    delete: (id: string) => invokeContract("db:column:delete", { id }),
   },
 
   // ── Task cards ────────────────────────────────
   card: {
-    list:         (opts?: unknown) => invoke("db:card:list", opts),
-    create:       (args: unknown) => invoke("db:card:create", args),
-    update:       (id: string, patch: unknown) => invoke("db:card:update", { id, patch }),
+    list:         (opts?: { projectId?: string; columnId?: string }) => invokeContract("db:card:list", opts),
+    create:       (input: CardCreateInput) => invokeContract("db:card:create", input),
+    update:       (id: string, patch: CardPatch) => invokeContract("db:card:update", { id, patch }),
     moveToProject:(id: string, projectId: string, columnId: string, order: number) =>
-      invoke("db:card:moveToProject", { id, projectId, columnId, order }),
-    delete:       (id: string) => invoke("db:card:delete", { id }),
-    archiveDone:  (columnId: string) => invoke("db:cards:archive-done", { columnId }),
-    addBlocker:   (cardId: string, blockerCardId: string) => invoke("db:card:addBlocker", { cardId, blockerCardId }),
-    removeBlocker:(cardId: string, blockerCardId: string) => invoke("db:card:removeBlocker", { cardId, blockerCardId }),
-    ready:        (projectId?: string) => invoke("db:card:ready", { projectId }),
+      invokeContract("db:card:moveToProject", { id, projectId, columnId, order }),
+    delete:       (id: string) => invokeContract("db:card:delete", { id }),
+    archiveDone:  (columnId: string) => invokeContract("db:cards:archive-done", { columnId }),
+    addBlocker:   (cardId: string, blockerCardId: string) => invokeContract("db:card:addBlocker", { cardId, blockerCardId }),
+    removeBlocker:(cardId: string, blockerCardId: string) => invokeContract("db:card:removeBlocker", { cardId, blockerCardId }),
+    ready:        (projectId?: string) => invokeContract("db:card:ready", { projectId }),
   },
 
   // ── Idea Flow ────────────────────────────────
@@ -331,10 +336,10 @@ const api = {
 
   // ── Tags ─────────────────────────────────────
   tag: {
-    list:   (workspaceId?: string) => invoke("db:tag:list", { workspaceId }),
-    create: (args: unknown) => invoke("db:tag:create", args),
-    update: (id: string, patch: unknown) => invoke("db:tag:update", { id, patch }),
-    delete: (id: string) => invoke("db:tag:delete", { id }),
+    list:   (workspaceId?: string) => invokeContract("db:tag:list", { workspaceId }),
+    create: (input: TagCreateInput) => invokeContract("db:tag:create", input),
+    update: (id: string, patch: TagPatch) => invokeContract("db:tag:update", { id, patch }),
+    delete: (id: string) => invokeContract("db:tag:delete", { id }),
   },
 
   // ── Slash commands ───────────────────────────

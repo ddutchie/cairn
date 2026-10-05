@@ -7,6 +7,9 @@
 import { stripMarkdown } from "./text-utils";
 import { noteExcerpt } from "../../shared/notes/excerpt";
 import type { Note } from "../../shared/types/notes";
+import type { BoardColumn, TaskCard } from "../../shared/types/board";
+import type { ColumnType, Priority, ProjectStatus } from "../../shared/types/domain";
+import type { Project, ProjectSettings, Tag, Workspace } from "../../shared/types/workspace";
 import type { IdeaFlow, IdeaFlowEdge, IdeaFlowNode, IdeaNodeType } from "../../shared/types/flow";
 
 /** A raw SQLite row: column names → values. Mappers cast fields explicitly. */
@@ -42,7 +45,7 @@ export function b(v: unknown): boolean {
 
 // ── Row -> Domain Type Mappers ───────────────────────────────────────────────
 
-export function toWorkspace(row: DbRow) {
+export function toWorkspace(row: DbRow): Workspace {
   return {
     id: row.id as string,
     name: row.name as string,
@@ -54,7 +57,7 @@ export function toWorkspace(row: DbRow) {
   };
 }
 
-export function toProject(row: DbRow) {
+export function toProject(row: DbRow): Project {
   const raw = row.project_settings as string | undefined;
   let projectSettings: Record<string, unknown> = {};
   if (raw) {
@@ -66,12 +69,12 @@ export function toProject(row: DbRow) {
     name: row.name as string,
     description: row.description as string | undefined,
     icon: row.icon as string | undefined,
-    status: row.status as string,
-    priority: row.priority as string,
+    status: row.status as ProjectStatus,
+    priority: row.priority as Priority,
     dueDate: row.due_date as string | undefined,
     tagIds: p(row.tag_ids) as string[],
     codeDirectory: row.code_directory as string | null ?? null,
-    projectSettings,
+    projectSettings: projectSettings as ProjectSettings,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     archivedAt: row.archived_at as string | undefined,
@@ -204,13 +207,13 @@ export function toNote(row: DbRow): Note & { content: string } {
   };
 }
 
-export function toColumn(row: DbRow) {
+export function toColumn(row: DbRow): BoardColumn {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
     workspaceId: row.workspace_id as string,
     name: row.name as string,
-    type: row.type as string,
+    type: row.type as ColumnType,
     order: row.order as number,
     cardLimit: row.card_limit as number | undefined,
     createdAt: row.created_at as string,
@@ -218,7 +221,7 @@ export function toColumn(row: DbRow) {
   };
 }
 
-export function toCard(row: DbRow) {
+export function toCard(row: DbRow): TaskCard {
   return {
     id: row.id as string,
     columnId: row.column_id as string,
@@ -227,7 +230,7 @@ export function toCard(row: DbRow) {
     title: row.title as string,
     description: row.description as string | undefined,
     tagIds: p(row.tag_ids) as string[],
-    priority: row.priority as string,
+    priority: row.priority as Priority,
     dueDate: row.due_date as string | undefined,
     linkedNoteIds: p(row.linked_note_ids) as string[],
     blockedByIds: p(row.blocked_by_ids) as string[],
@@ -241,7 +244,7 @@ export function toCard(row: DbRow) {
   };
 }
 
-export function toTag(row: DbRow) {
+export function toTag(row: DbRow): Tag {
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,

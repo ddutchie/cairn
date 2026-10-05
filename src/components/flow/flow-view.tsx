@@ -29,6 +29,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType } from "@/types";
 import { flowClient, persistFlow } from "@/lib/ipc/flow";
+import { id as newId } from "@/lib/utils";
 import { IpcUnavailableError, reportIpcError } from "@/lib/ipc/client";
 import { historyManager, flowHandlers } from "@/lib/history";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
@@ -616,13 +617,14 @@ function IdeaFlowCanvas() {
     try {
       // Create a new task card
       created = await window.electron.card.create({
+        id: newId(),
         projectId: activeProjectId,
         workspaceId: activeWorkspaceId,
         columnId: targetCol.id,
         title,
         description: body,
         priority: "medium",
-      }) as { id: string };
+      });
 
       // Delete the idea node (cascades its DB edges)
       await flowClient.deleteNode(nodeId);

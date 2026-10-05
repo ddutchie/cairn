@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { BoardColumn, TaskCard, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, ipcAwaitResult, isElectron } from "../ipc";
+import { ipc, ipcResult, isElectron } from "../ipc";
 import { historyManager } from "@/lib/history";
 import {
   makeCreateCardCmd,
@@ -455,9 +455,7 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
   // ── Dependencies ───────────────────────────────────────────────────────────
 
   async addCardBlocker(cardId, blockerCardId) {
-    const result = await ipcAwaitResult<unknown>(
-      (e) => e.card.addBlocker(cardId, blockerCardId) as Promise<{ data: unknown } | { error: string }>
-    );
+    const result = await ipcResult((e) => e.card.addBlocker(cardId, blockerCardId));
     if ("error" in result) return { error: result.error };
     // Optimistic local update
     set((s) => ({

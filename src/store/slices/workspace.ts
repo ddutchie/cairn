@@ -6,7 +6,7 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { Workspace, Project, BoardColumn, ID } from "@/types";
 import { id, now } from "@/lib/utils";
-import { ipc, ipcAwait, ipcAwaitResult, isElectron } from "../ipc";
+import { ipc, ipcAwait, ipcResult, isElectron } from "../ipc";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -118,16 +118,15 @@ export const createWorkspaceSlice: StateCreator<
     // On success, replace optimistic columns with authoritative server rows.
     if (typeof window !== "undefined" && window.electron) {
       try {
-        const result = await window.electron.project.create({
+        const { columns } = await window.electron.project.create({
           ...proj, workspaceId, withDefaultColumns: true,
-        }) as unknown as { data?: { project: Project; columns: BoardColumn[] }; error?: string } | undefined;
-        const payload = result && "data" in result ? result.data : undefined;
-        if (payload?.columns?.length) {
+        });
+        if (columns.length > 0) {
           set((s) => ({
             // Replace placeholder columns for this project with server columns
             columns: [
               ...s.columns.filter((c) => c.projectId !== proj.id),
-              ...payload.columns,
+              ...columns,
             ],
           }));
           get().persist();
@@ -192,12 +191,7 @@ export const createWorkspaceSlice: StateCreator<
     // The merge touches notes, cards, columns, idea-flow and more across three
     // slices; rather than surgically patching each, do the authoritative DB move
     // then re-hydrate every slice from the DB so local state matches exactly.
-    const result = await ipcAwaitResult<{ counts: { notes: number; cards: number } }>(
-      (e) =>
-        (e.project as {
-          merge: (s: string, t: string) => Promise<{ data: { counts: { notes: number; cards: number } } } | { error: string }>;
-        }).merge(sourceId, targetId)
-    );
+    const result = await ipcResult((e) => e.project.merge(sourceId, targetId));
     await get().hydrateFromElectron(true);
     return "data" in result ? { notes: result.data.counts.notes, cards: result.data.counts.cards } : null;
   },
