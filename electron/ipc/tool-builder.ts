@@ -19,7 +19,9 @@
 import type { IpcMainEvent } from "electron";
 import type { Database } from "better-sqlite3";
 import type { DbContext } from "./result-helpers";
-import { registerIpcOn } from "./registry";
+import { registerIpcOn, sendIpcEvent } from "./registry";
+import type { IpcEventArgs } from "../../shared/ipc/contract";
+import type { ToolBuilderPromptRequest } from "../../shared/types/tool-builder";
 import { getCachedConfig } from "../lib/config-cache";
 import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl } from "../lib/llm";
 import { newId } from "../db/utils";
@@ -32,6 +34,10 @@ import { AUTO_OUTPUT_TOKEN_CAP, resolveMaxOutputTokens } from "../../shared/mode
 import { resolveTemperatureForModel } from "../lib/model-pricing";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "../lib/usage-recorder";
 import { errMsg } from "../host-shared/errors";
+
+/** Push a `tool-builder:*` event to the requesting window, payload checked against `IpcEvents`. */
+type BuilderEvent = "tool-builder:token" | "tool-builder:step" | "tool-builder:probe-host" | "tool-builder:proposal" | "tool-builder:done";
+type BuilderSend = <E extends BuilderEvent>(channel: E, ...payload: IpcEventArgs<E>) => void;
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -141,7 +147,7 @@ async function dispatchBuilderTool(
   db: Database,
   name: string,
   args: Record<string, unknown>,
-  send: (channel: string, payload: unknown) => void
+  send: BuilderSend
 ): Promise<string> {
   switch (name) {
     case "probe_endpoint": {
@@ -313,7 +319,7 @@ function persistSecretHeaders(
 async function runBuilderLoop(
   session: BuilderSession,
   db: Database,
-  send: (channel: string, payload: unknown) => void
+  send: BuilderSend
 ): Promise<void> {
   const config = resolveConfig();
   if (!config.apiKey && !isLocalEndpoint(config.baseUrl)) {
@@ -395,13 +401,7 @@ function sanitizeArgsForRenderer(args: Record<string, unknown>): Record<string, 
 export function registerToolBuilderHandlers(ctx: DbContext): void {
   registerIpcOn(
     "tool-builder:prompt",
-    (event: IpcMainEvent, { sessionId, workspaceId, message, secret }: {
-      sessionId: string;
-      workspaceId: string;
-      message: string;
-      /** Optional { header, value } the user supplied for an authed probe. */
-      secret?: { header: string; value: string };
-    }) => {
+    (event: IpcMainEvent, { sessionId, workspaceId, message, secret }: ToolBuilderPromptRequest) => {
       let session = sessions.get(sessionId);
       if (!session) {
         session = {
@@ -443,8 +443,8 @@ export function registerToolBuilderHandlers(ctx: DbContext): void {
       // probe hosts, body samples, and saved proposals never leak to other
       // renderer instances.
       const sender = event.sender;
-      const send = (channel: string, payload: unknown) => {
-        if (!sender.isDestroyed()) sender.send(channel, payload);
+      const send: BuilderSend = (channel, ...payload) => {
+        if (!sender.isDestroyed()) sendIpcEvent(sender, channel, ...payload);
       };
       void runBuilderLoop(session, ctx.db, send);
     }
