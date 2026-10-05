@@ -11,18 +11,15 @@
 
 import { dialog, BrowserWindow } from "electron";
 import fs from "fs";
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { sanitizeFilename } from "../host-shared/text-utils";
-import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, type PdfTheme } from "../lib/pdf-template";
+import { buildPdfHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate } from "../lib/pdf-template";
 
 export function registerPdfExportHandler(ctx: DbContext): void {
-  registerIpcHandle(
+  registerContractHandle(
     "app:exportNotePdf",
-    (
-      _e,
-      { title, html, options }: { title: string; html: string; options?: { returnBuffer?: boolean; theme?: PdfTheme; fontFamily?: string } }
-    ) =>
+    (_e, { title, html, options }) =>
       handle(async () => {
         const returnBuffer = options?.returnBuffer ?? false;
         const theme = options?.theme ?? "light";

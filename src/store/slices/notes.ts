@@ -20,6 +20,7 @@ import {
   makeLinkNoteToCardCmd,
 } from "@/lib/commands/note-commands";
 import { excerptFor } from "@/lib/note-text";
+import { persist } from "@/lib/ipc/client";
 
 /**
  * Notes in `projectId` that live at `source` (a normalized folder path) or any
@@ -350,7 +351,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
 
   revealNote(noteId, projectId) {
     if (!isElectron()) return;
-    window.electron?.revealNote(noteId, projectId);
+    if (window.electron) persist(window.electron.revealNote(noteId, projectId), "Couldn't reveal the note");
   },
 
   async generatePrd(projectId, title, requirements) {

@@ -10,8 +10,8 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle } from "./registry";
-import { err, handle, type DbContext } from "./result-helpers";
+import { registerContractHandle } from "./registry";
+import { handle, type DbContext } from "./result-helpers";
 import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl, type LLMConfig } from "../lib/llm";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
@@ -49,6 +49,13 @@ function resolveConfig(
   const apiMode = getCachedConfig().aiConfig?.savedProviders?.find((p) => p.id === cached?.activeProviderId)?.apiMode as ("responses" | "completions" | "anthropic-messages" | undefined);
   // Resolve the ref to the real key only now, for this request.
   return { baseUrl, model, apiKey: resolveLlmApiKey(keyRef), apiMode };
+}
+
+/** {@link resolveConfig}, throwing the "not configured" message so `handle()` rejects with it. */
+function requireConfig(config: { baseUrl?: string; model?: string; apiKey?: string } | undefined, cacheKey: "ai" | "agent"): LLMConfig {
+  const resolved = resolveConfig(config, cacheKey);
+  if ("error" in resolved) throw new Error(resolved.error);
+  return resolved;
 }
 
 function cleanOutput(text: string): string {
@@ -108,9 +115,9 @@ export function registerAiHandlers(ctx: DbContext): void {
   // ── Model discovery (GET {baseUrl}/v1/models) ─────
   // Runs in the main process so the API key (a keychain ref) is resolved here
   // and the raw key never lives in the renderer or crosses the CSP boundary.
-  registerIpcHandle(
+  registerContractHandle(
     "ai:fetchModels",
-    async (_e, args: { baseUrl?: string; apiKey?: string }) =>
+    async (_e, args) =>
       handle(async () => {
         const url = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
         const realKey = resolveLlmApiKey(args.apiKey);
@@ -143,9 +150,9 @@ export function registerAiHandlers(ctx: DbContext): void {
   // the response per its `shape`. Returns null when the provider doesn't expose
   // credits (any non-2xx / parse failure) so the caller can hide the display —
   // never throws.
-  registerIpcHandle(
+  registerContractHandle(
     "ai:fetchKeyInfo",
-    async (_e, args: { baseUrl?: string; apiKey?: string }) =>
+    async (_e, args) =>
       handle(async () => {
         const baseUrl = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
         const realKey = resolveLlmApiKey(args.apiKey);
@@ -172,39 +179,25 @@ export function registerAiHandlers(ctx: DbContext): void {
   );
 
   // ── AI PRD generation (direct, no chat loop) ──────
-  registerIpcHandle("ai:generatePrd", async (_e, args: {
-    projectId: string;
-    title: string;
-    requirements: string;
-    config: { baseUrl: string; model: string; apiKey: string };
-  }) => {
-    // PRD returns its own { error } shape for user-facing validation errors.
+  registerContractHandle("ai:generatePrd", async (_e, args) => handle(async () => {
     // Cache the connection (apiKey scrubbed to a ref-or-clear by the cache layer).
     cacheLlmConnection("ai", args.config);
-
-    const resolved = resolveConfig(args.config, "ai");
-    if ("error" in resolved) {
-      return err(resolved.error);
-    }
-
-    return handle(() => generatePrd(ctx.db, ctx.workspacePath, {
+    const resolved = requireConfig(args.config, "ai");
+    // generatePrd reports failures as { error } (the chat tool returns that to
+    // the model as-is); over IPC it must reject instead of resolving as data.
+    const result = await generatePrd(ctx.db, ctx.workspacePath, {
       projectId: args.projectId,
       title: args.title,
       requirements: args.requirements,
-    }, resolved));
-  });
+    }, resolved);
+    if ("error" in result) throw new Error(result.error);
+    return result;
+  }));
 
   // ── AI commit message generation ──────────────────
-  registerIpcHandle("ai:generateCommitMessage", async (_e, args: {
-    diff: string;
-    config: { baseUrl: string; model: string; apiKey: string };
-  }) => {
-    const resolved = resolveConfig(args.config, "agent");
-    if ("error" in resolved) {
-      return err(resolved.error);
-    }
-
+  registerContractHandle("ai:generateCommitMessage", async (_e, args) => {
     return handle(async () => {
+      const resolved = requireConfig(args.config, "agent");
       const systemPrompt = "You are an expert at writing clear, concise git commit messages. "
         + "Generate a commit message with a short subject line (≤72 chars) and a detailed body. "
         + "Respond in this format:\n\nSUBJECT\n<subject>\n\nBODY\n<body>\n\n"
@@ -219,17 +212,9 @@ export function registerAiHandlers(ctx: DbContext): void {
   });
 
   // ── AI PR description generation ──────────────────
-  registerIpcHandle("ai:generatePrDescription", async (_e, args: {
-    diff: string;
-    config: { baseUrl: string; model: string; apiKey: string };
-    template?: string;
-  }) => {
-    const resolved = resolveConfig(args.config, "agent");
-    if ("error" in resolved) {
-      return err(resolved.error);
-    }
-
+  registerContractHandle("ai:generatePrDescription", async (_e, args) => {
     return handle(async () => {
+      const resolved = requireConfig(args.config, "agent");
       const systemPrompt = "You are an expert at writing clear, detailed pull request descriptions. "
         + "Based on the provided git diff, generate a professional pull request title and a detailed markdown description. "
         + (args.template
@@ -249,15 +234,9 @@ export function registerAiHandlers(ctx: DbContext): void {
   // sizes, and inter-module dependencies) — NOT source code — and returns a
   // short prose overview plus a one-line responsibility per module. Cheap +
   // privacy-friendly (only structure is sent).
-  registerIpcHandle("ai:explainArchitecture", async (_e, args: {
-    summary: string;
-    config: { baseUrl: string; model: string; apiKey: string };
-  }) => {
-    const resolved = resolveConfig(args.config, "agent");
-    if ("error" in resolved) {
-      return err(resolved.error);
-    }
+  registerContractHandle("ai:explainArchitecture", async (_e, args) => {
     return handle(async () => {
+      const resolved = requireConfig(args.config, "agent");
       const systemPrompt =
         "You are a senior engineer explaining a codebase's architecture to a new teammate. "
         + "You are given a project's module structure: top-level folders (modules) with their file/symbol counts and the dependencies between them. "

@@ -136,9 +136,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       // couldn't auto-create projects. Capture the created projects so a later
       // step can show them instead of prompting to create one.
       try {
-        const result = await ipcResult(
-          (e) => e.rescanWorkspace(ws.id, [...excludedFolders]) as Promise<{ projectsCreated: number; createdProjects: ImportedProject[] }>,
-        );
+        const result = await ipcResult((e) => e.rescanWorkspace(ws.id, [...excludedFolders]));
         setImportedProjects("data" in result ? result.data.createdProjects : []);
       } catch {
         // Best-effort — onboarding shouldn't block on the rescan.

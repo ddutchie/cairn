@@ -6,7 +6,7 @@
  * this module only aggregates.
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerIpcHandle, registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { queryUsageOverview, queryRecentUsage, queryUsageThreads, clearLlmUsage, type UsageQueryFilter, type UsageSource } from "../db/usage-queries";
 import { getAgentHost } from "../cordis/agent-host";
@@ -29,7 +29,7 @@ export interface UsageRangeArgs {
 export function registerUsageHandlers(ctx: DbContext): void {
   // models.dev per-1M pricing map pushed by the renderer once its catalog loads,
   // so the recorder can estimate cost for providers that don't report it.
-  registerIpcHandle("app:modelPricing", (_e, map: Record<string, { input: number | null; output: number | null; cacheRead?: number | null; cacheWrite?: number | null }> | null) => {
+  registerContractHandle("app:modelPricing", (_e, map) => {
     return handle(() => {
       setModelPricing(map);
       return { ok: true };
@@ -38,7 +38,7 @@ export function registerUsageHandlers(ctx: DbContext): void {
 
   // Model ids models.dev marks `temperature: false` — the request builders must
   // never send a temperature to these (the vendor manages sampling internally).
-  registerIpcHandle("app:noTemperatureModels", (_e, ids: string[] | null) => {
+  registerContractHandle("app:noTemperatureModels", (_e, ids) => {
     return handle(() => {
       setNoTemperatureModels(ids);
       return { ok: true };

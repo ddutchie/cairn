@@ -369,14 +369,17 @@ app.whenReady().then(async () => {
     autoUpdater.autoInstallOnAppQuit = true;
 
     autoUpdater.on("update-available", (info) => {
-      if (!win.isDestroyed()) win.webContents.send("updater:update-available", {
+      if (!win.isDestroyed()) sendIpcEvent(win.webContents, "updater:update-available", {
         version: info.version,
-        releaseNotes: info.releaseNotes ?? null,
+        // A string, or (with fullChangelog) one entry per version since the current one.
+        releaseNotes: Array.isArray(info.releaseNotes)
+          ? info.releaseNotes.map((n) => n.note).filter(Boolean).join("\n\n") || null
+          : info.releaseNotes ?? null,
       });
     });
 
     autoUpdater.on("update-downloaded", () => {
-      if (!win.isDestroyed()) win.webContents.send("updater:update-downloaded");
+      if (!win.isDestroyed()) sendIpcEvent(win.webContents, "updater:update-downloaded");
     });
 
     autoUpdater.on("error", (err) => {

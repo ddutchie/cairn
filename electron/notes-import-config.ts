@@ -22,14 +22,7 @@ const DEFAULT_SKIP_DIRS = new Set([
   "coverage",
 ]);
 
-export interface VaultImportPreview {
-  isObsidianVault: boolean;
-  vaultName: string;
-  noteCount: number;
-  skippedCount: number;
-  projects: Array<{ name: string; noteCount: number; root: boolean; projectKey: string }>;
-  excludedFolders: string[];
-}
+export type { VaultImportPreview } from "../shared/types/app";
 
 export function isSkippedMarkdown(name: string): boolean {
   const lower = name.toLowerCase();

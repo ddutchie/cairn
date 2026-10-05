@@ -8,14 +8,8 @@
  * cost and the request builders honour each model's temperature capability.
  */
 
-export interface ModelPrice {
-  input: number | null;
-  output: number | null;
-  /** USD per 1M prompt-cache-read tokens (models.dev cost.cache_read). */
-  cacheRead?: number | null;
-  /** USD per 1M prompt-cache-write tokens (models.dev cost.cache_write). */
-  cacheWrite?: number | null;
-}
+export type { ModelPrice } from "../../shared/types/app";
+import type { ModelPrice } from "../../shared/types/app";
 
 let pricing: Record<string, ModelPrice> | null = null;
 

@@ -9,6 +9,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { storage } from "@/lib/storage";
 import { SettingsGroup, SettingsRow } from "./shared";
+import { persist } from "@/lib/ipc/client";
 
 export function DataSettings({
   stats,
@@ -103,7 +104,7 @@ export function DataSettings({
       </SettingsRow>
 
       <SettingsRow label="Assets folder" description="Open the folder containing all pasted images">
-        <Button variant="default" size="sm" onClick={() => window.electron?.revealAssets()}>
+        <Button variant="default" size="sm" onClick={() => { if (window.electron) persist(window.electron.revealAssets(), "Couldn't open the assets folder"); }}>
           <FolderOpen size={12} /> {window.electron?.platform === "darwin" ? "Show in Finder" : window.electron?.platform === "win32" ? "Show in Explorer" : "Open folder"}
         </Button>
       </SettingsRow>

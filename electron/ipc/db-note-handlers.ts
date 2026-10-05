@@ -3,7 +3,7 @@
 import { shell } from "electron";
 import fs from "fs";
 import path from "path";
-import { registerContractHandle, registerIpcHandle, registerIpcOn } from "./registry";
+import { registerContractHandle, registerIpcOn } from "./registry";
 import { resolveWithinRoot } from "./path-safety";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
@@ -231,7 +231,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
   });
 
   // ── Reveal in Finder / Explorer ───────────────────
-  registerIpcHandle("app:revealNote", (_e, { noteId, projectId }) => handle(() => {
+  registerContractHandle("app:revealNote", (_e, { noteId, projectId }) => handle(() => {
     const projectName = getProjectName(ctx.db, projectId);
     const fp = findNoteFilePath(ctx.workspacePath, projectName, noteId);
     if (fp) {
@@ -243,7 +243,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
   // Saves to <workspace>/attachments/ with original filename (Obsidian-compatible).
   // Returns ![[filename]] syntax so images work in both Cairn and Obsidian.
   // Legacy asset:// URLs still render via the asset:// protocol handler.
-  registerIpcHandle("app:uploadAsset", (_e, { filename, data }: { filename: string; data: ArrayBuffer }) =>
+  registerContractHandle("app:uploadAsset", (_e, { filename, data }) =>
     handle(() => {
       // Determine attachment folder — read from Obsidian config if available
       let attachDir: string;
@@ -298,7 +298,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
   );
 
   // ── Reveal assets folder in Finder / Explorer ─────
-  registerIpcHandle("app:revealAssets", () => handle(async () => {
+  registerContractHandle("app:revealAssets", () => handle(async () => {
     const assetDir = path.join(ctx.workspacePath, "attachments");
     fs.mkdirSync(assetDir, { recursive: true });
     // shell.openPath returns a Promise<string>; non-empty = error message.
