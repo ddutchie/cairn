@@ -7,7 +7,7 @@
  * Registered through the canonical session:prompt IPC handler.
  */
 
-import { registerIpcHandle, broadcastEvent } from "./registry";
+import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import { broadcastToChat } from "../chat-popout";
 import type { DbContext } from "./result-helpers";
@@ -78,11 +78,7 @@ export { callLLM } from "../lib/llm";
  * chat bound to the throwaway boot DB until the app was restarted.
  */
 export function registerChatHandler(_ctx: DbContext): void {
-  registerIpcHandle("chat:compactThread", (_event, req: {
-    messages: Array<{ role: string; content: string }>;
-    threadId?: string;
-    config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; apiMode?: "responses" | "completions" | "anthropic-messages" };
-  }) => handle(async () => {
+  registerContractHandle("chat:compactThread", (_event, req) => handle(async () => {
       const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
       const threadId = req.threadId;
       if (!threadId) throw new Error("compact: threadId required");
@@ -93,6 +89,39 @@ export function registerChatHandler(_ctx: DbContext): void {
       if (!res.ok) throw new Error(res.error ?? "compact failed");
       console.log("[chat:compactThread] compactNow result", { threadId, compacted: res.compacted });
       return { compacted: res.compacted };
+  }));
+
+  // One-shot summary of a chat transcript, for archiving a thread into a note.
+  // Unlike chat:compactThread it reads only the messages it's given and leaves
+  // the session log alone.
+  registerContractHandle("chat:summarizeTranscript", (_event, req) => handle(async () => {
+    const { baseUrl, model, apiKey } = resolveAIConfig(req.config);
+    const turns = req.messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`);
+    if (!turns.join("").trim()) throw new Error("Nothing to summarise.");
+    // Keep the most recent whole messages of very long threads within a sane
+    // prompt size, and tell the model when the start was dropped.
+    const MAX_CHARS = 60_000;
+    const kept: string[] = [];
+    let size = 0;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (kept.length > 0 && size + turns[i].length > MAX_CHARS) break;
+      kept.unshift(turns[i]);
+      size += turns[i].length;
+    }
+    const dropped = turns.length - kept.length;
+    const clipped = (dropped > 0 ? `[${dropped} earlier messages omitted]\n\n` : "") + kept.join("\n\n");
+    const summary = await getAgentHost().runOneShot({
+      systemPrompt: "You summarise conversations for a project notebook. Write clear markdown: a short overview paragraph, then bullet points for decisions, findings and open questions. No preamble.",
+      userPrompt: `Summarise this conversation:\n\n${clipped}`,
+      config: { baseUrl, model, apiKey, provider: "openai", apiMode: req.config.apiMode },
+      source: "summary",
+      projectId: req.projectId,
+      workspaceId: req.workspaceId,
+    });
+    if (!summary.trim()) throw new Error("The model returned an empty summary.");
+    return { summary: summary.trim() };
   }));
 
 }

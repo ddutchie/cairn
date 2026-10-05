@@ -89,14 +89,6 @@ export async function resumeChatAgent(threadId: string, workspacePath: string, m
   } catch { return undefined; }
 }
 
-export interface ContextRingResult {
-  available: boolean;
-  ring?: {
-    currentModel: string | null;
-    byModel: Record<string, { turns: number; reasoningBlocks: number; reasoningChars: number; replayedBlocks: number; degradedBlocks: number }>;
-  };
-}
-
 export async function readContextRingWithContext(ctx: Context, sessionId: string): Promise<ContextRingResult> {
   try {
     const { cachedContextRing } = await import("./plugins/context-ring");
@@ -115,4 +107,7 @@ export async function readContextRing(sessionId: string): Promise<ContextRingRes
 }
 
 import { runChatCordisSession } from "./chat-session-runner";
+import type { ContextRingResult } from "../../shared/agent/session-wire";
+
+export type { ContextRingResult };
 export async function runCordisLoop(opts: RunCordisLoopOptions): Promise<RunCordisLoopResult> { return runChatCordisSession(opts); }

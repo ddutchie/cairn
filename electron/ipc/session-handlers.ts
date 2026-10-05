@@ -10,14 +10,15 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
 import { getAgentHost } from "../cordis/agent-host";
+import type { AgentSessionMessage } from "../../shared/agent/session-wire";
 
 /** Map shared ReplayMessage[] to the coding-agent message shape the renderer expects. */
-function toAgentMessages(messages: ReplayMessage[]) {
+function toAgentMessages(messages: ReplayMessage[]): AgentSessionMessage[] {
   return messages.map((m) => ({
     id: m.id,
     role: m.role as "user" | "assistant",
@@ -50,10 +51,10 @@ function isMissingSessionError(err: unknown): boolean {
 }
 
 export function registerSessionHandlers(ctx: DbContext): void {
-  registerIpcHandle("db:session:list", (_e, { projectId }) => handle(() => q.getCodingSessions(ctx.db, projectId)));
-  registerIpcHandle("db:session:create", (_e, args: Parameters<typeof q.createCodingSession>[1]) => handle(() => q.createCodingSession(ctx.db, args)));
-  registerIpcHandle("db:session:delete", (_e, { id }) => handle(() => q.deleteCodingSession(ctx.db, id)));
-  registerIpcHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
+  registerContractHandle("db:session:list", (_e, { projectId }) => handle(() => q.getCodingSessions(ctx.db, projectId)));
+  registerContractHandle("db:session:create", (_e, args) => handle(() => q.createCodingSession(ctx.db, args)));
+  registerContractHandle("db:session:delete", (_e, { id }) => handle(() => q.deleteCodingSession(ctx.db, id)));
+  registerContractHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 
   // ── session:permissions ──────────────────────────────────────────────
   // On-demand permission-preset select for the renderer switcher (initial
@@ -62,7 +63,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // as subagent:* — unavailable while the presets service is inject-gated on
   // per-turn `shell` (the switcher hides until then). Writes go through the
   // existing cordis:executeCommand path (`/permission <preset>`), not here.
-  registerIpcHandle("session:permissions", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
+  registerContractHandle("session:permissions", (_e, { sessionId }) => handle(async () => {
     try {
       return { ok: true as const, value: await getAgentHost().readPermissionsSnapshot(sessionId) };
     } catch (err) {
@@ -76,7 +77,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // through cordis:executeCommand, this works while the session is idle (no
   // per-turn `shell` → no presets service → no `/permission` command): the
   // choice is queued and applied when the next coding turn mounts the service.
-  registerIpcHandle("session:permissions:set", (_e, { sessionId, preset }: { sessionId: string; preset: string }) => handle(async () => {
+  registerContractHandle("session:permissions:set", (_e, { sessionId, preset }) => handle(async () => {
     try {
       return { ok: true as const, value: await getAgentHost().setPermissionPreset(sessionId, preset) };
     } catch (err) {
@@ -98,8 +99,8 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // rethrown so the renderer can surface it — an empty transcript is
   // indistinguishable from data loss, and hiding a version mismatch on a
   // silent upgrade would strand every pre-bump session with no diagnostic.
-  registerIpcHandle("db:session:messages", (_e, { sessionId }: { sessionId: string }) => handle(async () => {
-    if (!sessionId) return { messages: [] as ReturnType<typeof toAgentMessages> };
+  registerContractHandle("db:session:messages", (_e, { sessionId }) => handle(async () => {
+    if (!sessionId) return { messages: [] as AgentSessionMessage[] };
     try {
       const { messages, usage, contextRing, todos, stats } = await getAgentHost().loadSessionMessages(sessionId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
@@ -107,7 +108,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
       return { messages: agentMessages, usage, contextRing, todos, stats };
     } catch (err) {
       if (isMissingSessionError(err)) {
-        return { messages: [] as ReturnType<typeof toAgentMessages> };
+        return { messages: [] as AgentSessionMessage[] };
       }
       // Attach a useful diagnostic prefix so the renderer's error toast is
       // actionable (users have historically opened issues with the raw

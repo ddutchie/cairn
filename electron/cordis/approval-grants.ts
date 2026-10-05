@@ -15,6 +15,9 @@
  *
  * Grants are cleared with their session (session:clear / :destroy).
  */
+import type { PendingAskMeta } from "../../shared/agent/session-wire";
+
+export type { PendingAskMeta };
 
 export interface SessionGrants {
   /** Tool names exempt from future approval asks in this session. */
@@ -106,26 +109,6 @@ export function forgetSessionApprovalArgs(sessionId: string): void {
 }
 
 // ── Pending-ask registry ─────────────────────────────────────────────────────
-
-/** One outstanding HITL prompt, enough to re-surface it after a renderer reload. */
-export interface PendingAskMeta {
-  sessionId: string;
-  name: string;
-  label: string;
-  callId: string;
-  /**
-   * Per-ask random nonce minted when the ask was emitted. The renderer must
-   * echo it back on session:respond-tool — a compromised page / UI plugin
-   * that only saw the callId can't approve because it never received the
-   * nonce. Absent on legacy sites; the verify path fail-closes when the
-   * expected nonce is missing.
-   */
-  nonce?: string;
-  /** dsh's reason for a sandbox escalation ask; undefined for ordinary tool asks. */
-  reason?: string;
-  /** True for sandbox escalations — one-shot only, never mint a standing grant. */
-  escalation?: boolean;
-}
 
 export interface PendingAskRegistry {
   record(meta: PendingAskMeta): void;

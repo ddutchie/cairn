@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { applyApprovalProjection, normalizeSessionMessages, unwrapSessionMessages } from "@/lib/conversation/session";
 
 describe("conversation session normalization", () => {
-  it("unwraps both direct and data.messages session responses", () => {
+  it("reads a bare array or a { messages } payload, and nothing else", () => {
     const message = { id: "1", threadId: "t", role: "user", content: "hello", createdAt: "now" };
     expect(unwrapSessionMessages([message])).toEqual([message]);
-    expect(unwrapSessionMessages({ data: { messages: [message] } })).toEqual([message]);
-    expect(unwrapSessionMessages({ data: "invalid" })).toEqual([]);
+    expect(unwrapSessionMessages({ messages: [message] })).toEqual([message]);
+    // preload already strips the IPC envelope; a stray one is not a payload
+    expect(unwrapSessionMessages({ data: { messages: [message] } })).toEqual([]);
+    expect(unwrapSessionMessages("invalid")).toEqual([]);
   });
 
   it("normalizes chat records for the shared renderer", () => {

@@ -12,7 +12,7 @@
  * session:projection (typed presentation updates).
  */
 
-import { registerIpcHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { registerIpcHandle, registerContractHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { handle } from "./result-helpers";
 import type { AgentSession, AgentLLMConfig, AgentToolContext } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/tools";
@@ -167,7 +167,7 @@ export function registerSessionRuntimeHandlers(
   // present the correct per-ask nonce for that callId, and a poll without a
   // prior push is useless without a valid callId. Nonces are cleared on
   // settle/sweep so this surface is only live while the ask is outstanding.
-  registerIpcHandle("session:is-running", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
+  registerContractHandle("session:is-running", (_event, { sessionId }) => handle(async () => {
      const running = getAgentHost().isTurnRunning(sessionId);
     return {
       running,
@@ -191,14 +191,14 @@ export function registerSessionRuntimeHandlers(
   // Wrapped in handle() so a transient DB or runtime failure doesn't leave the
   // renderer's coalesced poller frozen on a stale "running" set (loop stays
   // green forever).
-  registerIpcHandle("session:running-ids", () => handle(async () => {
+  registerContractHandle("session:running-ids", () => handle(async () => {
      return { ids: getAgentHost().getRunningTurnIds() };
   }));
 
   // ── session:context-ring ─────────────────────────────────────────────────
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
   // agent panel's ring badge. Unavailable → renderer hides the pill.
-  registerIpcHandle("session:context-ring", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
+  registerContractHandle("session:context-ring", (_event, { sessionId }) => handle(async () => {
     return getAgentHost().readContextRing(sessionId);
   }));
 
@@ -216,14 +216,14 @@ export function registerSessionRuntimeHandlers(
       return { ok: false, code, message: err instanceof Error ? err.message : "subagent control failed" };
     }
   };
-  registerIpcHandle("subagent:list", (_event, { parentSessionId, scope }: { parentSessionId: string; scope?: unknown }) => handle(async () => {
+  registerContractHandle("subagent:list", (_event, { parentSessionId, scope }) => handle(async () => {
     const { normalizeSubagentScope } = await import("../cordis/subagent-control");
     return subagentResult(() => getAgentHost().listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
   }));
-  registerIpcHandle("subagent:interrupt", (_event, { parentSessionId, childId }: { parentSessionId: string; childId: string }) => handle(async () => {
+  registerContractHandle("subagent:interrupt", (_event, { parentSessionId, childId }) => handle(async () => {
     return subagentResult(() => getAgentHost().interruptSubagentChild(parentSessionId, childId));
   }));
-  registerIpcHandle("subagent:message", (_event, { parentSessionId, childId, text }: { parentSessionId: string; childId: string; text: string }) => handle(async () => {
+  registerContractHandle("subagent:message", (_event, { parentSessionId, childId, text }) => handle(async () => {
     return subagentResult(() => getAgentHost().messageSubagentChild(parentSessionId, childId, text));
   }));
 
@@ -233,7 +233,7 @@ export function registerSessionRuntimeHandlers(
   // turn ended, not-owner on a cross-session stop, registry passthrough
   // otherwise). The requesting session id is mandatory — the bridge only
   // stops jobs the caller's dock would show (unowned, or its own).
-  registerIpcHandle("session:job-kill", (_event, { jobId, sessionId }: { jobId: string; sessionId: string }) => handle(async () => {
+  registerContractHandle("session:job-kill", (_event, { jobId, sessionId }) => handle(async () => {
     return subagentResult(() => Promise.resolve(getAgentHost().killJob(jobId, sessionId)));
   }));
 
@@ -242,7 +242,7 @@ export function registerSessionRuntimeHandlers(
   // live changes arrive via session:projection kind:"goal" from goal-bridge).
   // Null goal = no current goal (pre-create / cleared) → chip hides. Same
   // {ok:true,value}|{ok:false,code,message} envelope as subagent:*.
-  registerIpcHandle("session:goal", (_event, { sessionId }: { sessionId: string }) => handle(async () => {
+  registerContractHandle("session:goal", (_event, { sessionId }) => handle(async () => {
     return subagentResult(() => getAgentHost().readGoalSnapshot(sessionId));
   }));
 
@@ -251,10 +251,10 @@ export function registerSessionRuntimeHandlers(
   // message-feedback sidecar). Same {ok:true,value}|{ok:false,code,message}
   // envelope as subagent:*. The /feedback command needs no handler — it is an
   // ENTRY_LIST-mounted command and surfaces via cordis:listCommands.
-  registerIpcHandle("session:feedback", (_event, req: { sessionId: string; messageId: string; rating: "positive" | "negative"; note?: string }) => handle(async () => {
+  registerContractHandle("session:feedback", (_event, req) => handle(async () => {
     return subagentResult(() => getAgentHost().putMessageFeedback(req));
   }));
-  registerIpcHandle("session:feedback-get", (_event, req: { sessionId: string; messageId: string }) => handle(async () => {
+  registerContractHandle("session:feedback-get", (_event, req) => handle(async () => {
     return subagentResult(() => getAgentHost().getMessageFeedback(req.sessionId, req.messageId));
   }));
 
@@ -262,7 +262,7 @@ export function registerSessionRuntimeHandlers(
   // On-demand active-reminder snapshot for the header alarm pill (polled on
   // header mount + turn end — no standing subscription). Empty list = overlay
   // off or no reminders → pill hides. Same envelope as subagent:*.
-  registerIpcHandle("session:schedule-list", (_event, req: { sessionId: string }) => handle(async () => {
+  registerContractHandle("session:schedule-list", (_event, req) => handle(async () => {
     return subagentResult(() => getAgentHost().listSchedules(req.sessionId));
   }));
 

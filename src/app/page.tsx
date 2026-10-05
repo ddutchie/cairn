@@ -202,16 +202,13 @@ export default function Home() {
               const latest = history[0];
               // Load messages for the latest session — session-as-truth (dsh JSONL),
               // SQLite fallback for pre-dsh sessions. Mirrors the chat load path.
-              // db:session:messages returns an ENVELOPE
-              // ({ messages, usage?, contextRing?, todos? }) — not a bare array
-              // (and IPC results may be result-wrapped) — so unwrap defensively
-              // exactly like useAgentSessionActions.handleResumeSession.
+              // db:session:messages returns { messages, usage?, contextRing?, todos? }.
               type SessionRow = {
                 id: string; role: "user" | "assistant" | "error"; content: string;
                 reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
               };
-              const sessRes = await (window.electron.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> }).getSessionMessages(latest.id);
+              const sessRes = await window.electron.session.getSessionMessages(latest.id);
               const payload = unwrapSessionPayload(sessRes);
               const rows: SessionRow[] | undefined = payload.messages.length > 0 ? payload.messages as unknown as SessionRow[] : undefined;
               const lastUsage = payload.usage as import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];

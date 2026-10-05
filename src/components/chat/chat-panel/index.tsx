@@ -10,7 +10,7 @@ import { useChatStream } from "@/hooks/useChatStream";
 import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { useGraphData } from "@/hooks/useGraphData";
-import { ipcAwaitResult } from "@/store/ipc";
+import { ipcResult } from "@/store/ipc";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { storage } from "@/lib/storage";
 import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
@@ -279,25 +279,21 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     let useSummary = false;
 
     try {
-      const result = await ipcAwaitResult<{ summary: string }>(async (e) => {
-        try {
-          const summaryObj = await e.chat.compactThread({
-            messages: history,
-            config: {
-              provider: aiConfig.provider,
-              baseUrl: aiConfig.baseUrl,
-              model: aiConfig.model,
-              apiKey: aiConfig.apiKey,
-              apiMode: aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode ?? "completions",
-            },
-          }) as { summary: string };
-          return { data: summaryObj };
-        } catch (err) {
-          return { error: err instanceof Error ? err.message : String(err) };
-        }
-      });
+      const result = await ipcResult((e) => e.chat.summarizeTranscript({
+        messages: history,
+        config: {
+          provider: aiConfig.provider,
+          baseUrl: aiConfig.baseUrl,
+          model: aiConfig.model,
+          apiKey: aiConfig.apiKey,
+          apiMode: aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode ?? "completions",
+        },
+        projectId: activeProjectId,
+        workspaceId: activeThread?.workspaceId,
+      }));
+      if ("error" in result) console.warn("AI summary unavailable, archiving the raw transcript:", result.error);
 
-      if (result && "data" in result && result.data?.summary) {
+      if ("data" in result) {
         const summary = result.data.summary;
         const threadTitle = activeThread?.title ?? (threadMessages.find((m) => m.role === "user")?.content.slice(0, 50) ?? "New thread");
         const dateStr = new Date().toLocaleString();

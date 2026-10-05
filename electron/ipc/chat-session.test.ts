@@ -130,6 +130,26 @@ describe("session:renameTitle uses the shared opener", () => {
     expect(result).toEqual({ data: { title: "Live Rename" } });
   });
 
+  it("keeps the thread's subagents flag when it syncs the renamed title", async () => {
+    const { default: BetterSqlite3 } = await import("better-sqlite3");
+    const { applySchema } = await import("../db/schema");
+    const q = await import("../db/queries");
+    const db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    q.createWorkspace(db, { id: "ws1", name: "WS" });
+    q.upsertChatThread(db, { id: "t1", scope: "workspace", workspaceId: "ws1", title: "Old", useSubagents: true });
+    sessionsGetMock.mockReturnValue({ id: "chat-t1" });
+    getContextMock.mockResolvedValue(liveCtx());
+
+    registerChatSessionHandlers({ db, workspacePath: "/tmp/ws", getWin: () => null });
+    const handler = getIpcHandler("session:renameTitle");
+    await (handler as (e: unknown, args: unknown) => Promise<unknown>)({}, { threadId: "t1", title: "Renamed" });
+
+    const [thread] = q.getChatThreads(db, "ws1");
+    expect(thread.title).toBe("Renamed");
+    expect(thread.useSubagents).toBe(true);
+  });
+
   it("rejects empty titles without opening a session", async () => {
     sessionsGetMock.mockReturnValue(undefined);
     getContextMock.mockResolvedValue(liveCtx());

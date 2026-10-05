@@ -82,9 +82,7 @@ export function useAgentSessionActions() {
           reasoning?: string | null;
           toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
         };
-        const sessRes = await (window.electron?.session as unknown as { getSessionMessages: (id: string) => Promise<unknown> })?.getSessionMessages(summary.id);
-        // Shared unwrapper — the same three response shapes the chat history
-        // path sees (see unwrapSessionPayload).
+        const sessRes = await window.electron?.session.getSessionMessages(summary.id);
         const payload = unwrapSessionPayload(sessRes);
         const rows: RowType[] | undefined = payload.messages.length > 0 ? payload.messages as unknown as RowType[] : undefined;
         lastUsage = payload.usage as TerminalSession["lastUsage"];

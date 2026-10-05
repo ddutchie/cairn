@@ -31,19 +31,9 @@ import {
   makeSessionProjection,
   type SessionProjectionKind,
 } from "../../shared/agent/session-projection";
+import type { GoalWire } from "../../shared/agent/session-wire";
 
-/** Renderer-safe goal summary (durable projection view — no activation). */
-export interface GoalWire {
-  id: string;
-  revision: number;
-  objective: string;
-  phase: GoalPhase;
-  blockedReason?: { code: string; message: string };
-  roundsStarted: number;
-  maxGoalRounds: number;
-  createdAt: number;
-  updatedAt: number;
-}
+export type { GoalWire };
 
 interface GoalSnapshotLike {
   id?: unknown;

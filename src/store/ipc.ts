@@ -152,22 +152,3 @@ export async function ipcResult<T>(
     return { error: err instanceof Error ? err.message : String(err) };
   }
 }
-
-/**
- * @deprecated Use `ipcResult`. This expects `fn` to resolve to a raw
- * `{ data } | { error }` envelope, but preload's invoke already unwraps it, so
- * a successful call comes back as the bare value with no `data` key. The
- * remaining (chat) callers compensate by hand; they move to `ipcResult` with
- * the chat domain's typed-contract migration.
- */
-export async function ipcAwaitResult<T>(
-  fn: (e: NonNullable<Window["electron"]>) => Promise<{ data: T } | { error: string } | undefined>
-): Promise<{ data: T } | { error: string }> {
-  if (!isElectron() || !window.electron) return { error: "Not in Electron" };
-  try {
-    const result = await (fn(window.electron) ?? Promise.resolve(undefined));
-    return result ?? { error: "No response" };
-  } catch (err) {
-    return { error: String(err) };
-  }
-}

@@ -1,10 +1,7 @@
 /** Shared answer broker for every Cordis session surface. */
-export interface PendingQuestionRecord {
-  sessionId: string;
-  callId: string;
-  questions: Array<{ id: string; [key: string]: unknown }>;
-}
+import type { PendingQuestionRecord } from "../../shared/agent/session-wire";
 
+export type { PendingQuestionRecord };
 const pendingQuestions = new Map<string, { resolve: (answersText: string) => void; record?: PendingQuestionRecord }>();
 
 const key = (sessionId: string, callId: string) => `${sessionId}::${callId}`;

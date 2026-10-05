@@ -17,24 +17,9 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
+import type { MessageFeedbackRating, MessageFeedbackItemWire, PutMessageFeedbackInput } from "../../shared/agent/session-wire";
 
-export type MessageFeedbackRating = "positive" | "negative";
-
-export interface MessageFeedbackItemWire {
-  messageId: string;
-  rating: MessageFeedbackRating;
-  note?: string;
-  version: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface PutMessageFeedbackInput {
-  sessionId: string;
-  messageId: string;
-  rating: MessageFeedbackRating;
-  note?: string;
-}
+export type { MessageFeedbackRating, MessageFeedbackItemWire, PutMessageFeedbackInput };
 
 type ServiceResult<T, E = { code?: string }> = { ok: true; value: T } | { ok: false; error: E };
 

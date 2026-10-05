@@ -17,6 +17,12 @@
 
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type {
+  AgentSessionMessage, CodingSessionCreateInput, CodingSessionRow, ContextRingResult, ControlResult, GoalWire,
+  MessageFeedbackItemWire, PermissionsSelect, PutMessageFeedbackInput, ScheduleWire, SessionLoadExtras,
+  SessionRunningState, SessionTodo, SubagentCatalogView, SubagentScope,
+} from "../agent/session-wire";
+import type { ChatMessage, ChatThread, ChatThreadUpsertInput } from "../types/chat";
+import type {
   GitBranchList, GitFileDiff, GitLogEntry, GitPathSelection, GitPrStatus, GitStashAction, GitStatus,
 } from "../types/git";
 import type {
@@ -58,6 +64,84 @@ export interface IpcContract {
   "chat:requestPopIn": { args: []; result: PopoutAck };
   /** Pop-out page → close and hand the session back to the main window. */
   "chat:popIn": { args: [payload: { sessionId: string }]; result: PopoutAck };
+
+  // ── Chat threads ─────────────────────────────────────────────────────────
+  "db:chat:threads": { args: [req: { workspaceId: string }]; result: ChatThread[] };
+  /** Transcript from the thread's dsh session log; empty for a thread with no log yet. */
+  "db:chat:sessionMessages": {
+    args: [req: { threadId: string }];
+    result: SessionLoadExtras & { messages: ChatMessage[]; title?: string | null };
+  };
+  "db:chat:upsertThread": { args: [input: ChatThreadUpsertInput]; result: ChatThread };
+  "db:chat:deleteThread": { args: [req: { threadId: string }]; result: void };
+  /** Wipes the thread's session logs (incl. subagent children) and cached agent. */
+  "db:chat:clearThreadMessages": { args: [req: { threadId: string }]; result: void };
+  "db:chat:clearAllThreads": {
+    args: [req: { workspaceId: string; projectId?: string | null }];
+    result: { deletedThreads: number; deletedMessages: number };
+  };
+  /** Compact the thread's session log (summary node + retained tail). */
+  "chat:compactThread": {
+    args: [req: {
+      messages: Array<{ role: string; content: string }>;
+      threadId: string;
+      config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; apiMode?: "responses" | "completions" | "anthropic-messages" };
+    }];
+    result: { compacted: boolean };
+  };
+
+  /** One-shot markdown summary of the given messages (archive-to-note); doesn't touch the session log. */
+  "chat:summarizeTranscript": {
+    args: [req: {
+      messages: Array<{ role: string; content: string }>;
+      config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; apiMode?: "responses" | "completions" | "anthropic-messages" };
+      projectId?: string;
+      workspaceId?: string;
+    }];
+    result: { summary: string };
+  };
+
+  // ── Coding sessions ──────────────────────────────────────────────────────
+  "db:session:list": { args: [req: { projectId: string }]; result: CodingSessionRow[] };
+  "db:session:create": { args: [input: CodingSessionCreateInput]; result: CodingSessionRow };
+  "db:session:delete": { args: [req: { id: string }]; result: void };
+  "db:session:todos": { args: [req: { sessionId: string }]; result: SessionTodo[] };
+  /** Transcript from the session's dsh log; rejects on corrupt/unsupported logs, empty when missing. */
+  "db:session:messages": {
+    args: [req: { sessionId: string }];
+    result: SessionLoadExtras & { messages: AgentSessionMessage[] };
+  };
+  "session:is-running": { args: [req: { sessionId: string }]; result: SessionRunningState };
+  "session:running-ids": { args: []; result: { ids: string[] } };
+  "session:context-ring": { args: [req: { sessionId: string }]; result: ContextRingResult };
+  /** Chat-only; null before the first eligible title. */
+  "session:title": { args: [req: { threadId?: string; sessionId?: string }]; result: { title: string | null } };
+  /** Pins a manual title (stops auto-titling). Chat-only. */
+  "session:renameTitle": {
+    args: [req: { threadId?: string; sessionId?: string; title: string }];
+    result: { title: string };
+  };
+  "session:permissions": { args: [req: { sessionId: string }]; result: ControlResult<PermissionsSelect> };
+  "session:permissions:set": { args: [req: { sessionId: string; preset: string }]; result: ControlResult<PermissionsSelect> };
+  "subagent:list": {
+    args: [req: { parentSessionId: string; scope?: SubagentScope }];
+    result: ControlResult<SubagentCatalogView>;
+  };
+  "subagent:interrupt": { args: [req: { parentSessionId: string; childId: string }]; result: ControlResult<{ accepted: true }> };
+  "subagent:message": {
+    args: [req: { parentSessionId: string; childId: string; text: string }];
+    result: ControlResult<{ messageId: string }>;
+  };
+  "session:job-kill": { args: [req: { jobId: string; sessionId: string }]; result: ControlResult<unknown> };
+  "session:goal": { args: [req: { sessionId: string }]; result: ControlResult<GoalWire | null> };
+  "session:feedback": { args: [req: PutMessageFeedbackInput]; result: ControlResult<MessageFeedbackItemWire> };
+  "session:feedback-get": {
+    args: [req: { sessionId: string; messageId: string }];
+    result: ControlResult<MessageFeedbackItemWire | null>;
+  };
+  "session:schedule-list": { args: [req: { sessionId: string }]; result: ControlResult<ScheduleWire[]> };
+  /** Registry commands (built-in + plugin) for the command palettes. */
+  "cordis:listCommands": { args: []; result: Array<{ name: string; description: string }> };
 
   // ── Workspaces & projects ────────────────────────────────────────────────
   "db:workspace:list": { args: []; result: Workspace[] };
@@ -253,6 +337,35 @@ const CHANNELS: ChannelRecord = {
   "chat:popoutReady": true,
   "chat:requestPopIn": true,
   "chat:popIn": true,
+  "db:chat:threads": true,
+  "db:chat:sessionMessages": true,
+  "db:chat:upsertThread": true,
+  "db:chat:deleteThread": true,
+  "db:chat:clearThreadMessages": true,
+  "db:chat:clearAllThreads": true,
+  "chat:compactThread": true,
+  "chat:summarizeTranscript": true,
+  "db:session:list": true,
+  "db:session:create": true,
+  "db:session:delete": true,
+  "db:session:todos": true,
+  "db:session:messages": true,
+  "session:is-running": true,
+  "session:running-ids": true,
+  "session:context-ring": true,
+  "session:title": true,
+  "session:renameTitle": true,
+  "session:permissions": true,
+  "session:permissions:set": true,
+  "subagent:list": true,
+  "subagent:interrupt": true,
+  "subagent:message": true,
+  "session:job-kill": true,
+  "session:goal": true,
+  "session:feedback": true,
+  "session:feedback-get": true,
+  "session:schedule-list": true,
+  "cordis:listCommands": true,
   "db:workspace:list": true,
   "db:workspace:create": true,
   "db:workspace:update": true,

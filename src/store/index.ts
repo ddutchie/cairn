@@ -26,7 +26,7 @@ import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite, isElectron } from "./ipc";
 import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY } from "@/lib/constants";
-import { ipcAwaitResult } from "./ipc";
+import { ipcResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
 // ── Slice imports ─────────────────────────────────────────────────────────────
@@ -769,27 +769,17 @@ export const useCairnStore = create<CairnStore>()(
         const savedThreadId = storage.get<string>(ACTIVE_CHAT_THREAD_KEY);
         if (savedThreadId) {
           try {
-            const res = await ipcAwaitResult<ChatThread | null>(
-              (e) => (e.chat as unknown as { thread?: (id: string) => Promise<{ data: ChatThread | null }> }).thread?.(savedThreadId) as Promise<{ data: ChatThread | null } | { error: string }>
-            ).catch(() => null as unknown as { data: ChatThread | null });
-            // Fallback: try via threads list if single-thread fetch not available
-            let thread: ChatThread | null | undefined = (res as { data?: ChatThread | null })?.data ?? null;
+            const threadsIn = async (workspaceId: string): Promise<ChatThread[]> => {
+              const r = await ipcResult((e) => e.chat.threads(workspaceId));
+              return "data" in r ? r.data : [];
+            };
+            // Current workspace first, then the others.
+            let thread: ChatThread | null = (await threadsIn(wsId ?? "")).find((t) => t.id === savedThreadId) ?? null;
             if (!thread) {
-              const allRes = await ipcAwaitResult<ChatThread[]>(
-                (e) => e.chat.threads(wsId ?? "") as Promise<{ data: ChatThread[] } | { error: string }>
-              ).catch(() => null as unknown as { data: ChatThread[] });
-              const rawList = Array.isArray(allRes) ? (allRes as unknown as ChatThread[]) : ((allRes as { data?: ChatThread[] })?.data ?? []);
-              thread = rawList.find((t) => t.id === savedThreadId) ?? null;
-              // If not in current ws, scan all workspaces' threads
-              if (!thread) {
-                for (const w of snapWorkspaces) {
-                  const r = await ipcAwaitResult<ChatThread[]>(
-                    (e) => e.chat.threads(w.id) as Promise<{ data: ChatThread[] } | { error: string }>
-                  ).catch(() => null as unknown as { data: ChatThread[] });
-                  const raw = Array.isArray(r) ? (r as unknown as ChatThread[]) : ((r as { data?: ChatThread[] })?.data ?? []);
-                  thread = raw.find((t) => t.id === savedThreadId) ?? null;
-                  if (thread) break;
-                }
+              for (const w of snapWorkspaces) {
+                if (w.id === wsId) continue;
+                thread = (await threadsIn(w.id)).find((t) => t.id === savedThreadId) ?? null;
+                if (thread) break;
               }
             }
             if (thread && thread.workspaceId) {

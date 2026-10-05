@@ -8,7 +8,7 @@
  * Extracted from the god-file `ipc/handlers.ts` (P2 of the cleanup plan).
  */
 
-import { registerIpcHandle } from "./registry";
+import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { assertSafeId, resolveWithinRoot, isSafeId } from "./path-safety";
@@ -19,8 +19,8 @@ import { getAgentHost } from "../cordis/agent-host";
 export function registerChatDbHandlers(ctx: DbContext): void {
   // Legacy SQLite transcript tables and pre-Cordis session indexes are reset by
   // migrations v49/v51. New history is owned by dsh JSONL sessions.
-  registerIpcHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
-  registerIpcHandle("db:chat:upsertThread", (_e, args: Parameters<typeof q.upsertChatThread>[1]) => handle(() => q.upsertChatThread(ctx.db, args)));
+  registerContractHandle("db:chat:threads", (_e, { workspaceId }) => handle(() => q.getChatThreads(ctx.db, workspaceId)));
+  registerContractHandle("db:chat:upsertThread", (_e, args) => handle(() => q.upsertChatThread(ctx.db, args)));
 
   // db:chat:clearThreadMessages — direct SQL DELETE + Cordis jsonl clear.
   // Mirrors the coding session runtime's brute-force session wipe but for
@@ -29,7 +29,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
   // (origin==='subagent' && parentSession===stableId, stored as random UUIDs
   // like bb4c63a3… — the prefix scan alone would leave them orphaned and they'd
   // reappear as 6 blocks on reload). Also drop in-memory agents.
-  registerIpcHandle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(async () => {
+  registerContractHandle("db:chat:clearThreadMessages", (_e, { threadId }) => handle(async () => {
     // Reject renderer-supplied ids that could path-traverse before they reach
     // fs.rmSync() below. Any legitimate `thr-<nanoid>` passes; `..`, `/`, `\`,
     // empty, over-length, control chars all fail here.
@@ -129,7 +129,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     } catch { /* best-effort */ }
   }));
 
-  registerIpcHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId }: { workspaceId: string; projectId?: string | null }) => handle(() => {
+  registerContractHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId }) => handle(() => {
     const threads = q.getChatThreads(ctx.db, workspaceId).filter((t) => !projectId || t.projectId === projectId);
     // Ids come from SQLite, but filter for path-safety anyway — a corrupt row
     // (e.g. from a compromised sync peer or a manual DB edit) must not turn
@@ -178,5 +178,5 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     return { deletedThreads: ids.length, deletedMessages: 0 };
   }));
 
-  registerIpcHandle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
+  registerContractHandle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
 }

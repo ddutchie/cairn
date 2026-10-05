@@ -4,12 +4,17 @@
 
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
-import type { ChatThread, ChatMessage, ChatToolCallRecord, ID, TokenBreakdown } from "@/types";
+import type { ChatThread, ChatThreadUpsertInput, ChatMessage, ChatToolCallRecord, ID, TokenBreakdown } from "@/types";
 import { id, now } from "@/lib/utils";
 import { storage } from "@/lib/storage";
 import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
-import { ipc, ipcAwait, ipcAwaitResult } from "../ipc";
+import { ipc, ipcAwait, ipcResult } from "../ipc";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
+
+/** The thread-index fields `db:chat:upsertThread` stores (it stamps its own timestamps). */
+function toUpsertInput(t: ChatThread): ChatThreadUpsertInput {
+  return { id: t.id, scope: t.scope, workspaceId: t.workspaceId, projectId: t.projectId, title: t.title, useSubagents: t.useSubagents };
+}
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -94,18 +99,9 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
    * clobber optimistic state.
    */
   async loadChatFromDb(workspaceId) {
-    const threadsRes = await ipcAwaitResult<ChatThread[]>(
-      (e) => e.chat.threads(workspaceId) as Promise<{ data: ChatThread[] } | { error: string }>
-    );
-    // ipcAwaitResult returns {data} on success, but handle both wrapped and raw array (defensive)
-    let dbThreads: ChatThread[] = [];
-    if (Array.isArray(threadsRes)) {
-      dbThreads = threadsRes as unknown as ChatThread[];
-    } else if (threadsRes && typeof threadsRes === "object" && "data" in threadsRes && Array.isArray((threadsRes as { data: unknown }).data)) {
-      dbThreads = (threadsRes as { data: ChatThread[] }).data;
-    } else {
-      return;
-    }
+    const threadsRes = await ipcResult((e) => e.chat.threads(workspaceId));
+    if ("error" in threadsRes) return;
+    const dbThreads = threadsRes.data;
 
     // Pull messages for every thread in parallel — dsh's JSONL session log
     // (JsonlSessionPersistence, stable id `chat-<threadId>`) is the sole
@@ -123,18 +119,13 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     const messageLists = await Promise.all(
       dbThreads.map(async (t) => {
         try {
-          const sessRes = await ipcAwaitResult<unknown>(
-             
-            (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: unknown } | { error: string }> }).sessionMessages(t.id)
-          );
-          // Shared unwrapper — see unwrapSessionPayload for why this used to be
-          // open-coded here (and drifted from the other three call sites).
-          if (sessRes && typeof sessRes === "object" && "error" in sessRes && (sessRes as { error?: unknown }).error) {
+          const sessRes = await ipcResult((e) => e.chat.sessionMessages(t.id));
+          if ("error" in sessRes) {
             failedThreadIds.add(t.id);
-            console.warn("[chat] sessionMessages failed", { threadId: t.id, error: String((sessRes as { error: unknown }).error) });
+            console.warn("[chat] sessionMessages failed", { threadId: t.id, error: sessRes.error });
             return [];
           }
-          const payload = unwrapSessionPayload(sessRes);
+          const payload = unwrapSessionPayload(sessRes.data);
           const data: ChatMessage[] | null = payload.messages.length > 0 ? payload.messages as ChatMessage[] : null;
           const usage: unknown = payload.usage;
           const maybeTitle = (payload as { title?: string | null }).title;
@@ -326,7 +317,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     };
     set((s) => ({ chatThreads: [...s.chatThreads, thread] }));
     get().persist();
-    ipc((e) => e.chat.upsertThread(thread));
+    ipc((e) => e.chat.upsertThread(toUpsertInput(thread)));
     return thread;
   },
 
@@ -363,7 +354,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // is legacy and was the source of the duplicate/ghost bubbles. Only the thread
     // index row is still upserted so the thread list can enumerate sessions.
     const thread = get().chatThreads.find((t) => t.id === threadId);
-    if (thread) ipc((e) => e.chat.upsertThread({ ...thread, updatedAt: now() }));
+    if (thread) ipc((e) => e.chat.upsertThread(toUpsertInput(thread)));
     return msg;
   },
 
@@ -432,10 +423,10 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     get().persist();
     // Pin via dsh's sessionTitle.rename (kind:'user' — stops auto-titling).
     // Chat-only: coding sessions are not auto-titled in phase 1.
-    ipcAwait((e) => (e as unknown as { session: { renameTitle: (args: { threadId: string; title: string }) => Promise<unknown> } }).session.renameTitle({ threadId, title: trimmed }));
+    ipcAwait((e) => e.session.renameTitle(threadId, trimmed));
     // Also keep SQLite index row in sync (SQLite is the thread-list fallback).
     const thread = get().chatThreads.find((t) => t.id === threadId);
-    if (thread) ipc((e) => e.chat.upsertThread({ ...thread, title: trimmed || undefined, updatedAt: now() }));
+    if (thread) ipc((e) => e.chat.upsertThread({ ...toUpsertInput(thread), title: trimmed || undefined }));
   },
 
   createNewThread(workspaceId, projectId) {
@@ -449,7 +440,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     };
     set((s) => ({ chatThreads: [...s.chatThreads, thread] }));
     get().persist();
-    ipc((e) => e.chat.upsertThread(thread));
+    ipc((e) => e.chat.upsertThread(toUpsertInput(thread)));
     return thread;
   },
 
@@ -474,51 +465,32 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // which rewrites the thread's dsh session surface (a summary `replace` node).
     // We then re-read the thread from the session log so the compacted history
     // (summary node + retained tail) replaces the in-memory transcript.
-    const result = await ipcAwaitResult<{ compacted: boolean }>(async (e) => {
-      try {
-        const obj = await e.chat.compactThread({
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-          threadId,
-          config: {
-            provider: aiConfig.provider,
-            baseUrl: aiConfig.baseUrl,
-            model: aiConfig.model,
-            apiKey: aiConfig.apiKey,
-            apiMode: aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode ?? "completions",
-          },
-        }) as { compacted: boolean };
-        return { data: obj };
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : String(err) };
-      }
-    });
+    const result = await ipcResult((e) => e.chat.compactThread({
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      threadId,
+      config: {
+        provider: aiConfig.provider,
+        baseUrl: aiConfig.baseUrl,
+        model: aiConfig.model,
+        apiKey: aiConfig.apiKey,
+        apiMode: aiConfig.savedProviders?.find((p) => p.id === aiConfig.activeProviderId)?.apiMode ?? "completions",
+      },
+    }));
 
     // Drop the "Compacting…" placeholder regardless of outcome.
     set((s) => ({ chatMessages: s.chatMessages.filter((m) => m.id !== tempId) }));
 
-    if (result && "data" in result) {
+    if ("error" in result) console.warn("[chat] compact failed", result.error);
+    else {
       // Reload this thread's messages from the (now compacted) dsh session log so
       // the summary node + retained tail render, and the thread persists across
       // reload (session is the source of truth). Replace only THIS thread's
       // messages to avoid disturbing other threads' in-memory state.
       try {
-        const sessRes = await ipcAwaitResult<unknown>(
-           
-          (e) => (e.chat as unknown as { sessionMessages: (id: string) => Promise<{ data: unknown } | { error: string }> }).sessionMessages(threadId)
-        );
-        let fresh: ChatMessage[] = [];
-        let usage: unknown = undefined;
-        let raw: unknown = sessRes;
-        if (raw && typeof raw === "object" && "data" in raw && (raw as { data: unknown }).data !== undefined) {
-          raw = (raw as { data: unknown }).data;
-        }
-        if (Array.isArray(raw)) {
-          fresh = raw as ChatMessage[];
-        } else if (raw && typeof raw === "object" && "messages" in raw && Array.isArray((raw as { messages?: unknown }).messages)) {
-          fresh = (raw as { messages: ChatMessage[] }).messages;
-          usage = (raw as { usage?: unknown }).usage;
-        }
-
+        const sessRes = await ipcResult((e) => e.chat.sessionMessages(threadId));
+        if ("error" in sessRes) throw new Error(sessRes.error);
+        const fresh = sessRes.data.messages;
+        const usage = sessRes.data.usage;
 
         set((s) => ({
           chatMessages: [...s.chatMessages.filter((m) => m.threadId !== threadId), ...fresh],
