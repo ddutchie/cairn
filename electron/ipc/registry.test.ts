@@ -1,50 +1,30 @@
 /**
- * Unit tests for the registry's read/write channel classification.
+ * Registry tests: which channels broadcast `db:changed`, and which are hidden
+ * from the Mobile Access bridge.
  *
- * `isWriteChannel` decides whether a completed `db:*` channel auto-broadcasts
- * `db:changed` (a full snapshot re-hydration in every window + mobile client).
- * Misclassifying a read as a write causes a silent re-hydration storm, so this
- * guards the convention: reads (by action verb or the small irregular-name set)
- * must never broadcast; everything else `db:*` does.
+ * A write channel (contract entry with `writes: true`) broadcasts `db:changed`
+ * after it completes, so every window and paired phone re-hydrates. Flagging a
+ * read as a write causes a silent re-hydration storm; forgetting the flag on a
+ * write leaves other windows stale.
  */
 
 import { describe, it, expect, vi } from "vitest";
+import fs from "fs";
+import path from "path";
+import { IPC_CONTRACT_CHANNELS, IPC_WRITE_CHANNELS } from "../../shared/ipc/contract";
+import type { IpcChannel } from "../../shared/ipc/contract";
 
-// registry.ts imports `electron` at module load; stub the bits it touches so the
-// pure classifier can be imported in the node test environment.
+// registry.ts imports `electron` at module load; stub the bits it touches.
 vi.mock("electron", () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
-import { __isWriteChannel as isWriteChannel, __classifyChannel as classifyChannel } from "./registry";
-import fs from "fs";
-import path from "path";
+const isWrite = (c: string) => IPC_WRITE_CHANNELS.has(c as IpcChannel);
 
-describe("isWriteChannel", () => {
-  it("treats read channels with non-verb names as reads (no db:changed storm from polling)", () => {
-    for (const ch of [
-      "db:automation:runningCount",
-      "db:automation:recentRuns",
-      "db:automation:runs",
-      "db:automation:runLog",
-      "db:notification:count",
-      "db:session:todos",
-      "db:chat:sessionMessages",
-      "db:changes:get",
-    ]) {
-      expect(isWriteChannel(ch), ch).toBe(false);
-    }
-  });
-
-  it("treats non-db channels as non-writes (they never broadcast db:changed)", () => {
-    for (const c of ["app:setTheme", "git:status", "session:prompt", "updater:install"]) {
-      expect(isWriteChannel(c)).toBe(false);
-    }
-  });
-
-  it("classifies write actions as writes", () => {
-    const writes = [
+describe("contract write flags", () => {
+  it("flags data-changing channels as writes", () => {
+    for (const c of [
       "db:note:create",
       "db:note:update",
       "db:note:delete",
@@ -63,64 +43,88 @@ describe("isWriteChannel", () => {
       "db:flow:node:update",
       "db:flow:node:delete",
       "db:flow:edge:delete",
-    ];
-    for (const c of writes) expect(isWriteChannel(c)).toBe(true);
+    ]) {
+      expect(isWrite(c), c).toBe(true);
+    }
   });
 
-  it("classifies read actions as reads (no broadcast)", () => {
-    const reads = [
+  it("leaves reads unflagged, including polled reads with non-verb names", () => {
+    for (const c of [
       "db:workspace:list",
       "db:project:list",
-      "db:note:list",
-      "db:column:list",
-      "db:card:list",
       "db:card:ready",
       "db:flow:get",
       "db:graph:get",
       "db:graph:neighbors",
-      "db:tag:list",
       "db:chat:threads",
-      "db:chat:messages",
       "db:session:list",
       "db:embeddings:search",
-    ];
-    for (const c of reads) expect(isWriteChannel(c)).toBe(false);
-  });
-
-  it("classifies irregularly-named read channels as reads", () => {
-    for (const c of ["db:snapshot", "db:hasData", "db:mcpQuery"]) {
-      expect(isWriteChannel(c)).toBe(false);
+      "db:snapshot",
+      "db:hasData",
+      "db:automation:runningCount",
+      "db:automation:recentRuns",
+      "db:automation:runs",
+      "db:automation:runLog",
+      "db:notification:count",
+      "db:session:todos",
+      "db:chat:sessionMessages",
+    ]) {
+      expect(IPC_CONTRACT_CHANNELS, c).toContain(c);
+      expect(isWrite(c), c).toBe(false);
     }
   });
 
-  it("does not broadcast for db:flow:url:fetch — a pure URL-metadata read (regression)", () => {
-    // Previously misclassified as a write because it wasn't in the denylist,
-    // causing a db:changed re-hydration on every URL preview.
-    expect(isWriteChannel("db:flow:url:fetch")).toBe(false);
+  it("does not flag db:flow:url:fetch, a pure URL-metadata read (regression)", () => {
+    // Once misclassified as a write, which re-hydrated every window on each URL preview.
+    expect(isWrite("db:flow:url:fetch")).toBe(false);
+  });
+
+  it("flags every db:* channel named with a write verb", () => {
+    // Catches a new write channel added without `writes: true`.
+    const writeVerb = /^(create|update|delete|set|clear|upsert|remove|add|merge|move|archive|mark|recompute|reindex|runNow|sync|summarize)([A-Z-]|$)/;
+    const unflagged = IPC_CONTRACT_CHANNELS.filter(
+      (c) => c.startsWith("db:") && writeVerb.test(c.slice(c.lastIndexOf(":") + 1)) && !isWrite(c),
+    );
+    expect(unflagged).toEqual([]);
+  });
+
+  it("only flags db:* channels", () => {
+    expect([...IPC_WRITE_CHANNELS].filter((c) => !c.startsWith("db:"))).toEqual([]);
   });
 });
 
-describe("db:* channel classification coverage", () => {
-  it("every registered db:* channel is explicitly a read or a write", () => {
-    // A db:* channel whose action is neither a known read nor a known write
-    // verb defaults to "write" and broadcasts db:changed (→ every window
-    // refreshes) on every call. Make new channels choose explicitly: add the
-    // action to READ_ACTIONS / WRITE_ACTIONS, or the channel to READ_CHANNELS.
-    const root = path.resolve(__dirname, "..");
-    const channels = new Set<string>();
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
-          for (const m of fs.readFileSync(full, "utf8").matchAll(/register(?:Ipc|Contract)Handle(?:<[^>]*>)?\(\s*"(db:[^"]+)"/g)) channels.add(m[1]);
-        }
-      }
+describe("write broadcast", () => {
+  const registered = async () => {
+    const registry = await import("./registry");
+    const { ipcMain } = await import("electron");
+    const broadcasts: string[] = [];
+    registry.setMobileBroadcastCallback((channel) => broadcasts.push(channel));
+    const observer = { begin: vi.fn(() => "token"), end: vi.fn() };
+    registry.setWriteObserver(observer);
+    const invoke = async (channel: IpcChannel) => {
+      registry.registerContractHandle(channel, async () => ({ data: undefined as never }));
+      const call = vi.mocked(ipcMain.handle).mock.calls.filter(([c]) => c === channel).at(-1)!;
+      await (call[1] as (e: unknown) => Promise<unknown>)({ sender: { id: 7 } });
     };
-    walk(root);
-    expect(channels.size).toBeGreaterThan(20);
-    const unknown = [...channels].filter((c) => classifyChannel(c) === "unknown");
-    expect(unknown).toEqual([]);
+    return { invoke, broadcasts, observer, registry };
+  };
+
+  it("broadcasts db:changed and runs the write observer after a write channel", async () => {
+    const { invoke, broadcasts, observer, registry } = await registered();
+    await invoke("db:note:delete");
+    expect(broadcasts).toEqual(["db:changed"]);
+    expect(observer.end).toHaveBeenCalledWith("token", 7, expect.any(Number));
+    registry.setMobileBroadcastCallback(null);
+    registry.setWriteObserver(null);
+  });
+
+  it("stays quiet after a read channel", async () => {
+    const { invoke, broadcasts, observer, registry } = await registered();
+    await invoke("db:flow:url:fetch");
+    expect(broadcasts).toEqual([]);
+    expect(observer.begin).not.toHaveBeenCalled();
+    registry.setMobileBroadcastCallback(null);
+    registry.setWriteObserver(null);
   });
 });
 

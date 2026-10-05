@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow } from "electron";
 import type { IpcMainInvokeEvent, IpcMainEvent, WebContents } from "electron";
+import { IPC_WRITE_CHANNELS } from "../../shared/ipc/contract";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEventArgs } from "../../shared/ipc/contract";
 import type { IpcResult } from "./result-helpers";
 
@@ -33,84 +34,7 @@ const registeredListeners = new Map<string, IpcHandler>();
 let mobileBroadcastCallback: ((channel: string, payload: unknown) => void) | null = null;
 
 /**
- * Decide whether a completed `db:*` channel should auto-broadcast `db:changed`
- * (which triggers a full snapshot re-hydration in every window + mobile client).
- *
- * Write channels broadcast; read channels must NOT. The previous implementation
- * was a pure denylist of read channels, defaulting any *unlisted* `db:*` channel
- * to "write" — so a forgotten read channel would silently fire `db:changed` on
- * every call (a re-hydration storm that never errors, just wastes work).
- *
- * The codebase follows a strict `db:<entity>:<action>` naming convention, so we
- * primarily classify by the trailing action verb: reads are the well-known
- * read verbs below. A small denylist of irregularly-named read channels
- * (e.g. `db:chat:threads`, `db:snapshot`) covers the cases that don't end in a
- * read verb. Anything else is treated as a write.
- */
-const READ_ACTIONS = new Set([
-  "list",
-  "get",
-  "search",
-  "neighbors",
-  "ready",
-  "messages",
-  "threads",
-  "fetch", // db:flow:url:fetch — fetches URL metadata, no DB write
-]);
-
-// Read channels whose names don't end in a recognised read verb.
-const READ_CHANNELS = new Set([
-  "db:snapshot",
-  "db:hasData",
-  "db:mcpQuery",
-  // Reads with non-verb action names. Misclassified as writes, each call used
-  // to broadcast db:changed to every window (runningCount/recentRuns are polled).
-  "db:automation:checkRequirements",
-  "db:automation:env",
-  "db:automation:files",
-  "db:automation:folder",
-  "db:automation:preview",
-  "db:automation:recentRuns",
-  "db:automation:runLog",
-  "db:automation:runningCount",
-  "db:automation:runs",
-  "db:chat:sessionMessages",
-  "db:notification:count",
-  "db:session:todos",
-]);
-
-// Known write verbs. Not needed for behaviour (anything unrecognised is treated
-// as a write — the safe default), but lets registry.test.ts fail on a NEW db:*
-// channel whose action is neither a known read nor a known write, forcing an
-// explicit decision instead of a silent db:changed broadcast on every call.
-const WRITE_ACTIONS = new Set([
-  "create", "update", "delete", "set", "clear", "upsertThread", "deleteThread",
-  "clearAllThreads", "clearThreadMessages", "addBlocker", "removeBlocker",
-  "archive-done", "moveToFolder", "markRead", "updateSettings", "recompute",
-  "recomputeProjections", "reindex", "runNow", "syncFromManifest",
-  "merge", "moveToProject", "summarize",
-]);
-
-type ChannelKind = "read" | "write" | "unknown";
-
-function classifyChannel(channel: string): ChannelKind {
-  if (!channel.startsWith("db:")) return "read";
-  if (READ_CHANNELS.has(channel)) return "read";
-  const action = channel.slice(channel.lastIndexOf(":") + 1);
-  if (READ_ACTIONS.has(action)) return "read";
-  return WRITE_ACTIONS.has(action) ? "write" : "unknown";
-}
-
-function isWriteChannel(channel: string): boolean {
-  return classifyChannel(channel) !== "read";
-}
-
-/** Exported for unit testing the read/write classification. */
-export const __isWriteChannel = isWriteChannel;
-export const __classifyChannel = classifyChannel;
-
-/**
- * Observer wrapped around every renderer-initiated `db:*` write handler. main.ts
+ * Observer wrapped around every write channel's handler (`writes: true`). main.ts
  * installs one that records the change-feed seq range each window wrote, so the
  * change feed can tell a window which changes it already holds optimistically.
  * `begin` runs before the handler; `end` after it settles (before db:changed is
@@ -129,17 +53,18 @@ export function setWriteObserver(observer: WriteObserver | null): void {
 }
 
 /**
- * Register a handler that maps to ipcMain.handle.
+ * Register a handler that maps to ipcMain.handle. A write handler runs inside
+ * the {@link WriteObserver} and broadcasts `db:changed` when it completes.
  */
 function registerIpcHandle<T extends unknown[]>(
   channel: string,
-  handler: IpcHandleHandler<T>
+  handler: IpcHandleHandler<T>,
+  isWrite: boolean,
 ): void {
   // Workspace reinitialisation re-registers the live surface. Electron rejects
   // duplicate invoke handlers, and duplicate listeners would run a turn twice.
   ipcMain.removeHandler?.(channel);
   ipcMain.removeAllListeners?.(channel);
-  const isWrite = isWriteChannel(channel);
   const wrappedHandler = async (event: unknown, ...args: unknown[]) => {
     const observer = isWrite ? writeObserver : null;
     let begin: unknown;
@@ -165,8 +90,8 @@ function registerIpcHandle<T extends unknown[]>(
 /**
  * Register a handler for a channel in the typed IPC contract
  * (`shared/ipc/contract.ts`): its arguments and result are checked against
- * the contract, which preload's `invokeContract` also uses. Same runtime
- * behaviour as {@link registerIpcHandle}.
+ * the contract, which preload's `invokeContract` also uses. Channels whose
+ * entry sets `writes: true` broadcast `db:changed` after they complete.
  */
 export function registerContractHandle<C extends IpcChannel>(
   channel: C,
@@ -175,7 +100,7 @@ export function registerContractHandle<C extends IpcChannel>(
 ): void {
   if (opts?.localOnly) localOnlyChannels.add(channel);
   else localOnlyChannels.delete(channel);
-  registerIpcHandle<IpcArgs<C>>(channel, handler);
+  registerIpcHandle<IpcArgs<C>>(channel, handler, IPC_WRITE_CHANNELS.has(channel));
 }
 
 /**
