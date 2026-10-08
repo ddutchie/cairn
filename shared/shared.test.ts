@@ -71,6 +71,13 @@ describe("getDueDateStatus", () => {
     expect(getDueDateStatus(NOW.toISOString())).toBe("today");
     expect(getDueDateStatus(new Date(NOW.getTime() + 2 * 86400000).toISOString())).toBe("upcoming");
   });
+
+  it("classifies against an injected now instead of the real clock", () => {
+    const now = new Date(2026, 9, 4, 12).getTime(); // Oct 4 2026, local noon
+    expect(getDueDateStatus("2026-10-03", now)).toBe("overdue");
+    expect(getDueDateStatus("2026-10-04", now)).toBe("today");
+    expect(getDueDateStatus("2026-10-05", now)).toBe("upcoming");
+  });
 });
 
 describe("formatDate", () => {
