@@ -80,7 +80,7 @@ export function atRiskCards<C extends DeliveryCard>(
   for (const card of cards) {
     if (!isOpen(card)) continue;
     const reasons: RiskReason[] = [];
-    if (card.dueDate && getDueDateStatus(card.dueDate) === "overdue") reasons.push("overdue");
+    if (card.dueDate && getDueDateStatus(card.dueDate, now) === "overdue") reasons.push("overdue");
     const hasOpenBlocker = (card.blockedByIds ?? []).some((id) => openIds.has(id));
     if (hasOpenBlocker && card.dueDate) {
       const dueMs = parseIsoLocal(card.dueDate).getTime();

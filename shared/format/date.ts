@@ -98,16 +98,17 @@ export type DueDateStatus = "overdue" | "today" | "upcoming" | "none";
 /**
  * Returns "overdue" | "today" | "upcoming" | "none" for a due date string.
  * Compares calendar days (not timestamps) so due-today is correct regardless
- * of time of day.
+ * of time of day. `now` defaults to the real clock; callers that take an
+ * injected `now` (e.g. atRiskCards) must pass it through.
  */
-export function getDueDateStatus(dueDate: string | null | undefined): DueDateStatus {
+export function getDueDateStatus(dueDate: string | null | undefined, now: number = Date.now()): DueDateStatus {
   if (!dueDate) return "none";
   // Compare LOCAL calendar days so "today" means the user's today regardless of
   // the time of day (see parseIsoLocal for the UTC-midnight shift a bare
   // yyyy-MM-dd would otherwise cause).
   const due = parseIsoLocal(dueDate);
   if (Number.isNaN(due.getTime())) return "none";
-  const today = new Date();
+  const today = new Date(now);
   due.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);
   const diff = due.getTime() - today.getTime();
