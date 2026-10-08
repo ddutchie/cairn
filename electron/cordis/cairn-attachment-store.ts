@@ -12,12 +12,14 @@
  *   - content-addressed by a sha256 of the bytes (dedupes identical images),
  *   - dimensions decoded from the raster header (no native deps — parses
  *     PNG/JPEG/WebP/GIF headers directly),
- *   - bytes held in an in-memory Map for the context lifetime. That is enough
- *     for a turn: the durable session log stores the ImageAttachmentRef, and
- *     the adapter reads bytes back within the same request. (A future durable
- *     backend can persist under <userData>/attachments without changing
- *     callers. Cold resume replays text; pi-ai's onReplayDegrade path covers
- *     history images the Map no longer holds.)
+ *   - bytes held in an in-memory LRU Map, and (when a `root` is configured)
+ *     also written to `<root>/<sha256>` so a session resumed after a restart
+ *     can still replay its images. The session log stores only the
+ *     ImageAttachmentRef, and the pi-ai adapter fails the whole request when
+ *     any history image can't be read — so without the disk copy every chat
+ *     containing an image broke after a restart. A memory miss falls back to
+ *     the file (hash-verified); an image missing from both is handled by
+ *     `missing-image-offload.ts`, which swaps it for a text placeholder.
  * Limits mirror upstream's defaults (not the older diverged Cairn values).
  */
 import type { Context } from "@deepseek-ai/cordis";
@@ -35,6 +37,8 @@ import AttachmentStore, {
   type StoredImageAttachment,
 } from "@deepseek-ai/dsh-attachment";
 import * as crypto from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 
 /** Limits mirror upstream dsh-attachment-local defaults. */
 const DEFAULT_LIMITS: ImageAttachmentLimits = {
@@ -204,20 +208,119 @@ export class CairnAttachmentStore extends AttachmentStore {
     this.pinned.delete(id);
   }
 
-  constructor(ctx: Context) {
+  /** Directory holding `<sha256>` files; undefined = memory-only (tests). */
+  private readonly root: string | undefined;
+  /** Last mtime refresh per id, so reads touch the disk copy at most daily. */
+  private readonly retentionRefreshedAt = new Map<string, number>();
+
+  /**
+   * @param ctx - the Cordis context the store registers on as `attachments`.
+   * @param config.root - directory for the durable `<sha256>` copies; omit for a memory-only store.
+   */
+  constructor(ctx: Context, config?: { root?: string }) {
     super(ctx);
+    this.root = config?.root || undefined;
+  }
+
+  /** Whether an attachment's bytes can still be read (memory, or a disk copy that matches its hash). */
+  has(id: string): boolean {
+    return this.blobs.has(id) || this.readVerified(id) !== undefined;
+  }
+
+  /** Disk path for an id, or undefined when memory-only or the id isn't a sha256 we minted. */
+  private filePath(id: string): string | undefined {
+    // Refusing anything but sha256 hex means a crafted ref can't name a path
+    // outside the root.
+    if (!this.root || !/^[0-9a-f]{64}$/.test(id)) return undefined;
+    return path.join(this.root, id);
+  }
+
+  /** The disk copy's bytes when present and matching the id's hash; undefined otherwise. */
+  private readVerified(id: string): Uint8Array | undefined {
+    const file = this.filePath(id);
+    if (!file) return undefined;
+    let data: Uint8Array;
+    try {
+      data = new Uint8Array(fs.readFileSync(file));
+    } catch {
+      return undefined;
+    }
+    return crypto.createHash("sha256").update(data).digest("hex") === id ? data : undefined;
+  }
+
+  /**
+   * Mark a disk copy as recently used so pruneAttachments keeps it. Throttled
+   * to once a day per id: every request re-reads all history images, and the
+   * sweep only cares about a 90-day horizon.
+   */
+  private refreshRetention(id: string): void {
+    const file = this.filePath(id);
+    if (!file) return;
+    const now = Date.now();
+    if (now - (this.retentionRefreshedAt.get(id) ?? 0) < 24 * 60 * 60 * 1000) return;
+    try {
+      const date = new Date(now);
+      fs.utimesSync(file, date, date);
+      this.retentionRefreshedAt.set(id, now);
+    } catch { /* missing file: nothing to keep */ }
+  }
+
+  /**
+   * Best-effort durable copy (atomic tmp+rename). A valid existing copy only
+   * has its retention refreshed; a corrupt one is replaced. Failures are
+   * logged, not thrown: the image still works this session, and a copy that
+   * is missing later is offloaded to a placeholder (missing-image-offload.ts)
+   * rather than dropping the image from the turn being sent now.
+   */
+  private persist(id: string, data: Uint8Array): void {
+    const file = this.filePath(id);
+    if (!file) return;
+    try {
+      if (this.readVerified(id) !== undefined) {
+        this.refreshRetention(id);
+        return;
+      }
+      fs.mkdirSync(this.root!, { recursive: true });
+      const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+      fs.writeFileSync(tmp, data);
+      fs.renameSync(tmp, file);
+      this.retentionRefreshedAt.set(id, Date.now());
+    } catch (err) {
+      console.warn("[attachments] persist failed:", (err as Error)?.message ?? err);
+    }
+  }
+
+  /** Memory hit, else load + verify the disk copy and re-admit it to the LRU. Either way the disk copy's retention is refreshed. */
+  private lookup(ref: ImageAttachmentRef): { data: Uint8Array; ref: ImageAttachmentRef } | undefined {
+    const id = String(ref.attachmentId);
+    const hit = this.blobs.get(id);
+    if (hit) {
+      this.touch(id, hit);
+      this.refreshRetention(id);
+      return hit;
+    }
+    const data = this.readVerified(id);
+    if (!data) return undefined;
+    const entry = { data, ref };
+    this.evictFor(data.byteLength);
+    this.blobs.set(id, entry);
+    this.blobsBytes += data.byteLength;
+    this.refreshRetention(id);
+    return entry;
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
     this.assertAndMeasure(input);
   }
 
+  /** Admit an image (content-addressed by sha256), keep it in the LRU and write its durable copy. */
   async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     const { dims } = this.assertAndMeasure(input);
     const id = crypto.createHash("sha256").update(input.data).digest("hex");
     const existing = this.blobs.get(id);
     if (existing) {
       this.touch(id, existing);
+      this.persist(id, input.data);
       return existing.ref;
     }
     const ref: ImageAttachmentRef = {
@@ -231,14 +334,15 @@ export class CairnAttachmentStore extends AttachmentStore {
     this.evictFor(input.data.byteLength);
     this.blobs.set(id, { data: input.data, ref });
     this.blobsBytes += input.data.byteLength;
+    this.persist(id, input.data);
     return ref;
   }
 
+  /** Read an image's original bytes from memory or its verified disk copy; ATTACHMENT_NOT_FOUND when neither has it. */
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
-    const hit = this.blobs.get(String(ref.attachmentId));
+    const hit = this.lookup(ref);
     if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
-    this.touch(String(ref.attachmentId), hit);
     return { ref: hit.ref, data: hit.data };
   }
 
@@ -258,9 +362,8 @@ export class CairnAttachmentStore extends AttachmentStore {
     signal?: AbortSignal,
   ): Promise<RequestImageAttachment> {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
-    const hit = this.blobs.get(String(ref.attachmentId));
+    const hit = this.lookup(ref);
     if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
-    this.touch(String(ref.attachmentId), hit);
     const variantId = ImageVariantId(
       crypto
         .createHash("sha256")

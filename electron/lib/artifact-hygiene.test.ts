@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { migrateLegacyVizDir, ensureGitExcluded, pruneChatArtifacts, pruneSessionLogs, DEFAULT_SESSION_MAX_AGE_DAYS, CHAT_DIR } from "./artifact-hygiene";
+import { migrateLegacyVizDir, ensureGitExcluded, pruneChatArtifacts, pruneSessionLogs, pruneAttachments, DEFAULT_SESSION_MAX_AGE_DAYS, CHAT_DIR } from "./artifact-hygiene";
 
 let root: string;
 beforeEach(() => {
@@ -126,6 +126,19 @@ describe("pruneSessionLogs", () => {
     expect(fs.existsSync(dir)).toBe(true);
   });
 
+  it("preserves a resumed session whose log uses the versioned name (session.v4.jsonl.zstd)", () => {
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const dir = path.join(root, "proj-a", "sess-v4");
+    fs.mkdirSync(dir, { recursive: true });
+    const log = path.join(dir, "session.v4.jsonl.zstd");
+    fs.writeFileSync(log, Buffer.alloc(200, 0));
+    fs.utimesSync(dir, new Date(now - 200 * dayMs), new Date(now - 200 * dayMs));
+    fs.utimesSync(log, new Date(now - 1 * dayMs), new Date(now - 1 * dayMs));
+    expect(pruneSessionLogs(root, 90).removed).toBe(0);
+    expect(fs.existsSync(dir)).toBe(true);
+  });
+
   it("cleans up empty project (encoded-cwd) directories after pruning", () => {
     const now = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
@@ -170,5 +183,32 @@ describe("pruneSessionLogs", () => {
 
   it("exports a sensible 90-day default", () => {
     expect(DEFAULT_SESSION_MAX_AGE_DAYS).toBe(90);
+  });
+});
+
+describe("pruneAttachments", () => {
+  it("removes old image files and stray tmp writes, keeps fresh ones and unrelated files", () => {
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const write = (name: string, ageDays: number) => {
+      const file = path.join(root, name);
+      fs.writeFileSync(file, Buffer.alloc(50, 1));
+      fs.utimesSync(file, new Date(now - ageDays * dayMs), new Date(now - ageDays * dayMs));
+      return file;
+    };
+    const old = write("a".repeat(64), 200);
+    const oldTmp = write(`${"b".repeat(64)}.123.abcd.tmp`, 200);
+    const fresh = write("c".repeat(64), 5);
+    const other = write("notes.txt", 200);
+    const result = pruneAttachments(root, 90);
+    expect(result.removed).toBe(2);
+    expect(fs.existsSync(old)).toBe(false);
+    expect(fs.existsSync(oldTmp)).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(true);
+    expect(fs.existsSync(other)).toBe(true);
+  });
+
+  it("is a no-op when the attachments dir does not exist", () => {
+    expect(pruneAttachments(path.join(root, "missing"), 90).removed).toBe(0);
   });
 });

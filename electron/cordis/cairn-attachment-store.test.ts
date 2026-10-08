@@ -11,6 +11,9 @@
  * upstream store's image round-trip.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { Context } from "@deepseek-ai/cordis";
 import { buildCordisUserContent, CairnAttachmentStore, pinTurnAttachments, __setBlobsBudgetForTest } from "./cairn-attachment-store";
 
@@ -223,6 +226,82 @@ describe("CairnAttachmentStore retention budget", () => {
       expect(() => pinTurnAttachments(undefined, [{ type: "image" }])()).not.toThrow();
     } finally {
       await ctx.fiber.dispose();
+    }
+  });
+});
+
+describe("CairnAttachmentStore disk persistence", () => {
+  const PNG = new Uint8Array(Buffer.from(PNG_DATA_URL.split(",")[1], "base64"));
+  const target = { width: 1, height: 1, maxBytes: 1024 } as never;
+  /** One store per fresh Context — a new Context stands in for an app restart. */
+  async function withStore<T>(root: string | undefined, fn: (store: CairnAttachmentStore) => Promise<T>): Promise<T> {
+    const ctx = new Context();
+    try {
+      return await fn(new CairnAttachmentStore(ctx, root ? { root } : undefined));
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  }
+
+  it("reloads an image from disk in a fresh store (survives a restart)", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-att-"));
+    try {
+      const ref = await withStore(root, (store) => store.saveImage({ data: PNG, mediaType: "image/png" }));
+      expect(fs.existsSync(path.join(root, String(ref.attachmentId)))).toBe(true);
+      await withStore(root, async (fresh) => {
+        expect(fresh.has(String(ref.attachmentId))).toBe(true);
+        const req = await fresh.readImageRequest(ref, target);
+        expect(Buffer.from(req.data).equals(Buffer.from(PNG))).toBe(true);
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("treats a missing or tampered disk copy as not found", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-att-"));
+    try {
+      const ref = await withStore(root, (store) => store.saveImage({ data: PNG, mediaType: "image/png" }));
+      const id = String(ref.attachmentId);
+      fs.writeFileSync(path.join(root, id), Buffer.from("not the image"));
+      await withStore(root, async (fresh) => {
+        // The tampered file still exists, but it must not count as available.
+        expect(fresh.has(id)).toBe(false);
+        await expect(fresh.readImage(ref)).rejects.toThrow(/not found/);
+        fs.rmSync(path.join(root, id));
+        expect(fresh.has(id)).toBe(false);
+      });
+      // Memory-only store (no root) keeps the old behaviour.
+      await withStore(undefined, async (mem) => expect(mem.has(id)).toBe(false));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("re-saving an image repairs a corrupt disk copy", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-att-"));
+    try {
+      const ref = await withStore(root, (store) => store.saveImage({ data: PNG, mediaType: "image/png" }));
+      const file = path.join(root, String(ref.attachmentId));
+      fs.writeFileSync(file, Buffer.from("corrupt"));
+      await withStore(root, (store) => store.saveImage({ data: PNG, mediaType: "image/png" }));
+      expect(Buffer.from(fs.readFileSync(file)).equals(Buffer.from(PNG))).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes the disk copy's mtime when the image is read, so the sweep keeps it", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-att-"));
+    try {
+      const ref = await withStore(root, (store) => store.saveImage({ data: PNG, mediaType: "image/png" }));
+      const file = path.join(root, String(ref.attachmentId));
+      const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(file, old, old);
+      await withStore(root, (fresh) => fresh.readImageRequest(ref, target));
+      expect(fs.statSync(file).mtimeMs).toBeGreaterThan(Date.now() - 60_000);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });

@@ -64,6 +64,7 @@ import McpResourceRuntime from "@deepseek-ai/dsh-mcp-resources";
 import { apply as webFetchHttpApply, inject as webFetchHttpInject, name as webFetchHttpName } from "@deepseek-ai/dsh-web-fetch-http";
 import { apply as toolWebApply, inject as toolWebInject, name as toolWebName } from "@deepseek-ai/dsh-tool-web";
 import { apply as sessionExportApply, inject as sessionExportInject, name as sessionExportName } from "./session-export";
+import { apply as missingImageOffloadApply, inject as missingImageOffloadInject, name as missingImageOffloadName } from "./missing-image-offload";
 
 let sharedCtx: Context | null = null;
 let contextReady: Promise<Context> | null = null;
@@ -148,6 +149,7 @@ export async function getContext(): Promise<Context> {
     B["dsh:tool-result-pruner"] = ToolResultPruner;
     B["dsh:compaction"] = BasicCompactionEngine;
     B["dsh:image-offload"] = { apply: imageOffloadApply, inject: imageOffloadInject, name: imageOffloadName };
+    B["cairn:missing-image-offload"] = { apply: missingImageOffloadApply, inject: missingImageOffloadInject, name: missingImageOffloadName };
     B["dsh:tool-session-query"] = { apply: toolSessionQueryApply, inject: toolSessionQueryInject, name: toolSessionQueryName };
     B["dsh:subagent"] = subagentServicePlugin;
     B["dsh:skills"] = SkillRegistry;
@@ -236,10 +238,11 @@ export async function getContext(): Promise<Context> {
       // derived FTS index next to the session logs.
       { id: "session-query-sqlite", name: "cordis:dsh:session-query-sqlite", config: { path: process.env.VITEST ? ":memory:" : path.join(path.dirname(sessionRoot), "session-search.db") } },
       { id: "agent-loop", name: "cordis:dsh:agent-loop", config: { agents: [] } },
-      // Cairn-owned sharp-free store (in-memory, context lifetime). Upstream's
-      // LocalAttachmentStore needs real sharp (stubbed repo-wide), so it is
-      // not mounted. No config — the store takes none.
-      { id: "attachment-store", name: "cordis:cairn:attachment-store", config: {} },
+      // Cairn-owned sharp-free store: in-memory LRU plus a `<sha256>` file per
+      // image next to the session logs, so resumed sessions can replay their
+      // images after a restart. Upstream's LocalAttachmentStore needs real
+      // sharp (stubbed repo-wide), so it is not mounted. Tests stay memory-only.
+      { id: "attachment-store", name: "cordis:cairn:attachment-store", config: process.env.VITEST ? {} : { root: path.join(path.dirname(sessionRoot), "attachments") } },
       { id: "spill", name: "cordis:dsh:spill", config: { root: path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "spill") } },
       { id: "spill-policy", name: "cordis:dsh:spill-policy", config: { maxInlineBytes: 32768 } },
       { id: "token-meter", name: "cordis:dsh:token-meter" },
@@ -251,6 +254,10 @@ export async function getContext(): Promise<Context> {
       // the oldest ones with placeholders and retry, instead of failing the
       // turn (the pi-ai adapter reports IMAGE_OFFLOAD_REQUIRED).
       { id: "image-offload", name: "cordis:dsh:image-offload" },
+      // A history image whose bytes are gone (lost before the disk copy
+      // existed, or swept) becomes placeholder text instead of failing every
+      // turn. Needs image-offload's projection, so mounts after it.
+      { id: "missing-image-offload", name: "cordis:cairn:missing-image-offload" },
       // Model-facing search over earlier sessions (session_search & co.),
       // backed by the session-query-sqlite index above. Scoped by the
       // session's cwd, i.e. the Cairn workspace folder.

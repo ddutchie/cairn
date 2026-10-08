@@ -159,13 +159,18 @@ app.whenReady().then(async () => {
   // var (mostly for tests / power users). The sweep is best-effort:
   // fs failures are logged and don't block boot.
   try {
-    const { pruneSessionLogs } = await import("./lib/artifact-hygiene");
+    const { pruneSessionLogs, pruneAttachments } = await import("./lib/artifact-hygiene");
     const runSessionSweep = () => {
       try {
         const res = pruneSessionLogs(sessionRoot);
         if (res.removed > 0) {
           const mb = (res.bytesFreed / (1024 * 1024)).toFixed(1);
           console.log(`[session-hygiene] removed ${res.removed}/${res.scanned} old sessions (${mb} MB freed)`);
+        }
+        const att = pruneAttachments(path.join(userDataPath, "attachments"));
+        if (att.removed > 0) {
+          const mb = (att.bytesFreed / (1024 * 1024)).toFixed(1);
+          console.log(`[session-hygiene] removed ${att.removed}/${att.scanned} old attachments (${mb} MB freed)`);
         }
       } catch (err) {
         console.warn("[session-hygiene] sweep failed:", (err as Error)?.message ?? err);

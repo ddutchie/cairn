@@ -62,11 +62,13 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         }
       },
       onUsage: (usage) => { if (threadId) setThreadUsage(threadId, usage as never); },
-      onTurnEnd: (reason, snapshot) => {
+      onTurnEnd: (reason, snapshot, detail) => {
         if (!threadId) return;
-        // Surface turn failures (blocked / error / max-tokens) — previously swallowed
+        // Surface turn failures (blocked / error / max-tokens) — previously swallowed.
+        // `detail` carries the structured failure message (as in AgentChatPane);
+        // `reason` alone only ever said "error" and hid the cause.
         if (reason && reason !== "completed" && reason !== "aborted") {
-          const msg = `Turn ended: ${reason}`;
+          const msg = detail ? `Turn ended: ${reason} — ${detail}` : `Turn ended: ${reason}`;
           // Don't add empty assistant bubble if we already have text; surface as system notice
           if (!snapshot.text.trim()) {
             addMessage(threadId, "system", msg, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined as never);

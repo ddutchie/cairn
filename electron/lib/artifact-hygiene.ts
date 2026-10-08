@@ -170,15 +170,18 @@ export function pruneSessionLogs(sessionRoot: string, maxAgeDays?: number): Sess
       let mtime = 0;
       try { mtime = fs.statSync(sessPath).mtimeMs; } catch { continue; }
       if (mtime > cutoffMs) continue;
-      // Also check the session.jsonl.zstd file's mtime if present — a resumed
-      // session whose dir mtime is old but whose log was updated recently
-      // should survive.
+      // A resumed session appends to its log without touching the dir mtime,
+      // so check every file in it. The log name carries the format version
+      // (session.v4.jsonl.zstd today), so match any file rather than a name.
       try {
-        const logPath = path.join(sessPath, "session.jsonl.zstd");
-        if (fs.existsSync(logPath) && fs.statSync(logPath).mtimeMs > cutoffMs) continue;
-        const legacy = path.join(sessPath, "session.jsonl");
-        if (fs.existsSync(legacy) && fs.statSync(legacy).mtimeMs > cutoffMs) continue;
-      } catch { /* fall through to remove */ }
+        const recent = fs.readdirSync(sessPath, { withFileTypes: true })
+          .some((ent) => ent.isFile() && fs.statSync(path.join(sessPath, ent.name)).mtimeMs > cutoffMs);
+        if (recent) continue;
+      } catch {
+        // A file vanished or couldn't be stat'd mid-check: we can't prove the
+        // session is stale, so keep it (next sweep re-checks).
+        continue;
+      }
       const size = dirSizeBytes(sessPath);
       try {
         fs.rmSync(sessPath, { recursive: true, force: true });
@@ -190,6 +193,38 @@ export function pruneSessionLogs(sessionRoot: string, maxAgeDays?: number): Sess
     try {
       const remaining = fs.readdirSync(projPath);
       if (remaining.length === 0) fs.rmdirSync(projPath);
+    } catch { /* ignore */ }
+  }
+  return result;
+}
+
+/**
+ * Sweep the attachment store's `<sha256>` image files (and stray `.tmp`
+ * writes) older than `maxAgeDays`, on the same budget as session logs. The
+ * store refreshes a file's mtime whenever the image is re-sent, so this only
+ * drops images no recent turn has used; a resumed session that still
+ * references one gets a text placeholder (see missing-image-offload.ts).
+ */
+export function pruneAttachments(attachmentRoot: string, maxAgeDays?: number): SessionSweepResult {
+  const days = resolveMaxAgeDays(maxAgeDays);
+  const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const result: SessionSweepResult = { scanned: 0, removed: 0, bytesFreed: 0, cutoffMs };
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(attachmentRoot, { withFileTypes: true });
+  } catch {
+    return result;
+  }
+  for (const ent of entries) {
+    if (!ent.isFile() || !/^[0-9a-f]{64}(\..+\.tmp)?$/.test(ent.name)) continue;
+    const file = path.join(attachmentRoot, ent.name);
+    result.scanned++;
+    try {
+      const stat = fs.statSync(file);
+      if (stat.mtimeMs > cutoffMs) continue;
+      fs.rmSync(file, { force: true });
+      result.removed++;
+      result.bytesFreed += stat.size;
     } catch { /* ignore */ }
   }
   return result;
