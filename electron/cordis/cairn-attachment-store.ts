@@ -210,53 +210,33 @@ export class CairnAttachmentStore extends AttachmentStore {
 
   /** Directory holding `<sha256>` files; undefined = memory-only (tests). */
   private readonly root: string | undefined;
+  /** Last mtime refresh per id, so reads touch the disk copy at most daily. */
+  private readonly retentionRefreshedAt = new Map<string, number>();
 
+  /**
+   * @param ctx - the Cordis context the store registers on as `attachments`.
+   * @param config.root - directory for the durable `<sha256>` copies; omit for a memory-only store.
+   */
   constructor(ctx: Context, config?: { root?: string }) {
     super(ctx);
     this.root = config?.root || undefined;
   }
 
-  /** Whether an attachment's bytes can still be read (memory or disk). */
+  /** Whether an attachment's bytes can still be read (memory, or a disk copy that matches its hash). */
   has(id: string): boolean {
-    if (this.blobs.has(id)) return true;
-    const file = this.filePath(id);
-    return file !== undefined && fs.existsSync(file);
+    return this.blobs.has(id) || this.readVerified(id) !== undefined;
   }
 
+  /** Disk path for an id, or undefined when memory-only or the id isn't a sha256 we minted. */
   private filePath(id: string): string | undefined {
-    // Ids are sha256 hex we minted; refuse anything else so a crafted ref
-    // can't name a path outside the root.
+    // Refusing anything but sha256 hex means a crafted ref can't name a path
+    // outside the root.
     if (!this.root || !/^[0-9a-f]{64}$/.test(id)) return undefined;
     return path.join(this.root, id);
   }
 
-  /** Best-effort durable copy (atomic tmp+rename); refreshes mtime on a hit. */
-  private persist(id: string, data: Uint8Array): void {
-    const file = this.filePath(id);
-    if (!file) return;
-    try {
-      if (fs.existsSync(file)) {
-        const now = new Date();
-        fs.utimesSync(file, now, now);
-        return;
-      }
-      fs.mkdirSync(this.root!, { recursive: true });
-      const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
-      fs.writeFileSync(tmp, data);
-      fs.renameSync(tmp, file);
-    } catch (err) {
-      console.warn("[attachments] persist failed:", (err as Error)?.message ?? err);
-    }
-  }
-
-  /** Memory hit, else load + verify the disk copy and re-admit it to the LRU. */
-  private lookup(ref: ImageAttachmentRef): { data: Uint8Array; ref: ImageAttachmentRef } | undefined {
-    const id = String(ref.attachmentId);
-    const hit = this.blobs.get(id);
-    if (hit) {
-      this.touch(id, hit);
-      return hit;
-    }
+  /** The disk copy's bytes when present and matching the id's hash; undefined otherwise. */
+  private readVerified(id: string): Uint8Array | undefined {
     const file = this.filePath(id);
     if (!file) return undefined;
     let data: Uint8Array;
@@ -265,11 +245,67 @@ export class CairnAttachmentStore extends AttachmentStore {
     } catch {
       return undefined;
     }
-    if (crypto.createHash("sha256").update(data).digest("hex") !== id) return undefined;
+    return crypto.createHash("sha256").update(data).digest("hex") === id ? data : undefined;
+  }
+
+  /**
+   * Mark a disk copy as recently used so pruneAttachments keeps it. Throttled
+   * to once a day per id: every request re-reads all history images, and the
+   * sweep only cares about a 90-day horizon.
+   */
+  private refreshRetention(id: string): void {
+    const file = this.filePath(id);
+    if (!file) return;
+    const now = Date.now();
+    if (now - (this.retentionRefreshedAt.get(id) ?? 0) < 24 * 60 * 60 * 1000) return;
+    try {
+      const date = new Date(now);
+      fs.utimesSync(file, date, date);
+      this.retentionRefreshedAt.set(id, now);
+    } catch { /* missing file: nothing to keep */ }
+  }
+
+  /**
+   * Best-effort durable copy (atomic tmp+rename). A valid existing copy only
+   * has its retention refreshed; a corrupt one is replaced. Failures are
+   * logged, not thrown: the image still works this session, and a copy that
+   * is missing later is offloaded to a placeholder (missing-image-offload.ts)
+   * rather than dropping the image from the turn being sent now.
+   */
+  private persist(id: string, data: Uint8Array): void {
+    const file = this.filePath(id);
+    if (!file) return;
+    try {
+      if (this.readVerified(id) !== undefined) {
+        this.refreshRetention(id);
+        return;
+      }
+      fs.mkdirSync(this.root!, { recursive: true });
+      const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+      fs.writeFileSync(tmp, data);
+      fs.renameSync(tmp, file);
+      this.retentionRefreshedAt.set(id, Date.now());
+    } catch (err) {
+      console.warn("[attachments] persist failed:", (err as Error)?.message ?? err);
+    }
+  }
+
+  /** Memory hit, else load + verify the disk copy and re-admit it to the LRU. Either way the disk copy's retention is refreshed. */
+  private lookup(ref: ImageAttachmentRef): { data: Uint8Array; ref: ImageAttachmentRef } | undefined {
+    const id = String(ref.attachmentId);
+    const hit = this.blobs.get(id);
+    if (hit) {
+      this.touch(id, hit);
+      this.refreshRetention(id);
+      return hit;
+    }
+    const data = this.readVerified(id);
+    if (!data) return undefined;
     const entry = { data, ref };
     this.evictFor(data.byteLength);
     this.blobs.set(id, entry);
     this.blobsBytes += data.byteLength;
+    this.refreshRetention(id);
     return entry;
   }
 
@@ -277,6 +313,7 @@ export class CairnAttachmentStore extends AttachmentStore {
     this.assertAndMeasure(input);
   }
 
+  /** Admit an image (content-addressed by sha256), keep it in the LRU and write its durable copy. */
   async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     const { dims } = this.assertAndMeasure(input);
     const id = crypto.createHash("sha256").update(input.data).digest("hex");
@@ -301,6 +338,7 @@ export class CairnAttachmentStore extends AttachmentStore {
     return ref;
   }
 
+  /** Read an image's original bytes from memory or its verified disk copy; ATTACHMENT_NOT_FOUND when neither has it. */
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
     const hit = this.lookup(ref);

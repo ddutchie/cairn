@@ -177,7 +177,11 @@ export function pruneSessionLogs(sessionRoot: string, maxAgeDays?: number): Sess
         const recent = fs.readdirSync(sessPath, { withFileTypes: true })
           .some((ent) => ent.isFile() && fs.statSync(path.join(sessPath, ent.name)).mtimeMs > cutoffMs);
         if (recent) continue;
-      } catch { /* fall through to remove */ }
+      } catch {
+        // A file vanished or couldn't be stat'd mid-check: we can't prove the
+        // session is stale, so keep it (next sweep re-checks).
+        continue;
+      }
       const size = dirSizeBytes(sessPath);
       try {
         fs.rmSync(sessPath, { recursive: true, force: true });

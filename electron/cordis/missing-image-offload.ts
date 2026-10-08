@@ -54,6 +54,11 @@ export function findMissingImageTargets(session: SessionLike, isReadable: (id: s
 export const name = "cairn-missing-image-offload";
 export const inject = ["agents", "sessions"];
 
+/**
+ * Mount the `agent/request-error` listener. Mount after dsh image-offload,
+ * whose `image/offload` projection renders the recorded targets as text.
+ * @param ctx - the shared Cordis context (`attachments` is read lazily per failure).
+ */
 export function apply(ctx: Context): void {
   const on = (ctx as unknown as {
     on(event: string, listener: (payload: { agent: { session: SessionLike }; failure: { message?: string } }, next: () => Promise<unknown>) => unknown): void;
