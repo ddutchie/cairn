@@ -45,6 +45,20 @@ interface ExecutionCtx {
 }
 
 /**
+ * Normalize a tool's return value to plain JSON before handing it to dsh.
+ * dsh rejects any value that isn't lossless JSON (e.g. an object with an
+ * `undefined` property, which every `toCard` row has for `completedAt`) with a
+ * ToolOutputError AFTER the tool already ran — so a successful create_task
+ * surfaced as a "failed" chip and an error the model might retry on. The JSON
+ * round trip drops `undefined` props and turns Dates into strings, which is
+ * exactly what the model would have seen via `render` anyway.
+ */
+export function toLosslessJson(value: unknown): unknown {
+  const text = JSON.stringify(value);
+  return text === undefined ? null : JSON.parse(text);
+}
+
+/**
  * Convert a Zod tool schema (as produced by z.toJSONSchema draft-07) into a
  * dsh ValueSchemaSpec object. Handles the common node types; unknown nodes
  * degrade to `json`.
@@ -171,7 +185,7 @@ export function buildCairnTool(
         emitDone,
         `cordis-${Math.random().toString(36).slice(2, 8)}`,
       );
-      return out as never;
+      return toLosslessJson(out) as never;
     },
   });
 }
@@ -292,7 +306,7 @@ export async function registerExternalCairnTools(
         },
         async execute(args) {
           const out = await createHostStore(exec.db).executeExternalTool(exec.workspaceId, exec.projectId, name, args as Record<string, unknown>);
-          return out as never;
+          return toLosslessJson(out) as never;
         },
       });
       disposers.push(ctx.tools.register(tool));

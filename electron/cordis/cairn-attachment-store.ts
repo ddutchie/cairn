@@ -12,12 +12,14 @@
  *   - content-addressed by a sha256 of the bytes (dedupes identical images),
  *   - dimensions decoded from the raster header (no native deps — parses
  *     PNG/JPEG/WebP/GIF headers directly),
- *   - bytes held in an in-memory Map for the context lifetime. That is enough
- *     for a turn: the durable session log stores the ImageAttachmentRef, and
- *     the adapter reads bytes back within the same request. (A future durable
- *     backend can persist under <userData>/attachments without changing
- *     callers. Cold resume replays text; pi-ai's onReplayDegrade path covers
- *     history images the Map no longer holds.)
+ *   - bytes held in an in-memory LRU Map, and (when a `root` is configured)
+ *     also written to `<root>/<sha256>` so a session resumed after a restart
+ *     can still replay its images. The session log stores only the
+ *     ImageAttachmentRef, and the pi-ai adapter fails the whole request when
+ *     any history image can't be read — so without the disk copy every chat
+ *     containing an image broke after a restart. A memory miss falls back to
+ *     the file (hash-verified); an image missing from both is handled by
+ *     `missing-image-offload.ts`, which swaps it for a text placeholder.
  * Limits mirror upstream's defaults (not the older diverged Cairn values).
  */
 import type { Context } from "@deepseek-ai/cordis";
@@ -35,6 +37,8 @@ import AttachmentStore, {
   type StoredImageAttachment,
 } from "@deepseek-ai/dsh-attachment";
 import * as crypto from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 
 /** Limits mirror upstream dsh-attachment-local defaults. */
 const DEFAULT_LIMITS: ImageAttachmentLimits = {
@@ -204,8 +208,69 @@ export class CairnAttachmentStore extends AttachmentStore {
     this.pinned.delete(id);
   }
 
-  constructor(ctx: Context) {
+  /** Directory holding `<sha256>` files; undefined = memory-only (tests). */
+  private readonly root: string | undefined;
+
+  constructor(ctx: Context, config?: { root?: string }) {
     super(ctx);
+    this.root = config?.root || undefined;
+  }
+
+  /** Whether an attachment's bytes can still be read (memory or disk). */
+  has(id: string): boolean {
+    if (this.blobs.has(id)) return true;
+    const file = this.filePath(id);
+    return file !== undefined && fs.existsSync(file);
+  }
+
+  private filePath(id: string): string | undefined {
+    // Ids are sha256 hex we minted; refuse anything else so a crafted ref
+    // can't name a path outside the root.
+    if (!this.root || !/^[0-9a-f]{64}$/.test(id)) return undefined;
+    return path.join(this.root, id);
+  }
+
+  /** Best-effort durable copy (atomic tmp+rename); refreshes mtime on a hit. */
+  private persist(id: string, data: Uint8Array): void {
+    const file = this.filePath(id);
+    if (!file) return;
+    try {
+      if (fs.existsSync(file)) {
+        const now = new Date();
+        fs.utimesSync(file, now, now);
+        return;
+      }
+      fs.mkdirSync(this.root!, { recursive: true });
+      const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+      fs.writeFileSync(tmp, data);
+      fs.renameSync(tmp, file);
+    } catch (err) {
+      console.warn("[attachments] persist failed:", (err as Error)?.message ?? err);
+    }
+  }
+
+  /** Memory hit, else load + verify the disk copy and re-admit it to the LRU. */
+  private lookup(ref: ImageAttachmentRef): { data: Uint8Array; ref: ImageAttachmentRef } | undefined {
+    const id = String(ref.attachmentId);
+    const hit = this.blobs.get(id);
+    if (hit) {
+      this.touch(id, hit);
+      return hit;
+    }
+    const file = this.filePath(id);
+    if (!file) return undefined;
+    let data: Uint8Array;
+    try {
+      data = new Uint8Array(fs.readFileSync(file));
+    } catch {
+      return undefined;
+    }
+    if (crypto.createHash("sha256").update(data).digest("hex") !== id) return undefined;
+    const entry = { data, ref };
+    this.evictFor(data.byteLength);
+    this.blobs.set(id, entry);
+    this.blobsBytes += data.byteLength;
+    return entry;
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
@@ -218,6 +283,7 @@ export class CairnAttachmentStore extends AttachmentStore {
     const existing = this.blobs.get(id);
     if (existing) {
       this.touch(id, existing);
+      this.persist(id, input.data);
       return existing.ref;
     }
     const ref: ImageAttachmentRef = {
@@ -231,14 +297,14 @@ export class CairnAttachmentStore extends AttachmentStore {
     this.evictFor(input.data.byteLength);
     this.blobs.set(id, { data: input.data, ref });
     this.blobsBytes += input.data.byteLength;
+    this.persist(id, input.data);
     return ref;
   }
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
-    const hit = this.blobs.get(String(ref.attachmentId));
+    const hit = this.lookup(ref);
     if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
-    this.touch(String(ref.attachmentId), hit);
     return { ref: hit.ref, data: hit.data };
   }
 
@@ -258,9 +324,8 @@ export class CairnAttachmentStore extends AttachmentStore {
     signal?: AbortSignal,
   ): Promise<RequestImageAttachment> {
     if (signal?.aborted) throw signal.reason ?? new Error("aborted");
-    const hit = this.blobs.get(String(ref.attachmentId));
+    const hit = this.lookup(ref);
     if (!hit) throw new AttachmentError(`attachment ${String(ref.attachmentId)} not found`, "ATTACHMENT_NOT_FOUND");
-    this.touch(String(ref.attachmentId), hit);
     const variantId = ImageVariantId(
       crypto
         .createHash("sha256")
