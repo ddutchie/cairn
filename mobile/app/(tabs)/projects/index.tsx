@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, FlatList, StyleSheet, RefreshControl } from "react-native";
+import { View, Text, FlatList, StyleSheet, RefreshControl, useWindowDimensions } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { getActiveSourceName } from "@/db";
@@ -8,6 +8,7 @@ import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { ProjectsSplitView } from "@/components/ProjectsSplitView";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
 import { ICON_SETTINGS } from "@/components/toolbar-icons";
@@ -16,9 +17,12 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
 import { useTheme, elevation, type as typeScale } from "@/theme";
 
+const SPLIT_MIN_WIDTH = 700;
+
 export default function ProjectsScreen() {
   const router = useRouter();
   const t = useTheme();
+  const { width } = useWindowDimensions();
   const syncBadge = useSyncBadge();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   // The active workspace name doubles as the header title; it changes when the
@@ -79,6 +83,18 @@ export default function ProjectsScreen() {
           subtitle="Connect your sync folder in the Sync tab to pull your workspace."
         />
       </TabScreen>
+    );
+  }
+
+  // SPIKE: wide windows (unfolded iPhone Duo, iPad) get a native split view.
+  // Its columns bring their own navigation bars, so the stack header is hidden
+  // and the side-inset padding from TabStack is dropped (SwiftUI owns it).
+  if (width >= SPLIT_MIN_WIDTH) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: t.background } }} />
+        <ProjectsSplitView projects={projects} workspaceName={workspaceName ?? "Projects"} />
+      </>
     );
   }
 

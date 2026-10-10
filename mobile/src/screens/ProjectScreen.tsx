@@ -67,8 +67,22 @@ const SEGMENT_BAR_H = 50;
  * copy pushes plain `/...` routes. Typed routes require the two path families to
  * be spelled out explicitly, hence the `Href` helpers below.
  */
-export function ProjectScreen({ nested = false }: { nested?: boolean }) {
-  const { id, back } = useLocalSearchParams<{ id: string; back?: string }>();
+export function ProjectScreen({
+  nested = false,
+  projectId,
+}: {
+  nested?: boolean;
+  /**
+   * Render inside a split-view column instead of as a route: the id comes from
+   * this prop, and the router header (title + toolbar) is skipped because the
+   * column brings its own navigation bar.
+   */
+  projectId?: string;
+}) {
+  const params = useLocalSearchParams<{ id: string; back?: string }>();
+  const embedded = projectId != null;
+  const id = projectId ?? params.id;
+  const back = embedded ? undefined : params.back;
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -309,6 +323,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 
   return (
     <View style={styles.container}>
+{!embedded && (
+        <>
       <Stack.Screen
         options={{
           title: project?.name || "Project",
@@ -338,6 +354,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           hidden={tab === "overview"}
         />
       </Stack.Toolbar>
+        </>
+      )}
 
       <View style={styles.segment}>
         <SegmentedControl
