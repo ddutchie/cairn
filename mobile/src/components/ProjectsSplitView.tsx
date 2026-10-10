@@ -13,6 +13,7 @@ import {
 import {
   background,
   navigationSplitViewColumnWidth,
+  navigationSplitViewStyle,
   onHingeChange,
   tint,
   type HingeStatus,
@@ -201,6 +202,18 @@ export function ProjectsSplitView({
     </ChromeColumn>
   );
 
+  // The note column's own minimum. SwiftUI's default is wide enough that half
+  // the window for the list plus it doesn't fit an unfolded Duo beside its tab
+  // rail, and the split then falls back to overlaying the list on the note.
+  const detailWidth = navigationSplitViewColumnWidth({ min: 280, ideal: half });
+
+  // Closing the note also leaves focus mode, so the list is never left hidden
+  // behind an empty detail.
+  const closeNote = () => {
+    setSelection({ noteId: null });
+    setVisibility("all");
+  };
+
   // Duo: opens the projects tree (the iPad has the system tab sidebar).
   const projectsButton = BRIDGE_HEADER
     ? []
@@ -248,13 +261,18 @@ export function ProjectsSplitView({
         <ChromeColumn
           key={sel.noteId}
           slot="secondary"
-          leading={[{ key: "close", label: "Close note", icon: "xmark", onPress: () => setSelection({ noteId: null }) }]}
+          modifiers={[detailWidth]}
+          leading={[
+            // Focus mode hides the list column, and its folder button with it.
+            ...(visibility === "detailOnly" ? projectsButton : []),
+            { key: "close", label: "Close note", icon: "xmark", onPress: closeNote },
+          ]}
         >
-          <NoteDetailScreen nested noteId={sel.noteId} onClose={() => setSelection({ noteId: null })} />
+          <NoteDetailScreen nested noteId={sel.noteId} onClose={closeNote} />
         </ChromeColumn>
       ) : (
         <ContentUnavailableView
-          modifiers={[background(t.background), ...hideBar]}
+          modifiers={[detailWidth, background(t.background), ...hideBar]}
           title="No Note Selected"
           systemImage="doc.text"
           description="Pick a note from the list."
@@ -334,30 +352,44 @@ export function ProjectsSplitView({
   // different SwiftUI column otherwise renders blank.
   if (fullWidth) {
     return withHeader(
-      <View style={{ flex: 1 }}>
+      <>
         <Host key="single" style={{ flex: 1 }}>
           <NavigationStack modifiers={[tint(t.accent), hingeModifier]}>{detail}</NavigationStack>
         </Host>
         {tree}
-      </View>,
+      </>,
     );
   }
 
   // ── Notes: list | note ────────────────────────────────────────────────────
+  // The tree panel is absolutely positioned over the screen, so it's a sibling:
+  // wrapping the Host in another view makes SwiftUI see a zero-width window on
+  // first layout and collapse the list column for good.
   return withHeader(
-    <View style={{ flex: 1 }}>
+    <>
       <Host key="two-column" style={{ flex: 1 }}>
         <NavigationSplitView
           // The system sidebar button collapses the list for a full-width note.
           columnVisibility={visibility}
-          onColumnVisibilityChange={setVisibility}
-          modifiers={[tint(t.accent), hingeModifier]}
+          onColumnVisibilityChange={(v) => {
+            // Focus needs a note. SwiftUI also collapses the list by itself
+            // during the first layout pass; answer with a different "list
+            // shown" value so the change is actually sent back to it.
+            if (v === "detailOnly" && !selection.noteId) {
+              setVisibility((prev) => (prev === "all" ? "doubleColumn" : "all"));
+              return;
+            }
+            setVisibility(v);
+          }}
+          // Balanced: the list sits beside the note in every visibility, never
+          // over it (the hinge layout depends on that).
+          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("balanced")]}
         >
           <NavigationSplitView.Sidebar>{listColumn([leftWidth], projectsButton)}</NavigationSplitView.Sidebar>
           <NavigationSplitView.Detail>{detail}</NavigationSplitView.Detail>
         </NavigationSplitView>
       </Host>
       {tree}
-    </View>,
+    </>,
   );
 }
