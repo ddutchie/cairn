@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useWindowDimensions } from "react-native";
 import { Host } from "@expo/ui";
 import {
   ContentUnavailableView,
@@ -21,8 +22,10 @@ import {
   shapes,
   navigationSplitViewColumnWidth,
   navigationTitle,
+  onHingeChange,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import type { HingeStatus } from "@expo/ui/swift-ui/modifiers";
 import type { ProjectSummary } from "@/db/queries";
 import { ProjectScreen } from "@/screens/ProjectScreen";
 import { useTheme } from "@/theme";
@@ -45,6 +48,13 @@ export function ProjectsSplitView({
   const [compactColumn, setCompactColumn] = useState<NavigationSplitViewColumn>("sidebar");
   const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("all");
   const selected = projects.find((p) => p.id === selectedId);
+  // iPhone Duo posture. Half open, the screen reads as two pages either side of
+  // a vertical hinge, so the sidebar is sized to end exactly on the fold instead
+  // of letting the crease cut through the detail column. (iOS 27.1+; null on
+  // devices without a hinge.)
+  const [hinge, setHinge] = useState<HingeStatus | null>(null);
+  const { width } = useWindowDimensions();
+  const halfOpen = hinge === "partiallyOpen";
   // SwiftUI colours take hex; the accent is a #rrggbb token, so append alpha.
   const selectedRow = /^#[0-9a-f]{6}$/i.test(t.accent) ? `${t.accent}33` : t.accent;
 
@@ -55,7 +65,10 @@ export function ProjectsSplitView({
         onPreferredCompactColumnChange={setCompactColumn}
         columnVisibility={visibility}
         onColumnVisibilityChange={setVisibility}
-        modifiers={[tint(t.accent)]}
+        modifiers={[
+          tint(t.accent),
+          onHingeChange((_, next) => setHinge(next.hinge?.status ?? null)),
+        ]}
       >
         <NavigationSplitView.Sidebar>
           {/* Rows select on tap and draw their own highlight. List's built-in
@@ -65,7 +78,9 @@ export function ProjectsSplitView({
             modifiers={[
               listStyle("sidebar"),
               navigationTitle(workspaceName),
-              navigationSplitViewColumnWidth({ min: 240, ideal: 280, max: 340 }),
+              halfOpen
+                ? navigationSplitViewColumnWidth(width / 2)
+                : navigationSplitViewColumnWidth({ min: 240, ideal: 280, max: 340 }),
             ]}
           >
             <Section title="Projects">
