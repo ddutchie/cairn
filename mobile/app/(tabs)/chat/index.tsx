@@ -40,6 +40,8 @@ import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanim
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
 import { ChatPreviewPane, ChatPreviewProvider, CHAT_PREVIEW_MIN_WIDTH, type PreviewRef } from "@/components/chat/ChatPreview";
+// NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
+import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -126,6 +128,9 @@ export default function ChatScreen() {
   // Wide windows open touched notes/tasks in a column beside the chat.
   const [preview, setPreview] = useState<PreviewRef | null>(null);
   const canPreview = width >= CHAT_PREVIEW_MIN_WIDTH;
+  // The wide header is transparent, so the conversation clears it itself — on
+  // iPad that includes the floating tab bar above it.
+  const headerHeight = useHeaderHeight();
   const keyboard = useReanimatedKeyboardAnimation();
   const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap), [height, insets.bottom]);
   const hostRef = useRef<CairnAttachmentHostHandle>(null);
@@ -434,7 +439,7 @@ export default function ChatScreen() {
       </Stack.Toolbar>
       <ChatPreviewProvider value={canPreview ? setPreview : null}>
       <View style={styles.row}>
-      <View style={{ flex: 1, paddingTop: canPreview ? insets.top : 0, backgroundColor: t.chatBg }}>
+      <View style={{ flex: 1, paddingTop: canPreview ? headerHeight : 0, backgroundColor: t.chatBg }}>
       <View style={{ flex: 1 }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient

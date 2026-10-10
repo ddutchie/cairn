@@ -149,12 +149,15 @@ export function ChromeColumn({
   children,
   modifiers = [],
   leading = [],
+  titleMenu,
 }: {
   children: ReactElement;
   /** Extra column modifiers, e.g. `navigationSplitViewColumnWidth`. */
   modifiers?: ViewModifier[];
   /** Column-owned buttons placed before the screen's own leading items. */
   leading?: { key: string; label: string; icon: SFSymbol; onPress: () => void }[];
+  /** Replaces the column title with a menu (e.g. the project's views). */
+  titleMenu?: ReactElement;
 }) {
   const t = useTheme();
   const [spec, setSpec] = useState<ChromeSpec | null>(null);
@@ -216,6 +219,7 @@ export function ChromeColumn({
         <ChromeContext.Provider value={report}>{children}</ChromeContext.Provider>
       </RNHostView>
       <Toolbar.Content>
+        {titleMenu ? <ToolbarItem placement="principal">{titleMenu}</ToolbarItem> : null}
         {leading.map((b) => (
           <ToolbarItem key={b.key} placement="topBarLeading">
             <Button label={b.label} systemImage={b.icon} onPress={b.onPress} />

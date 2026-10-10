@@ -13,11 +13,8 @@ import {
   Section,
   Text,
   VStack,
-  ZStack,
 } from "@expo/ui/swift-ui";
 import {
-  animation,
-  Animation,
   background,
   badge,
   contentShape,
@@ -27,11 +24,9 @@ import {
   listStyle,
   navigationSplitViewColumnWidth,
   navigationTitle,
-  offset,
   onHingeChange,
   onTapGesture,
   padding,
-  shadow,
   shapes,
   tint,
   type HingeStatus,
@@ -55,9 +50,10 @@ import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
  *   content  — the view's list (notes tree, board)
  *   detail   — the open note / task
  *
- * on wide iPads. Narrower windows (an unfolded Duo) show list | item, with the
- * sidebar as a panel sliding over the list. Overview and Calendar have no
- * list → item shape, so the panel becomes the left column instead. On a Duo the
+ * on wide iPads. Narrower windows (an unfolded Duo, a portrait iPad) show
+ * list | item, with the sidebar's contents in the list's title menu. Overview
+ * and Calendar have no list → item shape, so the sidebar becomes the left
+ * column instead. On a Duo the
  * left column always ends on the hinge: list on one page, item on the other.
  */
 
@@ -89,7 +85,6 @@ function useSelection(): Selection {
 }
 
 const ALL_COLUMNS_MIN_WIDTH = 1100;
-const PANEL_WIDTH = 290;
 
 const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
   { id: "overview", title: "Overview", icon: "number" },
@@ -130,11 +125,10 @@ export function ProjectsSplitView({
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   const hasHinge = hinge != null && hinge !== "closed";
   // Three native columns need room (wide iPads). Narrower — an unfolded Duo
-  // is ~950pt — shows two: list | item, with the project + views panel sliding
-  // over the list instead of squeezing both columns across the fold.
+  // is ~950pt — shows two: list | item, with the project + views in the list's
+  // title menu instead of a third column squeezed across the fold.
   const roomy = width >= ALL_COLUMNS_MIN_WIDTH;
   const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("all");
-  const [panelOpen, setPanelOpen] = useState(false);
   const half = width / 2;
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
@@ -142,7 +136,6 @@ export function ProjectsSplitView({
 
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next });
-    setPanelOpen(false);
   }, []);
   const openNote = useCallback((id: string) => setSelection({ view: "notes", noteId: id }), []);
   const openCard = useCallback((id: string) => setSelection({ view: "board", cardId: id }), []);
@@ -181,8 +174,7 @@ export function ProjectsSplitView({
                 systemImage={p.id === projectId ? "checkmark" : "folder"}
                 onPress={() => {
                   setSelection({ projectId: p.id, noteId: null, cardId: null });
-                  setPanelOpen(false);
-                }}
+                              }}
               />
             ))}
           </Menu>
@@ -223,8 +215,12 @@ export function ProjectsSplitView({
     );
   }
 
-  const listColumn = (extra: ViewModifier[] = [], leading: Parameters<typeof ChromeColumn>[0]["leading"] = []) => (
-    <ChromeColumn key={`${projectId}:${view}:${boardVersion}`} modifiers={extra} leading={leading}>
+  const listColumn = (
+    extra: ViewModifier[] = [],
+    leading: Parameters<typeof ChromeColumn>[0]["leading"] = [],
+    menu?: Parameters<typeof ChromeColumn>[0]["titleMenu"],
+  ) => (
+    <ChromeColumn key={`${projectId}:${view}:${boardVersion}`} modifiers={extra} leading={leading} titleMenu={menu}>
       <ProjectScreen
         nested
         projectId={projectId}
@@ -234,6 +230,32 @@ export function ProjectsSplitView({
         onOpenCard={openCard}
       />
     </ChromeColumn>
+  );
+
+  // Two-column layouts have no room for the project sidebar beside the list, so
+  // its contents become the list's title menu: tap "Project ▾" for the views
+  // and a project switcher. (Fewer buttons than a separate panel toggle.)
+  const titleMenu = (
+    <Menu label={`${project?.name ?? "Project"} · ${VIEWS.find((v) => v.id === view)?.title ?? ""}`}>
+      {VIEWS.map((v) => (
+        <Button
+          key={v.id}
+          label={v.title}
+          systemImage={v.id === view ? "checkmark" : v.icon}
+          onPress={() => selectView(v.id)}
+        />
+      ))}
+      <Menu label="Switch project" systemImage="folder">
+        {projects.map((p) => (
+          <Button
+            key={p.id}
+            label={p.name}
+            systemImage={p.id === projectId ? "checkmark" : "folder"}
+            onPress={() => setSelection({ projectId: p.id, noteId: null, cardId: null })}
+          />
+        ))}
+      </Menu>
+    </Menu>
   );
 
   const detail = (
@@ -279,9 +301,12 @@ export function ProjectsSplitView({
   const splitModifiers = [tint(t.accent), onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))];
 
   // ── Wide iPad: three native columns ────────────────────────────────────────
+  // Each layout gets its own Host key: switching between them (rotating an
+  // iPad) must remount the columns — a hosted React Native view moved into a
+  // different SwiftUI column otherwise renders blank.
   if (roomy) {
     return (
-      <Host style={{ flex: 1 }}>
+      <Host key="three-column" style={{ flex: 1 }}>
         <NavigationSplitView columnVisibility={visibility} onColumnVisibilityChange={setVisibility} modifiers={splitModifiers}>
           <NavigationSplitView.Sidebar>
             {viewsPanel([navigationTitle(workspaceName), navigationSplitViewColumnWidth({ min: 240, ideal: 270, max: 320 })])}
@@ -297,41 +322,24 @@ export function ProjectsSplitView({
     );
   }
 
-  // ── Duo / narrower: two columns, views panel slides over the list ──────────
+  // ── Duo / narrower: two columns; views + projects in the title menu ────────
   // On a Duo the left column asks for exactly half the window in every posture.
   const leftWidth = hasHinge
     ? navigationSplitViewColumnWidth(half)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
 
   return (
-    <Host style={{ flex: 1 }}>
+    <Host key="two-column" style={{ flex: 1 }}>
       <NavigationSplitView
         // The system sidebar button collapses the list for a full-width item
-        // (focus mode); the views panel has its own button in the list toolbar.
+        // (focus mode); views and projects live in the list's title menu.
         columnVisibility={visibility}
         onColumnVisibilityChange={setVisibility}
         modifiers={splitModifiers}
       >
         <NavigationSplitView.Sidebar>
           {listView ? (
-            <ZStack alignment="topLeading" modifiers={[leftWidth]}>
-              {listColumn([], [
-                {
-                  key: "views",
-                  label: panelOpen ? "Hide project views" : "Show project views",
-                  icon: "sidebar.squares.left",
-                  onPress: () => setPanelOpen((o) => !o),
-                },
-              ])}
-              {viewsPanel([
-                frame({ width: PANEL_WIDTH }),
-                frame({ maxHeight: Infinity, alignment: "top" }),
-                background(t.surface),
-                shadow({ radius: panelOpen ? 16 : 0, x: 4 }),
-                offset({ x: panelOpen ? 0 : -(PANEL_WIDTH + 24) }),
-                animation(Animation.spring({ duration: 0.35 }), panelOpen),
-              ])}
-            </ZStack>
+            listColumn([leftWidth], [], titleMenu)
           ) : (
             viewsPanel([navigationTitle(workspaceName), leftWidth])
           )}
