@@ -5,32 +5,15 @@ import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { onSidebarItem, setSidebarGroup } from "@modules/tab-sidebar";
 import { Host } from "@expo/ui";
 import {
-  Button,
   ContentUnavailableView,
-  Label,
-  List,
-  Menu,
   NavigationSplitView,
+  NavigationStack,
   type NavigationSplitViewVisibility,
-  ProgressView,
-  Section,
-  Text,
-  VStack,
 } from "@expo/ui/swift-ui";
 import {
   background,
-  badge,
-  contentShape,
-  font,
-  foregroundStyle,
-  frame,
-  listStyle,
   navigationSplitViewColumnWidth,
-  navigationTitle,
   onHingeChange,
-  onTapGesture,
-  padding,
-  shapes,
   tint,
   type HingeStatus,
   type ViewModifier,
@@ -40,6 +23,7 @@ import { listCards, listColumns, type ProjectSummary } from "@/db/queries";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { ChatPreviewPane } from "@/components/chat/ChatPreview";
+import { ProjectsTreePanel } from "@/components/ProjectsTreePanel";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
   bridgedItems,
@@ -59,10 +43,9 @@ import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
  *   iPad — like Mail: projects and their views are listed in the system tab
  *          sidebar; Notes shows list | note, every other view the full width.
  *          Column buttons share the floating tab bar's row.
- *   Duo  — the project and views are in the list's title menu; Overview and
- *          Calendar (no list) get the views panel as their left column. The
- *          left column always ends on the hinge: list on one page, item on
- *          the other.
+ *   Duo  — the same tree in a panel that slides over the left page (the
+ *          folder button). Notes is list | note with the left column ending on
+ *          the hinge: list on one page, note on the other.
  */
 
 type SplitViewKind = ProjectTab | "calendar";
@@ -124,9 +107,11 @@ export function ProjectsSplitView({
   // remounts or moves).
   const boardFull = view === "board";
   const listView = view === "notes";
-  // Views without a list take the whole window. On iPad that's every view but
-  // Notes: the views live in the tab sidebar, so no column is needed for them.
-  const fullWidth = boardFull || (BRIDGE_HEADER && !listView);
+  // Views without a list take the whole window; projects and views are picked
+  // from a tree (iPad: the system tab sidebar; Duo: a slide-over panel), so no
+  // column is needed for them.
+  const fullWidth = !listView;
+  const [treeOpen, setTreeOpen] = useState(false);
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
@@ -144,15 +129,8 @@ export function ProjectsSplitView({
   // ── Duo posture ────────────────────────────────────────────────────────────
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   const hasHinge = hinge != null && hinge !== "closed";
-  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>(fullWidth ? "detailOnly" : "all");
-  // Full-width views hide the other column (the system sidebar button still
-  // reveals it); leaving them restores it. Adjusted during render, not in an
-  // effect, so the columns never flash before collapsing.
-  const [wasFullWidth, setWasFullWidth] = useState(fullWidth);
-  if (wasFullWidth !== fullWidth) {
-    setWasFullWidth(fullWidth);
-    setVisibility(fullWidth ? "detailOnly" : "all");
-  }
+  // Notes only: "detailOnly" is focus mode (the note gets the whole window).
+  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("all");
   const half = width / 2;
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
@@ -202,73 +180,6 @@ export function ProjectsSplitView({
   const openNote = useCallback((id: string) => setSelection({ view: "notes", noteId: id }), []);
   const openCard = useCallback((id: string) => setSelection({ view: "board", cardId: id }), []);
 
-  // SwiftUI colours take hex; the accent is a #rrggbb token, so append alpha.
-  const selectedRow = /^#[0-9a-f]{6}$/i.test(t.accent) ? `${t.accent}33` : t.accent;
-
-  const row = (key: string, title: string, icon: SFSymbol, selected: boolean, onPress: () => void, count?: number) => (
-    <Label
-      key={key}
-      title={title}
-      systemImage={icon}
-      modifiers={[
-        // Rows select on tap with a drawn highlight: List's own selection binds
-        // a Set, which on iPhone-idiom devices (the Duo) only selects in edit mode.
-        padding({ horizontal: 4, vertical: 6 }),
-        frame({ maxWidth: Infinity, alignment: "leading" }),
-        contentShape(shapes.rectangle()),
-        onTapGesture(onPress),
-        ...(selected ? [background(selectedRow, shapes.roundedRectangle({ cornerRadius: 10 }))] : []),
-        ...(count ? [badge(String(count))] : []),
-      ]}
-    />
-  );
-
-  const viewsPanel = (panelModifiers: ViewModifier[]) => (
-      <List
-        modifiers={[listStyle("sidebar"), ...panelModifiers, ...hideBar]}
-      >
-        <Section title="Project">
-          <Menu label={project?.name ?? "Choose a project"} systemImage="folder">
-            {projects.map((p) => (
-              <Button
-                key={p.id}
-                label={p.name}
-                systemImage={p.id === projectId ? "checkmark" : "folder"}
-                onPress={() => {
-                  setSelection({ projectId: p.id, noteId: null, cardId: null });
-                              }}
-              />
-            ))}
-          </Menu>
-          {progress && progress.total > 0 ? (
-            <VStack alignment="leading" spacing={6} modifiers={[padding({ vertical: 4 })]}>
-              <ProgressView value={progress.closed / progress.total} modifiers={[tint(t.accent)]} />
-              <Text
-                modifiers={[
-                  font({ textStyle: "caption" }),
-                  foregroundStyle({ type: "hierarchical", style: "secondary" }),
-                ]}
-              >
-                {`${progress.closed} / ${progress.total} done · ${progress.open} open`}
-              </Text>
-            </VStack>
-          ) : null}
-        </Section>
-        <Section title="Views">
-          {VIEWS.map((v) =>
-            row(
-              v.id,
-              v.title,
-              v.icon,
-              v.id === view,
-              () => selectView(v.id),
-              v.id === "notes" ? project?.noteCount : v.id === "board" ? project?.cardCount : undefined,
-            ),
-          )}
-        </Section>
-      </List>
-  );
-
   if (!projectId) {
     return (
       <Host style={{ flex: 1 }}>
@@ -277,18 +188,8 @@ export function ProjectsSplitView({
     );
   }
 
-  const listColumn = (
-    extra: ViewModifier[] = [],
-    leading: Parameters<typeof ChromeColumn>[0]["leading"] = [],
-    menu?: Parameters<typeof ChromeColumn>[0]["titleMenu"],
-  ) => (
-    <ChromeColumn
-      key={`${projectId}:${view}:${boardVersion}`}
-      modifiers={extra}
-      leading={leading}
-      titleMenu={menu}
-      slot="primary"
-    >
+  const listColumn = (extra: ViewModifier[], leading: Parameters<typeof ChromeColumn>[0]["leading"]) => (
+    <ChromeColumn key={`${projectId}:${view}:${boardVersion}`} modifiers={extra} leading={leading} slot="primary">
       <ProjectScreen
         nested
         projectId={projectId}
@@ -300,36 +201,15 @@ export function ProjectsSplitView({
     </ChromeColumn>
   );
 
-  // Two-column layouts have no room for the project sidebar beside the list, so
-  // its contents become the list's title menu: tap "Project ▾" for the views
-  // and a project switcher. (Fewer buttons than a separate panel toggle.)
-  const titleMenu = (
-    <Menu label={`${project?.name ?? "Project"} · ${VIEWS.find((v) => v.id === view)?.title ?? ""}`}>
-      {VIEWS.map((v) => (
-        <Button
-          key={v.id}
-          label={v.title}
-          systemImage={v.id === view ? "checkmark" : v.icon}
-          onPress={() => selectView(v.id)}
-        />
-      ))}
-      <Menu label="Switch project" systemImage="folder">
-        {projects.map((p) => (
-          <Button
-            key={p.id}
-            label={p.name}
-            systemImage={p.id === projectId ? "checkmark" : "folder"}
-            onPress={() => setSelection({ projectId: p.id, noteId: null, cardId: null })}
-          />
-        ))}
-      </Menu>
-    </Menu>
-  );
+  // Duo: opens the projects tree (the iPad has the system tab sidebar).
+  const projectsButton = BRIDGE_HEADER
+    ? []
+    : [{ key: "projects", label: "Projects", icon: "folder" as const, onPress: () => setTreeOpen(true) }];
 
-  const detail = (
-    <NavigationSplitView.Detail>
-      {boardFull ? (
-        <ChromeColumn key={`${projectId}:board`} titleMenu={titleMenu} slot="primary">
+  // The open item (Notes), or the whole view (everything else).
+  const detail =
+      boardFull ? (
+        <ChromeColumn key={`${projectId}:board`} leading={projectsButton} slot="primary">
           <View style={{ flex: 1, flexDirection: "row", overflow: "hidden" }}>
             <View style={{ flex: 1 }}>
               <ProjectScreen
@@ -350,7 +230,7 @@ export function ProjectsSplitView({
           </View>
         </ChromeColumn>
       ) : view === "overview" ? (
-        <ChromeColumn key={`${projectId}:overview`} slot="secondary">
+        <ChromeColumn key={`${projectId}:overview`} leading={projectsButton} slot="secondary">
           <ProjectScreen
             nested
             projectId={projectId}
@@ -361,7 +241,7 @@ export function ProjectsSplitView({
           />
         </ChromeColumn>
       ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`} slot="secondary">
+        <ChromeColumn key={`${projectId}:calendar`} leading={projectsButton} slot="secondary">
           <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
       ) : view === "notes" && sel.noteId ? (
@@ -379,9 +259,7 @@ export function ProjectsSplitView({
           systemImage="doc.text"
           description="Pick a note from the list."
         />
-      )}
-    </NavigationSplitView.Detail>
-  );
+      );
 
   const toggleSidebar = () => setVisibility((v) => (v === "detailOnly" ? "all" : "detailOnly"));
   // Phone (Duo): the columns draw their own bars, so the stack header hides.
@@ -424,34 +302,62 @@ export function ProjectsSplitView({
     </>
   );
 
-  const splitModifiers = [tint(t.accent), onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))];
 
-  // ── Two columns: list | item ──────────────────────────────────────────────
-  // Each layout gets its own Host key: a hosted React Native view moved into a
-  // different SwiftUI column otherwise renders blank. On a Duo the left column
-  // asks for exactly half the window in every posture.
+  const hingeModifier = onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)));
+  // On a Duo the left column (and the tree panel) end exactly on the hinge.
   const leftWidth = hasHinge
     ? navigationSplitViewColumnWidth(half)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
+  const tree = BRIDGE_HEADER ? null : (
+    <ProjectsTreePanel
+      open={treeOpen}
+      onClose={() => setTreeOpen(false)}
+      width={hasHinge ? half : Math.min(360, Math.round(width * 0.4))}
+      title={workspaceName}
+      projects={projects}
+      views={VIEWS}
+      projectId={projectId}
+      view={view}
+      progress={progress}
+      onSelect={(id, next) => {
+        setSelection({
+          projectId: id,
+          view: next as SplitViewKind,
+          ...(id !== projectId ? { noteId: null, cardId: null } : {}),
+        });
+        setTreeOpen(false);
+      }}
+    />
+  );
 
+  // Each layout gets its own Host key: a hosted React Native view moved into a
+  // different SwiftUI column otherwise renders blank.
+  if (fullWidth) {
+    return withHeader(
+      <View style={{ flex: 1 }}>
+        <Host key="single" style={{ flex: 1 }}>
+          <NavigationStack modifiers={[tint(t.accent), hingeModifier]}>{detail}</NavigationStack>
+        </Host>
+        {tree}
+      </View>,
+    );
+  }
+
+  // ── Notes: list | note ────────────────────────────────────────────────────
   return withHeader(
-    <Host key="two-column" style={{ flex: 1 }}>
-      <NavigationSplitView
-        // The system sidebar button collapses the list for a full-width item
-        // (focus mode); views and projects live in the list's title menu.
-        columnVisibility={visibility}
-        onColumnVisibilityChange={setVisibility}
-        modifiers={splitModifiers}
-      >
-        <NavigationSplitView.Sidebar>
-          {listView ? (
-            listColumn([leftWidth], [], titleMenu)
-          ) : (
-            viewsPanel([navigationTitle(workspaceName), leftWidth])
-          )}
-        </NavigationSplitView.Sidebar>
-        {detail}
-      </NavigationSplitView>
-    </Host>
+    <View style={{ flex: 1 }}>
+      <Host key="two-column" style={{ flex: 1 }}>
+        <NavigationSplitView
+          // The system sidebar button collapses the list for a full-width note.
+          columnVisibility={visibility}
+          onColumnVisibilityChange={setVisibility}
+          modifiers={[tint(t.accent), hingeModifier]}
+        >
+          <NavigationSplitView.Sidebar>{listColumn([leftWidth], projectsButton)}</NavigationSplitView.Sidebar>
+          <NavigationSplitView.Detail>{detail}</NavigationSplitView.Detail>
+        </NavigationSplitView>
+      </Host>
+      {tree}
+    </View>,
   );
 }
