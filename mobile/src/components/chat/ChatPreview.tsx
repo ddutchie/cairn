@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from "react";
 import { useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { LinearTransition, SlideInRight, SlideOutRight } from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
 import { onHingeChange, type HingeStatus } from "@expo/ui/swift-ui/modifiers";
@@ -53,8 +54,11 @@ export function ChatPreviewPane({
 
   const close = { key: "close", label: "Close preview", icon: "xmark" as const, onPress: onClose };
 
+  // Slides in from the right edge and back out on close; the content beside it
+  // reflows with a LinearTransition (see PREVIEW_LAYOUT).
   return (
-    <Host style={{ width: paneWidth }}>
+    <Animated.View entering={SlideInRight.duration(280)} exiting={SlideOutRight.duration(220)} style={{ width: paneWidth }}>
+    <Host style={{ flex: 1 }}>
       <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
         {preview.kind === "note" ? (
           <ChromeColumn key={`note:${preview.id}`} leading={[close]}>
@@ -67,5 +71,9 @@ export function ChatPreviewPane({
         )}
       </NavigationStack>
     </Host>
+    </Animated.View>
   );
 }
+
+/** Layout transition for whatever sits beside the pane, so it narrows smoothly. */
+export const PREVIEW_LAYOUT = LinearTransition.duration(280);
