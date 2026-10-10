@@ -115,13 +115,10 @@ export function CardDetailScreen({
         celebrateTaskDone(remainingOpen);
       }
     }
-    // A column keeps the task open beside the board; a route pops back to it.
-    if (embedded) {
-      onChanged?.();
-      toast.success("Task saved");
-    } else {
-      router.back();
-    }
+    // Saving is done with the task: a column closes (the board widens back), a
+    // route pops back to the board.
+    if (embedded) toast.success("Task saved");
+    close();
   };
 
   const onArchive = () => {

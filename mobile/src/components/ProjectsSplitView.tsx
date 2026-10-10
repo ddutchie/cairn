@@ -106,7 +106,10 @@ export function ProjectsSplitView({
   const project = projects.find((p) => p.id === sel.projectId) ?? projects[0];
   const projectId = project?.id ?? null;
   const view = sel.view;
-  const listView = view === "notes" || view === "board";
+  // The Board is wide, so with no task open it takes the whole window; opening a
+  // task splits it back into board | task.
+  const boardFull = view === "board" && !sel.cardId;
+  const listView = view === "notes" || (view === "board" && !boardFull);
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
@@ -128,7 +131,15 @@ export function ProjectsSplitView({
   // is ~950pt — shows two: list | item, with the project + views in the list's
   // title menu instead of a third column squeezed across the fold.
   const roomy = width >= ALL_COLUMNS_MIN_WIDTH;
-  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("all");
+  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>(boardFull ? "detailOnly" : "all");
+  // Full-width board hides the other columns (the system sidebar button still
+  // reveals them); leaving it restores them. Adjusted during render, not in an
+  // effect, so the columns never flash before collapsing.
+  const [wasBoardFull, setWasBoardFull] = useState(boardFull);
+  if (wasBoardFull !== boardFull) {
+    setWasBoardFull(boardFull);
+    setVisibility(boardFull ? "detailOnly" : "all");
+  }
   const half = width / 2;
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
@@ -260,7 +271,18 @@ export function ProjectsSplitView({
 
   const detail = (
     <NavigationSplitView.Detail>
-      {view === "overview" ? (
+      {boardFull ? (
+        <ChromeColumn key={`${projectId}:board-full:${boardVersion}`} titleMenu={titleMenu}>
+          <ProjectScreen
+            nested
+            projectId={projectId}
+            view="board"
+            onSelectView={selectView}
+            onOpenNote={openNote}
+            onOpenCard={openCard}
+          />
+        </ChromeColumn>
+      ) : view === "overview" ? (
         <ChromeColumn key={`${projectId}:overview`}>
           <ProjectScreen
             nested
@@ -276,11 +298,18 @@ export function ProjectsSplitView({
           <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
       ) : view === "notes" && sel.noteId ? (
-        <ChromeColumn key={sel.noteId}>
+        <ChromeColumn
+          key={sel.noteId}
+          leading={[{ key: "close", label: "Close note", icon: "xmark", onPress: () => setSelection({ noteId: null }) }]}
+        >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={() => setSelection({ noteId: null })} />
         </ChromeColumn>
       ) : view === "board" && sel.cardId ? (
-        <ChromeColumn key={sel.cardId}>
+        // ✕ closes the task and the board widens back to full width.
+        <ChromeColumn
+          key={sel.cardId}
+          leading={[{ key: "close", label: "Close task", icon: "xmark", onPress: () => setSelection({ cardId: null }) }]}
+        >
           <CardDetailScreen
             cardId={sel.cardId}
             onClose={() => setSelection({ cardId: null })}
