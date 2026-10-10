@@ -1,0 +1,7 @@
+{
+  "name": "tab-sidebar",
+  "version": "0.1.0",
+  "description": "Groups child rows under a native tab in the iPad tab sidebar (UITabGroup), like Mail's mailboxes. Local Expo module (iOS only).",
+  "main": "index.ts",
+  "private": true
+}

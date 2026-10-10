@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View } from "react-native";
 import { Stack } from "expo-router";
 import { navigationBarHidden } from "@modules/swiftui-modifiers";
+import { onSidebarItem, setSidebarGroup } from "@modules/tab-sidebar";
 import { Host } from "@expo/ui";
 import {
   Button,
@@ -167,6 +168,23 @@ export function ProjectsSplitView({
     setBridged((prev) => (prev[slot] === chrome ? prev : { ...prev, [slot]: chrome }));
   }, []);
   const hideBar = BRIDGE_HEADER ? [navigationBarHidden()] : [];
+
+  // iPad: projects listed under the Projects tab in the system tab sidebar,
+  // like Mail's mailboxes. A row switches project (the Projects tab is index 0).
+  const sidebarKey = projects.map((p) => `${p.id}:${p.name}`).join("|");
+  useEffect(() => {
+    if (!BRIDGE_HEADER) return;
+    setSidebarGroup(
+      0,
+      projects.map((p) => ({ id: p.id, title: p.name, icon: "folder" })),
+      projectId,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sidebarKey captures projects
+  }, [sidebarKey, projectId]);
+  useEffect(
+    () => onSidebarItem((id) => setSelection({ projectId: id, noteId: null, cardId: null })),
+    [],
+  );
 
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next });
