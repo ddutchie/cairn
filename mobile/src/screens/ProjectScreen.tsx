@@ -482,16 +482,17 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
-    // Floating Overview|Notes|Board bar in the header colour: an absolute
-    // overlay pinned below the nav bar, so the tab content scrolls beneath it
-    // (like the search scope bar). Height = control 36 + 8 top + 6 bottom pad.
+    // Floating Overview|Notes|Board bar: an absolute overlay pinned below the
+    // nav bar, so the tab content scrolls beneath it (like the search scope
+    // bar). No band behind it — on an unfolded iPhone Duo the content is inset
+    // from the side rail, so a surface band stopped short of the edge.
+    // Height = control 36 + 8 top + 6 bottom pad.
     segment: {
       position: "absolute",
       top: 0,
       left: 0,
       right: 0,
       zIndex: 1,
-      backgroundColor: t.surface,
       paddingHorizontal: 12,
       paddingTop: 8,
       paddingBottom: 6,

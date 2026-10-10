@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Stack , ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
 import { useColorScheme } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/theme";
 
 /**
@@ -28,6 +29,10 @@ export function TabStack({
 } = {}) {
   const scheme = useColorScheme();
   const t = useTheme();
+  // Horizontal insets are 0 on a portrait iPhone, but an unfolded iPhone Duo
+  // (and landscape) puts system chrome — status bar, nav buttons, the tab rail —
+  // along a side edge. Keep screen content clear of it.
+  const { left, right } = useSafeAreaInsets();
   return (
     <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack
@@ -38,7 +43,7 @@ export function TabStack({
           headerTitleStyle: { color: t.textPrimary },
           headerTintColor: t.accent,
           headerShadowVisible: false,
-          contentStyle: { backgroundColor: t.background },
+          contentStyle: { backgroundColor: t.background, paddingLeft: left, paddingRight: right },
         }}
       >
         {children}

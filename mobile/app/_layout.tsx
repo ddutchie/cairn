@@ -9,7 +9,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
-import { initDatabase } from "@/db";
+import { initDatabase, getActiveSource } from "@/db";
+import { isDemoSource } from "@/dev/demo-seed";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -62,7 +63,8 @@ export default function RootLayout() {
     // Sync startup is non-fatal: a failure here must NOT show the "Database
     // error" screen (the DB opened fine). Guard it separately.
     try {
-      startAutoSync();
+      // The dev demo source is local-only: never publish it to the sync folder.
+      if (!isDemoSource(getActiveSource())) startAutoSync();
     } catch (e) {
       console.warn("[sync] auto-sync failed to start:", e);
     }
