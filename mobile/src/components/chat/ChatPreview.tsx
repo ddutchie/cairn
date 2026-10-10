@@ -1,7 +1,7 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { LinearTransition, SlideInRight, SlideOutRight } from "react-native-reanimated";
+import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
 import { onHingeChange, type HingeStatus } from "@expo/ui/swift-ui/modifiers";
@@ -37,7 +37,8 @@ export function ChatPreviewPane({
   onClose,
   onChanged,
 }: {
-  preview: PreviewRef;
+  /** The note / task to show; null slides the pane closed. */
+  preview: PreviewRef | null;
   onClose: () => void;
   /** The previewed task was saved, archived or deleted. */
   onChanged?: () => void;
@@ -52,28 +53,40 @@ export function ChatPreviewPane({
   const hasHinge = hinge != null && hinge !== "closed";
   const paneWidth = hasHinge ? width / 2 - right : Math.round(width * 0.46);
 
+  // One animated width drives the whole transition: the pane grows from the
+  // right edge and whatever sits beside it (flex: 1) shrinks in the same frame,
+  // so nothing trails. The content keeps its full width and is revealed, not
+  // squeezed. The last preview stays mounted until the slide-out finishes.
+  const [shown, setShown] = useState<PreviewRef | null>(preview);
+  if (preview && (preview.kind !== shown?.kind || preview.id !== shown?.id)) setShown(preview);
+  const open = useSharedValue(preview ? 1 : 0);
+  useEffect(() => {
+    open.set(
+      withTiming(preview ? 1 : 0, { duration: preview ? 280 : 220, easing: Easing.out(Easing.cubic) }, (done) => {
+        if (done && !preview) runOnJS(setShown)(null);
+      }),
+    );
+  }, [preview, open]);
+  const frame = useAnimatedStyle(() => ({ width: open.get() * paneWidth }));
+
+  if (!shown) return null;
   const close = { key: "close", label: "Close preview", icon: "xmark" as const, onPress: onClose };
 
-  // Slides in from the right edge and back out on close; the content beside it
-  // reflows with a LinearTransition (see PREVIEW_LAYOUT).
   return (
-    <Animated.View entering={SlideInRight.duration(280)} exiting={SlideOutRight.duration(220)} style={{ width: paneWidth }}>
-    <Host style={{ flex: 1 }}>
-      <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
-        {preview.kind === "note" ? (
-          <ChromeColumn key={`note:${preview.id}`} leading={[close]}>
-            <NoteDetailScreen nested noteId={preview.id} onClose={onClose} />
-          </ChromeColumn>
-        ) : (
-          <ChromeColumn key={`card:${preview.id}`} leading={[close]}>
-            <CardDetailScreen cardId={preview.id} onClose={onClose} onChanged={onChanged} />
-          </ChromeColumn>
-        )}
-      </NavigationStack>
-    </Host>
+    <Animated.View style={[{ overflow: "hidden" }, frame]}>
+      <Host style={{ width: paneWidth, flex: 1 }}>
+        <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
+          {shown.kind === "note" ? (
+            <ChromeColumn key={`note:${shown.id}`} leading={[close]}>
+              <NoteDetailScreen nested noteId={shown.id} onClose={onClose} />
+            </ChromeColumn>
+          ) : (
+            <ChromeColumn key={`card:${shown.id}`} leading={[close]}>
+              <CardDetailScreen cardId={shown.id} onClose={onClose} onChanged={onChanged} />
+            </ChromeColumn>
+          )}
+        </NavigationStack>
+      </Host>
     </Animated.View>
   );
 }
-
-/** Layout transition for whatever sits beside the pane, so it narrows smoothly. */
-export const PREVIEW_LAYOUT = LinearTransition.duration(280);

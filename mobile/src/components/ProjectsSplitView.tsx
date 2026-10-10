@@ -36,8 +36,7 @@ import type { SFSymbol } from "sf-symbols-typescript";
 import { listCards, listColumns, type ProjectSummary } from "@/db/queries";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
-import Animated from "react-native-reanimated";
-import { ChatPreviewPane, PREVIEW_LAYOUT } from "@/components/chat/ChatPreview";
+import { ChatPreviewPane } from "@/components/chat/ChatPreview";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import { ChromeColumn } from "@/components/screen-chrome";
 import { isDoneColumn } from "@/gamification/rewards";
@@ -276,7 +275,7 @@ export function ProjectsSplitView({
       {boardFull ? (
         <ChromeColumn key={`${projectId}:board`} titleMenu={titleMenu}>
           <View style={{ flex: 1, flexDirection: "row", overflow: "hidden" }}>
-            <Animated.View layout={PREVIEW_LAYOUT} style={{ flex: 1 }}>
+            <View style={{ flex: 1 }}>
               <ProjectScreen
                 key={boardVersion}
                 nested
@@ -286,14 +285,12 @@ export function ProjectsSplitView({
                 onOpenNote={openNote}
                 onOpenCard={openCard}
               />
-            </Animated.View>
-            {sel.cardId ? (
-              <ChatPreviewPane
-                preview={{ kind: "card", id: sel.cardId }}
-                onClose={() => setSelection({ cardId: null })}
-                onChanged={() => setBoardVersion((n) => n + 1)}
-              />
-            ) : null}
+            </View>
+            <ChatPreviewPane
+              preview={sel.cardId ? { kind: "card", id: sel.cardId } : null}
+              onClose={() => setSelection({ cardId: null })}
+              onChanged={() => setBoardVersion((n) => n + 1)}
+            />
           </View>
         </ChromeColumn>
       ) : view === "overview" ? (

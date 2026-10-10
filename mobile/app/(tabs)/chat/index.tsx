@@ -36,10 +36,10 @@ import { CairnAttachmentHost, type CairnAttachmentHostHandle } from "@/component
 import { ChatPatternOverlay } from "@/components/chat/ChatPatternOverlay";
 import { safeToolOutput } from "@/chat/tool-output";
 import { fetchManifest } from "@/chat/registry";
-import Animated, { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
+import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
-import { ChatPreviewPane, ChatPreviewProvider, CHAT_PREVIEW_MIN_WIDTH, PREVIEW_LAYOUT, type PreviewRef } from "@/components/chat/ChatPreview";
+import { ChatPreviewPane, ChatPreviewProvider, CHAT_PREVIEW_MIN_WIDTH, type PreviewRef } from "@/components/chat/ChatPreview";
 // NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
 import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
 
@@ -439,7 +439,7 @@ export default function ChatScreen() {
       </Stack.Toolbar>
       <ChatPreviewProvider value={canPreview ? setPreview : null}>
       <View style={styles.row}>
-      <Animated.View layout={PREVIEW_LAYOUT} style={{ flex: 1, paddingTop: canPreview ? headerHeight : 0, backgroundColor: t.chatBg }}>
+      <View style={{ flex: 1, paddingTop: canPreview ? headerHeight : 0, backgroundColor: t.chatBg }}>
       <View style={{ flex: 1 }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
@@ -564,8 +564,8 @@ export default function ChatScreen() {
           onAddAttachments={onAddAttachments}
         />
       </View>
-      </Animated.View>
-      {canPreview && preview ? <ChatPreviewPane preview={preview} onClose={() => setPreview(null)} /> : null}
+      </View>
+      {canPreview ? <ChatPreviewPane preview={preview} onClose={() => setPreview(null)} /> : null}
       </View>
       </ChatPreviewProvider>
     </TabScreen>
