@@ -10,6 +10,7 @@
 
 import { getDb, setActiveSource } from "@/db";
 import { createNote, createTask, setCardTags, setNoteTags } from "@/db/queries";
+import { hasChatHistory, saveChatMessage } from "@/db/chat-store";
 
 export const DEMO_WORKSPACE_ID = "dev-demo-workspace";
 
@@ -158,7 +159,34 @@ function isoInDays(days: number): string {
 export function openDemoWorkspace(): void {
   setActiveSource(DEMO_WORKSPACE_ID);
   const db = getDb();
-  if (db.getFirstSync("SELECT id FROM workspaces WHERE id = ?", DEMO_WORKSPACE_ID)) return;
+  if (!db.getFirstSync("SELECT id FROM workspaces WHERE id = ?", DEMO_WORKSPACE_ID)) seedWorkspace();
+  seedChat();
+}
+
+/**
+ * A short conversation whose tool chips point at seeded notes / tasks, so the
+ * chat preview column can be exercised without an AI provider. Only seeds an
+ * empty history.
+ */
+export function seedChat(): void {
+  if (hasChatHistory()) return;
+  const db = getDb();
+  const note = db.getFirstSync<{ id: string }>("SELECT id FROM notes WHERE title = ?", "Foldable layout research");
+  const card = db.getFirstSync<{ id: string }>("SELECT id FROM task_cards WHERE title = ?", "Projects split view");
+  saveChatMessage({ role: "user", content: "Summarise the foldable research and update the split view task." });
+  saveChatMessage({
+    role: "assistant",
+    content:
+      "The research note argues for one tree with two layouts, keeping selection in state so folding never loses your place. I added that to the **Projects split view** task.",
+    tools: [
+      ...(note ? [{ tool: "get_note", ok: true, ref: { kind: "note" as const, id: note.id } }] : []),
+      ...(card ? [{ tool: "update_task", ok: true, ref: { kind: "card" as const, id: card.id } }] : []),
+    ],
+  });
+}
+
+function seedWorkspace(): void {
+  const db = getDb();
 
   const now = new Date().toISOString();
   db.withTransactionSync(() => {

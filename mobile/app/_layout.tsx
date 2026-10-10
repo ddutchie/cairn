@@ -10,7 +10,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { initDatabase, getActiveSource } from "@/db";
-import { isDemoSource } from "@/dev/demo-seed";
+import { isDemoSource, seedChat } from "@/dev/demo-seed";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -64,7 +64,8 @@ export default function RootLayout() {
     // error" screen (the DB opened fine). Guard it separately.
     try {
       // The dev demo source is local-only: never publish it to the sync folder.
-      if (!isDemoSource(getActiveSource())) startAutoSync();
+      if (isDemoSource(getActiveSource())) seedChat();
+      else startAutoSync();
     } catch (e) {
       console.warn("[sync] auto-sync failed to start:", e);
     }

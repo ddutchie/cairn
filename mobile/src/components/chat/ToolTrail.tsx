@@ -12,17 +12,20 @@ import { listInstalledMcpServers } from "@/chat/mcp-store";
 import { listInstalledServices } from "@/chat/services";
 import { getCachedManifest } from "@/chat/registry";
 import { prettyToolOutput, safeToolOutput } from "@/chat/tool-output";
+import { useChatPreview } from "./ChatPreview";
 
 type Connector = { name: string; kind: "mcp" | "service"; iconSvg?: string; brandColor?: string };
 
 /**
  * The vertical trail of tool-call chips shown above an assistant bubble. A chip
  * whose tool created/touched a note or card is tappable and opens it by id (the
- * reliable, collision-proof path); read-only tools render as a plain chip.
+ * reliable, collision-proof path) — beside the chat on wide windows (see
+ * ChatPreview), otherwise by navigating; read-only tools render as a plain chip.
  */
 export function ToolTrail({ tools }: { tools: ToolCall[] }) {
   const t = useTheme();
   const router = useRouter();
+  const preview = useChatPreview();
   const styles = useMemo(() => makeStyles(t), [t]);
   const connectors: Record<string, Connector> = {};
   const manifest = getCachedManifest();
@@ -68,7 +71,10 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
               accessibilityLabel={`Open ${label}`}
               onPress={() => {
                 haptics.impact();
-                router.push(tt.ref!.kind === "card" ? `/card/${tt.ref!.id}` : `/note/${tt.ref!.id}`);
+                const ref = tt.ref!;
+                // Wide windows preview beside the chat; narrow ones navigate.
+                if (preview) preview({ kind: ref.kind === "card" ? "card" : "note", id: ref.id });
+                else router.push(ref.kind === "card" ? `/card/${ref.id}` : `/note/${ref.id}`);
               }}
             >
               <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />

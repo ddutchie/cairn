@@ -39,6 +39,7 @@ import { fetchManifest } from "@/chat/registry";
 import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
+import { ChatPreviewPane, ChatPreviewProvider, CHAT_PREVIEW_MIN_WIDTH, type PreviewRef } from "@/components/chat/ChatPreview";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -121,7 +122,10 @@ export default function ChatScreen() {
   const strip = useSharedValue(0);
   const plusOut = useSharedValue(0);
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
+  // Wide windows open touched notes/tasks in a column beside the chat.
+  const [preview, setPreview] = useState<PreviewRef | null>(null);
+  const canPreview = width >= CHAT_PREVIEW_MIN_WIDTH;
   const keyboard = useReanimatedKeyboardAnimation();
   const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap), [height, insets.bottom]);
   const hostRef = useRef<CairnAttachmentHostHandle>(null);
@@ -416,6 +420,8 @@ export default function ChatScreen() {
           onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
       </Stack.Toolbar>
+      <ChatPreviewProvider value={canPreview ? setPreview : null}>
+      <View style={styles.row}>
       <View style={{ flex: 1, backgroundColor: t.chatBg }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
@@ -540,6 +546,9 @@ export default function ChatScreen() {
           onAddAttachments={onAddAttachments}
         />
       </View>
+      {canPreview && preview ? <ChatPreviewPane preview={preview} onClose={() => setPreview(null)} /> : null}
+      </View>
+      </ChatPreviewProvider>
     </TabScreen>
   );
 }
@@ -552,6 +561,7 @@ function makeStyles(t: Theme) {
     // viewport measurement lagging content/keyboard-inset changes (chat "wrong
     // size"). It sits inside the absoluteFill KeyboardGestureArea.
     scroll: { flex: 1 },
+    row: { flex: 1, flexDirection: "row" },
     list: { padding: 14, paddingBottom: 20 },
     configureBtn: {
       flexDirection: "row",
