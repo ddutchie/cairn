@@ -383,7 +383,19 @@ export default function ChatScreen() {
     <TabScreen>
       <Stack.Screen
         options={{
-          title: "Chat",
+          // Wide windows: no header bar (it only titled the screen and pushed the
+          // preview column down), but keep the toolbar items — on an iPhone Duo
+          // they dock into the side rail beside the tabs.
+          title: canPreview ? "" : "Chat",
+          headerTransparent: canPreview,
+          // TabStack paints the header with the surface colour, and iOS 26 adds a
+          // scroll-edge fade under it — both drew a white strip across the top.
+          ...(canPreview
+            ? {
+                headerStyle: { backgroundColor: "transparent" },
+                scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
+              }
+            : {}),
           // Context-window usage ring in the header-left when the active provider
           // reports usage (Apple real, OpenAI real, Rork estimated).
           headerLeft:
@@ -422,7 +434,8 @@ export default function ChatScreen() {
       </Stack.Toolbar>
       <ChatPreviewProvider value={canPreview ? setPreview : null}>
       <View style={styles.row}>
-      <View style={{ flex: 1, backgroundColor: t.chatBg }}>
+      <View style={{ flex: 1, paddingTop: canPreview ? insets.top : 0, backgroundColor: t.chatBg }}>
+      <View style={{ flex: 1 }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
             colors={t.chatStops as [string, string, ...string[]]}
@@ -545,6 +558,7 @@ export default function ChatScreen() {
           existingCount={attachments.length}
           onAddAttachments={onAddAttachments}
         />
+      </View>
       </View>
       {canPreview && preview ? <ChatPreviewPane preview={preview} onClose={() => setPreview(null)} /> : null}
       </View>

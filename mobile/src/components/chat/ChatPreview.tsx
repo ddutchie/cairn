@@ -1,8 +1,10 @@
 import { createContext, useContext, useState } from "react";
 import { useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
 import { onHingeChange, type HingeStatus } from "@expo/ui/swift-ui/modifiers";
+import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
 import { ChromeColumn } from "@/components/screen-chrome";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { CardDetailScreen } from "@/screens/CardDetailScreen";
@@ -31,16 +33,20 @@ export const CHAT_PREVIEW_MIN_WIDTH = 700;
 
 export function ChatPreviewPane({ preview, onClose }: { preview: PreviewRef; onClose: () => void }) {
   const { width } = useWindowDimensions();
-  const [hinge, setHinge] = useState<HingeStatus | null>(null);
-  // Half open: the pane takes the right page exactly. Flat: a little under half,
-  // leaving the conversation the larger share.
-  const paneWidth = hinge === "partiallyOpen" ? width / 2 : Math.round(width * 0.46);
+  const { right } = useSafeAreaInsets();
+  const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
+  // On a device with a hinge (iPhone Duo, folded flat or half open) the pane
+  // starts exactly on the fold and runs to the side rail, so neither the chat
+  // nor the preview ever crosses the crease. Without one (iPad) it takes a
+  // little under half, leaving the conversation the larger share.
+  const hasHinge = hinge != null && hinge !== "closed";
+  const paneWidth = hasHinge ? width / 2 - right : Math.round(width * 0.46);
 
   const close = { key: "close", label: "Close preview", icon: "xmark" as const, onPress: onClose };
 
   return (
     <Host style={{ width: paneWidth }}>
-      <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(next.hinge?.status ?? null))]}>
+      <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
         {preview.kind === "note" ? (
           <ChromeColumn key={`note:${preview.id}`} leading={[close]}>
             <NoteDetailScreen nested noteId={preview.id} onClose={onClose} />

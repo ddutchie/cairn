@@ -28,6 +28,7 @@ import {
   navigationSplitViewColumnWidth,
   navigationTitle,
   offset,
+  onGeometryChange,
   onHingeChange,
   onTapGesture,
   padding,
@@ -46,6 +47,7 @@ import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import { ChromeColumn } from "@/components/screen-chrome";
 import { isDoneColumn } from "@/gamification/rewards";
 import { useTheme } from "@/theme";
+import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad), laid out like desktop:
@@ -54,10 +56,10 @@ import { useTheme } from "@/theme";
  *   content  — the view's list (notes tree, board)
  *   detail   — the open note / task
  *
- * Overview and Calendar have no list → item shape, so they drop the content
- * column and fill the detail. Half open on a Duo, the sidebar hides and the
- * content column is sized to end on the hinge: list on one page, item on the
- * other.
+ * on wide iPads. Narrower windows (an unfolded Duo) show list | item, with the
+ * sidebar as a panel sliding over the list. Overview and Calendar have no
+ * list → item shape, so the panel becomes the left column instead. On a Duo the
+ * left column always ends on the hinge: list on one page, item on the other.
  */
 
 type SplitViewKind = ProjectTab | "calendar";
@@ -126,8 +128,9 @@ export function ProjectsSplitView({
   }, [projectId, boardVersion]);
 
   // ── Duo posture ────────────────────────────────────────────────────────────
-  const [hinge, setHinge] = useState<HingeStatus | null>(null);
-  const halfOpen = hinge === "partiallyOpen";
+  const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
+  const hasHinge = hinge != null && hinge !== "closed";
+  const [leftFix, setLeftFix] = useState(0);
   // Three native columns need room (wide iPads). Narrower — an unfolded Duo
   // is ~950pt — shows two: list | item, with the project + views panel sliding
   // over the list instead of squeezing both columns across the fold.
@@ -272,7 +275,7 @@ export function ProjectsSplitView({
     </NavigationSplitView.Detail>
   );
 
-  const splitModifiers = [tint(t.accent), onHingeChange((_, next) => setHinge(next.hinge?.status ?? null))];
+  const splitModifiers = [tint(t.accent), onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))];
 
   // ── Wide iPad: three native columns ────────────────────────────────────────
   if (roomy) {
@@ -294,10 +297,17 @@ export function ProjectsSplitView({
   }
 
   // ── Duo / narrower: two columns, views panel slides over the list ──────────
-  // Half open, the left column is exactly half the window so the fold falls
-  // between the columns.
-  const leftWidth = halfOpen
-    ? navigationSplitViewColumnWidth(half)
+  // On a Duo the left column is exactly half the window in every posture, so
+  // the fold always falls between the columns, never through one.
+  // SwiftUI renders the sidebar column narrower than the width asked for (~20pt
+  // on the Duo), so measure the real width and ask for the difference on top.
+  const measureLeft = onGeometryChange((f) => {
+    if (!hasHinge) return;
+    const err = half - f.width;
+    if (Math.abs(err) > 0.5) setLeftFix((fix) => fix + err);
+  });
+  const leftWidth = hasHinge
+    ? navigationSplitViewColumnWidth(half + leftFix)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
 
   return (
@@ -311,7 +321,7 @@ export function ProjectsSplitView({
       >
         <NavigationSplitView.Sidebar>
           {listView ? (
-            <ZStack alignment="topLeading" modifiers={[leftWidth]}>
+            <ZStack alignment="topLeading" modifiers={[leftWidth, measureLeft]}>
               {listColumn([], [
                 {
                   key: "views",
@@ -330,7 +340,7 @@ export function ProjectsSplitView({
               ])}
             </ZStack>
           ) : (
-            viewsPanel([navigationTitle(workspaceName), leftWidth])
+            viewsPanel([navigationTitle(workspaceName), leftWidth, measureLeft])
           )}
         </NavigationSplitView.Sidebar>
         {detail}
