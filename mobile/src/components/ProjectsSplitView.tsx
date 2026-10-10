@@ -28,7 +28,6 @@ import {
   navigationSplitViewColumnWidth,
   navigationTitle,
   offset,
-  onGeometryChange,
   onHingeChange,
   onTapGesture,
   padding,
@@ -130,7 +129,6 @@ export function ProjectsSplitView({
   // ── Duo posture ────────────────────────────────────────────────────────────
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   const hasHinge = hinge != null && hinge !== "closed";
-  const [leftWidthSeen, setLeftWidthSeen] = useState<number | null>(null);
   // Three native columns need room (wide iPads). Narrower — an unfolded Duo
   // is ~950pt — shows two: list | item, with the project + views panel sliding
   // over the list instead of squeezing both columns across the fold.
@@ -139,14 +137,8 @@ export function ProjectsSplitView({
   const [panelOpen, setPanelOpen] = useState(false);
   const half = width / 2;
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
-  // the Duo), so the fold would cut into the detail column. Measure the list
-  // column and inset the detail content by the shortfall instead: only the
-  // matching page background straddles the crease, never content.
-  const measureLeft = onGeometryChange((f) => {
-    if (f.width > half * 0.8 && f.width <= half) setLeftWidthSeen(f.width);
-  });
-  const hingeGap = hasHinge && leftWidthSeen != null ? Math.max(0, half - leftWidthSeen) : 0;
-  const detailInset = hingeGap > 0 ? [padding({ leading: hingeGap })] : [];
+  // the Duo). That's fine: the detail screens' own side padding (~38pt) already
+  // keeps their content clear of the fold, so no extra inset is added.
 
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next });
@@ -247,7 +239,7 @@ export function ProjectsSplitView({
   const detail = (
     <NavigationSplitView.Detail>
       {view === "overview" ? (
-        <ChromeColumn key={`${projectId}:overview`} modifiers={detailInset}>
+        <ChromeColumn key={`${projectId}:overview`}>
           <ProjectScreen
             nested
             projectId={projectId}
@@ -258,15 +250,15 @@ export function ProjectsSplitView({
           />
         </ChromeColumn>
       ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`} modifiers={detailInset}>
+        <ChromeColumn key={`${projectId}:calendar`}>
           <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
       ) : view === "notes" && sel.noteId ? (
-        <ChromeColumn key={sel.noteId} modifiers={detailInset}>
+        <ChromeColumn key={sel.noteId}>
           <NoteDetailScreen nested noteId={sel.noteId} onClose={() => setSelection({ noteId: null })} />
         </ChromeColumn>
       ) : view === "board" && sel.cardId ? (
-        <ChromeColumn key={sel.cardId} modifiers={detailInset}>
+        <ChromeColumn key={sel.cardId}>
           <CardDetailScreen
             cardId={sel.cardId}
             onClose={() => setSelection({ cardId: null })}
@@ -275,7 +267,7 @@ export function ProjectsSplitView({
         </ChromeColumn>
       ) : (
         <ContentUnavailableView
-          modifiers={[background(t.background), ...detailInset]}
+          modifiers={[background(t.background)]}
           title={view === "notes" ? "No Note Selected" : "No Task Selected"}
           systemImage={view === "notes" ? "doc.text" : "checklist"}
           description={view === "notes" ? "Pick a note from the list." : "Pick a task from the board."}
@@ -306,8 +298,7 @@ export function ProjectsSplitView({
   }
 
   // ── Duo / narrower: two columns, views panel slides over the list ──────────
-  // On a Duo the left column asks for exactly half the window in every posture
-  // (see hingeGap for the shortfall SwiftUI leaves).
+  // On a Duo the left column asks for exactly half the window in every posture.
   const leftWidth = hasHinge
     ? navigationSplitViewColumnWidth(half)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
@@ -323,7 +314,7 @@ export function ProjectsSplitView({
       >
         <NavigationSplitView.Sidebar>
           {listView ? (
-            <ZStack alignment="topLeading" modifiers={[leftWidth, measureLeft]}>
+            <ZStack alignment="topLeading" modifiers={[leftWidth]}>
               {listColumn([], [
                 {
                   key: "views",
@@ -342,7 +333,7 @@ export function ProjectsSplitView({
               ])}
             </ZStack>
           ) : (
-            viewsPanel([navigationTitle(workspaceName), leftWidth, measureLeft])
+            viewsPanel([navigationTitle(workspaceName), leftWidth])
           )}
         </NavigationSplitView.Sidebar>
         {detail}
