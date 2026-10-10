@@ -1,16 +1,15 @@
-import { useEffect, useState } from "react";
-import { Pressable, StyleSheet } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Host } from "@expo/ui";
-import { DisclosureGroup, Label, List, ProgressView, Section, Text, VStack } from "@expo/ui/swift-ui";
+import { DisclosureGroup, Label, List, Section } from "@expo/ui/swift-ui";
 import {
   background,
   contentShape,
-  font,
-  foregroundStyle,
   frame,
   listStyle,
   onTapGesture,
+  scrollContentBackground,
   padding,
   shapes,
   tint,
@@ -30,15 +29,15 @@ export function ProjectsTreePanel({
   width,
   title,
   tree,
-  progress,
+  card,
 }: {
   open: boolean;
   onClose: () => void;
   width: number;
   title: string;
   tree: ProjectsTree;
-  /** The open project's task progress, shown above its views. */
-  progress: { closed: number; total: number; open: number } | null;
+  /** The open project at a glance (ProjectCard), above the tree. */
+  card?: ReactNode;
 }) {
   const t = useTheme();
   const [projectId, view] = tree.selectedPath;
@@ -94,8 +93,10 @@ export function ProjectsTreePanel({
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close projects" />
       </Animated.View>
       <Animated.View style={[styles.panel, { width, backgroundColor: t.background }, panelStyle]}>
+        {card ? <View style={styles.cardSlot}>{card}</View> : null}
         <Host style={{ flex: 1 }}>
-          <List modifiers={[listStyle("sidebar"), tint(t.accent)]}>
+          {/* The page colour behind the list too, so it joins the card above. */}
+          <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background)]}>
             <Section title={title}>
               {tree.nodes.map((p) => (
                 <DisclosureGroup
@@ -106,19 +107,6 @@ export function ProjectsTreePanel({
                   <DisclosureGroup.Label>
                     <Label title={p.title} systemImage={p.id === projectId ? "folder.fill" : "folder"} />
                   </DisclosureGroup.Label>
-                  {p.id === projectId && progress && progress.total > 0 ? (
-                    <VStack alignment="leading" spacing={6} modifiers={[padding({ vertical: 4 })]}>
-                      <ProgressView value={progress.closed / progress.total} modifiers={[tint(t.accent)]} />
-                      <Text
-                        modifiers={[
-                          font({ textStyle: "caption" }),
-                          foregroundStyle({ type: "hierarchical", style: "secondary" }),
-                        ]}
-                      >
-                        {`${progress.closed} / ${progress.total} done · ${progress.open} open`}
-                      </Text>
-                    </VStack>
-                  ) : null}
                   {(p.children ?? []).map((v) => row(p, v))}
                 </DisclosureGroup>
               ))}
@@ -131,6 +119,7 @@ export function ProjectsTreePanel({
 }
 
 const styles = StyleSheet.create({
+  cardSlot: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
   scrim: { backgroundColor: "rgba(0,0,0,0.25)" },
   panel: {
     position: "absolute",

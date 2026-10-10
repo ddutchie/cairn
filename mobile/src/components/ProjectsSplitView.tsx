@@ -18,7 +18,9 @@ import {
   type ViewModifier,
 } from "@expo/ui/swift-ui/modifiers";
 import type { SFSymbol } from "sf-symbols-typescript";
-import { listCards, listColumns, type ProjectSummary } from "@/db/queries";
+import { getProjectOverview, type ProjectSummary } from "@/db/queries";
+import { summarizeProject } from "@/components/overview/project-summary";
+import { ProjectCard } from "@/components/overview/ProjectCard";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { ChatPreviewPane } from "@/components/chat/ChatPreview";
@@ -34,7 +36,6 @@ import {
   type BridgedChrome,
   type ChromeSlot,
 } from "@/components/screen-chrome";
-import { isDoneColumn } from "@/gamification/rewards";
 import { useTheme } from "@/theme";
 import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
 
@@ -123,14 +124,14 @@ export function ProjectsSplitView({
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
   const [boardVersion, setBoardVersion] = useState(0);
 
-  const progress = useMemo(() => {
-    if (!projectId) return null;
-    const done = new Set(listColumns(projectId).filter(isDoneColumn).map((c) => c.id));
-    const cards = listCards(projectId);
-    const closed = cards.filter((c) => done.has(c.column_id)).length;
-    return { closed, total: cards.length, open: cards.length - closed };
+  // The open project's headline numbers, for the tree's card (re-read when a
+  // task changes in the detail column).
+  const overview = useMemo(
+    () => (projectId ? getProjectOverview(projectId) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- boardVersion forces a re-read
-  }, [projectId, boardVersion]);
+    [projectId, boardVersion],
+  );
+  const summary = useMemo(() => (overview ? summarizeProject(overview) : null), [overview]);
 
   // ── Duo posture ────────────────────────────────────────────────────────────
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
@@ -349,7 +350,11 @@ export function ProjectsSplitView({
       width={hasHinge ? half : Math.min(360, Math.round(width * 0.4))}
       title={workspaceName}
       tree={tree}
-      progress={progress}
+      card={
+        project && summary ? (
+          <ProjectCard name={project.name} icon={project.icon} description={overview?.project?.description} summary={summary} />
+        ) : null
+      }
     />
   );
 

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, LayoutDashboard, Kanban } from "lucide-react-native";
-import { computeProjectMetrics } from "@cairn/shared/overview/metrics";
 import { COLUMN_COLORS, PRIORITY_COLOR, COLUMN_TYPE_ORDER } from "@cairn/shared/ui/constants";
 import { getDueDateStatus, formatRelative, parseIsoLocal, formatDate } from "@cairn/shared/format/date";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -11,7 +10,8 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { PressableScale } from "@/components/PressableScale";
 import { EmptyState } from "@/components/EmptyState";
 import { ProgressRing } from "./ProgressRing";
-import { HealthRadar, buildRadarAxes } from "./HealthRadar";
+import { HealthRadar } from "./HealthRadar";
+import { summarizeProject } from "./project-summary";
 import { celebrateProjectMilestone } from "@/gamification/rewards";
 import { useTheme, withAlpha, elevation, type as typeScale, type Theme } from "@/theme";
 
@@ -63,29 +63,9 @@ export function OverviewTab({
   const styles = useMemo(() => makeStyles(t), [t]);
   const [focus, setFocus] = useState<FocusFilter>("all");
 
-  const metrics = useMemo(
-    () =>
-      computeProjectMetrics({
-        columns: data.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
-        cards: data.cards.map((c) => ({
-          id: c.id,
-          columnId: c.column_id,
-          title: c.title,
-          priority: c.priority,
-          dueDate: c.due_date ?? null,
-          updatedAt: c.updated_at,
-        })),
-        notes: data.notes.map((n) => ({
-          id: n.id,
-          title: n.title,
-          content: n.content,
-          isPinned: !!n.is_pinned,
-          updatedAt: n.updated_at,
-          tagIds: [],
-        })),
-      }),
-    [data],
-  );
+  // Shared with the projects tree's card (project-summary.ts).
+  const summary = useMemo(() => summarizeProject(data), [data]);
+  const { metrics, todayCount, bottleneck, radarAxes } = summary;
 
   const noteById = useMemo(() => new Map(data.notes.map((n) => [n.id, n])), [data.notes]);
 
@@ -99,23 +79,8 @@ export function OverviewTab({
     return d;
   }, []);
 
-  const todayCount = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "today").length, [dueCards]);
   const needsAttention = overdueCount + todayCount;
 
-  const bottleneck = useMemo<{ name: string; count: number } | null>(() => {
-    const doneColId = metricColumns.find((c) => c.type === "done")?.id;
-    const openCols = metricColumns.filter((c) => c.id !== doneColId);
-    let best: { name: string; count: number } | null = null;
-    let max = -1;
-    for (const col of openCols) {
-      const count = allCards.filter((c) => c.columnId === col.id).length;
-      if (count > max) {
-        max = count;
-        best = { name: col.name, count };
-      }
-    }
-    return best && best.count > 0 ? best : null;
-  }, [metricColumns, allCards]);
 
   const overdueCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue"), [dueCards]);
   const todayCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "today"), [dueCards]);
@@ -204,24 +169,6 @@ export function OverviewTab({
     return cols.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   }, [metricColumns]);
 
-  const radarAxes = useMemo(
-    () =>
-      buildRadarAxes({
-        completionRate,
-        openCards,
-        overdueCount,
-        todayCount,
-        notes: { length: totalNotes },
-        pinnedNotes,
-        recentNotes,
-        bottleneck,
-        priorityCounts,
-        columns: metricColumns as unknown as { id: string; type: string }[],
-        allCards,
-        activityByDay: activityByDay as unknown as { items: unknown[] }[],
-      }),
-    [completionRate, openCards, overdueCount, todayCount, totalNotes, pinnedNotes, recentNotes, bottleneck, priorityCounts, metricColumns, allCards, activityByDay],
-  );
 
   const empty = data.notes.length === 0 && allCards.length === 0;
 
