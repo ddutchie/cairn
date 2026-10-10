@@ -1,7 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps -- stable callbacks, intentional */
 import { useCallback, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
-import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { ScreenChrome } from "@/components/screen-chrome";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import {
@@ -43,7 +44,8 @@ import { Empty } from "./project/Empty";
 import { NoteFilterBar } from "./project/NoteFilterBar";
 import { type ListRow, rowKey } from "./project/list-rows";
 
-type Tab = "overview" | "notes" | "board";
+export type ProjectTab = "overview" | "notes" | "board";
+type Tab = ProjectTab;
 
 // Order of the native UISegmentedControl segments (Overview | Notes | Board);
 // the control's selectedIndex maps straight into the `tab` union.
@@ -70,14 +72,24 @@ const SEGMENT_BAR_H = 50;
 export function ProjectScreen({
   nested = false,
   projectId,
+  view,
+  onSelectView,
+  onOpenNote,
+  onOpenCard,
 }: {
   nested?: boolean;
   /**
-   * Render inside a split-view column instead of as a route: the id comes from
-   * this prop, and the router header (title + toolbar) is skipped because the
-   * column brings its own navigation bar.
+   * Split-view column: render for this project instead of the route param. The
+   * column brings its own navigation bar (see ScreenChrome).
    */
   projectId?: string;
+  /** Split-view column: the section to show; hides the segment control. */
+  view?: Tab;
+  /** Split-view column: Overview's "view notes / board" shortcuts. */
+  onSelectView?: (view: Tab) => void;
+  /** Split-view column: open a note / task beside this one instead of pushing. */
+  onOpenNote?: (id: string) => void;
+  onOpenCard?: (id: string) => void;
 }) {
   const params = useLocalSearchParams<{ id: string; back?: string }>();
   const embedded = projectId != null;
@@ -91,7 +103,13 @@ export function ProjectScreen({
   // screen (see TAB_BAR_BASE doc), so we no longer add it separately; the +24
   // is scroll slack above the bar / home indicator.
   const listBottomPad = 24 + insets.bottom;
-  const [tab, setTab] = useState<Tab>("overview");
+  const [ownTab, setOwnTab] = useState<Tab>("overview");
+  // The split view drives the section from its sidebar; a route owns it here.
+  const tab = view ?? ownTab;
+  const setTab = useCallback(
+    (next: Tab) => (onSelectView ? onSelectView(next) : setOwnTab(next)),
+    [onSelectView],
+  );
   const [project, setProject] = useState(id ? getProject(id) : null);
   const [overview, setOverview] = useState<ProjectOverviewData | null>(null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
@@ -146,7 +164,14 @@ export function ProjectScreen({
   // the memoised rows below keep the SAME onOpen reference across renders and
   // actually skip re-rendering when unrelated state (filter text, collapse)
   // changes. Passing a fresh `() => push(...)` per row would defeat React.memo.
-  const openNote = useCallback((nid: string) => router.push(noteHref(nid)), [router, noteHref]);
+  const openNote = useCallback(
+    (nid: string) => (onOpenNote ? onOpenNote(nid) : router.push(noteHref(nid))),
+    [router, noteHref, onOpenNote],
+  );
+  const openCard = useCallback(
+    (cid: string) => (onOpenCard ? onOpenCard(cid) : router.push(cardHref(cid))),
+    [router, cardHref, onOpenCard],
+  );
 
   // ── Long-press note actions ────────────────────────────────────────────────
   // A per-note contextual menu mirroring the desktop note ⋯ menu (Pin/Unpin,
@@ -323,40 +348,44 @@ export function ProjectScreen({
 
   return (
     <View style={styles.container}>
-{!embedded && (
-        <>
-      <Stack.Screen
-        options={{
-          title: project?.name || "Project",
-          // From Graph (root stack) the back target is the `(tabs)` group, so an
-          // explicit `back` label is passed; the nested Projects-list flow omits
-          // it and gets iOS's default "Projects" previous-title.
-          ...(back ? { headerBackTitle: back } : {}),
-        }}
+<ScreenChrome
+        title={project?.name || "Project"}
+        // From Graph (root stack) the back target is the `(tabs)` group, so an
+        // explicit `back` label is passed; the nested Projects-list flow omits
+        // it and gets iOS's default "Projects" previous-title.
+        back={back}
+        right={[
+          // In a split view Calendar is a sidebar section, not a push.
+          ...(embedded
+            ? []
+            : [
+                {
+                  kind: "button" as const,
+                  key: "calendar",
+                  label: "Calendar",
+                  icon: ICON_CALENDAR,
+                  onPress: toolbarPress(() =>
+                    id &&
+                    router.push(
+                      nested
+                        ? { pathname: "/projects/project/calendar", params: { project: id } }
+                        : { pathname: "/project/calendar", params: { project: id } },
+                    )
+                  ),
+                },
+              ]),
+          {
+            kind: "button",
+            key: "add",
+            label: tab === "board" ? "New task" : "New note",
+            icon: ICON_ADD,
+            onPress: toolbarPress(onAdd),
+            hidden: tab === "overview",
+          },
+        ]}
       />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button
-          icon={ICON_CALENDAR}
-          accessibilityLabel="Calendar"
-          onPress={toolbarPress(() =>
-            id &&
-            router.push(
-              nested
-                ? { pathname: "/projects/project/calendar", params: { project: id } }
-                : { pathname: "/project/calendar", params: { project: id } },
-            )
-          )}
-        />
-        <Stack.Toolbar.Button
-          icon={ICON_ADD}
-          accessibilityLabel={tab === "board" ? "New task" : "New note"}
-          onPress={toolbarPress(onAdd)}
-          hidden={tab === "overview"}
-        />
-      </Stack.Toolbar>
-        </>
-      )}
 
+      {view == null && (
       <View style={styles.segment}>
         <SegmentedControl
           // No flex:1 — Yoga's flexBasis:0 makes the native view collapse to
@@ -374,8 +403,9 @@ export function ProjectScreen({
           onChange={(e) => setTab(PROJECT_TABS[e.nativeEvent.selectedSegmentIndex] ?? "overview")}
         />
       </View>
+      )}
 
-      <View style={styles.content}>
+      <View style={[styles.content, view != null && styles.contentNoSegment]}>
         {tab === "overview" ? (
         overview ? (
           <OverviewTab
@@ -384,8 +414,8 @@ export function ProjectScreen({
             onRefresh={onRefresh}
             refreshing={refreshing}
             nav={{
-              onOpenNote: (nid) => router.push(noteHref(nid)),
-              onOpenCard: (cid) => router.push(cardHref(cid)),
+              onOpenNote: openNote,
+              onOpenCard: openCard,
               onViewNotes: () => setTab("notes"),
               onViewBoard: () => setTab("board"),
             }}
@@ -458,7 +488,7 @@ export function ProjectScreen({
               celebrateTaskDone(remainingOpen);
             }
           }}
-          onOpenCard={(cid) => router.push(cardHref(cid))}
+          onOpenCard={openCard}
           onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId, back: project?.name || "Project" } })}
           onArchive={(card) => {
             archiveCard(card.id);
@@ -518,6 +548,7 @@ function makeStyles(t: Theme) {
     // Tab content clears the floating segment bar (SEGMENT_BAR_H) plus a small
     // breathing gap so the first row isn't flush against the control.
     content: { flex: 1, paddingTop: SEGMENT_BAR_H + 8 },
+    contentNoSegment: { paddingTop: 8 },
     notesScroll: { flexGrow: 1 },
   });
 }
