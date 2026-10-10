@@ -20,6 +20,19 @@ import { useTheme } from "@/theme";
  * / white-toolbar strip is what this fixes), while the screen body stays
  * `t.background`.
  */
+/**
+ * The tab screens' content style: themed background plus horizontal safe-area
+ * insets. Horizontal insets are 0 on a portrait iPhone, but an iPhone Duo puts
+ * system chrome — status bar, nav buttons, the tab rail — along a side edge, so
+ * content must stay clear of it. Exported so a screen that overrides
+ * `contentStyle` for one layout (e.g. a split view) can restore it for another.
+ */
+export function useTabContentStyle() {
+  const t = useTheme();
+  const { left, right } = useSafeAreaInsets();
+  return { backgroundColor: t.background, paddingLeft: left, paddingRight: right };
+}
+
 export function TabStack({
   largeTitle = true,
   children,
@@ -29,10 +42,7 @@ export function TabStack({
 } = {}) {
   const scheme = useColorScheme();
   const t = useTheme();
-  // Horizontal insets are 0 on a portrait iPhone, but an unfolded iPhone Duo
-  // (and landscape) puts system chrome — status bar, nav buttons, the tab rail —
-  // along a side edge. Keep screen content clear of it.
-  const { left, right } = useSafeAreaInsets();
+  const contentStyle = useTabContentStyle();
   return (
     <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack
@@ -43,7 +53,7 @@ export function TabStack({
           headerTitleStyle: { color: t.textPrimary },
           headerTintColor: t.accent,
           headerShadowVisible: false,
-          contentStyle: { backgroundColor: t.background, paddingLeft: left, paddingRight: right },
+          contentStyle,
         }}
       >
         {children}

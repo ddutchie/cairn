@@ -5,6 +5,7 @@ import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { getActiveSourceName } from "@/db";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
+import { useTabContentStyle } from "@/components/TabStack";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -23,6 +24,8 @@ export default function ProjectsScreen() {
   const router = useRouter();
   const t = useTheme();
   const { width } = useWindowDimensions();
+  const contentStyle = useTabContentStyle();
+  const split = width >= SPLIT_MIN_WIDTH;
   const syncBadge = useSyncBadge();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   // The active workspace name doubles as the header title; it changes when the
@@ -52,7 +55,9 @@ export default function ProjectsScreen() {
 
   const header = (
     <>
-      <Stack.Screen options={{ title: workspaceName ?? "Projects" }} />
+      {/* Set explicitly: Stack.Screen options persist, so the split layout's
+          overrides would otherwise stick after folding back to narrow. */}
+      <Stack.Screen options={{ title: workspaceName ?? "Projects", headerShown: true, contentStyle }} />
       <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...syncBadge} />
@@ -89,7 +94,7 @@ export default function ProjectsScreen() {
   // SPIKE: wide windows (unfolded iPhone Duo, iPad) get a native split view.
   // Its columns bring their own navigation bars, so the stack header is hidden
   // and the side-inset padding from TabStack is dropped (SwiftUI owns it).
-  if (width >= SPLIT_MIN_WIDTH) {
+  if (split) {
     return (
       <>
         <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: t.background } }} />
