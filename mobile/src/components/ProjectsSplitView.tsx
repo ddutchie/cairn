@@ -54,17 +54,15 @@ import { useTheme } from "@/theme";
 import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
 
 /**
- * Projects on wide windows (unfolded iPhone Duo, iPad), laid out like desktop:
+ * Projects on wide windows (unfolded iPhone Duo, iPad): list | item.
  *
- *   sidebar  — project switcher + progress, and the project's views
- *   content  — the view's list (notes tree, board)
- *   detail   — the open note / task
- *
- * on wide iPads. Narrower windows (an unfolded Duo, a portrait iPad) show
- * list | item, with the sidebar's contents in the list's title menu. Overview
- * and Calendar have no list → item shape, so the sidebar becomes the left
- * column instead. On a Duo the
- * left column always ends on the hinge: list on one page, item on the other.
+ *   iPad — like Mail: projects and their views are listed in the system tab
+ *          sidebar; Notes shows list | note, every other view the full width.
+ *          Column buttons share the floating tab bar's row.
+ *   Duo  — the project and views are in the list's title menu; Overview and
+ *          Calendar (no list) get the views panel as their left column. The
+ *          left column always ends on the hinge: list on one page, item on
+ *          the other.
  */
 
 type SplitViewKind = ProjectTab | "calendar";
@@ -94,7 +92,6 @@ function useSelection(): Selection {
   return useSyncExternalStore(subscribe, () => selection);
 }
 
-const ALL_COLUMNS_MIN_WIDTH = 1100;
 
 // iPad's floating tab bar owns the top row, and SwiftUI column bars go below
 // it — a whole band of wasted height. There the columns hide their bars and
@@ -127,6 +124,9 @@ export function ProjectsSplitView({
   // remounts or moves).
   const boardFull = view === "board";
   const listView = view === "notes";
+  // Views without a list take the whole window. On iPad that's every view but
+  // Notes: the views live in the tab sidebar, so no column is needed for them.
+  const fullWidth = boardFull || (BRIDGE_HEADER && !listView);
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
@@ -144,18 +144,14 @@ export function ProjectsSplitView({
   // ── Duo posture ────────────────────────────────────────────────────────────
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   const hasHinge = hinge != null && hinge !== "closed";
-  // Three native columns need room (wide iPads). Narrower — an unfolded Duo
-  // is ~950pt — shows two: list | item, with the project + views in the list's
-  // title menu instead of a third column squeezed across the fold.
-  const roomy = width >= ALL_COLUMNS_MIN_WIDTH;
-  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>(boardFull ? "detailOnly" : "all");
-  // Full-width board hides the other columns (the system sidebar button still
-  // reveals them); leaving it restores them. Adjusted during render, not in an
+  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>(fullWidth ? "detailOnly" : "all");
+  // Full-width views hide the other column (the system sidebar button still
+  // reveals it); leaving them restores it. Adjusted during render, not in an
   // effect, so the columns never flash before collapsing.
-  const [wasBoardFull, setWasBoardFull] = useState(boardFull);
-  if (wasBoardFull !== boardFull) {
-    setWasBoardFull(boardFull);
-    setVisibility(boardFull ? "detailOnly" : "all");
+  const [wasFullWidth, setWasFullWidth] = useState(fullWidth);
+  if (wasFullWidth !== fullWidth) {
+    setWasFullWidth(fullWidth);
+    setVisibility(fullWidth ? "detailOnly" : "all");
   }
   const half = width / 2;
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
@@ -169,20 +165,34 @@ export function ProjectsSplitView({
   }, []);
   const hideBar = BRIDGE_HEADER ? [navigationBarHidden()] : [];
 
-  // iPad: projects listed under the Projects tab in the system tab sidebar,
-  // like Mail's mailboxes. A row switches project (the Projects tab is index 0).
+  // iPad: projects, each with its views, listed under the Projects tab in the
+  // system tab sidebar — like Mail's accounts and mailboxes. (The Projects tab
+  // is index 0.)
   const sidebarKey = projects.map((p) => `${p.id}:${p.name}`).join("|");
   useEffect(() => {
-    if (!BRIDGE_HEADER) return;
+    if (!BRIDGE_HEADER || !projectId) return;
     setSidebarGroup(
       0,
-      projects.map((p) => ({ id: p.id, title: p.name, icon: "folder" })),
-      projectId,
+      projects.map((p) => ({
+        id: p.id,
+        title: p.name,
+        icon: "folder",
+        children: VIEWS.map((v) => ({ id: v.id, title: v.title, icon: v.icon })),
+      })),
+      [projectId, view],
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sidebarKey captures projects
-  }, [sidebarKey, projectId]);
+  }, [sidebarKey, projectId, view]);
   useEffect(
-    () => onSidebarItem((id) => setSelection({ projectId: id, noteId: null, cardId: null })),
+    () =>
+      onSidebarItem(([id, nextView]) => {
+        const switching = id !== selection.projectId;
+        setSelection({
+          projectId: id,
+          ...(nextView ? { view: nextView as SplitViewKind } : {}),
+          ...(switching ? { noteId: null, cardId: null } : {}),
+        });
+      }),
     [],
   );
 
@@ -373,12 +383,11 @@ export function ProjectsSplitView({
     </NavigationSplitView.Detail>
   );
 
-  const viewTitle = VIEWS.find((v) => v.id === view)?.title ?? "";
   const toggleSidebar = () => setVisibility((v) => (v === "detailOnly" ? "all" : "detailOnly"));
   // Phone (Duo): the columns draw their own bars, so the stack header hides.
   // iPad: an untitled header in the tab bar's row carries every button — the
-  // sidebar toggle and project / views menu, the list's items, then (right of
-  // the tab bar) the open item's.
+  // focus toggle and the list's items, then (right of the tab bar) the open
+  // item's.
   const header = BRIDGE_HEADER ? (
     <>
       <Stack.Screen
@@ -391,36 +400,16 @@ export function ProjectsSplitView({
         }}
       />
       <Stack.Toolbar placement="left">
-        {/* Not a second sidebar icon: the tab bar already shows one. This
-            widens the open item to the whole window and back. */}
-        <Stack.Toolbar.Button
-          icon={visibility === "detailOnly" ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"}
-          accessibilityLabel={visibility === "detailOnly" ? "Show list" : "Focus"}
-          onPress={toggleSidebar}
-        />
-        <Stack.Toolbar.Menu
-          icon={VIEWS.find((v) => v.id === view)?.icon ?? "folder"}
-          title={`${project?.name ?? "Project"} · ${viewTitle}`}
-          accessibilityLabel="Views and projects"
-        >
-          {VIEWS.map((v) => (
-            <Stack.Toolbar.MenuAction key={v.id} icon={v.icon} isOn={v.id === view} onPress={() => selectView(v.id)}>
-              {v.title}
-            </Stack.Toolbar.MenuAction>
-          ))}
-          <Stack.Toolbar.Menu icon="folder" title="Switch project">
-            <Stack.Toolbar.Label>Switch project</Stack.Toolbar.Label>
-            {projects.map((p) => (
-              <Stack.Toolbar.MenuAction
-                key={p.id}
-                isOn={p.id === projectId}
-                onPress={() => setSelection({ projectId: p.id, noteId: null, cardId: null })}
-              >
-                {p.name}
-              </Stack.Toolbar.MenuAction>
-            ))}
-          </Stack.Toolbar.Menu>
-        </Stack.Toolbar.Menu>
+        {/* Views and projects live in the tab sidebar. This widens the open
+            note to the whole window and back (not a second sidebar icon: the
+            tab bar already has one). */}
+        {fullWidth ? null : (
+          <Stack.Toolbar.Button
+            icon={visibility === "detailOnly" ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"}
+            accessibilityLabel={visibility === "detailOnly" ? "Show list" : "Focus"}
+            onPress={toggleSidebar}
+          />
+        )}
         {routeItems(bridgedItems(bridged.primary))}
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">{routeItems(bridgedItems(bridged.secondary))}</Stack.Toolbar>
@@ -437,30 +426,10 @@ export function ProjectsSplitView({
 
   const splitModifiers = [tint(t.accent), onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))];
 
-  // ── Wide iPad: three native columns ────────────────────────────────────────
-  // Each layout gets its own Host key: switching between them (rotating an
-  // iPad) must remount the columns — a hosted React Native view moved into a
-  // different SwiftUI column otherwise renders blank.
-  if (roomy) {
-    return withHeader(
-      <Host key="three-column" style={{ flex: 1 }}>
-        <NavigationSplitView columnVisibility={visibility} onColumnVisibilityChange={setVisibility} modifiers={splitModifiers}>
-          <NavigationSplitView.Sidebar>
-            {viewsPanel([navigationTitle(workspaceName), navigationSplitViewColumnWidth({ min: 240, ideal: 270, max: 320 })])}
-          </NavigationSplitView.Sidebar>
-          {listView ? (
-            <NavigationSplitView.Content>
-              {listColumn([navigationSplitViewColumnWidth({ min: 280, ideal: 340, max: 420 })])}
-            </NavigationSplitView.Content>
-          ) : null}
-          {detail}
-        </NavigationSplitView>
-      </Host>
-    );
-  }
-
-  // ── Duo / narrower: two columns; views + projects in the title menu ────────
-  // On a Duo the left column asks for exactly half the window in every posture.
+  // ── Two columns: list | item ──────────────────────────────────────────────
+  // Each layout gets its own Host key: a hosted React Native view moved into a
+  // different SwiftUI column otherwise renders blank. On a Duo the left column
+  // asks for exactly half the window in every posture.
   const leftWidth = hasHinge
     ? navigationSplitViewColumnWidth(half)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });

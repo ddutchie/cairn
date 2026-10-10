@@ -7,11 +7,12 @@ import UIKit
 /// one tab into a `UITabGroup` with sidebar-only children (e.g. projects).
 /// Children have no view controller, so selecting one keeps showing the
 /// group's (the original tab's) screen — react-native-screens sees an ordinary
-/// selection of that tab — and the child's id is reported to JS.
+/// selection of that tab — and the child's id is reported to JS. A child may
+/// have children of its own (a project's views), shown as a nested group.
 public class TabSidebarModule: Module {
   private var groupIndex = 0
-  private var items: [[String: String]] = []
-  private var selectedId: String?
+  private var items: [[String: Any]] = []
+  private var selectedPath: [String] = []
   private var proxy: AnyObject?
 
   public func definition() -> ModuleDefinition {
@@ -19,26 +20,56 @@ public class TabSidebarModule: Module {
 
     Events("onSelectItem")
 
-    /// `items`: [{ id, title, icon? }] shown under tab `index` in the sidebar.
-    Function("setGroup") { (index: Int, items: [[String: String]], selectedId: String?) in
-      let changed = index != self.groupIndex || items != self.items
+    /// `items`: [{ id, title, icon?, children?: [{ id, title, icon? }] }]
+    /// shown under tab `index`; `selectedPath`: ids of the selected row, e.g.
+    /// [projectId, "board"]. A row's reported id is its path joined by "/".
+    Function("setGroup") { (index: Int, items: [[String: Any]], selectedPath: [String]) in
+      let changed = index != self.groupIndex || !(items as NSArray).isEqual(to: self.items)
       self.groupIndex = index
       self.items = items
-      self.selectedId = selectedId
+      self.selectedPath = selectedPath
       DispatchQueue.main.async {
-        if changed || self.groupRef == nil { self.apply(attempt: 0) } else { self.highlight() }
+        if changed || !self.isInstalled() { self.apply(attempt: 0) } else { self.highlight() }
       }
     }
   }
 
   private weak var groupRef: AnyObject?
-  @available(iOS 18.0, *)
-  private var group: UITabGroup? { groupRef as? UITabGroup }
+  private weak var tabBarController: UITabBarController?
 
-  /// Marks the selected row in the sidebar (the group's view is unchanged).
+  /// False when react-native-screens has since reset its tabs (or we never ran).
+  private func isInstalled() -> Bool {
+    guard #available(iOS 18.0, *), let group = groupRef as? UITabGroup, let tbc = tabBarController else { return false }
+    return tbc.tabs.contains { $0 === group }
+  }
+
+  /// Highlights the selected row: while the group's tab is showing, the row
+  /// itself is selected (it has no screen, so the tab's screen stays).
   private func highlight() {
-    guard #available(iOS 18.0, *), let group, let selectedId else { return }
-    group.defaultChildIdentifier = Self.childPrefix + selectedId
+    guard #available(iOS 18.0, *), let root = groupRef as? UITabGroup, let tbc = tabBarController else { return }
+    var group = root
+    var path: [String] = []
+    var leaf: UITab?
+    for id in selectedPath {
+      path.append(id)
+      let childId = Self.childPrefix + path.joined(separator: "/")
+      group.defaultChildIdentifier = childId
+      leaf = group.children.first { $0.identifier == childId }
+      guard let next = leaf as? UITabGroup else { break }
+      group = next
+    }
+    guard let leaf, tbc.selectedTab !== leaf, Self.isWithin(tbc.selectedTab, root) else { return }
+    tbc.selectedTab = leaf
+  }
+
+  @available(iOS 18.0, *)
+  private static func isWithin(_ tab: UITab?, _ root: UITab) -> Bool {
+    var current = tab
+    while let t = current {
+      if t === root { return true }
+      current = t.parent
+    }
+    return false
   }
 
   private func apply(attempt: Int) {
@@ -64,18 +95,10 @@ public class TabSidebarModule: Module {
       let item = vc.tabBarItem
       let id = "tab-\(i)"
       if i == groupIndex {
-        let children: [UITab] = items.map { it in
-          let child = UITab(
-            title: it["title"] ?? "",
-            image: UIImage(systemName: it["icon"] ?? "folder"),
-            identifier: Self.childPrefix + (it["id"] ?? ""),
-            viewControllerProvider: nil
-          )
-          child.preferredPlacement = .sidebarOnly
-          return child
-        }
+        let children = items.map { Self.row($0, parent: []) }
         let group = UITabGroup(title: item?.title ?? "", image: item?.image, identifier: id, children: children) { _ in vc }
         groupRef = group
+        tabBarController = tbc
         tabs.append(group)
       } else if let existing = existingTabs.first(where: { $0.viewController === vc }) {
         // Keep UIKit's own tab (e.g. the search tab's special placement).
@@ -87,8 +110,8 @@ public class TabSidebarModule: Module {
       }
     }
 
-    // Child rows are reported, never selected: wrap the existing delegate
-    // (react-native-screens' controller) and veto them.
+    // Wrap the existing delegate (react-native-screens' controller) to hear
+    // about child rows; everything else is forwarded to it untouched.
     if !(tbc.delegate is SidebarDelegateProxy) {
       let proxy = SidebarDelegateProxy(inner: tbc.delegate) { [weak self] id in
         self?.sendEvent("onSelectItem", ["id": id])
@@ -103,6 +126,29 @@ public class TabSidebarModule: Module {
   }
 
   static let childPrefix = "sidebar-item:"
+
+  /// A sidebar-only row; with children it becomes a collapsible nested group.
+  @available(iOS 18.0, *)
+  private static func row(_ it: [String: Any], parent: [String]) -> UITab {
+    let path = parent + [it["id"] as? String ?? ""]
+    let identifier = childPrefix + path.joined(separator: "/")
+    let title = it["title"] as? String ?? ""
+    let image = UIImage(systemName: it["icon"] as? String ?? "folder")
+    let tab: UITab
+    if let children = it["children"] as? [[String: Any]], !children.isEmpty {
+      tab = UITabGroup(
+        title: title,
+        image: image,
+        identifier: identifier,
+        children: children.map { row($0, parent: path) },
+        viewControllerProvider: nil
+      )
+    } else {
+      tab = UITab(title: title, image: image, identifier: identifier, viewControllerProvider: nil)
+    }
+    tab.preferredPlacement = .sidebarOnly
+    return tab
+  }
 
   /// react-native-screens marks the search tab with the system search item.
   private static func isSearch(_ item: UITabBarItem?) -> Bool {
@@ -154,7 +200,6 @@ final class SidebarDelegateProxy: NSObject, UITabBarControllerDelegate {
   func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
     if tab.identifier.hasPrefix(TabSidebarModule.childPrefix) {
       onItem(String(tab.identifier.dropFirst(TabSidebarModule.childPrefix.count)))
-      return true
     }
     return true
   }

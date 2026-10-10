@@ -11,20 +11,24 @@ export interface SidebarItem {
   title: string;
   /** SF Symbol name. */
   icon?: string;
+  /** Nested rows (shown as a collapsible group), e.g. a project's views. */
+  children?: SidebarItem[];
 }
 
 interface TabSidebarModule {
-  setGroup(index: number, items: SidebarItem[], selectedId: string | null): void;
+  setGroup(index: number, items: SidebarItem[], selectedPath: string[]): void;
   addListener(event: "onSelectItem", listener: (e: { id: string }) => void): EventSubscription;
 }
 
 const native = Platform.OS === "ios" ? requireOptionalNativeModule<TabSidebarModule>("TabSidebar") : null;
 
-export function setSidebarGroup(index: number, items: SidebarItem[], selectedId: string | null): void {
-  native?.setGroup(index, items, selectedId);
+/** Shows `items` under tab `index`; `selectedPath` is the highlighted row's ids. */
+export function setSidebarGroup(index: number, items: SidebarItem[], selectedPath: string[]): void {
+  native?.setGroup(index, items, selectedPath);
 }
 
-export function onSidebarItem(listener: (id: string) => void): () => void {
-  const sub = native?.addListener("onSelectItem", (e) => listener(e.id));
+/** Reports a tapped row as its path of ids, e.g. [projectId, "board"]. */
+export function onSidebarItem(listener: (path: string[]) => void): () => void {
+  const sub = native?.addListener("onSelectItem", (e) => listener(e.id.split("/")));
   return () => sub?.remove();
 }
