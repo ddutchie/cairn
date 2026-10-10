@@ -43,12 +43,17 @@ export function TabStack({
   const scheme = useColorScheme();
   const t = useTheme();
   const contentStyle = useTabContentStyle();
+  // With system chrome on a side edge (iPhone Duo's tab rail) a surface-coloured
+  // header stops short of the rail and reads as a stray band, so it takes the
+  // page colour there instead.
+  const { left, right } = useSafeAreaInsets();
+  const headerBackground = left > 0 || right > 0 ? t.background : t.surface;
   return (
     <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack
         screenOptions={{
           headerLargeTitle: largeTitle,
-          headerStyle: { backgroundColor: t.surface },
+          headerStyle: { backgroundColor: headerBackground },
           headerLargeTitleStyle: { color: t.textPrimary },
           headerTitleStyle: { color: t.textPrimary },
           headerTintColor: t.accent,
