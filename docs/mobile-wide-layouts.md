@@ -53,13 +53,25 @@ it renders depends on context:
 
 ### Picking a project and view
 The same tree on both wide devices — projects that expand to Overview / Notes /
-Board / Calendar, like Mail's accounts and mailboxes:
+Board / Calendar, like Mail's accounts and mailboxes. One model,
+`useProjectsTree` (`src/components/projects-tree.ts`: nodes with count badges,
+the selected path, `select(path)`), feeds two renderers:
 
 - **iPad** — the system tab sidebar (`modules/tab-sidebar`, see below). Picking a
   row from any tab opens Projects on it; the open view is highlighted.
 - **Duo** — `ProjectsTreePanel`: a SwiftUI sidebar list in a panel that slides
   over the left page and ends on the hinge. Opened by the folder button in each
   column's bar.
+
+The system sidebar is a feature flag (`SYSTEM_SIDEBAR` in `ProjectsSplitView`)
+and an enhancement, not a dependency: `setSidebarGroup` resolves `false` when it
+can't install (not an iPad, iPadOS < 18, module missing, no tab controller
+found), and the iPad then shows the same panel and folder button as the Duo.
+
+### The open item
+The note open beside the list is tinted in it (`NoteRowItem selected`), and the
+task open beside the board is outlined on its card (`DraggableBoard
+selectedCardId`) — both via `ProjectScreen selectedId`.
 
 ### Hinge (Duo)
 `onHingeChange` (iOS 27.1 SDK) on the split / stack reports the posture; the last
@@ -163,12 +175,10 @@ has the pill, so the bridge stays unless we accept the band there.
 ### Recommendation
 Keep the shared JS model and make the renderer the only per-device difference:
 
-1. Extract the tree data (`projects × VIEWS`, selected path, `onSelect`) into one
-   hook used by both the iPad sidebar and the Duo panel — so behaviour can't
-   drift.
-2. Keep `tab-sidebar` behind a feature flag with **A** as the fallback: if the
-   module fails to install (or a react-native-screens upgrade breaks it), the
-   iPad falls back to the same panel as the Duo. That makes the native piece an
-   enhancement rather than a dependency.
+1. ✅ The tree data lives in one hook (`useProjectsTree`) used by both the iPad
+   sidebar and the Duo panel, so behaviour can't drift.
+2. ✅ `tab-sidebar` sits behind a flag with **A** as the automatic fallback: if
+   the module can't install (or a react-native-screens upgrade breaks it), the
+   iPad gets the same panel as the Duo.
 3. Pursue **C** now (small) and **B** opportunistically; delete the modules as the
    upstream APIs land.

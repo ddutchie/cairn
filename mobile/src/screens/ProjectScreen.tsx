@@ -76,6 +76,7 @@ export function ProjectScreen({
   onSelectView,
   onOpenNote,
   onOpenCard,
+  selectedId = null,
 }: {
   nested?: boolean;
   /**
@@ -90,6 +91,8 @@ export function ProjectScreen({
   /** Split-view column: open a note / task beside this one instead of pushing. */
   onOpenNote?: (id: string) => void;
   onOpenCard?: (id: string) => void;
+  /** Split-view column: the note / task open beside this list, marked in it. */
+  selectedId?: string | null;
 }) {
   const params = useLocalSearchParams<{ id: string; back?: string }>();
   const embedded = projectId != null;
@@ -332,9 +335,17 @@ export function ProjectScreen({
       item.kind === "folder" ? (
         <FolderRow node={item.node} depth={item.depth} collapsed={!!collapsed[item.node.path]} onToggle={toggle} t={t} />
       ) : (
-        <NoteRowItem note={item.note} depth={item.depth} tags={tagMap.get(item.note.id)} onOpen={openNote} onLongPress={showNoteActions} t={t} />
+        <NoteRowItem
+          note={item.note}
+          depth={item.depth}
+          tags={tagMap.get(item.note.id)}
+          onOpen={openNote}
+          onLongPress={showNoteActions}
+          selected={item.note.id === selectedId}
+          t={t}
+        />
       ),
-    [collapsed, toggle, t, tagMap, openNote, showNoteActions],
+    [collapsed, toggle, t, tagMap, openNote, showNoteActions, selectedId],
   );
 
   const onAdd = () => {
@@ -442,6 +453,7 @@ export function ProjectScreen({
                 data={rows}
                 keyExtractor={rowKey}
                 renderItem={renderRow}
+                extraData={selectedId}
                 contentContainerStyle={[styles.notesScroll, { paddingBottom: listBottomPad }]}
                 keyboardShouldPersistTaps="handled"
                 // Windowing tuned for a text-row list: keep a modest buffer so
@@ -456,6 +468,7 @@ export function ProjectScreen({
         )
       ) : (
         <DraggableBoard
+          selectedCardId={selectedId}
           columns={columns}
           cards={cards}
           bottomInset={insets.bottom}

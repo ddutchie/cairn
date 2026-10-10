@@ -11,20 +11,33 @@ export interface SidebarItem {
   title: string;
   /** SF Symbol name. */
   icon?: string;
+  /** A count shown beside the row. */
+  badge?: string;
   /** Nested rows (shown as a collapsible group), e.g. a project's views. */
   children?: SidebarItem[];
 }
 
 interface TabSidebarModule {
-  setGroup(index: number, items: SidebarItem[], selectedPath: string[]): void;
+  setGroup(index: number, items: SidebarItem[], selectedPath: string[]): Promise<boolean>;
   addListener(event: "onSelectItem", listener: (e: { id: string }) => void): EventSubscription;
 }
 
 const native = Platform.OS === "ios" ? requireOptionalNativeModule<TabSidebarModule>("TabSidebar") : null;
 
-/** Shows `items` under tab `index`; `selectedPath` is the highlighted row's ids. */
-export function setSidebarGroup(index: number, items: SidebarItem[], selectedPath: string[]): void {
-  native?.setGroup(index, items, selectedPath);
+/** Whether the system tab sidebar can be used here at all (iPad, module built in). */
+export const sidebarSupported = native != null && Platform.OS === "ios" && Platform.isPad;
+
+/**
+ * Shows `items` under tab `index`; `selectedPath` is the highlighted row's ids.
+ * Resolves false where the sidebar can't be used, so callers can fall back.
+ */
+export async function setSidebarGroup(index: number, items: SidebarItem[], selectedPath: string[]): Promise<boolean> {
+  if (!native) return false;
+  try {
+    return await native.setGroup(index, items, selectedPath);
+  } catch {
+    return false;
+  }
 }
 
 /** Reports a tapped row as its path of ids, e.g. [projectId, "board"]. */

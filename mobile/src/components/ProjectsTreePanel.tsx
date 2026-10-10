@@ -15,47 +15,33 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
-import type { SFSymbol } from "sf-symbols-typescript";
-import type { ProjectSummary } from "@/db/queries";
+import type { ProjectsTree, TreeNode } from "@/components/projects-tree";
 import { useTheme } from "@/theme";
 
 /**
- * Projects tree for the iPhone Duo — the iPad gets the same tree in the system
- * tab sidebar, which iPhone-idiom devices never show. Each project expands to
- * its views, like Mail's accounts and mailboxes. It slides over the left page
- * (ending on the hinge) instead of pushing the columns across it.
+ * The in-app renderer of the projects tree (see projects-tree.ts): a panel that
+ * slides over the left page — ending on the hinge on a Duo — instead of pushing
+ * the columns across it. Used where the system tab sidebar isn't available:
+ * the iPhone Duo (phone idiom never shows it) and the iPad as a fallback.
  */
-export interface TreeView {
-  id: string;
-  title: string;
-  icon: SFSymbol;
-}
-
 export function ProjectsTreePanel({
   open,
   onClose,
   width,
   title,
-  projects,
-  views,
-  projectId,
-  view,
+  tree,
   progress,
-  onSelect,
 }: {
   open: boolean;
   onClose: () => void;
   width: number;
   title: string;
-  projects: ProjectSummary[];
-  views: TreeView[];
-  projectId: string;
-  view: string;
+  tree: ProjectsTree;
   /** The open project's task progress, shown above its views. */
   progress: { closed: number; total: number; open: number } | null;
-  onSelect: (projectId: string, view: string) => void;
 }) {
   const t = useTheme();
+  const [projectId, view] = tree.selectedPath;
   // The open project starts expanded; others keep whatever the user chose.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ [projectId]: true });
   const [seenProject, setSeenProject] = useState(projectId);
@@ -82,13 +68,12 @@ export function ProjectsTreePanel({
 
   // SwiftUI colours take hex; the accent is a #rrggbb token, so append alpha.
   const selectedRow = /^#[0-9a-f]{6}$/i.test(t.accent) ? `${t.accent}33` : t.accent;
-  const row = (p: ProjectSummary, v: TreeView) => {
+  const row = (p: TreeNode, v: TreeNode) => {
     const selected = p.id === projectId && v.id === view;
-    const count = v.id === "notes" ? p.noteCount : v.id === "board" ? p.cardCount : 0;
     return (
       <Label
         key={v.id}
-        title={count ? `${v.title}  ·  ${count}` : v.title}
+        title={v.badge ? `${v.title}  ·  ${v.badge}` : v.title}
         systemImage={v.icon}
         modifiers={[
           // Tap + drawn highlight: List selection only works in edit mode on
@@ -96,7 +81,7 @@ export function ProjectsTreePanel({
           padding({ horizontal: 4, vertical: 6 }),
           frame({ maxWidth: Infinity, alignment: "leading" }),
           contentShape(shapes.rectangle()),
-          onTapGesture(() => onSelect(p.id, v.id)),
+          onTapGesture(() => tree.select([p.id, v.id])),
           ...(selected ? [background(selectedRow, shapes.roundedRectangle({ cornerRadius: 10 }))] : []),
         ]}
       />
@@ -112,14 +97,14 @@ export function ProjectsTreePanel({
         <Host style={{ flex: 1 }}>
           <List modifiers={[listStyle("sidebar"), tint(t.accent)]}>
             <Section title={title}>
-              {projects.map((p) => (
+              {tree.nodes.map((p) => (
                 <DisclosureGroup
                   key={p.id}
                   isExpanded={expanded[p.id] ?? false}
                   onIsExpandedChange={(next) => setExpanded((e) => ({ ...e, [p.id]: next }))}
                 >
                   <DisclosureGroup.Label>
-                    <Label title={p.name} systemImage={p.id === projectId ? "folder.fill" : "folder"} />
+                    <Label title={p.title} systemImage={p.id === projectId ? "folder.fill" : "folder"} />
                   </DisclosureGroup.Label>
                   {p.id === projectId && progress && progress.total > 0 ? (
                     <VStack alignment="leading" spacing={6} modifiers={[padding({ vertical: 4 })]}>
@@ -134,7 +119,7 @@ export function ProjectsTreePanel({
                       </Text>
                     </VStack>
                   ) : null}
-                  {views.map((v) => row(p, v))}
+                  {(p.children ?? []).map((v) => row(p, v))}
                 </DisclosureGroup>
               ))}
             </Section>

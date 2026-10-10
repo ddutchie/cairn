@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type R
 import { Platform, useWindowDimensions, View } from "react-native";
 import { Stack } from "expo-router";
 import { navigationBarHidden } from "@modules/swiftui-modifiers";
-import { onSidebarItem, setSidebarGroup } from "@modules/tab-sidebar";
+import { onSidebarItem, setSidebarGroup, sidebarSupported } from "@modules/tab-sidebar";
 import { Host } from "@expo/ui";
 import {
   ContentUnavailableView,
@@ -25,6 +25,7 @@ import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { ChatPreviewPane } from "@/components/chat/ChatPreview";
 import { ProjectsTreePanel } from "@/components/ProjectsTreePanel";
+import { useProjectsTree } from "@/components/projects-tree";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
   bridgedItems,
@@ -83,6 +84,11 @@ function useSelection(): Selection {
 // row. (The Duo's tab bar is a side rail, so its columns keep their own bars.)
 const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 
+// Feature flag: the projects tree in the iPad's system tab sidebar
+// (modules/tab-sidebar). Off — or if the module can't install — the iPad uses
+// the same slide-over panel as the Duo.
+const SYSTEM_SIDEBAR = sidebarSupported;
+
 const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
   { id: "overview", title: "Overview", icon: "number" },
   { id: "notes", title: "Notes", icon: "doc.text" },
@@ -132,6 +138,9 @@ export function ProjectsSplitView({
   const hasHinge = hinge != null && hinge !== "closed";
   // Notes only: "detailOnly" is focus mode (the note gets the whole window).
   const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("all");
+  // Focus needs an open note: never leave an empty detail as the only column.
+  // Adjusted during render, so the list never flashes hidden.
+  if (visibility === "detailOnly" && !sel.noteId) setVisibility("all");
   const half = width / 2;
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
@@ -144,36 +153,29 @@ export function ProjectsSplitView({
   }, []);
   const hideBar = BRIDGE_HEADER ? [navigationBarHidden()] : [];
 
-  // iPad: projects, each with its views, listed under the Projects tab in the
-  // system tab sidebar — like Mail's accounts and mailboxes. (The Projects tab
-  // is index 0.)
-  const sidebarKey = projects.map((p) => `${p.id}:${p.name}`).join("|");
+  // The projects tree, one model for both renderers: the iPad's system tab
+  // sidebar (the Projects tab is index 0) or the in-app panel.
+  const onTreeSelect = useCallback((id: string, next?: string) => {
+    setSelection({
+      projectId: id,
+      ...(next ? { view: next as SplitViewKind } : {}),
+      ...(id !== selection.projectId ? { noteId: null, cardId: null } : {}),
+    });
+    setTreeOpen(false);
+  }, []);
+  const tree = useProjectsTree({ projects, views: VIEWS, projectId, view, onSelect: onTreeSelect });
+  const [systemSidebar, setSystemSidebar] = useState(SYSTEM_SIDEBAR);
   useEffect(() => {
-    if (!BRIDGE_HEADER || !projectId) return;
-    setSidebarGroup(
-      0,
-      projects.map((p) => ({
-        id: p.id,
-        title: p.name,
-        icon: "folder",
-        children: VIEWS.map((v) => ({ id: v.id, title: v.title, icon: v.icon })),
-      })),
-      [projectId, view],
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sidebarKey captures projects
-  }, [sidebarKey, projectId, view]);
-  useEffect(
-    () =>
-      onSidebarItem(([id, nextView]) => {
-        const switching = id !== selection.projectId;
-        setSelection({
-          projectId: id,
-          ...(nextView ? { view: nextView as SplitViewKind } : {}),
-          ...(switching ? { noteId: null, cardId: null } : {}),
-        });
-      }),
-    [],
-  );
+    if (!SYSTEM_SIDEBAR || !projectId) return;
+    let live = true;
+    void setSidebarGroup(0, tree.nodes, tree.selectedPath).then((ok) => {
+      if (live) setSystemSidebar(ok);
+    });
+    return () => {
+      live = false;
+    };
+  }, [tree.nodes, tree.selectedPath, projectId]);
+  useEffect(() => (SYSTEM_SIDEBAR ? onSidebarItem(tree.select) : undefined), [tree.select]);
 
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next });
@@ -195,6 +197,7 @@ export function ProjectsSplitView({
         nested
         projectId={projectId}
         view={view as ProjectTab}
+        selectedId={sel.noteId}
         onSelectView={selectView}
         onOpenNote={openNote}
         onOpenCard={openCard}
@@ -214,8 +217,8 @@ export function ProjectsSplitView({
     setVisibility("all");
   };
 
-  // Duo: opens the projects tree (the iPad has the system tab sidebar).
-  const projectsButton = BRIDGE_HEADER
+  // Opens the in-app tree (not needed while the system sidebar has it).
+  const projectsButton = systemSidebar
     ? []
     : [{ key: "projects", label: "Projects", icon: "folder" as const, onPress: () => setTreeOpen(true) }];
 
@@ -230,6 +233,7 @@ export function ProjectsSplitView({
                 nested
                 projectId={projectId}
                 view="board"
+                selectedId={sel.cardId}
                 onSelectView={selectView}
                 onOpenNote={openNote}
                 onOpenCard={openCard}
@@ -299,7 +303,7 @@ export function ProjectsSplitView({
         {/* Views and projects live in the tab sidebar. This widens the open
             note to the whole window and back (not a second sidebar icon: the
             tab bar already has one). */}
-        {fullWidth ? null : (
+        {fullWidth || !sel.noteId ? null : (
           <Stack.Toolbar.Button
             icon={visibility === "detailOnly" ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"}
             accessibilityLabel={visibility === "detailOnly" ? "Show list" : "Focus"}
@@ -326,25 +330,14 @@ export function ProjectsSplitView({
   const leftWidth = hasHinge
     ? navigationSplitViewColumnWidth(half)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
-  const tree = BRIDGE_HEADER ? null : (
+  const treePanel = systemSidebar ? null : (
     <ProjectsTreePanel
       open={treeOpen}
       onClose={() => setTreeOpen(false)}
       width={hasHinge ? half : Math.min(360, Math.round(width * 0.4))}
       title={workspaceName}
-      projects={projects}
-      views={VIEWS}
-      projectId={projectId}
-      view={view}
+      tree={tree}
       progress={progress}
-      onSelect={(id, next) => {
-        setSelection({
-          projectId: id,
-          view: next as SplitViewKind,
-          ...(id !== projectId ? { noteId: null, cardId: null } : {}),
-        });
-        setTreeOpen(false);
-      }}
     />
   );
 
@@ -356,7 +349,7 @@ export function ProjectsSplitView({
         <Host key="single" style={{ flex: 1 }}>
           <NavigationStack modifiers={[tint(t.accent), hingeModifier]}>{detail}</NavigationStack>
         </Host>
-        {tree}
+        {treePanel}
       </>,
     );
   }
@@ -389,7 +382,7 @@ export function ProjectsSplitView({
           <NavigationSplitView.Detail>{detail}</NavigationSplitView.Detail>
         </NavigationSplitView>
       </Host>
-      {tree}
+      {treePanel}
     </>,
   );
 }

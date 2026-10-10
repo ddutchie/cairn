@@ -50,6 +50,7 @@ export function DraggableBoard({
   onAddCard,
   onArchive,
   onDelete,
+  selectedCardId = null,
 }: {
   columns: ColumnRow[];
   cards: CardRow[];
@@ -61,6 +62,8 @@ export function DraggableBoard({
   onArchive?: (card: CardRow) => void;
   /** Drop a card on the Delete zone. */
   onDelete?: (card: CardRow) => void;
+  /** The task open beside the board (split view), marked on its card. */
+  selectedCardId?: string | null;
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -147,6 +150,7 @@ export function DraggableBoard({
             styles={styles}
             onOpenCard={onOpenCard}
             onAddCard={onAddCard}
+            selectedId={selectedCardId}
           />
         ))}
       </Animated.ScrollView>
@@ -296,6 +300,7 @@ const BoardColumn = memo(function BoardColumn({
   styles,
   onOpenCard,
   onAddCard,
+  selectedId,
 }: {
   column: ColumnRow;
   cards: CardRow[];
@@ -305,6 +310,7 @@ const BoardColumn = memo(function BoardColumn({
   styles: ReturnType<typeof makeStyles>;
   onOpenCard: (id: string) => void;
   onAddCard: (colId: string) => void;
+  selectedId: string | null;
 }) {
   const colId = column.id;
   const hoverStyle = useZoneHighlight(ctrl, colId);
@@ -325,6 +331,7 @@ const BoardColumn = memo(function BoardColumn({
             tags={tagMap.get(card.id)}
             ctrl={ctrl}
             isLifted={draggingId === card.id}
+            selected={selectedId === card.id}
             t={t}
             styles={styles}
             onOpen={onOpenCard}
@@ -344,6 +351,7 @@ const DraggableCard = memo(function DraggableCard({
   tags,
   ctrl,
   isLifted,
+  selected,
   t,
   styles,
   onOpen,
@@ -352,6 +360,7 @@ const DraggableCard = memo(function DraggableCard({
   tags?: TagRow[];
   ctrl: DragController<CardRow>;
   isLifted: boolean;
+  selected: boolean;
   t: Theme;
   styles: ReturnType<typeof makeStyles>;
   onOpen: (id: string) => void;
@@ -362,7 +371,12 @@ const DraggableCard = memo(function DraggableCard({
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={slotStyle}>
-        <PressableScale style={[styles.card, elevation.sm]} onPress={() => onOpen(card.id)} disabled={isLifted}>
+        <PressableScale
+          style={[styles.card, selected && styles.cardSelected, elevation.sm]}
+          onPress={() => onOpen(card.id)}
+          disabled={isLifted}
+          accessibilityState={{ selected }}
+        >
           <CardBody card={card} tags={tags} t={t} styles={styles} />
         </PressableScale>
       </Animated.View>
@@ -415,6 +429,9 @@ function makeStyles(t: Theme) {
     columnTitle: { fontSize: 14, fontWeight: "700", color: t.textPrimary, marginBottom: 8 },
     count: { color: t.textTertiary, fontWeight: "400" },
     card: { backgroundColor: t.surface2, borderRadius: 8, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: t.borderSubtle },
+    // The open task: accent outline, same footprint (padding absorbs the
+    // thicker border) so the column doesn't shift.
+    cardSelected: { borderWidth: 2, borderColor: t.accent, padding: 11 },
     cardLiftedOverlay: { borderColor: t.accent, backgroundColor: t.surface2 },
     addCard: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: t.border, borderStyle: "dashed", marginTop: 2 },
     addCardText: { ...typeScale.label, color: t.textTertiary },

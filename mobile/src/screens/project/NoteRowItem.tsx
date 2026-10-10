@@ -21,6 +21,7 @@ export const NoteRowItem = memo(function NoteRowItem({
   tags,
   onOpen,
   onLongPress,
+  selected = false,
   t,
 }: {
   note: NoteRow;
@@ -28,6 +29,8 @@ export const NoteRowItem = memo(function NoteRowItem({
   tags?: TagRow[];
   onOpen: (id: string) => void;
   onLongPress: (note: NoteRow) => void;
+  /** The note open beside the list (split view). */
+  selected?: boolean;
   t: Theme;
 }) {
   const preview = useMemo(() => {
@@ -43,7 +46,10 @@ export const NoteRowItem = memo(function NoteRowItem({
       onPress={onPress}
       onLongPress={handleLongPress}
       delayLongPress={350}
+      accessibilityState={{ selected }}
       style={{
+        // Selected: an accent tint, like a selected row in Mail.
+        backgroundColor: selected ? t.accentDim : undefined,
         gap: 3,
         paddingVertical: 10,
         paddingRight: 14,

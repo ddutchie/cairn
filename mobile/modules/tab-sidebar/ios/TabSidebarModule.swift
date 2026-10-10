@@ -23,13 +23,21 @@ public class TabSidebarModule: Module {
     /// `items`: [{ id, title, icon?, children?: [{ id, title, icon? }] }]
     /// shown under tab `index`; `selectedPath`: ids of the selected row, e.g.
     /// [projectId, "board"]. A row's reported id is its path joined by "/".
-    Function("setGroup") { (index: Int, items: [[String: Any]], selectedPath: [String]) in
+    /// Resolves true once the group is in the sidebar, false where it can't be
+    /// (not an iPad, iPadOS < 18, no tab bar controller found) — JS then falls
+    /// back to its own panel.
+    AsyncFunction("setGroup") { (index: Int, items: [[String: Any]], selectedPath: [String], promise: Promise) in
       let changed = index != self.groupIndex || !(items as NSArray).isEqual(to: self.items)
       self.groupIndex = index
       self.items = items
       self.selectedPath = selectedPath
       DispatchQueue.main.async {
-        if changed || !self.isInstalled() { self.apply(attempt: 0) } else { self.highlight() }
+        if changed || !self.isInstalled() {
+          self.apply(attempt: 0) { promise.resolve($0) }
+        } else {
+          self.highlight()
+          promise.resolve(true)
+        }
       }
     }
   }
@@ -72,16 +80,19 @@ public class TabSidebarModule: Module {
     return false
   }
 
-  private func apply(attempt: Int) {
-    guard #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom == .pad else { return }
+  private func apply(attempt: Int, done: @escaping (Bool) -> Void) {
+    guard #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom == .pad else { return done(false) }
     guard let tbc = Self.findTabBarController(), let vcs = tbc.viewControllers, groupIndex < vcs.count else {
       // The tab host mounts after the first JS render; try again shortly.
       if attempt < 20 {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.apply(attempt: attempt + 1) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.apply(attempt: attempt + 1, done: done) }
+      } else {
+        done(false)
       }
       return
     }
     install(on: tbc, vcs: vcs)
+    done(isInstalled())
   }
 
   @available(iOS 18.0, *)
@@ -147,6 +158,7 @@ public class TabSidebarModule: Module {
       tab = UITab(title: title, image: image, identifier: identifier, viewControllerProvider: nil)
     }
     tab.preferredPlacement = .sidebarOnly
+    tab.badgeValue = it["badge"] as? String
     return tab
   }
 
