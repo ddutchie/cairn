@@ -130,7 +130,7 @@ export function ProjectsSplitView({
   // ── Duo posture ────────────────────────────────────────────────────────────
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   const hasHinge = hinge != null && hinge !== "closed";
-  const [leftFix, setLeftFix] = useState(0);
+  const [leftWidthSeen, setLeftWidthSeen] = useState<number | null>(null);
   // Three native columns need room (wide iPads). Narrower — an unfolded Duo
   // is ~950pt — shows two: list | item, with the project + views panel sliding
   // over the list instead of squeezing both columns across the fold.
@@ -138,6 +138,15 @@ export function ProjectsSplitView({
   const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("all");
   const [panelOpen, setPanelOpen] = useState(false);
   const half = width / 2;
+  // SwiftUI caps the sidebar column a little short of half the window (~20pt on
+  // the Duo), so the fold would cut into the detail column. Measure the list
+  // column and inset the detail content by the shortfall instead: only the
+  // matching page background straddles the crease, never content.
+  const measureLeft = onGeometryChange((f) => {
+    if (f.width > half * 0.8 && f.width <= half) setLeftWidthSeen(f.width);
+  });
+  const hingeGap = hasHinge && leftWidthSeen != null ? Math.max(0, half - leftWidthSeen) : 0;
+  const detailInset = hingeGap > 0 ? [padding({ leading: hingeGap })] : [];
 
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next });
@@ -238,7 +247,7 @@ export function ProjectsSplitView({
   const detail = (
     <NavigationSplitView.Detail>
       {view === "overview" ? (
-        <ChromeColumn key={`${projectId}:overview`}>
+        <ChromeColumn key={`${projectId}:overview`} modifiers={detailInset}>
           <ProjectScreen
             nested
             projectId={projectId}
@@ -249,15 +258,15 @@ export function ProjectsSplitView({
           />
         </ChromeColumn>
       ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`}>
+        <ChromeColumn key={`${projectId}:calendar`} modifiers={detailInset}>
           <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
       ) : view === "notes" && sel.noteId ? (
-        <ChromeColumn key={sel.noteId}>
+        <ChromeColumn key={sel.noteId} modifiers={detailInset}>
           <NoteDetailScreen nested noteId={sel.noteId} onClose={() => setSelection({ noteId: null })} />
         </ChromeColumn>
       ) : view === "board" && sel.cardId ? (
-        <ChromeColumn key={sel.cardId}>
+        <ChromeColumn key={sel.cardId} modifiers={detailInset}>
           <CardDetailScreen
             cardId={sel.cardId}
             onClose={() => setSelection({ cardId: null })}
@@ -266,7 +275,7 @@ export function ProjectsSplitView({
         </ChromeColumn>
       ) : (
         <ContentUnavailableView
-          modifiers={[background(t.background)]}
+          modifiers={[background(t.background), ...detailInset]}
           title={view === "notes" ? "No Note Selected" : "No Task Selected"}
           systemImage={view === "notes" ? "doc.text" : "checklist"}
           description={view === "notes" ? "Pick a note from the list." : "Pick a task from the board."}
@@ -297,17 +306,10 @@ export function ProjectsSplitView({
   }
 
   // ── Duo / narrower: two columns, views panel slides over the list ──────────
-  // On a Duo the left column is exactly half the window in every posture, so
-  // the fold always falls between the columns, never through one.
-  // SwiftUI renders the sidebar column narrower than the width asked for (~20pt
-  // on the Duo), so measure the real width and ask for the difference on top.
-  const measureLeft = onGeometryChange((f) => {
-    if (!hasHinge) return;
-    const err = half - f.width;
-    if (Math.abs(err) > 0.5) setLeftFix((fix) => fix + err);
-  });
+  // On a Duo the left column asks for exactly half the window in every posture
+  // (see hingeGap for the shortfall SwiftUI leaves).
   const leftWidth = hasHinge
-    ? navigationSplitViewColumnWidth(half + leftFix)
+    ? navigationSplitViewColumnWidth(half)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
 
   return (

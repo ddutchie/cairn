@@ -204,10 +204,12 @@ export function ChromeColumn({
       modifiers={[
         navigationTitle(spec?.title ?? ""),
         navigationBarTitleDisplayMode("inline"),
+        // Caller modifiers (column width, a hinge inset) come first so the
+        // background below also paints any padding they add.
+        ...modifiers,
         // Fill the column, safe areas included (the Duo's hinge reserves one),
         // with the page colour so no white band shows around the hosted screen.
         background(t.background),
-        ...modifiers,
       ]}
     >
       <RNHostView>
