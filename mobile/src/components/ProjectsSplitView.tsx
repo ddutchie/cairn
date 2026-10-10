@@ -219,8 +219,8 @@ export function ProjectsSplitView({
     );
   }
 
-  const listColumn = (extra: ViewModifier[] = []) => (
-    <ChromeColumn key={`${projectId}:${view}:${boardVersion}`} modifiers={extra}>
+  const listColumn = (extra: ViewModifier[] = [], leading: Parameters<typeof ChromeColumn>[0]["leading"] = []) => (
+    <ChromeColumn key={`${projectId}:${view}:${boardVersion}`} modifiers={extra} leading={leading}>
       <ProjectScreen
         nested
         projectId={projectId}
@@ -303,18 +303,23 @@ export function ProjectsSplitView({
   return (
     <Host style={{ flex: 1 }}>
       <NavigationSplitView
-        // The list column always stays. The system sidebar button asks to hide
-        // it; we never apply that and toggle the views panel over the list.
-        columnVisibility="all"
-        onColumnVisibilityChange={(next) => {
-          if (next !== "all" && listView) setPanelOpen((o) => !o);
-        }}
+        // The system sidebar button collapses the list for a full-width item
+        // (focus mode); the views panel has its own button in the list toolbar.
+        columnVisibility={visibility}
+        onColumnVisibilityChange={setVisibility}
         modifiers={splitModifiers}
       >
         <NavigationSplitView.Sidebar>
           {listView ? (
             <ZStack alignment="topLeading" modifiers={[leftWidth]}>
-              {listColumn()}
+              {listColumn([], [
+                {
+                  key: "views",
+                  label: panelOpen ? "Hide project views" : "Show project views",
+                  icon: "sidebar.squares.left",
+                  onPress: () => setPanelOpen((o) => !o),
+                },
+              ])}
               {viewsPanel([
                 frame({ width: PANEL_WIDTH }),
                 frame({ maxHeight: Infinity, alignment: "top" }),

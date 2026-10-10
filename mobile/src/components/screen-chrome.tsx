@@ -148,10 +148,13 @@ const symbol = (icon?: Icon) => (typeof icon === "string" ? (icon as SFSymbol) :
 export function ChromeColumn({
   children,
   modifiers = [],
+  leading = [],
 }: {
   children: ReactElement;
   /** Extra column modifiers, e.g. `navigationSplitViewColumnWidth`. */
   modifiers?: ViewModifier[];
+  /** Column-owned buttons placed before the screen's own leading items. */
+  leading?: { key: string; label: string; icon: SFSymbol; onPress: () => void }[];
 }) {
   const t = useTheme();
   const [spec, setSpec] = useState<ChromeSpec | null>(null);
@@ -211,6 +214,11 @@ export function ChromeColumn({
         <ChromeContext.Provider value={report}>{children}</ChromeContext.Provider>
       </RNHostView>
       <Toolbar.Content>
+        {leading.map((b) => (
+          <ToolbarItem key={b.key} placement="topBarLeading">
+            <Button label={b.label} systemImage={b.icon} onPress={b.onPress} />
+          </ToolbarItem>
+        ))}
         {(spec?.left ?? []).map((i) => columnItem("left", i))}
         {/* Trailing items render right to left, so reverse to keep the
             route order reading left to right. */}
