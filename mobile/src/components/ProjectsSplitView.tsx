@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View } from "react-native";
 import { Stack } from "expo-router";
-import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { onSidebarItem, setSidebarGroup, sidebarSupported } from "@modules/tab-sidebar";
 import { Host } from "@expo/ui";
 import {
@@ -11,7 +10,6 @@ import {
   type NavigationSplitViewVisibility,
 } from "@expo/ui/swift-ui";
 import {
-  background,
   navigationSplitViewColumnWidth,
   navigationSplitViewStyle,
   onHingeChange,
@@ -25,6 +23,7 @@ import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { ChatPreviewPane } from "@/components/chat/ChatPreview";
 import { ProjectsTreePanel } from "@/components/ProjectsTreePanel";
+import { EmptyState } from "@/components/EmptyState";
 import { useProjectsTree } from "@/components/projects-tree";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
@@ -151,7 +150,6 @@ export function ProjectsSplitView({
   const bridge = useCallback((slot: ChromeSlot, chrome: BridgedChrome | null) => {
     setBridged((prev) => (prev[slot] === chrome ? prev : { ...prev, [slot]: chrome }));
   }, []);
-  const hideBar = BRIDGE_HEADER ? [navigationBarHidden()] : [];
 
   // The projects tree, one model for both renderers: the iPad's system tab
   // sidebar (the Projects tab is index 0) or the in-app panel.
@@ -221,13 +219,23 @@ export function ProjectsSplitView({
   const projectsButton = systemSidebar
     ? []
     : [{ key: "projects", label: "Projects", icon: "folder" as const, onPress: () => setTreeOpen(true) }];
+  // Where buttons go:
+  //   iPad — the stack header: the folder first on the left (drawn by the
+  //          header itself), the list's / board's items after it, the open
+  //          item's or view's own items right of the tab bar.
+  //   Duo  — the bar that docks into the side rail: every view's own column,
+  //          and on Notes the note column, which also carries the list's
+  //          items (the list keeps just its title).
+  const columnFolder = BRIDGE_HEADER ? [] : projectsButton;
+  const slot = (s: ChromeSlot) => (BRIDGE_HEADER ? s : undefined);
+  const listItems = BRIDGE_HEADER ? [] : bridgedItems(bridged.primary);
 
   // The open item (Notes), or the whole view (everything else).
   const detail =
       boardFull ? (
         // While a task is open, its panel brings ✕ / ⋯ / Save; the board's own
         // + would only crowd the bar (the Duo's rail stacks both).
-        <ChromeColumn key={`${projectId}:board`} leading={projectsButton} slot="primary" hideItems={!!sel.cardId}>
+        <ChromeColumn key={`${projectId}:board`} leading={columnFolder} slot={slot("primary")} hideItems={!!sel.cardId}>
           <View style={{ flex: 1, flexDirection: "row", overflow: "hidden" }}>
             <View style={{ flex: 1 }}>
               <ProjectScreen
@@ -249,7 +257,7 @@ export function ProjectsSplitView({
           </View>
         </ChromeColumn>
       ) : view === "overview" ? (
-        <ChromeColumn key={`${projectId}:overview`} leading={projectsButton} slot="secondary">
+        <ChromeColumn key={`${projectId}:overview`} leading={columnFolder} slot={slot("secondary")}>
           <ProjectScreen
             nested
             projectId={projectId}
@@ -260,29 +268,25 @@ export function ProjectsSplitView({
           />
         </ChromeColumn>
       ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`} leading={projectsButton} slot="secondary">
+        <ChromeColumn key={`${projectId}:calendar`} leading={columnFolder} slot={slot("secondary")}>
           <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
       ) : view === "notes" && sel.noteId ? (
         <ChromeColumn
           key={sel.noteId}
-          slot="secondary"
+          slot={slot("secondary")}
           modifiers={[detailWidth]}
-          leading={[
-            // Focus mode hides the list column, and its folder button with it.
-            ...(visibility === "detailOnly" ? projectsButton : []),
-            { key: "close", label: "Close note", icon: "xmark", onPress: closeNote },
-          ]}
+          leading={[...columnFolder, { key: "close", label: "Close note", icon: "xmark", onPress: closeNote }]}
+          extra={listItems}
         >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={closeNote} />
         </ChromeColumn>
       ) : (
-        <ContentUnavailableView
-          modifiers={[detailWidth, background(t.background), ...hideBar]}
-          title="No Note Selected"
-          systemImage="doc.text"
-          description="Pick a note from the list."
-        />
+        // A column (not a bare SwiftUI view) so it has a bar for the Duo's
+        // folder and list buttons.
+        <ChromeColumn key="no-note" slot={slot("secondary")} modifiers={[detailWidth]} leading={columnFolder} extra={listItems}>
+          <EmptyState title="No note selected" subtitle="Pick a note from the list." />
+        </ChromeColumn>
       );
 
   const toggleSidebar = () => setVisibility((v) => (v === "detailOnly" ? "all" : "detailOnly"));
@@ -302,6 +306,9 @@ export function ProjectsSplitView({
         }}
       />
       <Stack.Toolbar placement="left">
+        {projectsButton.map((b) => (
+          <Stack.Toolbar.Button key={b.key} icon={b.icon} accessibilityLabel={b.label} onPress={b.onPress} />
+        ))}
         {/* Views and projects live in the tab sidebar. This widens the open
             note to the whole window and back (not a second sidebar icon: the
             tab bar already has one). */}
@@ -322,7 +329,10 @@ export function ProjectsSplitView({
   const withHeader = (body: ReactElement) => (
     <>
       {header}
-      {BRIDGE_HEADER ? <ChromeBridgeProvider value={bridge}>{body}</ChromeBridgeProvider> : body}
+      {/* Duo: only the notes list is bridged, into the note column's bar. */}
+      <ChromeBridgeProvider value={bridge} keepBars={!BRIDGE_HEADER}>
+        {body}
+      </ChromeBridgeProvider>
     </>
   );
 
@@ -380,7 +390,7 @@ export function ProjectsSplitView({
           // over it (the hinge layout depends on that).
           modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("balanced")]}
         >
-          <NavigationSplitView.Sidebar>{listColumn([leftWidth], projectsButton)}</NavigationSplitView.Sidebar>
+          <NavigationSplitView.Sidebar>{listColumn([leftWidth], [])}</NavigationSplitView.Sidebar>
           <NavigationSplitView.Detail>{detail}</NavigationSplitView.Detail>
         </NavigationSplitView>
       </Host>

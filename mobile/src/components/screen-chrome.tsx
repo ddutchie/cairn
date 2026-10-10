@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { Stack } from "expo-router";
 import { navigationBarHidden } from "@modules/swiftui-modifiers";
@@ -157,7 +158,27 @@ export interface BridgedChrome {
 
 type Bridge = (slot: ChromeSlot, chrome: BridgedChrome | null) => void;
 const ChromeBridgeContext = createContext<Bridge | null>(null);
-export const ChromeBridgeProvider = ChromeBridgeContext.Provider;
+/**
+ * Keep bridged columns' own bars (title only) instead of hiding them — used on
+ * the iPhone Duo, where a column's buttons move to another column's bar (the
+ * one that docks into the tab rail) rather than into the stack header.
+ */
+const ChromeBridgeKeepBarsContext = createContext(false);
+export function ChromeBridgeProvider({
+  value,
+  keepBars = false,
+  children,
+}: {
+  value: Bridge;
+  keepBars?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <ChromeBridgeContext.Provider value={value}>
+      <ChromeBridgeKeepBarsContext.Provider value={keepBars}>{children}</ChromeBridgeKeepBarsContext.Provider>
+    </ChromeBridgeContext.Provider>
+  );
+}
 
 /** Flattens a bridged column into stack-header items: its buttons, then its own. */
 export function bridgedItems(chrome: BridgedChrome | null | undefined): ChromeItem[] {
@@ -212,6 +233,7 @@ export function ChromeColumn({
   titleMenu,
   slot,
   hideItems = false,
+  extra = [],
 }: {
   children: ReactElement;
   /** Extra column modifiers, e.g. `navigationSplitViewColumnWidth`. */
@@ -224,12 +246,15 @@ export function ChromeColumn({
   slot?: ChromeSlot;
   /** Hide the screen's own items (e.g. while a panel beside it has its own). */
   hideItems?: boolean;
+  /** Items from another column (see `bridgedItems`), drawn after this one's. */
+  extra?: ChromeItem[];
 }) {
   const t = useTheme();
   const [spec, setSpec] = useState<ChromeSpec | null>(null);
   const latest = useRef<ChromeSpec | null>(null);
   const bridge = useContext(ChromeBridgeContext);
   const bridged = bridge != null && slot != null;
+  const keepBar = useContext(ChromeBridgeKeepBarsContext);
 
   // Bridged: hand the items to the stack header whenever what's drawn changes.
   // One stable object carries the current handlers for press-time lookup.
@@ -289,6 +314,30 @@ export function ChromeColumn({
     );
   }
 
+  // Another column's item: its handlers already look themselves up at press time.
+  function extraItem(item: ChromeItem) {
+    if (item.kind === "button" && item.hidden) return null;
+    return (
+      <ToolbarItem key={`extra:${item.key}`} placement="topBarTrailing">
+        {item.kind === "button" ? (
+          <Button label={item.label} systemImage={symbol(item.icon)} onPress={item.onPress} />
+        ) : (
+          <Menu label={item.label} systemImage={symbol(item.icon)}>
+            {item.actions.map((a) => (
+              <Button
+                key={a.label}
+                label={a.label}
+                systemImage={symbol(a.icon)}
+                role={a.destructive ? "destructive" : undefined}
+                onPress={a.onPress}
+              />
+            ))}
+          </Menu>
+        )}
+      </ToolbarItem>
+    );
+  }
+
   return (
     // Inline titles: a large title costs too much height in a narrow column.
     <Toolbar
@@ -298,7 +347,7 @@ export function ChromeColumn({
         // Caller modifiers (column width, a hinge inset) come first so the
         // background below also paints any padding they add.
         ...modifiers,
-        ...(bridged ? [navigationBarHidden()] : []),
+        ...(bridged && !keepBar ? [navigationBarHidden()] : []),
         // Fill the column, safe areas included (the Duo's hinge reserves one),
         // with the page colour so no white band shows around the hosted screen.
         background(t.background),
@@ -307,17 +356,19 @@ export function ChromeColumn({
       <RNHostView>
         <ChromeContext.Provider value={report}>{children}</ChromeContext.Provider>
       </RNHostView>
-      {bridged ? null : <Toolbar.Content>
+      {bridged && !keepBar ? null : <Toolbar.Content>
         {titleMenu ? <ToolbarItem placement="principal">{titleMenu}</ToolbarItem> : null}
-        {leading.map((b) => (
+        {/* Bridged with its bar kept: the title stays, the buttons went elsewhere. */}
+        {bridged ? null : leading.map((b) => (
           <ToolbarItem key={b.key} placement="topBarLeading">
             <Button label={b.label} systemImage={b.icon} onPress={b.onPress} />
           </ToolbarItem>
         ))}
-        {(shown?.left ?? []).map((i) => columnItem("left", i))}
+        {bridged ? null : (shown?.left ?? []).map((i) => columnItem("left", i))}
         {/* Trailing items render right to left, so reverse to keep the
             route order reading left to right. */}
-        {[...(shown?.right ?? [])].reverse().map((i) => columnItem("right", i))}
+        {bridged ? null : [...(shown?.right ?? [])].reverse().map((i) => columnItem("right", i))}
+        {[...extra].reverse().map((i) => extraItem(i))}
       </Toolbar.Content>}
     </Toolbar>
   );

@@ -51,6 +51,15 @@ it renders depends on context:
   column bars *below* the pill's row, wasting a band of height; the native stack
   header shares the pill's row.
 
+### Where buttons go
+- **iPad** — the stack header in the tab bar's row: the folder (panel mode) first
+  on the left, then the list's / board's items; the open note's or the view's
+  own items (Overview, Calendar) right of the tab bar.
+- **Duo** — the bar that docks into the side rail. Full-width views use their
+  own column's bar; on Notes the list keeps only its title and its items (+)
+  move, with the folder, to the note column's bar, so every view puts its
+  buttons in the rail.
+
 ### Picking a project and view
 The same tree on both wide devices — projects that expand to Overview / Notes /
 Board / Calendar, like Mail's accounts and mailboxes. One model,
