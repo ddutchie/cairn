@@ -1,5 +1,7 @@
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import { useWindowDimensions, View } from "react-native";
+import { useCallback, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
+import { Platform, useWindowDimensions, View } from "react-native";
+import { Stack } from "expo-router";
+import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { Host } from "@expo/ui";
 import {
   Button,
@@ -38,7 +40,14 @@ import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { ChatPreviewPane } from "@/components/chat/ChatPreview";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
-import { ChromeColumn } from "@/components/screen-chrome";
+import {
+  bridgedItems,
+  ChromeBridgeProvider,
+  ChromeColumn,
+  routeItems,
+  type BridgedChrome,
+  type ChromeSlot,
+} from "@/components/screen-chrome";
 import { isDoneColumn } from "@/gamification/rewards";
 import { useTheme } from "@/theme";
 import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
@@ -85,6 +94,12 @@ function useSelection(): Selection {
 }
 
 const ALL_COLUMNS_MIN_WIDTH = 1100;
+
+// iPad's floating tab bar owns the top row, and SwiftUI column bars go below
+// it — a whole band of wasted height. There the columns hide their bars and
+// their buttons move into the native stack header, which shares the tab bar's
+// row. (The Duo's tab bar is a side rail, so its columns keep their own bars.)
+const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 
 const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
   { id: "overview", title: "Overview", icon: "number" },
@@ -146,6 +161,13 @@ export function ProjectsSplitView({
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
   // keeps their content clear of the fold, so no extra inset is added.
 
+  // Items reported by bridged columns (iPad), drawn in the stack header.
+  const [bridged, setBridged] = useState<Partial<Record<ChromeSlot, BridgedChrome | null>>>({});
+  const bridge = useCallback((slot: ChromeSlot, chrome: BridgedChrome | null) => {
+    setBridged((prev) => (prev[slot] === chrome ? prev : { ...prev, [slot]: chrome }));
+  }, []);
+  const hideBar = BRIDGE_HEADER ? [navigationBarHidden()] : [];
+
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next });
   }, []);
@@ -175,7 +197,7 @@ export function ProjectsSplitView({
 
   const viewsPanel = (panelModifiers: ViewModifier[]) => (
       <List
-        modifiers={[listStyle("sidebar"), ...panelModifiers]}
+        modifiers={[listStyle("sidebar"), ...panelModifiers, ...hideBar]}
       >
         <Section title="Project">
           <Menu label={project?.name ?? "Choose a project"} systemImage="folder">
@@ -232,7 +254,13 @@ export function ProjectsSplitView({
     leading: Parameters<typeof ChromeColumn>[0]["leading"] = [],
     menu?: Parameters<typeof ChromeColumn>[0]["titleMenu"],
   ) => (
-    <ChromeColumn key={`${projectId}:${view}:${boardVersion}`} modifiers={extra} leading={leading} titleMenu={menu}>
+    <ChromeColumn
+      key={`${projectId}:${view}:${boardVersion}`}
+      modifiers={extra}
+      leading={leading}
+      titleMenu={menu}
+      slot="primary"
+    >
       <ProjectScreen
         nested
         projectId={projectId}
@@ -273,7 +301,7 @@ export function ProjectsSplitView({
   const detail = (
     <NavigationSplitView.Detail>
       {boardFull ? (
-        <ChromeColumn key={`${projectId}:board`} titleMenu={titleMenu}>
+        <ChromeColumn key={`${projectId}:board`} titleMenu={titleMenu} slot="primary">
           <View style={{ flex: 1, flexDirection: "row", overflow: "hidden" }}>
             <View style={{ flex: 1 }}>
               <ProjectScreen
@@ -294,7 +322,7 @@ export function ProjectsSplitView({
           </View>
         </ChromeColumn>
       ) : view === "overview" ? (
-        <ChromeColumn key={`${projectId}:overview`}>
+        <ChromeColumn key={`${projectId}:overview`} slot="secondary">
           <ProjectScreen
             nested
             projectId={projectId}
@@ -305,25 +333,88 @@ export function ProjectsSplitView({
           />
         </ChromeColumn>
       ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`}>
+        <ChromeColumn key={`${projectId}:calendar`} slot="secondary">
           <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
       ) : view === "notes" && sel.noteId ? (
         <ChromeColumn
           key={sel.noteId}
+          slot="secondary"
           leading={[{ key: "close", label: "Close note", icon: "xmark", onPress: () => setSelection({ noteId: null }) }]}
         >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={() => setSelection({ noteId: null })} />
         </ChromeColumn>
       ) : (
         <ContentUnavailableView
-          modifiers={[background(t.background)]}
+          modifiers={[background(t.background), ...hideBar]}
           title="No Note Selected"
           systemImage="doc.text"
           description="Pick a note from the list."
         />
       )}
     </NavigationSplitView.Detail>
+  );
+
+  const viewTitle = VIEWS.find((v) => v.id === view)?.title ?? "";
+  const toggleSidebar = () => setVisibility((v) => (v === "detailOnly" ? "all" : "detailOnly"));
+  // Phone (Duo): the columns draw their own bars, so the stack header hides.
+  // iPad: an untitled header in the tab bar's row carries every button — the
+  // sidebar toggle and project / views menu, the list's items, then (right of
+  // the tab bar) the open item's.
+  const header = BRIDGE_HEADER ? (
+    <>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: "",
+          headerLargeTitle: false,
+          headerStyle: { backgroundColor: t.background },
+          contentStyle: { backgroundColor: t.background },
+        }}
+      />
+      <Stack.Toolbar placement="left">
+        {/* Not a second sidebar icon: the tab bar already shows one. This
+            widens the open item to the whole window and back. */}
+        <Stack.Toolbar.Button
+          icon={visibility === "detailOnly" ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"}
+          accessibilityLabel={visibility === "detailOnly" ? "Show list" : "Focus"}
+          onPress={toggleSidebar}
+        />
+        <Stack.Toolbar.Menu
+          icon={VIEWS.find((v) => v.id === view)?.icon ?? "folder"}
+          title={`${project?.name ?? "Project"} · ${viewTitle}`}
+          accessibilityLabel="Views and projects"
+        >
+          {VIEWS.map((v) => (
+            <Stack.Toolbar.MenuAction key={v.id} icon={v.icon} isOn={v.id === view} onPress={() => selectView(v.id)}>
+              {v.title}
+            </Stack.Toolbar.MenuAction>
+          ))}
+          <Stack.Toolbar.Menu icon="folder" title="Switch project">
+            <Stack.Toolbar.Label>Switch project</Stack.Toolbar.Label>
+            {projects.map((p) => (
+              <Stack.Toolbar.MenuAction
+                key={p.id}
+                isOn={p.id === projectId}
+                onPress={() => setSelection({ projectId: p.id, noteId: null, cardId: null })}
+              >
+                {p.name}
+              </Stack.Toolbar.MenuAction>
+            ))}
+          </Stack.Toolbar.Menu>
+        </Stack.Toolbar.Menu>
+        {routeItems(bridgedItems(bridged.primary))}
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">{routeItems(bridgedItems(bridged.secondary))}</Stack.Toolbar>
+    </>
+  ) : (
+    <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: t.background } }} />
+  );
+  const withHeader = (body: ReactElement) => (
+    <>
+      {header}
+      {BRIDGE_HEADER ? <ChromeBridgeProvider value={bridge}>{body}</ChromeBridgeProvider> : body}
+    </>
   );
 
   const splitModifiers = [tint(t.accent), onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))];
@@ -333,7 +424,7 @@ export function ProjectsSplitView({
   // iPad) must remount the columns — a hosted React Native view moved into a
   // different SwiftUI column otherwise renders blank.
   if (roomy) {
-    return (
+    return withHeader(
       <Host key="three-column" style={{ flex: 1 }}>
         <NavigationSplitView columnVisibility={visibility} onColumnVisibilityChange={setVisibility} modifiers={splitModifiers}>
           <NavigationSplitView.Sidebar>
@@ -356,7 +447,7 @@ export function ProjectsSplitView({
     ? navigationSplitViewColumnWidth(half)
     : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
 
-  return (
+  return withHeader(
     <Host key="two-column" style={{ flex: 1 }}>
       <NavigationSplitView
         // The system sidebar button collapses the list for a full-width item

@@ -8,6 +8,7 @@ import {
   type ReactElement,
 } from "react";
 import { Stack } from "expo-router";
+import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { Button, Menu, RNHostView, Toolbar, ToolbarItem } from "@expo/ui/swift-ui";
 import { background, navigationBarTitleDisplayMode, navigationTitle, type ViewModifier } from "@expo/ui/swift-ui/modifiers";
 import { useTheme } from "@/theme";
@@ -127,6 +128,63 @@ function routeItem(item: ChromeItem) {
   );
 }
 
+/** A column-owned button (e.g. ✕ to close the column's item). */
+export interface LeadingButton {
+  key: string;
+  label: string;
+  icon: SFSymbol;
+  onPress: () => void;
+}
+
+/**
+ * Header bridge — on iPad the floating tab bar sits in the window's top row and
+ * SwiftUI columns put their own bars *below* it, wasting a band of height. So
+ * a split view can provide a bridge instead: each bridged column hides its bar
+ * and reports its items here, and the split view draws them in the native
+ * stack header, which shares the tab bar's row.
+ *
+ *   primary   — the left / list column (drawn left of the tab bar)
+ *   secondary — the open item (drawn right of it)
+ */
+export type ChromeSlot = "primary" | "secondary";
+
+export interface BridgedChrome {
+  /** Current handlers, for press-time lookup. */
+  latest: { spec: ChromeSpec | null; leading: LeadingButton[] };
+  spec: ChromeSpec | null;
+  leading: LeadingButton[];
+}
+
+type Bridge = (slot: ChromeSlot, chrome: BridgedChrome | null) => void;
+const ChromeBridgeContext = createContext<Bridge | null>(null);
+export const ChromeBridgeProvider = ChromeBridgeContext.Provider;
+
+/** Flattens a bridged column into stack-header items: its buttons, then its own. */
+export function bridgedItems(chrome: BridgedChrome | null | undefined): ChromeItem[] {
+  if (!chrome) return [];
+  const pressLeading = (key: string) => () => chrome.latest.leading.find((b) => b.key === key)?.onPress();
+  const pressItem = (side: "left" | "right", key: string, action?: number) => () => {
+    const item = chrome.latest.spec?.[side]?.find((i) => i.key === key);
+    if (!item) return;
+    if (item.kind === "button") item.onPress();
+    else if (action != null) item.actions[action]?.onPress();
+  };
+  const own = (side: "left" | "right") =>
+    (chrome.spec?.[side] ?? []).map<ChromeItem>((i) =>
+      i.kind === "button"
+        ? { ...i, onPress: pressItem(side, i.key) }
+        : { ...i, actions: i.actions.map((a, n) => ({ ...a, onPress: pressItem(side, i.key, n) })) },
+    );
+  return [
+    ...chrome.leading.map<ChromeItem>((b) => ({ kind: "button", key: b.key, label: b.label, icon: b.icon, onPress: pressLeading(b.key) })),
+    ...own("left"),
+    ...own("right"),
+  ];
+}
+
+/** Renders bridged items as `Stack.Toolbar` children. */
+export const routeItems = (items: ChromeItem[]) => items.map(routeItem);
+
 /** Everything about a spec that affects what's drawn — not the handlers. */
 function shape(spec: ChromeSpec | null): string {
   if (!spec) return "";
@@ -139,6 +197,8 @@ function shape(spec: ChromeSpec | null): string {
   return JSON.stringify([spec.title, items(spec.left), items(spec.right)]);
 }
 
+const leadingShape = (leading: LeadingButton[]) => JSON.stringify(leading.map((b) => [b.key, b.label, b.icon]));
+
 const symbol = (icon?: Icon) => (typeof icon === "string" ? (icon as SFSymbol) : undefined);
 
 /**
@@ -150,21 +210,44 @@ export function ChromeColumn({
   modifiers = [],
   leading = [],
   titleMenu,
+  slot,
 }: {
   children: ReactElement;
   /** Extra column modifiers, e.g. `navigationSplitViewColumnWidth`. */
   modifiers?: ViewModifier[];
   /** Column-owned buttons placed before the screen's own leading items. */
-  leading?: { key: string; label: string; icon: SFSymbol; onPress: () => void }[];
+  leading?: LeadingButton[];
   /** Replaces the column title with a menu (e.g. the project's views). */
   titleMenu?: ReactElement;
+  /** Where this column's items go when a header bridge is provided (iPad). */
+  slot?: ChromeSlot;
 }) {
   const t = useTheme();
   const [spec, setSpec] = useState<ChromeSpec | null>(null);
   const latest = useRef<ChromeSpec | null>(null);
+  const bridge = useContext(ChromeBridgeContext);
+  const bridged = bridge != null && slot != null;
+
+  // Bridged: hand the items to the stack header whenever what's drawn changes.
+  // One stable object carries the current handlers for press-time lookup.
+  const bridgeLatest = useRef<BridgedChrome["latest"]>({ spec: null, leading });
+  useEffect(() => {
+    bridgeLatest.current.leading = leading;
+  });
+  const drawn = `${shape(spec)}|${leadingShape(leading)}`;
+  useEffect(() => {
+    if (!bridged) return;
+    bridge(slot, { latest: bridgeLatest.current, spec, leading: bridgeLatest.current.leading });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `drawn` captures spec + leading
+  }, [bridged, drawn]);
+  useEffect(() => {
+    if (!bridged) return;
+    return () => bridge(slot, null);
+  }, [bridged, bridge, slot]);
 
   const report = useCallback<Report>((next) => {
     latest.current = next;
+    bridgeLatest.current.spec = next;
     setSpec((prev) => (shape(prev) === shape(next) ? prev : next));
   }, []);
 
@@ -210,6 +293,7 @@ export function ChromeColumn({
         // Caller modifiers (column width, a hinge inset) come first so the
         // background below also paints any padding they add.
         ...modifiers,
+        ...(bridged ? [navigationBarHidden()] : []),
         // Fill the column, safe areas included (the Duo's hinge reserves one),
         // with the page colour so no white band shows around the hosted screen.
         background(t.background),
@@ -218,7 +302,7 @@ export function ChromeColumn({
       <RNHostView>
         <ChromeContext.Provider value={report}>{children}</ChromeContext.Provider>
       </RNHostView>
-      <Toolbar.Content>
+      {bridged ? null : <Toolbar.Content>
         {titleMenu ? <ToolbarItem placement="principal">{titleMenu}</ToolbarItem> : null}
         {leading.map((b) => (
           <ToolbarItem key={b.key} placement="topBarLeading">
@@ -229,7 +313,7 @@ export function ChromeColumn({
         {/* Trailing items render right to left, so reverse to keep the
             route order reading left to right. */}
         {[...(spec?.right ?? [])].reverse().map((i) => columnItem("right", i))}
-      </Toolbar.Content>
+      </Toolbar.Content>}
     </Toolbar>
   );
 }

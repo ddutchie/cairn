@@ -73,7 +73,9 @@ export default function ProjectsScreen() {
   if (!loaded) {
     return (
       <TabScreen>
-        {header}
+        {/* Not when wide: the split view sets its own header items, and these
+            unmounting after it mounts would clear them. */}
+        {split ? null : header}
         <SkeletonList count={6} />
       </TabScreen>
     );
@@ -91,16 +93,11 @@ export default function ProjectsScreen() {
     );
   }
 
-  // SPIKE: wide windows (unfolded iPhone Duo, iPad) get a native split view.
-  // Its columns bring their own navigation bars, so the stack header is hidden
-  // and the side-inset padding from TabStack is dropped (SwiftUI owns it).
+  // SPIKE: wide windows (unfolded iPhone Duo, iPad) get a native split view,
+  // which sets up the stack header itself and drops TabStack's side-inset
+  // padding (SwiftUI owns it).
   if (split) {
-    return (
-      <>
-        <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: t.background } }} />
-        <ProjectsSplitView projects={projects} workspaceName={workspaceName ?? "Projects"} />
-      </>
-    );
+    return <ProjectsSplitView projects={projects} workspaceName={workspaceName ?? "Projects"} />;
   }
 
   return (

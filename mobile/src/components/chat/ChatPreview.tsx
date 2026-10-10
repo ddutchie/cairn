@@ -77,11 +77,11 @@ export function ChatPreviewPane({
       <Host style={{ width: paneWidth, flex: 1 }}>
         <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
           {shown.kind === "note" ? (
-            <ChromeColumn key={`note:${shown.id}`} leading={[close]}>
+            <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">
               <NoteDetailScreen nested noteId={shown.id} onClose={onClose} />
             </ChromeColumn>
           ) : (
-            <ChromeColumn key={`card:${shown.id}`} leading={[close]}>
+            <ChromeColumn key={`card:${shown.id}`} leading={[close]} slot="secondary">
               <CardDetailScreen cardId={shown.id} onClose={onClose} onChanged={onChanged} />
             </ChromeColumn>
           )}
