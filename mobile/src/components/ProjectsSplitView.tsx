@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import { useWindowDimensions } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import { Host } from "@expo/ui";
 import {
   Button,
@@ -36,7 +36,7 @@ import type { SFSymbol } from "sf-symbols-typescript";
 import { listCards, listColumns, type ProjectSummary } from "@/db/queries";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
-import { CardDetailScreen } from "@/screens/CardDetailScreen";
+import { ChatPreviewPane } from "@/components/chat/ChatPreview";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import { ChromeColumn } from "@/components/screen-chrome";
 import { isDoneColumn } from "@/gamification/rewards";
@@ -106,10 +106,11 @@ export function ProjectsSplitView({
   const project = projects.find((p) => p.id === sel.projectId) ?? projects[0];
   const projectId = project?.id ?? null;
   const view = sel.view;
-  // The Board is wide, so with no task open it takes the whole window; opening a
-  // task splits it back into board | task.
-  const boardFull = view === "board" && !sel.cardId;
-  const listView = view === "notes" || (view === "board" && !boardFull);
+  // The Board is wide, so it always takes the whole window; an open task slides
+  // in as a panel beside it (inside the same column, so the board never
+  // remounts or moves).
+  const boardFull = view === "board";
+  const listView = view === "notes";
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
@@ -272,15 +273,27 @@ export function ProjectsSplitView({
   const detail = (
     <NavigationSplitView.Detail>
       {boardFull ? (
-        <ChromeColumn key={`${projectId}:board-full:${boardVersion}`} titleMenu={titleMenu}>
-          <ProjectScreen
-            nested
-            projectId={projectId}
-            view="board"
-            onSelectView={selectView}
-            onOpenNote={openNote}
-            onOpenCard={openCard}
-          />
+        <ChromeColumn key={`${projectId}:board`} titleMenu={titleMenu}>
+          <View style={{ flex: 1, flexDirection: "row" }}>
+            <View style={{ flex: 1 }}>
+              <ProjectScreen
+                key={boardVersion}
+                nested
+                projectId={projectId}
+                view="board"
+                onSelectView={selectView}
+                onOpenNote={openNote}
+                onOpenCard={openCard}
+              />
+            </View>
+            {sel.cardId ? (
+              <ChatPreviewPane
+                preview={{ kind: "card", id: sel.cardId }}
+                onClose={() => setSelection({ cardId: null })}
+                onChanged={() => setBoardVersion((n) => n + 1)}
+              />
+            ) : null}
+          </View>
         </ChromeColumn>
       ) : view === "overview" ? (
         <ChromeColumn key={`${projectId}:overview`}>
@@ -304,24 +317,12 @@ export function ProjectsSplitView({
         >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={() => setSelection({ noteId: null })} />
         </ChromeColumn>
-      ) : view === "board" && sel.cardId ? (
-        // ✕ closes the task and the board widens back to full width.
-        <ChromeColumn
-          key={sel.cardId}
-          leading={[{ key: "close", label: "Close task", icon: "xmark", onPress: () => setSelection({ cardId: null }) }]}
-        >
-          <CardDetailScreen
-            cardId={sel.cardId}
-            onClose={() => setSelection({ cardId: null })}
-            onChanged={() => setBoardVersion((n) => n + 1)}
-          />
-        </ChromeColumn>
       ) : (
         <ContentUnavailableView
           modifiers={[background(t.background)]}
-          title={view === "notes" ? "No Note Selected" : "No Task Selected"}
-          systemImage={view === "notes" ? "doc.text" : "checklist"}
-          description={view === "notes" ? "Pick a note from the list." : "Pick a task from the board."}
+          title="No Note Selected"
+          systemImage="doc.text"
+          description="Pick a note from the list."
         />
       )}
     </NavigationSplitView.Detail>

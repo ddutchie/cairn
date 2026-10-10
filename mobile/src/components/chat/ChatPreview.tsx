@@ -31,7 +31,16 @@ export function useChatPreview() {
 /** Below this width the chat stays single-column and chips navigate as before. */
 export const CHAT_PREVIEW_MIN_WIDTH = 700;
 
-export function ChatPreviewPane({ preview, onClose }: { preview: PreviewRef; onClose: () => void }) {
+export function ChatPreviewPane({
+  preview,
+  onClose,
+  onChanged,
+}: {
+  preview: PreviewRef;
+  onClose: () => void;
+  /** The previewed task was saved, archived or deleted. */
+  onChanged?: () => void;
+}) {
   const { width } = useWindowDimensions();
   const { right } = useSafeAreaInsets();
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
@@ -53,7 +62,7 @@ export function ChatPreviewPane({ preview, onClose }: { preview: PreviewRef; onC
           </ChromeColumn>
         ) : (
           <ChromeColumn key={`card:${preview.id}`} leading={[close]}>
-            <CardDetailScreen cardId={preview.id} onClose={onClose} />
+            <CardDetailScreen cardId={preview.id} onClose={onClose} onChanged={onChanged} />
           </ChromeColumn>
         )}
       </NavigationStack>
