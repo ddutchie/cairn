@@ -211,6 +211,7 @@ export function ChromeColumn({
   leading = [],
   titleMenu,
   slot,
+  hideItems = false,
 }: {
   children: ReactElement;
   /** Extra column modifiers, e.g. `navigationSplitViewColumnWidth`. */
@@ -221,6 +222,8 @@ export function ChromeColumn({
   titleMenu?: ReactElement;
   /** Where this column's items go when a header bridge is provided (iPad). */
   slot?: ChromeSlot;
+  /** Hide the screen's own items (e.g. while a panel beside it has its own). */
+  hideItems?: boolean;
 }) {
   const t = useTheme();
   const [spec, setSpec] = useState<ChromeSpec | null>(null);
@@ -234,10 +237,12 @@ export function ChromeColumn({
   useEffect(() => {
     bridgeLatest.current.leading = leading;
   });
-  const drawn = `${shape(spec)}|${leadingShape(leading)}`;
+  // The items actually drawn: the title stays, the screen's buttons may not.
+  const shown = hideItems && spec ? { ...spec, left: [], right: [] } : spec;
+  const drawn = `${shape(shown)}|${leadingShape(leading)}`;
   useEffect(() => {
     if (!bridged) return;
-    bridge(slot, { latest: bridgeLatest.current, spec, leading: bridgeLatest.current.leading });
+    bridge(slot, { latest: bridgeLatest.current, spec: shown, leading: bridgeLatest.current.leading });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `drawn` captures spec + leading
   }, [bridged, drawn]);
   useEffect(() => {
@@ -309,10 +314,10 @@ export function ChromeColumn({
             <Button label={b.label} systemImage={b.icon} onPress={b.onPress} />
           </ToolbarItem>
         ))}
-        {(spec?.left ?? []).map((i) => columnItem("left", i))}
+        {(shown?.left ?? []).map((i) => columnItem("left", i))}
         {/* Trailing items render right to left, so reverse to keep the
             route order reading left to right. */}
-        {[...(spec?.right ?? [])].reverse().map((i) => columnItem("right", i))}
+        {[...(shown?.right ?? [])].reverse().map((i) => columnItem("right", i))}
       </Toolbar.Content>}
     </Toolbar>
   );

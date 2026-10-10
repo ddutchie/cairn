@@ -225,7 +225,9 @@ export function ProjectsSplitView({
   // The open item (Notes), or the whole view (everything else).
   const detail =
       boardFull ? (
-        <ChromeColumn key={`${projectId}:board`} leading={projectsButton} slot="primary">
+        // While a task is open, its panel brings ✕ / ⋯ / Save; the board's own
+        // + would only crowd the bar (the Duo's rail stacks both).
+        <ChromeColumn key={`${projectId}:board`} leading={projectsButton} slot="primary" hideItems={!!sel.cardId}>
           <View style={{ flex: 1, flexDirection: "row", overflow: "hidden" }}>
             <View style={{ flex: 1 }}>
               <ProjectScreen
