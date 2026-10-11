@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
-import { Platform, useWindowDimensions, View } from "react-native";
-import { Stack } from "expo-router";
-import { onSidebarItem, setSidebarGroup, sidebarSupported } from "@modules/tab-sidebar";
+import { useCallback, useState, useSyncExternalStore, type ReactElement } from "react";
+import { Platform, useWindowDimensions, View, Text } from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { FileText, ListTodo, CalendarDays, LayoutDashboard } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
   ContentUnavailableView,
   NavigationSplitView,
-  NavigationStack,
+  type NavigationSplitViewColumn,
   type NavigationSplitViewVisibility,
 } from "@expo/ui/swift-ui";
 import {
-  navigationSplitViewColumnWidth,
   navigationSplitViewStyle,
   onHingeChange,
   tint,
@@ -18,15 +17,12 @@ import {
   type ViewModifier,
 } from "@expo/ui/swift-ui/modifiers";
 import type { SFSymbol } from "sf-symbols-typescript";
-import { getProjectOverview, type ProjectSummary } from "@/db/queries";
-import { summarizeProject } from "@/components/overview/project-summary";
-import { ProjectCard } from "@/components/overview/ProjectCard";
+import { type ProjectSummary } from "@/db/queries";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
+import { CardDetailScreen } from "@/screens/CardDetailScreen";
 import { NoteComposer } from "@/components/NoteComposer";
-import { ChatPreviewPane } from "@/components/chat/ChatPreview";
-import { ProjectsTreePanel } from "@/components/ProjectsTreePanel";
-import { EmptyState } from "@/components/EmptyState";
+import { ProjectsTreeSidebar } from "@/components/ProjectsTreeSidebar";
 import { useProjectsTree } from "@/components/projects-tree";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
@@ -37,18 +33,18 @@ import {
   type BridgedChrome,
   type ChromeSlot,
 } from "@/components/screen-chrome";
-import { useTheme } from "@/theme";
+import { useTheme, type as typeScale } from "@/theme";
+import { PressableScale } from "@/components/PressableScale";
 import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
 
 /**
- * Projects on wide windows (unfolded iPhone Duo, iPad): list | item.
+ * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
  *
- *   iPad — like Mail: projects and their views are listed in the system tab
- *          sidebar; Notes shows list | note, every other view the full width.
+ *   iPad — like Mail: the tree sidebar, the project view, the open item.
  *          Column buttons share the floating tab bar's row.
- *   Duo  — the same tree in a panel that slides over the left page (the
- *          folder button). Notes is list | note with the left column ending on
- *          the hinge: list on one page, note on the other.
+ *   Duo  — the same tree in the sidebar column (hidden by the system when
+ *          there isn't room — the column bar then offers its toggle).
+ *          Notes is list | note with the list ending on the hinge.
  */
 
 type SplitViewKind = ProjectTab | "calendar";
@@ -80,6 +76,15 @@ function useSelection(): Selection {
   return useSyncExternalStore(subscribe, () => selection);
 }
 
+/** Reset the selection (e.g. after a workspace switch unmounts the data). */
+export function resetProjectsSelection() {
+  setSelection({ projectId: null, view: "notes", noteId: null, cardId: null, composing: false });
+}
+
+// SPIKE (2026-10-11, continuity): one adaptive container for the whole Projects
+// hierarchy — a single NavigationSplitView always mounted, collapsing to one
+// column when compact via preferredCompactColumn. No width-switched subtrees,
+// no Host-key swaps: fold/unfold must morph, never remount.
 
 // iPad's floating tab bar owns the top row, and SwiftUI column bars go below
 // it — a whole band of wasted height. There the columns hide their bars and
@@ -88,12 +93,10 @@ function useSelection(): Selection {
 const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 
 // Feature flag: the projects tree in the iPad's system tab sidebar
-// (modules/tab-sidebar). Off — or if the module can't install — the iPad uses
-// the same slide-over panel as the Duo.
+// (modules/tab-sidebar) — reserved for a future enhancement; the split-view
+// sidebar column serves both devices today.
 const BOTH_SLOTS: readonly ChromeSlot[] = ["primary", "secondary"];
 const LIST_SLOT: readonly ChromeSlot[] = ["primary"];
-
-const SYSTEM_SIDEBAR = false && sidebarSupported;
 
 const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
   { id: "overview", title: "Overview", icon: "number" },
@@ -105,52 +108,61 @@ const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
 export function ProjectsSplitView({
   projects,
   workspaceName,
+  onWorkspaceSwitched,
 }: {
   projects: ProjectSummary[];
   workspaceName: string;
+  /** Called after the sidebar switches workspace, so the owner reloads. */
+  onWorkspaceSwitched: () => void;
 }) {
   const t = useTheme();
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const sel = useSelection();
   const project = projects.find((p) => p.id === sel.projectId) ?? projects[0];
   const projectId = project?.id ?? null;
   const view = sel.view;
-  // The Board is wide, so it always takes the whole window; an open task slides
-  // in as a panel beside it (inside the same column, so the board never
-  // remounts or moves).
+  // The Board is wide, so an open task slides in as a panel beside it (inside
+  // the same column, so the board never remounts or moves).
   const boardFull = view === "board";
-  const listView = view === "notes";
-  // Views without a list take the whole window; projects and views are picked
-  // from a tree (iPad: the system tab sidebar; Duo: a slide-over panel), so no
-  // column is needed for them.
-  const fullWidth = !listView;
-  const [treeOpen, setTreeOpen] = useState(false);
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
   const [boardVersion, setBoardVersion] = useState(0);
 
-  // The open project's headline numbers, for the tree's card (re-read when a
-  // task changes in the detail column).
-  const overview = useMemo(
-    () => (projectId ? getProjectOverview(projectId) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- boardVersion forces a re-read
-    [projectId, boardVersion],
-  );
-  const summary = useMemo(() => (overview ? summarizeProject(overview) : null), [overview]);
-
   // ── Duo posture ────────────────────────────────────────────────────────────
-  const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
-  const hasHinge = hinge != null && hinge !== "closed";
+  // The hinge status feeds the shared cache (ChatPreviewPane and others read
+  // it); column widths are SwiftUI's job, so nothing here branches on it.
+  const [, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   // Notes only: "detailOnly" is focus mode (the note gets the whole window).
-  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("all");
+  // Visibility starts at "doubleColumn" (sidebar hidden): on room-short
+  // windows SwiftUI asks for it anyway, and starting at "all" opens the
+  // sidebar as an overlay over fresh launches. The header (iPad) and native
+  // toggles (Duo) open it on demand.
+  const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("doubleColumn");
   // Focus needs an open note: never leave an empty detail as the only column.
   // Adjusted during render, so the list never flashes hidden.
   if (visibility === "detailOnly" && !sel.noteId) setVisibility("all");
-  const half = width / 2;
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
   // keeps their content clear of the fold, so no extra inset is added.
+  // SPIKE: compact proxy for the collapsed split view. A visibility/selection
+  // hint only — the component tree never swaps, so nothing remounts.
+  const compact = width < 700;
+  // The collapsed column follows the selection depth: tree → project view →
+  // open item, mirroring the phone drill-down (projects → project → note).
+  const compactColumn: NavigationSplitViewColumn =
+    sel.noteId || sel.composing || sel.cardId ? "detail" : sel.projectId ? "content" : "sidebar";
+  const onCompactColumn = (col: NavigationSplitViewColumn) => {
+    if (col === compactColumn) return;
+    if (col === "content") setSelection({ noteId: null, cardId: null, composing: false });
+    else if (col === "sidebar") setSelection({ projectId: null, noteId: null, cardId: null, composing: false });
+    // "detail" carries no pop information — the selection already says what's open.
+  };
+  const hingeModifier = onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)));
+  // No width pins on any column: SwiftUI owns all widths. Explicit pins —
+  // fixed numbers and stale-prone ideals alike — visibly missed the crease
+  // across poses, while the unpinned board always reflowed correctly. Same treatment everywhere.
 
   // Items reported by bridged columns (iPad), drawn in the stack header.
   const [bridged, setBridged] = useState<Partial<Record<ChromeSlot, BridgedChrome | null>>>({});
@@ -167,27 +179,18 @@ export function ProjectsSplitView({
       ...(id !== selection.projectId ? { noteId: null, cardId: null } : {}),
       composing: false,
     });
-    setTreeOpen(false);
   }, []);
   const tree = useProjectsTree({ projects, views: VIEWS, projectId, view, onSelect: onTreeSelect });
-  const [systemSidebar, setSystemSidebar] = useState(SYSTEM_SIDEBAR);
-  useEffect(() => {
-    if (!SYSTEM_SIDEBAR || !projectId) return;
-    let live = true;
-    void setSidebarGroup(0, tree.nodes, tree.selectedPath).then((ok) => {
-      if (live) setSystemSidebar(ok);
-    });
-    return () => {
-      live = false;
-    };
-  }, [tree.nodes, tree.selectedPath, projectId]);
-  useEffect(() => (SYSTEM_SIDEBAR ? onSidebarItem(tree.select) : undefined), [tree.select]);
 
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next, composing: false });
   }, []);
-  const openNote = useCallback((id: string) => setSelection({ view: "notes", noteId: id, composing: false }), []);
-  const openCard = useCallback((id: string) => setSelection({ view: "board", cardId: id, composing: false }), []);
+  // SPIKE: opening an item never switches the view out from under the user —
+  // the item renders in Detail whatever the Content column shows.
+  const openNote = useCallback((id: string) => setSelection({ noteId: id, cardId: null, composing: false }), []);
+  // SPIKE: cards open in the Detail column (wide) or fullscreen (compact) —
+  // never in the in-board slide-over anymore, so the right page is never empty.
+  const openCard = useCallback((id: string) => setSelection({ cardId: id, noteId: null, composing: false }), []);
   // The list's + composes inline in the detail column (a native modal would
   // park on the wrong page on a Duo — there is no sheet-placement API).
   const openComposer = useCallback(() => setSelection({ view: "notes", composing: true }), []);
@@ -215,10 +218,7 @@ export function ProjectsSplitView({
     </ChromeColumn>
   );
 
-  // The note column's own minimum. SwiftUI's default is wide enough that half
-  // the window for the list plus it doesn't fit an unfolded Duo beside its tab
-  // rail, and the split then falls back to overlaying the list on the note.
-  const detailWidth = navigationSplitViewColumnWidth({ min: 280, ideal: half });
+  // Column widths are SwiftUI's job (see hingeModifier above) — no pins here.
 
   // Closing the note also leaves focus mode, so the list is never left hidden
   // behind an empty detail.
@@ -227,55 +227,50 @@ export function ProjectsSplitView({
     setVisibility("all");
   };
 
-  // Opens the in-app tree (not needed while the system sidebar has it).
-  const projectsButton = systemSidebar
-    ? []
-    : [{ key: "projects", label: "Projects", icon: "folder" as const, onPress: () => setTreeOpen(true) }];
   // Where buttons go:
-  //   iPad — the stack header: the folder first on the left (drawn by the
-  //          header itself), the list's / board's items after it, the open
-  //          item's or view's own items right of the tab bar.
+  //   iPad — the stack header: the list's / board's items left of the tab bar,
+  //          the open item's or view's own items right of it.
   //   Duo  — the bar that docks into the side rail: every view's own column,
   //          and on Notes the note column, which also carries the list's
   //          items (the list keeps just its title).
-  const columnFolder = BRIDGE_HEADER ? [] : projectsButton;
   const slot = (s: ChromeSlot) => (BRIDGE_HEADER ? s : undefined);
   // Duo: the open note's bar also carries the list's items — while a note is
-  // open, drop the list's own + (close/folder/⋯/edit is already a full bar).
-  // With no note open the + stays (it's the only creation entry point there).
-  // iPad keeps it always: its header shares the tab bar's row, so there's room.
+  // open, drop the list's own + (a full bar already). With no note open the +
+  // stays (it's the only creation entry point there). iPad keeps it always:
+  // its header shares the tab bar's row, so there's room.
   const listItems = BRIDGE_HEADER
     ? []
     : bridgedItems(bridged.primary).filter((i) => sel.noteId == null || i.key !== "add");
 
+  // Detail always hosts the open item or the per-view action panel below, so
+  // every column stays mounted across fold/unfold.
+
   // The open item (Notes), or the whole view (everything else).
-  const detail =
+  // SPIKE: the project view is always the Content column; the open note (or a
+  // placeholder) is always the Detail column. Both stay mounted across
+  // fold/unfold — only the split view's own collapse changes what is shown.
+  const contentView =
       boardFull ? (
-        // While a task is open, its panel brings ✕ / ⋯ / Save; the board's own
-        // + would only crowd the bar (the Duo's rail stacks both).
-        <ChromeColumn key={`${projectId}:board`} leading={columnFolder} slot={slot("primary")} hideItems={!!sel.cardId}>
-          <View style={{ flex: 1, flexDirection: "row", overflow: "hidden" }}>
-            <View style={{ flex: 1 }}>
-              <ProjectScreen
-                key={boardVersion}
-                nested
-                projectId={projectId}
-                view="board"
-                selectedId={sel.cardId}
-                onSelectView={selectView}
-                onOpenNote={openNote}
-                onOpenCard={openCard}
-              />
-            </View>
-            <ChatPreviewPane
-              preview={sel.cardId ? { kind: "card", id: sel.cardId } : null}
-              onClose={() => setSelection({ cardId: null })}
-              onChanged={() => setBoardVersion((n) => n + 1)}
-            />
-          </View>
+        // An open card lives in the Detail column now (not a slide-over here),
+        // so the board always has the whole Content column.
+        <ChromeColumn
+          key={`${projectId}:board`}
+          slot={slot("primary")}
+          hideItems={!BRIDGE_HEADER && !!sel.cardId}
+        >
+          <ProjectScreen
+            key={boardVersion}
+            nested
+            projectId={projectId}
+            view="board"
+            selectedId={sel.cardId}
+            onSelectView={selectView}
+            onOpenNote={openNote}
+            onOpenCard={openCard}
+          />
         </ChromeColumn>
       ) : view === "overview" ? (
-        <ChromeColumn key={`${projectId}:overview`} leading={columnFolder} slot={slot("secondary")}>
+        <ChromeColumn key={`${projectId}:overview`} slot={slot("primary")}>
           <ProjectScreen
             nested
             projectId={projectId}
@@ -286,43 +281,91 @@ export function ProjectsSplitView({
           />
         </ChromeColumn>
       ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`} leading={columnFolder} slot={slot("secondary")}>
+        <ChromeColumn key={`${projectId}:calendar`} slot={slot("primary")}>
           <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
-      ) : view === "notes" && sel.noteId ? (
+      ) : (
+        // No item open: Detail hosts the action panel below, so the list
+        // keeps its hinge pin unconditionally.
+        listColumn([], [])
+      );
+
+  // Closing the card also leaves focus mode, so the list is never left hidden
+  // behind an empty detail.
+  const closeCard = () => {
+    setSelection({ cardId: null });
+    setVisibility("all");
+  };
+
+  // The open note or task. Both stay mounted across fold/unfold — the split
+  // view's own collapse is the only thing that hides or shows them.
+  const detailView =
+      sel.cardId ? (        <ChromeColumn
+          key={sel.cardId}
+          slot={slot("secondary")}
+                    leading={[{ key: "close", label: "Close task", icon: "xmark", onPress: closeCard }]}
+        >
+          <CardDetailScreen
+            cardId={sel.cardId}
+            onClose={closeCard}
+            onChanged={() => setBoardVersion((n) => n + 1)}
+          />
+        </ChromeColumn>
+      ) : sel.noteId ? (
         <ChromeColumn
           key={sel.noteId}
           slot={slot("secondary")}
-          modifiers={[detailWidth]}
-          leading={[...columnFolder, { key: "close", label: "Close note", icon: "xmark", onPress: closeNote }]}
+                    leading={[{ key: "close", label: "Close note", icon: "xmark", onPress: closeNote }]}
           extra={listItems}
         >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={closeNote} />
         </ChromeColumn>
-      ) : view === "notes" && sel.composing ? (
+      ) : sel.composing ? (
         // Inline composer: a native modal would park on the wrong page on a
         // Duo (no sheet-placement API), so composing happens here, in the
         // note column. No bridged extras — the bar is just ✕ + Save.
         <ChromeColumn
           key="compose"
           slot={slot("secondary")}
-          modifiers={[detailWidth]}
-          leading={[...columnFolder, { key: "close", label: "Discard note", icon: "xmark", onPress: () => setSelection({ composing: false }) }]}
+                    leading={[{ key: "close", label: "Discard note", icon: "xmark", onPress: () => setSelection({ composing: false }) }]}
         >
           <NoteComposer
             projectId={projectId}
             onSaved={(id) => setSelection({ noteId: id, composing: false })}
           />
         </ChromeColumn>
-      ) : (
-        // A column (not a bare SwiftUI view) so it has a bar for the Duo's
-        // folder and list buttons.
-        <ChromeColumn key="no-note" slot={slot("secondary")} modifiers={[detailWidth]} leading={columnFolder} extra={listItems}>
-          <EmptyState title="No note selected" subtitle="Pick a note from the list." />
-        </ChromeColumn>
-      );
+      ) : null;
+
+  // Detail with nothing open: a per-view action panel, so the right page
+  // earns its space instead of sitting blank.
+  const newTask = () => {
+    if (projectId) router.push({ pathname: "/card/new", params: { project: projectId } });
+  };
+  const emptyDetail =
+    view === "board" ? (
+      <ChromeColumn key="empty" slot={slot("secondary")}>
+        <DetailActionPanel icon={ListTodo} title="No task selected" body="Pick a task from the board — or start a new one." actionLabel="New task" onAction={newTask} />
+      </ChromeColumn>
+    ) : view === "calendar" ? (
+      <ChromeColumn key="empty" slot={slot("secondary")}>
+        <DetailActionPanel icon={CalendarDays} title="No task selected" body="Pick a task from the calendar — or start a new one." actionLabel="New task" onAction={newTask} />
+      </ChromeColumn>
+    ) : view === "overview" ? (
+      <ChromeColumn key="empty" slot={slot("secondary")}>
+        <DetailActionPanel icon={LayoutDashboard} title="Nothing open" body="Open a note or task to read it beside the overview." actionLabel="View board" onAction={() => selectView("board")} />
+      </ChromeColumn>
+    ) : (
+      <ChromeColumn key="empty" slot={slot("secondary")}>
+        <DetailActionPanel icon={FileText} title="No note selected" body="Pick a note from the list — or start a new one." actionLabel="New note" onAction={openComposer} />
+      </ChromeColumn>
+    );
 
   const toggleSidebar = () => setVisibility((v) => (v === "detailOnly" ? "all" : "detailOnly"));
+  // iPad tab header: the sidebar toggle. Column bars are bridged (hidden) on
+  // iPad, so SwiftUI's own sidebar toggle is invisible with them — this is
+  // the only way to open the tree when the system hides it for room. (On Duo
+  // the columns keep their bars, so the native toggle shows in the list bar.)
+  const toggleTree = () => setVisibility((v) => (v === "all" ? "doubleColumn" : "all"));
   // Phone (Duo): the columns draw their own bars, so the stack header hides.
   // iPad: an untitled header in the tab bar's row carries every button — the
   // focus toggle and the list's items, then (right of the tab bar) the open
@@ -339,13 +382,14 @@ export function ProjectsSplitView({
         }}
       />
       <Stack.Toolbar placement="left">
-        {projectsButton.map((b) => (
-          <Stack.Toolbar.Button key={b.key} icon={b.icon} accessibilityLabel={b.label} onPress={b.onPress} />
-        ))}
-        {/* Views and projects live in the tab sidebar. This widens the open
-            note to the whole window and back (not a second sidebar icon: the
-            tab bar already has one). */}
-        {fullWidth || !sel.noteId ? null : (
+        {/* Tree toggle first: the only way to open the sidebar on iPad. */}
+        <Stack.Toolbar.Button
+          icon="sidebar.left"
+          accessibilityLabel={visibility === "all" ? "Hide sidebar" : "Show sidebar"}
+          onPress={toggleTree}
+        />
+        {/* The focus toggle widens the open note to the whole window and back. */}
+        {view !== "notes" || !sel.noteId ? null : (
           <Stack.Toolbar.Button
             icon={visibility === "detailOnly" ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"}
             accessibilityLabel={visibility === "detailOnly" ? "Show list" : "Focus"}
@@ -370,76 +414,105 @@ export function ProjectsSplitView({
   );
 
 
-  const hingeModifier = onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)));
-  // On a Duo the left column (and the tree panel) end exactly on the hinge.
-  const leftWidth = hasHinge
-    ? navigationSplitViewColumnWidth(half)
-    : navigationSplitViewColumnWidth({ min: 300, ideal: 360, max: 440 });
-  const treePanel = systemSidebar ? null : (
-    <ProjectsTreePanel
-      open={treeOpen}
-      onClose={() => setTreeOpen(false)}
-      width={hasHinge ? half : Math.min(360, Math.round(width * 0.4))}
-      title={workspaceName}
-      tree={tree}
-      card={
-        project && summary ? (
-          <ProjectCard name={project.name} icon={project.icon} description={overview?.project?.description} summary={summary} />
-        ) : null
-      }
-    />
-  );
-
-  // Each layout gets its own Host key: a hosted React Native view moved into a
-  // different SwiftUI column otherwise renders blank.
-  if (fullWidth) {
-    return withHeader(
-      <>
-        <Host key="single" style={{ flex: 1 }}>
-          <NavigationStack modifiers={[tint(t.accent), hingeModifier]}>{detail}</NavigationStack>
-        </Host>
-        {treePanel}
-      </>,
-    );
-  }
-
-  // ── Notes: list | note ────────────────────────────────────────────────────
-  // The tree panel is absolutely positioned over the screen, so it's a sibling:
-  // wrapping the Host in another view makes SwiftUI see a zero-width window on
-  // first layout and collapse the list column for good.
+  // ── Unified hierarchy: tree | view | item ─────────────────────────────────
+  // One stable Host, one NavigationSplitView, always mounted. The same
+  // container collapses (compact) ↔ expands (regular): the open note, its
+  // draft, and the list never unmount across fold/unfold.
   //
   // NOTE (2026-10-11): a native split ArrangementView was spiked here as an
-  // alternative to NavigationSplitView. Simulator frame logs showed
-  // byte-identical columns in both branches ([0,456] / [496,867] half-folded,
-  // hinge-centred with ~20pt crease gutters from SwiftUI itself), and the
-  // arrangement needed per-side NavigationStacks for the column bars — which
-  // reintroduced the insets it was meant to remove. Verdict: no advantage;
-  // the split view stays. See docs/plans/iphone-duo.md.
+  // alternative to NavigationSplitView and killed: simulator frame logs showed
+  // byte-identical columns ([0,456] / [496,867] half-folded), and the
+  // arrangement needed per-side NavigationStacks for the column bars —
+  // navigation *inside* the arrangement, contrary to Apple ("keep navigation
+  // outside of arrangement views"). Here navigation stays outside and the
+  // columns are navigation-free ChromeColumns, which is exactly Apple's
+  // containment. See docs/plans/iphone-duo.md.
   return withHeader(
     <>
-      <Host key="two-column" style={{ flex: 1 }}>
+      <Host style={{ flex: 1 }}>
         <NavigationSplitView
-          // The system sidebar button collapses the list for a full-width note.
-          columnVisibility={visibility}
+          // True echo (except the spurious first-layout detailOnly with
+          // nothing open, which is swallowed): controlled visibility only
+          // settles when SwiftUI's reports are acknowledged.
+          columnVisibility={
+            compact ? "automatic" : visibility === "detailOnly" && sel.noteId ? "detailOnly" : visibility
+          }
           onColumnVisibilityChange={(v) => {
-            // Focus needs a note. SwiftUI also collapses the list by itself
-            // during the first layout pass; answer with a different "list
-            // shown" value so the change is actually sent back to it.
-            if (v === "detailOnly" && !selection.noteId) {
-              setVisibility((prev) => (prev === "all" ? "doubleColumn" : "all"));
-              return;
-            }
+            // Swallow the spurious first-layout detailOnly with nothing open;
+            // echo everything else back (controlled visibility only settles
+            // when SwiftUI's reports are acknowledged).
+            if (v === "detailOnly" && !selection.noteId) return;
             setVisibility(v);
           }}
-          // Balanced: the list sits beside the note in every visibility, never
-          // over it (the hinge layout depends on that).
-          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("balanced")]}
+          // Collapsed (compact) the split view is a single column following
+          // the selection depth; expanded it shows tree | view | item.
+          // Controlled: the handler above feeds the user's Back back into
+          // the selection, which recomputes this value.
+          preferredCompactColumn={compactColumn}
+          onPreferredCompactColumnChange={onCompactColumn}
+          // Automatic: the style owns how many columns fit. ("balanced" was
+          // correct for the old two-column notes split — side by side, never
+          // overlaid — but in a three-column split it pins content+detail and
+          // hides the sidebar everywhere, iPad included.)
+          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic")]}
         >
-          <NavigationSplitView.Sidebar>{listColumn([leftWidth], [])}</NavigationSplitView.Sidebar>
-          <NavigationSplitView.Detail>{detail}</NavigationSplitView.Detail>
+          <NavigationSplitView.Sidebar>
+            <ProjectsTreeSidebar title={workspaceName} tree={tree} onWorkspaceSwitched={onWorkspaceSwitched} />
+          </NavigationSplitView.Sidebar>
+          <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
+          {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for
+              a null child, so a conditional only trades the action panel for
+              a blank page. Period. */}
+          <NavigationSplitView.Detail>{detailView ?? emptyDetail}</NavigationSplitView.Detail>
         </NavigationSplitView>
       </Host>
-      {treePanel}
     </>,
+  );
+}
+
+/**
+ * Detail column with nothing open: a per-view action panel so the right page
+ * earns its space (SwiftUI reserves the slot even when empty — a conditional
+ * only trades this panel for a blank page).
+ */
+function DetailActionPanel({
+  icon: Icon,
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  icon: typeof FileText;
+  title: string;
+  body: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10, backgroundColor: t.background }}>
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: t.surface2,
+          borderWidth: 1,
+          borderColor: t.border,
+        }}
+      >
+        <Icon size={26} color={t.textTertiary} />
+      </View>
+      <Text style={[typeScale.subtitle, { color: t.textPrimary, fontWeight: "700", textAlign: "center" }]}>{title}</Text>
+      <Text style={[typeScale.caption, { color: t.textSecondary, textAlign: "center", lineHeight: 18 }]}>{body}</Text>
+      <PressableScale
+        onPress={onAction}
+        style={{ marginTop: 6, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, backgroundColor: t.accent }}
+      >
+        <Text style={[typeScale.control, { color: "#fff", fontWeight: "700" }]}>{actionLabel}</Text>
+      </PressableScale>
+    </View>
   );
 }

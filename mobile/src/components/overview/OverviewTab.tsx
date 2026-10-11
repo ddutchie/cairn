@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, LayoutDashboard, Kanban } from "lucide-react-native";
 import { COLUMN_COLORS, PRIORITY_COLOR, COLUMN_TYPE_ORDER } from "@cairn/shared/ui/constants";
@@ -179,23 +178,16 @@ export function OverviewTab({
 
   const focusLabel: Record<FocusFilter, string> = { all: "All", today: "Due today", overdue: "Overdue", pinned: "Pinned" };
 
-  const { width: winW } = useWindowDimensions();
-  // Wide enough for side-by-side cards (mirrors SPLIT_MIN_WIDTH in the
-  // Projects tab): sections split at the hinge instead of stacking.
-  const twoColumn = winW >= 700;
-  // The column break must sit on the window middle (the hinge), not the
-  // container middle: the container is already inset by the side safe areas,
-  // so symmetric flex would land left of the hinge whenever they differ.
-  // (RN insets are window-uniform, which is exactly what this math needs.)
-  const { left: safeLeft, right: safeRight } = useSafeAreaInsets();
+  // Measure the container, not the window: this tab renders inside the Content
+  // column (or fullscreen on phones), whose width differs from the window's.
+  // Single stack until the first layout pass reports a width.
+  const [cw, setCw] = useState<number | null>(null);
+  const twoColumn = (cw ?? 0) >= 600;
   const COL_GAP = 14;
   // The scroll content pads horizontally (styles.content) — the row lives
-  // inside that padding, so measure from its edges, not the container's.
-  // (Forgetting this both offsets the break and clips the right column.)
+  // inside that padding, so split the width inside its edges.
   const CONTENT_PAD = 12;
-  const hingeBreak = winW / 2;
-  const leftW = hingeBreak - COL_GAP / 2 - (safeLeft + CONTENT_PAD);
-  const rightW = winW - safeRight - CONTENT_PAD - (hingeBreak + COL_GAP / 2);
+  const colW = Math.max(0, ((cw ?? 0) - CONTENT_PAD * 2 - COL_GAP) / 2);
 
   const masthead = project ? (
         <View style={styles.masthead}>
@@ -692,13 +684,14 @@ export function OverviewTab({
       style={{ flex: 1, backgroundColor: t.background }}
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       showsVerticalScrollIndicator={false}
+      onLayout={(e) => setCw(e.nativeEvent.layout.width)}
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} /> : undefined}
     >
       {twoColumn ? (
         <View style={styles.columns}>
           {/* min/max clamps (not bare width): they beat any flex-basis
-              resolution, so the hinge math survives Yoga unconditionally. */}
-          <View style={[styles.column, { width: leftW, minWidth: leftW, maxWidth: leftW }]}>
+              resolution, so the split survives Yoga unconditionally. */}
+          <View style={[styles.column, { width: colW, minWidth: colW, maxWidth: colW }]}>
             {masthead}
             {focusBar}
             {kpi}
@@ -707,7 +700,7 @@ export function OverviewTab({
             {priority}
             {radar}
           </View>
-          <View style={[styles.column, { width: rightW, minWidth: rightW, maxWidth: rightW }]}>
+          <View style={[styles.column, { width: colW, minWidth: colW, maxWidth: colW }]}>
             {notes}
             {activity}
           </View>
@@ -781,8 +774,8 @@ function makeStyles(t: Theme) {
   void t;
   return StyleSheet.create({
     content: { padding: 12, paddingTop: 0, gap: 14 },
-    // Wide split-view columns: sections flow into two hinge-aligned columns
-    // (status left, actionables right) instead of one stack.
+    // Wide containers: sections flow into two even columns (status left,
+    // actionables right) instead of one stack.
     columns: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
     column: { flex: 1, minWidth: 0, gap: 14 },
     masthead: { gap: 12 },

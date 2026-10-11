@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { ScreenChrome } from "@/components/screen-chrome";
+import { ScreenChrome, useInColumn } from "@/components/screen-chrome";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
@@ -58,6 +58,10 @@ export function NoteDetailScreen({
   const back = noteId != null ? undefined : params.back;
   const router = useRouter();
   const close = useCallback(() => (onClose ? onClose() : router.back()), [onClose, router]);
+  // In a split-view column the column's own ✕ dismisses, so the editor doesn't
+  // add a second one (route mode keeps Cancel: Back pops, Cancel just drops
+  // the edits and stays).
+  const inColumn = useInColumn();
   const t = useTheme();
   const isDark = useIsDark();
   const fontId = useFont();
@@ -217,7 +221,7 @@ export function NoteDetailScreen({
         // origin tab's title; the in-tab Projects flow omits it.
         back={back}
         left={
-          editing
+          editing && !inColumn
             ? [{ kind: "button", key: "cancel", label: "Cancel", icon: ICON_CLOSE, onPress: toolbarPress(onCancel) }]
             : []
         }

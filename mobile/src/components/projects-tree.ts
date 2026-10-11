@@ -4,10 +4,8 @@ import type { ProjectSummary } from "@/db/queries";
 
 /**
  * The projects tree — projects that expand to their views, like Mail's accounts
- * and mailboxes. One model for every wide layout; only the renderer differs:
- * the iPad's system tab sidebar (modules/tab-sidebar) or the in-app panel
- * (ProjectsTreePanel: the Duo, and the iPad when the system sidebar can't be
- * used).
+ * and mailboxes. One model, one renderer: the split-view sidebar column
+ * (`ProjectsTreeSidebar`).
  */
 export interface TreeNode {
   id: string;

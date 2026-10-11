@@ -3,40 +3,63 @@
 How Cairn Mobile lays out Projects (and the Chat preview) on wide windows: the
 unfolded iPhone Duo and the iPad. Spike branch `spike/duo-split-view`.
 
+## Canonical Apple docs (start here)
+
+- [Prepare — iPhone Duo](https://developer.apple.com/iphone-duo/prepare/) (SDK tiers + resizing checklist)
+- [Preparing your app for iPhone Duo](https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo.md) (canonical overview)
+- [Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo) (HIG; raw markdown: `https://developer.apple.com/tutorials/data/design/human-interface-guidelines/designing-for-iphone-duo.md`)
+- Tech Talks: [Prepare your app for iPhone Duo](https://developer.apple.com/videos/play/tech-talks/111461/) · [Strike a pose with adaptive layouts](https://developer.apple.com/videos/play/tech-talks/111463/)
+- API: [`ArrangementView`](https://developer.apple.com/documentation/swiftui/arrangementview.md)
+
+For agents: prefer the `.md` endpoints where available; several
+`developer.apple.com` HTML pages require JavaScript. Device/OS research lives
+in `docs/plans/iphone-duo.md`.
+
 ## Devices and what differs
 
-| | Phone (folded Duo, iPhone) | iPhone Duo, unfolded | iPad |
+| | Folded Duo / iPhone (compact) | iPhone Duo, unfolded | iPad |
 |---|---|---|---|
-| Window | < 700pt | ~951 × 669pt, hinge at ½ | 1032pt+ |
+| Window | < 700pt | ~951pt landscape / ~710pt portrait | 1032pt+ |
 | UI idiom | phone | **phone** | pad |
 | Tab bar | bottom bar | **side rail** (84pt right inset) | **floating pill** in the top row |
 | System tab sidebar | no | **no** (idiom gate, see below) | yes (`sidebarAdaptable`) |
-| Projects layout | stack (routes) | split view | split view |
-| Project / view picker | segment + routes | slide-over tree panel | system tab sidebar |
-| Column buttons | stack header | each column's SwiftUI bar | stack header (shares the pill's row) |
+| Projects layout | collapsed split (one column) | split view | split view |
+| Project / view picker | tree sidebar column | tree sidebar column (or its toggle) | tree sidebar column |
+| Column buttons | column's SwiftUI bar | each column's SwiftUI bar | stack header (shares the pill's row) |
 
-`SPLIT_MIN_WIDTH = 700` (`app/(tabs)/projects/index.tsx`) switches between the
-phone stack and the split view, live on fold/unfold.
+iOS always mounts one `NavigationSplitView` (`app/(tabs)/projects/index.tsx`
+renders `<ProjectsSplitView>` unconditionally); it collapses to a single
+column when compact, driven by `preferredCompactColumn` (other platforms keep
+the old width-switched list).
 
 ## Component map
 
 ```
-app/(tabs)/projects/index.tsx      width ≥ 700 → <ProjectsSplitView>
-└─ ProjectsSplitView               selection store, layout choice, header (iPad)
-   ├─ Notes view:   Host ▸ NavigationSplitView (balanced)
-   │                  Sidebar: ChromeColumn ▸ ProjectScreen (notes list)
-   │                  Detail:  ChromeColumn ▸ NoteDetailScreen | empty state
-   ├─ Other views:  Host ▸ NavigationStack ▸ ChromeColumn ▸ Overview | Board | Calendar
-   │                  Board: row of [board | ChatPreviewPane (task panel)]
-   └─ Duo only:     ProjectsTreePanel (slide-over, absolutely positioned)
+app/(tabs)/projects/index.tsx      iOS → always <ProjectsSplitView> (collapses
+                                   when compact); other platforms keep the
+                                   width-switched list
+└─ ProjectsSplitView               one NavigationSplitView, always mounted:
+                                   Sidebar (tree) | Content (view) | Detail
+                                   (open note/task, else a per-view action
+                                   panel — the slot is always reserved)
+   ├─ Sidebar:   ProjectsTreeSidebar (native bar: Projects title, leading
+   │              workspace menu, trailing sync/settings icons + tree list)
+   ├─ Content:   ChromeColumn ▸ ProjectScreen (notes list | board | overview
+   │              | calendar)
+   └─ Detail:    ChromeColumn ▸ NoteDetailScreen | NoteComposer |
+                  CardDetailScreen | DetailActionPanel
 
 app/(tabs)/chat/index.tsx          width ≥ 700 → ChatPreviewPane beside the chat
+                                  (the board's old task panel moved to Detail)
 ```
 
 ### Selection
 A module-level store in `ProjectsSplitView` (`{ projectId, view, noteId, cardId }`
-via `useSyncExternalStore`). It lives outside React so it survives the split view
-unmounting when the Duo folds and remounting when it unfolds.
+via `useSyncExternalStore`). It lives outside React so the open item survives
+fold/unfold — and opening an item never switches the view: the item renders in
+Detail whatever Content shows. `preferredCompactColumn` follows the selection
+depth (tree → view → item) and the native Back feeds back into the selection,
+so compact drill-down needs no router pushes.
 
 ### Screens in columns — `screen-chrome.tsx`
 Screens describe their title and toolbar once as data (`<ScreenChrome>`). Where
@@ -52,30 +75,34 @@ it renders depends on context:
   header shares the pill's row.
 
 ### Where buttons go
-- **iPad** — the stack header in the tab bar's row: the folder (panel mode) first
-  on the left, then the list's / board's items; the open note's or the view's
-  own items (Overview, Calendar) right of the tab bar.
-- **Duo** — the bar that docks into the side rail. Full-width views use their
-  own column's bar; on Notes the list keeps only its title and its items (+)
-  move, with the folder, to the note column's bar, so every view puts its
-  buttons in the rail.
+- **iPad** — the stack header in the tab bar's row: the sidebar toggle first
+  (the system hides the tree for room on narrow windows and its own toggle
+  is bridged away with the column bars), then the list's / board's items;
+  the open note's or the view's own items (Overview, Calendar) right of the
+  tab bar.
+- **Duo** — the bar that docks into the side rail. Every column owns its bar:
+  the sidebar (workspace menu, sync, settings), the view, and the open item
+  (which also carries the list's items on Notes — the list keeps just its
+  title while a note is open).
 
 ### Picking a project and view
 The same tree on both wide devices — projects that expand to Overview / Notes /
 Board / Calendar, like Mail's accounts and mailboxes. One model,
 `useProjectsTree` (`src/components/projects-tree.ts`: nodes with count badges,
-the selected path, `select(path)`), feeds two renderers:
+the selected path, `select(path)`), feeds two renderers (past and present):
 
-- **iPad** — the system tab sidebar (`modules/tab-sidebar`, see below). Picking a
-  row from any tab opens Projects on it; the open view is highlighted.
-- **Duo** — `ProjectsTreePanel`: a SwiftUI sidebar list in a panel that slides
-  over the left page and ends on the hinge. Opened by the folder button in each
-  column's bar.
+- **iPad system tab sidebar** (`modules/tab-sidebar`, flag-gated, future) —
+  picking a row from any tab opens Projects on it.
+- **Split-view sidebar column** (`ProjectsTreeSidebar`, current) — the tree
+  list under a native column bar: `Projects` title, leading workspace-switcher
+  menu, trailing sync/settings icon buttons (the same `Toolbar` pattern the
+  `ChromeColumn` content columns use). It is the projects entry in every
+  posture: a permanent column when wide, the collapsed column when compact.
+  The old slide-over `ProjectsTreePanel` (and its folder button) is deleted.
 
-The system sidebar is a feature flag (`SYSTEM_SIDEBAR` in `ProjectsSplitView`)
-and an enhancement, not a dependency: `setSidebarGroup` resolves `false` when it
-can't install (not an iPad, iPadOS < 18, module missing, no tab controller
-found), and the iPad then shows the same panel and folder button as the Duo.
+The system sidebar stays a feature flag in `modules/tab-sidebar` for a future
+enhancement, not a dependency — the split-view sidebar column serves both
+devices today.
 
 ### The open item
 The note open beside the list is tinted in it (`NoteRowItem selected`), and the
@@ -83,17 +110,21 @@ task open beside the board is outlined on its card (`DraggableBoard
 selectedCardId`) — both via `ProjectScreen selectedId`.
 
 ### Hinge (Duo)
-`onHingeChange` (iOS 27.1 SDK) on the split / stack reports the posture; the last
-value is cached in `src/lib/hinge.ts` so a remount starts in the right layout.
-The left column and the tree panel are exactly half the window. Note:
-`onHingeChange` is a no-op with precompiled Expo modules — builds need
+`onHingeChange` (iOS 27.1 SDK) on the split view reports the posture; the last
+value is cached in `src/lib/hinge.ts` for whoever needs it (currently only the
+chat preview pane). Column widths are SwiftUI's job entirely — no pins: a
+plain number is a FIXED column that can't follow pose changes, and even soft
+`{ min, ideal }` ideals visibly missed the crease across poses while the
+unpinned board always reflowed correctly. So every column is unpinned
+(`balanced` style does the hinge-centring itself).
+Note: `onHingeChange` is a no-op with precompiled Expo modules — builds need
 `EXPO_USE_PRECOMPILED_MODULES=0` (release: `ios.usePrecompiledModules: false`
 and an Xcode 27.1 EAS image).
 
 ### Task / note side panel — `ChatPreviewPane`
-One animated width (Reanimated) slides a note or task in from the right, beside
-the chat or the board, so neither remounts. Half open on a Duo it starts exactly
-on the hinge.
+One animated width (Reanimated) slides a note or task in from the right beside
+the chat, so neither remounts. Half open on a Duo it starts exactly on the
+hinge. (The board's old task panel is gone — open tasks live in Detail now.)
 
 ## Native additions (what's not stock Expo)
 
@@ -128,21 +159,31 @@ a customisation "Edit" button.
 
 - **Duo is phone idiom.** `List` selection only works in edit mode → rows select
   with `onTapGesture` + a drawn highlight. `UITabBarController` in `tabSidebar`
-  mode reports regular width yet never draws a sidebar → the Duo's own panel.
-- **SwiftUI split falls back to overlay** when sidebar + detail minimums don't fit
-  the window (Duo: half the window + default detail minimum > 951pt − rail). Set
-  the detail column's own minimum (`navigationSplitViewColumnWidth`) and use
-  `navigationSplitViewStyle("balanced")`.
-- **Controlled `columnVisibility`** only reaches SwiftUI when the prop changes.
-  SwiftUI may collapse the list by itself on first layout and report
-  `detailOnly`; answering with the same value we already pass does nothing —
-  answer with a different "shown" value (`all` ↔ `doubleColumn`).
+  mode reports regular width yet never draws a sidebar (which is why the tree
+  lives in a split-view column instead of the tab sidebar).
+- **SwiftUI reserves the Detail slot even when empty.** Conditionally unmounting
+  the Detail column trades a placeholder for a blank page (verified), and no
+  width trick reclaims it — explicit full-window widths overflow in poses where
+  the sidebar is visible. So Detail always hosts something: the open item, else
+  a per-view action panel (`DetailActionPanel`).
+- **No column width pins.** Fixed numbers freeze a pose; `{ min, ideal }` ideals
+  still missed the crease across poses. Unpinned columns under `balanced` reflow
+  correctly everywhere (the board proved it first).
+- **Controlled `columnVisibility` only settles when SwiftUI's reports are
+  acknowledged.** Passing a constant (e.g. always `"all"`) while ignoring
+  `onColumnVisibilityChange` parks columns in limbo (sidebar stuck as an
+  overlay). The split starts at `"doubleColumn"` and echoes every report back,
+  swallowing only the spurious first-layout `detailOnly` with nothing open;
+  focus mode passes an explicit `detailOnly` while on. Compact passes
+  `"automatic"` (same as uncontrolled).
 - **iPad leading header items** fold into a "⋯" overflow on a cold start when an
   item has a long text label → icon-only items.
-- **Moving a hosted RN view between SwiftUI columns** renders blank → each layout
-  has its own `Host` key.
-- **Stack.Screen options persist** → the narrow header sets `headerShown` and
-  `contentStyle` explicitly so the split view's overrides don't stick.
+- **One stable `Host`, never moved or keyed.** A hosted RN view moved into a
+  different SwiftUI column renders blank — so the split view (and its `Host`)
+  mounts once and columns only ever swap *content*, never containers.
+- **Stack.Screen options persist** → route screens set `headerShown` and
+  `contentStyle` explicitly so the split view's overrides don't stick when
+  navigating back to phone-style routes (Android, root-stack pushes).
 
 ## Unifying — getting rid of the native additions
 
@@ -151,18 +192,17 @@ little native code as possible.
 
 ### What's already shared
 - The selection store, the views list (`VIEWS`), the column chrome
-  (`ScreenChrome` / `ChromeColumn`), the side panel, and the full-width vs
-  list | item rule (only Notes has a list).
-- The tree's *data* — projects × views — is the same for the iPad sidebar and the
-  Duo panel; only the renderer differs.
+  (`ScreenChrome` / `ChromeColumn`), and the tree sidebar column.
+- The tree's *data* — projects × views — is the same everywhere; there is one
+  renderer now (the sidebar column).
 
 ### Options
 
-**A. One in-app tree everywhere (no `tab-sidebar` module).**
-Use `ProjectsTreePanel` (or a SwiftUI sidebar column) on iPad too, and keep the
-system tab sidebar flat. Zero UIKit surgery; identical behaviour on both devices.
-Cost: on iPad the app has two sidebars (the system one for tabs, ours for
-projects) — less Mail-like, and the panel overlays rather than docking.
+**A. One in-app tree everywhere (no `tab-sidebar` module) — DONE.**
+The SwiftUI sidebar column serves iPad too; the system tab sidebar stays flat.
+Zero UIKit surgery; identical behaviour on both devices. Cost: on iPad the app
+has two sidebars (the system one for tabs, ours for projects) — less
+Mail-like, but the column docks instead of overlaying.
 
 **B. Upstream grouped tabs (removes `tab-sidebar`).**
 Add `UITabGroup` / sidebar-only children to react-native-screens' tabs host and
@@ -184,8 +224,9 @@ has the pill, so the bridge stays unless we accept the band there.
 ### Recommendation
 Keep the shared JS model and make the renderer the only per-device difference:
 
-1. ✅ The tree data lives in one hook (`useProjectsTree`) used by both the iPad
-   sidebar and the Duo panel, so behaviour can't drift.
+1. ✅ The tree data lives in one hook (`useProjectsTree`), and since the
+   panel deletion there is one renderer too (`ProjectsTreeSidebar`), so
+   behaviour can't drift.
 2. ✅ `tab-sidebar` sits behind a flag with **A** as the automatic fallback: if
    the module can't install (or a react-native-screens upgrade breaks it), the
    iPad gets the same panel as the Duo.
@@ -231,17 +272,20 @@ through `ScreenChrome`, which draws in the native header as a route and in
 the column bar in a split view — one component, both hosts. The `note/new`
 route is now a thin wrapper (phone keeps the modal). A `composing` flag on
 the split-view selection drives it; any navigation clears it. While a note is
-open the note bar also drops the list's `+` (same declutter rule the board
-already uses for its panel-open `+`).
+open the note bar also drops the list's `+` (mirrored on the board, which
+drops its `+` while a task is open on the Duo).
 
-### Tree panel owns workspace actions
+### Tree sidebar owns workspace actions (panel deleted)
 
 The narrow Projects header (sync badge + settings) never renders in split
-mode, stranding both. They moved into the tree panel header (workspace title
-+ sync + settings), reachable from every column via the folder button. The
-sync tint logic mirrors `useSyncBadge` with lucide icons (its SF Symbols only
-render in native toolbars). If `SYSTEM_SIDEBAR` is ever switched on, the panel
-goes away on iPad and these need a home in the header bridge instead.
+mode, stranding both. They moved into the sidebar's native column bar
+(`Projects` title, leading workspace-switcher menu, trailing sync/settings
+icon buttons) — first as a hand-rolled row (which wrapped at narrow widths),
+then as a real `Toolbar`, the same pattern the content columns use. The
+slide-over `ProjectsTreePanel` and its folder button are deleted: the sidebar
+column is the projects entry in every posture (permanent column when wide,
+the collapsed column when compact, reached via the native sidebar toggle when
+the system hides it for room).
 
 ### ArrangementView spiked and killed
 
@@ -254,16 +298,17 @@ from `onGeometryChange` frame logs, both branches half-folded:
   columns lose all bars, and per-side `NavigationStack`s reintroduce insets.
 - Verdict: no geometric advantage; the split view stays. Note left in code.
 
-### Overview splits at the hinge (`OverviewTab`)
+### Overview measures its container (`OverviewTab`)
 
-Wide mode (`≥700pt`, mirroring `SPLIT_MIN_WIDTH`) renders the nine sections
-as two columns — status through health left, notes + activity right. Two
-Yoga lessons, both load-bearing:
+First cut split the nine sections at the window middle (mirroring
+`SPLIT_MIN_WIDTH`) — correct when Overview owned the whole window, broken once
+it moved into the Content column (window-sized columns overflowed and clipped
+inside it). It now measures its own container (`onLayout`): two even columns
+at ≥600pt, one stack below (single stack on the first frame until measured).
+Yoga lessons, both still load-bearing:
 
-1. Measure from the window middle, not the container: the container is
-   already rail-inset, so symmetric flex lands ~40pt left of the hinge.
-   Subtract scroll-content padding too (it offsets the break *and* clips the
-   right column).
+1. Subtract the scroll-content padding from the measured width (forgetting it
+   both offsets the break and clips the right column).
 2. Bare `width` loses to `flex:1`'s zero flex-basis, and the `flexBasis:
    "auto"` string form measured zero — pin columns with matching
    `width`/`minWidth`/`maxWidth` and no flex keys.
@@ -277,4 +322,27 @@ and `onGeometryChange` frame logs (`[duo-debug]`) settle "where is it really"
 arguments — all removed before committing. `xcrun simctl io booted screenshot`
 captures the simulator without interrupting the session. The LogBox banner in
 screenshots is pre-existing noise (DrawerLayoutAndroid deprecation +
-Reanimated web-deps warning on chat).
+Reanimated web-deps warning on chat). Dual-display capture: once unfolded, the
+default framebuffer is the dark outer display — capture the inner display by
+UUID (`simctl io booted enumerate` lists the ports).
+
+### Single adaptive container (continuity spike)
+
+One `NavigationSplitView` always mounted on iOS (Sidebar = tree, Content =
+view, Detail = item-or-action-panel), collapsing via `preferredCompactColumn`
+(the collapsed column follows the selection depth; the native Back pops the
+selection). Fold/unfold morphs instead of remounting — verified with a note
+open, in both directions. Supporting rules, all learned the hard way:
+
+- Opening an item never switches the view (`openNote`/`openCard` only set the
+  item id); the item renders in Detail whatever Content shows.
+- Detail is always mounted (the slot stays reserved when empty); with nothing
+  open it hosts a per-view `DetailActionPanel` (New note / New task /
+  View board).
+- No column width pins of any kind (see the hinge note).
+- The note editor's Cancel ✕ shows in route mode only — in a column the
+  column's own ✕ is the single dismiss (`useInColumn()`).
+- `simctl terminate` does not reliably restart the app; after structural
+  native changes reboot the simulator (`shutdown`/`boot`), and confirm the new
+  code is actually running (temporary marker, or curl the Metro bundle and
+  grep for a new string) — stale bundles get served silently.

@@ -1,9 +1,23 @@
 # iPhone Duo — device, OS behaviors & Cairn plan
 
-Status: Research + plan (spike branch `spike/duo-split-view`)
+Status: Spike implemented on `spike/duo-split-view` (uncommitted) — single adaptive
+container, sidebar column, action panels. Remaining: draft/focus acceptance
+matrix (§5.0), merge.
 Date: 2026-10-11 (Duo launches Oct 23, 2026; pre-orders Oct 16)
 Related: `docs/mobile-wide-layouts.md` (current split-view architecture),
 `docs/plans/mobile-app-viability.md`, `mobile/changelogs/v0.1.10.md`
+
+## Canonical Apple docs (start here)
+
+- [Get ready for iPhone Duo](https://developer.apple.com/iphone-duo/) (hub)
+- [Prepare — iPhone Duo](https://developer.apple.com/iphone-duo/prepare/) (SDK tiers + resizing checklist)
+- [Preparing your app for iPhone Duo](https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo.md) (canonical overview)
+- [Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo) (HIG; raw markdown: `https://developer.apple.com/tutorials/data/design/human-interface-guidelines/designing-for-iphone-duo.md`)
+- Tech Talks: [Prepare your app for iPhone Duo](https://developer.apple.com/videos/play/tech-talks/111461/) · [Strike a pose with adaptive layouts](https://developer.apple.com/videos/play/tech-talks/111463/)
+- API: [`ArrangementView`](https://developer.apple.com/documentation/swiftui/arrangementview.md)
+
+For agents: prefer the `.md` endpoints where available; several
+`developer.apple.com` HTML pages require JavaScript.
 
 ## 1. The device (from Apple)
 
@@ -73,9 +87,9 @@ From the Tech Talks + MacObserver summary:
 
 | API | What it does | Cairn relevance |
 |---|---|---|
-| `ArrangementView` / `UIArrangementViewController` (split/overlay) | Primary + secondary views laid out across the fold | ★ Our list\|note columns are the textbook case |
+| `ArrangementView` / `UIArrangementViewController` (split/overlay) | Primary + secondary views laid out across the fold | Killed for navigational list\|note (spike: identical frames + nav-inside-arrangement is contrary to Apple); reserved for layout-only pairs inside one navigation container |
 | `ReservedRegion` / `UIViewReservedRegion` (division/occlusion) | Query hinge + camera regions; place custom UI outside the safe area without colliding | Custom bars, edge-to-edge canvases (graph?) |
-| `onHingeChange` / `UIHingeInteraction` | Hinge status (closed/partially/fully open) + continuous angle — **for effects, not layout** | Already used for column widths (see §5) |
+| `onHingeChange` / `UIHingeInteraction` | Hinge status (closed/partially/fully open) + continuous angle — **for effects, not layout** | Feeds the shared hinge cache only; column widths are SwiftUI-owned, unpinned |
 | `UIWindowSceneActivation` | **Second window of the same app — first iPhone that can do this** (inner display only) | Note in one window + list/chat in another; needs a native module (not in Expo, see §3) |
 | `CameraCaptureAccessory` / `.sceneAccessory()` | Extra UI (teleprompter, subject preview) on the outer display during a camera session | None (no camera features) |
 | Virtual Front Camera | Auto handoff outer ↔ under-display camera | None |
@@ -102,7 +116,8 @@ Sources: [Tech Talk: Prepare your app](https://developer.apple.com/videos/play/t
 - ✅ `ArrangementView` (+ Primary/Secondary, `arrangementViewStyle('split'|'overlay')`,
   `splitArrangementLayoutRatio`) — iOS 27.1+, children render without a
   container below 27.1 (graceful fallback).
-- ✅ `onHingeChange` (+ `HingeStatus`) — already driving our column widths.
+- ✅ `onHingeChange` (+ `HingeStatus`) — feeds the shared hinge cache
+  (`src/lib/hinge.ts`); column widths are SwiftUI-owned, unpinned.
 - ✅ `NavigationSplitView` 2- and 3-column + `balanced` style — our Projects layout.
 - ✅ `NativeTabs` `sidebarAdaptable` — the side rail itself.
 - ✅ `onGeometryChange` with global position, `RNHostView matchContents`.
@@ -126,17 +141,53 @@ builds need `EXPO_USE_PRECOMPILED_MODULES=0`**.
 
 Already done on this branch:
 
-- `SPLIT_MIN_WIDTH = 700` switches phone stack ↔ native split view, live on fold/unfold.
-- List | note columns sized to the hinge (`half` window, `balanced` style,
-  detail minimum 280 so the split never falls back to overlay).
+- One adaptive container: a single `NavigationSplitView` (Sidebar = tree,
+  Content = view, Detail = open note/task or a per-view action panel) always
+  mounted on iOS, collapsing to one column when compact via
+  `preferredCompactColumn` — no width-switched subtrees, no `Host`-key swaps,
+  no column width pins of any kind (`balanced` centres the break itself).
 - Side-rail safe zones: tab screens via `useTabContentStyle()`, modals via the
   root navigator (`mobile/app/_layout.tsx`); headers blend to page colour
   beside the rail.
-- Selection store survives split-view unmount on fold/unfold.
-- Slide-over projects tree ending on the hinge; per-column SwiftUI bars whose
-  buttons dock into the rail.
+- Selection store + `preferredCompactColumn` carry the hierarchy across
+  fold/unfold; opening an item never switches the view; the native Back feeds
+  back into the selection.
+- Per-column SwiftUI bars whose buttons dock into the rail (sidebar: `Projects`
+  title, leading workspace menu, trailing sync/settings).
+- Overview measures its container (two columns ≥600pt, stack below).
 
 ## 5. Gaps & next steps (ranked)
+
+### 5.0 Continuity across unfold/fold — new top priority, outranks all below
+
+Apple's Duo model is one running app morphing across displays (Mail pattern:
+list-or-email closed, both side-by-side open), with the app responsible for
+keeping functionality and state the same.
+
+Direction (✅ SPIKED 2026-10-11, verified on the Duo simulator): **one adaptive
+Projects container** — a single `NavigationSplitView` always mounted for the
+Projects hierarchy (Sidebar = tree, Content = view, Detail = open item), letting
+the system collapse it when compact. Expo's `NavigationSplitView` DOES collapse
+(`preferredCompactColumn` + `onPreferredCompactColumnChange` both work); the
+collapsed column follows the selection depth and the native Back pops the
+selection. Verified on the simulator: folded drill-down lands on the right
+column with a native Back; unfolding with a note open keeps the note open (no
+remount, no route push); portrait-unfolded is too narrow for three columns so
+the system hides the sidebar with its own toggle; landscape board verified
+spanning poses with its action panel. Not yet verified: notes list|detail
+hinge-centring after pin removal, draft/focus survival across the trip.
+The width-switched subtree swap and the `Host`-key swap are removed.
+
+Hard lessons that constrain all future Duo work (see `mobile-wide-layouts.md`
+gotchas): SwiftUI reserves the Detail slot even when its child is null, so
+Detail always hosts something (open item, else a per-view action panel) —
+unmounting it only trades the panel for a blank page. And no width pins:
+fixed numbers freeze a pose, `{ min, ideal }` ideals still missed the crease
+across poses — the unpinned board reflowed correctly everywhere first.
+
+Remaining (acceptance matrix, real task in progress): draft/focus survival
+across the trip (edit + type + fold); keyboard open; sheet open/return; 50/50
+Split View resize; delete-selected-from-elsewhere resolves; screenshot each pose.
 
 1. **Build config for the 27.1 SDK (required before launch).** ✅ DONE
    2026-10-11: `eas.json` pins `macos-tahoe-26.6-xcode-27.1` (Xcode 27.1 RC)
@@ -155,7 +206,14 @@ Already done on this branch:
    **byte-identical columns in both branches** half-folded (`[0,456]` /
    `[496,867]`, hinge-centred with ~20pt crease gutters from SwiftUI itself),
    and the per-side stacks reintroduced the insets the spike was meant to
-   remove. Verdict: no advantage; the `NavigationSplitView` stays. All spike
+   remove. Verdict: no advantage; the `NavigationSplitView` stays. Correction
+   from further Apple research: the spike also inverted Apple's containment —
+   Apple puts `ArrangementView` *inside* a `NavigationStack` and says to keep
+   navigation containers *outside* arrangements, never split views inside them.
+   Our spike put per-side `NavigationStack`s *inside* the arrangement. So the
+   kill stands for navigational list|note, and any future `ArrangementView`
+   use is layout-only pairs inside one navigation container — never a
+   navigation replacement. All spike
    + debug code removed, verdict noted in `ProjectsSplitView`.
 3. **Audit for symmetry + main-screen assumptions.** ✅ AUDITED, no changes
    needed (2026-10-11): every `useWindowDimensions` call reads the live window
@@ -168,8 +226,9 @@ Already done on this branch:
    Remaining: run Xcode's **App Resizability** skill over the target.
 4. **Split View multitasking test pass.** Drag the app to each side on the
    inner display; vertical system buttons can appear left or right. Confirm
-   columns, tree panel, modals and the chat preview survive narrowed widths
-   well below 700pt (they'll drop to the phone stack — verify that transition).
+   columns, sidebar, modals and the chat preview survive narrowed widths —
+   the split collapses to one column (no phone-stack swap anymore); verify
+   that transition, especially around compact widths in 50/50.
 5. **Second window (later).** `UIWindowSceneActivation` would let a note live
    beside its list as a real second window (better than our in-app preview
    panel for multitaskers). Needs a local module; inner-display-only. Defer
@@ -190,9 +249,15 @@ Already done on this branch:
 
 ## 6. Open questions
 
+- ✅ ANSWERED for §5.0: Expo's `NavigationSplitView` collapses via
+  `preferredCompactColumn` (+ `onPreferredCompactColumnChange`); no local
+  module or state-lifting fallback needed. Narrow router routes still exist
+  for Android and deep links, but on iOS the selection store is the single
+  source of truth — no bidirectional sync required.
 - Does EAS offer an Xcode 27.1 image yet, and does `expo prebuild` with the
   iOS 27.1 SDK break any of our other native deps?
-- For (4): what is the narrowest useful width for the notes list column before
-  the phone stack takes over — is 700 still the right threshold in Split View?
+- Compact behaviour is size-class-driven now (no width threshold): which is
+  the narrowest useful compact width for the notes list before it feels
+  cramped — and does anything still key off 700 that shouldn't?
 - For (6): attachment sync cost — a sketch PNG per note vs. the current
   text-only oplog.
