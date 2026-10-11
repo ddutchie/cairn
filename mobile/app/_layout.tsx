@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import "@/chat/crypto-polyfill";
 import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
 import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
@@ -129,7 +129,6 @@ export default function RootLayout() {
     headerStyle: { backgroundColor: t.surface },
     headerTintColor: t.accent,
     headerTitleStyle: { color: t.textPrimary },
-    contentStyle: { backgroundColor: t.background },
   };
 
   return (
@@ -141,35 +140,68 @@ export default function RootLayout() {
               in dark mode (see Expo "Stack Toolbar → Common problems"). */}
           <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
             <ToastProvider>
-              <Stack screenOptions={{ headerShown: true, ...headerStyle }}>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-                <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
-                <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
-                <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
-                <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
-                <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
-                <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
-                <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
-                <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
-                <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal" }} />
-                <Stack.Screen name="settings/appearance" options={{ title: "Appearance", presentation: "modal" }} />
-                {/* Native iOS sheets for the contextual pickers (tags, move,
-                    wikilink, due date) — UISheetPresentationController gives
-                    blur, drag-to-dismiss and detents for free. Expansion is
-                    grabber-only: auto-expanding when the list is scrolled to the
-                    edge made the content jump/disappear during the transition. */}
-                <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
-                <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
-                <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
-                <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.5, 0.8], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
-              </Stack>
+              <RootNavigator headerStyle={headerStyle} backgroundColor={t.background} />
             </ToastProvider>
           </ThemeProvider>
           <UpdateBanner />
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/**
+ * The root navigator, rendered under the SafeAreaProvider so it can read the
+ * horizontal safe-area insets. Those are 0 on a portrait iPhone, but an
+ * unfolded iPhone Duo puts system chrome — the tab side rail — along the
+ * right edge (~84pt inset). Every screen here is either a native modal (AI
+ * settings, Sync, new note/task, pickers) or a pushed detail route, so they
+ * all take the same side-inset padding as tab screens (see
+ * `useTabContentStyle` in TabStack) to stay clear of the rail.
+ */
+function RootNavigator({
+  headerStyle,
+  backgroundColor,
+}: {
+  headerStyle: {
+    headerStyle: { backgroundColor: string };
+    headerTintColor: string;
+    headerTitleStyle: { color: string };
+  };
+  backgroundColor: string;
+}) {
+  const { left, right } = useSafeAreaInsets();
+  const contentStyle = { backgroundColor, paddingLeft: left, paddingRight: right };
+  return (
+    <Stack screenOptions={{ headerShown: true, ...headerStyle, contentStyle }}>
+      {/* Tabs own their side-inset padding themselves (TabStack /
+          useTabContentStyle, incl. the split view's overrides) — the root
+          safe-zone padding must not inset the whole tab navigator twice. */}
+      <Stack.Screen
+        name="(tabs)"
+        options={{ headerShown: false, contentStyle: { backgroundColor } }}
+      />
+      <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
+      <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
+      <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
+      <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
+      <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
+      <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
+      <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
+      <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
+      <Stack.Screen name="settings/ai" options={{ title: "AI settings", presentation: "modal" }} />
+      <Stack.Screen name="settings/tools" options={{ title: "Tools & Services", presentation: "modal" }} />
+      <Stack.Screen name="settings/appearance" options={{ title: "Appearance", presentation: "modal" }} />
+      {/* Native iOS sheets for the contextual pickers (tags, move,
+          wikilink, due date) — UISheetPresentationController gives
+          blur, drag-to-dismiss and detents for free. Expansion is
+          grabber-only: auto-expanding when the list is scrolled to the
+          edge made the content jump/disappear during the transition. */}
+      <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+      <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+      <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+      <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.5, 0.8], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
+    </Stack>
   );
 }
 
