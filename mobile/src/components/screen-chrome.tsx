@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -163,19 +164,26 @@ const ChromeBridgeContext = createContext<Bridge | null>(null);
  * the iPhone Duo, where a column's buttons move to another column's bar (the
  * one that docks into the tab rail) rather than into the stack header.
  */
-const ChromeBridgeKeepBarsContext = createContext(false);
+const ChromeBridgeOptionsContext = createContext<{ keepBars: boolean; slots: readonly ChromeSlot[] }>({
+  keepBars: false,
+  slots: ["primary", "secondary"],
+});
 export function ChromeBridgeProvider({
   value,
   keepBars = false,
+  slots = ["primary", "secondary"],
   children,
 }: {
   value: Bridge;
   keepBars?: boolean;
+  /** The slots this bridge takes; columns in other slots keep their own buttons. */
+  slots?: readonly ChromeSlot[];
   children: ReactNode;
 }) {
+  const options = useMemo(() => ({ keepBars, slots }), [keepBars, slots]);
   return (
     <ChromeBridgeContext.Provider value={value}>
-      <ChromeBridgeKeepBarsContext.Provider value={keepBars}>{children}</ChromeBridgeKeepBarsContext.Provider>
+      <ChromeBridgeOptionsContext.Provider value={options}>{children}</ChromeBridgeOptionsContext.Provider>
     </ChromeBridgeContext.Provider>
   );
 }
@@ -253,8 +261,8 @@ export function ChromeColumn({
   const [spec, setSpec] = useState<ChromeSpec | null>(null);
   const latest = useRef<ChromeSpec | null>(null);
   const bridge = useContext(ChromeBridgeContext);
-  const bridged = bridge != null && slot != null;
-  const keepBar = useContext(ChromeBridgeKeepBarsContext);
+  const { keepBars: keepBar, slots } = useContext(ChromeBridgeOptionsContext);
+  const bridged = bridge != null && slot != null && slots.includes(slot);
 
   // Bridged: hand the items to the stack header whenever what's drawn changes.
   // One stable object carries the current handlers for press-time lookup.

@@ -23,6 +23,7 @@ import { summarizeProject } from "@/components/overview/project-summary";
 import { ProjectCard } from "@/components/overview/ProjectCard";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
+import { NoteComposer } from "@/components/NoteComposer";
 import { ChatPreviewPane } from "@/components/chat/ChatPreview";
 import { ProjectsTreePanel } from "@/components/ProjectsTreePanel";
 import { EmptyState } from "@/components/EmptyState";
@@ -57,11 +58,13 @@ interface Selection {
   view: SplitViewKind;
   noteId: string | null;
   cardId: string | null;
+  /** Inline new-note composer open in the detail column (wide layouts only). */
+  composing: boolean;
 }
 
 // Module-level so the selection survives the split view unmounting when the
 // Duo folds to the phone layout and remounting when it unfolds.
-let selection: Selection = { projectId: null, view: "notes", noteId: null, cardId: null };
+let selection: Selection = { projectId: null, view: "notes", noteId: null, cardId: null, composing: false };
 const listeners = new Set<() => void>();
 function setSelection(next: Partial<Selection>) {
   selection = { ...selection, ...next };
@@ -87,7 +90,10 @@ const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 // Feature flag: the projects tree in the iPad's system tab sidebar
 // (modules/tab-sidebar). Off — or if the module can't install — the iPad uses
 // the same slide-over panel as the Duo.
-const SYSTEM_SIDEBAR = sidebarSupported;
+const BOTH_SLOTS: readonly ChromeSlot[] = ["primary", "secondary"];
+const LIST_SLOT: readonly ChromeSlot[] = ["primary"];
+
+const SYSTEM_SIDEBAR = false && sidebarSupported;
 
 const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
   { id: "overview", title: "Overview", icon: "number" },
@@ -159,6 +165,7 @@ export function ProjectsSplitView({
       projectId: id,
       ...(next ? { view: next as SplitViewKind } : {}),
       ...(id !== selection.projectId ? { noteId: null, cardId: null } : {}),
+      composing: false,
     });
     setTreeOpen(false);
   }, []);
@@ -177,10 +184,13 @@ export function ProjectsSplitView({
   useEffect(() => (SYSTEM_SIDEBAR ? onSidebarItem(tree.select) : undefined), [tree.select]);
 
   const selectView = useCallback((next: SplitViewKind) => {
-    setSelection({ view: next });
+    setSelection({ view: next, composing: false });
   }, []);
-  const openNote = useCallback((id: string) => setSelection({ view: "notes", noteId: id }), []);
-  const openCard = useCallback((id: string) => setSelection({ view: "board", cardId: id }), []);
+  const openNote = useCallback((id: string) => setSelection({ view: "notes", noteId: id, composing: false }), []);
+  const openCard = useCallback((id: string) => setSelection({ view: "board", cardId: id, composing: false }), []);
+  // The list's + composes inline in the detail column (a native modal would
+  // park on the wrong page on a Duo — there is no sheet-placement API).
+  const openComposer = useCallback(() => setSelection({ view: "notes", composing: true }), []);
 
   if (!projectId) {
     return (
@@ -200,6 +210,7 @@ export function ProjectsSplitView({
         onSelectView={selectView}
         onOpenNote={openNote}
         onOpenCard={openCard}
+        onComposeNote={openComposer}
       />
     </ChromeColumn>
   );
@@ -212,7 +223,7 @@ export function ProjectsSplitView({
   // Closing the note also leaves focus mode, so the list is never left hidden
   // behind an empty detail.
   const closeNote = () => {
-    setSelection({ noteId: null });
+    setSelection({ noteId: null, composing: false });
     setVisibility("all");
   };
 
@@ -229,7 +240,13 @@ export function ProjectsSplitView({
   //          items (the list keeps just its title).
   const columnFolder = BRIDGE_HEADER ? [] : projectsButton;
   const slot = (s: ChromeSlot) => (BRIDGE_HEADER ? s : undefined);
-  const listItems = BRIDGE_HEADER ? [] : bridgedItems(bridged.primary);
+  // Duo: the open note's bar also carries the list's items — while a note is
+  // open, drop the list's own + (close/folder/⋯/edit is already a full bar).
+  // With no note open the + stays (it's the only creation entry point there).
+  // iPad keeps it always: its header shares the tab bar's row, so there's room.
+  const listItems = BRIDGE_HEADER
+    ? []
+    : bridgedItems(bridged.primary).filter((i) => sel.noteId == null || i.key !== "add");
 
   // The open item (Notes), or the whole view (everything else).
   const detail =
@@ -282,6 +299,21 @@ export function ProjectsSplitView({
         >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={closeNote} />
         </ChromeColumn>
+      ) : view === "notes" && sel.composing ? (
+        // Inline composer: a native modal would park on the wrong page on a
+        // Duo (no sheet-placement API), so composing happens here, in the
+        // note column. No bridged extras — the bar is just ✕ + Save.
+        <ChromeColumn
+          key="compose"
+          slot={slot("secondary")}
+          modifiers={[detailWidth]}
+          leading={[...columnFolder, { key: "close", label: "Discard note", icon: "xmark", onPress: () => setSelection({ composing: false }) }]}
+        >
+          <NoteComposer
+            projectId={projectId}
+            onSaved={(id) => setSelection({ noteId: id, composing: false })}
+          />
+        </ChromeColumn>
       ) : (
         // A column (not a bare SwiftUI view) so it has a bar for the Duo's
         // folder and list buttons.
@@ -331,7 +363,7 @@ export function ProjectsSplitView({
     <>
       {header}
       {/* Duo: only the notes list is bridged, into the note column's bar. */}
-      <ChromeBridgeProvider value={bridge} keepBars={!BRIDGE_HEADER}>
+      <ChromeBridgeProvider value={bridge} keepBars={!BRIDGE_HEADER} slots={BRIDGE_HEADER ? BOTH_SLOTS : LIST_SLOT}>
         {body}
       </ChromeBridgeProvider>
     </>
@@ -375,6 +407,14 @@ export function ProjectsSplitView({
   // The tree panel is absolutely positioned over the screen, so it's a sibling:
   // wrapping the Host in another view makes SwiftUI see a zero-width window on
   // first layout and collapse the list column for good.
+  //
+  // NOTE (2026-10-11): a native split ArrangementView was spiked here as an
+  // alternative to NavigationSplitView. Simulator frame logs showed
+  // byte-identical columns in both branches ([0,456] / [496,867] half-folded,
+  // hinge-centred with ~20pt crease gutters from SwiftUI itself), and the
+  // arrangement needed per-side NavigationStacks for the column bars — which
+  // reintroduced the insets it was meant to remove. Verdict: no advantage;
+  // the split view stays. See docs/plans/iphone-duo.md.
   return withHeader(
     <>
       <Host key="two-column" style={{ flex: 1 }}>

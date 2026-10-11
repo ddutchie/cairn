@@ -7,14 +7,22 @@
     "production": {
       "autoIncrement": true,
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "m-medium",
+        "image": "macos-tahoe-26.6-xcode-27.1"
+      },
+      "env": {
+        "EXPO_USE_PRECOMPILED_MODULES": "0"
       },
       "channel": "production"
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "image": "macos-tahoe-26.6-xcode-27.1"
+      },
+      "env": {
+        "EXPO_USE_PRECOMPILED_MODULES": "0"
       },
       "channel": "preview"
     }

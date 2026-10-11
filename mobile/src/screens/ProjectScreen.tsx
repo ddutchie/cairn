@@ -76,6 +76,7 @@ export function ProjectScreen({
   onSelectView,
   onOpenNote,
   onOpenCard,
+  onComposeNote,
   selectedId = null,
 }: {
   nested?: boolean;
@@ -91,6 +92,12 @@ export function ProjectScreen({
   /** Split-view column: open a note / task beside this one instead of pushing. */
   onOpenNote?: (id: string) => void;
   onOpenCard?: (id: string) => void;
+  /**
+   * Split-view column: compose a new note beside this list instead of pushing
+   * the new-note modal (which would park on the wrong page on a Duo). Omit
+   * (routes, board) to keep the modal.
+   */
+  onComposeNote?: () => void;
   /** Split-view column: the note / task open beside this list, marked in it. */
   selectedId?: string | null;
 }) {
@@ -350,10 +357,12 @@ export function ProjectScreen({
 
   const onAdd = () => {
     if (!id) return;
-    // New-note / new-task are modals in the root stack (they present over the
-    // tab bar by design), so they stay absolute for both variants. On the
-    // Overview segment the + is hidden, so default the action to a new note.
+    // New-task is always a modal in the root stack (it presents over the tab
+    // bar by design). New-note goes inline when the host offers it (the
+    // split-view detail column); otherwise it is a modal too. On the Overview
+    // segment the + is hidden, so default the action to a new note.
     if (tab === "board") router.push({ pathname: "/card/new", params: { project: id, back: project?.name || "Project" } });
+    else if (onComposeNote) onComposeNote();
     else router.push({ pathname: "/note/new", params: { project: id } });
   };
 

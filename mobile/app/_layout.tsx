@@ -154,10 +154,15 @@ export default function RootLayout() {
  * The root navigator, rendered under the SafeAreaProvider so it can read the
  * horizontal safe-area insets. Those are 0 on a portrait iPhone, but an
  * unfolded iPhone Duo puts system chrome — the tab side rail — along the
- * right edge (~84pt inset). Every screen here is either a native modal (AI
- * settings, Sync, new note/task, pickers) or a pushed detail route, so they
- * all take the same side-inset padding as tab screens (see
- * `useTabContentStyle` in TabStack) to stay clear of the rail.
+ * right edge (~84pt inset). Full-window screens (pushed detail routes and
+ * full-width modals like AI settings / Sync) take the same side-inset padding
+ * as tab screens (see `useTabContentStyle` in TabStack) to stay clear of it.
+ *
+ * Partial presentations (the new note/task composers, the picker formSheets)
+ * are deliberately excluded below: on wide layouts the system parks them as
+ * cards that never reach the rail, so window insets would only squeeze them.
+ * In compact postures the insets are 0 anyway, so the exclusion is a no-op
+ * everywhere else.
  */
 function RootNavigator({
   headerStyle,
@@ -172,6 +177,8 @@ function RootNavigator({
 }) {
   const { left, right } = useSafeAreaInsets();
   const contentStyle = { backgroundColor, paddingLeft: left, paddingRight: right };
+  // No side insets: partial card/sheet presentations that never reach the rail.
+  const cardStyle = { backgroundColor };
   return (
     <Stack screenOptions={{ headerShown: true, ...headerStyle, contentStyle }}>
       {/* Tabs own their side-inset padding themselves (TabStack /
@@ -183,9 +190,9 @@ function RootNavigator({
       />
       <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
       <Stack.Screen name="project/calendar" options={{ title: "Calendar" }} />
-      <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal" }} />
+      <Stack.Screen name="note/new" options={{ title: "New Note", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="note/[id]" options={{ title: "Note" }} />
-      <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal" }} />
+      <Stack.Screen name="card/new" options={{ title: "New Task", presentation: "modal", contentStyle: cardStyle }} />
       <Stack.Screen name="card/[id]" options={{ title: "Task" }} />
       <Stack.Screen name="sync" options={{ title: "Sync", presentation: "modal" }} />
       <Stack.Screen name="conflicts" options={{ title: "Sync Conflicts" }} />
@@ -197,10 +204,10 @@ function RootNavigator({
           blur, drag-to-dismiss and detents for free. Expansion is
           grabber-only: auto-expanding when the list is scrolled to the
           edge made the content jump/disappear during the transition. */}
-      <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
-      <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
-      <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
-      <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", sheetAllowedDetents: [0.5, 0.8], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
+      <Stack.Screen name="picker/tags" options={{ title: "Tags", presentation: "formSheet", contentStyle: cardStyle, sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+      <Stack.Screen name="picker/note" options={{ title: "Choose", presentation: "formSheet", contentStyle: cardStyle, sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+      <Stack.Screen name="picker/wikilink" options={{ title: "Link a note", presentation: "formSheet", contentStyle: cardStyle, sheetAllowedDetents: [0.4, 0.9], sheetGrabberVisible: true, sheetCornerRadius: 24, sheetExpandsWhenScrolledToEdge: false }} />
+      <Stack.Screen name="picker/due-date" options={{ title: "Due date", presentation: "formSheet", contentStyle: cardStyle, sheetAllowedDetents: [0.5, 0.8], sheetGrabberVisible: true, sheetCornerRadius: 24 }} />
     </Stack>
   );
 }
