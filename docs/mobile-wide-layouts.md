@@ -191,3 +191,90 @@ Keep the shared JS model and make the renderer the only per-device difference:
    iPad gets the same panel as the Duo.
 3. Pursue **C** now (small) and **B** opportunistically; delete the modules as the
    upstream APIs land.
+
+## Session notes — 2026-10-11 (modal safe zones, inline composer, overview split)
+
+What was decided and built while testing on the Duo simulator
+(`npx expo run:ios`, iPhone Duo, `EXPO_USE_PRECOMPILED_MODULES=0` exported —
+without it `onHingeChange` silently no-ops; the hinge status also reads `null`
+until the first posture change after each reload, which is normal).
+
+### Modal side-insets: measure, don't assume (`ModalSafeView`)
+
+The tab rail reserves ~84pt on the unfolded Duo's right edge (`L=0 R=84` in
+that posture). Tab screens clear it via `useTabContentStyle()`; native modals
+needed the same — but a static inset is wrong in both directions:
+
+- Full-window modals (AI settings, Sync) run under the rail without one.
+- The *same route* presents as a parked card in another posture (e.g.
+  Appearance centered/leading on the inner display), where window insets only
+  squeeze the card. Placement is system-decided per posture, so no static
+  per-route assignment survives.
+
+`src/components/ModalSafeView.tsx` is the single rule: it measures its own
+container (`onLayout`) against the window and pads only when the container
+spans (nearly) the whole window. Unmeasured first frame assumes fullscreen
+(the clipping case); cards correct on layout. It must be the outermost
+`flex:1` view. Applied to the AI/Sync/Tools/Appearance/Usage/Card modals;
+those routes use the unpadded `cardStyle` contentStyle so insets apply exactly
+once. Pushed detail routes keep the navigator-level padding (always
+fullscreen); `(tabs)` keeps none (TabStack owns it — double-padding guard).
+Phone/folded postures have zero insets, so everything is a no-op there.
+
+### New-note goes inline on wide layouts (`NoteComposer`)
+
+Tapping `+` pushed the `note/new` modal, which parks on the left page — and
+iOS exposes no sheet-placement API to move it (`preferredPlacement` is not
+surfaced by expo-router; verified all `presentation` modes). So the composer
+lives in the detail column instead: `NoteComposer` renders its title + Save
+through `ScreenChrome`, which draws in the native header as a route and in
+the column bar in a split view — one component, both hosts. The `note/new`
+route is now a thin wrapper (phone keeps the modal). A `composing` flag on
+the split-view selection drives it; any navigation clears it. While a note is
+open the note bar also drops the list's `+` (same declutter rule the board
+already uses for its panel-open `+`).
+
+### Tree panel owns workspace actions
+
+The narrow Projects header (sync badge + settings) never renders in split
+mode, stranding both. They moved into the tree panel header (workspace title
++ sync + settings), reachable from every column via the folder button. The
+sync tint logic mirrors `useSyncBadge` with lucide icons (its SF Symbols only
+render in native toolbars). If `SYSTEM_SIDEBAR` is ever switched on, the panel
+goes away on iPad and these need a home in the header bridge instead.
+
+### ArrangementView spiked and killed
+
+Tried `ArrangementView` (split, horizontal) for Notes list|note. Findings
+from `onGeometryChange` frame logs, both branches half-folded:
+
+- Identical native frames: `[0,456]` / `[496,868]` — hinge-centred with ~20pt
+  crease gutters from SwiftUI itself.
+- `ChromeColumn` toolbars only draw inside a navigation container; bare
+  columns lose all bars, and per-side `NavigationStack`s reintroduce insets.
+- Verdict: no geometric advantage; the split view stays. Note left in code.
+
+### Overview splits at the hinge (`OverviewTab`)
+
+Wide mode (`≥700pt`, mirroring `SPLIT_MIN_WIDTH`) renders the nine sections
+as two columns — status through health left, notes + activity right. Two
+Yoga lessons, both load-bearing:
+
+1. Measure from the window middle, not the container: the container is
+   already rail-inset, so symmetric flex lands ~40pt left of the hinge.
+   Subtract scroll-content padding too (it offsets the break *and* clips the
+   right column).
+2. Bare `width` loses to `flex:1`'s zero flex-basis, and the `flexBasis:
+   "auto"` string form measured zero — pin columns with matching
+   `width`/`minWidth`/`maxWidth` and no flex keys.
+
+### Debugging on the Duo simulator
+
+Fast, reliable loop used throughout: Metro serves this repo directly, so edits
+apply on save; navigator-structure changes need a full `r` reload (Fast
+Refresh leaves phantom shifted layouts). Temporary red-line/readout overlays
+and `onGeometryChange` frame logs (`[duo-debug]`) settle "where is it really"
+arguments — all removed before committing. `xcrun simctl io booted screenshot`
+captures the simulator without interrupting the session. The LogBox banner in
+screenshots is pre-existing noise (DrawerLayoutAndroid deprecation +
+Reanimated web-deps warning on chat).

@@ -17,6 +17,7 @@ import { haptics, toolbarPress } from "@/haptics";
 import { useTheme, useIsDark, useChatTheme, setChatThemeId } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { ProviderLogo } from "@/components/ProviderLogo";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { getCachedPersonalitiesManifest, fetchPersonalitiesManifest } from "@/chat/personalities-registry";
 import { formatModelCost, modelInputChips, endpointLogoSlug } from "@cairn/shared/models/model-catalog";
@@ -700,7 +701,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <View style={styles.flex}>
+    <ModalSafeView backgroundColor={t.surface}>
       <Stack.Screen options={{ headerShown: true, title: "AI settings", headerBackTitle: "Back" }} />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
@@ -1310,7 +1311,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
             )}
           </ScrollView>
         </BottomSheet>
-    </View>
+    </ModalSafeView>
   );
 }
 

@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Stack } from "expo-router";
 import { useTheme } from "@/theme";
 import { useModalOpenHaptic } from "@/haptics";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { UsageBody } from "@/components/ai-settings/UsageBody";
 
 /**
@@ -15,6 +16,7 @@ export default function UsageSettingsScreen() {
   return (
     <>
       <Stack.Screen options={{ title: "Usage" }} />
+      <ModalSafeView backgroundColor={t.surface}>
       <ScrollView
         style={[styles.flex, { backgroundColor: t.surface }]}
         contentContainerStyle={styles.body}
@@ -22,6 +24,7 @@ export default function UsageSettingsScreen() {
       >
         <UsageBody />
       </ScrollView>
+      </ModalSafeView>
     </>
   );
 }

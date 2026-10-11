@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, LayoutDashboard, Kanban } from "lucide-react-native";
 import { COLUMN_COLORS, PRIORITY_COLOR, COLUMN_TYPE_ORDER } from "@cairn/shared/ui/constants";
@@ -178,15 +179,25 @@ export function OverviewTab({
 
   const focusLabel: Record<FocusFilter, string> = { all: "All", today: "Due today", overdue: "Overdue", pinned: "Pinned" };
 
-  return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
-      contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
-      showsVerticalScrollIndicator={false}
-      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} /> : undefined}
-    >
-      {/* ── masthead + instrument ── */}
-      {project ? (
+  const { width: winW } = useWindowDimensions();
+  // Wide enough for side-by-side cards (mirrors SPLIT_MIN_WIDTH in the
+  // Projects tab): sections split at the hinge instead of stacking.
+  const twoColumn = winW >= 700;
+  // The column break must sit on the window middle (the hinge), not the
+  // container middle: the container is already inset by the side safe areas,
+  // so symmetric flex would land left of the hinge whenever they differ.
+  // (RN insets are window-uniform, which is exactly what this math needs.)
+  const { left: safeLeft, right: safeRight } = useSafeAreaInsets();
+  const COL_GAP = 14;
+  // The scroll content pads horizontally (styles.content) — the row lives
+  // inside that padding, so measure from its edges, not the container's.
+  // (Forgetting this both offsets the break and clips the right column.)
+  const CONTENT_PAD = 12;
+  const hingeBreak = winW / 2;
+  const leftW = hingeBreak - COL_GAP / 2 - (safeLeft + CONTENT_PAD);
+  const rightW = winW - safeRight - CONTENT_PAD - (hingeBreak + COL_GAP / 2);
+
+  const masthead = project ? (
         <View style={styles.masthead}>
           <View style={styles.mastheadLeft}>
             <View style={[styles.headerIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
@@ -301,9 +312,9 @@ export function OverviewTab({
             </View>
           </View>
         </View>
-      ) : null}
+      ) : null;
 
-      {/* ── focus bar ── */}
+  const focusBar = (
       <View style={[styles.focusBar, { backgroundColor: t.surface, borderColor: t.border }, elevation.sm as StyleProp<ViewStyle>]}>
         <Text style={[typeScale.micro, { color: t.textTertiary, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase", marginRight: 4 }]}>Focus</Text>
         {(["all", "today", "overdue", "pinned"] as FocusFilter[]).map((k) => {
@@ -329,8 +340,9 @@ export function OverviewTab({
         <View style={{ flex: 1 }} />
         <Text style={[typeScale.micro, { color: t.textTertiary, fontFamily: "Menlo" }]}>{focus === "all" ? "Showing all" : `Filtered: ${focusLabel[focus]}`} · {filteredQueue.length || focusCounts[focus]} items</Text>
       </View>
+  );
 
-      {/* ── KPI strip — hairline dividers, not double borders ── */}
+  const kpi = (
       <View style={[styles.kpiStrip, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={[styles.kpiCell, { borderColor: t.border, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth }]}>
           <View style={[styles.kpiAccent, { backgroundColor: t.danger }]} />
@@ -377,8 +389,9 @@ export function OverviewTab({
           </Text>
         </View>
       </View>
+  );
 
-      {/* ── attention queue ── */}
+  const queue = (
       <View style={{ gap: 8 }}>
         {filteredQueue.length === 0 ? (
           <View style={[styles.emptyQueue, { backgroundColor: withAlpha(t.surface2, 0.6), borderColor: t.border }]}>
@@ -440,8 +453,9 @@ export function OverviewTab({
           })
         )}
       </View>
+  );
 
-      {/* ── task flow + priority bento ── */}
+  const flow = (
       <View style={[styles.bentoCard, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={styles.bentoHeader}>
           <View style={[styles.bentoIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
@@ -487,7 +501,9 @@ export function OverviewTab({
           ))}
         </View>
       </View>
+  );
 
+  const priority = (
       <View style={[styles.bentoCard, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={styles.bentoHeader}>
           <View style={[styles.bentoIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
@@ -529,11 +545,13 @@ export function OverviewTab({
           </Text>
         </View>
       </View>
+  );
 
-      {/* ── health radar ── */}
+  const radar = (
       <HealthRadar axes={radarAxes} size={260} />
+  );
 
-      {/* ── notes summary ── */}
+  const notes = (
       <View style={[styles.notesCard, { backgroundColor: t.surface, borderColor: t.border }]}>
         <View style={styles.notesHeader}>
           <View style={styles.bentoHeader}>
@@ -619,8 +637,9 @@ export function OverviewTab({
           </View>
         )}
       </View>
+  );
 
-      {/* ── activity log ── */}
+  const activity = (
       <View style={[styles.activityCard, { backgroundColor: t.surface, borderColor: t.border, borderLeftColor: withAlpha(t.accent, 0.6) }]}>
         <View style={styles.activityHeader}>
           <View style={styles.bentoHeader}>
@@ -666,6 +685,46 @@ export function OverviewTab({
           </View>
         )}
       </View>
+  );
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: t.background }}
+      contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} /> : undefined}
+    >
+      {twoColumn ? (
+        <View style={styles.columns}>
+          {/* min/max clamps (not bare width): they beat any flex-basis
+              resolution, so the hinge math survives Yoga unconditionally. */}
+          <View style={[styles.column, { width: leftW, minWidth: leftW, maxWidth: leftW }]}>
+            {masthead}
+            {focusBar}
+            {kpi}
+            {queue}
+            {flow}
+            {priority}
+            {radar}
+          </View>
+          <View style={[styles.column, { width: rightW, minWidth: rightW, maxWidth: rightW }]}>
+            {notes}
+            {activity}
+          </View>
+        </View>
+      ) : (
+        <>
+          {masthead}
+          {focusBar}
+          {kpi}
+          {queue}
+          {flow}
+          {priority}
+          {radar}
+          {notes}
+          {activity}
+        </>
+      )}
 
       {empty && <EmptyState title="Nothing here yet" subtitle="Add a note or a task to see this project's snapshot." align="top" />}
 
@@ -722,6 +781,10 @@ function makeStyles(t: Theme) {
   void t;
   return StyleSheet.create({
     content: { padding: 12, paddingTop: 0, gap: 14 },
+    // Wide split-view columns: sections flow into two hinge-aligned columns
+    // (status left, actionables right) instead of one stack.
+    columns: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
+    column: { flex: 1, minWidth: 0, gap: 14 },
     masthead: { gap: 12 },
     mastheadLeft: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
     headerIcon: { width: 44, height: 44, borderRadius: 11, alignItems: "center", justifyContent: "center", borderWidth: 1 },

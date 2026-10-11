@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { useRouter } from "expo-router";
+import { Cloud, CloudOff, RefreshCw, Settings } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import { DisclosureGroup, Label, List, Section } from "@expo/ui/swift-ui";
 import {
@@ -15,7 +17,9 @@ import {
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import type { ProjectsTree, TreeNode } from "@/components/projects-tree";
-import { useTheme } from "@/theme";
+import { useSyncStatus } from "@/sync/useSyncStatus";
+import { haptics } from "@/haptics";
+import { useTheme, type as typeScale } from "@/theme";
 
 /**
  * The in-app renderer of the projects tree (see projects-tree.ts): a panel that
@@ -40,6 +44,25 @@ export function ProjectsTreePanel({
   card?: ReactNode;
 }) {
   const t = useTheme();
+  const router = useRouter();
+  const { state: syncState, pending: syncPending } = useSyncStatus();
+  // Workspace-level actions live here because the narrow Projects header
+  // (which owns sync + settings on the phone) never renders in split-view
+  // mode — the panel is reachable from every column via the folder button.
+  const syncOffline = syncState === "offline";
+  const syncActive = syncState === "syncing" || syncPending > 0;
+  const SyncIcon = syncOffline ? CloudOff : syncActive ? RefreshCw : Cloud;
+  const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
+  const goSync = () => {
+    haptics.selection();
+    onClose();
+    router.push("/sync");
+  };
+  const goSettings = () => {
+    haptics.selection();
+    onClose();
+    router.push("/settings/appearance");
+  };
   const [projectId, view] = tree.selectedPath;
   // The open project starts expanded; others keep whatever the user chose.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ [projectId]: true });
@@ -93,11 +116,22 @@ export function ProjectsTreePanel({
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close projects" />
       </Animated.View>
       <Animated.View style={[styles.panel, { width, backgroundColor: t.background }, panelStyle]}>
+        <View style={styles.topBar}>
+          <Text style={[styles.title, { color: t.textPrimary }]} numberOfLines={1}>
+            {title}
+          </Text>
+          <Pressable onPress={goSync} hitSlop={10} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Sync status" accessibilityHint="Opens sync details">
+            <SyncIcon size={20} color={syncTint} />
+          </Pressable>
+          <Pressable onPress={goSettings} hitSlop={10} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Appearance settings">
+            <Settings size={20} color={t.textSecondary} />
+          </Pressable>
+        </View>
         {card ? <View style={styles.cardSlot}>{card}</View> : null}
         <Host style={{ flex: 1 }}>
           {/* The page colour behind the list too, so it joins the card above. */}
           <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background)]}>
-            <Section title={title}>
+            <Section>
               {tree.nodes.map((p) => (
                 <DisclosureGroup
                   key={p.id}
@@ -119,7 +153,17 @@ export function ProjectsTreePanel({
 }
 
 const styles = StyleSheet.create({
-  cardSlot: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  title: { ...typeScale.title, fontWeight: "700", flex: 1 },
+  iconBtn: { padding: 6 },
+  cardSlot: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
   scrim: { backgroundColor: "rgba(0,0,0,0.25)" },
   panel: {
     position: "absolute",

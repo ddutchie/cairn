@@ -5,6 +5,7 @@ import { createTask, listColumns, type ColumnRow } from "@/db/queries";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { ICON_CHECK } from "@/components/toolbar-icons";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { PriorityChips, ColumnChips } from "@/components/TaskChips";
 
 /**
@@ -46,6 +47,7 @@ export default function NewCard() {
   };
 
   return (
+    <ModalSafeView backgroundColor={t.surface}>
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <Stack.Screen
         options={{
@@ -90,6 +92,7 @@ export default function NewCard() {
         />
       </ScrollView>
     </KeyboardAvoidingView>
+    </ModalSafeView>
   );
 }
 

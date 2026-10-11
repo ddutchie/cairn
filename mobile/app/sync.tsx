@@ -8,6 +8,7 @@ import { useSyncStatus } from "@/sync/useSyncStatus";
 import { restorableCount, stalePeerCount, stalePeerVersions, getUserStyle, type UserStyleRow } from "@/db/queries";
 import { SYNC_PROTOCOL_VERSION } from "@cairn/shared/sync/engine";
 import { EmbeddingsCard } from "@/components/EmbeddingsCard";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { SectionLabel } from "@/components/SectionLabel";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
@@ -93,7 +94,7 @@ export default function SyncScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: t.surface }]}>
+    <ModalSafeView backgroundColor={t.surface}>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Done" onPress={toolbarPress(close)}>
           Done
@@ -219,7 +220,7 @@ export default function SyncScreen() {
 
         <EmbeddingsCard />
       </ScrollView>
-    </View>
+    </ModalSafeView>
   );
 }
 
