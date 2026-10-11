@@ -128,6 +128,10 @@ export default function ChatScreen() {
   // Wide windows open touched notes/tasks in a column beside the chat.
   const [preview, setPreview] = useState<PreviewRef | null>(null);
   const canPreview = width >= CHAT_PREVIEW_MIN_WIDTH;
+  // Folding a Duo with a preview open keeps it (continuity): the pane fills
+  // the window and the chat collapses beside it, still mounted. Its ✕
+  // returns to the conversation. (Chips only open previews while wide.)
+  const previewFills = !canPreview && preview != null;
   // The wide header is transparent, so the conversation clears it itself — on
   // iPad that includes the floating tab bar above it.
   const headerHeight = useHeaderHeight();
@@ -391,6 +395,8 @@ export default function ChatScreen() {
           // Wide windows: no header bar (it only titled the screen and pushed the
           // preview column down), but keep the toolbar items — on an iPhone Duo
           // they dock into the side rail beside the tabs.
+          // Folded with a preview open, the pane's own bar is the only one.
+          headerShown: !previewFills,
           title: canPreview ? "" : "Chat",
           headerTransparent: canPreview,
           // TabStack paints the header with the surface colour, and iOS 26 adds a
@@ -421,6 +427,10 @@ export default function ChatScreen() {
               : undefined,
         }}
       />
+      {/* While a preview is open its own bar is the rail's: the chat's items
+          would stack a second column of buttons beside it (and, folded, keep
+          the chat's header up over a chat that isn't showing). */}
+      {preview == null ? (
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_DELETE}
@@ -437,9 +447,15 @@ export default function ChatScreen() {
           onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
       </Stack.Toolbar>
+      ) : null}
       <ChatPreviewProvider value={canPreview ? setPreview : null}>
       <View style={styles.row}>
-      <View style={{ flex: 1, paddingTop: canPreview ? headerHeight : 0, backgroundColor: t.chatBg }}>
+      <View
+        style={[
+          { flex: 1, paddingTop: canPreview ? headerHeight : 0, backgroundColor: t.chatBg },
+          previewFills && { flex: 0, width: 0, overflow: "hidden" },
+        ]}
+      >
       <View style={{ flex: 1 }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
@@ -565,7 +581,9 @@ export default function ChatScreen() {
         />
       </View>
       </View>
-      {canPreview ? <ChatPreviewPane preview={preview} onClose={() => setPreview(null)} /> : null}
+      {canPreview || previewFills ? (
+        <ChatPreviewPane preview={preview} fill={previewFills} onClose={() => setPreview(null)} />
+      ) : null}
       </View>
       </ChatPreviewProvider>
     </TabScreen>

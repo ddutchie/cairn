@@ -11,7 +11,7 @@ import {
 } from "react";
 import { Stack } from "expo-router";
 import { navigationBarHidden } from "@modules/swiftui-modifiers";
-import { Button, Menu, RNHostView, Toolbar, ToolbarItem } from "@expo/ui/swift-ui";
+import { Button, Menu, RNHostView, Toolbar, ToolbarItem, type ToolbarItemPlacement } from "@expo/ui/swift-ui";
 import { background, navigationBarTitleDisplayMode, navigationTitle, type ViewModifier } from "@expo/ui/swift-ui/modifiers";
 import { useTheme } from "@/theme";
 import type { SFSymbol } from "sf-symbols-typescript";
@@ -49,6 +49,8 @@ export type ChromeItem =
       onPress: () => void;
       variant?: "done";
       hidden?: boolean;
+      /** Keeps the item out of overflow longest (Compose-style actions). */
+      priority?: "high" | "low";
     }
   | {
       kind: "menu";
@@ -58,6 +60,13 @@ export type ChromeItem =
       /** Visible text beside the icon (e.g. the current choice). */
       text?: string;
       actions: ChromeAction[];
+      priority?: "high" | "low";
+      /**
+       * An "actions" (⋯) menu: in a column its actions go into the system
+       * overflow menu instead (Apple reserves the ellipsis for it), so the
+       * side rail keeps Close → Done → the rest.
+       */
+      overflow?: boolean;
     };
 
 export interface ChromeSpec {
@@ -220,13 +229,34 @@ function shape(spec: ChromeSpec | null): string {
   const items = (list?: ChromeItem[]) =>
     (list ?? []).map((i) =>
       i.kind === "button"
-        ? [i.key, i.label, String(i.icon), i.variant, i.hidden]
-        : [i.key, i.label, String(i.icon), i.text, i.actions.map((a) => [a.label, String(a.icon), a.destructive, a.isOn])],
+        ? [i.key, i.label, String(i.icon), i.variant, i.hidden, i.priority]
+        : [i.key, i.label, String(i.icon), i.text, i.priority, i.overflow, i.actions.map((a) => [a.label, String(a.icon), a.destructive, a.isOn])],
     );
   return JSON.stringify([spec.title, items(spec.left), items(spec.right)]);
 }
 
 const leadingShape = (leading: LeadingButton[]) => JSON.stringify(leading.map((b) => [b.key, b.label, b.icon]));
+
+/**
+ * A screen's own Cancel item (e.g. the note editor's). In a column it replaces
+ * the column's ✕ — one dismiss at the top of the side rail, never two.
+ */
+export const CANCEL_KEY = "cancel";
+
+/**
+ * Semantic placement + overflow priority for a column item. On the Duo the
+ * detail column's bar docks into the side rail, where Apple orders it top to
+ * bottom: Close (cancellationAction), then the prominent action
+ * (confirmationAction — keeps the prominent style; topBarPinnedTrailing put
+ * it above Close and plain), then the rest. Done items overflow last.
+ */
+function itemPlacement(side: "left" | "right", item: ChromeItem) {
+  const done = item.kind === "button" && item.variant === "done";
+  const placement: ToolbarItemPlacement =
+    item.key === CANCEL_KEY ? "cancellationAction" : done ? "confirmationAction" : side === "left" ? "topBarLeading" : "topBarTrailing";
+  const visibilityPriority = item.priority ?? (done ? "high" : undefined);
+  return { placement, visibilityPriority };
+}
 
 const symbol = (icon?: Icon) => (typeof icon === "string" ? (icon as SFSymbol) : undefined);
 
@@ -272,6 +302,8 @@ export function ChromeColumn({
   });
   // The items actually drawn: the title stays, the screen's buttons may not.
   const shown = hideItems && spec ? { ...spec, left: [], right: [] } : spec;
+  // The screen's own Cancel supersedes the column's ✕ (one dismiss).
+  if (shown?.left?.some((i) => i.key === CANCEL_KEY)) leading = leading.filter((b) => b.key !== "close");
   const drawn = `${shape(shown)}|${leadingShape(leading)}`;
   useEffect(() => {
     if (!bridged) return;
@@ -301,8 +333,20 @@ export function ChromeColumn({
 
   function columnItem(side: "left" | "right", item: ChromeItem) {
     if (item.kind === "button" && item.hidden) return null;
+    if (item.kind === "menu" && item.overflow) {
+      return item.actions.map((a, i) => (
+        <ToolbarItem key={`${item.key}:${a.label}`} placement="secondaryAction">
+          <Button
+            label={a.label}
+            systemImage={symbol(a.icon)}
+            role={a.destructive ? "destructive" : undefined}
+            onPress={press(side, item.key, i)}
+          />
+        </ToolbarItem>
+      ));
+    }
     return (
-      <ToolbarItem key={item.key} placement={side === "left" ? "topBarLeading" : "topBarTrailing"}>
+      <ToolbarItem key={item.key} {...itemPlacement(side, item)}>
         {item.kind === "button" ? (
           <Button label={item.label} systemImage={symbol(item.icon)} onPress={press(side, item.key)} />
         ) : (
@@ -326,7 +370,7 @@ export function ChromeColumn({
   function extraItem(item: ChromeItem) {
     if (item.kind === "button" && item.hidden) return null;
     return (
-      <ToolbarItem key={`extra:${item.key}`} placement="topBarTrailing">
+      <ToolbarItem key={`extra:${item.key}`} {...itemPlacement("right", item)}>
         {item.kind === "button" ? (
           <Button label={item.label} systemImage={symbol(item.icon)} onPress={item.onPress} />
         ) : (
@@ -367,8 +411,9 @@ export function ChromeColumn({
       {bridged && !keepBar ? null : <Toolbar.Content>
         {titleMenu ? <ToolbarItem placement="principal">{titleMenu}</ToolbarItem> : null}
         {/* Bridged with its bar kept: the title stays, the buttons went elsewhere. */}
+        {/* Column-owned dismiss: cancellationAction, so the side rail puts it on top. */}
         {bridged ? null : leading.map((b) => (
-          <ToolbarItem key={b.key} placement="topBarLeading">
+          <ToolbarItem key={b.key} placement={b.key === "close" ? "cancellationAction" : "topBarLeading"}>
             <Button label={b.label} systemImage={b.icon} onPress={b.onPress} />
           </ToolbarItem>
         ))}

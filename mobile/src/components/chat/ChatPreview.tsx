@@ -32,13 +32,24 @@ export function useChatPreview() {
 /** Below this width the chat stays single-column and chips navigate as before. */
 export const CHAT_PREVIEW_MIN_WIDTH = 700;
 
+/** Room inside the clipping pane for the side bar's glass buttons. */
+const BAR_GUTTER = 12;
+
 export function ChatPreviewPane({
   preview,
   onClose,
   onChanged,
+  fill = false,
 }: {
   /** The note / task to show; null slides the pane closed. */
   preview: PreviewRef | null;
+  /**
+   * Folded with a preview open: the pane takes the whole window (the chat
+   * stays mounted, collapsed beside it) — Mail on a closed Duo shows the
+   * message, not the list. Same component, so nothing remounts across the
+   * fold and unsaved edits survive it.
+   */
+  fill?: boolean;
   onClose: () => void;
   /** The previewed task was saved, archived or deleted. */
   onChanged?: () => void;
@@ -67,14 +78,17 @@ export function ChatPreviewPane({
       }),
     );
   }, [preview, open]);
-  const frame = useAnimatedStyle(() => ({ width: open.get() * paneWidth }));
+  const frame = useAnimatedStyle(() => (fill ? { flex: 1 } : { width: open.get() * paneWidth }));
 
   if (!shown) return null;
   const close = { key: "close", label: "Close preview", icon: "xmark" as const, onPress: onClose };
 
   return (
     <Animated.View style={[{ overflow: "hidden" }, frame]}>
-      <Host style={{ width: paneWidth, flex: 1 }}>
+      {/* The bar docks vertically at the Host's trailing edge and its glass
+          buttons overhang it slightly; the pane clips (for the slide), so
+          leave a gutter or the buttons get cut. */}
+      <Host style={fill ? { flex: 1 } : { width: paneWidth - BAR_GUTTER, flex: 1 }}>
         <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">

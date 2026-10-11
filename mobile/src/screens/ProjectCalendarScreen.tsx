@@ -11,7 +11,7 @@ import {
   type CalendarCard,
 } from "@/db/queries";
 import { CalendarView, type CalendarLayout } from "@/components/CalendarView";
-import { ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
+import { ICON_TODAY, ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
@@ -79,13 +79,14 @@ export function ProjectCalendarScreen({
       <ScreenChrome
         title={name ? `${name} · Calendar` : "Calendar"}
         right={[
-          { kind: "button", key: "today", label: "Today", onPress: toolbarPress(() => setTodayNonce((n) => n + 1)) },
+          { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => setTodayNonce((n) => n + 1)) },
           {
             kind: "menu",
             key: "span",
             label: "Calendar span",
             icon: layout === "month" ? ICON_VIEW_MONTH : ICON_VIEW_WEEK,
-            text: layout === "month" ? "Month" : "Week",
+            // No visible text: text-labelled items can't dock into the Duo's
+            // side rail (Apple) — the icon already shows the current span.
             actions: [
               { label: "Month", icon: ICON_VIEW_MONTH, isOn: layout === "month", onPress: toolbarPress(() => setLayout("month")) },
               { label: "Week", icon: ICON_VIEW_WEEK, isOn: layout === "week", onPress: toolbarPress(() => setLayout("week")) },

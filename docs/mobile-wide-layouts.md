@@ -340,9 +340,78 @@ open, in both directions. Supporting rules, all learned the hard way:
   open it hosts a per-view `DetailActionPanel` (New note / New task /
   View board).
 - No column width pins of any kind (see the hinge note).
-- The note editor's Cancel ✕ shows in route mode only — in a column the
-  column's own ✕ is the single dismiss (`useInColumn()`).
+- One dismiss per posture: the column ✕ only when expanded (collapsed has
+  Back); while editing, the editor's Cancel replaces it (see the Apple Duo
+  audit below — this superseded "Cancel in route mode only").
 - `simctl terminate` does not reliably restart the app; after structural
   native changes reboot the simulator (`shutdown`/`boot`), and confirm the new
   code is actually running (temporary marker, or curl the Metro bundle and
   grep for a new string) — stale bundles get served silently.
+
+## Apple Duo audit — 2026-10-11
+
+Checked against the HIG ([Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo))
+and [Preparing your app for iPhone Duo](https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo).
+
+### Already aligned
+- **Continuity (Mail pattern).** One always-mounted split view: folded shows
+  one level, unfolded shows two/three; selection survives remounts.
+- **System containers, no width pins** — Apple: split views adapt to the fold
+  themselves. ArrangementView rejected for the reasons in the session notes
+  (and "keep navigation outside arrangement views").
+- **Bar axis.** Sidebar/content bars horizontal, detail bar vertical (system).
+- **Container-relative sizing** (`OverviewTab`, `ModalSafeView`); even column
+  counts on the Overview.
+
+### Side rail rules (implemented in `ChromeColumn`)
+Apple orders the vertical bar top → bottom: Back/Close, the prominent action,
+then the rest; items overflow bottom-up by `visibilityPriority`.
+
+| Item | Placement / priority | Why |
+|---|---|---|
+| Column ✕ (`leading` key `close`) | `cancellationAction` | top of the rail |
+| Screen Cancel (`CANCEL_KEY`) | `cancellationAction`, replaces the column ✕ | one dismiss |
+| `variant: "done"` (Save) | `confirmationAction`, priority high | prominent, kept longest. `topBarPinnedTrailing` was tried: it landed *above* Close and lost the prominent style |
+| `kind: "menu", overflow: true` (note/task actions) | each action → `secondaryAction` | the system overflow menu; Apple reserves the ellipsis for it |
+| List / board + (`priority: "high"`) | high | "Preserve frequently used actions first" (Compose) |
+| Sidebar sync / appearance | high / low | status stays visible; settings overflow first |
+
+Text-only items never dock vertically, so every column item needs a symbol
+(Calendar's Today got one; the span menu dropped its visible text).
+
+**One dismiss per posture.** Folded, the collapsed split view shows Back, which
+pops to the same place as the column ✕ — so `ProjectsSplitView.dismiss()`
+omits the ✕ when compact. Unfolded the detail column has no Back, so ✕ stays.
+While editing a note, the editor's Cancel (revert, stay) replaces the ✕.
+
+Resulting rails (folded): task — Back · Save · ⋯; note — Back · Edit · ⋯;
+note editing — Back · Cancel · Save; board/list — Back · +; calendar — Back ·
+Today · span.
+
+### Fixed in the audit
+- **Notes list + vanished when folded.** The Duo bridge moved the list's items
+  into the note column's bar, which isn't on screen folded. The list is now
+  bridged only when unfolded with a note open.
+- **Chat preview lost on fold.** `ChatPreviewPane` stays mounted; folded with a
+  preview open it fills the window (`fill`), the chat collapses beside it
+  (still mounted). ✕ returns to the chat. While any preview is open the
+  chat's own toolbar (clear / AI settings) is unmounted — mounting
+  `Stack.Toolbar` keeps the stack header up even with `headerShown: false`,
+  and its items stacked a second button column beside the preview's bar.
+- **New task was a modal** (parks on the left page unfolded). `TaskComposer`
+  is shared by the `card/new` route and the detail column (`composing:
+  { task, column? }` in the selection), like `NoteComposer`.
+- Workspace switcher used `folder` (same as the Projects tab and project
+  rows) → `square.stack.3d.up`.
+
+### Still open (need native modifiers in `modules/swiftui-modifiers`)
+- Hide Back while editing (`navigationBarBackButtonHidden`) — standard iOS
+  edit mode shows only Cancel / Done.
+- `toolbarVerticalCompressionBehavior` — minimise the tab bar in editors
+  (task-oriented views) so their actions keep the rail.
+- `presentationPlacement` for sheets; `reservedRegions` / `toolbarVerticalEdge`
+  for custom layouts (the chat preview still sizes from the hinge status).
+- Layout decisions still key off `Platform.isPad` (`BRIDGE_HEADER`) and a 700pt
+  width cut; Apple prefers size classes. Harmless today, wrong for iPad
+  Split View at compact width.
+

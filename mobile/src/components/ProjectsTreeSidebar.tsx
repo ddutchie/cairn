@@ -114,7 +114,8 @@ export function ProjectsTreeSidebar({
       </List>
       <Toolbar.Content>
         <ToolbarItem placement="topBarLeading">
-          <Menu label={title} systemImage="folder">
+          {/* Not "folder": that's the Projects tab and every project row. */}
+          <Menu label={title} systemImage="square.stack.3d.up">
             {sources.map((s) => (
               <Button
                 key={s.workspaceId}
@@ -129,7 +130,9 @@ export function ProjectsTreeSidebar({
             ))}
           </Menu>
         </ToolbarItem>
-        <ToolbarItem placement="topBarTrailing">
+        {/* Status stays visible longest (Apple: badges/status); Appearance
+            is rare, so it is the first to fold into the overflow menu. */}
+        <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
           <Button
             label="Sync status"
             systemImage="arrow.triangle.2.circlepath"
@@ -140,7 +143,7 @@ export function ProjectsTreeSidebar({
             }}
           />
         </ToolbarItem>
-        <ToolbarItem placement="topBarTrailing">
+        <ToolbarItem placement="topBarTrailing" visibilityPriority="low">
           <Button
             label="Appearance settings"
             systemImage="gear"

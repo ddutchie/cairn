@@ -165,6 +165,7 @@ export function CardDetailScreen({
             kind: "menu",
             key: "actions",
             label: "Task actions",
+            overflow: true,
             icon: ICON_MORE,
             // Archive is recoverable, so it's NOT destructive — kept in the
             // default colour to distinguish it from the red Delete below.

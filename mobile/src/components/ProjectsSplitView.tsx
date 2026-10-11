@@ -1,6 +1,6 @@
 import { useCallback, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import { FileText, ListTodo, CalendarDays, LayoutDashboard } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
@@ -22,6 +22,7 @@ import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { CardDetailScreen } from "@/screens/CardDetailScreen";
 import { NoteComposer } from "@/components/NoteComposer";
+import { TaskComposer } from "@/components/TaskComposer";
 import { ProjectsTreeSidebar } from "@/components/ProjectsTreeSidebar";
 import { useProjectsTree } from "@/components/projects-tree";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
@@ -54,8 +55,11 @@ interface Selection {
   view: SplitViewKind;
   noteId: string | null;
   cardId: string | null;
-  /** Inline new-note composer open in the detail column (wide layouts only). */
-  composing: boolean;
+  /**
+   * Inline composer open in the detail column (wide layouts only): a new note,
+   * or a new task (optionally pre-set to a board column).
+   */
+  composing: false | "note" | { task: true; column?: string };
 }
 
 // Module-level so the selection survives the split view unmounting when the
@@ -97,6 +101,7 @@ const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 // sidebar column serves both devices today.
 const BOTH_SLOTS: readonly ChromeSlot[] = ["primary", "secondary"];
 const LIST_SLOT: readonly ChromeSlot[] = ["primary"];
+const NO_SLOTS: readonly ChromeSlot[] = [];
 
 const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
   { id: "overview", title: "Overview", icon: "number" },
@@ -116,7 +121,6 @@ export function ProjectsSplitView({
   onWorkspaceSwitched: () => void;
 }) {
   const t = useTheme();
-  const router = useRouter();
   const { width } = useWindowDimensions();
   const sel = useSelection();
   const project = projects.find((p) => p.id === sel.projectId) ?? projects[0];
@@ -193,7 +197,13 @@ export function ProjectsSplitView({
   const openCard = useCallback((id: string) => setSelection({ cardId: id, noteId: null, composing: false }), []);
   // The list's + composes inline in the detail column (a native modal would
   // park on the wrong page on a Duo — there is no sheet-placement API).
-  const openComposer = useCallback(() => setSelection({ view: "notes", composing: true }), []);
+  const openComposer = useCallback(() => setSelection({ view: "notes", composing: "note", noteId: null, cardId: null }), []);
+  // New task: composed in the detail column too (the modal would park on the
+  // left page of an unfolded Duo). Never switches the view (Board/Calendar).
+  const composeTask = useCallback(
+    (column?: string) => setSelection({ composing: { task: true, ...(column ? { column } : {}) }, noteId: null, cardId: null }),
+    [],
+  );
 
   if (!projectId) {
     return (
@@ -214,6 +224,7 @@ export function ProjectsSplitView({
         onOpenNote={openNote}
         onOpenCard={openCard}
         onComposeNote={openComposer}
+        onComposeTask={composeTask}
       />
     </ChromeColumn>
   );
@@ -267,6 +278,7 @@ export function ProjectsSplitView({
             onSelectView={selectView}
             onOpenNote={openNote}
             onOpenCard={openCard}
+            onComposeTask={composeTask}
           />
         </ChromeColumn>
       ) : view === "overview" ? (
@@ -297,13 +309,20 @@ export function ProjectsSplitView({
     setVisibility("all");
   };
 
+  // The column's ✕ — only when expanded. Collapsed (folded Duo, compact
+  // iPad) the split view's own Back pops to the same place, and Apple's side
+  // rail wants one dismiss at the top, not two.
+  const dismiss = (label: string, onPress: () => void) =>
+    compact ? [] : [{ key: "close", label, icon: "xmark" as const, onPress }];
+
   // The open note or task. Both stay mounted across fold/unfold — the split
   // view's own collapse is the only thing that hides or shows them.
   const detailView =
-      sel.cardId ? (        <ChromeColumn
+      sel.cardId ? (
+        <ChromeColumn
           key={sel.cardId}
           slot={slot("secondary")}
-                    leading={[{ key: "close", label: "Close task", icon: "xmark", onPress: closeCard }]}
+          leading={dismiss("Close task", closeCard)}
         >
           <CardDetailScreen
             cardId={sel.cardId}
@@ -315,10 +334,26 @@ export function ProjectsSplitView({
         <ChromeColumn
           key={sel.noteId}
           slot={slot("secondary")}
-                    leading={[{ key: "close", label: "Close note", icon: "xmark", onPress: closeNote }]}
+          leading={dismiss("Close note", closeNote)}
           extra={listItems}
         >
           <NoteDetailScreen nested noteId={sel.noteId} onClose={closeNote} />
+        </ChromeColumn>
+      ) : sel.composing && sel.composing !== "note" ? (
+        // Inline task composer — same reasoning as the note composer below.
+        <ChromeColumn
+          key="compose-task"
+          slot={slot("secondary")}
+          leading={dismiss("Discard task", () => setSelection({ composing: false }))}
+        >
+          <TaskComposer
+            projectId={projectId}
+            column={sel.composing.column}
+            onSaved={(id) => {
+              setSelection({ cardId: id, composing: false });
+              setBoardVersion((n) => n + 1);
+            }}
+          />
         </ChromeColumn>
       ) : sel.composing ? (
         // Inline composer: a native modal would park on the wrong page on a
@@ -327,7 +362,7 @@ export function ProjectsSplitView({
         <ChromeColumn
           key="compose"
           slot={slot("secondary")}
-                    leading={[{ key: "close", label: "Discard note", icon: "xmark", onPress: () => setSelection({ composing: false }) }]}
+          leading={dismiss("Discard note", () => setSelection({ composing: false }))}
         >
           <NoteComposer
             projectId={projectId}
@@ -338,9 +373,7 @@ export function ProjectsSplitView({
 
   // Detail with nothing open: a per-view action panel, so the right page
   // earns its space instead of sitting blank.
-  const newTask = () => {
-    if (projectId) router.push({ pathname: "/card/new", params: { project: projectId } });
-  };
+  const newTask = () => composeTask();
   const emptyDetail =
     view === "board" ? (
       <ChromeColumn key="empty" slot={slot("secondary")}>
@@ -406,8 +439,15 @@ export function ProjectsSplitView({
   const withHeader = (body: ReactElement) => (
     <>
       {header}
-      {/* Duo: only the notes list is bridged, into the note column's bar. */}
-      <ChromeBridgeProvider value={bridge} keepBars={!BRIDGE_HEADER} slots={BRIDGE_HEADER ? BOTH_SLOTS : LIST_SLOT}>
+      {/* Duo: the notes list is bridged into the note column's bar only while
+          both are on screen (unfolded, a note open). Folded, or with nothing
+          open, the list keeps its own + — otherwise New note vanishes with
+          the column it was moved to. */}
+      <ChromeBridgeProvider
+        value={bridge}
+        keepBars={!BRIDGE_HEADER}
+        slots={BRIDGE_HEADER ? BOTH_SLOTS : !compact && sel.noteId ? LIST_SLOT : NO_SLOTS}
+      >
         {body}
       </ChromeBridgeProvider>
     </>

@@ -77,6 +77,7 @@ export function ProjectScreen({
   onOpenNote,
   onOpenCard,
   onComposeNote,
+  onComposeTask,
   selectedId = null,
 }: {
   nested?: boolean;
@@ -98,6 +99,8 @@ export function ProjectScreen({
    * (routes, board) to keep the modal.
    */
   onComposeNote?: () => void;
+  /** Split-view column: the same for a new task (optionally in a column). */
+  onComposeTask?: (column?: string) => void;
   /** Split-view column: the note / task open beside this list, marked in it. */
   selectedId?: string | null;
 }) {
@@ -355,13 +358,17 @@ export function ProjectScreen({
     [collapsed, toggle, t, tagMap, openNote, showNoteActions, selectedId],
   );
 
+  const addCard = (column?: string) => {
+    if (onComposeTask) onComposeTask(column);
+    else router.push({ pathname: "/card/new", params: { project: id, ...(column ? { column } : {}), back: project?.name || "Project" } });
+  };
+
   const onAdd = () => {
     if (!id) return;
-    // New-task is always a modal in the root stack (it presents over the tab
-    // bar by design). New-note goes inline when the host offers it (the
-    // split-view detail column); otherwise it is a modal too. On the Overview
-    // segment the + is hidden, so default the action to a new note.
-    if (tab === "board") router.push({ pathname: "/card/new", params: { project: id, back: project?.name || "Project" } });
+    // New note / task go inline when the host offers it (the split-view
+    // detail column); otherwise they are modals over the tab bar. On the
+    // Overview segment the + is hidden, so default the action to a new note.
+    if (tab === "board") addCard();
     else if (onComposeNote) onComposeNote();
     else router.push({ pathname: "/note/new", params: { project: id } });
   };
@@ -401,6 +408,8 @@ export function ProjectScreen({
             icon: ICON_ADD,
             onPress: toolbarPress(onAdd),
             hidden: tab === "overview",
+            // Apple: creation (Compose / New Note) is the last thing to overflow.
+            priority: "high",
           },
         ]}
       />
@@ -511,7 +520,7 @@ export function ProjectScreen({
             }
           }}
           onOpenCard={openCard}
-          onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId, back: project?.name || "Project" } })}
+          onAddCard={addCard}
           onArchive={(card) => {
             archiveCard(card.id);
             load();
