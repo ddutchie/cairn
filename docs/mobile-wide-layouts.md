@@ -130,10 +130,15 @@ hinge. (The board's old task panel is gone — open tasks live in Detail now.)
 
 Nothing in `node_modules` is patched. There are two local Expo modules:
 
-### `modules/swiftui-modifiers` — `navigationBarHidden()`
-Registers one custom @expo/ui modifier (`.toolbar(.hidden, for: .navigationBar)`)
-via `ViewModifierRegistry`. Used by bridged columns on iPad. Tiny and stable —
-it's @expo/ui's own extension point.
+### `modules/swiftui-modifiers` — `navigationBarHidden()`, `forceCompactWidth()`
+Registers custom @expo/ui modifiers via `ViewModifierRegistry` — @expo/ui's own
+extension point, tiny and stable:
+- `navigationBarHidden()` — `.toolbar(.hidden, for: .navigationBar)`; used by
+  bridged columns on iPad.
+- `forceCompactWidth(enabled)` — `.environment(\.horizontalSizeClass, .compact)`
+  while enabled; used by `ProjectsSplitView` below 700pt (see "Projects in a narrow
+  regular-width window"). Always the same single environment modifier with a changing
+  value, so toggling it never changes the view's identity (no remount).
 
 ### `modules/tab-sidebar` — Mail-style groups in the iPad tab sidebar
 react-native-screens (4.28, also 5.0 alpha) builds its `UITabBarController` from
@@ -278,6 +283,39 @@ keyboard. `RestingStickyView` (`src/components/chat/RestingStickyView.tsx`) trea
 zero keyboard height as closed regardless of `progress`; while the keyboard moves the
 height is non-zero and the library's progress is used as before. Search's scope bar
 uses the same library view and may show the same symptom.
+
+### Keyboard + SwiftUI hosts: who owns the keyboard (note editor toolbars)
+
+Inside a `Host` (the Projects split view, the side-preview pane) SwiftUI also resizes
+its columns for the keyboard, while `react-native-keyboard-controller`'s
+`KeyboardStickyView` assumes the keyboard overlaps a full-height container and lifts
+by the whole keyboard height — counted twice, so the editor's formatting/AI toolbars
+ended up under the header (pre-existing, reproduced on the pre-PR commit). Rules now:
+- Both hosts pass `ignoreSafeArea="keyboard"`; keyboard-controller owns the keyboard
+  everywhere, as in Chat.
+- `NoteEditorBody` renders the toolbar as an absolute overlay on a full-height wrapper
+  inside a `RestingStickyView` (like the chat composer), and if the wrapper was
+  already shrunk for the keyboard (detected from its own `onLayout`; `measureInWindow`
+  is unreliable inside the hosting layer) it cancels the lift.
+- Nested in Projects the container already stops above the tab bar / bottom safe
+  area, so `bottomInset` is 0 there (it doubled the inset: an empty band under the
+  formatting row). Full-window routes keep `insets.bottom`.
+- The image button is the first item of the formatting row (reachable without
+  scrolling).
+
+### Debugging aids and tooling notes (2026-10-12 session)
+- Settings → Appearance → Developer → **Fold overlay** (dev builds; `dev-flags.ts`,
+  `FoldDebugOverlay`) — window/insets/hinge readout plus the inferred crease band.
+- Bisect against the pre-PR commit by checking it out (`git checkout --detach
+  898c5d7f`) and cold-launching: it separated three pre-existing bugs (rotation
+  composer, editor toolbars, Projects empty detail) from the fold work.
+- A second simulator (`iPhone 17 Pro`) is the control for "is this a Duo problem?";
+  it needs the dev client rebuilt for any native module changes
+  (`EXPO_USE_PRECOMPILED_MODULES=0 npx expo run:ios --device <udid> --no-bundler`).
+- Screenshots lag taps; take a second one before judging a state. Tap coordinates are
+  device points (the screenshot's pixel width ÷ the device's point width).
+- `onHingeChange` needs a SwiftUI view to hang off: `HingeObserver` (root, invisible)
+  keeps the hinge cache fed when no split view or preview pane is mounted.
 
 ## Unifying — getting rid of the native additions
 
@@ -503,6 +541,13 @@ Today · span.
   { task, column? }` in the selection), like `NoteComposer`.
 - Workspace switcher used `folder` (same as the Projects tab and project
   rows) → `square.stack.3d.up`.
+
+### Still open after the laptop-pose work
+- Search's scope bar uses `KeyboardStickyView` and may show the rotation symptom the
+  chat composer had (see `RestingStickyView`); not yet checked.
+- Native `ReservedRegion` frames would replace the inferred crease (needed for Split
+  View multitasking, where the window no longer fills the display).
+- `NoteDetailScreen`'s `nested` prop is now unused (lint warning).
 
 ### Still open (need native modifiers in `modules/swiftui-modifiers`)
 - Hide Back while editing (`navigationBarBackButtonHidden`) — standard iOS
