@@ -45,11 +45,12 @@ const TAGS: { name: string; color: string }[] = [
   { name: "mobile", color: "#10b981" },
 ];
 
+// One line per paragraph: notes render single newlines as line breaks
+// (remark-breaks on desktop, markdown-it `breaks` here), so hard-wrapping
+// would show as ragged lines.
 const LONG_NOTE = `# Foldable layout research
 
-The iPhone Duo folds from a phone-sized screen into a near-square canvas. Apps
-get a live size-class change when it opens, so layouts must adapt **without a
-relaunch** and keep whatever the user was looking at.
+The iPhone Duo folds from a phone-sized screen into a near-square canvas. Apps get a live size-class change when it opens, so layouts must adapt **without a relaunch** and keep whatever the user was looking at.
 
 ## Principles
 
@@ -66,8 +67,7 @@ relaunch** and keep whatever the user was looking at.
 
 ## Notes
 
-Wide screens make long lines hard to read. Cap the editor around 70 characters
-per line and centre it, the way Notes and Mail do on iPad.
+Wide screens make long lines hard to read. Cap the editor around 70 characters per line and centre it, the way Notes and Mail do on iPad.
 
 | Device | Folded | Unfolded |
 | --- | --- | --- |
