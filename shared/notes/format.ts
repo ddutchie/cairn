@@ -245,6 +245,21 @@ export function insertWikilink(text: string, selection: Selection, title: string
   };
 }
 
+/**
+ * Insert an embed (e.g. `![[photo.jpg]]`) at the selection on its own line(s):
+ * a newline is added before it unless it starts a line, and after it unless a
+ * newline already follows. The caret lands just after the embed's line break.
+ */
+export function insertEmbedAtSelection(text: string, selection: Selection, embed: string): FormatResult {
+  const { start, end } = normalize(selection, text.length);
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const lead = before.length === 0 || before.endsWith("\n") ? "" : "\n";
+  const trail = after.startsWith("\n") ? "" : "\n";
+  const caret = before.length + lead.length + embed.length + trail.length;
+  return { text: `${before}${lead}${embed}${trail}${after}`, selection: { start: caret, end: caret } };
+}
+
 /** Clamp + order a selection to the current text bounds. */
 function normalize(sel: Selection, len: number): Selection {
   let start = Math.max(0, Math.min(sel.start, len));

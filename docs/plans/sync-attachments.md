@@ -1,6 +1,6 @@
 # Sync: attachments (images) over the synced folder
 
-Status: implemented (desktop + mobile read path). Remote relay is planned separately and intentionally not in the repo.
+Status: implemented (desktop; mobile read + add-from-phone). Remote relay is planned separately and intentionally not in the repo.
 Related: `shared/sync/attachments.ts`, `electron/sync/attachments.ts`, `mobile/src/sync/blobs.ts`, `mobile/src/components/SyncedImage.tsx`
 
 ## Problem
@@ -29,14 +29,21 @@ Safety: the user's own files are never overwritten (a name taken by different by
 filesystem; path-traversal names are ignored); attachment failures never fail the oplog sync; ≤200 copies per tick.
 
 ### Mobile
-Read path only. The iCloud folder is the store (placeholders give lazy download). After each sync, `requestMissingBlobs`
+The iCloud folder is the store (placeholders give lazy download). After each sync, `requestMissingBlobs`
 asks iCloud to download blobs of live manifest rows. `![[image.png]]` is rewritten by the shared preprocess to
 `cairn://embed/<name>` and rendered by `SyncedImage` (manifest lookup → `expo-image`), which shows a placeholder and polls
 until the file lands.
 
+### Adding images on the phone (`mobile/src/notes/insert-image.ts`)
+Editor toolbar → image button → photo library / camera / paste from clipboard. Each source is normalised (longest side
+≤2000px; JPEG, or PNG for PNG sources), hashed, named `photo-<hash8>.<ext>`, uploaded to
+`blobs-<ws>/<hash>.<ext>` in the iCloud folder, registered with an `INSERT OR IGNORE` manifest row (capture triggers stage it)
+and embedded as `![[name]]`. Nothing is published until the user adds the image to a note. Needs `expo-image-picker` and
+`expo-image-manipulator` (native rebuild) and iCloud. Paste is a toolbar option (shown when the clipboard holds an image),
+not the system long-press Paste — React Native's `TextInput` can't receive pasted images; a native wrapper such as
+`expo-paste-input` would be needed for that.
+
 ## Not in this change
-- Phone-originated images (camera/photos inserted into a note): needs a photo-picker dependency (native rebuild) and a
-  mobile write path into `blobs-*/`. The manifest + folder layout already support it.
 - Encryption, GC of unreferenced blobs, per-type/Wi-Fi-only toggles, PDFs on mobile (placeholder remains).
 - Known limit: manifest rows are registered when a note referencing the image is scanned; an image replaced in place under
   the same name produces a new row (old row/blob are not garbage-collected yet).
