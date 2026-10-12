@@ -5,7 +5,7 @@ import { Image } from "expo-image";
 import { Send, X, Plus } from "lucide-react-native";
 import Animated, { Extrapolation, FadeOut, interpolate, LinearTransition, useAnimatedReaction, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { RestingStickyView } from "./RestingStickyView";
 import { useTheme, withAlpha, useIsDark, KEYBOARD_OPEN_GAP } from "@/theme";
 import { Glass } from "./attachment-panel/glass";
 import { COMPOSER, COMPOSER_STRIP_HEIGHT, DURATION, GUTTER } from "./attachment-panel/constants";
@@ -80,11 +80,10 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
   const fallbackBg = withAlpha(t.surface2, 0.92);
   const isLight = !useIsDark();
   return (
-    <KeyboardStickyView
+    <RestingStickyView
       offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
-      // A stable StyleSheet object (never a fresh array): KeyboardStickyView merges
-      // this with its animated transform, and a new style identity every render
-      // makes Reanimated re-attach it — the composer then loses its lift/touch frame.
+      // A stable StyleSheet object (never a fresh array), merged with the animated
+      // transform.
       style={hidden ? styles.composerOverlayHidden : styles.composerOverlay}
       pointerEvents={hidden ? "none" : "auto"}
     >
@@ -132,7 +131,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
           </Glass>
         </View>
       </View>
-    </KeyboardStickyView>
+    </RestingStickyView>
   );
 });
 

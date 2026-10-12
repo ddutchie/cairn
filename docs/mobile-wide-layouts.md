@@ -257,6 +257,18 @@ own coordinates — null once the container already sits below it).
   simulator screenshots never show the fold. Persisted in the meta DB, forced
   off in release builds.
 
+### Composer behind the tab bar after rotating (pre-existing, fixed)
+
+Bisected against the pre-fold commit: rotating the unfolded Duo from landscape to
+portrait left the chat composer resting ~8pt above the bottom edge — behind the tab
+bar — until the screen was left and re-entered. `KeyboardStickyView` interpolates its
+offset by the keyboard `progress`, which can be stuck at 1 after a rotation while the
+height is 0, so it applied the *opened* offset (`KEYBOARD_OPEN_GAP`) to a closed
+keyboard. `RestingStickyView` (`src/components/chat/RestingStickyView.tsx`) treats a
+zero keyboard height as closed regardless of `progress`; while the keyboard moves the
+height is non-zero and the library's progress is used as before. Search's scope bar
+uses the same library view and may show the same symptom.
+
 ## Unifying — getting rid of the native additions
 
 Goal: one model for "pick project → view → item" on every wide device, with as
