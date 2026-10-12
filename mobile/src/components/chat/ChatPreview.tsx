@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useWindowDimensions } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
@@ -32,8 +31,6 @@ export function useChatPreview() {
 /** Below this width the chat stays single-column and chips navigate as before. */
 export const CHAT_PREVIEW_MIN_WIDTH = 700;
 
-/** Room inside the clipping pane for the side bar's glass buttons. */
-const BAR_GUTTER = 12;
 
 export function ChatPreviewPane({
   preview,
@@ -55,14 +52,18 @@ export function ChatPreviewPane({
   onChanged?: () => void;
 }) {
   const { width } = useWindowDimensions();
-  const { right } = useSafeAreaInsets();
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
-  // On a device with a hinge (iPhone Duo, folded flat or half open) the pane
-  // starts exactly on the fold and runs to the side rail, so neither the chat
-  // nor the preview ever crosses the crease. Without one (iPad) it takes a
-  // little under half, leaving the conversation the larger share.
-  const hasHinge = hinge != null && hinge !== "closed";
-  const paneWidth = hasHinge ? width / 2 - right : Math.round(width * 0.46);
+  // Same split as the Notes split view: half open on a Duo, the pane starts
+  // exactly on the fold (each half its own page); fully open (flat), and on
+  // iPad, the open item gets the larger share, as SwiftUI's detail column
+  // does. The pane runs to the window edge (the chat screen drops its rail
+  // padding while it's open).
+  const paneWidth = hinge === "partiallyOpen" ? width / 2 : Math.round(width * 0.6);
+  // Hinge / size changes resize the open pane smoothly instead of jumping.
+  const paneW = useSharedValue(paneWidth);
+  useEffect(() => {
+    paneW.set(withTiming(paneWidth, { duration: 280, easing: Easing.out(Easing.cubic) }));
+  }, [paneWidth, paneW]);
 
   // One animated width drives the whole transition: the pane grows from the
   // right edge and whatever sits beside it (flex: 1) shrinks in the same frame,
@@ -78,17 +79,16 @@ export function ChatPreviewPane({
       }),
     );
   }, [preview, open]);
-  const frame = useAnimatedStyle(() => (fill ? { flex: 1 } : { width: open.get() * paneWidth }));
+  const frame = useAnimatedStyle(() => (fill ? { flex: 1 } : { width: open.get() * paneW.get() }));
 
-  if (!shown) return null;
+  // Folded (fill) there is nothing to slide beside: closing just removes it,
+  // instead of a half-width slide-out over the chat.
+  if (!shown || (fill && !preview)) return null;
   const close = { key: "close", label: "Close preview", icon: "xmark" as const, onPress: onClose };
 
   return (
     <Animated.View style={[{ overflow: "hidden" }, frame]}>
-      {/* The bar docks vertically at the Host's trailing edge and its glass
-          buttons overhang it slightly; the pane clips (for the slide), so
-          leave a gutter or the buttons get cut. */}
-      <Host style={fill ? { flex: 1 } : { width: paneWidth - BAR_GUTTER, flex: 1 }}>
+      <Host style={fill ? { flex: 1 } : { width: paneWidth, flex: 1 }}>
         <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">

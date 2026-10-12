@@ -398,6 +398,12 @@ Today · span.
   chat's own toolbar (clear / AI settings) is unmounted — mounting
   `Stack.Toolbar` keeps the stack header up even with `headerShown: false`,
   and its items stacked a second button column beside the preview's bar.
+- **Chat preview at every width.** Chips always open the pane (never a pushed
+  route): folded it fills the window, unfolded it sits beside the chat, so
+  fold/unfold moves the same preview. While it's open the chat screen drops
+  its right rail padding (`contentStyle`) so the pane's SwiftUI host reaches
+  the window edge and its bar joins the tab rail — with the RN padding the
+  bar stood as a second column beside the rail (inset applied twice).
 - **New task was a modal** (parks on the left page unfolded). `TaskComposer`
   is shared by the `card/new` route and the detail column (`composing:
   { task, column? }` in the selection), like `NoteComposer`.

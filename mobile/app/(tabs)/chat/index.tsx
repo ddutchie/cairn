@@ -130,7 +130,7 @@ export default function ChatScreen() {
   const canPreview = width >= CHAT_PREVIEW_MIN_WIDTH;
   // Folding a Duo with a preview open keeps it (continuity): the pane fills
   // the window and the chat collapses beside it, still mounted. Its ✕
-  // returns to the conversation. (Chips only open previews while wide.)
+  // returns to the conversation.
   const previewFills = !canPreview && preview != null;
   // The wide header is transparent, so the conversation clears it itself — on
   // iPad that includes the floating tab bar above it.
@@ -397,6 +397,13 @@ export default function ChatScreen() {
           // they dock into the side rail beside the tabs.
           // Folded with a preview open, the pane's own bar is the only one.
           headerShown: !previewFills,
+          // While a preview is open its SwiftUI pane reaches the window edge and
+          // handles the side rail itself (its bar joins the rail, as in the
+          // Projects split view); the RN padding would double that inset.
+          contentStyle:
+            preview != null
+              ? { backgroundColor: t.background, paddingLeft: insets.left }
+              : { backgroundColor: t.background, paddingLeft: insets.left, paddingRight: insets.right },
           title: canPreview ? "" : "Chat",
           headerTransparent: canPreview,
           // TabStack paints the header with the surface colour, and iOS 26 adds a
@@ -448,7 +455,10 @@ export default function ChatScreen() {
         />
       </Stack.Toolbar>
       ) : null}
-      <ChatPreviewProvider value={canPreview ? setPreview : null}>
+      {/* Every width previews in the pane (not a pushed route): folded it fills
+          the window, unfolded it sits beside the chat — so fold/unfold moves
+          the same preview instead of stranding a full-screen page. */}
+      <ChatPreviewProvider value={setPreview}>
       <View style={styles.row}>
       <View
         style={[
@@ -581,9 +591,7 @@ export default function ChatScreen() {
         />
       </View>
       </View>
-      {canPreview || previewFills ? (
-        <ChatPreviewPane preview={preview} fill={previewFills} onClose={() => setPreview(null)} />
-      ) : null}
+      <ChatPreviewPane preview={preview} fill={!canPreview} onClose={() => setPreview(null)} />
       </View>
       </ChatPreviewProvider>
     </TabScreen>

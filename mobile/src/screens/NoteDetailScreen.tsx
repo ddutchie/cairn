@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { ScreenChrome } from "@/components/screen-chrome";
+import { ScreenChrome, useInColumn } from "@/components/screen-chrome";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
@@ -65,6 +65,8 @@ export function NoteDetailScreen({
   const isDark = useIsDark();
   const fontId = useFont();
   const insets = useSafeAreaInsets();
+  // Hosted in a SwiftUI column / preview pane (insets already applied there).
+  const inColumn = useInColumn();
   // Bottom padding so the note body scrolls clear of the bottom safe area.
   // `insets.bottom` already includes the native tab bar on a tab screen (see
   // TAB_BAR_BASE doc), so we no longer add it separately; the +40 is scroll
@@ -286,10 +288,12 @@ export function NoteDetailScreen({
           A glass pill bottom-right. `insets.bottom` already reserves the native
           tab bar's area (the bar extends into the home-indicator inset), so we
           add only a small fixed gap — NOT TAB_BAR_BASE, which would double-count
-          in the nested (tab-bar-visible) flow and float the button too high. */}
+          in the nested (tab-bar-visible) flow and float the button too high.
+          In a split-view column / preview pane the SwiftUI host already keeps
+          its content clear of the bottom edge, so the inset would apply twice. */}
       {!editing && headings.length >= 2 ? (
         <View
-          style={[styles.tocFab, { bottom: 12 + insets.bottom }]}
+          style={[styles.tocFab, { bottom: 12 + (inColumn ? 0 : insets.bottom) }]}
           pointerEvents="box-none"
         >
           <PressableScale onPress={() => setTocOpen(true)} haptic={false} accessibilityLabel="Table of contents">
