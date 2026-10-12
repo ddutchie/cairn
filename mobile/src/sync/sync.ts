@@ -45,11 +45,20 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 export async function syncNow(): Promise<SyncResult> {
+  // Capture the source and its engine BEFORE any await: a source switch while
+  // iCloud is being checked must not redirect this sync to another workspace
+  // (or slip the demo guard below).
+  const workspaceId = getActiveSource();
+  if (!workspaceId) {
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "No sync source selected." };
+  }
   // The dev demo workspace is local-only: never drain or publish its oplog to
   // the shared iCloud folder (pull-to-refresh and focus syncs still call this).
-  if (isDemoSource(getActiveSource())) {
+  if (isDemoSource(workspaceId)) {
     return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Demo data isn't synced." };
   }
+  const engine = getEngine();
+
   if (!(await iCloudAvailable())) {
     return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "iCloud not available — sign in to iCloud in Settings." };
   }
@@ -57,13 +66,6 @@ export async function syncNow(): Promise<SyncResult> {
   if (!folder) {
     return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Couldn't open the iCloud Cairn folder." };
   }
-
-  const workspaceId = getActiveSource();
-  if (!workspaceId) {
-    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "No sync source selected." };
-  }
-
-  const engine = getEngine();
 
   try {
     // 1. Stage local writes into the oplog.
