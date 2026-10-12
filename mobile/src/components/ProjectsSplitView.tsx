@@ -99,6 +99,9 @@ const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 // Feature flag: the projects tree in the iPad's system tab sidebar
 // (modules/tab-sidebar) — reserved for a future enhancement; the split-view
 // sidebar column serves both devices today.
+// Leaving focus mode (detailOnly) returns to list | item with the sidebar still
+// hidden — "all" would pop the sidebar open over a note/task the user just closed.
+const LEAVE_FOCUS: NavigationSplitViewVisibility = "doubleColumn";
 const BOTH_SLOTS: readonly ChromeSlot[] = ["primary", "secondary"];
 const LIST_SLOT: readonly ChromeSlot[] = ["primary"];
 const NO_SLOTS: readonly ChromeSlot[] = [];
@@ -154,7 +157,7 @@ export function ProjectsSplitView({
   const [visibility, setVisibility] = useState<NavigationSplitViewVisibility>("doubleColumn");
   // Focus needs an open note: never leave an empty detail as the only column.
   // Adjusted during render, so the list never flashes hidden.
-  if (visibility === "detailOnly" && !sel.noteId) setVisibility("all");
+  if (visibility === "detailOnly" && !sel.noteId) setVisibility(LEAVE_FOCUS);
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
   // keeps their content clear of the fold, so no extra inset is added.
@@ -188,14 +191,16 @@ export function ProjectsSplitView({
     setSelection({
       projectId: id,
       ...(next ? { view: next as SplitViewKind } : {}),
-      ...(id !== selection.projectId ? { noteId: null, cardId: null } : {}),
+      ...(id !== selection.projectId || (next && next !== selection.view) ? { noteId: null, cardId: null } : {}),
       composing: false,
     });
   }, []);
   const tree = useProjectsTree({ projects, views: VIEWS, projectId, view, onSelect: onTreeSelect });
 
+  // Switching panels (Overview → Notes, …) closes the open note/task: an item
+  // from one panel must not stay selected inside another (a task open in Notes).
   const selectView = useCallback((next: SplitViewKind) => {
-    setSelection({ view: next, composing: false });
+    setSelection({ view: next, ...(next !== selection.view ? { noteId: null, cardId: null } : {}), composing: false });
   }, []);
   // SPIKE: opening an item never switches the view out from under the user —
   // the item renders in Detail whatever the Content column shows.
@@ -243,7 +248,7 @@ export function ProjectsSplitView({
   // behind an empty detail.
   const closeNote = () => {
     setSelection({ noteId: null, composing: false });
-    setVisibility("all");
+    setVisibility((v) => (v === "detailOnly" ? LEAVE_FOCUS : v));
   };
 
   // Where buttons go:
@@ -314,7 +319,7 @@ export function ProjectsSplitView({
   // behind an empty detail.
   const closeCard = () => {
     setSelection({ cardId: null });
-    setVisibility("all");
+    setVisibility((v) => (v === "detailOnly" ? LEAVE_FOCUS : v));
   };
 
   // The column's ✕ — only when expanded. Collapsed (folded Duo, compact
