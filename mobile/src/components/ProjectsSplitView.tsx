@@ -496,7 +496,11 @@ export function ProjectsSplitView({
   // containment. See docs/plans/iphone-duo.md.
   return withHeader(
     <>
-      <Host style={{ flex: 1 }}>
+      {/* ignoreSafeArea="keyboard": SwiftUI would shrink the columns for the keyboard,
+          and the editor's keyboard-sticky toolbar then lifts by the keyboard height
+          a second time, ending up under the header. react-native-keyboard-controller
+          owns the keyboard, as everywhere else in the app. */}
+      <Host style={{ flex: 1 }} ignoreSafeArea="keyboard">
         <NavigationSplitView
           // True echo (except the spurious first-layout detailOnly with
           // nothing open, which is swallowed): controlled visibility only

@@ -292,7 +292,7 @@ export function SidePreviewPane({
 
   return (
     <Animated.View style={[{ overflow: "hidden" }, frame]}>
-      <Host style={fill ? { flex: 1 } : stacked ? { width, height: stackedH } : { width: paneWidth, flex: 1 }}>
+      <Host ignoreSafeArea="keyboard" style={fill ? { flex: 1 } : stacked ? { width, height: stackedH } : { width: paneWidth, flex: 1 }}>
         <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">

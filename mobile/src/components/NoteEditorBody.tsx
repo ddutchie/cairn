@@ -1,6 +1,7 @@
-import { useRef, type ReactNode } from "react";
-import { TextInput, StyleSheet, type TextInputInstance } from "react-native";
-import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
+import { useRef, useState, type ReactNode } from "react";
+import { View, TextInput, StyleSheet, useWindowDimensions, type LayoutChangeEvent, type TextInputInstance } from "react-native";
+import { KeyboardAwareScrollView, useKeyboardState } from "react-native-keyboard-controller";
+import { RestingStickyView } from "@/components/chat/RestingStickyView";
 import { NoteEditorToolbar } from "@/components/NoteEditorToolbar";
 import type { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { useTheme, useFont, resolveRNFontFamily, type as typeScale } from "@/theme";
@@ -45,8 +46,31 @@ export function NoteEditorBody({
   const fontFamily = resolveRNFontFamily(fontId);
   const bodyRef = useRef<TextInputInstance>(null);
 
+  // The toolbar is an overlay on a full-height wrapper, like the chat composer, and
+  // rides the keyboard. Inside a SwiftUI split view / preview pane the hosting layer
+  // also shrinks the wrapper for the keyboard, so its bottom already meets the
+  // keyboard's top: lifting by the whole keyboard height again counted it twice and
+  // left the toolbars under the header. Detect that from the wrapper's own size
+  // (onLayout; measureInWindow is unreliable inside the hosting layer): if it shrank
+  // by a good part of the keyboard, no extra lift is needed; otherwise (a plain
+  // full-window route) lift by the whole keyboard, as before.
+  const keyboardVisible = useKeyboardState((st) => st.isVisible);
+  const keyboardHeight = useKeyboardState((st) => st.height);
+  const { height: windowHeight } = useWindowDimensions();
+  const [size, setSize] = useState({ tallest: 0, current: 0, window: windowHeight });
+  const onWrapLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    setSize((c) => {
+      const tallest = c.window !== windowHeight ? h : Math.max(c.tallest, h);
+      return tallest === c.tallest && h === c.current && c.window === windowHeight ? c : { tallest, current: h, window: windowHeight };
+    });
+  };
+  const alreadyResized = keyboardVisible && keyboardHeight > 0 && size.tallest - size.current > keyboardHeight * 0.4;
+  // opened offset is added to the library's -keyboardHeight translation: +keyboard cancels it.
+  const lift = alreadyResized ? keyboardHeight : 0;
+
   return (
-    <>
+    <View style={styles.wrap} onLayout={onWrapLayout}>
       <KeyboardAwareScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -81,7 +105,7 @@ export function NoteEditorBody({
         />
       </KeyboardAwareScrollView>
 
-      <KeyboardStickyView>
+      <RestingStickyView offset={{ closed: 0, opened: lift }} style={styles.toolbarOverlay}>
         <NoteEditorToolbar
           onFormat={fmt.onFormat}
           onAction={fmt.onAIAction}
@@ -93,14 +117,17 @@ export function NoteEditorBody({
           onInsertImage={fmt.onInsertImage}
           imageBusy={fmt.imageBusy}
         />
-      </KeyboardStickyView>
-    </>
+      </RestingStickyView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: { flex: 1 },
+  toolbarOverlay: { position: "absolute", left: 0, right: 0, bottom: 0 },
   scroll: { flex: 1 },
-  content: { padding: 18, paddingBottom: 64 },
+  // Room for the overlaid toolbars (two rows) under the last line.
+  content: { padding: 18, paddingBottom: 190 },
   titleInput: { ...typeScale.display, padding: 0 },
   bodyInput: { ...typeScale.body, marginTop: 16, minHeight: 320 },
 });

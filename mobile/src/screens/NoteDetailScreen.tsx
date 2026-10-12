@@ -32,7 +32,7 @@ import { splitLeadingTitleHeading } from "@cairn/shared/notes/markdown";
 import { resolveFontPreset } from "@cairn/shared/ui/fonts";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
-import { useTheme, useIsDark, useFont, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
+import { useTheme, useIsDark, useFont, type as typeScale, type Theme } from "@/theme";
 
 /**
  * Note viewer / editor. A leaf screen (navigates only back), so both its routes
@@ -267,7 +267,10 @@ export function NoteDetailScreen({
           onTitle={setTitle}
           onBody={setBody}
           fmt={fmt}
-          bottomInset={insets.bottom + (nested ? TAB_BAR_BASE : 0)}
+          // Nested in the Projects tab the container already stops above the tab bar /
+          // bottom safe area, so the toolbar adds no home-indicator padding of its own
+          // (it doubled the inset, leaving an empty band under the formatting row).
+          bottomInset={nested ? 0 : insets.bottom}
         />
       ) : (
         <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: viewBottomPad }]}>
