@@ -79,7 +79,10 @@ export function ChatPreviewPane({
       }),
     );
   }, [preview, open]);
-  const frame = useAnimatedStyle(() => (fill ? { flex: 1 } : { width: open.get() * paneW.get() }));
+  // Always an explicit width — never toggle style keys: Reanimated keeps the
+  // last value of a key that disappears, so a folded `flex: 1` survived
+  // unfolding and squeezed the chat. Folded, the pane is the whole window.
+  const frame = useAnimatedStyle(() => ({ width: fill ? width : open.get() * paneW.get() }));
 
   // Folded (fill) there is nothing to slide beside: closing just removes it,
   // instead of a half-width slide-out over the chat.
