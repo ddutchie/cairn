@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, type TextInputSelectionChangeEvent } from "react-native";
 import { useRouter } from "expo-router";
 import { applyFormat, insertEmbedAtSelection, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
@@ -112,7 +112,9 @@ export function useNoteFormattingToolbar(body: string, setBody: (next: string) =
   // The picker/camera/upload take seconds and the editor stays editable, so the
   // embed must be spliced into the LATEST body, not the one captured on press.
   const bodyRef = useRef(body);
-  bodyRef.current = body;
+  useEffect(() => {
+    bodyRef.current = body;
+  }, [body]);
   const insertImage = useCallback(
     async (source: ImageSource) => {
       setImageBusy(true);

@@ -20,11 +20,14 @@ export function SyncedImage({ name }: { name: string }) {
   const [ratio, setRatio] = useState(1.5);
 
   // The component can be reused for a different embed (list recycling, edits):
-  // re-resolve whenever the name changes instead of keeping the old image.
-  useEffect(() => {
+  // re-resolve when the name changes instead of keeping the old image. Adjusted
+  // during render (React's "reset state on prop change" pattern), not in an effect.
+  const [shownName, setShownName] = useState(name);
+  if (shownName !== name) {
+    setShownName(name);
     setUri(resolveEmbedUri(name));
     setRatio(1.5);
-  }, [name]);
+  }
 
   useEffect(() => {
     if (uri) return;
