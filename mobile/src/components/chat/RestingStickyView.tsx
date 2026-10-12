@@ -19,12 +19,16 @@ export function RestingStickyView({
   style,
   children,
   pointerEvents,
+  accessibilityElementsHidden,
+  importantForAccessibility,
 }: {
   /** translateY added when the keyboard is closed / open. */
   offset: { closed: number; opened: number };
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  accessibilityElementsHidden?: boolean;
+  importantForAccessibility?: "auto" | "yes" | "no" | "no-hide-descendants";
 }) {
   const { height, progress } = useReanimatedKeyboardAnimation();
   const { closed, opened } = offset;
@@ -36,7 +40,12 @@ export function RestingStickyView({
     return { transform: [{ translateY: h + interpolate(p, [0, 1], [closed, opened]) }] };
   });
   return (
-    <Animated.View style={[style, sticky]} pointerEvents={pointerEvents}>
+    <Animated.View
+      style={[style, sticky]}
+      pointerEvents={pointerEvents}
+      accessibilityElementsHidden={accessibilityElementsHidden}
+      importantForAccessibility={importantForAccessibility}
+    >
       {children}
     </Animated.View>
   );

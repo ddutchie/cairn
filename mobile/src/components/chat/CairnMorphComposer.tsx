@@ -85,6 +85,8 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
       // A stable StyleSheet object (never a fresh array), merged with the animated
       // transform.
       style={hidden ? styles.composerOverlayHidden : styles.composerOverlay}
+      accessibilityElementsHidden={hidden}
+      importantForAccessibility={hidden ? "no-hide-descendants" : "auto"}
       pointerEvents={hidden ? "none" : "auto"}
     >
       <View onLayout={(e) => onLayoutHeight(e.nativeEvent.layout.height)}>

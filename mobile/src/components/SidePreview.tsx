@@ -192,9 +192,8 @@ export function SidePreviewLayout({
         onLayout={topHalf.onLayout}
         style={[styles.row, stacked && styles.column]}
       >
-        {stacked && pane}
         <View style={[{ flex: 1, paddingTop: bodyPaddingTop }, bodyStyle, fills && styles.collapsed]}>{children}</View>
-        {!stacked && pane}
+        {pane}
       </View>
     </SidePreviewProvider>
   );
@@ -202,7 +201,9 @@ export function SidePreviewLayout({
 
 const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: "row", overflow: "hidden" },
-  column: { flexDirection: "column" },
+  // The pane is always the second child (so it never remounts when the layout flips
+  // between a row and the laptop pose); reversed, it lands above the screen body.
+  column: { flexDirection: "column-reverse" },
   collapsed: { flex: 0, width: 0, overflow: "hidden" },
 });
 

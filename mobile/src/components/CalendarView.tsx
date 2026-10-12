@@ -19,7 +19,7 @@ import { DraggableChip } from "./calendar/DraggableChip";
 import { DayCell } from "./calendar/DayCell";
 import { DayDetailRow } from "./calendar/DayDetailRow";
 import { UnscheduledTray } from "./calendar/UnscheduledTray";
-import { useFold } from "@/lib/use-fold";
+import { useFold, useTopHalf } from "@/lib/use-fold";
 
 export type CalendarLayout = "month" | "week";
 
@@ -147,8 +147,11 @@ export function CalendarView({
   const { height: windowHeight } = useWindowDimensions();
   // Laptop pose (portrait half-fold): the grid ends at the crease and the band
   // takes the whole flat half below it, instead of the crease cutting a week row.
+  // Only when this view actually spans the crease: under a stacked preview the
+  // body already starts below it and keeps the normal sizing.
   const fold = useFold();
-  const laptop = fold?.axis === "horizontal";
+  const topHalf = useTopHalf();
+  const laptop = topHalf.before != null && fold?.axis === "horizontal";
   const bottomBandHeight = laptop
     ? Math.round(windowHeight - fold.position - fold.gutter / 2)
     : Math.round(Math.min(360, Math.max(200, windowHeight * 0.35)));
@@ -183,7 +186,7 @@ export function CalendarView({
       : `Week of ${buildWeekGrid(anchor, todayKey)[0].date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 
   return (
-    <View ref={ctrl.setContainer} style={styles.root} collapsable={false}>
+    <View ref={ctrl.setContainer} style={styles.root} collapsable={false} onLayout={topHalf.onLayout}>
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.navGroup}>
