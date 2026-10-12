@@ -28,11 +28,13 @@ export function RestingStickyView({
 }) {
   const { height, progress } = useReanimatedKeyboardAnimation();
   const { closed, opened } = offset;
+  // No dependency array: Reanimated ignores it on native (and warns); the worklet
+  // re-captures `closed` / `opened` itself when they change.
   const sticky = useAnimatedStyle(() => {
     const h = height.get();
     const p = Math.abs(h) < 0.5 ? 0 : progress.get();
     return { transform: [{ translateY: h + interpolate(p, [0, 1], [closed, opened]) }] };
-  }, [closed, opened]);
+  });
   return (
     <Animated.View style={[style, sticky]} pointerEvents={pointerEvents}>
       {children}
