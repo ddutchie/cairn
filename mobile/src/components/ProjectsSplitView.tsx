@@ -205,7 +205,11 @@ export function ProjectsSplitView({
       composing: false,
     });
   }, []);
-  const tree = useProjectsTree({ projects, views: VIEWS, projectId, view, onSelect: onTreeSelect });
+  // Collapsed at the root (nothing chosen yet) no row is highlighted: the fallback
+  // project only exists so the other columns have something to show when expanded,
+  // and a lit "Notes" row would read as already being inside it.
+  const treeProjectId = compact && sel.projectId == null ? null : projectId;
+  const tree = useProjectsTree({ projects, views: VIEWS, projectId: treeProjectId, view, onSelect: onTreeSelect });
 
   // Switching panels (Overview → Notes, …) closes the open note/task: an item
   // from one panel must not stay selected inside another (a task open in Notes).
