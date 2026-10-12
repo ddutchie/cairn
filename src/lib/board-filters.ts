@@ -74,7 +74,7 @@ export function cardMatchesFilter(
     } else if (!card.dueDate) {
       return false;
     } else if (f.due === "overdue") {
-      if (getDueDateStatus(card.dueDate) !== "overdue") return false;
+      if (getDueDateStatus(card.dueDate, now) !== "overdue") return false;
     } else {
       // Today through the next 7 days; overdue cards have their own option.
       const dueMs = parseIsoLocal(card.dueDate).getTime();

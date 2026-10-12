@@ -10,6 +10,7 @@
 import { getDb, getEngine, getActiveSource } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "./folder";
 import { writeOwnOplog, readSourceOplog } from "./fs-transport";
+import { isDemoSource } from "@/dev/demo-seed";
 
 export interface SyncResult {
   drained: number;
@@ -44,6 +45,11 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 export async function syncNow(): Promise<SyncResult> {
+  // The dev demo workspace is local-only: never drain or publish its oplog to
+  // the shared iCloud folder (pull-to-refresh and focus syncs still call this).
+  if (isDemoSource(getActiveSource())) {
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Demo data isn't synced." };
+  }
   if (!(await iCloudAvailable())) {
     return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "iCloud not available — sign in to iCloud in Settings." };
   }

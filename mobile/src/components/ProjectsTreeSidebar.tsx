@@ -11,6 +11,7 @@ import {
   ToolbarItem,
 } from "@expo/ui/swift-ui";
 import {
+  accessibilityAddTraits,
   background,
   contentShape,
   frame,
@@ -80,6 +81,9 @@ export function ProjectsTreeSidebar({
           frame({ maxWidth: Infinity, alignment: "leading" }),
           contentShape(shapes.rectangle()),
           onTapGesture(() => tree.select([p.id, v.id])),
+          // A tap gesture alone isn't announced as a button; the tint isn't
+          // announced as selection. (A Button would restyle the row.)
+          accessibilityAddTraits(selected ? ["isButton", "isSelected"] : ["isButton"]),
           ...(selected ? [background(selectedRow, shapes.roundedRectangle({ cornerRadius: 10 }))] : []),
         ]}
       />

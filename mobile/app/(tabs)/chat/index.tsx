@@ -5,7 +5,9 @@ import {
   Pressable,
   StyleSheet,
   Alert,
- useWindowDimensions } from "react-native";
+  Platform,
+  useWindowDimensions,
+} from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
@@ -42,6 +44,9 @@ import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
 import { ChatPreviewPane, ChatPreviewProvider, CHAT_PREVIEW_MIN_WIDTH, type PreviewRef } from "@/components/chat/ChatPreview";
 // NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
 import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
+
+/** The chat preview pane is SwiftUI (`@expo/ui`), so it exists on iOS only. */
+const IOS_PREVIEW = Platform.OS === "ios";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -458,7 +463,8 @@ export default function ChatScreen() {
       {/* Every width previews in the pane (not a pushed route): folded it fills
           the window, unfolded it sits beside the chat — so fold/unfold moves
           the same preview instead of stranding a full-screen page. */}
-      <ChatPreviewProvider value={setPreview}>
+      {/* The preview pane is SwiftUI: iOS only. Android chips keep the route path. */}
+      <ChatPreviewProvider value={IOS_PREVIEW ? setPreview : null}>
       <View style={styles.row}>
       <View
         style={[
@@ -591,7 +597,7 @@ export default function ChatScreen() {
         />
       </View>
       </View>
-      <ChatPreviewPane preview={preview} fill={!canPreview} onClose={() => setPreview(null)} />
+      {IOS_PREVIEW && <ChatPreviewPane preview={preview} fill={!canPreview} onClose={() => setPreview(null)} />}
       </View>
       </ChatPreviewProvider>
     </TabScreen>

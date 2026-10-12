@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
 import { Stack } from "expo-router";
 import { FileText, ListTodo, CalendarDays, LayoutDashboard } from "lucide-react-native";
@@ -125,6 +125,14 @@ export function ProjectsSplitView({
   const sel = useSelection();
   const project = projects.find((p) => p.id === sel.projectId) ?? projects[0];
   const projectId = project?.id ?? null;
+  // The selected project vanished (deleted or synced away on another device):
+  // move the selection to the fallback so the collapsed column and the detail
+  // column don't keep pointing into the old project. Skipped while the list
+  // is still empty (first load).
+  const stale = projects.length > 0 && sel.projectId != null && !projects.some((p) => p.id === sel.projectId);
+  useEffect(() => {
+    if (stale) setSelection({ projectId: projects[0].id, noteId: null, cardId: null, composing: false });
+  }, [stale, projects]);
   const view = sel.view;
   // The Board is wide, so an open task slides in as a panel beside it (inside
   // the same column, so the board never remounts or moves).
