@@ -10,9 +10,11 @@ import { PriorityChips, ColumnChips } from "@/components/TaskChips";
 /**
  * New-task composer, shared by two hosts (like `NoteComposer`):
  *
- *   • the native modal route (`app/card/new.tsx`) — phone / folded Duo;
- *   • the split-view detail column (`ProjectsSplitView`) — unfolded Duo / iPad,
- *     where a modal would park on the left page (no sheet-placement API).
+ *   • the split-view detail column (`ProjectsSplitView`) — every iOS posture
+ *     (pushed when collapsed, beside the board when expanded), so it survives
+ *     folding and never parks on the wrong Duo page as a modal would;
+ *   • the native modal route (`app/card/new.tsx`) — Android and the
+ *     standalone project route.
  *
  * `column` optionally pre-selects the destination column (from a board
  * column's "New task"); falls back to the first column. Save hides until

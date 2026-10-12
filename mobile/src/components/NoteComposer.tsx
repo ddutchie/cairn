@@ -13,10 +13,12 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
 /**
  * New-note composer, shared by two hosts:
  *
- *   • the native modal route (`app/note/new.tsx`) — phone / folded Duo;
- *   • the split-view detail column (`ProjectsSplitView`) — unfolded Duo / iPad,
- *     where a half-window card parked on the left page is the wrong place to
- *     write (the system offers no sheet-placement API to move it right).
+ *   • the split-view detail column (`ProjectsSplitView`) — every iOS posture
+ *     (pushed when collapsed, beside the list when expanded); a half-window
+ *     card parked on the Duo's left page is the wrong place to write (the
+ *     system offers no sheet-placement API to move it right);
+ *   • the native modal route (`app/note/new.tsx`) — Android and the
+ *     standalone project route.
  *
  * `ScreenChrome` renders the title + Save in whichever container hosts this:
  * the native stack header as a route, the column's SwiftUI bar in a split
