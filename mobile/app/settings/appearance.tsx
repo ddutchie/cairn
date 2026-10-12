@@ -1,9 +1,10 @@
 import { useMemo } from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Switch } from "react-native";
 import { Check } from "lucide-react-native";
 import { ModalSafeView } from "@/components/ModalSafeView";
 import { PressableScale } from "@/components/PressableScale";
 import { haptics } from "@/haptics";
+import { setFoldOverlay, useFoldOverlay } from "@/lib/dev-flags";
 import {
   useTheme,
   useAccent,
@@ -29,6 +30,7 @@ export default function AppearanceSettingsScreen() {
   const isDark = useIsDark();
   const accentId = useAccent();
   const fontId = useFont();
+  const foldOverlay = useFoldOverlay();
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
@@ -110,6 +112,29 @@ export default function AppearanceSettingsScreen() {
           })}
         </View>
       </View>
+
+      {__DEV__ ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Developer</Text>
+          <View style={styles.row}>
+            <View style={styles.rowMain}>
+              <Text style={styles.rowTitle}>Fold overlay</Text>
+              <Text style={styles.rowSub}>
+                iPhone Duo: window size, insets and hinge status on screen, plus a band where
+                the crease is. Dev builds only.
+              </Text>
+            </View>
+            <Switch
+              value={foldOverlay}
+              onValueChange={(v) => {
+                haptics.selection();
+                setFoldOverlay(v);
+              }}
+              accessibilityLabel="Fold overlay"
+            />
+          </View>
+        </View>
+      ) : null}
     </ScrollView>
     </ModalSafeView>
   );

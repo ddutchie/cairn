@@ -19,6 +19,7 @@ import { DraggableChip } from "./calendar/DraggableChip";
 import { DayCell } from "./calendar/DayCell";
 import { DayDetailRow } from "./calendar/DayDetailRow";
 import { UnscheduledTray } from "./calendar/UnscheduledTray";
+import { useFold } from "@/lib/use-fold";
 
 export type CalendarLayout = "month" | "week";
 
@@ -144,7 +145,13 @@ export function CalendarView({
   // the rest. Clamped so it never eats the grid on short screens or grows
   // unwieldy on tall ones.
   const { height: windowHeight } = useWindowDimensions();
-  const bottomBandHeight = Math.round(Math.min(360, Math.max(200, windowHeight * 0.35)));
+  // Laptop pose (portrait half-fold): the grid ends at the crease and the band
+  // takes the whole flat half below it, instead of the crease cutting a week row.
+  const fold = useFold();
+  const laptop = fold?.axis === "horizontal";
+  const bottomBandHeight = laptop
+    ? Math.round(windowHeight - fold.position - fold.gutter / 2)
+    : Math.round(Math.min(360, Math.max(200, windowHeight * 0.35)));
 
   // Drag-to-reschedule (shared drag core). Drop zones are each day cell (keyed
   // by its yyyy-MM-dd key) plus the Unscheduled tray (UNSCHEDULED_DROP_ID). On
@@ -321,6 +328,7 @@ export function CalendarView({
           native tab bar. Scroll is locked while a chip is lifted so the drag
           gesture isn't stolen; the grid above stays fully visible so day drops
           need no auto-scroll (the tray is a single drop zone). */}
+      {laptop && <View style={{ height: fold.gutter }} />}
       <View style={[styles.bottomBand, { height: bottomBandHeight }]}>
         <ScrollView
           contentContainerStyle={{ paddingBottom: bottomInset + 16 }}

@@ -7,14 +7,14 @@ import {
   Alert,
   useWindowDimensions,
 } from "react-native";
-import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKeyboardState, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { Settings2 } from "lucide-react-native";
+import { Settings2, Trash2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
-import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { useTheme, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
@@ -41,6 +41,7 @@ import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanim
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
+import { useTopHalf } from "@/lib/use-fold";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -128,6 +129,48 @@ export default function ChatScreen() {
   // Duo with a preview open keeps it: the pane fills the window, its ✕ returns
   // to the conversation). Shared with Graph/Calendar — see SidePreview.
   const sp = useSidePreview({ title: "Chat", titleWhenWide: false });
+  // Laptop pose (portrait half-fold): the transcript and empty state stay in the
+  // upright top half; the composer and tab pill sit on the flat bottom half.
+  const topHalf = useTopHalf();
+  // With a preview stacked above the chat, the keyboard (the whole flat half)
+  // belongs to whichever input is focused. Typing in the chat morphs the top half
+  // into two columns — chat left, preview right — so the conversation stays
+  // visible with its composer on the crease; while the note is being edited the
+  // composer hides instead of riding up over the editor.
+  const keyboardVisible = useKeyboardState((s) => s.isVisible);
+  const [inputFocused, setInputFocused] = useState(false);
+  const hideComposer = sp.stacked && sp.preview != null && keyboardVisible && !inputFocused;
+  // The transcript fills the window (scrolling under the crease is fine) until
+  // the chat's own input has the keyboard; then it is confined above the crease,
+  // since the composer rises onto it and the keyboard takes the flat half.
+  const confined = topHalf.before != null && (inputFocused || keyboardVisible);
+  const keyboardHeight = useKeyboardState((s) => s.height);
+  // Once the fold layout has stopped moving (focus, columns, keyboard), put the
+  // latest message back at the end — if the user was following it.
+  const foldLayoutKey = `${confined}|${sp.stacked && inputFocused}|${Math.round(topHalf.before ?? -1)}`;
+  useEffect(() => {
+    if (!sp.stacked && topHalf.before == null) return;
+    const id = setTimeout(() => {
+      if (nearBottom.current) scrollToEndSoon(false);
+    }, 350);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foldLayoutKey]);
+  // Confined, the transcript needs no tab-bar clearance; it reserves only the part
+  // of the composer that overlaps its bottom edge (the composer sits a little
+  // above the keyboard, which starts below the crease), nothing otherwise.
+  const [composerHeight, setComposerHeight] = useState(0);
+  const topHalfPadding = useSharedValue(0);
+  useEffect(() => {
+    const overlap = Math.max(0, keyboardHeight + KEYBOARD_OPEN_GAP + composerHeight - topHalf.gap);
+    // Instant, not eased: an animated inset runs in parallel with the layout
+    // switch (columns / confined area) and the scroll-to-end, and the transcript
+    // visibly slides out of view before settling.
+    topHalfPadding.set(inputFocused ? overlap + 12 : 0);
+  }, [inputFocused, keyboardHeight, composerHeight, topHalf.gap, topHalfPadding]);
+  const transcriptArea = confined
+    ? ({ position: "absolute", top: 0, left: 0, right: 0, height: topHalf.before } as const)
+    : StyleSheet.absoluteFill;
   const keyboard = useReanimatedKeyboardAnimation();
   const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap));
   const hostRef = useRef<CairnAttachmentHostHandle>(null);
@@ -381,29 +424,52 @@ export default function ChatScreen() {
   // being blocked — the queue drains when the current reply finishes.
   const canSend = !!input.trim() || attachments.length > 0;
 
+  // Context-window ring (shared by the header and, with a preview open, the composer).
+  const renderContextRing = (popoverArrowEdge: "top" | "bottom") =>
+    usage && messages.length > 0 ? (
+      <ContextRing
+        popoverArrowEdge={popoverArrowEdge}
+        promptTokens={usage.promptTokens}
+        contextLimit={usage.contextLimit}
+        estimated={usage.estimated}
+        breakdown={usage.breakdown}
+        completionTokens={usage.completionTokens}
+        reasoningTokens={usage.reasoningTokens}
+        costUsd={usage.costUsd}
+        cacheReadTokens={usage.cacheReadTokens}
+        cacheCreationTokens={usage.cacheCreationTokens}
+      />
+    ) : null;
+  const contextRing = renderContextRing("top");
+  // Stacked under a preview the header's buttons have stepped aside (its bar is
+  // the preview's), so the ring and clear-chat go to the left of the input bar.
+  const composerTools =
+    sp.stacked && sp.preview != null && messages.length > 0 ? (
+      <View style={styles.composerTools}>
+        {renderContextRing("bottom")}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Clear chat"
+          hitSlop={8}
+          disabled={busy}
+          onPress={onClear}
+          style={[styles.composerToolBtn, busy && { opacity: 0.4 }]}
+        >
+          <Trash2 size={18} color={t.textSecondary} />
+        </Pressable>
+      </View>
+    ) : null;
+
   return (
     <TabScreen>
       <Stack.Screen
         options={{
           ...sp.screenOptions,
           // Context-window usage ring in the header-left when the active provider
-          // reports usage (Apple real, OpenAI real, Rork estimated).
-          headerLeft:
-            usage && messages.length > 0
-              ? () => (
-                <ContextRing
-                  promptTokens={usage.promptTokens}
-                  contextLimit={usage.contextLimit}
-                  estimated={usage.estimated}
-                  breakdown={usage.breakdown}
-                  completionTokens={usage.completionTokens}
-                  reasoningTokens={usage.reasoningTokens}
-                  costUsd={usage.costUsd}
-                  cacheReadTokens={usage.cacheReadTokens}
-                  cacheCreationTokens={usage.cacheCreationTokens}
-                />
-              )
-              : undefined,
+          // reports usage (Apple real, OpenAI real, Rork estimated). Not while a
+          // preview is open: its own bar owns the rail, and stacked above the chat
+          // the pane's ✕ sits exactly where the ring would, which then swallows taps.
+          headerLeft: contextRing && sp.preview == null ? () => contextRing : undefined,
         }}
       />
       {/* While a preview is open its own bar is the rail's: the chat's items
@@ -429,8 +495,8 @@ export default function ChatScreen() {
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills
           the window, unfolded it sits beside the chat. Android keeps the route path. */}
-      <SidePreviewLayout state={sp} bodyStyle={{ backgroundColor: t.chatBg }}>
-      <View style={{ flex: 1 }}>
+      <SidePreviewLayout state={sp} bodyStyle={{ backgroundColor: t.chatBg }} topHalfColumns={inputFocused}>
+      <View style={{ flex: 1 }} onLayout={topHalf.onLayout}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
             colors={t.chatStops as [string, string, ...string[]]}
@@ -450,22 +516,29 @@ export default function ChatScreen() {
             KeyboardGestureArea (full-region) so keyboardDismissMode="interactive"
             gets proper swipe-to-dismiss gesture handling (per the library's chat
             example) — iOS follow-finger + Android gesture control. */}
-        <KeyboardGestureArea interpolator="ios" style={StyleSheet.absoluteFill}>
+        <KeyboardGestureArea interpolator="ios" style={transcriptArea}>
           <KeyboardChatScrollView
             ref={scrollRef}
             style={styles.scroll}
             contentContainerStyle={styles.list}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
-            keyboardLiftBehavior="whenAtEnd"
-            offset={offset}
-            extraContentPadding={extraContentPadding}
+            // Laptop pose: the keyboard is exactly the flat half below the crease.
+            // The transcript either ends at the crease (nothing to lift clear of —
+            // lifting pushed the conversation off the top) or, under a stacked
+            // preview, lives entirely behind the keyboard (lifting made it poke up
+            // over the crease and the composer).
+            keyboardLiftBehavior={confined || sp.stacked ? "never" : "whenAtEnd"}
+            offset={confined ? topHalf.gap : offset}
+            extraContentPadding={confined ? topHalfPadding : extraContentPadding}
             scrollEventThrottle={16}
             onEndVisible={(visible) => { nearBottom.current = visible; }}
             onContentSizeChange={() => {
               // Follow new content only when the user is already near the bottom
               // (e.g. streaming) — never when they've scrolled up to read/expand.
-              if (nearBottom.current) scrollToEndSoon(true);
+              // No animation while the area is being resized for the fold (it chases
+              // a moving layout and slides the transcript out of view).
+              if (nearBottom.current) scrollToEndSoon(!(confined || sp.stacked));
             }}
           >
             {messages.length === 0 ? null : (
@@ -512,18 +585,20 @@ export default function ChatScreen() {
             through the blank areas to the composer / scroll view beneath, while
             the Cairn icon and "Set up AI" button stay tappable. */}
         {messages.length === 0 ? (
-          <EmptyState
-            title="Ask Cairn"
-            subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
-            pinned
-          >
-            {!configured ? (
-              <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
-                <Settings2 size={14} color={t.accentFg} />
-                <Text style={styles.configureBtnText}>Set up AI</Text>
-              </Pressable>
-            ) : null}
-          </EmptyState>
+          <View style={transcriptArea} pointerEvents="box-none">
+            <EmptyState
+              title="Ask Cairn"
+              subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
+              pinned
+            >
+              {!configured ? (
+                <Pressable style={styles.configureBtn} onPress={() => router.push("/settings/ai")}>
+                  <Settings2 size={14} color={t.accentFg} />
+                  <Text style={styles.configureBtnText}>Set up AI</Text>
+                </Pressable>
+              ) : null}
+            </EmptyState>
+          </View>
         ) : null}
 
         <CairnMorphComposer
@@ -539,9 +614,18 @@ export default function ChatScreen() {
           busy={busy}
           canSend={canSend}
           onSend={send}
-          onInputFocus={followEnd}
+          onInputFocus={() => {
+            setInputFocused(true);
+            followEnd();
+          }}
+          onInputBlur={() => setInputFocused(false)}
+          leading={composerTools}
+          hidden={hideComposer}
           closedLift={closedLift}
-          onLayoutHeight={setComposerH}
+          onLayoutHeight={(h) => {
+            setComposerH(h);
+            setComposerHeight(h);
+          }}
           allowImages={allowImages}
           queuedCount={queued.length}
         />
@@ -580,6 +664,8 @@ function makeStyles(t: Theme) {
       borderRadius: 12,
     },
     configureBtnText: { ...typeScale.control, color: t.accentFg },
+    composerTools: { flexDirection: "row", alignItems: "center", gap: 10, marginLeft: 6 },
+    composerToolBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
     queuedRow: { alignItems: "flex-end", gap: 3, marginBottom: 14 },
     queuedBubble: {
       maxWidth: "90%",

@@ -14,6 +14,7 @@ import { isDemoSource, seedChat } from "@/dev/demo-seed";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { FoldDebugOverlay } from "@/components/FoldDebugOverlay";
 import { ToastProvider } from "@/components/Toast";
 import { OnboardingGuide } from "@/components/OnboardingGuide";
 import { useTheme } from "@/theme";
@@ -144,6 +145,7 @@ export default function RootLayout() {
             </ToastProvider>
           </ThemeProvider>
           <UpdateBanner />
+          {__DEV__ ? <FoldDebugOverlay /> : null}
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>

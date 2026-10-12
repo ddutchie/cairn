@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { forwardRef, useEffect, useState } from "react";
+import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from "react-native";
 import { Image } from "expo-image";
 import { Send, X, Plus } from "lucide-react-native";
@@ -37,6 +37,15 @@ export interface CairnMorphComposerProps {
   canSend: boolean;
   onSend: () => void;
   onInputFocus: () => void;
+  onInputBlur?: () => void;
+  /** Extra controls at the start of the input row, left of the + button. */
+  leading?: ReactNode;
+  /**
+   * Stay mounted (keeps the draft and focus state) but invisible and untouchable.
+   * Used when another input owns the keyboard — the composer would otherwise ride
+   * up over it (laptop pose: a note being edited above the chat).
+   */
+  hidden?: boolean;
   closedLift: number;
   onLayoutHeight: (h: number) => void;
   allowImages?: boolean;
@@ -44,7 +53,7 @@ export interface CairnMorphComposerProps {
 }
 
 export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
-  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
+  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, onInputBlur, leading = null, hidden = false, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
   ref,
 ) {
   const t = useTheme();
@@ -73,7 +82,11 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
   const fallbackBg = withAlpha(t.surface2, 0.92);
   const isLight = !useIsDark();
   return (
-    <KeyboardStickyView offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }} style={styles.composerOverlay}>
+    <KeyboardStickyView
+      offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
+      style={[styles.composerOverlay, hidden && styles.composerHidden]}
+      pointerEvents={hidden ? "none" : "auto"}
+    >
       <View onLayout={(e) => onLayoutHeight(e.nativeEvent.layout.height)}>
         <View style={[styles.composerWrap]}>
           <Glass radius={COMPOSER.radius} interactive={false} fallbackTint={fallbackBg} style={styles.glassRoot}>
@@ -85,6 +98,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
               </ScrollView>
             </Animated.View>
             <View style={styles.row}>
+              {leading}
               <Pressable accessibilityRole="button" accessibilityLabel="Add attachment" hitSlop={12} onPress={onPlusPress} style={styles.plus} disabled={!allowImages}>
                 <Animated.View style={plusStyle}>
                   <Plus size={COMPOSER.plusSize} color={busy || !allowImages ? withAlpha(t.textTertiary, 0.5) : isLight ? t.textSecondary : t.textTertiary} />
@@ -95,6 +109,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 value={input}
                 onChangeText={onChangeInput}
                 onFocus={onInputFocus}
+                onBlur={onInputBlur}
                 placeholder="Message Cairn…"
                 placeholderTextColor={isLight ? t.textSecondary : t.textTertiary}
                 multiline
@@ -123,6 +138,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
 
 const styles = StyleSheet.create({
   composerOverlay: { position: "absolute", left: 0, right: 0, bottom: 0 },
+  composerHidden: { opacity: 0 },
   composerWrap: { paddingHorizontal: GUTTER, paddingTop: 8 },
   glassRoot: { overflow: "hidden", borderCurve: "continuous" as const },
   strip: { overflow: "hidden", borderTopLeftRadius: COMPOSER.radius - COMPOSER.stripPaddingTop, borderTopRightRadius: COMPOSER.radius - COMPOSER.stripPaddingTop, borderCurve: "continuous" as const },

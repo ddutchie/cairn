@@ -185,6 +185,73 @@ a customisation "Edit" button.
   `contentStyle` explicitly so the split view's overrides don't stick when
   navigating back to phone-style routes (Android, root-stack pushes).
 
+## Poses — what the app can see (iPhone Duo, measured 2026-10-12)
+
+Apple's six poses (closed, tent, open-wide, half-folded book, open-tall, laptop)
+as the Duo simulator reports them to the app (window pts / safe-area insets /
+`onHingeChange` status):
+
+| Pose | Window | Insets T/B/L/R | Hinge | Fold |
+|---|---|---|---|---|
+| Closed (outer display) | 466×678 | 0/34/0/84 | `closed` | none |
+| Open, tall (flat) | 669×951 | 82/34/0/0 | `fullyOpen` | none |
+| **Laptop** (portrait half-fold) | 669×951 | 82/34/0/0 | `partiallyOpen` | **horizontal**, mid-height |
+| Open, wide (flat) | 951×669 | 0/34/0/84 | `fullyOpen` | none |
+| Book (landscape half-fold) | 951×669 | 0/34/0/84 | `partiallyOpen` | vertical, mid-width |
+
+Gotchas:
+- **Laptop and tall are identical** except for the hinge status — same window,
+  same insets. The status is the only signal, and it carries no axis or frame.
+- The status also reads `partiallyOpen` transiently on the 466×678 outer display
+  while folding/unfolding; `foldGeometry` ignores windows with a short side
+  under 600pt.
+- The simulator exposes no distinct tent/kickstand pose; the closed device on
+  its side is the outer display (app stays portrait-only, so it rotates with the
+  device). No custom layout is needed — there is no crease.
+- Headless screenshots (`simctl`/the sim tool) never draw the crease; judge
+  folds from the Device Hub window or the debug band below. Tab-pill taps from
+  automation are flaky; pose changes can't be scripted (Device Hub hosts the
+  simulator, not Simulator.app).
+
+### How screens avoid the crease (laptop pose)
+
+`src/lib/fold.ts` (`foldGeometry`, pure + tested) infers the crease from hinge
+status and window shape: `partiallyOpen` on an inner-size window → horizontal
+crease at mid-height when portrait, vertical at mid-width when landscape, with a
+~20pt gutter. It assumes the window fills the display (not true in Split View —
+the native `ReservedRegion` frame would replace it; see `docs/plans/iphone-duo.md`).
+`src/lib/hinge.ts` is now reactive (`useHingeStatus`); `src/lib/use-fold.ts` has
+`useFold()` and `useTopHalf()` (room above a horizontal crease, in a container's
+own coordinates — null once the container already sits below it).
+
+- **Chat** fills the window — the transcript may scroll under the crease — until
+  its own input has the keyboard. Then it is confined above the crease (the
+  composer rides up onto it; the keyboard is exactly the flat half): lift is
+  `never`, `offset` is the real gap to the window bottom (`useTopHalf().gap`; the
+  default tab-bar offset made the library inset the transcript by nearly the
+  whole keyboard and scrolled the messages out of view), and bottom padding is
+  only the composer's overlap with the transcript's bottom edge (no tab-bar lift).
+- **Side preview** (`SidePreviewLayout`, shared by Chat/Graph/Calendar): when
+  stacked, the pane sits above the crease and the screen body below it (a column
+  instead of a row; the pane animates its height). Header treatment matches the
+  wide case. The keyboard is the whole flat half, so a stacked chat would sit
+  behind it: while the chat's own input is focused `topHalfColumns` rearranges
+  the top half into chat (left, full height — its composer rises to the crease)
+  and preview (right ~55%), same views so nothing remounts. While the note is
+  being edited instead, the chat composer `hidden`s (it would float over the
+  editor). Keyboard lift is `never` throughout the stacked layout. With a preview
+  stacked, the header's context ring and clear-chat button step aside (the pane's
+  ✕ sits under the ring and the ring swallowed its taps) and move to the left of
+  the input bar via the composer's `leading` slot.
+- **Calendar**: the grid flexes down to the crease; the bottom band (selected-day
+  list + Unscheduled tray) is sized to the flat half.
+- Projects (split view) is system-managed; Graph and Overview — see the survey.
+- Debug aid for pose work: Settings → Appearance → Developer → **Fold overlay**
+  (dev builds only; `src/lib/dev-flags.ts`, `FoldDebugOverlay`) prints
+  window/insets/hinge along the top and draws the inferred crease band, since
+  simulator screenshots never show the fold. Persisted in the meta DB, forced
+  off in release builds.
+
 ## Unifying — getting rid of the native additions
 
 Goal: one model for "pick project → view → item" on every wide device, with as
