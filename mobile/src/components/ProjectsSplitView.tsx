@@ -37,6 +37,7 @@ import {
 import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
 import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
+import { forceCompactWidth } from "@modules/swiftui-modifiers";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
@@ -516,7 +517,12 @@ export function ProjectsSplitView({
           // correct for the old two-column notes split — side by side, never
           // overlaid — but in a three-column split it pins content+detail and
           // hides the sidebar everywhere, iPad included.)
-          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic")]}
+          // Narrow windows (the unfolded Duo in portrait, ~669pt) are regular width
+          // but can't hold the columns: SwiftUI then keeps only the detail and hides
+          // the project view behind the sidebar button. Forcing compact width makes
+          // the split view collapse like the folded Duo — tree → view → item
+          // drill-down — through the real size-class path.
+          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic"), forceCompactWidth(compact)]}
         >
           <NavigationSplitView.Sidebar>
             <ProjectsTreeSidebar title={workspaceName} tree={tree} onWorkspaceSwitched={onWorkspaceSwitched} />

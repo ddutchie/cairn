@@ -257,6 +257,16 @@ own coordinates — null once the container already sits below it).
   simulator screenshots never show the fold. Persisted in the meta DB, forced
   off in release builds.
 
+### Projects in a narrow regular-width window (portrait Duo, ~669pt)
+
+Regular width but too narrow for three columns: SwiftUI kept only the detail and hid
+the project view behind the sidebar button (open it once and it shows as a scrimmed
+overlay over the detail). `forceCompactWidth(compact)` (local `swiftui-modifiers`,
+`.environment(\.horizontalSizeClass, .compact)`) makes the split view collapse for
+real below 700pt, so the portrait Duo drills tree → view → item with a native Back,
+like the folded Duo. It changes only an environment value, so nothing remounts.
+Needs a native rebuild.
+
 ### Composer behind the tab bar after rotating (pre-existing, fixed)
 
 Bisected against the pre-fold commit: rotating the unfolded Duo from landscape to

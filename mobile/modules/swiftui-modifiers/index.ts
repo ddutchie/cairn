@@ -7,3 +7,11 @@ import { createModifier } from "@expo/ui/swift-ui/modifiers";
  * bar's row instead of sitting in a bar below it.
  */
 export const navigationBarHidden = (hidden = true) => createModifier("navigationBarHidden", { hidden });
+
+/**
+ * While `enabled`, SwiftUI treats the view as compact width (`.environment(\.horizontalSizeClass,
+ * .compact)`), so a `NavigationSplitView` collapses to one column even though the
+ * window is regular width. For windows too narrow for the columns — the unfolded
+ * iPhone Duo in portrait (~669pt). The value toggles without remounting.
+ */
+export const forceCompactWidth = (enabled = true) => createModifier("forceCompactWidth", { enabled });
