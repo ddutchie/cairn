@@ -127,7 +127,7 @@ export default function ChatScreen() {
   // Wide windows open touched notes/tasks in a column beside the chat (folding a
   // Duo with a preview open keeps it: the pane fills the window, its ✕ returns
   // to the conversation). Shared with Graph/Calendar — see SidePreview.
-  const sp = useSidePreview({ title: "Chat" });
+  const sp = useSidePreview({ title: "Chat", titleWhenWide: false });
   const keyboard = useReanimatedKeyboardAnimation();
   const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap));
   const hostRef = useRef<CairnAttachmentHostHandle>(null);

@@ -78,7 +78,18 @@ export interface SidePreviewState {
  * preview column down) but keep the toolbar items, which dock into the Duo's
  * side rail; folded with a preview open, the pane's own bar is the only one.
  */
-export function useSidePreview({ title }: { title: string }): SidePreviewState {
+export function useSidePreview({
+  title,
+  titleWhenWide = true,
+}: {
+  title: string;
+  /**
+   * Keep the screen title on wide windows (until a preview opens — the pane's own
+   * bar owns the top then, and a window-centred title would sit over it). Chat
+   * passes false: it has never shown a title beside its conversation.
+   */
+  titleWhenWide?: boolean;
+}): SidePreviewState {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -94,7 +105,7 @@ export function useSidePreview({ title }: { title: string }): SidePreviewState {
       preview != null
         ? { backgroundColor: t.background, paddingLeft: insets.left }
         : { backgroundColor: t.background, paddingLeft: insets.left, paddingRight: insets.right },
-    title: wide ? "" : title,
+    title: wide && (!titleWhenWide || preview != null) ? "" : title,
     headerTransparent: wide,
     // TabStack paints the header with the surface colour, and iOS 26 adds a
     // scroll-edge fade under it — both drew a white strip across the top.
