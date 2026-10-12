@@ -141,7 +141,7 @@ export default function ChatScreen() {
   // iPad that includes the floating tab bar above it.
   const headerHeight = useHeaderHeight();
   const keyboard = useReanimatedKeyboardAnimation();
-  const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap), [height, insets.bottom]);
+  const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap));
   const hostRef = useRef<CairnAttachmentHostHandle>(null);
   const composerInputRef = useRef<import("react-native").TextInputInstance>(null);
   useEffect(() => {

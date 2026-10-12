@@ -42,7 +42,7 @@ export function DraggableChip({
   // zone (a day cell is ~narrow, the Unscheduled tray is full-width — without a
   // fixed width the clone would inherit those very different zone widths).
   const pan = useMemo(() => ctrl.panGesture(card, sourceZoneId, DRAG_CHIP_WIDTH), [ctrl, card, sourceZoneId]);
-  const slotStyle = useAnimatedStyle(() => ({ opacity: isLifted ? 0.3 : 1 }), [isLifted]);
+  const slotStyle = useAnimatedStyle(() => ({ opacity: isLifted ? 0.3 : 1 }));
 
   const chip = <TaskChip card={card} overdue={overdue} onPress={onPress} t={t} styles={styles} />;
   if (!dragEnabled) return chip;

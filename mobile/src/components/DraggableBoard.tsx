@@ -367,7 +367,7 @@ const DraggableCard = memo(function DraggableCard({
 }) {
   const pan = useMemo(() => ctrl.panGesture(card, card.column_id), [ctrl, card]);
   // The in-place slot dims to a ghost while its card is lifted out.
-  const slotStyle = useAnimatedStyle(() => ({ opacity: isLifted ? 0.28 : 1 }), [isLifted]);
+  const slotStyle = useAnimatedStyle(() => ({ opacity: isLifted ? 0.28 : 1 }));
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={slotStyle}>
