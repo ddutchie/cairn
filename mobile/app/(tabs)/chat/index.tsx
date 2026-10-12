@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   Alert,
-  Platform,
   useWindowDimensions,
 } from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
@@ -41,12 +40,7 @@ import { fetchManifest } from "@/chat/registry";
 import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
-import { ChatPreviewPane, ChatPreviewProvider, CHAT_PREVIEW_MIN_WIDTH, type PreviewRef } from "@/components/chat/ChatPreview";
-// NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
-import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
-
-/** The chat preview pane is SwiftUI (`@expo/ui`), so it exists on iOS only. */
-const IOS_PREVIEW = Platform.OS === "ios";
+import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -129,17 +123,11 @@ export default function ChatScreen() {
   const strip = useSharedValue(0);
   const plusOut = useSharedValue(0);
   const insets = useSafeAreaInsets();
-  const { height, width } = useWindowDimensions();
-  // Wide windows open touched notes/tasks in a column beside the chat.
-  const [preview, setPreview] = useState<PreviewRef | null>(null);
-  const canPreview = width >= CHAT_PREVIEW_MIN_WIDTH;
-  // Folding a Duo with a preview open keeps it (continuity): the pane fills
-  // the window and the chat collapses beside it, still mounted. Its ✕
-  // returns to the conversation.
-  const previewFills = !canPreview && preview != null;
-  // The wide header is transparent, so the conversation clears it itself — on
-  // iPad that includes the floating tab bar above it.
-  const headerHeight = useHeaderHeight();
+  const { height } = useWindowDimensions();
+  // Wide windows open touched notes/tasks in a column beside the chat (folding a
+  // Duo with a preview open keeps it: the pane fills the window, its ✕ returns
+  // to the conversation). Shared with Graph/Calendar — see SidePreview.
+  const sp = useSidePreview({ title: "Chat" });
   const keyboard = useReanimatedKeyboardAnimation();
   const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap));
   const hostRef = useRef<CairnAttachmentHostHandle>(null);
@@ -397,28 +385,7 @@ export default function ChatScreen() {
     <TabScreen>
       <Stack.Screen
         options={{
-          // Wide windows: no header bar (it only titled the screen and pushed the
-          // preview column down), but keep the toolbar items — on an iPhone Duo
-          // they dock into the side rail beside the tabs.
-          // Folded with a preview open, the pane's own bar is the only one.
-          headerShown: !previewFills,
-          // While a preview is open its SwiftUI pane reaches the window edge and
-          // handles the side rail itself (its bar joins the rail, as in the
-          // Projects split view); the RN padding would double that inset.
-          contentStyle:
-            preview != null
-              ? { backgroundColor: t.background, paddingLeft: insets.left }
-              : { backgroundColor: t.background, paddingLeft: insets.left, paddingRight: insets.right },
-          title: canPreview ? "" : "Chat",
-          headerTransparent: canPreview,
-          // TabStack paints the header with the surface colour, and iOS 26 adds a
-          // scroll-edge fade under it — both drew a white strip across the top.
-          ...(canPreview
-            ? {
-                headerStyle: { backgroundColor: "transparent" },
-                scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
-              }
-            : {}),
+          ...sp.screenOptions,
           // Context-window usage ring in the header-left when the active provider
           // reports usage (Apple real, OpenAI real, Rork estimated).
           headerLeft:
@@ -442,7 +409,7 @@ export default function ChatScreen() {
       {/* While a preview is open its own bar is the rail's: the chat's items
           would stack a second column of buttons beside it (and, folded, keep
           the chat's header up over a chat that isn't showing). */}
-      {preview == null ? (
+      {sp.showToolbar ? (
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_DELETE}
@@ -461,17 +428,8 @@ export default function ChatScreen() {
       </Stack.Toolbar>
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills
-          the window, unfolded it sits beside the chat — so fold/unfold moves
-          the same preview instead of stranding a full-screen page. */}
-      {/* The preview pane is SwiftUI: iOS only. Android chips keep the route path. */}
-      <ChatPreviewProvider value={IOS_PREVIEW ? setPreview : null}>
-      <View style={styles.row}>
-      <View
-        style={[
-          { flex: 1, paddingTop: canPreview ? headerHeight : 0, backgroundColor: t.chatBg },
-          previewFills && { flex: 0, width: 0, overflow: "hidden" },
-        ]}
-      >
+          the window, unfolded it sits beside the chat. Android keeps the route path. */}
+      <SidePreviewLayout state={sp} bodyStyle={{ backgroundColor: t.chatBg }}>
       <View style={{ flex: 1 }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
@@ -596,10 +554,7 @@ export default function ChatScreen() {
           onAddAttachments={onAddAttachments}
         />
       </View>
-      </View>
-      {IOS_PREVIEW && <ChatPreviewPane preview={preview} fill={!canPreview} onClose={() => setPreview(null)} />}
-      </View>
-      </ChatPreviewProvider>
+      </SidePreviewLayout>
     </TabScreen>
   );
 }

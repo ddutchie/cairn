@@ -146,7 +146,7 @@ export function ProjectsSplitView({
   const [boardVersion, setBoardVersion] = useState(0);
 
   // ── Duo posture ────────────────────────────────────────────────────────────
-  // The hinge status feeds the shared cache (ChatPreviewPane and others read
+  // The hinge status feeds the shared cache (SidePreviewPane and others read
   // it); column widths are SwiftUI's job, so nothing here branches on it.
   const [, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   // Notes only: "detailOnly" is focus mode (the note gets the whole window).
