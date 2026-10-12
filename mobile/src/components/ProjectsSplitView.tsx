@@ -85,6 +85,15 @@ export function resetProjectsSelection() {
   setSelection({ projectId: null, view: "notes", noteId: null, cardId: null, composing: false });
 }
 
+/**
+ * Point the split view at a project's section (clearing any open item). Used by
+ * the side-preview pane, whose project peek has no switcher: its "View board" /
+ * "Open notes" shortcuts hand the project over to the Projects tab here.
+ */
+export function showProjectInSplitView(projectId: string, view: SplitViewKind = "overview") {
+  setSelection({ projectId, view, noteId: null, cardId: null, composing: false });
+}
+
 // SPIKE (2026-10-11, continuity): one adaptive container for the whole Projects
 // hierarchy — a single NavigationSplitView always mounted, collapsing to one
 // column when compact via preferredCompactColumn. No width-switched subtrees,

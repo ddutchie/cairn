@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Platform, StyleSheet, View, useWindowDimensions, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
@@ -13,6 +14,7 @@ import { ChromeColumn } from "@/components/screen-chrome";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { CardDetailScreen } from "@/screens/CardDetailScreen";
 import { ProjectScreen } from "@/screens/ProjectScreen";
+import { showProjectInSplitView } from "@/components/ProjectsSplitView";
 
 /**
  * Side preview — on wide windows (unfolded iPhone Duo, iPad) a note or task the
@@ -179,6 +181,7 @@ export function SidePreviewPane({
   /** Swap the pane's content (a project's note/task row opens in place of the project). */
   onOpen?: (ref: PreviewRef) => void;
 }) {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   // Same split as the Notes split view: half open on a Duo, the pane starts
@@ -230,12 +233,20 @@ export function SidePreviewPane({
               <CardDetailScreen cardId={shown.id} onClose={onClose} onChanged={onChanged} />
             </ChromeColumn>
           ) : (
-            // A whole project: its own Overview / Notes / Board switcher. Its
-            // note/task rows open in this same pane instead of pushing a route.
+            // A project peek: Overview only (no section switcher — fixing `view`
+            // hides it). Its note/task rows open in this same pane, and the
+            // Overview's "View board" / "Open notes" shortcuts hand the project to
+            // the Projects tab, which has the full tree | view | item layout.
             <ChromeColumn key={`project:${shown.id}`} leading={[close]} slot="secondary">
               <ProjectScreen
                 nested
                 projectId={shown.id}
+                view="overview"
+                onSelectView={(next) => {
+                  showProjectInSplitView(shown.id, next);
+                  onClose();
+                  router.navigate("/projects");
+                }}
                 onOpenNote={onOpen ? (id) => onOpen({ kind: "note", id }) : undefined}
                 onOpenCard={onOpen ? (id) => onOpen({ kind: "card", id }) : undefined}
               />
