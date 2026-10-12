@@ -22,6 +22,7 @@ import { SyncEngine } from "../../shared/sync/engine";
 import { writeOplogFileAsync, readPeerOplogsAsync } from "../../shared/sync/transport";
 import { inspectConflict, cleanConflictTitle } from "../../shared/sync/conflict";
 import { errMsg } from "../host-shared/errors";
+import { registerAttachments, syncAttachments, type AttachmentSyncResult } from "./attachments";
 import type { ConflictCopy, DesktopSyncResult, SyncPendingBreakdown, SyncState, SyncStatus } from "../../shared/types/sync";
 
 export type { ConflictCopy, DesktopSyncResult, SyncState, SyncStatus };
@@ -41,6 +42,14 @@ export type NoteFileProjector = (noteId: string, op: "put" | "delete") => void;
 let _projector: NoteFileProjector | null = null;
 export function setNoteFileProjector(fn: NoteFileProjector | null): void {
   _projector = fn;
+}
+
+// Workspace folder that holds attachment binaries. Registered once by main.ts
+// (it owns ctx.workspacePath, which can change on workspace switch) so BOTH the
+// periodic loop and the manual sync:now handler sync images without threading it.
+let _workspacePathProvider: (() => string | null) | null = null;
+export function setAttachmentWorkspaceProvider(fn: (() => string | null) | null): void {
+  _workspacePathProvider = fn;
 }
 
 // ── live status (pushed to the renderer title-bar indicator) ────────────────
@@ -489,6 +498,17 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
   try {
     // First-run backfill so the phone receives the whole existing workspace.
     const seeded = engine.backfill();
+    // Register embedded images in the (synced) attachment manifest BEFORE the
+    // drain so the new rows ship in this same tick. Never fails the sync.
+    const workspacePath = _workspacePathProvider?.() ?? null;
+    let registered = 0;
+    if (workspacePath) {
+      try {
+        registered = await registerAttachments(db, workspacePath, workspaceId);
+      } catch (err) {
+        console.error("[sync] attachment registration failed:", err);
+      }
+    }
     // Stage any pending local writes.
     const drained = engine.drainPending();
     // Publish our full oplog. Folder I/O is async so a slow/network-backed folder
@@ -521,8 +541,19 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
       }
     }
 
+    // Move image bytes through <syncFolder>/blobs-<workspaceId>/ (after the oplog
+    // so manifest rows applied this tick are fetched immediately).
+    // A brand-new device had no workspace when the tick began (workspaceId ""),
+    // but applyRemote may have just created it — resolve again so images follow.
+    const attWorkspaceId = workspaceId || getSourceWorkspaceId(db);
+    const attachments: AttachmentSyncResult = workspacePath
+      ? await syncAttachments(db, folder, workspacePath, attWorkspaceId)
+      : { registered: 0, published: 0, fetched: 0, pending: 0, collisions: 0 };
+    attachments.registered = registered;
+
     updateStatus(db, { connected: true, state: "idle", lastSyncAt: new Date().toISOString() });
     return {
+      attachments,
       drained,
       seeded,
       // Ops actually applied to our DB (new/changed rows). On a converged

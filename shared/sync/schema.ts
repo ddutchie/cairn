@@ -25,6 +25,8 @@ export const SYNCABLE_TABLES = [
   "notes",
   "task_cards",
   "user_style",
+  // Manifest only (hash + embed name); bytes travel as blobs, see ./attachments.ts.
+  "attachments",
 ] as const;
 
 export type SyncableTable = (typeof SYNCABLE_TABLES)[number];

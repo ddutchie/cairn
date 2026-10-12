@@ -10,6 +10,7 @@
 import { getDb, getEngine, getActiveSource } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "./folder";
 import { writeOwnOplog, readSourceOplog } from "./fs-transport";
+import { requestMissingBlobs } from "./blobs";
 import { isDemoSource } from "@/dev/demo-seed";
 
 export interface SyncResult {
@@ -87,6 +88,11 @@ export async function syncNow(): Promise<SyncResult> {
     if (peerEntries.length > 0) {
       await withTimeout(writeOwnOplog(folder, engine.deviceId, workspaceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");
     }
+
+    // 6. Ask iCloud to download any synced images we don't have yet (their
+    // manifest rows were just applied). Fire-and-forget: it must never delay or
+    // fail the oplog sync, and the image view notices files as they land.
+    void requestMissingBlobs(workspaceId).catch(() => {});
 
     return {
       drained,

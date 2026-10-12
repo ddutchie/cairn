@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useMemo, type ReactNode } from "react";
 import { Linking, Text, View, Pressable, type StyleProp, type TextStyle } from "react-native";
-import Markdown, { MarkdownIt, type RenderRules, type ASTNode } from "react-native-markdown-display";
+import Markdown, { MarkdownIt, renderRules, type RenderRules, type ASTNode } from "react-native-markdown-display";
 import markdownItMark from "markdown-it-mark";
 import { useRouter } from "expo-router";
 import {
@@ -18,9 +18,11 @@ import {
 import { useTheme, useFont, resolveRNFontFamily, withAlpha, surfaceTint, type Theme } from "@/theme";
 import { findNoteIdByTitle, findCardIdByTitle, liveNoteTitleById, liveCardTitleById } from "@/db/queries";
 import { CodeBlock } from "@/components/CodeBlock";
+import { SyncedImage } from "@/components/SyncedImage";
 import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
+  embedNameFromUrl,
   cardIdFromUrl,
   isColorLiteral,
   toggleCheckboxInSource,
@@ -48,7 +50,7 @@ const MathView = lazy(() =>
  *   - GFM: headings, lists, tables, blockquotes, strikethrough.
  *   - Syntax-highlighted fenced code (CodeBlock) with a language header + copy.
  *   - [[Wikilinks]] → tappable, navigate to the linked note.
- *   - ![[embeds]] → italic placeholder (binary assets out of the mobile MVP).
+ *   - ![[image.png]] → synced attachment (SyncedImage); other embeds → italic placeholder.
  *   - > [!type] callouts → coloured callout blocks.
  *   - ==highlight== → <mark> (via markdown-it-mark).
  *   - Interactive task-list checkboxes — tapping toggles the source and calls
@@ -131,7 +133,7 @@ export function MarkdownView({
     };
   }, [resolveLinks]);
 
-  const src = useMemo(() => preprocessCairnMarkdown(content ?? "", resolve), [content, resolve]);
+  const src = useMemo(() => preprocessCairnMarkdown(content ?? "", resolve, { imageEmbeds: true }), [content, resolve]);
 
   const onLinkPress = useCallback((url: string): boolean => {
     // Card/task links carry an id directly (baked in at preprocess).
@@ -506,6 +508,15 @@ function makeRules(
       return <CodeBlock key={node.key} code={node.content} language={lang} />;
     },
     code_block: (node) => <CodeBlock key={node.key} code={node.content} />,
+
+    // ![[image.png]] embeds (rewritten to cairn://embed/<name> by the shared
+    // preprocess) render from the synced attachment store; any other image
+    // (https etc.) keeps the library default.
+    image: (node, children, parent, styles, allowedImageHandlers, defaultImageHandler) => {
+      const name = embedNameFromUrl(String(node.attributes?.src ?? ""));
+      if (name) return <SyncedImage key={node.key} name={name} />;
+      return renderRules.image?.(node, children, parent, styles, allowedImageHandlers, defaultImageHandler);
+    },
 
     // KaTeX math (from mathPlugin).
     math_inline: (node) => (

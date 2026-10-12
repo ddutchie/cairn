@@ -4,7 +4,7 @@ import { shell } from "electron";
 import fs from "fs";
 import path from "path";
 import { registerContractHandle, registerIpcOn } from "./registry";
-import { resolveWithinRoot } from "./path-safety";
+import { resolveAttachmentDir } from "../host-shared/attachment-dir";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteNoteFile, hardDeleteNoteFile, findNoteFilePath } from "../notes-files";
@@ -245,25 +245,8 @@ export function registerNoteHandlers(ctx: DbContext): void {
   // Legacy asset:// URLs still render via the asset:// protocol handler.
   registerContractHandle("app:uploadAsset", (_e, { filename, data }) =>
     handle(() => {
-      // Determine attachment folder — read from Obsidian config if available
-      let attachDir: string;
-      const obsidianAppJson = path.join(ctx.workspacePath, ".obsidian", "app.json");
-      try {
-        if (fs.existsSync(obsidianAppJson)) {
-          const obsConfig = JSON.parse(fs.readFileSync(obsidianAppJson, "utf-8"));
-          if (typeof obsConfig.attachmentFolderPath === "string" && obsConfig.attachmentFolderPath) {
-            const resolved = resolveWithinRoot(ctx.workspacePath, obsConfig.attachmentFolderPath);
-            attachDir = resolved ?? path.join(ctx.workspacePath, "attachments");
-          } else {
-            // Obsidian default: vault root
-            attachDir = path.join(ctx.workspacePath, "attachments");
-          }
-        } else {
-          attachDir = path.join(ctx.workspacePath, "attachments");
-        }
-      } catch {
-        attachDir = path.join(ctx.workspacePath, "attachments");
-      }
+      // Determine attachment folder — Obsidian config if available (shared with Device Sync)
+      const attachDir = resolveAttachmentDir(ctx.workspacePath);
 
       fs.mkdirSync(attachDir, { recursive: true });
       const buf = Buffer.from(data);

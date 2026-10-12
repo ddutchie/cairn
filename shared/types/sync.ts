@@ -17,6 +17,15 @@ export interface DesktopSyncResult {
   peerOpsRead: number;
   conflictCopies: number;
   connected: boolean;
+  /** Image/attachment channel counters for this tick (absent when disconnected). */
+  attachments?: {
+    registered: number;
+    published: number;
+    fetched: number;
+    /** Manifest rows whose bytes aren't available yet — retried next tick. */
+    pending: number;
+    collisions: number;
+  };
 }
 
 /** Coarse sync lifecycle state, mirroring mobile's controller model. */

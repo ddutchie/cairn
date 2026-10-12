@@ -90,6 +90,8 @@ export function NoteEditorBody({
           loading={fmt.aiLoading}
           onDismiss={() => bodyRef.current?.blur()}
           bottomInset={bottomInset}
+          onInsertImage={fmt.onInsertImage}
+          imageBusy={fmt.imageBusy}
         />
       </KeyboardStickyView>
     </>
