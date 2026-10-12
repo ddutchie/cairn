@@ -12,7 +12,7 @@ import { listInstalledMcpServers } from "@/chat/mcp-store";
 import { listInstalledServices } from "@/chat/services";
 import { getCachedManifest } from "@/chat/registry";
 import { prettyToolOutput, safeToolOutput } from "@/chat/tool-output";
-import { useChatPreview } from "./ChatPreview";
+import { useOpenInPreview } from "@/components/SidePreview";
 
 type Connector = { name: string; kind: "mcp" | "service"; iconSvg?: string; brandColor?: string };
 
@@ -20,12 +20,12 @@ type Connector = { name: string; kind: "mcp" | "service"; iconSvg?: string; bran
  * The vertical trail of tool-call chips shown above an assistant bubble. A chip
  * whose tool created/touched a note or card is tappable and opens it by id (the
  * reliable, collision-proof path) — beside the chat on wide windows (see
- * ChatPreview), otherwise by navigating; read-only tools render as a plain chip.
+ * SidePreview), otherwise by navigating; read-only tools render as a plain chip.
  */
 export function ToolTrail({ tools }: { tools: ToolCall[] }) {
   const t = useTheme();
   const router = useRouter();
-  const preview = useChatPreview();
+  const preview = useOpenInPreview();
   const styles = useMemo(() => makeStyles(t), [t]);
   const connectors: Record<string, Connector> = {};
   const manifest = getCachedManifest();

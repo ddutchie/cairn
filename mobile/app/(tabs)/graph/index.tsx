@@ -12,6 +12,7 @@ import { useRefreshOnFocus, useDataChanged } from "@/sync/useSyncStatus";
 import { semanticEdges } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useTheme } from "@/theme";
+import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 
 // The graph WebView inlines the full D3 bundle (~274 KB) as a string. Load it
 // lazily so opening the app / other tabs never evaluates that module — only the
@@ -33,6 +34,8 @@ const KnowledgeGraphWebView = lazy(() =>
 export default function GraphScreen() {
   const router = useRouter();
   const t = useTheme();
+  // Wide windows open a picked note/task beside the graph (shared with Chat/Calendar).
+  const sp = useSidePreview({ title: "Knowledge Graph" });
   const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
   const [mode, setMode] = useState<GraphMode>("force");
   const [labelMode, setLabelMode] = useState<LabelMode>("smart");
@@ -101,30 +104,34 @@ export default function GraphScreen() {
     return { nodes: graph.nodes, edges: [...graph.edges, ...extra] };
   }, [graph, semantic, showSemantic]);
 
+  const openPreview = sp.open;
   const onSelectNode = useCallback(
     (node: { id: string; type: string }) => {
       switch (node.type) {
         case "note":
-          router.push({ pathname: "/note/[id]", params: { id: node.id, back: "Graph" } });
+          if (openPreview) openPreview({ kind: "note", id: node.id });
+          else router.push({ pathname: "/note/[id]", params: { id: node.id, back: "Graph" } });
           break;
         case "card":
-          router.push({ pathname: "/card/[id]", params: { id: node.id, back: "Graph" } });
+          if (openPreview) openPreview({ kind: "card", id: node.id });
+          else router.push({ pathname: "/card/[id]", params: { id: node.id, back: "Graph" } });
           break;
         case "project":
-          router.push({ pathname: "/project/[id]", params: { id: node.id, back: "Graph" } });
+          if (openPreview) openPreview({ kind: "project", id: node.id });
+          else router.push({ pathname: "/project/[id]", params: { id: node.id, back: "Graph" } });
           break;
         // tags have no detail screen — ignore.
       }
     },
-    [router],
+    [router, openPreview],
   );
 
   const isEmpty = graph !== null && graph.nodes.length === 0;
 
   return (
     <TabScreen>
-      <Stack.Screen options={{ title: "Knowledge Graph" }} />
-      {!isEmpty ? (
+      <Stack.Screen options={sp.screenOptions} />
+      {!isEmpty && sp.showToolbar ? (
         <>
           <Stack.Toolbar placement="right">
             <Stack.Toolbar.Menu
@@ -167,6 +174,7 @@ export default function GraphScreen() {
           ) : null}
         </>
       ) : null}
+      <SidePreviewLayout state={sp} onChanged={load}>
       {isEmpty ? (
         <EmptyState
           title="Nothing to graph yet"
@@ -188,6 +196,7 @@ export default function GraphScreen() {
           />
         </Suspense>
       ) : null}
+      </SidePreviewLayout>
     </TabScreen>
   );
 }

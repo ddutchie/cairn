@@ -171,10 +171,13 @@ export function StackToast({
   const color = variantColor(t, toast.variant);
   const Icon = VARIANT_ICON[toast.variant];
   const bottom = 16 + insets.bottom * 0.5 + 49 * 0.5; // above tab bar
+  // Side safe zones: on the iPhone Duo / iPad the tab bar is a side rail, which iOS
+  // reports as a left/right inset — keep the toast clear of it instead of covering it.
+  const sideInset = { left: 16 + insets.left, right: 16 + insets.right };
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.container, { bottom, backgroundColor: t.surface2, borderColor: withAlpha(color, 0.5) }, animatedStyle]}>
+      <Animated.View style={[styles.container, { bottom, ...sideInset, backgroundColor: t.surface2, borderColor: withAlpha(color, 0.5) }, animatedStyle]}>
         <View style={styles.content}>
           <View style={[styles.iconWrap, { backgroundColor: withAlpha(color, 0.16) }]}>
             <Icon size={17} color={color} />

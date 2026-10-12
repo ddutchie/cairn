@@ -7,6 +7,7 @@ import { TabScreen } from "@/components/TabScreen";
 import { ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
+import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 
 /**
  * Workspace-wide Calendar: every live task with a due date across all projects,
@@ -21,6 +22,8 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 export default function CalendarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Wide windows open a picked task beside the calendar (shared with Chat/Graph).
+  const sp = useSidePreview({ title: "Calendar" });
   const [cards, setCards] = useState<CalendarCard[]>([]);
   const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
   const [layout, setLayout] = useState<CalendarLayout>("month");
@@ -42,7 +45,8 @@ export default function CalendarScreen() {
 
   return (
     <TabScreen>
-      <Stack.Screen options={{ title: "Calendar" }} />
+      <Stack.Screen options={sp.screenOptions} />
+      {sp.showToolbar ? (
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           accessibilityLabel="Jump to today"
@@ -71,6 +75,8 @@ export default function CalendarScreen() {
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
+      ) : null}
+      <SidePreviewLayout state={sp} onChanged={load}>
       <CalendarView
         cards={cards}
         showProject
@@ -80,8 +86,11 @@ export default function CalendarScreen() {
         todayNonce={todayNonce}
         unscheduled={unscheduled}
         onReschedule={reschedule}
-        onOpenCard={(id) => router.push({ pathname: "/card/[id]", params: { id, back: "Calendar" } })}
+        onOpenCard={(id) =>
+          sp.open ? sp.open({ kind: "card", id }) : router.push({ pathname: "/card/[id]", params: { id, back: "Calendar" } })
+        }
       />
+      </SidePreviewLayout>
     </TabScreen>
   );
 }
