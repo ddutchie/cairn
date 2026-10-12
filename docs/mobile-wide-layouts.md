@@ -543,11 +543,10 @@ Today · span.
   rows) → `square.stack.3d.up`.
 
 ### Still open after the laptop-pose work
-- Search's scope bar uses `KeyboardStickyView` and may show the rotation symptom the
-  chat composer had (see `RestingStickyView`); not yet checked.
+(Checked and not affected: Search's scope bar is UIKit's native search scope — or a
+measured inset — not a `KeyboardStickyView`, so the composer's rotation bug can't occur.)
 - Native `ReservedRegion` frames would replace the inferred crease (needed for Split
   View multitasking, where the window no longer fills the display).
-- `NoteDetailScreen`'s `nested` prop is now unused (lint warning).
 
 ### Still open (need native modifiers in `modules/swiftui-modifiers`)
 - Hide Back while editing (`navigationBarBackButtonHidden`) — standard iOS
