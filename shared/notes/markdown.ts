@@ -221,3 +221,23 @@ export function toggleCheckboxInSource(source: string, index: number): string {
 
   return changed ? lines.join("\n") : source;
 }
+
+/**
+ * Split off a leading `# Title` heading that merely repeats the note's own title.
+ * Many notes (Obsidian imports, markdown exported from elsewhere) open with an H1
+ * equal to the title; a screen that already shows the title as a heading would
+ * then show it twice. `prefix` is the removed text (heading line plus following
+ * blank lines, "" when nothing matched) so a caller that edits the rendered body
+ * (e.g. toggling a checkbox) can write `prefix + edited` back without losing it.
+ */
+export function splitLeadingTitleHeading(
+  content: string | null | undefined,
+  title: string | null | undefined,
+): { prefix: string; body: string } {
+  const src = content ?? "";
+  const t = (title ?? "").trim().toLowerCase();
+  if (!t) return { prefix: "", body: src };
+  const m = /^(\s*\n)*#[ \t]+(.+?)[ \t]*#*[ \t]*(\r?\n|$)(\s*\n)*/.exec(src);
+  if (!m || m[2].trim().toLowerCase() !== t) return { prefix: "", body: src };
+  return { prefix: m[0], body: src.slice(m[0].length) };
+}

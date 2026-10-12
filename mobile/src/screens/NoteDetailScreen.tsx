@@ -28,6 +28,7 @@ import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings"
 import { exportNoteToPdf } from "@/notes/note-pdf";
 import { haptics, toolbarPress } from "@/haptics";
 import { extractHeadings } from "@cairn/shared/notes/toc";
+import { splitLeadingTitleHeading } from "@cairn/shared/notes/markdown";
 import { resolveFontPreset } from "@cairn/shared/ui/fonts";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
@@ -88,7 +89,13 @@ export function NoteDetailScreen({
   const scrollRef = useRef<ScrollViewInstance>(null);
   const headingY = useRef<Map<string, number>>(new Map());
   const mdOffsetY = useRef(0);
-  const headings = useMemo(() => extractHeadings(note?.content ?? ""), [note?.content]);
+  // The title is already shown as the page heading, so an H1 in the body that
+  // repeats it is hidden in read mode (the stored content is untouched).
+  const titleSplit = useMemo(
+    () => splitLeadingTitleHeading(note?.content, note?.title),
+    [note?.content, note?.title],
+  );
+  const headings = useMemo(() => extractHeadings(titleSplit.body), [titleSplit.body]);
 
   const scrollToHeading = useCallback((slugId: string) => {
     setTocOpen(false);
@@ -141,12 +148,14 @@ export function NoteDetailScreen({
   const onToggleCheckbox = useCallback(
     (next: string) => {
       if (!note) return;
-      updateNote(note.id, note.title ?? "Untitled", next);
+      // `next` is the rendered body; put back the hidden title heading before saving.
+      const full = titleSplit.prefix + next;
+      updateNote(note.id, note.title ?? "Untitled", full);
       const fresh = getNote(note.id);
       setNote(fresh);
-      setBody(fresh?.content ?? next);
+      setBody(fresh?.content ?? full);
     },
-    [note],
+    [note, titleSplit.prefix],
   );
 
   const onDelete = useCallback(() => {
@@ -216,7 +225,9 @@ export function NoteDetailScreen({
   return (
     <View style={styles.container}>
       <ScreenChrome
-        title={editing ? "Edit note" : note.title || "Note"}
+        // Read mode leaves the bar title empty: the page already shows the note's
+        // title as its heading, so repeating it in the bar showed it twice.
+        title={editing ? "Edit note" : ""}
         // Callers reaching this over the tab navigator (Graph/Search/Conflicts)
         // pass an explicit `back` label since the root stack can't infer the
         // origin tab's title; the in-tab Projects flow omits it.
@@ -271,7 +282,7 @@ export function NoteDetailScreen({
             onLayout={(e) => { mdOffsetY.current = e.nativeEvent.layout.y; }}
           >
             <MarkdownView
-              content={note.content ?? ""}
+              content={titleSplit.body}
               onChangeContent={onToggleCheckbox}
               onHeadingLayout={(headingId, y) => headingY.current.set(headingId, y)}
             />

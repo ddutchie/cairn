@@ -3,6 +3,7 @@ import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
   embedNameFromUrl,
+  splitLeadingTitleHeading,
   cardIdFromUrl,
   CAIRN_NOTE_SCHEME,
   CAIRN_CARD_SCHEME,
@@ -100,5 +101,29 @@ describe("preprocessCairnMarkdown image embeds", () => {
   it("round-trips the embed name through embedNameFromUrl", () => {
     expect(embedNameFromUrl("cairn://embed/my%20pic.png")).toBe("my pic.png");
     expect(embedNameFromUrl("https://x/y.png")).toBeNull();
+  });
+});
+
+describe("splitLeadingTitleHeading", () => {
+  it("removes an H1 that repeats the title, plus the blank lines after it", () => {
+    const r = splitLeadingTitleHeading("# My Note\n\nbody text\n", "My Note");
+    expect(r.body).toBe("body text\n");
+    expect(r.prefix + r.body).toBe("# My Note\n\nbody text\n");
+  });
+
+  it("matches case-insensitively and ignores closing hashes / leading blank lines", () => {
+    expect(splitLeadingTitleHeading("\n# my note ##\ntext", "My Note").body).toBe("text");
+  });
+
+  it("keeps a different heading, a deeper heading, or a heading that is not first", () => {
+    expect(splitLeadingTitleHeading("# Other\ntext", "My Note").prefix).toBe("");
+    expect(splitLeadingTitleHeading("## My Note\ntext", "My Note").prefix).toBe("");
+    expect(splitLeadingTitleHeading("intro\n# My Note\n", "My Note").prefix).toBe("");
+  });
+
+  it("handles a title-only note and missing input", () => {
+    expect(splitLeadingTitleHeading("# My Note", "My Note")).toEqual({ prefix: "# My Note", body: "" });
+    expect(splitLeadingTitleHeading(null, "x")).toEqual({ prefix: "", body: "" });
+    expect(splitLeadingTitleHeading("# x\ny", "")).toEqual({ prefix: "", body: "# x\ny" });
   });
 });
