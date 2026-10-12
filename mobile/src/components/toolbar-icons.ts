@@ -88,6 +88,8 @@ export const ICON_UNPIN: ToolbarIcon = ios ? "pin.slash" : UnpinXml;
 export const ICON_TAG: ToolbarIcon = ios ? "tag" : TagXml;
 /** Calendar / due dates. */
 export const ICON_CALENDAR: ToolbarIcon = ios ? "calendar" : CalendarXml;
+/** Jump to today (a symbol, so it can dock into the Duo's side rail). */
+export const ICON_TODAY: ToolbarIcon = ios ? "calendar.badge.clock" : CalendarXml;
 /** Month span (grid of days). */
 export const ICON_VIEW_MONTH: ToolbarIcon = ios ? "square.grid.2x2" : CalendarViewMonthXml;
 /** Week span (single-row timeline). */

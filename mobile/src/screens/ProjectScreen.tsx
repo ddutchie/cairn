@@ -1,7 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps -- stable callbacks, intentional */
 import { useCallback, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
-import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { ScreenChrome } from "@/components/screen-chrome";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import {
@@ -43,7 +44,8 @@ import { Empty } from "./project/Empty";
 import { NoteFilterBar } from "./project/NoteFilterBar";
 import { type ListRow, rowKey } from "./project/list-rows";
 
-type Tab = "overview" | "notes" | "board";
+export type ProjectTab = "overview" | "notes" | "board";
+type Tab = ProjectTab;
 
 // Order of the native UISegmentedControl segments (Overview | Notes | Board);
 // the control's selectedIndex maps straight into the `tab` union.
@@ -67,8 +69,45 @@ const SEGMENT_BAR_H = 50;
  * copy pushes plain `/...` routes. Typed routes require the two path families to
  * be spelled out explicitly, hence the `Href` helpers below.
  */
-export function ProjectScreen({ nested = false }: { nested?: boolean }) {
-  const { id, back } = useLocalSearchParams<{ id: string; back?: string }>();
+export function ProjectScreen({
+  nested = false,
+  projectId,
+  view,
+  onSelectView,
+  onOpenNote,
+  onOpenCard,
+  onComposeNote,
+  onComposeTask,
+  selectedId = null,
+}: {
+  nested?: boolean;
+  /**
+   * Split-view column: render for this project instead of the route param. The
+   * column brings its own navigation bar (see ScreenChrome).
+   */
+  projectId?: string;
+  /** Split-view column: the section to show; hides the segment control. */
+  view?: Tab;
+  /** Split-view column: Overview's "view notes / board" shortcuts. */
+  onSelectView?: (view: Tab) => void;
+  /** Split-view column: open a note / task beside this one instead of pushing. */
+  onOpenNote?: (id: string) => void;
+  onOpenCard?: (id: string) => void;
+  /**
+   * Split-view column: compose a new note beside this list instead of pushing
+   * the new-note modal (which would park on the wrong page on a Duo). Omit
+   * (routes, board) to keep the modal.
+   */
+  onComposeNote?: () => void;
+  /** Split-view column: the same for a new task (optionally in a column). */
+  onComposeTask?: (column?: string) => void;
+  /** Split-view column: the note / task open beside this list, marked in it. */
+  selectedId?: string | null;
+}) {
+  const params = useLocalSearchParams<{ id: string; back?: string }>();
+  const embedded = projectId != null;
+  const id = projectId ?? params.id;
+  const back = embedded ? undefined : params.back;
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -77,7 +116,13 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   // screen (see TAB_BAR_BASE doc), so we no longer add it separately; the +24
   // is scroll slack above the bar / home indicator.
   const listBottomPad = 24 + insets.bottom;
-  const [tab, setTab] = useState<Tab>("overview");
+  const [ownTab, setOwnTab] = useState<Tab>("overview");
+  // The split view drives the section from its sidebar; a route owns it here.
+  const tab = view ?? ownTab;
+  const setTab = useCallback(
+    (next: Tab) => (onSelectView ? onSelectView(next) : setOwnTab(next)),
+    [onSelectView],
+  );
   const [project, setProject] = useState(id ? getProject(id) : null);
   const [overview, setOverview] = useState<ProjectOverviewData | null>(null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
@@ -132,7 +177,14 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
   // the memoised rows below keep the SAME onOpen reference across renders and
   // actually skip re-rendering when unrelated state (filter text, collapse)
   // changes. Passing a fresh `() => push(...)` per row would defeat React.memo.
-  const openNote = useCallback((nid: string) => router.push(noteHref(nid)), [router, noteHref]);
+  const openNote = useCallback(
+    (nid: string) => (onOpenNote ? onOpenNote(nid) : router.push(noteHref(nid))),
+    [router, noteHref, onOpenNote],
+  );
+  const openCard = useCallback(
+    (cid: string) => (onOpenCard ? onOpenCard(cid) : router.push(cardHref(cid))),
+    [router, cardHref, onOpenCard],
+  );
 
   // ── Long-press note actions ────────────────────────────────────────────────
   // A per-note contextual menu mirroring the desktop note ⋯ menu (Pin/Unpin,
@@ -293,52 +345,76 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
       item.kind === "folder" ? (
         <FolderRow node={item.node} depth={item.depth} collapsed={!!collapsed[item.node.path]} onToggle={toggle} t={t} />
       ) : (
-        <NoteRowItem note={item.note} depth={item.depth} tags={tagMap.get(item.note.id)} onOpen={openNote} onLongPress={showNoteActions} t={t} />
+        <NoteRowItem
+          note={item.note}
+          depth={item.depth}
+          tags={tagMap.get(item.note.id)}
+          onOpen={openNote}
+          onLongPress={showNoteActions}
+          selected={item.note.id === selectedId}
+          t={t}
+        />
       ),
-    [collapsed, toggle, t, tagMap, openNote, showNoteActions],
+    [collapsed, toggle, t, tagMap, openNote, showNoteActions, selectedId],
   );
+
+  const addCard = (column?: string) => {
+    if (onComposeTask) onComposeTask(column);
+    else router.push({ pathname: "/card/new", params: { project: id, ...(column ? { column } : {}), back: project?.name || "Project" } });
+  };
 
   const onAdd = () => {
     if (!id) return;
-    // New-note / new-task are modals in the root stack (they present over the
-    // tab bar by design), so they stay absolute for both variants. On the
+    // New note / task go inline when the host offers it (the split-view
+    // detail column); otherwise they are modals over the tab bar. On the
     // Overview segment the + is hidden, so default the action to a new note.
-    if (tab === "board") router.push({ pathname: "/card/new", params: { project: id, back: project?.name || "Project" } });
+    if (tab === "board") addCard();
+    else if (onComposeNote) onComposeNote();
     else router.push({ pathname: "/note/new", params: { project: id } });
   };
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: project?.name || "Project",
-          // From Graph (root stack) the back target is the `(tabs)` group, so an
-          // explicit `back` label is passed; the nested Projects-list flow omits
-          // it and gets iOS's default "Projects" previous-title.
-          ...(back ? { headerBackTitle: back } : {}),
-        }}
+<ScreenChrome
+        title={project?.name || "Project"}
+        // From Graph (root stack) the back target is the `(tabs)` group, so an
+        // explicit `back` label is passed; the nested Projects-list flow omits
+        // it and gets iOS's default "Projects" previous-title.
+        back={back}
+        right={[
+          // In a split view Calendar is a sidebar section, not a push.
+          ...(embedded
+            ? []
+            : [
+                {
+                  kind: "button" as const,
+                  key: "calendar",
+                  label: "Calendar",
+                  icon: ICON_CALENDAR,
+                  onPress: toolbarPress(() =>
+                    id &&
+                    router.push(
+                      nested
+                        ? { pathname: "/projects/project/calendar", params: { project: id } }
+                        : { pathname: "/project/calendar", params: { project: id } },
+                    )
+                  ),
+                },
+              ]),
+          {
+            kind: "button",
+            key: "add",
+            label: tab === "board" ? "New task" : "New note",
+            icon: ICON_ADD,
+            onPress: toolbarPress(onAdd),
+            hidden: tab === "overview",
+            // Apple: creation (Compose / New Note) is the last thing to overflow.
+            priority: "high",
+          },
+        ]}
       />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button
-          icon={ICON_CALENDAR}
-          accessibilityLabel="Calendar"
-          onPress={toolbarPress(() =>
-            id &&
-            router.push(
-              nested
-                ? { pathname: "/projects/project/calendar", params: { project: id } }
-                : { pathname: "/project/calendar", params: { project: id } },
-            )
-          )}
-        />
-        <Stack.Toolbar.Button
-          icon={ICON_ADD}
-          accessibilityLabel={tab === "board" ? "New task" : "New note"}
-          onPress={toolbarPress(onAdd)}
-          hidden={tab === "overview"}
-        />
-      </Stack.Toolbar>
 
+      {view == null && (
       <View style={styles.segment}>
         <SegmentedControl
           // No flex:1 — Yoga's flexBasis:0 makes the native view collapse to
@@ -356,8 +432,9 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
           onChange={(e) => setTab(PROJECT_TABS[e.nativeEvent.selectedSegmentIndex] ?? "overview")}
         />
       </View>
+      )}
 
-      <View style={styles.content}>
+      <View style={[styles.content, view != null && styles.contentNoSegment]}>
         {tab === "overview" ? (
         overview ? (
           <OverviewTab
@@ -366,8 +443,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
             onRefresh={onRefresh}
             refreshing={refreshing}
             nav={{
-              onOpenNote: (nid) => router.push(noteHref(nid)),
-              onOpenCard: (cid) => router.push(cardHref(cid)),
+              onOpenNote: openNote,
+              onOpenCard: openCard,
               onViewNotes: () => setTab("notes"),
               onViewBoard: () => setTab("board"),
             }}
@@ -394,6 +471,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
                 data={rows}
                 keyExtractor={rowKey}
                 renderItem={renderRow}
+                extraData={selectedId}
                 contentContainerStyle={[styles.notesScroll, { paddingBottom: listBottomPad }]}
                 keyboardShouldPersistTaps="handled"
                 // Windowing tuned for a text-row list: keep a modest buffer so
@@ -408,6 +486,7 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
         )
       ) : (
         <DraggableBoard
+          selectedCardId={selectedId}
           columns={columns}
           cards={cards}
           bottomInset={insets.bottom}
@@ -440,8 +519,8 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
               celebrateTaskDone(remainingOpen);
             }
           }}
-          onOpenCard={(cid) => router.push(cardHref(cid))}
-          onAddCard={(colId) => router.push({ pathname: "/card/new", params: { project: id, column: colId, back: project?.name || "Project" } })}
+          onOpenCard={openCard}
+          onAddCard={addCard}
           onArchive={(card) => {
             archiveCard(card.id);
             load();
@@ -482,16 +561,17 @@ export function ProjectScreen({ nested = false }: { nested?: boolean }) {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
-    // Floating Overview|Notes|Board bar in the header colour: an absolute
-    // overlay pinned below the nav bar, so the tab content scrolls beneath it
-    // (like the search scope bar). Height = control 36 + 8 top + 6 bottom pad.
+    // Floating Overview|Notes|Board bar: an absolute overlay pinned below the
+    // nav bar, so the tab content scrolls beneath it (like the search scope
+    // bar). No band behind it — on an unfolded iPhone Duo the content is inset
+    // from the side rail, so a surface band stopped short of the edge.
+    // Height = control 36 + 8 top + 6 bottom pad.
     segment: {
       position: "absolute",
       top: 0,
       left: 0,
       right: 0,
       zIndex: 1,
-      backgroundColor: t.surface,
       paddingHorizontal: 12,
       paddingTop: 8,
       paddingBottom: 6,
@@ -499,6 +579,7 @@ function makeStyles(t: Theme) {
     // Tab content clears the floating segment bar (SEGMENT_BAR_H) plus a small
     // breathing gap so the first row isn't flush against the control.
     content: { flex: 1, paddingTop: SEGMENT_BAR_H + 8 },
+    contentNoSegment: { paddingTop: 8 },
     notesScroll: { flexGrow: 1 },
   });
 }

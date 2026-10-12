@@ -5,7 +5,9 @@ import {
   Pressable,
   StyleSheet,
   Alert,
- useWindowDimensions } from "react-native";
+  Platform,
+  useWindowDimensions,
+} from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
@@ -39,6 +41,12 @@ import { fetchManifest } from "@/chat/registry";
 import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
+import { ChatPreviewPane, ChatPreviewProvider, CHAT_PREVIEW_MIN_WIDTH, type PreviewRef } from "@/components/chat/ChatPreview";
+// NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
+import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
+
+/** The chat preview pane is SwiftUI (`@expo/ui`), so it exists on iOS only. */
+const IOS_PREVIEW = Platform.OS === "ios";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -121,7 +129,17 @@ export default function ChatScreen() {
   const strip = useSharedValue(0);
   const plusOut = useSharedValue(0);
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
+  // Wide windows open touched notes/tasks in a column beside the chat.
+  const [preview, setPreview] = useState<PreviewRef | null>(null);
+  const canPreview = width >= CHAT_PREVIEW_MIN_WIDTH;
+  // Folding a Duo with a preview open keeps it (continuity): the pane fills
+  // the window and the chat collapses beside it, still mounted. Its ✕
+  // returns to the conversation.
+  const previewFills = !canPreview && preview != null;
+  // The wide header is transparent, so the conversation clears it itself — on
+  // iPad that includes the floating tab bar above it.
+  const headerHeight = useHeaderHeight();
   const keyboard = useReanimatedKeyboardAnimation();
   const composerBottom = useDerivedValue(() => height - (Math.max(-keyboard.height.get(), insets.bottom) + COMPOSER.keyboardGap), [height, insets.bottom]);
   const hostRef = useRef<CairnAttachmentHostHandle>(null);
@@ -379,7 +397,28 @@ export default function ChatScreen() {
     <TabScreen>
       <Stack.Screen
         options={{
-          title: "Chat",
+          // Wide windows: no header bar (it only titled the screen and pushed the
+          // preview column down), but keep the toolbar items — on an iPhone Duo
+          // they dock into the side rail beside the tabs.
+          // Folded with a preview open, the pane's own bar is the only one.
+          headerShown: !previewFills,
+          // While a preview is open its SwiftUI pane reaches the window edge and
+          // handles the side rail itself (its bar joins the rail, as in the
+          // Projects split view); the RN padding would double that inset.
+          contentStyle:
+            preview != null
+              ? { backgroundColor: t.background, paddingLeft: insets.left }
+              : { backgroundColor: t.background, paddingLeft: insets.left, paddingRight: insets.right },
+          title: canPreview ? "" : "Chat",
+          headerTransparent: canPreview,
+          // TabStack paints the header with the surface colour, and iOS 26 adds a
+          // scroll-edge fade under it — both drew a white strip across the top.
+          ...(canPreview
+            ? {
+                headerStyle: { backgroundColor: "transparent" },
+                scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
+              }
+            : {}),
           // Context-window usage ring in the header-left when the active provider
           // reports usage (Apple real, OpenAI real, Rork estimated).
           headerLeft:
@@ -400,6 +439,10 @@ export default function ChatScreen() {
               : undefined,
         }}
       />
+      {/* While a preview is open its own bar is the rail's: the chat's items
+          would stack a second column of buttons beside it (and, folded, keep
+          the chat's header up over a chat that isn't showing). */}
+      {preview == null ? (
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_DELETE}
@@ -416,7 +459,20 @@ export default function ChatScreen() {
           onPress={toolbarPress(() => router.push("/settings/ai"))}
         />
       </Stack.Toolbar>
-      <View style={{ flex: 1, backgroundColor: t.chatBg }}>
+      ) : null}
+      {/* Every width previews in the pane (not a pushed route): folded it fills
+          the window, unfolded it sits beside the chat — so fold/unfold moves
+          the same preview instead of stranding a full-screen page. */}
+      {/* The preview pane is SwiftUI: iOS only. Android chips keep the route path. */}
+      <ChatPreviewProvider value={IOS_PREVIEW ? setPreview : null}>
+      <View style={styles.row}>
+      <View
+        style={[
+          { flex: 1, paddingTop: canPreview ? headerHeight : 0, backgroundColor: t.chatBg },
+          previewFills && { flex: 0, width: 0, overflow: "hidden" },
+        ]}
+      >
+      <View style={{ flex: 1 }}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
             colors={t.chatStops as [string, string, ...string[]]}
@@ -540,6 +596,10 @@ export default function ChatScreen() {
           onAddAttachments={onAddAttachments}
         />
       </View>
+      </View>
+      {IOS_PREVIEW && <ChatPreviewPane preview={preview} fill={!canPreview} onClose={() => setPreview(null)} />}
+      </View>
+      </ChatPreviewProvider>
     </TabScreen>
   );
 }
@@ -552,6 +612,7 @@ function makeStyles(t: Theme) {
     // viewport measurement lagging content/keyboard-inset changes (chat "wrong
     // size"). It sits inside the absoluteFill KeyboardGestureArea.
     scroll: { flex: 1 },
+    row: { flex: 1, flexDirection: "row", overflow: "hidden" },
     list: { padding: 14, paddingBottom: 20 },
     configureBtn: {
       flexDirection: "row",

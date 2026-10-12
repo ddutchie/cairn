@@ -16,7 +16,9 @@ export default function TabsLayout() {
       {/* tintColor accents the selected tab (icon + label) with our brand
           accent instead of the platform default blue. minimizeBehavior
           collapses the tab bar as you scroll down for more content room. */}
-      <NativeTabs tintColor={t.accent} minimizeBehavior="onScrollDown">
+      {/* sidebarAdaptable: on iPad the tabs can become a sidebar instead of a
+          bar floating over the top of the screen (no effect on iPhone/Duo). */}
+      <NativeTabs tintColor={t.accent} minimizeBehavior="onScrollDown" sidebarAdaptable>
         <NativeTabs.Trigger name="projects">
           <NativeTabs.Trigger.Icon sf="folder.fill" md="folder" />
           <NativeTabs.Trigger.Label>Projects</NativeTabs.Trigger.Label>

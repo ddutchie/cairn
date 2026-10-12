@@ -22,6 +22,7 @@ import { iCloudAvailable, getSyncFolderPath, syncFolderLabel } from "@/sync/fold
 import { listSources, type SyncSource } from "@/sync/fs-transport";
 import { PressableScale } from "@/components/PressableScale";
 import { haptics } from "@/haptics";
+import { openDemoWorkspace, DEMO_WORKSPACE_ID } from "@/dev/demo-seed";
 
 const CAIRN_ICON = require("../../assets/splashIcon.png");
 
@@ -279,6 +280,18 @@ export function OnboardingGuide({
             {scanning ? "Checking…" : "Refresh"}
           </Text>
         </PressableScale>
+        {__DEV__ && (
+          // Dev builds only: skip iCloud (e.g. on a simulator) with seeded data.
+          <PressableScale
+            style={s.demo}
+            onPress={() => {
+              openDemoWorkspace();
+              onConnected(DEMO_WORKSPACE_ID);
+            }}
+          >
+            <Text style={[s.demoText, { color: t.textTertiary }]}>Skip — use demo data (dev)</Text>
+          </PressableScale>
+        )}
       </View>
     </View>
   );
@@ -408,5 +421,7 @@ function makeStyles(_t: Theme) {
       borderWidth: StyleSheet.hairlineWidth,
     },
     refreshText: { ...typeScale.control },
+    demo: { marginTop: 12, paddingVertical: 6, paddingHorizontal: 12 },
+    demoText: { ...typeScale.caption },
   });
 }

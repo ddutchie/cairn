@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { ScreenChrome } from "@/components/screen-chrome";
 import { Calendar, X } from "lucide-react-native";
 import { getCard, listColumns, listCards, updateTask, moveCardToColumn, archiveCard, deleteCard, tagsForCard, noteTagIds, setCardTags, type ColumnRow } from "@/db/queries";
 import { TagChips } from "@/components/TagChips";
@@ -20,9 +21,28 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
  * routes (root `app/card/[id]` and Projects-tab `app/(tabs)/projects/card/[id]`)
  * render it unchanged; the containing stack decides whether the tab bar shows.
  */
-export function CardDetailScreen() {
-  const { id, back } = useLocalSearchParams<{ id: string; back?: string }>();
+export function CardDetailScreen({
+  cardId,
+  onClose,
+  onChanged,
+}: {
+  /** Split-view column: the task to show (instead of the route param). */
+  cardId?: string;
+  /** Split-view column: called instead of popping the route (archive / delete). */
+  onClose?: () => void;
+  /** Split-view column: the task was saved, archived or deleted. */
+  onChanged?: () => void;
+} = {}) {
+  const params = useLocalSearchParams<{ id: string; back?: string }>();
+  const embedded = cardId != null;
+  const id = cardId ?? params.id;
+  const back = embedded ? undefined : params.back;
   const router = useRouter();
+  const close = () => {
+    onChanged?.();
+    if (onClose) onClose();
+    else router.back();
+  };
   const t = useTheme();
   // Memoize the SQLite reads by their stable inputs so controlled-input edits
   // (title/description keystrokes) don't re-run the queries every render — and
@@ -95,7 +115,10 @@ export function CardDetailScreen() {
         celebrateTaskDone(remainingOpen);
       }
     }
-    router.back();
+    // Saving is done with the task: a column closes (the board widens back), a
+    // route pops back to the board.
+    if (embedded) toast.success("Task saved");
+    close();
   };
 
   const onArchive = () => {
@@ -106,7 +129,7 @@ export function CardDetailScreen() {
         onPress: () => {
           haptics.warning();
           archiveCard(card.id);
-          router.back();
+          close();
         },
       },
     ]);
@@ -122,7 +145,7 @@ export function CardDetailScreen() {
           haptics.impactHeavy();
           deleteCard(card.id);
           toast.success("Task deleted");
-          router.back();
+          close();
         },
       },
     ]);
@@ -130,32 +153,30 @@ export function CardDetailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Stack.Screen
-        options={{
-          title: "Edit Task",
-          // Root-stack pushes over the tab navigator can't infer the origin
-          // tab's title (the back target is the whole `(tabs)` group), so
-          // callers pass an explicit `back` label (Graph/Calendar/Search). The
-          // in-tab Board flow omits it and gets iOS's default previous-title.
-          ...(back ? { headerBackTitle: back } : {}),
-        }}
+      <ScreenChrome
+        title="Edit Task"
+        // Root-stack pushes over the tab navigator can't infer the origin
+        // tab's title (the back target is the whole `(tabs)` group), so
+        // callers pass an explicit `back` label (Graph/Calendar/Search). The
+        // in-tab Board flow omits it and gets iOS's default previous-title.
+        back={back}
+        right={[
+          {
+            kind: "menu",
+            key: "actions",
+            label: "Task actions",
+            overflow: true,
+            icon: ICON_MORE,
+            // Archive is recoverable, so it's NOT destructive — kept in the
+            // default colour to distinguish it from the red Delete below.
+            actions: [
+              { label: "Archive", icon: ICON_ARCHIVE, onPress: toolbarPress(onArchive) },
+              { label: "Delete", icon: ICON_DELETE, destructive: true, onPress: toolbarPress(onDelete) },
+            ],
+          },
+          { kind: "button", key: "save", label: "Save", icon: ICON_CHECK, variant: "done", onPress: toolbarPress(save, "confirm") },
+        ]}
       />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon={ICON_MORE} accessibilityLabel="Task actions">
-          {/* Archive is recoverable, so it's NOT destructive — kept in the
-              default colour to distinguish it from the red Delete below (the
-              native iOS menu can't tint an action amber like the board zone). */}
-          <Stack.Toolbar.MenuAction icon={ICON_ARCHIVE} onPress={toolbarPress(onArchive)}>
-            Archive
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={toolbarPress(onDelete)}>
-            Delete
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
-        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={toolbarPress(save, "confirm")}>
-          Save
-        </Stack.Toolbar.Button>
-      </Stack.Toolbar>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
         <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Task title" placeholderTextColor={t.textTertiary} multiline />

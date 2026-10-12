@@ -1,104 +1,34 @@
-import { useMemo, useState } from "react";
-import { Text, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from "react-native";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { createTask, listColumns, type ColumnRow } from "@/db/queries";
-import { useModalOpenHaptic, toolbarPress } from "@/haptics";
-import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { ICON_CHECK } from "@/components/toolbar-icons";
-import { PriorityChips, ColumnChips } from "@/components/TaskChips";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useModalOpenHaptic } from "@/haptics";
+import { useTheme } from "@/theme";
+import { ModalSafeView } from "@/components/ModalSafeView";
+import { TaskComposer } from "@/components/TaskComposer";
 
 /**
- * New-task composer. `project` (id) required; `column` optionally pre-selects
- * the destination column (passed from the board). Falls back to the first
- * column. Creates the card locally so capture triggers stage it for sync.
+ * New-task composer as a native modal. `project` (id) required; `column`
+ * optionally pre-selects the destination column (passed from the board).
+ * Creates the card locally so capture triggers stage it for sync.
+ *
+ * The form itself lives in `TaskComposer` (shared with the split-view detail
+ * column on wide layouts); this route only adds the modal haptic + routing.
  */
 export default function NewCard() {
   useModalOpenHaptic();
   const { project, column, back } = useLocalSearchParams<{ project: string; column?: string; back?: string }>();
   const router = useRouter();
   const t = useTheme();
-  const styles = useMemo(() => makeStyles(t), [t]);
-  // Memoize by `project` so the SQLite query doesn't re-run on every keystroke.
-  const columns: ColumnRow[] = useMemo(() => (project ? listColumns(project) : []), [project]);
-
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<string>("medium");
-  const [columnId, setColumnId] = useState(column ?? columns[0]?.id ?? "");
-
-  const canSave = title.trim().length > 0 && !!columnId;
-
-  const save = () => {
-    if (!project || !canSave) return;
-    let id: string;
-    try {
-      id = createTask(project, columnId, title.trim(), { description, priority });
-    } catch (e) {
-      // The column can vanish while this form is open (deleted on another device).
-      Alert.alert("Couldn't create the task", e instanceof Error ? e.message : String(e));
-      return;
-    }
-    // Replace this modal with the new card's detail. Forward `back` (the project
-    // name) so the card's header shows "< {Project}" instead of the raw route
-    // group name ("(tabs)") — the root-stack card route can't infer the
-    // originating tab's title on its own.
-    router.replace({ pathname: "/card/[id]", params: { id, ...(back ? { back } : {}) } });
-  };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Stack.Screen
-        options={{
-          title: "New Task",
-          headerBackTitle: back || "Board",
-        }}
+    <ModalSafeView backgroundColor={t.surface}>
+      <TaskComposer
+        projectId={project ?? ""}
+        column={column}
+        back={back}
+        // Replace this modal with the new card's detail. Forward `back` (the
+        // project name) so the card's header shows "< {Project}" instead of the
+        // raw route group name ("(tabs)").
+        onSaved={(id) => router.replace({ pathname: "/card/[id]", params: { id, ...(back ? { back } : {}) } })}
       />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button
-          icon={ICON_CHECK}
-          variant="done"
-          disabled={!canSave}
-          accessibilityLabel="Save"
-          onPress={toolbarPress(save, "confirm")}
-        >
-          Save
-        </Stack.Toolbar.Button>
-      </Stack.Toolbar>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Title</Text>
-        <TextInput style={styles.titleInput} value={title} onChangeText={setTitle} placeholder="Task title" placeholderTextColor={t.textTertiary} autoFocus multiline />
-
-        <Text style={styles.label}>Priority</Text>
-        <PriorityChips value={priority} onChange={setPriority} />
-
-        {columns.length > 0 && (
-          <>
-            <Text style={styles.label}>Column</Text>
-            <ColumnChips columns={columns} value={columnId} onChange={setColumnId} />
-          </>
-        )}
-
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={styles.descInput}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Add a description (markdown)…"
-          placeholderTextColor={t.textTertiary}
-          multiline
-          textAlignVertical="top"
-        />
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </ModalSafeView>
   );
-}
-
-function makeStyles(t: Theme) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: t.surface },
-    content: { padding: 18, paddingBottom: 60 },
-    label: { ...typeScale.overline, color: t.textTertiary, marginTop: 18, marginBottom: 8 },
-    titleInput: { ...typeScale.title, color: t.textPrimary, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12 },
-    descInput: { ...typeScale.body, color: t.textPrimary, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.border, borderRadius: 10, padding: 12, minHeight: 160, fontFamily: "Menlo" },
-  });
 }

@@ -197,3 +197,30 @@ const styles = StyleSheet.create({
   legendPct: { fontSize: 10, fontFamily: "Menlo", marginTop: 4 },
   foot: { fontSize: 11, lineHeight: 16, marginTop: 4 },
 });
+
+/**
+ * The radar's shape alone — no labels or legend — for small spots like the
+ * projects tree's card (desktop's SidebarMiniRadar, "bare").
+ */
+export function MiniRadar({ axes, size = 44 }: { axes: RadarAxis[]; size?: number }) {
+  const t = useTheme();
+  const n = axes.length;
+  const c = size / 2;
+  const radius = size * 0.46;
+  const angleFor = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2;
+  const point = (value: number, i: number) => {
+    const r = radius * Math.max(0.08, Math.min(1, value));
+    return [c + Math.cos(angleFor(i)) * r, c + Math.sin(angleFor(i)) * r] as const;
+  };
+  const ring = axes.map((_, i) => [c + Math.cos(angleFor(i)) * radius, c + Math.sin(angleFor(i)) * radius].join(",")).join(" ");
+  const shape = axes.map((ax, i) => point(ax.value, i));
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} accessibilityLabel="Project health">
+      <Polygon points={ring} fill="none" stroke={t.border} strokeWidth={1} />
+      <Polygon points={shape.map((p) => p.join(",")).join(" ")} fill={t.accentDim} stroke={t.accent} strokeWidth={1.25} />
+      {shape.map(([x, y], i) => (
+        <Circle key={axes[i].key} cx={x} cy={y} r={1.8} fill={t.accent} />
+      ))}
+    </Svg>
+  );
+}

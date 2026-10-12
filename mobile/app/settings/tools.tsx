@@ -39,6 +39,7 @@ import { TOOLS, WRITE_TOOL_NAMES, type ToolDef } from "@/chat/tools";
 import { getToggleMap, setToolEnabled } from "@/chat/tool-toggles";
 import type { RegistryServiceEntry, RegistryMcpEntry } from "@cairn/shared/chat/registry-schema";
 import { ConnectorLogo } from "@/components/ConnectorLogo";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { SearchField } from "@/components/SearchField";
 
 /**
@@ -417,7 +418,7 @@ export default function ToolsSettingsScreen() {
   );
 
   return (
-    <View style={styles.flex}>
+    <ModalSafeView backgroundColor={t.surface}>
       <Stack.Screen options={{ title: "Tools & Services" }} />
       <Stack.Toolbar>
         <Stack.Toolbar.Button
@@ -884,7 +885,7 @@ export default function ToolsSettingsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ModalSafeView>
   );
 }
 

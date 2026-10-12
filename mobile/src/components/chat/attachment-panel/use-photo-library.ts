@@ -18,8 +18,15 @@ function isReadable(permission: PermissionResponse | null) {
   return !!permission && (permission.granted || permission.accessPrivileges === "limited");
 }
 
-export function usePhotoLibrary(): PhotoLibrary {
+/**
+ * `wanted` latches the first time the attachment panel opens: the chat tab
+ * mounts at launch, and asking for photo access before the user has reached
+ * for an attachment greets a fresh install with a permission prompt.
+ */
+export function usePhotoLibrary(wanted: boolean): PhotoLibrary {
   const [permission, requestPermission] = usePermissions({ granularPermissions: ["photo"] });
+  const [asked, setAsked] = useState(wanted);
+  if (wanted && !asked) setAsked(true);
   const [photos, setPhotos] = useState<LibraryPhoto[]>([]);
   const [status, setStatus] = useState<LibraryStatus>("loading");
 
@@ -38,10 +45,10 @@ export function usePhotoLibrary(): PhotoLibrary {
   }, []);
 
   useEffect(() => {
-    if (permission && !permission.granted && permission.canAskAgain) {
+    if (asked && permission && !permission.granted && permission.canAskAgain) {
       requestPermission();
     }
-  }, [permission, requestPermission]);
+  }, [asked, permission, requestPermission]);
 
   useEffect(() => {
     if (!permission) return;

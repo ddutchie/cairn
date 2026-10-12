@@ -1,0 +1,7 @@
+{
+  "name": "swiftui-modifiers",
+  "version": "0.1.0",
+  "description": "Extra SwiftUI view modifiers for @expo/ui (e.g. hiding a split-view column's navigation bar on iPad). Local Expo module (iOS only).",
+  "main": "index.ts",
+  "private": true
+}

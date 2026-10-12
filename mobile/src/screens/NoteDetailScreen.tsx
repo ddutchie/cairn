@@ -1,4 +1,5 @@
-import { useLocalSearchParams, Stack, useRouter, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { ScreenChrome, useInColumn } from "@/components/screen-chrome";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
@@ -41,13 +42,31 @@ import { useTheme, useIsDark, useFont, TAB_BAR_BASE, type as typeScale, type The
  * view adds tab-bar bottom padding; root-stack copies (Search/Graph/Conflicts)
  * pass it false.
  */
-export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
-  const { id, back } = useLocalSearchParams<{ id: string; back?: string }>();
+export function NoteDetailScreen({
+  nested = false,
+  noteId,
+  onClose,
+}: {
+  nested?: boolean;
+  /** Split-view column: the note to show (instead of the route param). */
+  noteId?: string;
+  /** Split-view column: called instead of popping the route (e.g. after delete). */
+  onClose?: () => void;
+}) {
+  const params = useLocalSearchParams<{ id: string; back?: string }>();
+  const id = noteId ?? params.id;
+  const back = noteId != null ? undefined : params.back;
   const router = useRouter();
+  const close = useCallback(() => (onClose ? onClose() : router.back()), [onClose, router]);
+  // While editing, Cancel (drop the edits, stay on the note) is the one
+  // dismiss everywhere: in a split-view column it replaces the column's ✕
+  // (which would close the whole note), see ChromeColumn.
   const t = useTheme();
   const isDark = useIsDark();
   const fontId = useFont();
   const insets = useSafeAreaInsets();
+  // Hosted in a SwiftUI column / preview pane (insets already applied there).
+  const inColumn = useInColumn();
   // Bottom padding so the note body scrolls clear of the bottom safe area.
   // `insets.bottom` already includes the native tab bar on a tab screen (see
   // TAB_BAR_BASE doc), so we no longer add it separately; the +40 is scroll
@@ -140,11 +159,11 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
         onPress: () => {
           haptics.warning();
           softDeleteNote(note.id);
-          router.back();
+          close();
         },
       },
     ]);
-  }, [note, router]);
+  }, [note, close]);
 
   const onExport = useCallback(async () => {
     if (!note) return;
@@ -196,56 +215,39 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: editing ? "Edit note" : note.title || "Note",
-          // Callers reaching this over the tab navigator (Graph/Search/Conflicts)
-          // pass an explicit `back` label since the root stack can't infer the
-          // origin tab's title; the in-tab Projects flow omits it.
-          ...(back ? { headerBackTitle: back } : {}),
-        }}
+      <ScreenChrome
+        title={editing ? "Edit note" : note.title || "Note"}
+        // Callers reaching this over the tab navigator (Graph/Search/Conflicts)
+        // pass an explicit `back` label since the root stack can't infer the
+        // origin tab's title; the in-tab Projects flow omits it.
+        back={back}
+        left={
+          editing
+            ? [{ kind: "button", key: "cancel", label: "Cancel", icon: ICON_CLOSE, onPress: toolbarPress(onCancel) }]
+            : []
+        }
+        right={
+          editing
+            ? [{ kind: "button", key: "save", label: "Save", icon: ICON_CHECK, variant: "done", onPress: toolbarPress(onSave) }]
+            : [
+                {
+                  kind: "menu",
+                  key: "actions",
+                  label: "Note actions",
+                  overflow: true,
+                  icon: ICON_MORE,
+                  actions: [
+                    { label: isPinned ? "Unpin" : "Pin", icon: isPinned ? ICON_UNPIN : ICON_PIN, isOn: isPinned, onPress: toolbarPress(onPin) },
+                    { label: "Edit tags", icon: ICON_TAG, onPress: toolbarPress(openTagPicker) },
+                    { label: "Export as Markdown", icon: ICON_EXPORT, onPress: toolbarPress(onExport) },
+                    { label: "Export as PDF", icon: ICON_PDF, onPress: toolbarPress(onExportPdf) },
+                    { label: "Delete", icon: ICON_DELETE, destructive: true, onPress: toolbarPress(onDelete) },
+                  ],
+                },
+                { kind: "button", key: "edit", label: "Edit", icon: ICON_EDIT, onPress: toolbarPress(() => setEditing(true)) },
+              ]
+        }
       />
-      {editing ? (
-        <>
-          <Stack.Toolbar placement="left">
-            <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={toolbarPress(onCancel)}>
-              Cancel
-            </Stack.Toolbar.Button>
-          </Stack.Toolbar>
-          <Stack.Toolbar placement="right">
-            <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Save" onPress={toolbarPress(onSave)}>
-              Save
-            </Stack.Toolbar.Button>
-          </Stack.Toolbar>
-        </>
-      ) : (
-        <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Menu icon={ICON_MORE} accessibilityLabel="Note actions">
-            <Stack.Toolbar.MenuAction
-              icon={isPinned ? ICON_UNPIN : ICON_PIN}
-              isOn={isPinned}
-              onPress={toolbarPress(onPin)}
-            >
-              {isPinned ? "Unpin" : "Pin"}
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon={ICON_TAG} onPress={toolbarPress(openTagPicker)}>
-              Edit tags
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon={ICON_EXPORT} onPress={toolbarPress(onExport)}>
-              Export as Markdown
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon={ICON_PDF} onPress={toolbarPress(onExportPdf)}>
-              Export as PDF
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon={ICON_DELETE} destructive onPress={toolbarPress(onDelete)}>
-              Delete
-            </Stack.Toolbar.MenuAction>
-          </Stack.Toolbar.Menu>
-          <Stack.Toolbar.Button icon={ICON_EDIT} accessibilityLabel="Edit" onPress={toolbarPress(() => setEditing(true))}>
-            Edit
-          </Stack.Toolbar.Button>
-        </Stack.Toolbar>
-      )}
 
       {editing ? (
         <NoteEditorBody
@@ -286,10 +288,12 @@ export function NoteDetailScreen({ nested = false }: { nested?: boolean }) {
           A glass pill bottom-right. `insets.bottom` already reserves the native
           tab bar's area (the bar extends into the home-indicator inset), so we
           add only a small fixed gap — NOT TAB_BAR_BASE, which would double-count
-          in the nested (tab-bar-visible) flow and float the button too high. */}
+          in the nested (tab-bar-visible) flow and float the button too high.
+          In a split-view column / preview pane the SwiftUI host already keeps
+          its content clear of the bottom edge, so the inset would apply twice. */}
       {!editing && headings.length >= 2 ? (
         <View
-          style={[styles.tocFab, { bottom: 12 + insets.bottom }]}
+          style={[styles.tocFab, { bottom: 12 + (inColumn ? 0 : insets.bottom) }]}
           pointerEvents="box-none"
         >
           <PressableScale onPress={() => setTocOpen(true)} haptic={false} accessibilityLabel="Table of contents">

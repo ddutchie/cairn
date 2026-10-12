@@ -42,7 +42,6 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
 ) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { photos, status } = usePhotoLibrary();
   const gridRef = useRef<PhotoGridHandle>(null);
   const cameraRef = useRef<CameraSheetHandle>(null);
   const leadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,6 +55,8 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   const [flights, setFlights] = useState<Flight[]>([]);
   const [closing, setClosing] = useState(false);
   const [settledKeyboard, setSettledKeyboard] = useState(0);
+  // Ask for photo access when the panel first opens, not when chat mounts.
+  const { photos, status } = usePhotoLibrary(mode !== "closed");
 
   const open = useSharedValue(0);
   const morph = useSharedValue(0);

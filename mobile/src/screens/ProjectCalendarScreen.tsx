@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { useLocalSearchParams, useRouter, Stack, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { ScreenChrome } from "@/components/screen-chrome";
 import { View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -10,7 +11,7 @@ import {
   type CalendarCard,
 } from "@/db/queries";
 import { CalendarView, type CalendarLayout } from "@/components/CalendarView";
-import { ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
+import { ICON_TODAY, ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
@@ -29,8 +30,19 @@ import { useTheme } from "@/theme";
  * onward "open card" push to the in-tab card detail so the tab bar stays
  * visible through the whole Projects drill-down.
  */
-export function ProjectCalendarScreen({ nested = false }: { nested?: boolean }) {
-  const { project } = useLocalSearchParams<{ project: string }>();
+export function ProjectCalendarScreen({
+  nested = false,
+  projectId,
+  onOpenCard,
+}: {
+  nested?: boolean;
+  /** Split-view column: the project to show (instead of the route param). */
+  projectId?: string;
+  /** Split-view column: open a task beside the calendar instead of pushing it. */
+  onOpenCard?: (id: string) => void;
+}) {
+  const params = useLocalSearchParams<{ project: string }>();
+  const project = projectId ?? params.project;
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -64,35 +76,24 @@ export function ProjectCalendarScreen({ nested = false }: { nested?: boolean }) 
 
   return (
     <View style={[styles.root, { backgroundColor: t.background }]}>
-      <Stack.Screen options={{ title: name ? `${name} · Calendar` : "Calendar" }} />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button
-          accessibilityLabel="Jump to today"
-          onPress={toolbarPress(() => setTodayNonce((n) => n + 1))}
-        >
-          Today
-        </Stack.Toolbar.Button>
-        <Stack.Toolbar.Menu
-          icon={layout === "month" ? ICON_VIEW_MONTH : ICON_VIEW_WEEK}
-          accessibilityLabel="Calendar span"
-        >
-          <Stack.Toolbar.Label>{layout === "month" ? "Month" : "Week"}</Stack.Toolbar.Label>
-          <Stack.Toolbar.MenuAction
-            icon={ICON_VIEW_MONTH}
-            isOn={layout === "month"}
-            onPress={toolbarPress(() => setLayout("month"))}
-          >
-            Month
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction
-            icon={ICON_VIEW_WEEK}
-            isOn={layout === "week"}
-            onPress={toolbarPress(() => setLayout("week"))}
-          >
-            Week
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
-      </Stack.Toolbar>
+      <ScreenChrome
+        title={name ? `${name} · Calendar` : "Calendar"}
+        right={[
+          { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => setTodayNonce((n) => n + 1)) },
+          {
+            kind: "menu",
+            key: "span",
+            label: "Calendar span",
+            icon: layout === "month" ? ICON_VIEW_MONTH : ICON_VIEW_WEEK,
+            // No visible text: text-labelled items can't dock into the Duo's
+            // side rail (Apple) — the icon already shows the current span.
+            actions: [
+              { label: "Month", icon: ICON_VIEW_MONTH, isOn: layout === "month", onPress: toolbarPress(() => setLayout("month")) },
+              { label: "Week", icon: ICON_VIEW_WEEK, isOn: layout === "week", onPress: toolbarPress(() => setLayout("week")) },
+            ],
+          },
+        ]}
+      />
       <CalendarView
         cards={cards}
         bottomInset={insets.bottom}
@@ -101,7 +102,7 @@ export function ProjectCalendarScreen({ nested = false }: { nested?: boolean }) 
         todayNonce={todayNonce}
         unscheduled={unscheduled}
         onReschedule={reschedule}
-        onOpenCard={(id) => router.push(cardHref(id))}
+        onOpenCard={(id) => (onOpenCard ? onOpenCard(id) : router.push(cardHref(id)))}
       />
     </View>
   );

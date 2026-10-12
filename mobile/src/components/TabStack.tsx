@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Stack , ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
 import { useColorScheme } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/theme";
 
 /**
@@ -19,6 +20,19 @@ import { useTheme } from "@/theme";
  * / white-toolbar strip is what this fixes), while the screen body stays
  * `t.background`.
  */
+/**
+ * The tab screens' content style: themed background plus horizontal safe-area
+ * insets. Horizontal insets are 0 on a portrait iPhone, but an iPhone Duo puts
+ * system chrome — status bar, nav buttons, the tab rail — along a side edge, so
+ * content must stay clear of it. Exported so a screen that overrides
+ * `contentStyle` for one layout (e.g. a split view) can restore it for another.
+ */
+export function useTabContentStyle() {
+  const t = useTheme();
+  const { left, right } = useSafeAreaInsets();
+  return { backgroundColor: t.background, paddingLeft: left, paddingRight: right };
+}
+
 export function TabStack({
   largeTitle = true,
   children,
@@ -28,17 +42,23 @@ export function TabStack({
 } = {}) {
   const scheme = useColorScheme();
   const t = useTheme();
+  const contentStyle = useTabContentStyle();
+  // With system chrome on a side edge (iPhone Duo's tab rail) a surface-coloured
+  // header stops short of the rail and reads as a stray band, so it takes the
+  // page colour there instead.
+  const { left, right } = useSafeAreaInsets();
+  const headerBackground = left > 0 || right > 0 ? t.background : t.surface;
   return (
     <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack
         screenOptions={{
           headerLargeTitle: largeTitle,
-          headerStyle: { backgroundColor: t.surface },
+          headerStyle: { backgroundColor: headerBackground },
           headerLargeTitleStyle: { color: t.textPrimary },
           headerTitleStyle: { color: t.textPrimary },
           headerTintColor: t.accent,
           headerShadowVisible: false,
-          contentStyle: { backgroundColor: t.background },
+          contentStyle,
         }}
       >
         {children}

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { Check } from "lucide-react-native";
+import { ModalSafeView } from "@/components/ModalSafeView";
 import { PressableScale } from "@/components/PressableScale";
 import { haptics } from "@/haptics";
 import {
@@ -31,6 +32,7 @@ export default function AppearanceSettingsScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
+    <ModalSafeView backgroundColor={t.surface}>
     <ScrollView
       style={styles.flex}
       contentContainerStyle={styles.body}
@@ -109,6 +111,7 @@ export default function AppearanceSettingsScreen() {
         </View>
       </View>
     </ScrollView>
+    </ModalSafeView>
   );
 }
 

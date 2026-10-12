@@ -1,13 +1,15 @@
 import { useCallback, useState } from "react";
-import { View, Text, FlatList, StyleSheet, RefreshControl } from "react-native";
+import { Platform, View, Text, FlatList, StyleSheet, RefreshControl, useWindowDimensions } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
 import { getActiveSourceName } from "@/db";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
+import { useTabContentStyle } from "@/components/TabStack";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { ProjectsSplitView, resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
 import { ICON_SETTINGS } from "@/components/toolbar-icons";
@@ -16,9 +18,14 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
 import { useTheme, elevation, type as typeScale } from "@/theme";
 
+const SPLIT_MIN_WIDTH = 700;
+
 export default function ProjectsScreen() {
   const router = useRouter();
   const t = useTheme();
+  const { width } = useWindowDimensions();
+  const contentStyle = useTabContentStyle();
+  const split = width >= SPLIT_MIN_WIDTH;
   const syncBadge = useSyncBadge();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   // The active workspace name doubles as the header title; it changes when the
@@ -36,6 +43,13 @@ export default function ProjectsScreen() {
   }, []);
   useRefreshOnFocus(load);
   const [refreshing, setRefreshing] = useState(false);
+  // SPIKE (continuity): the sidebar owns workspace switching now (the narrow
+  // header is gone on iOS) — reset the selection out from under the old
+  // workspace's data, then reload.
+  const onWorkspaceSwitched = useCallback(() => {
+    resetProjectsSelection();
+    load();
+  }, [load]);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     haptics.selection();
@@ -48,7 +62,9 @@ export default function ProjectsScreen() {
 
   const header = (
     <>
-      <Stack.Screen options={{ title: workspaceName ?? "Projects" }} />
+      {/* Set explicitly: Stack.Screen options persist, so the split layout's
+          overrides would otherwise stick after folding back to narrow. */}
+      <Stack.Screen options={{ title: workspaceName ?? "Projects", headerShown: true, contentStyle }} />
       <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...syncBadge} />
@@ -64,7 +80,9 @@ export default function ProjectsScreen() {
   if (!loaded) {
     return (
       <TabScreen>
-        {header}
+        {/* Not when wide: the split view sets its own header items, and these
+            unmounting after it mounts would clear them. */}
+        {split ? null : header}
         <SkeletonList count={6} />
       </TabScreen>
     );
@@ -80,6 +98,15 @@ export default function ProjectsScreen() {
         />
       </TabScreen>
     );
+  }
+
+  // SPIKE: on iOS the Projects tab is always one adaptive split view (which
+  // sets up the stack header itself and drops TabStack's side-inset padding —
+  // SwiftUI owns it). It collapses to a single column when compact, so
+  // fold/unfold morphs instead of remounting. Other platforms keep the old
+  // width-switched behavior.
+  if (Platform.OS === "ios" || split) {
+    return <ProjectsSplitView projects={projects} workspaceName={workspaceName ?? "Projects"} onWorkspaceSwitched={onWorkspaceSwitched} />;
   }
 
   return (
