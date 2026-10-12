@@ -8,8 +8,8 @@
  * placeholders until requested, which gives lazy download for free, and a file
  * only appears materialised once complete (so no partial-read hazard here).
  *
- * This module reads that store; it never writes to it (phone-originated
- * images are a separate follow-up).
+ * This module only READS that store (lookup, URIs, download requests); images
+ * added on the phone are written by notes/insert-image.ts.
  */
 
 import { readDir, startDownloadingUbiquitousItem, PathUtils } from "react-native-cloud-store";

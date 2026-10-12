@@ -109,13 +109,17 @@ export function useNoteFormattingToolbar(body: string, setBody: (next: string) =
 
   // Add an image (library / camera / clipboard) and embed it at the caret.
   const [imageBusy, setImageBusy] = useState(false);
+  // The picker/camera/upload take seconds and the editor stays editable, so the
+  // embed must be spliced into the LATEST body, not the one captured on press.
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
   const insertImage = useCallback(
     async (source: ImageSource) => {
       setImageBusy(true);
       try {
         const embed = await addImageFromSource(source);
         if (!embed) return; // cancelled
-        const res = insertEmbedAtSelection(body, selectionRef.current, embed);
+        const res = insertEmbedAtSelection(bodyRef.current, selectionRef.current, embed);
         setBody(res.text);
         selectionRef.current = res.selection;
         setSelection(res.selection);
@@ -128,7 +132,7 @@ export function useNoteFormattingToolbar(body: string, setBody: (next: string) =
         setImageBusy(false);
       }
     },
-    [body, setBody],
+    [setBody],
   );
 
   const onInsertImage = useCallback(async () => {

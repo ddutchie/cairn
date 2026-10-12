@@ -103,6 +103,23 @@ describe("attachment sync", () => {
     expect(again.attachments?.fetched).toBe(0);
   });
 
+  it("treats a same-size, different-content local file as a collision, not as equal", async () => {
+    await tick(a);
+    const sameSize = Buffer.from("X".repeat(PNG_A.length));
+    expect(sameSize.length).toBe(PNG_A.length);
+    fs.writeFileSync(path.join(b.ws, "attachments", "pic.png"), sameSize);
+    const rb = await tick(b);
+    expect(rb.attachments?.collisions).toBe(1);
+    expect(fs.readFileSync(path.join(b.ws, "attachments", "pic.png"))).toEqual(sameSize); // untouched
+    expect(fs.readFileSync(path.join(b.ws, "attachments", `pic-${sha(PNG_A).slice(0, 8)}.png`))).toEqual(PNG_A);
+  });
+
+  it("leaves no temp files behind in the sync folder", async () => {
+    await tick(a);
+    const left = fs.readdirSync(path.join(folder, blobsDirName("ws1"))).filter((f) => f.endsWith(".tmp"));
+    expect(left).toEqual([]);
+  });
+
   it("refuses a blob whose bytes don't match the manifest hash", async () => {
     await tick(a);
     fs.writeFileSync(path.join(folder, blobsDirName("ws1"), `${sha(PNG_A)}.png`), Buffer.from("truncated"));

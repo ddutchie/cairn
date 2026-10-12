@@ -19,6 +19,13 @@ export function SyncedImage({ name }: { name: string }) {
   const [uri, setUri] = useState<string | null>(() => resolveEmbedUri(name));
   const [ratio, setRatio] = useState(1.5);
 
+  // The component can be reused for a different embed (list recycling, edits):
+  // re-resolve whenever the name changes instead of keeping the old image.
+  useEffect(() => {
+    setUri(resolveEmbedUri(name));
+    setRatio(1.5);
+  }, [name]);
+
   useEffect(() => {
     if (uri) return;
     let polls = 0;

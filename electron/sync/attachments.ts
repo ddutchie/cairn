@@ -19,7 +19,6 @@
  */
 
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { createHash } from "crypto";
 import type Database from "better-sqlite3";
@@ -37,6 +36,8 @@ import {
 import { findAttachmentFile, resolveAttachmentDir } from "../host-shared/attachment-dir";
 
 const SCAN_KEY = "attachments_scan_at";
+/** local path → "size:mtime:hash" of files already verified equal to their manifest row. */
+const verifiedLocal = new Map<string, string>();
 /** Cap blob copies per tick so a huge first sync can't monopolise the main loop. */
 const MAX_COPIES_PER_TICK = 200;
 
@@ -68,17 +69,24 @@ function setState(db: Database.Database, key: string, value: string): void {
   ).run(key, value);
 }
 
-/** Write bytes to `target` without exposing a half-written file to a cloud provider. */
+/**
+ * Write bytes to `target` without ever exposing a half-written file to a cloud
+ * provider. The temp file lives in the TARGET's directory so the rename is
+ * atomic on every volume (a temp dir on another volume would force a direct
+ * write, which iCloud/Dropbox can upload mid-write — and blobs are write-once,
+ * so a partial upload would stay stuck). Leading dot + `.tmp` keeps it out of
+ * the way of readers, which only look for `<sha256>.<ext>` names.
+ */
 async function writeFileStaged(target: string, buf: Buffer): Promise<void> {
-  await fs.promises.mkdir(path.dirname(target), { recursive: true });
-  const tmp = path.join(os.tmpdir(), `cairn-att-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tmp`);
+  const dir = path.dirname(target);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const tmp = path.join(dir, `.cairn-att-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tmp`);
   await fs.promises.writeFile(tmp, buf);
   try {
     await fs.promises.rename(tmp, target);
-  } catch {
-    // Cross-volume rename (temp dir vs sync/workspace folder): copy in place.
-    await fs.promises.writeFile(target, buf);
+  } catch (err) {
     try { await fs.promises.unlink(tmp); } catch { /* best effort */ }
+    throw err;
   }
 }
 
@@ -202,10 +210,21 @@ export async function fetchBlobs(
     const local = findAttachmentFile(workspacePath, row.name);
     let targetName = row.name;
     if (local) {
-      // Cheap equality first: same size → treat as the same file.
+      // Size is only a fast NEGATIVE check — equal sizes are common (fixed-size
+      // screenshots), so a match still needs the hash. Verified files are
+      // remembered by (size, mtime) so an idle tick doesn't re-read every image.
       try {
-        if ((await fs.promises.stat(local)).size === row.size) continue;
-        if (sha256(await fs.promises.readFile(local)) === row.hash) continue;
+        const st = await fs.promises.stat(local);
+        if (st.size === row.size) {
+          const stamp = `${st.size}:${st.mtimeMs}:${row.hash}`;
+          if (verifiedLocal.get(local) === stamp) continue;
+          if (sha256(await fs.promises.readFile(local)) === row.hash) {
+            verifiedLocal.set(local, stamp);
+            continue;
+          }
+        } else if (sha256(await fs.promises.readFile(local)) === row.hash) {
+          continue; // identical bytes under a stale manifest size
+        }
       } catch {
         continue;
       }
