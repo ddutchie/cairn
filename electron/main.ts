@@ -521,7 +521,7 @@ app.whenReady().then(async () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const desktopSync = require("./sync/desktop-sync");
   const drainDesktop: (db: unknown) => number = desktopSync.drainDesktop;
-  const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => Promise<{ seeded: number; drained: number; peerOpsApplied: number; peerOpsRead: number; conflictCopies: number; connected: boolean }> = desktopSync.syncDesktop;
+  const syncDesktop: (db: unknown, projectNote?: (noteId: string, op: "put" | "delete") => void) => Promise<{ seeded: number; drained: number; peerOpsApplied: number; peerOpsRead: number; conflictCopies: number; connected: boolean; attachments?: { registered: number; published: number; fetched: number; pending: number; collisions: number } }> = desktopSync.syncDesktop;
   const getSyncFolder: (db: unknown) => string | null = desktopSync.getSyncFolder;
   const setSyncStatusListener: (fn: ((s: SyncStatus) => void) | null) => void = desktopSync.setSyncStatusListener;
   const refreshSyncStatus: (db: unknown) => void = desktopSync.refreshSyncStatus;
@@ -563,6 +563,7 @@ app.whenReady().then(async () => {
   // Register once so both the periodic loop and the manual sync:now IPC handler
   // re-emit .md files for inbound note changes.
   desktopSync.setNoteFileProjector(projectNoteToDisk);
+  desktopSync.setAttachmentWorkspaceProvider(() => ctx.workspacePath);
 
   // Clean up NESTED conflict-copy junk (`…_conflict_…_conflict_…`) left by the
   // old "conflict copy of a conflict copy" bug — an exploding pile that churned
@@ -649,6 +650,10 @@ app.whenReady().then(async () => {
       // Only log when something real happened (seeded / sent / actually applied).
       // A converged sync that merely READS the peer snapshot (peerOpsRead > 0 but
       // peerOpsApplied === 0) is silent — that steady read is normal, not a loop.
+      const att = r.attachments;
+      if (att && (att.registered || att.published || att.fetched || att.collisions)) {
+        console.log(`[sync] ${reason}: attachments registered=${att.registered} published=${att.published} fetched=${att.fetched} pending=${att.pending} collisions=${att.collisions}`);
+      }
       if (r.seeded || r.drained || r.peerOpsApplied) {
         console.log(`[sync] ${reason}: seeded=${r.seeded} sent=${r.drained} applied=${r.peerOpsApplied} (read=${r.peerOpsRead}) conflicts=${r.conflictCopies}`);
         // If peers changed our data, tell the renderer to re-hydrate.

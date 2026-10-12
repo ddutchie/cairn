@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   preprocessCairnMarkdown,
   noteTitleFromUrl,
+  embedNameFromUrl,
   cardIdFromUrl,
   CAIRN_NOTE_SCHEME,
   CAIRN_CARD_SCHEME,
@@ -79,5 +80,25 @@ describe("noteTitleFromUrl / cardIdFromUrl", () => {
   it("returns null for an external URL", () => {
     expect(noteTitleFromUrl("https://example.com")).toBeNull();
     expect(cardIdFromUrl("https://example.com")).toBeNull();
+  });
+});
+
+describe("preprocessCairnMarkdown image embeds", () => {
+  it("keeps the placeholder for embeds by default", () => {
+    expect(preprocessCairnMarkdown("![[a b.png]]")).toBe("_(embed: a b.png)_");
+  });
+
+  it("rewrites image embeds to a resolvable cairn://embed/ image when asked", () => {
+    const out = preprocessCairnMarkdown("see ![[my pic.png|300]] ok", undefined, { imageEmbeds: true });
+    expect(out).toBe("see ![my pic.png](cairn://embed/my%20pic.png) ok");
+  });
+
+  it("leaves non-image embeds (pdf, notes) as placeholders", () => {
+    expect(preprocessCairnMarkdown("![[doc.pdf]]", undefined, { imageEmbeds: true })).toBe("_(embed: doc.pdf)_");
+  });
+
+  it("round-trips the embed name through embedNameFromUrl", () => {
+    expect(embedNameFromUrl("cairn://embed/my%20pic.png")).toBe("my pic.png");
+    expect(embedNameFromUrl("https://x/y.png")).toBeNull();
   });
 });

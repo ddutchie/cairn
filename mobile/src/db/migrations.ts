@@ -176,6 +176,25 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
       "UPDATE sync_oplog SET payload = json_remove(payload, '$.content_text') WHERE entity = 'notes' AND op = 'put' AND payload IS NOT NULL AND json_valid(payload)",
     );
   },
+  // v9: attachment manifest (image sync, protocol 4). Fresh installs have it from
+  // the base schema; this back-fills existing installs. Capture triggers come
+  // free from SYNCABLE_TABLES (MOBILE_TRIGGERS_SQL runs on every launch).
+  (db) =>
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS attachments (
+        id           TEXT NOT NULL PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        hash         TEXT NOT NULL,
+        name         TEXT NOT NULL,
+        ext          TEXT NOT NULL,
+        size         INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL,
+        hlc          TEXT,
+        deleted_at   TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_attachments_name ON attachments(workspace_id, name);
+    `),
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */
