@@ -31,6 +31,7 @@ import { ChevronLeft, ChevronRight ,
   Code2,
   Minus,
   Link2,
+  ImagePlus,
   RefreshCw,
   AlignLeft,
   Expand,
@@ -191,7 +192,12 @@ export function NoteEditorToolbar({
   loading,
   onDismiss,
   bottomInset = 0,
+  onInsertImage,
+  imageBusy = false,
 }: {
+  /** When provided, shows an "Add image" button (library / camera / paste). */
+  onInsertImage?: () => void;
+  imageBusy?: boolean;
   onFormat: (action: FormatAction) => void;
   onAction: (action: AITextAction, customPrompt?: string) => void;
   hasSelection: boolean;
@@ -327,6 +333,25 @@ export function NoteEditorToolbar({
             })}
           </View>
         ))}
+        {onInsertImage && (
+          <View style={styles.group}>
+            <View style={styles.divider} />
+            <Pressable
+              disabled={imageBusy}
+              onPress={onInsertImage}
+              style={[styles.fmtBtn, imageBusy && styles.disabled]}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel="Add image"
+            >
+              {imageBusy ? (
+                <ActivityIndicator size="small" color={t.textTertiary} />
+              ) : (
+                <ImagePlus size={ICON} color={t.textSecondary} />
+              )}
+            </Pressable>
+          </View>
+        )}
       </ScrollAffordanceRow>
     </Animated.View>
   );

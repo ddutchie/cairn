@@ -137,11 +137,16 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * kept every divergent body, even when the put was older than the delete,
  * which made every offline checkbox toggle look like a conflict.
  *
+ * Protocol 4 (image sync release): added the `attachments` manifest entity
+ * (image sync). An older peer ignores the unknown entity and stays convergent,
+ * but cannot publish or fetch images — stamping it `behind` surfaces the
+ * "device needs updating" hint so a missing image has an explanation.
+ *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from
  * which optional fields happen to be present.
  */
-export const SYNC_PROTOCOL_VERSION = 3;
+export const SYNC_PROTOCOL_VERSION = 4;
 
 /** sync_state key prefix for the highest protocol version seen from a peer. */
 const PEER_PROTOCOL_PREFIX = "peer_protocol:";

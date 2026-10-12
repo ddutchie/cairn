@@ -28,6 +28,20 @@ export const EMBED_RE = /!\[\[([^\][\n]+?)\]\]/g;
 /** Scheme used for internal note navigation (intercepted by onLinkPress). */
 export const CAIRN_NOTE_SCHEME = "cairn://note/";
 
+/** Scheme for an image embed the mobile renderer resolves from synced attachments. */
+export const CAIRN_EMBED_SCHEME = "cairn://embed/";
+const IMAGE_EMBED_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
+
+/** If an image URL is a synced-attachment embed, return the decoded filename. */
+export function embedNameFromUrl(url: string): string | null {
+  if (!url.startsWith(CAIRN_EMBED_SCHEME)) return null;
+  try {
+    return decodeURIComponent(url.slice(CAIRN_EMBED_SCHEME.length));
+  } catch {
+    return url.slice(CAIRN_EMBED_SCHEME.length);
+  }
+}
+
 /** Scheme used for internal card/task navigation (intercepted by onLinkPress). */
 export const CAIRN_CARD_SCHEME = "cairn://task/";
 
@@ -67,12 +81,28 @@ export function parseCalloutHeader(firstLine: string): CalloutMeta | null {
  * `cairn://note/` URL (tap-time resolution). Without `resolve`, every wikilink
  * uses the title-encoded note form.
  */
-export function preprocessCairnMarkdown(src: string, resolve?: WikilinkResolver): string {
+export function preprocessCairnMarkdown(
+  src: string,
+  resolve?: WikilinkResolver,
+  opts?: { imageEmbeds?: boolean },
+): string {
   if (!src) return "";
   let out = src;
 
-  // ![[embed]] -> italic placeholder (binary assets are out of the mobile MVP).
-  out = out.replace(EMBED_RE, (_all, target: string) => `_(embed: ${target.trim()})_`);
+  // ![[embed]] -> italic placeholder, except (with `imageEmbeds`) image embeds,
+  // which become a standard image whose URL the renderer resolves against the
+  // synced attachment store (cairn://embed/<name>).
+  out = out.replace(EMBED_RE, (_all, target: string) => {
+    const inner = target.trim();
+    if (opts?.imageEmbeds) {
+      const name = inner.split("|")[0].split("#")[0].trim();
+      if (IMAGE_EMBED_EXT_RE.test(name)) {
+        const alt = name.replace(/[[\]]/g, "");
+        return `![${alt}](${CAIRN_EMBED_SCHEME}${encodeURIComponent(name)})`;
+      }
+    }
+    return `_(embed: ${inner})_`;
+  });
 
   // [[Title]] -> [label](cairn://note|task/<id or encoded title>)
   out = out.replace(WIKILINK_RE, (_all, title: string) => {
@@ -190,4 +220,24 @@ export function toggleCheckboxInSource(source: string, index: number): string {
   });
 
   return changed ? lines.join("\n") : source;
+}
+
+/**
+ * Split off a leading `# Title` heading that merely repeats the note's own title.
+ * Many notes (Obsidian imports, markdown exported from elsewhere) open with an H1
+ * equal to the title; a screen that already shows the title as a heading would
+ * then show it twice. `prefix` is the removed text (heading line plus following
+ * blank lines, "" when nothing matched) so a caller that edits the rendered body
+ * (e.g. toggling a checkbox) can write `prefix + edited` back without losing it.
+ */
+export function splitLeadingTitleHeading(
+  content: string | null | undefined,
+  title: string | null | undefined,
+): { prefix: string; body: string } {
+  const src = content ?? "";
+  const t = (title ?? "").trim().toLowerCase();
+  if (!t) return { prefix: "", body: src };
+  const m = /^(\s*\n)*#[ \t]+(.+?)[ \t]*#*[ \t]*(\r?\n|$)(\s*\n)*/.exec(src);
+  if (!m || m[2].trim().toLowerCase() !== t) return { prefix: "", body: src };
+  return { prefix: m[0], body: src.slice(m[0].length) };
 }

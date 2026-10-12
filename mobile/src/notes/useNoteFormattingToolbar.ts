@@ -1,9 +1,15 @@
-import { useCallback, useRef, useState } from "react";
-import { Alert, type TextInputSelectionChangeEvent } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActionSheetIOS, Alert, Platform, type TextInputSelectionChangeEvent } from "react-native";
 import { useRouter } from "expo-router";
-import { applyFormat, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
+import { applyFormat, insertEmbedAtSelection, insertWikilink, type FormatAction, type Selection } from "@cairn/shared/notes/format";
 import { buildAIActionPrompt, type AITextAction } from "@cairn/shared/notes/ai-actions";
 import { runTextAction } from "@/chat/agent";
+import {
+  addImageFromSource,
+  clipboardHasImage,
+  InsertImageError,
+  type ImageSource,
+} from "@/notes/insert-image";
 import { newSheetResultKey, registerSheetResult } from "@/lib/sheet-result";
 
 /**
@@ -101,9 +107,63 @@ export function useNoteFormattingToolbar(body: string, setBody: (next: string) =
     [body, setBody],
   );
 
+  // Add an image (library / camera / clipboard) and embed it at the caret.
+  const [imageBusy, setImageBusy] = useState(false);
+  // The picker/camera/upload take seconds and the editor stays editable, so the
+  // embed must be spliced into the LATEST body, not the one captured on press.
+  const bodyRef = useRef(body);
+  useEffect(() => {
+    bodyRef.current = body;
+  }, [body]);
+  const insertImage = useCallback(
+    async (source: ImageSource) => {
+      setImageBusy(true);
+      try {
+        const embed = await addImageFromSource(source);
+        if (!embed) return; // cancelled
+        const res = insertEmbedAtSelection(bodyRef.current, selectionRef.current, embed);
+        setBody(res.text);
+        selectionRef.current = res.selection;
+        setSelection(res.selection);
+      } catch (e) {
+        Alert.alert(
+          "Couldn't add image",
+          e instanceof InsertImageError ? e.message : "Something went wrong. Try again.",
+        );
+      } finally {
+        setImageBusy(false);
+      }
+    },
+    [setBody],
+  );
+
+  const onInsertImage = useCallback(async () => {
+    const canPaste = await clipboardHasImage();
+    const options: { label: string; source: ImageSource }[] = [
+      { label: "Photo Library", source: "library" },
+      { label: "Take Photo", source: "camera" },
+      ...(canPaste ? [{ label: "Paste Image", source: "clipboard" as const }] : []),
+    ];
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: [...options.map((o) => o.label), "Cancel"], cancelButtonIndex: options.length },
+        (i) => {
+          if (i < options.length) void insertImage(options[i].source);
+        },
+      );
+    } else {
+      Alert.alert("Add image", undefined, [
+        ...options.map((o) => ({ text: o.label, onPress: () => void insertImage(o.source) })),
+        { text: "Cancel", style: "cancel" as const },
+      ]);
+    }
+  }, [insertImage]);
+
   return {
     selection,
     hasSelection,
+    imageBusy,
+    onInsertImage,
     aiLoading,
     onSelectionChange,
     onFormat,

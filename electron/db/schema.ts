@@ -1608,6 +1608,52 @@ const MIGRATIONS: Migration[] = [
     if (moved > 0) console.warn(`[schema] v61: moved ${moved} card(s) back onto their own project's board`);
     if (moved < stray.length) console.warn(`[schema] v61: ${stray.length - moved} card(s) have no column in their own project`);
   },
+
+  // v62: attachment manifest (Device Sync, protocol 4). One row per (content
+  // hash, embed name) so a peer that receives `![[photo.png]]` in a note can map
+  // the name to the content-addressed blob in the sync folder
+  // (shared/sync/attachments.ts). The bytes themselves never enter the oplog.
+  // Syncable like every other table: hlc/deleted_at plus the standard capture
+  // triggers. No FK to workspaces so replay order can never reject a row.
+  // Rows are registered by electron/sync/attachments.ts during each sync tick,
+  // which also covers pre-existing images (first scan walks every note).
+  (db) => {
+    const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS attachments (
+        id           TEXT NOT NULL PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        hash         TEXT NOT NULL,
+        name         TEXT NOT NULL,
+        ext          TEXT NOT NULL,
+        size         INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL,
+        hlc          TEXT,
+        deleted_at   TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_attachments_name ON attachments(workspace_id, name);
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_attachments_ins AFTER INSERT ON attachments
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('attachments', NEW.id, 'put');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_attachments_upd AFTER UPDATE ON attachments
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op)
+        VALUES ('attachments', NEW.id, CASE WHEN NEW.deleted_at IS NOT NULL THEN 'delete' ELSE 'put' END);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_sync_attachments_del AFTER DELETE ON attachments
+      WHEN ${suppressGuard}
+      BEGIN
+        INSERT INTO sync_pending (entity, entity_id, op) VALUES ('attachments', OLD.id, 'delete');
+      END;
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

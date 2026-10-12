@@ -46,3 +46,14 @@ export async function getSyncFolderPath(): Promise<string | null> {
 export function syncFolderLabel(): string {
   return "iCloud Drive › Cairn › sync";
 }
+
+/**
+ * Synchronous path of the sync folder (same location getSyncFolderPath()
+ * resolves, without the async existence check) — for render-time lookups of
+ * synced attachment files. Null when iCloud isn't available.
+ */
+export function syncFolderPathSync(): string | null {
+  const container = defaultICloudContainerPath;
+  if (!container) return null;
+  return PathUtils.join(PathUtils.join(container, "Documents"), SYNC_SUBDIR);
+}

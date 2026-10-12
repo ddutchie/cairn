@@ -104,3 +104,6 @@ scripts/runtime-baselines/
 # Demo recording pass logs
 /ffmpeg2pass-0.log
 /ffmpeg2pass-0.log.mbtree
+
+# private planning notes (not published)
+/docs/private/

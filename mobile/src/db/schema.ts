@@ -132,6 +132,23 @@ CREATE TABLE IF NOT EXISTS user_style (
   deleted_at   TEXT
 );
 
+-- Attachment manifest, synced from desktop (one row per content hash + embed
+-- name; see shared/sync/attachments.ts). The bytes live in the iCloud sync
+-- folder under blobs-<workspaceId>/<hash>.<ext>, never in the DB.
+CREATE TABLE IF NOT EXISTS attachments (
+  id           TEXT NOT NULL PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  hash         TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  ext          TEXT NOT NULL,
+  size         INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  hlc          TEXT,
+  deleted_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_name ON attachments(workspace_id, name);
+
 CREATE TABLE IF NOT EXISTS chat_threads (
   id           TEXT PRIMARY KEY,
   scope        TEXT NOT NULL DEFAULT 'workspace',
