@@ -235,14 +235,19 @@ own coordinates — null once the container already sits below it).
   stacked, the pane sits above the crease and the screen body below it (a column
   instead of a row; the pane animates its height). Header treatment matches the
   wide case. The keyboard is the whole flat half, so a stacked chat would sit
-  behind it: while the chat's own input is focused `topHalfColumns` rearranges
-  the top half into chat (left, full height — its composer rises to the crease)
-  and preview (right ~55%), same views so nothing remounts. While the note is
-  being edited instead, the chat composer `hidden`s (it would float over the
-  editor). Keyboard lift is `never` throughout the stacked layout. With a preview
-  stacked, the header's context ring and clear-chat button step aside (the pane's
-  ✕ sits under the ring and the ring swallowed its taps) and move to the left of
-  the input bar via the composer's `leading` slot.
+  behind it: while the chat's own input is focused `collapsePane` slides the pane
+  shut (it stays mounted at full size, only its clipping frame shrinks, so an
+  unsaved note edit survives and nothing re-lays out) and the chat fills the top
+  half with its composer on the crease; it re-expands when the keyboard goes. While
+  the note is being edited instead, the chat composer `hidden`s (it would float over
+  the editor). Keyboard lift is `never` throughout the stacked layout. With a
+  preview open the header's context ring and clear-chat button step aside (the
+  pane's ✕ sits under the ring and the ring swallowed its taps) and go into a small
+  glass capsule at the bottom-left, on the tab bar's row in the room beside it —
+  except while typing, when the pane is slid away and they return to the header.
+  The ring's popover opens upward from the capsule. (The ring is a native
+  `matchContents` host — leave it self-sizing in a centred RN slot: a fixed-size
+  host pins its SwiftUI content to the top-left.)
 - **Calendar**: the grid flexes down to the crease; the bottom band (selected-day
   list + Unscheduled tray) is sized to the flat half.
 - Projects (split view) is system-managed; Graph and Overview — see the survey.

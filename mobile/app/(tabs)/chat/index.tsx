@@ -14,7 +14,7 @@ import { Settings2, Trash2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
-import { useTheme, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
+import { useTheme, withAlpha, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
 import { saveChatMessage, clearChatHistory, loadLastChatUsage, saveLastChatUsage, recordChatUsage, type ToolCall } from "@/db/chat-store";
@@ -27,6 +27,7 @@ import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/c
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import { type UIMessage, type ChatUsage, msgId } from "@/chat/providers/types";
 import { ContextRing } from "@/components/ContextRing";
+import { Glass } from "@/components/chat/attachment-panel/glass";
 import { toolRef } from "@cairn/shared/chat/tool-ref";
 import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, type UiMessage } from "@/chat/history";
@@ -133,10 +134,10 @@ export default function ChatScreen() {
   // upright top half; the composer and tab pill sit on the flat bottom half.
   const topHalf = useTopHalf();
   // With a preview stacked above the chat, the keyboard (the whole flat half)
-  // belongs to whichever input is focused. Typing in the chat morphs the top half
-  // into two columns — chat left, preview right — so the conversation stays
-  // visible with its composer on the crease; while the note is being edited the
-  // composer hides instead of riding up over the editor.
+  // belongs to whichever input is focused. Typing in the chat slides the preview
+  // away (it stays mounted, drafts intact) so the conversation fills the top half
+  // with its composer on the crease; while the note is being edited instead, the
+  // composer hides rather than riding up over the editor.
   const keyboardVisible = useKeyboardState((s) => s.isVisible);
   const [inputFocused, setInputFocused] = useState(false);
   const hideComposer = sp.stacked && sp.preview != null && keyboardVisible && !inputFocused;
@@ -145,7 +146,7 @@ export default function ChatScreen() {
   // since the composer rises onto it and the keyboard takes the flat half.
   const confined = topHalf.before != null && (inputFocused || keyboardVisible);
   const keyboardHeight = useKeyboardState((s) => s.height);
-  // Once the fold layout has stopped moving (focus, columns, keyboard), put the
+  // Once the fold layout has stopped moving (focus, pane collapse, keyboard), put the
   // latest message back at the end — if the user was following it.
   const foldLayoutKey = `${confined}|${sp.stacked && inputFocused}|${Math.round(topHalf.before ?? -1)}`;
   useEffect(() => {
@@ -164,7 +165,7 @@ export default function ChatScreen() {
   useEffect(() => {
     const overlap = Math.max(0, keyboardHeight + KEYBOARD_OPEN_GAP + composerHeight - topHalf.gap);
     // Instant, not eased: an animated inset runs in parallel with the layout
-    // switch (columns / confined area) and the scroll-to-end, and the transcript
+    // switch (pane collapse / confined area) and the scroll-to-end, and the transcript
     // visibly slides out of view before settling.
     topHalfPadding.set(inputFocused ? overlap + 12 : 0);
   }, [inputFocused, keyboardHeight, composerHeight, topHalf.gap, topHalfPadding]);
@@ -441,22 +442,37 @@ export default function ChatScreen() {
       />
     ) : null;
   const contextRing = renderContextRing("top");
-  // Stacked under a preview the header's buttons have stepped aside (its bar is
-  // the preview's), so the ring and clear-chat go to the left of the input bar.
-  const composerTools =
-    sp.stacked && sp.preview != null && messages.length > 0 ? (
-      <View style={styles.composerTools}>
-        {renderContextRing("bottom")}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Clear chat"
-          hitSlop={8}
-          disabled={busy}
-          onPress={onClear}
-          style={[styles.composerToolBtn, busy && { opacity: 0.4 }]}
-        >
-          <Trash2 size={18} color={t.textSecondary} />
-        </Pressable>
+  // With a preview open the header's buttons have stepped aside (its bar is the
+  // preview's), so the context ring and clear-chat sit left of the input bar. The
+  // ring's popover opens upward: the composer is at the bottom of the screen/half.
+  // While typing the preview is slid away, so the header is free again: the ring
+  // and clear-chat return there as header items instead of sitting by the input.
+  const typingCollapsed = sp.stacked && sp.preview != null && inputFocused;
+  const showHeaderTools = sp.showToolbar || typingCollapsed;
+  // Stacked under a preview (not typing), the header's buttons have stepped aside
+  // and the input bar is no place for them: a small glass capsule on the tab bar's
+  // row, in the room beside it, carries the context ring and clear-chat. The ring's
+  // popover opens upward from there.
+  const toolsPill =
+    sp.stacked && sp.preview != null && !inputFocused && !keyboardVisible && messages.length > 0 ? (
+      <View pointerEvents="box-none" style={styles.toolsPillWrap}>
+        <Glass radius={24} interactive={false} fallbackTint={withAlpha(t.surface2, 0.92)} style={styles.toolsPill}>
+          <View style={styles.composerTools}>
+            {/* The ring is a native matchContents host: a fixed-size host pins its
+                SwiftUI content top-left, so let the slot centre the measured one. */}
+            <View style={styles.composerToolSlot}>{renderContextRing("bottom")}</View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear chat"
+              hitSlop={8}
+              disabled={busy}
+              onPress={onClear}
+              style={[styles.composerToolBtn, busy && { opacity: 0.4 }]}
+            >
+              <Trash2 size={18} color={t.textSecondary} />
+            </Pressable>
+          </View>
+        </Glass>
       </View>
     ) : null;
 
@@ -469,13 +485,13 @@ export default function ChatScreen() {
           // reports usage (Apple real, OpenAI real, Rork estimated). Not while a
           // preview is open: its own bar owns the rail, and stacked above the chat
           // the pane's ✕ sits exactly where the ring would, which then swallows taps.
-          headerLeft: contextRing && sp.preview == null ? () => contextRing : undefined,
+          headerLeft: contextRing && showHeaderTools ? () => contextRing : undefined,
         }}
       />
       {/* While a preview is open its own bar is the rail's: the chat's items
           would stack a second column of buttons beside it (and, folded, keep
           the chat's header up over a chat that isn't showing). */}
-      {sp.showToolbar ? (
+      {showHeaderTools ? (
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
           icon={ICON_DELETE}
@@ -495,7 +511,7 @@ export default function ChatScreen() {
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills
           the window, unfolded it sits beside the chat. Android keeps the route path. */}
-      <SidePreviewLayout state={sp} bodyStyle={{ backgroundColor: t.chatBg }} topHalfColumns={inputFocused}>
+      <SidePreviewLayout state={sp} bodyStyle={{ backgroundColor: t.chatBg }} collapsePane={inputFocused}>
       <View style={{ flex: 1 }} onLayout={topHalf.onLayout}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
@@ -619,7 +635,6 @@ export default function ChatScreen() {
             followEnd();
           }}
           onInputBlur={() => setInputFocused(false)}
-          leading={composerTools}
           hidden={hideComposer}
           closedLift={closedLift}
           onLayoutHeight={(h) => {
@@ -637,6 +652,7 @@ export default function ChatScreen() {
           existingCount={attachments.length}
           onAddAttachments={onAddAttachments}
         />
+        {toolsPill}
       </View>
       </SidePreviewLayout>
     </TabScreen>
@@ -664,8 +680,13 @@ function makeStyles(t: Theme) {
       borderRadius: 12,
     },
     configureBtnText: { ...typeScale.control, color: t.accentFg },
-    composerTools: { flexDirection: "row", alignItems: "center", gap: 10, marginLeft: 6 },
-    composerToolBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+    // On the tab pill's row, left of it: raised to the pill's vertical centre (the
+    // container's bottom edge sits below it) and inset from the display's corner.
+    toolsPillWrap: { position: "absolute", left: 16, bottom: 26 },
+    toolsPill: { height: 48, paddingHorizontal: 10, justifyContent: "center", overflow: "hidden" },
+    composerTools: { flexDirection: "row", alignItems: "center", gap: 4, height: 32 },
+    composerToolSlot: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+    composerToolBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
     queuedRow: { alignItems: "flex-end", gap: 3, marginBottom: 14 },
     queuedBubble: {
       maxWidth: "90%",

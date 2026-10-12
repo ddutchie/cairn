@@ -151,18 +151,17 @@ export function SidePreviewLayout({
   children,
   bodyStyle,
   onChanged,
-  topHalfColumns = false,
+  collapsePane = false,
 }: {
   state: SidePreviewState;
   children: ReactNode;
   /**
-   * Laptop pose, stacked: arrange the top half as two columns — the screen on the
-   * left, the preview on the right — instead of preview-over-screen. For when the
-   * screen's own input has the keyboard (the whole flat half): the screen's
-   * composer rides up to the crease beside the preview instead of hiding behind
-   * the keys. Same views, only their arrangement changes, so nothing remounts.
+   * Laptop pose, stacked: slide the pane away (it stays mounted, so an unsaved
+   * edit survives) and give the screen the whole top half. For when the screen's
+   * own input has the keyboard — the flat half — so the screen's composer rises
+   * to the crease with its conversation above it.
    */
-  topHalfColumns?: boolean;
+  collapsePane?: boolean;
   /** Extra style for the body column (e.g. background, top padding). */
   bodyStyle?: ViewStyle | ViewStyle[];
   /** The previewed task was saved, archived or deleted. */
@@ -170,21 +169,18 @@ export function SidePreviewLayout({
 }) {
   const { preview, setPreview, fills, stacked, contentPaddingTop } = state;
   const topHalf = useTopHalf();
-  const { width } = useWindowDimensions();
   // Laptop pose: the pane takes the top half (above the crease) and the screen
-  // body the bottom half, starting just under the crease's gutter. With
-  // `topHalfColumns` the pane is the right ~55% of the top half and the body
-  // keeps the full height on the left (its composer still rises to the crease).
-  const columns = stacked && topHalfColumns && preview != null;
+  // body the bottom half, starting just under the crease's gutter. Collapsed, the
+  // body has the whole container instead.
+  const collapsed = stacked && collapsePane;
   const stackedHeight = stacked ? topHalf.before : null;
-  const stackedWidth = columns ? Math.round(width * 0.55) : width;
-  const bodyPaddingTop = stacked && preview && !columns ? FOLD_GUTTER : contentPaddingTop;
+  const bodyPaddingTop = stacked && preview && !collapsed ? FOLD_GUTTER : contentPaddingTop;
   const pane = SIDE_PREVIEW_SUPPORTED && (
     <SidePreviewPane
       preview={preview}
       fill={!state.wide && !stacked}
       stackedHeight={stackedHeight}
-      stackedWidth={stackedWidth}
+      stackedCollapsed={collapsed}
       onClose={() => setPreview(null)}
       onChanged={onChanged}
       onOpen={setPreview}
@@ -194,7 +190,7 @@ export function SidePreviewLayout({
     <SidePreviewProvider value={SIDE_PREVIEW_SUPPORTED ? setPreview : null}>
       <View
         onLayout={topHalf.onLayout}
-        style={[styles.row, stacked && (columns ? styles.columnsReverse : styles.column)]}
+        style={[styles.row, stacked && styles.column]}
       >
         {stacked && pane}
         <View style={[{ flex: 1, paddingTop: bodyPaddingTop }, bodyStyle, fills && styles.collapsed]}>{children}</View>
@@ -207,8 +203,6 @@ export function SidePreviewLayout({
 const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: "row", overflow: "hidden" },
   column: { flexDirection: "column" },
-  // Pane is the first child; reversed, it lands on the right of the screen body.
-  columnsReverse: { flexDirection: "row-reverse" },
   collapsed: { flex: 0, width: 0, overflow: "hidden" },
 });
 
@@ -219,7 +213,7 @@ export function SidePreviewPane({
   onOpen,
   fill = false,
   stackedHeight = null,
-  stackedWidth,
+  stackedCollapsed = false,
 }: {
   /** The note / task to show; null slides the pane closed. */
   preview: PreviewRef | null;
@@ -235,8 +229,8 @@ export function SidePreviewPane({
    * above the crease) instead of a width. Null everywhere else.
    */
   stackedHeight?: number | null;
-  /** Stacked pane's width: the window's, or its right share when the top half is two columns. */
-  stackedWidth?: number;
+  /** Stacked: ease the pane's frame shut (content keeps its size, so nothing re-lays out). */
+  stackedCollapsed?: boolean;
   onClose: () => void;
   /** The previewed task was saved, archived or deleted. */
   onChanged?: () => void;
@@ -278,11 +272,16 @@ export function SidePreviewPane({
   // Both dimensions are always set (see above): beside the body the pane animates
   // its width, stacked above it its height.
   const stackedH = stackedHeight ?? 0;
-  const stackedW = stackedWidth ?? width;
   const stacked = stackedHeight != null;
+  // Collapsing eases the frame shut over the (full-size, clipped) content, so the
+  // screen's body grows into the freed room in step.
+  const collapse = useSharedValue(stackedCollapsed ? 1 : 0);
+  useEffect(() => {
+    collapse.set(withTiming(stackedCollapsed ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+  }, [stackedCollapsed, collapse]);
   const frame = useAnimatedStyle(() => ({
-    width: stacked ? stackedW : fill ? width : open.get() * paneW.get(),
-    height: stacked ? open.get() * stackedH : "100%",
+    width: stacked || fill ? width : open.get() * paneW.get(),
+    height: stacked ? open.get() * stackedH * (1 - collapse.get()) : "100%",
   }));
 
   // Folded (fill) there is nothing to slide beside: closing just removes it,
@@ -292,7 +291,7 @@ export function SidePreviewPane({
 
   return (
     <Animated.View style={[{ overflow: "hidden" }, frame]}>
-      <Host style={fill ? { flex: 1 } : stacked ? { width: stackedW, height: stackedH } : { width: paneWidth, flex: 1 }}>
+      <Host style={fill ? { flex: 1 } : stacked ? { width, height: stackedH } : { width: paneWidth, flex: 1 }}>
         <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">
