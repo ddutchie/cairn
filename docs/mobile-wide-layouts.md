@@ -302,6 +302,25 @@ windows) that meant going Back to the tree to change a project's view. Now:
 - The demo seed's project icons are emoji, which aren't Lucide names, so they all fall
   back to the folder; synced workspaces carry real names.
 
+### Wide layout: status beside the canvas (2026-10-13)
+
+Unfolded (≥700pt) the project column used to hold whatever view was selected, which
+squeezed the Board and Calendar into a ~330pt column beside an empty "No task selected"
+panel (the board scrolled sideways, the calendar grid was tiny). Now, on wide windows
+(`mainInDetail` in `ProjectsSplitView`):
+
+- **Overview** and **Notes** are unchanged (overview | item, list | note).
+- **Board** and **Calendar** take the big *detail* column; the project **Overview stays
+  as a narrow status column** beside them (same `ChromeColumn` key as the Overview view,
+  so switching Overview ↔ Board keeps it mounted). The segmented control sits at the top
+  of the status column, so it is always there to switch views.
+- Opening a task or note **replaces the canvas** in the detail column; ✕ brings the board
+  / calendar back (the canvas is rebuilt — its scroll position isn't kept). Composing a task
+  does the same.
+- Collapsed (<700pt) there is one column at a time, so the canvas is the project column as
+  before. Folding/unfolding therefore moves the Board/Calendar between columns (a remount of
+  that screen only; selection and any open item survive).
+
 ### Split View on the Duo (test pass 2026-10-12)
 
 The simulator's Split View is half-screen only: Cairn's window is **469×669** (or the

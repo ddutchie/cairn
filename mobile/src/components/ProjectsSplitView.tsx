@@ -140,9 +140,18 @@ export function ProjectsSplitView({
     if (stale) setSelection({ projectId: projects[0].id, noteId: null, cardId: null, composing: false });
   }, [stale, projects]);
   const view = sel.view;
+  // SPIKE: compact proxy for the collapsed split view. A visibility/selection
+  // hint only — the component tree never swaps, so nothing remounts.
+  const compact = width < 700;
+  // Wide windows: Board and Calendar are interactive canvases that need room, so
+  // they take the big (detail) column and the project overview stays beside them
+  // as a narrow status column. Opening a task/note replaces the canvas (✕ brings
+  // it back). Collapsed (compact) there is one column at a time, so the canvas is
+  // the project column as before.
   // The Board is wide, so an open task slides in as a panel beside it (inside
   // the same column, so the board never remounts or moves).
-  const boardFull = view === "board";
+  const mainInDetail = !compact && (view === "board" || view === "calendar");
+  const boardFull = view === "board" && !mainInDetail;
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
@@ -164,9 +173,6 @@ export function ProjectsSplitView({
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
   // keeps their content clear of the fold, so no extra inset is added.
-  // SPIKE: compact proxy for the collapsed split view. A visibility/selection
-  // hint only — the component tree never swaps, so nothing remounts.
-  const compact = width < 700;
   // The collapsed column follows the selection depth: tree → project view →
   // open item, mirroring the phone drill-down (projects → project → note).
   const compactColumn: NavigationSplitViewColumn =
@@ -311,7 +317,9 @@ export function ProjectsSplitView({
             onComposeTask={composeTask}
           />
         </ChromeColumn>
-      ) : view === "overview" ? (
+      ) : view === "overview" || mainInDetail ? (
+        // Also the status column beside Board / Calendar (same key, so switching
+        // Overview <-> Board keeps it mounted).
         <ChromeColumn key={`${projectId}:overview`} slot={slot("primary")}>
           <ProjectScreen
             nested
@@ -406,7 +414,24 @@ export function ProjectsSplitView({
   // earns its space instead of sitting blank.
   const newTask = () => composeTask();
   const emptyDetail =
-    view === "board" ? (
+    mainInDetail && view === "board" ? (
+      <ChromeColumn key={`${projectId}:board`} slot={slot("secondary")}>
+        <ProjectScreen
+          key={boardVersion}
+          nested
+          projectId={projectId}
+          view="board"
+          onSelectView={selectView}
+          onOpenNote={openNote}
+          onOpenCard={openCard}
+          onComposeTask={composeTask}
+        />
+      </ChromeColumn>
+    ) : mainInDetail ? (
+      <ChromeColumn key={`${projectId}:calendar`} slot={slot("secondary")}>
+        <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
+      </ChromeColumn>
+    ) : view === "board" ? (
       <ChromeColumn key="empty" slot={slot("secondary")}>
         <DetailActionPanel icon={ListTodo} title="No task selected" body="Pick a task from the board — or start a new one." actionLabel="New task" onAction={newTask} />
       </ChromeColumn>
