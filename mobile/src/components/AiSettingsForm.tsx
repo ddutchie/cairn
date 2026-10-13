@@ -14,6 +14,7 @@ import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, ChevronUp, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, useIsDark, useChatTheme, setChatThemeId } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -144,6 +145,10 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const isDark = useIsDark();
   const styles = useAiSettingsStyles();
+  // Next to the Duo's bar column the system inset already provides the margin, so the page
+  // padding on that side shrinks instead of stacking on top of it.
+  const insets = useSafeAreaInsets();
+  const edgePad = { paddingLeft: insets.left > 0 ? 10 : 18, paddingRight: insets.right > 0 ? 10 : 18 };
 
   // Warm the models.dev catalog + re-render rows once it arrives (cost/logo/
   // tool markers in the model list).
@@ -725,7 +730,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           {/* 3-tab layout (native segmented control, iOS/Android). "Setup" holds
               provider + model and saves on Done; "Tuning" (settings + theme) and
               "Usage" are live/read-only. */}
-          <View style={styles.tabBar}>
+          <View style={[styles.tabBar, edgePad]}>
             <SegmentedControl
               style={{ height: 36 }}
               tintColor={t.accent}
@@ -738,7 +743,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
           </View>
           <KeyboardAwareScrollView
             style={styles.body}
-            contentContainerStyle={styles.bodyContent}
+            contentContainerStyle={[styles.bodyContent, edgePad]}
             keyboardShouldPersistTaps="handled"
             bottomOffset={32}
             extraKeyboardSpace={16}
