@@ -15,11 +15,15 @@ public class SwiftUIModifiersModule: Module {
       ViewModifierRegistry.register("forceCompactWidth") { params, _, _ in
         ForceCompactWidthModifier(enabled: params["enabled"] as? Bool ?? true)
       }
+      ViewModifierRegistry.register("forceCompactBelow") { params, _, _ in
+        ForceCompactBelowModifier(threshold: params["threshold"] as? Double ?? 700)
+      }
     }
 
     OnDestroy {
       ViewModifierRegistry.unregister("navigationBarHidden")
       ViewModifierRegistry.unregister("forceCompactWidth")
+      ViewModifierRegistry.unregister("forceCompactBelow")
     }
   }
 }
@@ -46,5 +50,23 @@ struct ForceCompactWidthModifier: ViewModifier {
 
   func body(content: Content) -> some View {
     content.environment(\.horizontalSizeClass, enabled ? .compact : current)
+  }
+}
+
+/// Like `forceCompactWidth`, but SwiftUI measures its own width and decides, so the
+/// collapse follows the window in the same layout pass — with the JS flag, unfolding
+/// the Duo left the split view forced compact for a beat until React Native reported
+/// the new width (a visible flash). Compact below `threshold` points, the real size
+/// class otherwise. Starts narrow: folded/narrow windows are the common first state,
+/// and the first geometry report corrects a wide start.
+struct ForceCompactBelowModifier: ViewModifier {
+  let threshold: Double
+  @State private var narrow = true
+  @Environment(\.horizontalSizeClass) private var current
+
+  func body(content: Content) -> some View {
+    content
+      .environment(\.horizontalSizeClass, narrow ? .compact : current)
+      .onGeometryChange(for: Bool.self) { $0.size.width < threshold } action: { narrow = $0 }
   }
 }

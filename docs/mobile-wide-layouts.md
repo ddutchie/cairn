@@ -325,6 +325,7 @@ made a view switch a column push — a page swipe — and was dropped).
   (`calSelected`), and a reschedule bumps `calVersion` to refresh the panel.
 - The Overview blocks are reusable (`OverviewTab` `show`, `OverviewPanel` loads the data), which
   is how the Board gets its status. Long card subtitles wrap instead of overflowing.
+- Native collapse: `forceCompactBelow(700)` (`swiftui-modifiers`) lets SwiftUI measure its own width and force compact below 700pt in the same layout pass; the old JS-driven `forceCompactWidth(compact)` left the split view forced compact for a beat after unfolding. The Overview's detail column is always the Recent panel (not a compact-only placeholder) for the same reason: on unfold SwiftUI expands before JS knows the width. Needs a native rebuild.
 - `useHingeStatus() === "closed"` flips `compact` early (the hinge reports before the window
   shrinks). The first project is recorded as selected while the wide layout shows it as a
   fallback, so folding keeps you in it.

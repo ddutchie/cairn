@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
 import { Stack } from "expo-router";
-import { FileText, LayoutDashboard } from "lucide-react-native";
+import { FileText } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
   ContentUnavailableView,
@@ -42,7 +42,7 @@ import {
 import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
 import { lastHingeStatus, rememberHingeStatus, useHingeStatus } from "@/lib/hinge";
-import { forceCompactWidth } from "@modules/swiftui-modifiers";
+import { forceCompactBelow } from "@modules/swiftui-modifiers";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
@@ -109,6 +109,8 @@ export function showProjectInSplitView(projectId: string, view: SplitViewKind = 
 // it — a whole band of wasted height. There the columns hide their bars and
 // their buttons move into the native stack header, which shares the tab bar's
 // row. (The Duo's tab bar is a side rail, so its columns keep their own bars.)
+/** Windows narrower than this collapse to one column (SwiftUI decides natively). */
+const COMPACT_BELOW = 700;
 const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 
 // Feature flag: the projects tree in the iPad's system tab sidebar
@@ -160,7 +162,7 @@ export function ProjectsSplitView({
   // SwiftUI collapses the split view with the window, so keying on width alone left the
   // wide-layout columns (the status panel in the project column) showing on the outer
   // display for a moment before JS caught up. Width still gates unfolding.
-  const compact = width < 700 || hingeClosed;
+  const compact = width < COMPACT_BELOW || hingeClosed;
   // Wide Overview: the blocks up to the health radar stay in this column; the recent
   // notes and activity move to the detail column (beside / instead of "Nothing open").
   const overviewSplit = !compact && view === "overview";
@@ -462,18 +464,16 @@ export function ProjectsSplitView({
           <CalendarDayPanel key={calVersion} projectId={projectId} selectedKey={calSelected} onOpenCard={openCard} />
         </>
       </ChromeColumn>
-    ) : overviewSplit ? (
-      // The rest of the Overview (recent notes, activity) in the big column while
-      // nothing is open; opening a note/task replaces it.
+    ) : view === "overview" ? (
+      // The rest of the Overview (recent notes, activity) in the big column while nothing
+      // is open; opening a note/task replaces it. Not keyed on `compact`: collapsed, this
+      // column is never visible without an open item, and on unfold SwiftUI expands a beat
+      // before JS learns the width, so a compact-only placeholder here flashed.
       <ChromeColumn key={`${projectId}:overview-detail`} slot={slot("secondary")}>
         <>
           <ScreenChrome title="Recent" />
           <OverviewPanel key={boardVersion} projectId={projectId} show={OVERVIEW_DETAIL} nav={overviewNav} />
         </>
-      </ChromeColumn>
-    ) : view === "overview" ? (
-      <ChromeColumn key="empty" slot={slot("secondary")}>
-        <DetailActionPanel icon={LayoutDashboard} title="Nothing open" body="Open a note or task to read it beside the overview." actionLabel="View board" onAction={() => selectView("board")} />
       </ChromeColumn>
     ) : (
       <ChromeColumn key="empty" slot={slot("secondary")}>
@@ -591,7 +591,7 @@ export function ProjectsSplitView({
           // the project view behind the sidebar button. Forcing compact width makes
           // the split view collapse like the folded Duo — tree → view → item
           // drill-down — through the real size-class path.
-          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic"), forceCompactWidth(compact)]}
+          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic"), forceCompactBelow(COMPACT_BELOW)]}
         >
           <NavigationSplitView.Sidebar>
             <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} />
