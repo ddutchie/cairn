@@ -271,6 +271,7 @@ export function ChromeColumn({
   titleMenu,
   slot,
   hideItems = false,
+  hideBar = false,
   extra = [],
 }: {
   children: ReactElement;
@@ -284,6 +285,8 @@ export function ChromeColumn({
   slot?: ChromeSlot;
   /** Hide the screen's own items (e.g. while a panel beside it has its own). */
   hideItems?: boolean;
+  /** Hide the whole column bar (title and items) for a canvas that needs the height. */
+  hideBar?: boolean;
   /** Items from another column (see `bridgedItems`), drawn after this one's. */
   extra?: ChromeItem[];
 }) {
@@ -399,7 +402,7 @@ export function ChromeColumn({
         // Caller modifiers (column width, a hinge inset) come first so the
         // background below also paints any padding they add.
         ...modifiers,
-        ...(bridged && !keepBar ? [navigationBarHidden()] : []),
+        ...((bridged && !keepBar) || hideBar ? [navigationBarHidden()] : []),
         // Fill the column, safe areas included (the Duo's hinge reserves one),
         // with the page colour so no white band shows around the hosted screen.
         background(t.background),
@@ -408,7 +411,7 @@ export function ChromeColumn({
       <RNHostView>
         <ChromeContext.Provider value={report}>{children}</ChromeContext.Provider>
       </RNHostView>
-      {bridged && !keepBar ? null : <Toolbar.Content>
+      {(bridged && !keepBar) || hideBar ? null : <Toolbar.Content>
         {titleMenu ? <ToolbarItem placement="principal">{titleMenu}</ToolbarItem> : null}
         {/* Bridged with its bar kept: the title stays, the buttons went elsewhere. */}
         {/* Column-owned dismiss: cancellationAction, so the side rail puts it on top. */}

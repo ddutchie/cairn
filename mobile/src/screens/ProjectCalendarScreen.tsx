@@ -34,6 +34,10 @@ export function ProjectCalendarScreen({
   nested = false,
   projectId,
   switcher,
+  layout: layoutProp,
+  onLayoutChange,
+  todayNonce: todayNonceProp,
+  topPad = 0,
   onOpenCard,
 }: {
   nested?: boolean;
@@ -41,6 +45,12 @@ export function ProjectCalendarScreen({
   projectId?: string;
   /** Split-view column: the project-view switcher drawn above the calendar. */
   switcher?: ReactNode;
+  /** Split-view column: own the span / "today" state outside (its controls live elsewhere). */
+  layout?: CalendarLayout;
+  onLayoutChange?: (layout: CalendarLayout) => void;
+  todayNonce?: number;
+  /** Split-view column: breathing room above the calendar when its bar is hidden. */
+  topPad?: number;
   /** Split-view column: open a task beside the calendar instead of pushing it. */
   onOpenCard?: (id: string) => void;
 }) {
@@ -52,8 +62,12 @@ export function ProjectCalendarScreen({
   const [cards, setCards] = useState<CalendarCard[]>([]);
   const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
   const [name, setName] = useState<string>("");
-  const [layout, setLayout] = useState<CalendarLayout>("month");
-  const [todayNonce, setTodayNonce] = useState(0);
+  const [ownLayout, setOwnLayout] = useState<CalendarLayout>("month");
+  const [ownTodayNonce, setOwnTodayNonce] = useState(0);
+  const layout = layoutProp ?? ownLayout;
+  const setLayout = onLayoutChange ?? setOwnLayout;
+  const todayNonce = todayNonceProp ?? ownTodayNonce;
+  const setTodayNonce = setOwnTodayNonce;
 
   const load = useCallback(() => {
     if (!project) return;
@@ -78,7 +92,7 @@ export function ProjectCalendarScreen({
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: t.background }]}>
+    <View style={[styles.root, { backgroundColor: t.background, paddingTop: topPad }]}>
       <ScreenChrome
         title={name ? `${name} · Calendar` : "Calendar"}
         right={[

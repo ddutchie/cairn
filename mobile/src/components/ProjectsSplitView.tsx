@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
 import { Stack } from "expo-router";
 import { FileText, ListTodo, CalendarDays, LayoutDashboard } from "lucide-react-native";
@@ -26,6 +26,9 @@ import { ProjectsTreeSidebar } from "@/components/ProjectsTreeSidebar";
 import { useProjectsList } from "@/components/projects-tree";
 import { ProjectViewSwitcher } from "@/components/ProjectViewSwitcher";
 import { ProjectViewStatus } from "@/components/ProjectViewStatus";
+import { OverviewPanel } from "@/components/overview/OverviewPanel";
+import { OVERVIEW_DETAIL, OVERVIEW_STATUS } from "@/components/overview/OverviewTab";
+import type { CalendarLayout } from "@/components/CalendarView";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
@@ -153,6 +156,13 @@ export function ProjectsSplitView({
   // The Board is wide, so an open task slides in as a panel beside it (inside
   // the same column, so the board never remounts or moves).
   const mainInDetail = !compact && (view === "board" || view === "calendar");
+  // Wide Overview: the blocks up to the health radar stay in this column; the recent
+  // notes and activity move to the detail column (beside / instead of "Nothing open").
+  const overviewSplit = !compact && view === "overview";
+  // The calendar canvas hides its own bar (its context is the status column), so its
+  // Today / Month-Week controls live in that column and their state lives here.
+  const [calLayout, setCalLayout] = useState<CalendarLayout>("month");
+  const [calToday, setCalToday] = useState(0);
   const boardFull = view === "board" && !mainInDetail;
 
   // Bumped when a task changes in the detail column, so the board and the
@@ -231,6 +241,15 @@ export function ProjectsSplitView({
   // SPIKE: cards open in the Detail column (wide) or fullscreen (compact) —
   // never in the in-board slide-over anymore, so the right page is never empty.
   const openCard = useCallback((id: string) => setSelection({ cardId: id, noteId: null, composing: false }), []);
+  const overviewNav = useMemo(
+    () => ({
+      onOpenNote: openNote,
+      onOpenCard: openCard,
+      onViewNotes: () => selectView("notes"),
+      onViewBoard: () => selectView("board"),
+    }),
+    [openNote, openCard, selectView],
+  );
   // The list's + composes inline in the detail column (a native modal would
   // park on the wrong page on a Duo — there is no sheet-placement API).
   const openComposer = useCallback(() => setSelection({ view: "notes", composing: "note", noteId: null, cardId: null }), []);
@@ -330,6 +349,12 @@ export function ProjectsSplitView({
               projectId={projectId}
               view={view as "board" | "calendar"}
               switcher={switcher}
+              nav={overviewNav}
+              calendar={
+                view === "calendar" && !BRIDGE_HEADER
+                  ? { layout: calLayout, onLayout: setCalLayout, onToday: () => setCalToday((n) => n + 1) }
+                  : undefined
+              }
             />
           </>
         </ChromeColumn>
@@ -340,6 +365,7 @@ export function ProjectsSplitView({
             projectId={projectId}
             view="overview"
             switcher={switcher}
+            overviewShow={overviewSplit ? OVERVIEW_STATUS : undefined}
             onSelectView={selectView}
             onOpenNote={openNote}
             onOpenCard={openCard}
@@ -442,8 +468,16 @@ export function ProjectsSplitView({
         />
       </ChromeColumn>
     ) : mainInDetail ? (
-      <ChromeColumn key={`${projectId}:calendar`} slot={slot("secondary")}>
-        <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
+      <ChromeColumn key={`${projectId}:calendar`} slot={slot("secondary")} hideBar={!BRIDGE_HEADER}>
+        <ProjectCalendarScreen
+          nested
+          projectId={projectId}
+          layout={BRIDGE_HEADER ? undefined : calLayout}
+          onLayoutChange={BRIDGE_HEADER ? undefined : setCalLayout}
+          todayNonce={BRIDGE_HEADER ? undefined : calToday}
+          topPad={BRIDGE_HEADER ? 0 : 10}
+          onOpenCard={openCard}
+        />
       </ChromeColumn>
     ) : view === "board" ? (
       <ChromeColumn key="empty" slot={slot("secondary")}>
@@ -452,6 +486,15 @@ export function ProjectsSplitView({
     ) : view === "calendar" ? (
       <ChromeColumn key="empty" slot={slot("secondary")}>
         <DetailActionPanel icon={CalendarDays} title="No task selected" body="Pick a task from the calendar — or start a new one." actionLabel="New task" onAction={newTask} />
+      </ChromeColumn>
+    ) : overviewSplit ? (
+      // The rest of the Overview (recent notes, activity) in the big column while
+      // nothing is open; opening a note/task replaces it.
+      <ChromeColumn key={`${projectId}:overview-detail`} slot={slot("secondary")}>
+        <>
+          <ScreenChrome title="Recent" />
+          <OverviewPanel key={boardVersion} projectId={projectId} show={OVERVIEW_DETAIL} nav={overviewNav} />
+        </>
       </ChromeColumn>
     ) : view === "overview" ? (
       <ChromeColumn key="empty" slot={slot("secondary")}>

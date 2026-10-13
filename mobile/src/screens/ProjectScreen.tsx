@@ -31,7 +31,7 @@ import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { toast } from "@/components/Toast";
-import { OverviewTab } from "@/components/overview/OverviewTab";
+import { OverviewTab, type OverviewSection } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
 import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
@@ -74,6 +74,7 @@ export function ProjectScreen({
   projectId,
   view,
   switcher,
+  overviewShow,
   onSelectView,
   onOpenNote,
   onOpenCard,
@@ -91,6 +92,8 @@ export function ProjectScreen({
   view?: Tab;
   /** Split-view column: the project-view switcher to draw in place of the own segment control. */
   switcher?: ReactNode;
+  /** Split-view column: render only these Overview blocks (see OverviewTab `show`). */
+  overviewShow?: OverviewSection[];
   /** Split-view column: Overview's "view notes / board" shortcuts. */
   onSelectView?: (view: Tab) => void;
   /** Split-view column: open a note / task beside this one instead of pushing. */
@@ -442,6 +445,7 @@ export function ProjectScreen({
         {tab === "overview" ? (
         overview ? (
           <OverviewTab
+            show={overviewShow}
             data={overview}
             bottomPad={listBottomPad}
             onRefresh={onRefresh}

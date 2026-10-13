@@ -1,48 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { boardStatus, calendarStatus } from "./project-status";
-
-const cols = [
-  { id: "b", name: "Backlog", type: "backlog" },
-  { id: "p", name: "In Progress", type: "in_progress" },
-  { id: "d", name: "Done", type: "done" },
-];
-
-describe("boardStatus", () => {
-  it("counts open / done / important and per-column totals", () => {
-    const s = boardStatus(
-      cols,
-      [
-        { column_id: "b", priority: "high" },
-        { column_id: "b", priority: "low" },
-        { column_id: "p", priority: "urgent" },
-        { column_id: "d", priority: "urgent" },
-      ],
-      [],
-      "2026-10-13",
-    );
-    expect(s.open).toBe(3);
-    expect(s.done).toBe(1);
-    expect(s.important).toBe(2); // the done urgent one doesn't count
-    expect(s.perColumn.map((c) => c.count)).toEqual([2, 1, 1]);
-    expect(s.perColumn[2].done).toBe(true);
-  });
-
-  it("separates overdue from due-today, ignoring done tasks", () => {
-    const s = boardStatus(
-      cols,
-      [],
-      [
-        { due_date: "2026-10-11", is_done: 0 },
-        { due_date: "2026-10-13", is_done: 0 },
-        { due_date: "2026-10-01", is_done: 1 },
-        { due_date: "2026-10-20", is_done: 0 },
-      ],
-      "2026-10-13",
-    );
-    expect(s.overdue).toBe(1);
-    expect(s.dueToday).toBe(1);
-  });
-});
+import { calendarStatus } from "./project-status";
 
 describe("calendarStatus", () => {
   // 2026-10-13 is a Tuesday: its Sunday-start week is Oct 11 - Oct 17.

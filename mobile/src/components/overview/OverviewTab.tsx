@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, LayoutDashboard, Kanban } from "lucide-react-native";
@@ -34,6 +34,14 @@ function prettyStatus(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** The Overview's blocks, in their single-column order (see `show`). */
+export type OverviewSection = "masthead" | "focus" | "kpi" | "queue" | "flow" | "priority" | "radar" | "notes" | "activity";
+
+/** Overview up to and including the project health radar — the narrow status column. */
+export const OVERVIEW_STATUS: OverviewSection[] = ["masthead", "focus", "kpi", "queue", "flow", "priority", "radar"];
+/** What follows the health radar — the recent notes and activity, for a wide detail column. */
+export const OVERVIEW_DETAIL: OverviewSection[] = ["notes", "activity"];
+
 export interface OverviewNav {
   onOpenNote: (id: string) => void;
   onOpenCard: (id: string) => void;
@@ -52,12 +60,22 @@ export function OverviewTab({
   bottomPad,
   onRefresh,
   refreshing,
+  show,
+  header,
 }: {
   data: ProjectOverviewData;
   nav: OverviewNav;
   bottomPad: number;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /**
+   * Render just these blocks, in this order, as one column (the split view reuses
+   * them: the overview's status blocks beside a wide Board/Calendar, its notes and
+   * activity in the detail column). Omitted: the whole Overview, two columns when wide.
+   */
+  show?: OverviewSection[];
+  /** Extra content above the blocks (inside the scroll view; only with `show`). */
+  header?: ReactNode;
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -454,7 +472,7 @@ export function OverviewTab({
             <Text style={{ fontSize: 10, color: t.textTertiary }}>▦</Text>
           </View>
           <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Task flow</Text>
-          <Text style={[typeScale.micro, { color: t.textTertiary }]}> — {bottleneck ? `${bottleneck.name} is the bottleneck (${bottleneck.count} of ${openCards.length} open)` : `${openCards.length} open`}</Text>
+          <Text style={[typeScale.micro, styles.bentoSub, { color: t.textTertiary }]}> — {bottleneck ? `${bottleneck.name} is the bottleneck (${bottleneck.count} of ${openCards.length} open)` : `${openCards.length} open`}</Text>
         </View>
         {flowColumns.length === 0 ? (
           <Text style={[typeScale.caption, { color: t.textTertiary, textAlign: "center", paddingVertical: 12 }]}>No columns yet</Text>
@@ -551,7 +569,7 @@ export function OverviewTab({
               <FileText size={10} color={t.textTertiary} />
             </View>
             <Text style={[typeScale.caption, { color: t.textPrimary, fontWeight: "600" }]}>Notes</Text>
-            <Text style={[typeScale.micro, { color: t.textTertiary }]}> · {totalNotes} total{pinneNotesLabel(pinnedNotes.length)} · {recentNotes.length} recent</Text>
+            <Text style={[typeScale.micro, styles.bentoSub, { color: t.textTertiary }]}> · {totalNotes} total{pinneNotesLabel(pinnedNotes.length)} · {recentNotes.length} recent</Text>
           </View>
           <Pressable onPress={nav.onViewNotes}>
             <Text style={[typeScale.caption, { color: t.accent, fontWeight: "600", fontSize: 12 }]}>Open notes →</Text>
@@ -679,6 +697,8 @@ export function OverviewTab({
       </View>
   );
 
+  const sections: Record<OverviewSection, ReactNode> = { masthead, focus: focusBar, kpi, queue, flow, priority, radar, notes, activity };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: t.background }}
@@ -687,7 +707,14 @@ export function OverviewTab({
       onLayout={(e) => setCw(e.nativeEvent.layout.width)}
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} /> : undefined}
     >
-      {twoColumn ? (
+      {show ? (
+        <>
+          {header}
+          {show.map((k) => (
+            <Fragment key={k}>{sections[k]}</Fragment>
+          ))}
+        </>
+      ) : twoColumn ? (
         <View style={styles.columns}>
           {/* min/max clamps (not bare width): they beat any flex-basis
               resolution, so the split survives Yoga unconditionally. */}
@@ -811,7 +838,10 @@ function makeStyles(t: Theme) {
     queueIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
     queueStripe: { width: 3, alignSelf: "stretch", borderRadius: 2, marginLeft: 6 },
     bentoCard: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 12 },
-    bentoHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+    // Wraps (and the subtitle shrinks) so a long subtitle in a narrow column wraps
+    // under the title instead of running off the card.
+    bentoHeader: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1, flexWrap: "wrap" },
+    bentoSub: { flexShrink: 1 },
     bentoIcon: { width: 20, height: 20, borderRadius: 6, alignItems: "center", justifyContent: "center", borderWidth: 1 },
     barRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
     barLabel: { width: 92, fontSize: 12, textAlign: "right" },
@@ -824,12 +854,12 @@ function makeStyles(t: Theme) {
     priorityTile: { width: "48.2%", alignItems: "center", gap: 2, paddingVertical: 12, borderRadius: 10, borderWidth: 1 },
     wipRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, marginTop: 4 },
     notesCard: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 12 },
-    notesHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    notesHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
     notesSubHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
     noteRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
     noteIcon: { width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center", borderWidth: 1 },
     activityCard: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 12, borderLeftWidth: 2 },
-    activityHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    activityHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
     activityGroup: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
     activityRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 9, paddingHorizontal: 12 },
     statRow: { flexDirection: "row", gap: 8 },

@@ -306,23 +306,31 @@ windows) that meant going Back to the tree to change a project's view. Now:
 
 Unfolded (≥700pt) the project column used to hold whatever view was selected, which
 squeezed the Board and Calendar into a ~330pt column beside an empty "No task selected"
-panel (the board scrolled sideways, the calendar grid was tiny). Now, on wide windows
-(`mainInDetail` in `ProjectsSplitView`):
+panel (the board scrolled sideways, the calendar grid was tiny). Now, on wide windows the
+Overview is split into reusable blocks (`OverviewTab` `show` prop; `OverviewPanel` loads
+the data for a block set) and each view gets a narrow *status* column plus a big *detail*
+column (`mainInDetail` / `overviewSplit` in `ProjectsSplitView`):
 
-- **Overview** and **Notes** are unchanged (overview | item, list | note).
-- **Board** and **Calendar** take the big *detail* column; the project column beside them
-  becomes a small **status panel** for that view (`ProjectViewStatus`, maths in
-  `lib/project-status.ts`, unit-tested): Board — open (+ done), overdue, due today, high /
-  urgent, and a bar per column; Calendar — today, this week (Sunday-start, the grid's week),
-  this month, overdue, unscheduled (open tasks only). The segmented control sits at the top of
-  the panel, so it is always there to switch views. The panel is re-keyed on `boardVersion`, so
-  editing a task in the canvas refreshes its numbers.
-- Opening a task or note **replaces the canvas** in the detail column; ✕ brings the board
-  / calendar back (the canvas is rebuilt — its scroll position isn't kept). Composing a task
-  does the same.
-- Collapsed (<700pt) there is one column at a time, so the canvas is the project column as
-  before. Folding/unfolding therefore moves the Board/Calendar between columns (a remount of
-  that screen only; selection and any open item survive).
+| View | Left (narrow, scrolls) | Right (big) |
+|---|---|---|
+| Overview | masthead, focus, KPI strip, attention queue, task flow, open-by-priority, health radar (`OVERVIEW_STATUS`) | recent notes + activity log (`OVERVIEW_DETAIL`), until an item is opened |
+| Notes | list | note |
+| Board | KPI strip, task flow, open-by-priority | the board |
+| Calendar | Today / Month / Week controls, today / week / month / overdue / unscheduled counts (`lib/project-status.ts`, tested), attention queue | the calendar, with its own column bar hidden |
+
+- The **segmented control is pinned** above the scrolling blocks in the Board / Calendar
+  status column (it used to sit inside the scroll view and scrolled away).
+- The calendar's bar was hidden (`ChromeColumn hideBar`) because the left column already
+  gives the context and the bar cost ~60pt; its Today and Month/Week controls therefore
+  live in the left column (state lifted into `ProjectsSplitView`; on iPad the bridged
+  stack header keeps them, so nothing changes there).
+- Opening a task or note **replaces the canvas / recent panel** in the detail column; ✕
+  brings it back (the canvas is rebuilt — scroll position isn't kept). Composing does the same.
+- Overview cards: a long subtitle ("Backlog is the bottleneck (2 of 6 open)") now wraps
+  under its title instead of running off the card (`bentoHeader` wraps, subtitle shrinks).
+- Collapsed (<700pt) there is one column at a time, so every view is the project column as
+  before. Folding/unfolding therefore moves Board/Calendar/recent between columns (a remount
+  of that screen only; selection and any open item survive).
 
 ### Split View on the Duo (test pass 2026-10-12)
 

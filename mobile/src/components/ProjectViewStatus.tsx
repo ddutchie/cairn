@@ -1,115 +1,131 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { listCards, listCardsWithDueDates, listColumns, listUnscheduledCards, type CalendarCard, type CardRow, type ColumnRow } from "@/db/queries";
+import { StyleSheet, Text, View } from "react-native";
+import { listCardsWithDueDates, listUnscheduledCards, type CalendarCard } from "@/db/queries";
 import { dayKey } from "@/components/calendar/grid";
-import { boardStatus, calendarStatus } from "@/lib/project-status";
+import { OverviewPanel } from "@/components/overview/OverviewPanel";
+import type { OverviewNav } from "@/components/overview/OverviewTab";
+import { PressableScale } from "@/components/PressableScale";
+import { calendarStatus } from "@/lib/project-status";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
+import type { CalendarLayout } from "@/components/CalendarView";
+
+interface CalendarControls {
+  layout: CalendarLayout;
+  onLayout: (l: CalendarLayout) => void;
+  onToday: () => void;
+}
 
 /**
- * The small status panel beside the Board / Calendar when they take the big column
- * (wide windows): a glance at the project's tasks — Board: open / done and how they
- * spread over the columns; Calendar: today, this week, this month, overdue.
- * The owner re-keys it when a task changes elsewhere on screen so the numbers follow.
+ * The status column beside the Board / Calendar when they take the big column
+ * (wide windows). The view switcher is pinned above (it must not scroll with the
+ * content); below it, reused Overview blocks — Board: needs-attention strip, task
+ * flow and open-by-priority; Calendar: today / week / month counts and the attention
+ * queue, plus its Today and Month/Week controls (the calendar's own bar is hidden).
  */
 export function ProjectViewStatus({
   projectId,
   view,
   switcher,
+  nav,
+  calendar,
 }: {
   projectId: string;
   view: "board" | "calendar";
   switcher: ReactNode;
+  nav: OverviewNav;
+  calendar?: CalendarControls;
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const [columns, setColumns] = useState<ColumnRow[]>([]);
-  const [cards, setCards] = useState<CardRow[]>([]);
+  return (
+    <View style={styles.root}>
+      <View style={styles.switcher}>{switcher}</View>
+      {view === "board" ? (
+        <OverviewPanel projectId={projectId} show={["kpi", "flow", "priority"]} nav={nav} />
+      ) : (
+        <OverviewPanel
+          projectId={projectId}
+          show={["queue"]}
+          nav={nav}
+          header={<CalendarCounts projectId={projectId} calendar={calendar} styles={styles} />}
+        />
+      )}
+    </View>
+  );
+}
+
+function CalendarCounts({
+  projectId,
+  calendar,
+  styles,
+}: {
+  projectId: string;
+  calendar?: CalendarControls;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const t = useTheme();
   const [dated, setDated] = useState<CalendarCard[]>([]);
   const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
   const load = useCallback(() => {
-    setColumns(listColumns(projectId));
-    setCards(listCards(projectId));
     setDated(listCardsWithDueDates(projectId));
     setUnscheduled(listUnscheduledCards(projectId));
   }, [projectId]);
   useRefreshOnFocus(load);
-
-  const todayKey = dayKey(new Date());
-  const board = useMemo(() => boardStatus(columns, cards, dated, todayKey), [columns, cards, dated, todayKey]);
   const cal = useMemo(
-    () => calendarStatus(dated, unscheduled.filter((c) => !c.is_done).length, todayKey),
-    [dated, unscheduled, todayKey],
+    () => calendarStatus(dated, unscheduled.filter((c) => !c.is_done).length, dayKey(new Date())),
+    [dated, unscheduled],
   );
-  const maxCount = Math.max(1, ...board.perColumn.map((c) => c.count));
-
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="never">
-      <View style={styles.switcher}>{switcher}</View>
-      {view === "board" ? (
-        <>
-          <Tile label="Open" value={board.open} detail={board.done ? `${board.done} done` : undefined} big styles={styles} />
-          <View style={styles.row}>
-            <Tile label="Overdue" value={board.overdue} tone={board.overdue ? t.danger : undefined} styles={styles} />
-            <Tile label="Due today" value={board.dueToday} tone={board.dueToday ? t.warning : undefined} styles={styles} />
-          </View>
-          <Tile label="High / urgent" value={board.important} tone={board.important ? t.warning : undefined} styles={styles} />
-          <Text style={styles.heading}>BY COLUMN</Text>
-          <View style={styles.card}>
-            {board.perColumn.map((c) => (
-              <View key={c.id} style={styles.colRow}>
-                <View style={styles.colHead}>
-                  <Text style={styles.colName} numberOfLines={1}>
-                    {c.name}
-                  </Text>
-                  <Text style={styles.colCount}>{c.count}</Text>
-                </View>
-                <View style={styles.track}>
-                  <View style={[styles.fill, { width: `${(c.count / maxCount) * 100}%`, backgroundColor: c.done ? t.success : t.accent }]} />
-                </View>
-              </View>
-            ))}
-          </View>
-        </>
-      ) : (
-        <>
-          <Tile label="Today" value={cal.today} big styles={styles} />
-          <View style={styles.row}>
-            <Tile label="This week" value={cal.week} styles={styles} />
-            <Tile label="This month" value={cal.month} styles={styles} />
-          </View>
-          <View style={styles.row}>
-            <Tile label="Overdue" value={cal.overdue} tone={cal.overdue ? t.danger : undefined} styles={styles} />
-            <Tile label="Unscheduled" value={cal.unscheduled} styles={styles} />
-          </View>
-        </>
-      )}
-    </ScrollView>
+    <>
+      {calendar ? (
+        <View style={styles.row}>
+          <PressableScale style={[styles.ctl, styles.flex]} onPress={calendar.onToday} accessibilityLabel="Go to today">
+            <Text style={styles.ctlText}>Today</Text>
+          </PressableScale>
+          {(["month", "week"] as const).map((l) => (
+            <PressableScale
+              key={l}
+              style={[styles.ctl, styles.flex, calendar.layout === l && { backgroundColor: t.accent, borderColor: t.accent }]}
+              onPress={() => calendar.onLayout(l)}
+              accessibilityLabel={`${l} view`}
+              accessibilityState={{ selected: calendar.layout === l }}
+            >
+              <Text style={[styles.ctlText, calendar.layout === l && { color: t.accentFg }]}>{l === "month" ? "Month" : "Week"}</Text>
+            </PressableScale>
+          ))}
+        </View>
+      ) : null}
+      <Tile label="Today" value={cal.today} big styles={styles} />
+      <View style={styles.row}>
+        <Tile label="This week" value={cal.week} styles={styles} />
+        <Tile label="This month" value={cal.month} styles={styles} />
+      </View>
+      <View style={styles.row}>
+        <Tile label="Overdue" value={cal.overdue} tone={cal.overdue ? t.danger : undefined} styles={styles} />
+        <Tile label="Unscheduled" value={cal.unscheduled} styles={styles} />
+      </View>
+    </>
   );
 }
 
 function Tile({
   label,
   value,
-  detail,
   tone,
   big,
   styles,
 }: {
   label: string;
   value: number;
-  detail?: string;
   tone?: string;
   big?: boolean;
   styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <View style={[styles.tile, styles.flex]} accessible accessibilityLabel={`${label}: ${value}${detail ? `, ${detail}` : ""}`}>
+    <View style={[styles.tile, styles.flex]} accessible accessibilityLabel={`${label}: ${value}`}>
       <Text style={styles.tileLabel}>{label.toUpperCase()}</Text>
-      <View style={styles.valueRow}>
-        <Text style={[big ? styles.valueBig : styles.value, tone ? { color: tone } : null]}>{value}</Text>
-        {detail ? <Text style={styles.detail}>{detail}</Text> : null}
-      </View>
+      <Text style={[big ? styles.valueBig : styles.value, tone ? { color: tone } : null]}>{value}</Text>
     </View>
   );
 }
@@ -117,24 +133,15 @@ function Tile({
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.background },
-    content: { padding: 12, gap: 10 },
-    // Same insets as the segmented bars elsewhere (ProjectScreen / ProjectCalendarScreen).
-    switcher: { paddingBottom: 4 },
+    // Pinned above the scrolling blocks; same insets as the other segment bars.
+    switcher: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
     row: { flexDirection: "row", gap: 10 },
     flex: { flex: 1 },
     tile: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 14, padding: 14, gap: 6 },
     tileLabel: { ...typeScale.overline, color: t.textTertiary },
-    valueRow: { flexDirection: "row", alignItems: "baseline", gap: 8 },
     value: { fontSize: 26, fontWeight: "700", color: t.textPrimary },
     valueBig: { fontSize: 40, fontWeight: "700", color: t.textPrimary },
-    detail: { ...typeScale.caption, color: t.textSecondary },
-    heading: { ...typeScale.overline, color: t.textTertiary, marginTop: 8 },
-    card: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 14, padding: 14, gap: 12 },
-    colRow: { gap: 6 },
-    colHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
-    colName: { ...typeScale.body, color: t.textPrimary, flexShrink: 1 },
-    colCount: { ...typeScale.body, color: t.textSecondary, fontWeight: "600" },
-    track: { height: 6, borderRadius: 3, backgroundColor: t.surface3, overflow: "hidden" },
-    fill: { height: 6, borderRadius: 3 },
+    ctl: { alignItems: "center", paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
+    ctlText: { ...typeScale.control, color: t.textPrimary, fontWeight: "600" },
   });
 }
