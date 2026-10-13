@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
 import { Stack } from "expo-router";
-import { FileText, ListTodo, CalendarDays, LayoutDashboard } from "lucide-react-native";
+import { FileText, LayoutDashboard } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
   ContentUnavailableView,
@@ -41,7 +41,7 @@ import {
 } from "@/components/screen-chrome";
 import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
-import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
+import { lastHingeStatus, rememberHingeStatus, useHingeStatus } from "@/lib/hinge";
 import { forceCompactWidth } from "@modules/swiftui-modifiers";
 
 /**
@@ -144,18 +144,31 @@ export function ProjectsSplitView({
   useEffect(() => {
     if (stale) setSelection({ projectId: projects[0].id, noteId: null, cardId: null, composing: false });
   }, [stale, projects]);
+  const hingeClosed = useHingeStatus() === "closed";
+  // Continuity: the wide layout shows the first project when none was picked. Record it,
+  // so folding keeps you in it (the collapsed column follows `sel.projectId`; without this
+  // the outer screen fell back to the project list). Collapsed, nothing is picked until
+  // you tap a project, so the list stays the root there.
+  const wideFallback = width >= 700 && !hingeClosed && sel.projectId == null && projectId != null;
+  useEffect(() => {
+    if (wideFallback) setSelection({ projectId });
+  }, [wideFallback, projectId]);
   const view = sel.view;
   // SPIKE: compact proxy for the collapsed split view. A visibility/selection
   // hint only — the component tree never swaps, so nothing remounts.
-  const compact = width < 700;
-  // Wide windows: Board and Calendar are interactive canvases that need room, so
-  // they take the big (detail) column and the project overview stays beside them
-  // as a narrow status column. Opening a task/note replaces the canvas (✕ brings
-  // it back). Collapsed (compact) there is one column at a time, so the canvas is
-  // the project column as before.
-  // The Board is wide, so an open task slides in as a panel beside it (inside
-  // the same column, so the board never remounts or moves).
-  const mainInDetail = !compact && (view === "board" || view === "calendar");
+  // The hinge reports `closed` a beat before the window shrinks to the outer display;
+  // SwiftUI collapses the split view with the window, so keying on width alone left the
+  // wide-layout columns (the status panel in the project column) showing on the outer
+  // display for a moment before JS caught up. Width still gates unfolding.
+  const compact = width < 700 || hingeClosed;
+  // Board and Calendar are interactive canvases that need room, so at EVERY width they
+  // live in the detail column and the project column holds their small status panel.
+  // Keeping that structure (same columns, same keys) in both layouts is what lets
+  // fold/unfold be the system's own collapse with nothing remounting underneath: wide
+  // shows status | canvas, collapsed shows just the canvas (carrying the view switcher
+  // itself, since the status column is then out of sight). Opening a task/note replaces
+  // the canvas in the detail column; ✕ (wide) or Back (collapsed) brings it back.
+  const mainInDetail = view === "board" || view === "calendar";
   // Wide Overview: the blocks up to the health radar stay in this column; the recent
   // notes and activity move to the detail column (beside / instead of "Nothing open").
   const overviewSplit = !compact && view === "overview";
@@ -163,7 +176,6 @@ export function ProjectsSplitView({
   // Today / Month-Week controls live in that column and their state lives here.
   const [calLayout, setCalLayout] = useState<CalendarLayout>("month");
   const [calToday, setCalToday] = useState(0);
-  const boardFull = view === "board" && !mainInDetail;
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
@@ -187,12 +199,23 @@ export function ProjectsSplitView({
   // keeps their content clear of the fold, so no extra inset is added.
   // The collapsed column follows the selection depth: tree → project view →
   // open item, mirroring the phone drill-down (projects → project → note).
-  const compactColumn: NavigationSplitViewColumn =
-    sel.noteId || sel.composing || sel.cardId ? "detail" : sel.projectId ? "content" : "sidebar";
+  const itemOpen = !!(sel.noteId || sel.composing || sel.cardId);
+  // Board / Calendar collapse onto their canvas (the detail column), not the status panel.
+  const compactColumn: NavigationSplitViewColumn = itemOpen
+    ? "detail"
+    : sel.projectId
+      ? mainInDetail
+        ? "detail"
+        : "content"
+      : "sidebar";
   const onCompactColumn = (col: NavigationSplitViewColumn) => {
     if (col === compactColumn) return;
-    if (col === "content") setSelection({ noteId: null, cardId: null, composing: false });
-    else if (col === "sidebar") setSelection({ projectId: null, noteId: null, cardId: null, composing: false });
+    if (col === "content") {
+      // From a Board / Calendar item, Back closes the item and shows the canvas again
+      // (same detail column); from the canvas itself it goes up to the project list.
+      if (mainInDetail && !itemOpen) setSelection({ projectId: null, noteId: null, cardId: null, composing: false });
+      else setSelection({ noteId: null, cardId: null, composing: false });
+    } else if (col === "sidebar") setSelection({ projectId: null, noteId: null, cardId: null, composing: false });
     // "detail" carries no pop information — the selection already says what's open.
   };
   const hingeModifier = onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)));
@@ -317,28 +340,7 @@ export function ProjectsSplitView({
   // placeholder) is always the Detail column. Both stay mounted across
   // fold/unfold — only the split view's own collapse changes what is shown.
   const contentView =
-      boardFull ? (
-        // An open card lives in the Detail column now (not a slide-over here),
-        // so the board always has the whole Content column.
-        <ChromeColumn
-          key={`${projectId}:board`}
-          slot={slot("primary")}
-          hideItems={!BRIDGE_HEADER && !!sel.cardId}
-        >
-          <ProjectScreen
-            key={boardVersion}
-            nested
-            projectId={projectId}
-            view="board"
-            switcher={switcher}
-            selectedId={sel.cardId}
-            onSelectView={selectView}
-            onOpenNote={openNote}
-            onOpenCard={openCard}
-            onComposeTask={composeTask}
-          />
-        </ChromeColumn>
-      ) : mainInDetail ? (
+      mainInDetail ? (
         // Wide Board / Calendar: a small status panel for the view; the canvas itself
         // is in the Detail column (emptyDetail below).
         <ChromeColumn key={`${projectId}:status`} slot={slot("primary")}>
@@ -370,10 +372,6 @@ export function ProjectsSplitView({
             onOpenNote={openNote}
             onOpenCard={openCard}
           />
-        </ChromeColumn>
-      ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`} slot={slot("primary")}>
-          <ProjectCalendarScreen nested projectId={projectId} switcher={switcher} onOpenCard={openCard} />
         </ChromeColumn>
       ) : (
         // No item open: Detail hosts the action panel below, so the list
@@ -452,40 +450,37 @@ export function ProjectsSplitView({
 
   // Detail with nothing open: a per-view action panel, so the right page
   // earns its space instead of sitting blank.
-  const newTask = () => composeTask();
   const emptyDetail =
-    mainInDetail && view === "board" ? (
+    view === "board" ? (
       <ChromeColumn key={`${projectId}:board`} slot={slot("secondary")}>
         <ProjectScreen
           key={boardVersion}
           nested
           projectId={projectId}
           view="board"
+          // Collapsed, the status column is out of sight, so the canvas carries the switcher.
+          switcher={compact ? switcher : undefined}
           onSelectView={selectView}
           onOpenNote={openNote}
           onOpenCard={openCard}
           onComposeTask={composeTask}
         />
       </ChromeColumn>
-    ) : mainInDetail ? (
-      <ChromeColumn key={`${projectId}:calendar`} slot={slot("secondary")} hideBar={!BRIDGE_HEADER}>
+    ) : view === "calendar" ? (
+      // Wide: the bar is hidden (the status column has the context and the controls).
+      // Collapsed: the bar stays (Back, Today, Month/Week) and the canvas carries the switcher.
+      <ChromeColumn key={`${projectId}:calendar`} slot={slot("secondary")} hideBar={!BRIDGE_HEADER && !compact}>
         <ProjectCalendarScreen
           nested
           projectId={projectId}
+          switcher={compact ? switcher : undefined}
           layout={BRIDGE_HEADER ? undefined : calLayout}
           onLayoutChange={BRIDGE_HEADER ? undefined : setCalLayout}
           todayNonce={BRIDGE_HEADER ? undefined : calToday}
-          topPad={BRIDGE_HEADER ? 0 : 10}
+          onToday={BRIDGE_HEADER ? undefined : () => setCalToday((n) => n + 1)}
+          topPad={BRIDGE_HEADER || compact ? 0 : 10}
           onOpenCard={openCard}
         />
-      </ChromeColumn>
-    ) : view === "board" ? (
-      <ChromeColumn key="empty" slot={slot("secondary")}>
-        <DetailActionPanel icon={ListTodo} title="No task selected" body="Pick a task from the board — or start a new one." actionLabel="New task" onAction={newTask} />
-      </ChromeColumn>
-    ) : view === "calendar" ? (
-      <ChromeColumn key="empty" slot={slot("secondary")}>
-        <DetailActionPanel icon={CalendarDays} title="No task selected" body="Pick a task from the calendar — or start a new one." actionLabel="New task" onAction={newTask} />
       </ChromeColumn>
     ) : overviewSplit ? (
       // The rest of the Overview (recent notes, activity) in the big column while

@@ -37,6 +37,7 @@ export function ProjectCalendarScreen({
   layout: layoutProp,
   onLayoutChange,
   todayNonce: todayNonceProp,
+  onToday,
   topPad = 0,
   onOpenCard,
 }: {
@@ -49,6 +50,8 @@ export function ProjectCalendarScreen({
   layout?: CalendarLayout;
   onLayoutChange?: (layout: CalendarLayout) => void;
   todayNonce?: number;
+  /** Split-view column: the Today button's handler when `todayNonce` is owned outside. */
+  onToday?: () => void;
   /** Split-view column: breathing room above the calendar when its bar is hidden. */
   topPad?: number;
   /** Split-view column: open a task beside the calendar instead of pushing it. */
@@ -96,7 +99,7 @@ export function ProjectCalendarScreen({
       <ScreenChrome
         title={name ? `${name} · Calendar` : "Calendar"}
         right={[
-          { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => setTodayNonce((n) => n + 1)) },
+          { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => (onToday ? onToday() : setTodayNonce((n) => n + 1))) },
           {
             kind: "menu",
             key: "span",

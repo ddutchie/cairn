@@ -328,9 +328,15 @@ column (`mainInDetail` / `overviewSplit` in `ProjectsSplitView`):
   brings it back (the canvas is rebuilt — scroll position isn't kept). Composing does the same.
 - Overview cards: a long subtitle ("Backlog is the bottleneck (2 of 6 open)") now wraps
   under its title instead of running off the card (`bentoHeader` wraps, subtitle shrinks).
-- Collapsed (<700pt) there is one column at a time, so every view is the project column as
-  before. Folding/unfolding therefore moves Board/Calendar/recent between columns (a remount
-  of that screen only; selection and any open item survive).
+- **Same structure at every width (no remount on fold).** Board and Calendar are in the
+  detail column and their status panel in the project column *whether wide or collapsed*, with
+  the same keys, so fold/unfold is only the system's collapse (before, JS swapped the columns a
+  beat after SwiftUI collapsed, remounting the screens: a visible two-stage morph). Collapsed,
+  the status column is out of sight, so the canvas carries the view switcher itself (and the
+  calendar keeps its column bar for Back / Today / Month-Week); the compact column for a
+  Board/Calendar is the detail. Back from the canvas goes to the project list; Back from an
+  open item returns to the canvas. `useHingeStatus() === "closed"` also flips `compact` early,
+  since the hinge reports before the window shrinks. Overview and Notes were already stable.
 
 ### Split View on the Duo (test pass 2026-10-12)
 
