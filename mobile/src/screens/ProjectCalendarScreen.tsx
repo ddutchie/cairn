@@ -60,9 +60,11 @@ export function ProjectCalendarScreen({
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const [cards, setCards] = useState<CalendarCard[]>([]);
-  const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
-  const [name, setName] = useState<string>("");
+  // Seeded synchronously (cheap local reads) so the first frame already has the title and
+  // the grid's tasks instead of settling a beat after mount.
+  const [cards, setCards] = useState<CalendarCard[]>(() => (project ? listCardsWithDueDates(project) : []));
+  const [unscheduled, setUnscheduled] = useState<CalendarCard[]>(() => (project ? listUnscheduledCards(project) : []));
+  const [name, setName] = useState<string>(() => (project ? (getProject(project)?.name ?? "") : ""));
   const [layout, setLayout] = useState<CalendarLayout>("month");
   const [todayNonce, setTodayNonce] = useState(0);
 

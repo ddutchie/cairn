@@ -130,10 +130,12 @@ export function ProjectScreen({
     [onSelectView],
   );
   const [project, setProject] = useState(id ? getProject(id) : null);
-  const [overview, setOverview] = useState<ProjectOverviewData | null>(null);
-  const [notes, setNotes] = useState<NoteRow[]>([]);
-  const [columns, setColumns] = useState<ColumnRow[]>([]);
-  const [cards, setCards] = useState<CardRow[]>([]);
+  // Seeded synchronously (cheap local reads) so the first frame already has the data —
+  // otherwise the Board said "No board columns" for a beat after mounting.
+  const [overview, setOverview] = useState<ProjectOverviewData | null>(() => (id ? getProjectOverview(id) : null));
+  const [notes, setNotes] = useState<NoteRow[]>(() => (id ? listNotes(id) : []));
+  const [columns, setColumns] = useState<ColumnRow[]>(() => (id ? listColumns(id) : []));
+  const [cards, setCards] = useState<CardRow[]>(() => (id ? listCards(id) : []));
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
