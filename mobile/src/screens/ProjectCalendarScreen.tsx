@@ -34,11 +34,10 @@ export function ProjectCalendarScreen({
   nested = false,
   projectId,
   switcher,
-  layout: layoutProp,
-  onLayoutChange,
-  todayNonce: todayNonceProp,
-  onToday,
-  topPad = 0,
+  selectedKey,
+  onSelectKey,
+  externalDayList,
+  onChanged,
   onOpenCard,
 }: {
   nested?: boolean;
@@ -46,14 +45,13 @@ export function ProjectCalendarScreen({
   projectId?: string;
   /** Split-view column: the project-view switcher drawn above the calendar. */
   switcher?: ReactNode;
-  /** Split-view column: own the span / "today" state outside (its controls live elsewhere). */
-  layout?: CalendarLayout;
-  onLayoutChange?: (layout: CalendarLayout) => void;
-  todayNonce?: number;
-  /** Split-view column: the Today button's handler when `todayNonce` is owned outside. */
-  onToday?: () => void;
-  /** Split-view column: breathing room above the calendar when its bar is hidden. */
-  topPad?: number;
+  /** Split-view column: the selected day lives outside (shared with the day panel beside). */
+  selectedKey?: string;
+  onSelectKey?: (key: string) => void;
+  /** Split-view column: the day's task list is in the detail column, not under the grid. */
+  externalDayList?: boolean;
+  /** Split-view column: a task was rescheduled here (so the day panel can refresh). */
+  onChanged?: () => void;
   /** Split-view column: open a task beside the calendar instead of pushing it. */
   onOpenCard?: (id: string) => void;
 }) {
@@ -65,12 +63,8 @@ export function ProjectCalendarScreen({
   const [cards, setCards] = useState<CalendarCard[]>([]);
   const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
   const [name, setName] = useState<string>("");
-  const [ownLayout, setOwnLayout] = useState<CalendarLayout>("month");
-  const [ownTodayNonce, setOwnTodayNonce] = useState(0);
-  const layout = layoutProp ?? ownLayout;
-  const setLayout = onLayoutChange ?? setOwnLayout;
-  const todayNonce = todayNonceProp ?? ownTodayNonce;
-  const setTodayNonce = setOwnTodayNonce;
+  const [layout, setLayout] = useState<CalendarLayout>("month");
+  const [todayNonce, setTodayNonce] = useState(0);
 
   const load = useCallback(() => {
     if (!project) return;
@@ -84,8 +78,9 @@ export function ProjectCalendarScreen({
     (cardId: string, dueDate: string | null) => {
       updateTask(cardId, { dueDate });
       load();
+      onChanged?.();
     },
-    [load],
+    [load, onChanged],
   );
 
   const cardHref = useCallback(
@@ -95,11 +90,11 @@ export function ProjectCalendarScreen({
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: t.background, paddingTop: topPad }]}>
+    <View style={[styles.root, { backgroundColor: t.background }]}>
       <ScreenChrome
         title={name ? `${name} · Calendar` : "Calendar"}
         right={[
-          { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => (onToday ? onToday() : setTodayNonce((n) => n + 1))) },
+          { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => setTodayNonce((n) => n + 1)) },
           {
             kind: "menu",
             key: "span",
@@ -123,6 +118,9 @@ export function ProjectCalendarScreen({
         todayNonce={todayNonce}
         unscheduled={unscheduled}
         onReschedule={reschedule}
+        selectedKey={selectedKey}
+        onSelectKey={onSelectKey}
+        externalDayList={externalDayList}
         onOpenCard={(id) => (onOpenCard ? onOpenCard(id) : router.push(cardHref(id)))}
       />
     </View>

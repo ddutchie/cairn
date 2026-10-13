@@ -302,41 +302,33 @@ windows) that meant going Back to the tree to change a project's view. Now:
 - The demo seed's project icons are emoji, which aren't Lucide names, so they all fall
   back to the folder; synced workspaces carry real names.
 
-### Wide layout: status beside the canvas (2026-10-13)
+### Wide layout: main on the left, overflow on the right (2026-10-13)
 
-Unfolded (≥700pt) the project column used to hold whatever view was selected, which
-squeezed the Board and Calendar into a ~330pt column beside an empty "No task selected"
-panel (the board scrolled sideways, the calendar grid was tiny). Now, on wide windows the
-Overview is split into reusable blocks (`OverviewTab` `show` prop; `OverviewPanel` loads
-the data for a block set) and each view gets a narrow *status* column plus a big *detail*
-column (`mainInDetail` / `overviewSplit` in `ProjectsSplitView`):
+Every view lives in the **project (content) column at every width**; the detail column
+holds the view's *overflow* on wide windows (`overviewSplit`, `emptyDetail` in
+`ProjectsSplitView`). Switching view is therefore an in-place change in any layout (an
+earlier attempt put Board/Calendar in the detail column to give them room; folded, that
+made a view switch a column push — a page swipe — and was dropped).
 
-| View | Left (narrow, scrolls) | Right (big) |
+| View | Left (project column) | Right (detail column) until an item is open |
 |---|---|---|
-| Overview | masthead, focus, KPI strip, attention queue, task flow, open-by-priority, health radar (`OVERVIEW_STATUS`) | recent notes + activity log (`OVERVIEW_DETAIL`), until an item is opened |
+| Overview | masthead, focus, KPI strip, attention queue, task flow, open-by-priority, health radar (`OVERVIEW_STATUS`) | recent notes + activity log (`OVERVIEW_DETAIL`) |
 | Notes | list | note |
-| Board | KPI strip, task flow, open-by-priority | the board |
-| Calendar | Month/Week control + Today pill, a KPI strip in the Overview's style (today / week / month / overdue; `lib/project-status.ts`, tested), attention queue | the calendar, with its own column bar hidden |
+| Board | the board (view switcher on top) | status blocks: KPI strip, task flow, open-by-priority |
+| Calendar | month/week grid, overdue banner and the Unscheduled tray | `CalendarDayPanel`: KPI strip (today / week / month / overdue, `lib/project-status.ts`) and the selected day's tasks |
 
-- The **segmented control is pinned** above the scrolling blocks in the Board / Calendar
-  status column (it used to sit inside the scroll view and scrolled away).
-- The calendar's bar was hidden (`ChromeColumn hideBar`) because the left column already
-  gives the context and the bar cost ~60pt; its Today and Month/Week controls therefore
-  live in the left column (state lifted into `ProjectsSplitView`; on iPad the bridged
-  stack header keeps them, so nothing changes there).
-- Opening a task or note **replaces the canvas / recent panel** in the detail column; ✕
-  brings it back (the canvas is rebuilt — scroll position isn't kept). Composing does the same.
-- Overview cards: a long subtitle ("Backlog is the bottleneck (2 of 6 open)") now wraps
-  under its title instead of running off the card (`bentoHeader` wraps, subtitle shrinks).
-- **Same structure at every width (no remount on fold).** Board and Calendar are in the
-  detail column and their status panel in the project column *whether wide or collapsed*, with
-  the same keys, so fold/unfold is only the system's collapse (before, JS swapped the columns a
-  beat after SwiftUI collapsed, remounting the screens: a visible two-stage morph). Collapsed,
-  the status column is out of sight, so the canvas carries the view switcher itself (and the
-  calendar keeps its column bar for Back / Today / Month-Week); the compact column for a
-  Board/Calendar is the detail. Back from the canvas goes to the project list; Back from an
-  open item returns to the canvas. `useHingeStatus() === "closed"` also flips `compact` early,
-  since the hinge reports before the window shrinks. Overview and Notes were already stable.
+- Opening a task or note replaces the overflow panel; ✕ brings it back. Collapsed, the detail
+  column only appears with an open item (Back returns), and the Calendar's grid column shows
+  its own day list again (`externalDayList` is off when `compact`).
+- The Calendar keeps the grid and the Unscheduled tray together so drag-to-reschedule still
+  works inside one view; the selected day is shared with the detail panel
+  (`calSelected`), and a reschedule bumps `calVersion` to refresh the panel.
+- The Overview blocks are reusable (`OverviewTab` `show`, `OverviewPanel` loads the data), which
+  is how the Board gets its status. Long card subtitles wrap instead of overflowing.
+- `useHingeStatus() === "closed"` flips `compact` early (the hinge reports before the window
+  shrinks). The first project is recorded as selected while the wide layout shows it as a
+  fallback, so folding keeps you in it.
+- The board's first frame can briefly show "No board columns" before its data loads.
 
 ### Split View on the Duo (test pass 2026-10-12)
 

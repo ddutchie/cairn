@@ -54,6 +54,9 @@ export function CalendarView({
   todayNonce = 0,
   unscheduled = EMPTY_CARDS,
   onReschedule,
+  selectedKey: selectedKeyProp,
+  onSelectKey,
+  externalDayList = false,
 }: {
   cards: CalendarCard[];
   onOpenCard: (cardId: string) => void;
@@ -72,6 +75,15 @@ export function CalendarView({
   /** Commit a drag-reschedule: `dueDate` is a "yyyy-MM-dd" key, or null to
    *  clear (dropped on the Unscheduled tray). Omit to disable drag-to-reschedule. */
   onReschedule?: (cardId: string, dueDate: string | null) => void;
+  /** Controlled selected day ("yyyy-MM-dd"); omit to keep it internal. */
+  selectedKey?: string;
+  onSelectKey?: (key: string) => void;
+  /**
+   * The selected day's task list is drawn elsewhere (the split view's detail column),
+   * so the bottom band keeps only the Unscheduled tray (it must stay with the grid for
+   * drag-to-reschedule).
+   */
+  externalDayList?: boolean;
 }) {
   const t = useTheme();
   const styles = useCalendarStyles();
@@ -84,7 +96,12 @@ export function CalendarView({
     else setLayoutInternal(l);
   };
   const [anchor, setAnchor] = useState<Date>(() => new Date());
-  const [selectedKey, setSelectedKey] = useState<string>(() => dayKey(new Date()));
+  const [selectedInternal, setSelectedInternal] = useState<string>(() => dayKey(new Date()));
+  const selectedKey = selectedKeyProp ?? selectedInternal;
+  const setSelectedKey = (key: string) => {
+    onSelectKey?.(key);
+    setSelectedInternal(key);
+  };
 
   // A native "Today" toolbar button bumps `todayNonce`; jump home when it does.
   const firstNonce = useRef(todayNonce);
@@ -93,7 +110,9 @@ export function CalendarView({
     firstNonce.current = todayNonce;
     const now = new Date();
     setAnchor(now);
-    setSelectedKey(dayKey(now));
+    onSelectKey?.(dayKey(now));
+    setSelectedInternal(dayKey(now));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the nonce only
   }, [todayNonce]);
 
   const todayKey = dayKey(new Date());
@@ -342,6 +361,7 @@ export function CalendarView({
           {/* Selected-day item list — the "meet halfway" mobile affordance:
               tapping any day fills this list instead of cramming everything into
               tiny cells or a modal sheet. */}
+          {externalDayList ? null : (
           <View style={styles.dayList}>
             <Text style={styles.dayListTitle}>{formatDayLabel(selectedKey)}</Text>
             {selectedCards.length === 0 ? (
@@ -360,6 +380,7 @@ export function CalendarView({
               ))
             )}
           </View>
+          )}
 
           {/* Unscheduled tray — droppable list of undated tasks. Drag a chip onto
               a day to schedule it; drag a dated task here to clear its due date. */}
