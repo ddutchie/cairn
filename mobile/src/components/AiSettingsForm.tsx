@@ -14,7 +14,7 @@ import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Check, ShieldCheck, RefreshCw, Cpu, Apple, Brain, Wrench, ChevronRight, ChevronDown, ChevronUp, Pencil, Wallet, Server, TriangleAlert, Type, Image as ImageIcon, FileText, Video, AudioLines, Star } from "lucide-react-native";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useEdgePad } from "@/lib/use-edge-pad";
 import { useTheme, useIsDark, useChatTheme, setChatThemeId } from "@/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -145,10 +145,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const isDark = useIsDark();
   const styles = useAiSettingsStyles();
-  // Next to the Duo's bar column the system inset already provides the margin, so the page
-  // padding on that side shrinks instead of stacking on top of it.
-  const insets = useSafeAreaInsets();
-  const edgePad = { paddingLeft: insets.left > 0 ? 10 : 18, paddingRight: insets.right > 0 ? 10 : 18 };
+  const edgePad = useEdgePad(18);
 
   // Warm the models.dev catalog + re-render rows once it arrives (cost/logo/
   // tool markers in the model list).

@@ -7,6 +7,7 @@ import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme, withAlpha } from "@/theme";
 import type { RestorableRow } from "@cairn/shared/sync/engine";
 import { formatRelative } from "@cairn/shared/format/date";
+import { useEdgePad } from "@/lib/use-edge-pad";
 
 /**
  * Recovery screen for notes another device deleted (plan §4 Phase 4b).
@@ -40,6 +41,7 @@ function deviceLabel(origin: string | null): string {
 }
 
 export default function RestoreScreen() {
+  const edge = useEdgePad(16);
   const t = useTheme();
   const router = useRouter();
   const [rows, setRows] = useState<RestorableRow[]>([]);
@@ -84,7 +86,7 @@ export default function RestoreScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={[styles.scroll, edge]}>
           <Text style={styles.intro}>
             {total} note{total === 1 ? "" : "s"} deleted on another device. Restoring brings a note
             back everywhere — it won&apos;t be deleted again on the next sync.

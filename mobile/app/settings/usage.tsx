@@ -4,6 +4,7 @@ import { useTheme } from "@/theme";
 import { useModalOpenHaptic } from "@/haptics";
 import { ModalSafeView } from "@/components/ModalSafeView";
 import { UsageBody } from "@/components/ai-settings/UsageBody";
+import { useEdgePad } from "@/lib/use-edge-pad";
 
 /**
  * Usage — mobile chat token/cost tracker (route wrapper). The body lives in
@@ -11,6 +12,7 @@ import { UsageBody } from "@/components/ai-settings/UsageBody";
  * screen only adds the native header + scroll wrapper + modal haptic.
  */
 export default function UsageSettingsScreen() {
+  const edge = useEdgePad(18);
   useModalOpenHaptic();
   const t = useTheme();
   return (
@@ -19,7 +21,7 @@ export default function UsageSettingsScreen() {
       <ModalSafeView backgroundColor={t.surface}>
       <ScrollView
         style={[styles.flex, { backgroundColor: t.surface }]}
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, edge]}
         contentInsetAdjustmentBehavior="automatic"
       >
         <UsageBody />

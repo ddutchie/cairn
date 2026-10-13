@@ -13,6 +13,7 @@ import { merge3 } from "@cairn/shared/sync/merge3";
 import { diffLines, diffStats, type DiffRow } from "@cairn/shared/sync/line-diff";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme, withAlpha } from "@/theme";
+import { useEdgePad } from "@/lib/use-edge-pad";
 
 /**
  * Manual conflict-resolution screen. Lists every conflict-copy note (created
@@ -22,6 +23,7 @@ import { useTheme, type as typeScale, type Theme, withAlpha } from "@/theme";
  * added); overlapping edits open an editable box. Never silent loss.
  */
 export default function ConflictsScreen() {
+  const edge = useEdgePad(16);
   const t = useTheme();
   const router = useRouter();
   const [conflicts, setConflicts] = useState<ConflictCopy[]>([]);
@@ -83,7 +85,7 @@ export default function ConflictsScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={[styles.scroll, edge]}>
           <Text style={styles.intro}>
             {conflicts.length} note{conflicts.length === 1 ? "" : "s"} diverged. Keep one version, or merge both.
           </Text>

@@ -13,6 +13,7 @@ import { SectionLabel } from "@/components/SectionLabel";
 import { ICON_CHECK } from "@/components/toolbar-icons";
 import { useModalOpenHaptic, toolbarPress } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { useEdgePad } from "@/lib/use-edge-pad";
 
 /**
  * Sync detail presented as a native modal (see the `sync` screen's
@@ -43,6 +44,7 @@ function formatWhen(iso: string): string {
 }
 
 export default function SyncScreen() {
+  const edge = useEdgePad(18);
   useModalOpenHaptic();
   const t = useTheme();
   const router = useRouter();
@@ -100,7 +102,7 @@ export default function SyncScreen() {
           Done
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
-      <ScrollView contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
+      <ScrollView contentContainerStyle={[styles.container, edge]} contentInsetAdjustmentBehavior="automatic">
         <View style={styles.card}>
           <SectionLabel>iCloud sync folder</SectionLabel>
           <View style={styles.statusRow}>
