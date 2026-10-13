@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
 import { Stack } from "expo-router";
 import { FileText } from "lucide-react-native";
@@ -147,14 +147,15 @@ export function ProjectsSplitView({
     if (stale) setSelection({ projectId: projects[0].id, noteId: null, cardId: null, composing: false });
   }, [stale, projects]);
   const hingeClosed = useHingeStatus() === "closed";
-  // Continuity: the wide layout shows the first project when none was picked. Record it,
-  // so folding keeps you in it (the collapsed column follows `sel.projectId`; without this
-  // the outer screen fell back to the project list). Collapsed, nothing is picked until
-  // you tap a project, so the list stays the root there.
-  const wideFallback = width >= 700 && !hingeClosed && sel.projectId == null && projectId != null;
+  // Continuity: the wide layout shows the first project when none was picked. It is only
+  // recorded as the selection when you act in it (switch view, open or compose something),
+  // so folding then keeps you in that project — while a plain unfold from the project list
+  // doesn't jump into a project by itself.
+  const shownProject = useRef<string | null>(null);
   useEffect(() => {
-    if (wideFallback) setSelection({ projectId });
-  }, [wideFallback, projectId]);
+    shownProject.current = projectId;
+  }, [projectId]);
+  const claimProject = () => selection.projectId ?? shownProject.current;
   const view = sel.view;
   // SPIKE: compact proxy for the collapsed split view. A visibility/selection
   // hint only — the component tree never swaps, so nothing remounts.
@@ -230,7 +231,7 @@ export function ProjectsSplitView({
   // Switching panels (Overview → Notes, …) closes the open note/task: an item
   // from one panel must not stay selected inside another (a task open in Notes).
   const selectView = useCallback((next: SplitViewKind) => {
-    setSelection({ view: next, ...(next !== selection.view ? { noteId: null, cardId: null } : {}), composing: false });
+    setSelection({ projectId: claimProject(), view: next, ...(next !== selection.view ? { noteId: null, cardId: null } : {}), composing: false });
   }, []);
   const switcher = (
     <ProjectViewSwitcher
@@ -243,10 +244,10 @@ export function ProjectsSplitView({
 
   // SPIKE: opening an item never switches the view out from under the user —
   // the item renders in Detail whatever the Content column shows.
-  const openNote = useCallback((id: string) => setSelection({ noteId: id, cardId: null, composing: false }), []);
+  const openNote = useCallback((id: string) => setSelection({ projectId: claimProject(), noteId: id, cardId: null, composing: false }), []);
   // SPIKE: cards open in the Detail column (wide) or fullscreen (compact) —
   // never in the in-board slide-over anymore, so the right page is never empty.
-  const openCard = useCallback((id: string) => setSelection({ cardId: id, noteId: null, composing: false }), []);
+  const openCard = useCallback((id: string) => setSelection({ projectId: claimProject(), cardId: id, noteId: null, composing: false }), []);
   const overviewNav = useMemo(
     () => ({
       onOpenNote: openNote,
@@ -258,11 +259,11 @@ export function ProjectsSplitView({
   );
   // The list's + composes inline in the detail column (a native modal would
   // park on the wrong page on a Duo — there is no sheet-placement API).
-  const openComposer = useCallback(() => setSelection({ view: "notes", composing: "note", noteId: null, cardId: null }), []);
+  const openComposer = useCallback(() => setSelection({ projectId: claimProject(), view: "notes", composing: "note", noteId: null, cardId: null }), []);
   // New task: composed in the detail column too (the modal would park on the
   // left page of an unfolded Duo). Never switches the view (Board/Calendar).
   const composeTask = useCallback(
-    (column?: string) => setSelection({ composing: { task: true, ...(column ? { column } : {}) }, noteId: null, cardId: null }),
+    (column?: string) => setSelection({ projectId: claimProject(), composing: { task: true, ...(column ? { column } : {}) }, noteId: null, cardId: null }),
     [],
   );
 
