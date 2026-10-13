@@ -316,7 +316,7 @@ column (`mainInDetail` / `overviewSplit` in `ProjectsSplitView`):
 | Overview | masthead, focus, KPI strip, attention queue, task flow, open-by-priority, health radar (`OVERVIEW_STATUS`) | recent notes + activity log (`OVERVIEW_DETAIL`), until an item is opened |
 | Notes | list | note |
 | Board | KPI strip, task flow, open-by-priority | the board |
-| Calendar | Today / Month / Week controls, today / week / month / overdue / unscheduled counts (`lib/project-status.ts`, tested), attention queue | the calendar, with its own column bar hidden |
+| Calendar | Month/Week control + Today pill, a KPI strip in the Overview's style (today / week / month / overdue; `lib/project-status.ts`, tested), attention queue | the calendar, with its own column bar hidden |
 
 - The **segmented control is pinned** above the scrolling blocks in the Board / Calendar
   status column (it used to sit inside the scroll view and scrolled away).

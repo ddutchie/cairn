@@ -5,6 +5,7 @@ import { dayKey } from "@/components/calendar/grid";
 import { OverviewPanel } from "@/components/overview/OverviewPanel";
 import type { OverviewNav } from "@/components/overview/OverviewTab";
 import { PressableScale } from "@/components/PressableScale";
+import { SegmentedControl } from "@/components/SegmentedControl";
 import { calendarStatus } from "@/lib/project-status";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
@@ -76,57 +77,55 @@ function CalendarCounts({
     () => calendarStatus(dated, unscheduled.filter((c) => !c.is_done).length, dayKey(new Date())),
     [dated, unscheduled],
   );
+  const cells: { label: string; value: number; accent: string; caption: string; tone?: string }[] = [
+    { label: "Today", value: cal.today, accent: t.accent, caption: cal.today ? "due today" : "nothing due" },
+    { label: "This week", value: cal.week, accent: t.info, caption: "open tasks" },
+    { label: "This month", value: cal.month, accent: t.success, caption: "open tasks" },
+    { label: "Overdue", value: cal.overdue, accent: t.danger, caption: cal.overdue ? "need a new date" : "all caught up", tone: cal.overdue ? t.danger : undefined },
+  ];
   return (
     <>
       {calendar ? (
-        <View style={styles.row}>
-          <PressableScale style={[styles.ctl, styles.flex]} onPress={calendar.onToday} accessibilityLabel="Go to today">
-            <Text style={styles.ctlText}>Today</Text>
+        <View style={styles.controls}>
+          <View style={styles.flex}>
+            <SegmentedControl
+              // Same native control (and sizing notes) as the view switcher above.
+              style={{ height: 32 }}
+              tintColor={t.accent}
+              fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
+              activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
+              values={["Month", "Week"]}
+              selectedIndex={calendar.layout === "month" ? 0 : 1}
+              onChange={(e) => calendar.onLayout(e.nativeEvent.selectedSegmentIndex === 0 ? "month" : "week")}
+            />
+          </View>
+          <PressableScale style={styles.today} onPress={calendar.onToday} accessibilityLabel="Go to today">
+            <Text style={styles.todayText}>Today</Text>
           </PressableScale>
-          {(["month", "week"] as const).map((l) => (
-            <PressableScale
-              key={l}
-              style={[styles.ctl, styles.flex, calendar.layout === l && { backgroundColor: t.accent, borderColor: t.accent }]}
-              onPress={() => calendar.onLayout(l)}
-              accessibilityLabel={`${l} view`}
-              accessibilityState={{ selected: calendar.layout === l }}
-            >
-              <Text style={[styles.ctlText, calendar.layout === l && { color: t.accentFg }]}>{l === "month" ? "Month" : "Week"}</Text>
-            </PressableScale>
-          ))}
         </View>
       ) : null}
-      <Tile label="Today" value={cal.today} big styles={styles} />
-      <View style={styles.row}>
-        <Tile label="This week" value={cal.week} styles={styles} />
-        <Tile label="This month" value={cal.month} styles={styles} />
-      </View>
-      <View style={styles.row}>
-        <Tile label="Overdue" value={cal.overdue} tone={cal.overdue ? t.danger : undefined} styles={styles} />
-        <Tile label="Unscheduled" value={cal.unscheduled} styles={styles} />
+      <View style={styles.strip}>
+        {cells.map((c, i) => (
+          <View
+            key={c.label}
+            style={[
+              styles.cell,
+              i % 2 === 0 && { borderRightWidth: StyleSheet.hairlineWidth },
+              i < 2 && { borderBottomWidth: StyleSheet.hairlineWidth },
+            ]}
+            accessible
+            accessibilityLabel={`${c.label}: ${c.value}, ${c.caption}`}
+          >
+            <View style={[styles.accent, { backgroundColor: c.accent }]} />
+            <Text style={styles.cellLabel}>{c.label.toUpperCase()}</Text>
+            <Text style={[styles.cellValue, c.tone ? { color: c.tone } : null]}>{c.value}</Text>
+            <Text style={styles.cellCaption} numberOfLines={1}>
+              {c.caption}
+            </Text>
+          </View>
+        ))}
       </View>
     </>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  tone,
-  big,
-  styles,
-}: {
-  label: string;
-  value: number;
-  tone?: string;
-  big?: boolean;
-  styles: ReturnType<typeof makeStyles>;
-}) {
-  return (
-    <View style={[styles.tile, styles.flex]} accessible accessibilityLabel={`${label}: ${value}`}>
-      <Text style={styles.tileLabel}>{label.toUpperCase()}</Text>
-      <Text style={[big ? styles.valueBig : styles.value, tone ? { color: tone } : null]}>{value}</Text>
-    </View>
   );
 }
 
@@ -135,13 +134,16 @@ function makeStyles(t: Theme) {
     root: { flex: 1, backgroundColor: t.background },
     // Pinned above the scrolling blocks; same insets as the other segment bars.
     switcher: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
-    row: { flexDirection: "row", gap: 10 },
     flex: { flex: 1 },
-    tile: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 14, padding: 14, gap: 6 },
-    tileLabel: { ...typeScale.overline, color: t.textTertiary },
-    value: { fontSize: 26, fontWeight: "700", color: t.textPrimary },
-    valueBig: { fontSize: 40, fontWeight: "700", color: t.textPrimary },
-    ctl: { alignItems: "center", paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
-    ctlText: { ...typeScale.control, color: t.textPrimary, fontWeight: "600" },
+    controls: { flexDirection: "row", alignItems: "center", gap: 10 },
+    today: { paddingHorizontal: 16, height: 32, justifyContent: "center", borderRadius: 16, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
+    todayText: { ...typeScale.control, color: t.textPrimary, fontWeight: "600" },
+    // Mirrors the Overview's KPI strip (OverviewTab kpiStrip / kpiCell).
+    strip: { borderWidth: 1, borderColor: t.border, backgroundColor: t.surface, borderRadius: 12, overflow: "hidden", flexDirection: "row", flexWrap: "wrap" },
+    cell: { width: "50%", padding: 12, gap: 2, borderColor: t.border },
+    accent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
+    cellLabel: { fontSize: 10, fontWeight: "600", letterSpacing: 0.5, color: t.textTertiary },
+    cellValue: { ...typeScale.heading, color: t.textPrimary, marginTop: 4 },
+    cellCaption: { ...typeScale.caption, color: t.textTertiary, fontSize: 11, marginTop: 2 },
   });
 }
