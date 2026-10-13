@@ -32,7 +32,11 @@ export function UsageBody({ width }: { width?: number }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const { width: screenW } = useWindowDimensions();
-  const chartW = width ?? Math.min(screenW - 48, 560);
+  // The chart fills its own card: measure the container (the card's padding, the page
+  // padding and a side rail all vary) instead of guessing from the window width, which
+  // let the plot run past the card. The window-based guess is only the first-frame fallback.
+  const [measuredW, setMeasuredW] = useState<number | null>(null);
+  const chartW = width ?? measuredW ?? Math.min(screenW - 96, 520);
 
   const [history, setHistory] = useState<ChatUsageRow[]>(() => loadChatUsageHistory());
   const [metric, setMetric] = useState<Metric>("tokens");
@@ -163,12 +167,14 @@ export function UsageBody({ width }: { width?: number }) {
               <LegendDot color={t.accent} label="Input" />
               <LegendDot color={t.info} label="Output" />
             </View>
-            <UsageLineChart
-              series={series}
-              metric={metric}
-              width={chartW}
-              t={t}
-            />
+            <View onLayout={(e) => setMeasuredW(Math.floor(e.nativeEvent.layout.width))}>
+              <UsageLineChart
+                series={series}
+                metric={metric}
+                width={chartW}
+                t={t}
+              />
+            </View>
           </View>
 
           <View style={styles.card}>
