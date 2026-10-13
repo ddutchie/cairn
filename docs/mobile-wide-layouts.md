@@ -220,11 +220,27 @@ Gotchas:
 
 ### How screens avoid the crease (laptop pose)
 
-`src/lib/fold.ts` (`foldGeometry`, pure + tested) infers the crease from hinge
-status and window shape: `partiallyOpen` on an inner-size window → horizontal
-crease at mid-height when portrait, vertical at mid-width when landscape, with a
-~20pt gutter. It assumes the window fills the display (not true in Split View —
-the native `ReservedRegion` frame would replace it; see `docs/plans/iphone-duo.md`).
+`src/lib/fold.ts` (pure + tested) resolves the crease two ways, `resolveFold`:
+
+- **Native (iOS 27.1+)**: the local `modules/fold-region` Expo module reads the
+  active *division* `ReservedRegion` of the foreground scene's key window
+  (`UIView.reservedRegions(kind: .division)`; occlusion = camera, unused) and
+  publishes its frame in window coordinates. `foldFromRegion` clips it to the
+  window and derives axis (wider-than-tall band → horizontal), position (band
+  centre) and gutter (band thickness, margins included). So Split View works: a
+  window clear of the crease gets no fold, one abutting it sees only the sliver.
+  `src/lib/division-region.ts` is the store (`useDivisionRegion`; `undefined` =
+  API unavailable, `null` = available but no active region, e.g. flat or the outer
+  display). The module calls the API through the ObjC runtime (selectors + KVC), so
+  it builds on any Xcode and reports `supported: false` on older iOS; a probe view
+  in the window (`updateProperties`, which UIKit re-runs when the regions it read
+  change, plus `layoutSubviews`) emits `onDivisionRegionChange` on pose changes
+  and resizes, and `useFold` also re-queries on hinge/window change.
+- **Fallback (old iOS, Android, build without the module)**: `foldGeometry` infers
+  from hinge status and window shape: `partiallyOpen` on an inner-size window →
+  horizontal crease at mid-height when portrait, vertical at mid-width when
+  landscape, ~20pt gutter. Wrong in Split View (assumes the window fills the display).
+
 `src/lib/hinge.ts` is now reactive (`useHingeStatus`); `src/lib/use-fold.ts` has
 `useFold()` and `useTopHalf()` (room above a horizontal crease, in a container's
 own coordinates — null once the container already sits below it).
@@ -258,7 +274,7 @@ own coordinates — null once the container already sits below it).
 - Projects (split view) is system-managed; Graph and Overview — see the survey.
 - Debug aid for pose work: Settings → Appearance → Developer → **Fold overlay**
   (dev builds only; `src/lib/dev-flags.ts`, `FoldDebugOverlay`) prints
-  window/insets/hinge along the top and draws the inferred crease band, since
+  window/insets/hinge and the crease source (`fold=native|native:none|inferred`) along the top and draws the crease band, since
   simulator screenshots never show the fold. Persisted in the meta DB, forced
   off in release builds.
 
@@ -545,8 +561,13 @@ Today · span.
 ### Still open after the laptop-pose work
 (Checked and not affected: Search's scope bar is UIKit's native search scope — or a
 measured inset — not a `KeyboardStickyView`, so the composer's rotation bug can't occur.)
-- Native `ReservedRegion` frames would replace the inferred crease (needed for Split
-  View multitasking, where the window no longer fills the display).
+- ✅ Native `ReservedRegion` crease (`modules/fold-region`), verified on the Duo
+  simulator (2026-10-12), overlay readout in brackets: closed [`native:none`], laptop
+  [`h@476±20`, 40pt gutter, not the 20pt the inference assumed], book [`v@476±20`], flat
+  [`native:none`], and Split View (469pt window left of the crease) flat [`native:none`]
+  / half-folded [`v@462±7`, a 14pt sliver at the window's edge; the inference would
+  have put it at mid-window]. Pose changes re-publish with no manual refresh. Needs a
+  native rebuild.
 
 ### Still open (need native modifiers in `modules/swiftui-modifiers`)
 - Hide Back while editing (`navigationBarBackButtonHidden`) — standard iOS

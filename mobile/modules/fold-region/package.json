@@ -1,0 +1,7 @@
+{
+  "name": "fold-region",
+  "version": "0.1.0",
+  "description": "Real iPhone Duo crease: the active division ReservedRegion frame of the current scene's window (iOS 27.1 UIKit). Local Expo module (iOS only).",
+  "main": "index.ts",
+  "private": true
+}

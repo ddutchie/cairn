@@ -126,7 +126,7 @@ Sources: [Tech Talk: Prepare your app](https://developer.apple.com/videos/play/t
 
 ### Not exposed by Expo (candidate local modules — we have precedent)
 
-- ❌ `ReservedRegion` query (SwiftUI + UIKit).
+- ✅ `ReservedRegion` division query — local `modules/fold-region` (UIKit, via ObjC runtime); occlusion (camera) not exposed, unused.
 - ❌ `toolbarVerticalBehavior` / `verticalBarEdge`.
 - ❌ `UIWindowSceneActivation` (second window).
 - ❌ `.defaultTabBarPlacement(.sidebar)` (only `sidebarAdaptable` style).
@@ -248,7 +248,7 @@ Split View resize; delete-selected-from-elsewhere resolves; screenshot each pose
    side previews and Calendar via an inferred crease (`src/lib/fold.ts`); book pose
    keeps SwiftUI's hinge-centred columns; the simulator has no distinct tent pose
    (closed = outer display, no crease). The inferred crease assumes the window fills
-   the display — `ReservedRegion` (7) replaces it for Split View.
+   the display — superseded where the API exists (iOS 27.1+) by the real division region (`modules/fold-region`, `foldFromRegion`); the inference remains the fallback.
 8. **No-ops to explicitly ignore**: CameraCaptureAccessory / Virtual Front
    Camera (no camera features), tent/StandBy postures (no media playback),
    Touch ID changes nothing for us (keychain access is unchanged; no Face ID

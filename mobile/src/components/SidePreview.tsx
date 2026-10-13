@@ -169,12 +169,13 @@ export function SidePreviewLayout({
 }) {
   const { preview, setPreview, fills, stacked, contentPaddingTop } = state;
   const topHalf = useTopHalf();
+  const fold = useFold();
   // Laptop pose: the pane takes the top half (above the crease) and the screen
   // body the bottom half, starting just under the crease's gutter. Collapsed, the
   // body has the whole container instead.
   const collapsed = stacked && collapsePane;
   const stackedHeight = stacked ? topHalf.before : null;
-  const bodyPaddingTop = stacked && preview && !collapsed ? FOLD_GUTTER : contentPaddingTop;
+  const bodyPaddingTop = stacked && preview && !collapsed ? (fold?.gutter ?? FOLD_GUTTER) : contentPaddingTop;
   const pane = SIDE_PREVIEW_SUPPORTED && (
     <SidePreviewPane
       preview={preview}

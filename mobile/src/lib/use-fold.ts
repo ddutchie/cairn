@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWindowDimensions, type HostInstance, type LayoutChangeEvent } from "react-native";
-import { foldGeometry, type Fold } from "@/lib/fold";
+import { resolveFold, type Fold } from "@/lib/fold";
+import { refreshDivisionRegion, useDivisionRegion } from "@/lib/division-region";
 import { useHingeStatus } from "@/lib/hinge";
 
-/** The crease in the current window, or null when the display is flat/closed. */
+/**
+ * The crease in the current window, or null when the display is flat/closed or
+ * the window doesn't touch it. Uses the OS-reported division region when the
+ * native module has it; otherwise infers from hinge status + window shape.
+ */
 export function useFold(): Fold | null {
   const { width, height } = useWindowDimensions();
   const status = useHingeStatus();
-  return foldGeometry({ width, height }, status);
+  const region = useDivisionRegion();
+  // The native observer publishes region changes itself; this re-query on a pose
+  // or window change covers any beat the OS reports them in.
+  useEffect(() => {
+    refreshDivisionRegion();
+  }, [status, width, height]);
+  return resolveFold({ width, height }, status, region);
 }
 
 /**
