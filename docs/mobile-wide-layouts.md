@@ -278,6 +278,30 @@ own coordinates — null once the container already sits below it).
   simulator screenshots never show the fold. Persisted in the meta DB, forced
   off in release builds.
 
+### Projects navigation: flat list + view switcher (2026-10-13)
+
+The Projects split view's sidebar used to be a tree (each project expanding to
+Overview / Notes / Board / Calendar rows). Collapsed (phone, folded Duo, narrow
+windows) that meant going Back to the tree to change a project's view. Now:
+
+- The **sidebar is a flat list of projects** (`ProjectsTreeSidebar`,
+  `useProjectsList` in `projects-tree.ts`): the project's own icon (shared Lucide
+  name → SF Symbol, `SF_FOR_ICON`), name and "N notes · N tasks". It only chooses the
+  project; choosing one keeps the current view and closes any open item.
+- A **segmented control** — `ProjectViewSwitcher`: Overview | Notes n | Board n |
+  Calendar — sits at the top of the project column at every width, and sets the same
+  `selection.view` the tree rows did, so fold/unfold continuity is unchanged (the
+  component tree doesn't change; the selection lives in the module-level store).
+  `ProjectScreen` / `ProjectCalendarScreen` take it as a `switcher` prop and draw it
+  (the route copies of `ProjectScreen` keep their own three-segment control).
+- The default view for a fresh selection is Overview (was Notes).
+- **Re-tapping the Projects tab** returns to the project list: the tab hosts a SwiftUI
+  split view whose collapsed stack is our own selection state, so the native tab bar's
+  pop-to-root had nothing to pop; `app/(tabs)/_layout.tsx` listens for `tabPress` on
+  the Projects trigger and calls `resetProjectsSelection()` when it's already focused.
+- The demo seed's project icons are emoji, which aren't Lucide names, so they all fall
+  back to the folder; synced workspaces carry real names.
+
 ### Split View on the Duo (test pass 2026-10-12)
 
 The simulator's Split View is half-screen only: Cairn's window is **469×669** (or the

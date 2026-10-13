@@ -16,7 +16,6 @@ import {
   type HingeStatus,
   type ViewModifier,
 } from "@expo/ui/swift-ui/modifiers";
-import type { SFSymbol } from "sf-symbols-typescript";
 import { type ProjectSummary } from "@/db/queries";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
@@ -24,7 +23,8 @@ import { CardDetailScreen } from "@/screens/CardDetailScreen";
 import { NoteComposer } from "@/components/NoteComposer";
 import { TaskComposer } from "@/components/TaskComposer";
 import { ProjectsTreeSidebar } from "@/components/ProjectsTreeSidebar";
-import { useProjectsTree } from "@/components/projects-tree";
+import { useProjectsList } from "@/components/projects-tree";
+import { ProjectViewSwitcher } from "@/components/ProjectViewSwitcher";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
   bridgedItems,
@@ -65,7 +65,7 @@ interface Selection {
 
 // Module-level so the selection survives the split view unmounting when the
 // Duo folds to the phone layout and remounting when it unfolds.
-let selection: Selection = { projectId: null, view: "notes", noteId: null, cardId: null, composing: false };
+let selection: Selection = { projectId: null, view: "overview", noteId: null, cardId: null, composing: false };
 const listeners = new Set<() => void>();
 function setSelection(next: Partial<Selection>) {
   selection = { ...selection, ...next };
@@ -83,7 +83,7 @@ function useSelection(): Selection {
 
 /** Reset the selection (e.g. after a workspace switch unmounts the data). */
 export function resetProjectsSelection() {
-  setSelection({ projectId: null, view: "notes", noteId: null, cardId: null, composing: false });
+  setSelection({ projectId: null, view: "overview", noteId: null, cardId: null, composing: false });
 }
 
 /**
@@ -115,13 +115,6 @@ const LEAVE_FOCUS: NavigationSplitViewVisibility = "doubleColumn";
 const BOTH_SLOTS: readonly ChromeSlot[] = ["primary", "secondary"];
 const LIST_SLOT: readonly ChromeSlot[] = ["primary"];
 const NO_SLOTS: readonly ChromeSlot[] = [];
-
-const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
-  { id: "overview", title: "Overview", icon: "number" },
-  { id: "notes", title: "Notes", icon: "doc.text" },
-  { id: "board", title: "Board", icon: "rectangle.split.3x1" },
-  { id: "calendar", title: "Calendar", icon: "calendar" },
-];
 
 export function ProjectsSplitView({
   projects,
@@ -195,27 +188,35 @@ export function ProjectsSplitView({
     setBridged((prev) => (prev[slot] === chrome ? prev : { ...prev, [slot]: chrome }));
   }, []);
 
-  // The projects tree, one model for both renderers: the iPad's system tab
-  // sidebar (the Projects tab is index 0) or the in-app panel.
-  const onTreeSelect = useCallback((id: string, next?: string) => {
+  // The sidebar is a flat list of projects: choosing one keeps the current view
+  // (Overview / Notes / Board / Calendar) and closes any open item; the views
+  // themselves are switched by the segmented control in the project column.
+  const onProjectSelect = useCallback((id: string) => {
     setSelection({
       projectId: id,
-      ...(next ? { view: next as SplitViewKind } : {}),
-      ...(id !== selection.projectId || (next && next !== selection.view) ? { noteId: null, cardId: null } : {}),
+      ...(id !== selection.projectId ? { noteId: null, cardId: null } : {}),
       composing: false,
     });
   }, []);
   // Collapsed at the root (nothing chosen yet) no row is highlighted: the fallback
   // project only exists so the other columns have something to show when expanded,
-  // and a lit "Notes" row would read as already being inside it.
-  const treeProjectId = compact && sel.projectId == null ? null : projectId;
-  const tree = useProjectsTree({ projects, views: VIEWS, projectId: treeProjectId, view, onSelect: onTreeSelect });
-
+  // and a lit row would read as already being inside it.
+  const listProjectId = compact && sel.projectId == null ? null : projectId;
+  const projectsList = useProjectsList({ projects, projectId: listProjectId, onSelect: onProjectSelect });
   // Switching panels (Overview → Notes, …) closes the open note/task: an item
   // from one panel must not stay selected inside another (a task open in Notes).
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next, ...(next !== selection.view ? { noteId: null, cardId: null } : {}), composing: false });
   }, []);
+  const switcher = (
+    <ProjectViewSwitcher
+      view={view}
+      noteCount={project?.noteCount ?? 0}
+      cardCount={project?.cardCount ?? 0}
+      onSelect={selectView}
+    />
+  );
+
   // SPIKE: opening an item never switches the view out from under the user —
   // the item renders in Detail whatever the Content column shows.
   const openNote = useCallback((id: string) => setSelection({ noteId: id, cardId: null, composing: false }), []);
@@ -246,6 +247,7 @@ export function ProjectsSplitView({
         nested
         projectId={projectId}
         view={view as ProjectTab}
+        switcher={switcher}
         selectedId={sel.noteId}
         onSelectView={selectView}
         onOpenNote={openNote}
@@ -301,6 +303,7 @@ export function ProjectsSplitView({
             nested
             projectId={projectId}
             view="board"
+            switcher={switcher}
             selectedId={sel.cardId}
             onSelectView={selectView}
             onOpenNote={openNote}
@@ -314,6 +317,7 @@ export function ProjectsSplitView({
             nested
             projectId={projectId}
             view="overview"
+            switcher={switcher}
             onSelectView={selectView}
             onOpenNote={openNote}
             onOpenCard={openCard}
@@ -321,7 +325,7 @@ export function ProjectsSplitView({
         </ChromeColumn>
       ) : view === "calendar" ? (
         <ChromeColumn key={`${projectId}:calendar`} slot={slot("primary")}>
-          <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
+          <ProjectCalendarScreen nested projectId={projectId} switcher={switcher} onOpenCard={openCard} />
         </ChromeColumn>
       ) : (
         // No item open: Detail hosts the action panel below, so the list
@@ -533,7 +537,7 @@ export function ProjectsSplitView({
           modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic"), forceCompactWidth(compact)]}
         >
           <NavigationSplitView.Sidebar>
-            <ProjectsTreeSidebar title={workspaceName} tree={tree} onWorkspaceSwitched={onWorkspaceSwitched} />
+            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} />
           </NavigationSplitView.Sidebar>
           <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
           {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { View, StyleSheet } from "react-native";
@@ -33,11 +33,14 @@ import { useTheme } from "@/theme";
 export function ProjectCalendarScreen({
   nested = false,
   projectId,
+  switcher,
   onOpenCard,
 }: {
   nested?: boolean;
   /** Split-view column: the project to show (instead of the route param). */
   projectId?: string;
+  /** Split-view column: the project-view switcher drawn above the calendar. */
+  switcher?: ReactNode;
   /** Split-view column: open a task beside the calendar instead of pushing it. */
   onOpenCard?: (id: string) => void;
 }) {
@@ -94,6 +97,7 @@ export function ProjectCalendarScreen({
           },
         ]}
       />
+      {switcher != null && <View style={styles.switcher}>{switcher}</View>}
       <CalendarView
         cards={cards}
         bottomInset={insets.bottom}
@@ -110,4 +114,6 @@ export function ProjectCalendarScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  // Same insets as ProjectScreen's segment bar, but in flow above the calendar.
+  switcher: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
 });

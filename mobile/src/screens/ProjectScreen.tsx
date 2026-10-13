@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps -- stable callbacks, intentional */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
@@ -73,6 +73,7 @@ export function ProjectScreen({
   nested = false,
   projectId,
   view,
+  switcher,
   onSelectView,
   onOpenNote,
   onOpenCard,
@@ -86,8 +87,10 @@ export function ProjectScreen({
    * column brings its own navigation bar (see ScreenChrome).
    */
   projectId?: string;
-  /** Split-view column: the section to show; hides the segment control. */
+  /** Split-view column: the section to show; hides the screen's own segment control. */
   view?: Tab;
+  /** Split-view column: the project-view switcher to draw in place of the own segment control. */
+  switcher?: ReactNode;
   /** Split-view column: Overview's "view notes / board" shortcuts. */
   onSelectView?: (view: Tab) => void;
   /** Split-view column: open a note / task beside this one instead of pushing. */
@@ -414,6 +417,7 @@ export function ProjectScreen({
         ]}
       />
 
+      {switcher != null && <View style={styles.segment}>{switcher}</View>}
       {view == null && (
       <View style={styles.segment}>
         <SegmentedControl
@@ -434,7 +438,7 @@ export function ProjectScreen({
       </View>
       )}
 
-      <View style={[styles.content, view != null && styles.contentNoSegment]}>
+      <View style={[styles.content, view != null && switcher == null && styles.contentNoSegment]}>
         {tab === "overview" ? (
         overview ? (
           <OverviewTab
