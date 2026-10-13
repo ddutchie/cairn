@@ -113,9 +113,13 @@ export function useSidePreview({
     headerShown: !fills,
     // While a preview is open its SwiftUI pane reaches the window edge and
     // handles the side rail itself; the RN padding would double that inset.
+    // Beside/above the body the pane only takes the right edge, so the body
+    // keeps the left inset. When it fills the window it spans both edges, so a
+    // left rail (the left window of a Split View) must not be padded again —
+    // that put the whole page one rail-width too far right and clipped it.
     contentStyle:
       preview != null
-        ? { backgroundColor: t.background, paddingLeft: insets.left }
+        ? { backgroundColor: t.background, paddingLeft: fills ? 0 : insets.left }
         : { backgroundColor: t.background, paddingLeft: insets.left, paddingRight: insets.right },
     title: chrome && (!titleWhenWide || preview != null) ? "" : title,
     headerTransparent: chrome,

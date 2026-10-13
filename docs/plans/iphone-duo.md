@@ -226,11 +226,16 @@ Split View resize; delete-selected-from-elsewhere resolves; screenshot each pose
    integrate with (floating pill vs side rail), not a layout by idiom, and
    expo-router exposes no placement signal to key off instead — leave it.
    Remaining: run Xcode's **App Resizability** skill over the target.
-4. **Split View multitasking test pass.** Drag the app to each side on the
-   inner display; vertical system buttons can appear left or right. Confirm
-   columns, sidebar, modals and the chat preview survive narrowed widths —
-   the split collapses to one column (no phone-stack swap anymore); verify
-   that transition, especially around compact widths in 50/50.
+4. **Split View multitasking test pass.** ✅ DONE 2026-10-12 on the Duo
+   simulator (details + the bug it found in `docs/mobile-wide-layouts.md`,
+   "Split View on the Duo"). The sim only offers a **half-screen** split: Cairn's
+   window is 469×669 or the full 951×669 — no 50/50 resize, no other widths, so the
+   "compact widths in 50/50" transition can't be exercised there. In the 469pt
+   window Projects drills down as one column, notes/Chat/Calendar fit, and the
+   crease is correct (`v@462±7` sliver when half-folded). It found one real bug
+   (task/note previews that fill the window were pushed a rail-width too far right
+   and clipped when the rail is on the left) — fixed in `SidePreview`. Still to try on
+   hardware: the app in the *right* window (rail on the right), modals in the split.
 5. **Second window (later).** `UIWindowSceneActivation` would let a note live
    beside its list as a real second window (better than our in-app preview
    panel for multitaskers). Needs a local module; inner-display-only. Defer

@@ -278,6 +278,38 @@ own coordinates — null once the container already sits below it).
   simulator screenshots never show the fold. Persisted in the meta DB, forced
   off in release builds.
 
+### Split View on the Duo (test pass 2026-10-12)
+
+The simulator's Split View is half-screen only: Cairn's window is **469×669** (or the
+full 951×669). The divider doesn't free-resize — drags snap back to 469, or past a
+limit hand Cairn the whole display. Measured with the Fold overlay and `lldb`
+(`recursiveDescription` on the live window — see "Debugging aids"):
+
+- Projects, notes, Chat and Calendar all lay out in the 469pt window (below the 700pt
+  `forceCompactWidth` cut, so Projects drills down; previews that open from Chat /
+  Calendar / Graph / Overview **fill** the window since 469 < `SIDE_PREVIEW_MIN_WIDTH`).
+- The side rail sits on the **left** of the left window (right of the right window).
+  The window reports `L0 R0` safe-area insets there, while a screen's own
+  `useSafeAreaInsets()` reports `left: 84` and the screens' `RNSSafeAreaView` wrapper
+  is laid out at x=84 (385pt wide).
+- **Bug (fixed): filled previews clipped in the left window.** Opening a task or note
+  from Chat / Calendar / Graph / Overview in the 469pt window drew the page ~84pt too
+  far right and ran it off the edge (Title field, Urgent chip cut off). Cause: with a
+  preview open, `useSidePreview`'s `contentStyle` kept `paddingLeft: insets.left`
+  (right padding was already dropped because the SwiftUI pane handles the rail), but
+  a *filled* pane spans both edges and handles the left rail too — so the RN wrapper
+  inset it once (385pt container at x=84) and the SwiftUI `Host`/`NavigationStack`
+  inside inset the content again (hosting view 469pt wide, content placed at +84).
+  Fix: `paddingLeft: fills ? 0 : insets.left`. Notes opened inside the Projects tab
+  were fine in the same window (they aren't hosted in a `SidePreview` pane).
+- Not covered: the app in the right-hand window (rail on the right; same code path
+  as full screen), modals in the split. If a bug like this resurfaces, the view
+  hierarchy dump is the fastest way to see which layer adds the extra inset:
+  `lldb -p <pid> --batch -o 'expr -l objc -O -- [[[[[[UIApplication sharedApplication]
+  connectedScenes] anyObject] windows] firstObject] recursiveDescription]'` (cast
+  `NSStringFromX` calls to `(NSString*)` when building strings; no variadic
+  `appendFormat`).
+
 ### Projects in a narrow regular-width window (portrait Duo, ~669pt)
 
 Regular width but too narrow for three columns: SwiftUI kept only the detail and hid
