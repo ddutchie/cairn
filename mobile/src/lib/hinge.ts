@@ -1,5 +1,7 @@
+import { Platform } from "react-native";
 import { useSyncExternalStore } from "react";
 import { addHingeListener, getHinge } from "expo-hinge";
+import { statusFromHinge } from "@/lib/hinge-status";
 import type { HingeStatus } from "@expo/ui/swift-ui/modifiers";
 
 /**
@@ -43,11 +45,11 @@ export function useHingeStatus(): HingeStatus | null {
 
 // Feed the cache from expo-hinge for the app's lifetime (null-safe where unavailable).
 try {
-  const initial = getHinge();
-  if (initial) last = initial.status;
+  const initial = statusFromHinge(getHinge(), Platform.OS);
+  if (initial) last = initial;
   addHingeListener((event) => {
-    rememberHingeStatus(event.hinge?.status ?? null);
+    rememberHingeStatus(statusFromHinge(event.hinge, Platform.OS));
   });
 } catch {
-  // Native module missing in this build: callers keep whatever else reports.
+  // Native module missing in this build: nothing reports, so useFold stays on its null path.
 }

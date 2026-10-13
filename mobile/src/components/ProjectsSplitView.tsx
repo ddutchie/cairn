@@ -11,9 +11,7 @@ import {
 } from "@expo/ui/swift-ui";
 import {
   navigationSplitViewStyle,
-  onHingeChange,
   tint,
-  type HingeStatus,
   type ViewModifier,
 } from "@expo/ui/swift-ui/modifiers";
 import { type ProjectSummary } from "@/db/queries";
@@ -41,7 +39,7 @@ import {
 } from "@/components/screen-chrome";
 import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
-import { lastHingeStatus, rememberHingeStatus, useHingeStatus } from "@/lib/hinge";
+import { useHingeStatus } from "@/lib/hinge";
 import { forceCompactBelow } from "@modules/swiftui-modifiers";
 
 /**
@@ -171,9 +169,6 @@ export function ProjectsSplitView({
   const [boardVersion, setBoardVersion] = useState(0);
 
   // ── Duo posture ────────────────────────────────────────────────────────────
-  // The hinge status feeds the shared cache (SidePreviewPane and others read
-  // it); column widths are SwiftUI's job, so nothing here branches on it.
-  const [, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   // Notes only: "detailOnly" is focus mode (the note gets the whole window).
   // Visibility starts at "doubleColumn" (sidebar hidden): on room-short
   // windows SwiftUI asks for it anyway, and starting at "all" opens the
@@ -196,7 +191,6 @@ export function ProjectsSplitView({
     else if (col === "sidebar") setSelection({ projectId: null, noteId: null, cardId: null, composing: false });
     // "detail" carries no pop information — the selection already says what's open.
   };
-  const hingeModifier = onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)));
   // No width pins on any column: SwiftUI owns all widths. Explicit pins —
   // fixed numbers and stale-prone ideals alike — visibly missed the crease
   // across poses, while the unpinned board always reflowed correctly. Same treatment everywhere.
@@ -286,7 +280,7 @@ export function ProjectsSplitView({
     </ChromeColumn>
   );
 
-  // Column widths are SwiftUI's job (see hingeModifier above) — no pins here.
+  // Column widths are SwiftUI's job (see the hinge note in the docs) — no pins here.
 
   // Closing the note also leaves focus mode, so the list is never left hidden
   // behind an empty detail.
@@ -601,7 +595,7 @@ export function ProjectsSplitView({
           // the project view behind the sidebar button. Forcing compact width makes
           // the split view collapse like the folded Duo — tree → view → item
           // drill-down — through the real size-class path.
-          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic"), forceCompactBelow(COMPACT_BELOW)]}
+          modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(COMPACT_BELOW)]}
         >
           <NavigationSplitView.Sidebar>
             <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} />

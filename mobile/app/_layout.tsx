@@ -15,7 +15,6 @@ import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { FoldDebugOverlay } from "@/components/FoldDebugOverlay";
-import { HingeObserver } from "@/components/HingeObserver";
 import { ToastProvider } from "@/components/Toast";
 import { OnboardingGuide } from "@/components/OnboardingGuide";
 import { useTheme } from "@/theme";
@@ -146,7 +145,6 @@ export default function RootLayout() {
             </ToastProvider>
           </ThemeProvider>
           <UpdateBanner />
-          <HingeObserver />
           {__DEV__ ? <FoldDebugOverlay /> : null}
         </SafeAreaProvider>
       </KeyboardProvider>

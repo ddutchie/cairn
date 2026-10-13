@@ -5,8 +5,7 @@ import { useRouter } from "expo-router";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
-import { onHingeChange, type HingeStatus } from "@expo/ui/swift-ui/modifiers";
-import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
+import { useHingeStatus } from "@/lib/hinge";
 import { FOLD_GUTTER } from "@/lib/fold";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 // NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
@@ -245,7 +244,7 @@ export function SidePreviewPane({
 }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
+  const hinge = useHingeStatus();
   // Same split as the Notes split view: half open on a Duo, the pane starts
   // exactly on the fold (each half its own page); fully open (flat), and on
   // iPad, the open item gets the larger share, as SwiftUI's detail column
@@ -298,7 +297,7 @@ export function SidePreviewPane({
   return (
     <Animated.View style={[{ overflow: "hidden" }, frame]}>
       <Host ignoreSafeArea="keyboard" style={fill ? { flex: 1 } : stacked ? { width, height: stackedH } : { width: paneWidth, flex: 1 }}>
-        <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
+        <NavigationStack>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">
               <NoteDetailScreen nested noteId={shown.id} onClose={onClose} />
