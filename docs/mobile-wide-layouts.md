@@ -130,10 +130,15 @@ hinge. (The board's old task panel is gone — open tasks live in Detail now.)
 
 Nothing in `node_modules` is patched. There are two local Expo modules:
 
-### `modules/swiftui-modifiers` — `navigationBarHidden()`
-Registers one custom @expo/ui modifier (`.toolbar(.hidden, for: .navigationBar)`)
-via `ViewModifierRegistry`. Used by bridged columns on iPad. Tiny and stable —
-it's @expo/ui's own extension point.
+### `modules/swiftui-modifiers` — `navigationBarHidden()`, `forceCompactWidth()`
+Registers custom @expo/ui modifiers via `ViewModifierRegistry` — @expo/ui's own
+extension point, tiny and stable:
+- `navigationBarHidden()` — `.toolbar(.hidden, for: .navigationBar)`; used by
+  bridged columns on iPad.
+- `forceCompactWidth(enabled)` — `.environment(\.horizontalSizeClass, .compact)`
+  while enabled; used by `ProjectsSplitView` below 700pt (see "Projects in a narrow
+  regular-width window"). Always the same single environment modifier with a changing
+  value, so toggling it never changes the view's identity (no remount).
 
 ### `modules/tab-sidebar` — Mail-style groups in the iPad tab sidebar
 react-native-screens (4.28, also 5.0 alpha) builds its `UITabBarController` from
@@ -184,6 +189,133 @@ a customisation "Edit" button.
 - **Stack.Screen options persist** → route screens set `headerShown` and
   `contentStyle` explicitly so the split view's overrides don't stick when
   navigating back to phone-style routes (Android, root-stack pushes).
+
+## Poses — what the app can see (iPhone Duo, measured 2026-10-12)
+
+Apple's six poses (closed, tent, open-wide, half-folded book, open-tall, laptop)
+as the Duo simulator reports them to the app (window pts / safe-area insets /
+`onHingeChange` status):
+
+| Pose | Window | Insets T/B/L/R | Hinge | Fold |
+|---|---|---|---|---|
+| Closed (outer display) | 466×678 | 0/34/0/84 | `closed` | none |
+| Open, tall (flat) | 669×951 | 82/34/0/0 | `fullyOpen` | none |
+| **Laptop** (portrait half-fold) | 669×951 | 82/34/0/0 | `partiallyOpen` | **horizontal**, mid-height |
+| Open, wide (flat) | 951×669 | 0/34/0/84 | `fullyOpen` | none |
+| Book (landscape half-fold) | 951×669 | 0/34/0/84 | `partiallyOpen` | vertical, mid-width |
+
+Gotchas:
+- **Laptop and tall are identical** except for the hinge status — same window,
+  same insets. The status is the only signal, and it carries no axis or frame.
+- The status also reads `partiallyOpen` transiently on the 466×678 outer display
+  while folding/unfolding; `foldGeometry` ignores windows with a short side
+  under 600pt.
+- The simulator exposes no distinct tent/kickstand pose; the closed device on
+  its side is the outer display (app stays portrait-only, so it rotates with the
+  device). No custom layout is needed — there is no crease.
+- Headless screenshots (`simctl`/the sim tool) never draw the crease; judge
+  folds from the Device Hub window or the debug band below. Tab-pill taps from
+  automation are flaky; pose changes can't be scripted (Device Hub hosts the
+  simulator, not Simulator.app).
+
+### How screens avoid the crease (laptop pose)
+
+`src/lib/fold.ts` (`foldGeometry`, pure + tested) infers the crease from hinge
+status and window shape: `partiallyOpen` on an inner-size window → horizontal
+crease at mid-height when portrait, vertical at mid-width when landscape, with a
+~20pt gutter. It assumes the window fills the display (not true in Split View —
+the native `ReservedRegion` frame would replace it; see `docs/plans/iphone-duo.md`).
+`src/lib/hinge.ts` is now reactive (`useHingeStatus`); `src/lib/use-fold.ts` has
+`useFold()` and `useTopHalf()` (room above a horizontal crease, in a container's
+own coordinates — null once the container already sits below it).
+
+- **Chat** fills the window — the transcript may scroll under the crease — until
+  its own input has the keyboard. Then it is confined above the crease (the
+  composer rides up onto it; the keyboard is exactly the flat half): lift is
+  `never`, `offset` is the real gap to the window bottom (`useTopHalf().gap`; the
+  default tab-bar offset made the library inset the transcript by nearly the
+  whole keyboard and scrolled the messages out of view), and bottom padding is
+  only the composer's overlap with the transcript's bottom edge (no tab-bar lift).
+- **Side preview** (`SidePreviewLayout`, shared by Chat/Graph/Calendar): when
+  stacked, the pane sits above the crease and the screen body below it (a column
+  instead of a row; the pane animates its height). Header treatment matches the
+  wide case. The keyboard is the whole flat half, so a stacked chat would sit
+  behind it: while the chat's own input is focused `collapsePane` slides the pane
+  shut (it stays mounted at full size, only its clipping frame shrinks, so an
+  unsaved note edit survives and nothing re-lays out) and the chat fills the top
+  half with its composer on the crease; it re-expands when the keyboard goes. While
+  the note is being edited instead, the chat composer `hidden`s (it would float over
+  the editor). Keyboard lift is `never` throughout the stacked layout. With a
+  preview open the header's context ring and clear-chat button step aside (the
+  pane's ✕ sits under the ring and the ring swallowed its taps) and go into a small
+  glass capsule at the bottom-left, on the tab bar's row in the room beside it —
+  except while typing, when the pane is slid away and they return to the header.
+  The ring's popover opens upward from the capsule. (The ring is a native
+  `matchContents` host — leave it self-sizing in a centred RN slot: a fixed-size
+  host pins its SwiftUI content to the top-left.)
+- **Calendar**: the grid flexes down to the crease; the bottom band (selected-day
+  list + Unscheduled tray) is sized to the flat half.
+- Projects (split view) is system-managed; Graph and Overview — see the survey.
+- Debug aid for pose work: Settings → Appearance → Developer → **Fold overlay**
+  (dev builds only; `src/lib/dev-flags.ts`, `FoldDebugOverlay`) prints
+  window/insets/hinge along the top and draws the inferred crease band, since
+  simulator screenshots never show the fold. Persisted in the meta DB, forced
+  off in release builds.
+
+### Projects in a narrow regular-width window (portrait Duo, ~669pt)
+
+Regular width but too narrow for three columns: SwiftUI kept only the detail and hid
+the project view behind the sidebar button (open it once and it shows as a scrimmed
+overlay over the detail). `forceCompactWidth(compact)` (local `swiftui-modifiers`,
+`.environment(\.horizontalSizeClass, .compact)`) makes the split view collapse for
+real below 700pt, so the portrait Duo drills tree → view → item with a native Back,
+like the folded Duo. It changes only an environment value, so nothing remounts.
+Needs a native rebuild.
+
+### Composer behind the tab bar after rotating (pre-existing, fixed)
+
+Bisected against the pre-fold commit: rotating the unfolded Duo from landscape to
+portrait left the chat composer resting ~8pt above the bottom edge — behind the tab
+bar — until the screen was left and re-entered. `KeyboardStickyView` interpolates its
+offset by the keyboard `progress`, which can be stuck at 1 after a rotation while the
+height is 0, so it applied the *opened* offset (`KEYBOARD_OPEN_GAP`) to a closed
+keyboard. `RestingStickyView` (`src/components/chat/RestingStickyView.tsx`) treats a
+zero keyboard height as closed regardless of `progress`; while the keyboard moves the
+height is non-zero and the library's progress is used as before. Search's scope bar
+uses the same library view and may show the same symptom.
+
+### Keyboard + SwiftUI hosts: who owns the keyboard (note editor toolbars)
+
+Inside a `Host` (the Projects split view, the side-preview pane) SwiftUI also resizes
+its columns for the keyboard, while `react-native-keyboard-controller`'s
+`KeyboardStickyView` assumes the keyboard overlaps a full-height container and lifts
+by the whole keyboard height — counted twice, so the editor's formatting/AI toolbars
+ended up under the header (pre-existing, reproduced on the pre-PR commit). Rules now:
+- Both hosts pass `ignoreSafeArea="keyboard"`; keyboard-controller owns the keyboard
+  everywhere, as in Chat.
+- `NoteEditorBody` renders the toolbar as an absolute overlay on a full-height wrapper
+  inside a `RestingStickyView` (like the chat composer), and if the wrapper was
+  already shrunk for the keyboard (detected from its own `onLayout`; `measureInWindow`
+  is unreliable inside the hosting layer) it cancels the lift.
+- Nested in Projects the container already stops above the tab bar / bottom safe
+  area, so `bottomInset` is 0 there (it doubled the inset: an empty band under the
+  formatting row). Full-window routes keep `insets.bottom`.
+- The image button is the first item of the formatting row (reachable without
+  scrolling).
+
+### Debugging aids and tooling notes (2026-10-12 session)
+- Settings → Appearance → Developer → **Fold overlay** (dev builds; `dev-flags.ts`,
+  `FoldDebugOverlay`) — window/insets/hinge readout plus the inferred crease band.
+- Bisect against the pre-PR commit by checking it out (`git checkout --detach
+  898c5d7f`) and cold-launching: it separated three pre-existing bugs (rotation
+  composer, editor toolbars, Projects empty detail) from the fold work.
+- A second simulator (`iPhone 17 Pro`) is the control for "is this a Duo problem?";
+  it needs the dev client rebuilt for any native module changes
+  (`EXPO_USE_PRECOMPILED_MODULES=0 npx expo run:ios --device <udid> --no-bundler`).
+- Screenshots lag taps; take a second one before judging a state. Tap coordinates are
+  device points (the screenshot's pixel width ÷ the device's point width).
+- `onHingeChange` needs a SwiftUI view to hang off: `HingeObserver` (root, invisible)
+  keeps the hinge cache fed when no split view or preview pane is mounted.
 
 ## Unifying — getting rid of the native additions
 
@@ -409,6 +541,12 @@ Today · span.
   { task, column? }` in the selection), like `NoteComposer`.
 - Workspace switcher used `folder` (same as the Projects tab and project
   rows) → `square.stack.3d.up`.
+
+### Still open after the laptop-pose work
+(Checked and not affected: Search's scope bar is UIKit's native search scope — or a
+measured inset — not a `KeyboardStickyView`, so the composer's rotation bug can't occur.)
+- Native `ReservedRegion` frames would replace the inferred crease (needed for Split
+  View multitasking, where the window no longer fills the display).
 
 ### Still open (need native modifiers in `modules/swiftui-modifiers`)
 - Hide Back while editing (`navigationBarBackButtonHidden`) — standard iOS

@@ -53,6 +53,7 @@ export function ContextRing({
   cacheCreationTokens,
   size = 22,
   stroke = 3.5,
+  popoverArrowEdge = "top",
 }: {
   promptTokens: number;
   contextLimit: number;
@@ -69,6 +70,12 @@ export function ContextRing({
   cacheCreationTokens?: number;
   size?: number;
   stroke?: number;
+  /**
+   * Which side of the popover its arrow is on: "top" (default) opens it below the
+   * ring, as from a header; "bottom" opens it above, for a ring near the screen's
+   * bottom (the chat composer).
+   */
+  popoverArrowEdge?: "top" | "bottom";
 }) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
@@ -257,7 +264,7 @@ export function ContextRing({
 
   return (
     <Host matchContents style={styles.host}>
-      <Popover isPresented={open} onIsPresentedChange={setOpen} arrowEdge="top">
+      <Popover isPresented={open} onIsPresentedChange={setOpen} arrowEdge={popoverArrowEdge}>
         <Popover.Trigger>
           <Button
             modifiers={[accessibilityLabel(a11yLabel)]}

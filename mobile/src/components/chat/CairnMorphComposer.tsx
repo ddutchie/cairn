@@ -5,7 +5,7 @@ import { Image } from "expo-image";
 import { Send, X, Plus } from "lucide-react-native";
 import Animated, { Extrapolation, FadeOut, interpolate, LinearTransition, useAnimatedReaction, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { RestingStickyView } from "./RestingStickyView";
 import { useTheme, withAlpha, useIsDark, KEYBOARD_OPEN_GAP } from "@/theme";
 import { Glass } from "./attachment-panel/glass";
 import { COMPOSER, COMPOSER_STRIP_HEIGHT, DURATION, GUTTER } from "./attachment-panel/constants";
@@ -37,6 +37,13 @@ export interface CairnMorphComposerProps {
   canSend: boolean;
   onSend: () => void;
   onInputFocus: () => void;
+  onInputBlur?: () => void;
+  /**
+   * Stay mounted (keeps the draft and focus state) but invisible and untouchable.
+   * Used when another input owns the keyboard — the composer would otherwise ride
+   * up over it (laptop pose: a note being edited above the chat).
+   */
+  hidden?: boolean;
   closedLift: number;
   onLayoutHeight: (h: number) => void;
   allowImages?: boolean;
@@ -44,7 +51,7 @@ export interface CairnMorphComposerProps {
 }
 
 export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
-  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
+  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, onInputBlur, hidden = false, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
   ref,
 ) {
   const t = useTheme();
@@ -73,7 +80,15 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
   const fallbackBg = withAlpha(t.surface2, 0.92);
   const isLight = !useIsDark();
   return (
-    <KeyboardStickyView offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }} style={styles.composerOverlay}>
+    <RestingStickyView
+      offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
+      // A stable StyleSheet object (never a fresh array), merged with the animated
+      // transform.
+      style={hidden ? styles.composerOverlayHidden : styles.composerOverlay}
+      accessibilityElementsHidden={hidden}
+      importantForAccessibility={hidden ? "no-hide-descendants" : "auto"}
+      pointerEvents={hidden ? "none" : "auto"}
+    >
       <View onLayout={(e) => onLayoutHeight(e.nativeEvent.layout.height)}>
         <View style={[styles.composerWrap]}>
           <Glass radius={COMPOSER.radius} interactive={false} fallbackTint={fallbackBg} style={styles.glassRoot}>
@@ -95,6 +110,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 value={input}
                 onChangeText={onChangeInput}
                 onFocus={onInputFocus}
+                onBlur={onInputBlur}
                 placeholder="Message Cairn…"
                 placeholderTextColor={isLight ? t.textSecondary : t.textTertiary}
                 multiline
@@ -117,12 +133,13 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
           </Glass>
         </View>
       </View>
-    </KeyboardStickyView>
+    </RestingStickyView>
   );
 });
 
 const styles = StyleSheet.create({
   composerOverlay: { position: "absolute", left: 0, right: 0, bottom: 0 },
+  composerOverlayHidden: { position: "absolute", left: 0, right: 0, bottom: 0, opacity: 0 },
   composerWrap: { paddingHorizontal: GUTTER, paddingTop: 8 },
   glassRoot: { overflow: "hidden", borderCurve: "continuous" as const },
   strip: { overflow: "hidden", borderTopLeftRadius: COMPOSER.radius - COMPOSER.stripPaddingTop, borderTopRightRadius: COMPOSER.radius - COMPOSER.stripPaddingTop, borderCurve: "continuous" as const },

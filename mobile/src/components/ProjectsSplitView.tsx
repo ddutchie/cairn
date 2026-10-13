@@ -37,6 +37,7 @@ import {
 import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
 import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
+import { forceCompactWidth } from "@modules/swiftui-modifiers";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
@@ -204,7 +205,11 @@ export function ProjectsSplitView({
       composing: false,
     });
   }, []);
-  const tree = useProjectsTree({ projects, views: VIEWS, projectId, view, onSelect: onTreeSelect });
+  // Collapsed at the root (nothing chosen yet) no row is highlighted: the fallback
+  // project only exists so the other columns have something to show when expanded,
+  // and a lit "Notes" row would read as already being inside it.
+  const treeProjectId = compact && sel.projectId == null ? null : projectId;
+  const tree = useProjectsTree({ projects, views: VIEWS, projectId: treeProjectId, view, onSelect: onTreeSelect });
 
   // Switching panels (Overview → Notes, …) closes the open note/task: an item
   // from one panel must not stay selected inside another (a task open in Notes).
@@ -491,7 +496,11 @@ export function ProjectsSplitView({
   // containment. See docs/plans/iphone-duo.md.
   return withHeader(
     <>
-      <Host style={{ flex: 1 }}>
+      {/* ignoreSafeArea="keyboard": SwiftUI would shrink the columns for the keyboard,
+          and the editor's keyboard-sticky toolbar then lifts by the keyboard height
+          a second time, ending up under the header. react-native-keyboard-controller
+          owns the keyboard, as everywhere else in the app. */}
+      <Host style={{ flex: 1 }} ignoreSafeArea="keyboard">
         <NavigationSplitView
           // True echo (except the spurious first-layout detailOnly with
           // nothing open, which is swallowed): controlled visibility only
@@ -516,7 +525,12 @@ export function ProjectsSplitView({
           // correct for the old two-column notes split — side by side, never
           // overlaid — but in a three-column split it pins content+detail and
           // hides the sidebar everywhere, iPad included.)
-          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic")]}
+          // Narrow windows (the unfolded Duo in portrait, ~669pt) are regular width
+          // but can't hold the columns: SwiftUI then keeps only the detail and hides
+          // the project view behind the sidebar button. Forcing compact width makes
+          // the split view collapse like the folded Duo — tree → view → item
+          // drill-down — through the real size-class path.
+          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic"), forceCompactWidth(compact)]}
         >
           <NavigationSplitView.Sidebar>
             <ProjectsTreeSidebar title={workspaceName} tree={tree} onWorkspaceSwitched={onWorkspaceSwitched} />

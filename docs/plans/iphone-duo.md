@@ -1,8 +1,10 @@
 # iPhone Duo — device, OS behaviors & Cairn plan
 
-Status: Spike implemented on `spike/duo-split-view` (uncommitted) — single adaptive
-container, sidebar column, action panels. Remaining: draft/focus acceptance
-matrix (§5.0), merge.
+Status: Split view merged; laptop pose (portrait half-fold), narrow-window Projects
+drill-down and several keyboard/rotation fixes shipped in PR #223 (`feat/duo-poses`,
+2026-10-12) — see `docs/mobile-wide-layouts.md` "Poses". Remaining: draft/focus
+acceptance matrix (§5.0), Split View multitasking pass (§5.4), native `ReservedRegion`
+(§5.7).
 Date: 2026-10-11 (Duo launches Oct 23, 2026; pre-orders Oct 16)
 Related: `docs/mobile-wide-layouts.md` (current split-view architecture),
 `docs/plans/mobile-app-viability.md`, `mobile/changelogs/v0.1.10.md`
@@ -242,6 +244,11 @@ Split View resize; delete-selected-from-elsewhere resolves; screenshot each pose
 7. **`ReservedRegion` module (if needed).** Only if a custom bar or the graph
    canvas needs to sit outside the safe area. Our standard-bars-everywhere
    approach may never need it — prefer that.
+7a. **Poses (2026-10-12).** ✅ Laptop pose (horizontal crease) handled for Chat,
+   side previews and Calendar via an inferred crease (`src/lib/fold.ts`); book pose
+   keeps SwiftUI's hinge-centred columns; the simulator has no distinct tent pose
+   (closed = outer display, no crease). The inferred crease assumes the window fills
+   the display — `ReservedRegion` (7) replaces it for Split View.
 8. **No-ops to explicitly ignore**: CameraCaptureAccessory / Virtual Front
    Camera (no camera features), tent/StandBy postures (no media playback),
    Touch ID changes nothing for us (keychain access is unchanged; no Face ID

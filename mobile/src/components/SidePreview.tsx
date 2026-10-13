@@ -7,6 +7,8 @@ import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
 import { onHingeChange, type HingeStatus } from "@expo/ui/swift-ui/modifiers";
 import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
+import { FOLD_GUTTER } from "@/lib/fold";
+import { useFold, useTopHalf } from "@/lib/use-fold";
 // NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
 import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
 import { useTheme } from "@/theme";
@@ -62,6 +64,11 @@ export interface SidePreviewState {
   open: ((ref: PreviewRef) => void) | null;
   /** Wide enough for a column beside the screen (and a pane exists). */
   wide: boolean;
+  /**
+   * Laptop pose (portrait half-fold): the preview opens in the upright top half
+   * and the screen keeps the flat bottom half, instead of a column beside it.
+   */
+  stacked: boolean;
   /** Folded with a preview open: the pane owns the whole window. */
   fills: boolean;
   /** Whether the screen's own toolbar items should render (the pane's bar owns the rail while open). */
@@ -95,8 +102,13 @@ export function useSidePreview({
   const { width } = useWindowDimensions();
   const headerHeight = useHeaderHeight();
   const [preview, setPreview] = useState<PreviewRef | null>(null);
+  const fold = useFold();
   const wide = SIDE_PREVIEW_SUPPORTED && width >= SIDE_PREVIEW_MIN_WIDTH;
-  const fills = SIDE_PREVIEW_SUPPORTED && !wide && preview != null;
+  const stacked = SIDE_PREVIEW_SUPPORTED && !wide && fold?.axis === "horizontal";
+  const fills = SIDE_PREVIEW_SUPPORTED && !wide && !stacked && preview != null;
+  // Header treatment is shared: transparent, title dropped once a preview opens
+  // (its own bar owns the top), whether the pane sits beside or above the body.
+  const chrome = wide || stacked;
   const screenOptions: Record<string, unknown> = {
     headerShown: !fills,
     // While a preview is open its SwiftUI pane reaches the window edge and
@@ -105,11 +117,11 @@ export function useSidePreview({
       preview != null
         ? { backgroundColor: t.background, paddingLeft: insets.left }
         : { backgroundColor: t.background, paddingLeft: insets.left, paddingRight: insets.right },
-    title: wide && (!titleWhenWide || preview != null) ? "" : title,
-    headerTransparent: wide,
+    title: chrome && (!titleWhenWide || preview != null) ? "" : title,
+    headerTransparent: chrome,
     // TabStack paints the header with the surface colour, and iOS 26 adds a
     // scroll-edge fade under it — both drew a white strip across the top.
-    ...(wide
+    ...(chrome
       ? {
           headerStyle: { backgroundColor: "transparent" },
           scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
@@ -121,10 +133,11 @@ export function useSidePreview({
     setPreview,
     open: SIDE_PREVIEW_SUPPORTED ? setPreview : null,
     wide,
+    stacked,
     fills,
     showToolbar: preview == null,
     screenOptions,
-    contentPaddingTop: wide ? headerHeight : 0,
+    contentPaddingTop: chrome ? headerHeight : 0,
   };
 }
 
@@ -138,28 +151,49 @@ export function SidePreviewLayout({
   children,
   bodyStyle,
   onChanged,
+  collapsePane = false,
 }: {
   state: SidePreviewState;
   children: ReactNode;
+  /**
+   * Laptop pose, stacked: slide the pane away (it stays mounted, so an unsaved
+   * edit survives) and give the screen the whole top half. For when the screen's
+   * own input has the keyboard — the flat half — so the screen's composer rises
+   * to the crease with its conversation above it.
+   */
+  collapsePane?: boolean;
   /** Extra style for the body column (e.g. background, top padding). */
   bodyStyle?: ViewStyle | ViewStyle[];
   /** The previewed task was saved, archived or deleted. */
   onChanged?: () => void;
 }) {
-  const { preview, setPreview, fills, contentPaddingTop } = state;
+  const { preview, setPreview, fills, stacked, contentPaddingTop } = state;
+  const topHalf = useTopHalf();
+  // Laptop pose: the pane takes the top half (above the crease) and the screen
+  // body the bottom half, starting just under the crease's gutter. Collapsed, the
+  // body has the whole container instead.
+  const collapsed = stacked && collapsePane;
+  const stackedHeight = stacked ? topHalf.before : null;
+  const bodyPaddingTop = stacked && preview && !collapsed ? FOLD_GUTTER : contentPaddingTop;
+  const pane = SIDE_PREVIEW_SUPPORTED && (
+    <SidePreviewPane
+      preview={preview}
+      fill={!state.wide && !stacked}
+      stackedHeight={stackedHeight}
+      stackedCollapsed={collapsed}
+      onClose={() => setPreview(null)}
+      onChanged={onChanged}
+      onOpen={setPreview}
+    />
+  );
   return (
     <SidePreviewProvider value={SIDE_PREVIEW_SUPPORTED ? setPreview : null}>
-      <View style={styles.row}>
-        <View style={[{ flex: 1, paddingTop: contentPaddingTop }, bodyStyle, fills && styles.collapsed]}>{children}</View>
-        {SIDE_PREVIEW_SUPPORTED && (
-          <SidePreviewPane
-            preview={preview}
-            fill={!state.wide}
-            onClose={() => setPreview(null)}
-            onChanged={onChanged}
-            onOpen={setPreview}
-          />
-        )}
+      <View
+        onLayout={topHalf.onLayout}
+        style={[styles.row, stacked && styles.column]}
+      >
+        <View style={[{ flex: 1, paddingTop: bodyPaddingTop }, bodyStyle, fills && styles.collapsed]}>{children}</View>
+        {pane}
       </View>
     </SidePreviewProvider>
   );
@@ -167,6 +201,9 @@ export function SidePreviewLayout({
 
 const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: "row", overflow: "hidden" },
+  // The pane is always the second child (so it never remounts when the layout flips
+  // between a row and the laptop pose); reversed, it lands above the screen body.
+  column: { flexDirection: "column-reverse" },
   collapsed: { flex: 0, width: 0, overflow: "hidden" },
 });
 
@@ -176,6 +213,8 @@ export function SidePreviewPane({
   onChanged,
   onOpen,
   fill = false,
+  stackedHeight = null,
+  stackedCollapsed = false,
 }: {
   /** The note / task to show; null slides the pane closed. */
   preview: PreviewRef | null;
@@ -186,6 +225,13 @@ export function SidePreviewPane({
    * fold and unsaved edits survive it.
    */
   fill?: boolean;
+  /**
+   * Laptop pose: the pane sits above the body and grows to this height (the room
+   * above the crease) instead of a width. Null everywhere else.
+   */
+  stackedHeight?: number | null;
+  /** Stacked: ease the pane's frame shut (content keeps its size, so nothing re-lays out). */
+  stackedCollapsed?: boolean;
   onClose: () => void;
   /** The previewed task was saved, archived or deleted. */
   onChanged?: () => void;
@@ -224,7 +270,20 @@ export function SidePreviewPane({
   // Always an explicit width — never toggle style keys: Reanimated keeps the
   // last value of a key that disappears, so a folded `flex: 1` survived
   // unfolding and squeezed the chat. Folded, the pane is the whole window.
-  const frame = useAnimatedStyle(() => ({ width: fill ? width : open.get() * paneW.get() }));
+  // Both dimensions are always set (see above): beside the body the pane animates
+  // its width, stacked above it its height.
+  const stackedH = stackedHeight ?? 0;
+  const stacked = stackedHeight != null;
+  // Collapsing eases the frame shut over the (full-size, clipped) content, so the
+  // screen's body grows into the freed room in step.
+  const collapse = useSharedValue(stackedCollapsed ? 1 : 0);
+  useEffect(() => {
+    collapse.set(withTiming(stackedCollapsed ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+  }, [stackedCollapsed, collapse]);
+  const frame = useAnimatedStyle(() => ({
+    width: stacked || fill ? width : open.get() * paneW.get(),
+    height: stacked ? open.get() * stackedH * (1 - collapse.get()) : "100%",
+  }));
 
   // Folded (fill) there is nothing to slide beside: closing just removes it,
   // instead of a half-width slide-out over the chat.
@@ -233,7 +292,7 @@ export function SidePreviewPane({
 
   return (
     <Animated.View style={[{ overflow: "hidden" }, frame]}>
-      <Host style={fill ? { flex: 1 } : { width: paneWidth, flex: 1 }}>
+      <Host ignoreSafeArea="keyboard" style={fill ? { flex: 1 } : stacked ? { width, height: stackedH } : { width: paneWidth, flex: 1 }}>
         <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">

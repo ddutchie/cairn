@@ -311,6 +311,26 @@ export function NoteEditorToolbar({
 
       {/* ── Formatting row ── */}
       <ScrollAffordanceRow>
+        {/* Leftmost: always reachable without scrolling the row. */}
+        {onInsertImage && (
+          <View style={styles.group}>
+            <Pressable
+              disabled={imageBusy}
+              onPress={onInsertImage}
+              style={[styles.fmtBtn, imageBusy && styles.disabled]}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel="Add image"
+            >
+              {imageBusy ? (
+                <ActivityIndicator size="small" color={t.textTertiary} />
+              ) : (
+                <ImagePlus size={ICON} color={t.textSecondary} />
+              )}
+            </Pressable>
+            <View style={styles.divider} />
+          </View>
+        )}
         {FORMAT_GROUPS.map((group, gi) => (
           <View key={gi} style={styles.group}>
             {gi > 0 && <View style={styles.divider} />}
@@ -333,25 +353,6 @@ export function NoteEditorToolbar({
             })}
           </View>
         ))}
-        {onInsertImage && (
-          <View style={styles.group}>
-            <View style={styles.divider} />
-            <Pressable
-              disabled={imageBusy}
-              onPress={onInsertImage}
-              style={[styles.fmtBtn, imageBusy && styles.disabled]}
-              hitSlop={4}
-              accessibilityRole="button"
-              accessibilityLabel="Add image"
-            >
-              {imageBusy ? (
-                <ActivityIndicator size="small" color={t.textTertiary} />
-              ) : (
-                <ImagePlus size={ICON} color={t.textSecondary} />
-              )}
-            </Pressable>
-          </View>
-        )}
       </ScrollAffordanceRow>
     </Animated.View>
   );
