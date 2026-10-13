@@ -92,7 +92,8 @@ export function ProjectCalendarScreen({
   return (
     <View style={[styles.root, { backgroundColor: t.background }]}>
       <ScreenChrome
-        title={name ? `${name} · Calendar` : "Calendar"}
+        // In the split view the view switcher already says "Calendar"; the standalone route has none.
+        title={switcher != null ? name || "Calendar" : name ? `${name} · Calendar` : "Calendar"}
         right={[
           { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => setTodayNonce((n) => n + 1)) },
           {
