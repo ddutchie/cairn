@@ -107,11 +107,12 @@ selectedCardId`) — both via `ProjectScreen selectedId`.
 The hinge *status* is fed to the cache in `src/lib/hinge.ts` by **`expo-hinge`** (Expo SDK 58: `useHinge` /
 `getHinge` / `addHingeListener` → `{ angle, status }`, iOS 27.1 via `UIHingeInteraction`, Android 11+ via
 WindowManager). It works from plain JS (no SwiftUI host needed) and seeds synchronously, so the first render
-already knows the pose; the invisible `HingeObserver` and the `onHingeChange` modifiers still call
-`rememberHingeStatus` too (harmless duplicates; the modifiers can go once nothing else needs a host). The
+already knows the pose. It is the *only* source: the invisible `HingeObserver` and the `onHingeChange`
+modifiers were removed (SidePreview and the split view read `useHingeStatus()`). The
 Fold overlay shows the live angle (`hinge=closed@0°`). expo-hinge says to use hinge state for effects, not
 layout — the crease *geometry* is `modules/fold-region`. Android never reports `closed` (only `unknown` when
-the window doesn't span the fold), so an angle threshold would be needed there. The cache is read by
+the window doesn't span the fold), so `statusFromHinge` (`src/lib/hinge-status.ts`, unit-tested) treats an angle
+below 15° as closed there — untested on a device. The cache is read by
 `useFold` and the split view (`hingeClosed`). Column widths are SwiftUI's job entirely — no pins: a
 plain number is a FIXED column that can't follow pose changes, and even soft
 `{ min, ideal }` ideals visibly missed the crease across poses while the
@@ -498,8 +499,7 @@ ended up under the header (pre-existing, reproduced on the pre-PR commit). Rules
   (`EXPO_USE_PRECOMPILED_MODULES=0 npx expo run:ios --device <udid> --no-bundler`).
 - Screenshots lag taps; take a second one before judging a state. Tap coordinates are
   device points (the screenshot's pixel width ÷ the device's point width).
-- `onHingeChange` needs a SwiftUI view to hang off: `HingeObserver` (root, invisible)
-  keeps the hinge cache fed when no split view or preview pane is mounted.
+- The hinge cache is fed by `expo-hinge` (no SwiftUI host needed; the old `HingeObserver` is gone).
 
 ## Unifying — getting rid of the native additions
 
