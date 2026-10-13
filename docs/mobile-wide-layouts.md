@@ -315,7 +315,9 @@ windows) that meant going Back to the tree to change a project's view. Now:
 - **Re-tapping the Projects tab** returns to the project list: the tab hosts a SwiftUI
   split view whose collapsed stack is our own selection state, so the native tab bar's
   pop-to-root had nothing to pop; `app/(tabs)/_layout.tsx` listens for `tabPress` on
-  the Projects trigger and calls `resetProjectsSelection()` when it's already focused.
+  the Projects trigger and calls `resetProjectsSelection()` when it's already focused. Folded
+  that lands on the project list; wide it clears the selection, so the sidebar opens with
+  "No project selected" in the detail column (see "Wide layout" below).
 - The demo seed's project icons are emoji, which aren't Lucide names, so they all fall
   back to the folder; synced workspaces carry real names.
 
@@ -344,8 +346,8 @@ made a view switch a column push — a page swipe — and was dropped).
   is how the Board gets its status. Long card subtitles wrap instead of overflowing.
 - Native collapse: `forceCompactBelow(700)` (`swiftui-modifiers`) lets SwiftUI measure its own width and force compact below 700pt in the same layout pass; the old JS-driven `forceCompactWidth(compact)` left the split view forced compact for a beat after unfolding. The Overview's detail column is always the Recent panel (not a compact-only placeholder) for the same reason: on unfold SwiftUI expands before JS knows the width. Needs a native rebuild.
 - `useHingeStatus() === "closed"` flips `compact` early (the hinge reports before the window
-  shrinks). **No project selected** (a wide window on the project list, or after re-tapping the Projects tab): the sidebar opens (`columnVisibility="all"`, our own value is never kept as the user's choice) and the detail column says "No project selected" (the project column is blank: the overlay sidebar covers it). Choosing a project hides the sidebar again. A plain unfold no longer jumps into the first project.
-- The board's first frame can briefly show "No board columns" before its data loads.
+  shrinks).
+- **No project selected** (a wide window on the project list, or after re-tapping the Projects tab): the sidebar opens (`columnVisibility="all"`, our own value is never kept as the user's choice) and the detail column says "No project selected" (the project column is blank: the overlay sidebar covers it). Choosing a project hides the sidebar again. A plain unfold no longer jumps into the first project.
 
 ### Fold/unfold transitions: causes and rules (2026-10-13)
 
