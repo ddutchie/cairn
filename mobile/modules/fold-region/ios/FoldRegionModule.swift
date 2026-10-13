@@ -10,6 +10,7 @@ public class FoldRegionModule: Module {
   private var probe: RegionProbe?
   private var observers: [NSObjectProtocol] = []
   private var lastFrame: [Double]?
+  private var lastSupported: Bool?
   private var observing = false
 
   public func definition() -> ModuleDefinition {
@@ -59,13 +60,22 @@ public class FoldRegionModule: Module {
     probe?.removeFromSuperview()
     probe = nil
     lastFrame = nil
+    lastSupported = nil
   }
 
   /// A transparent, full-window, touch-transparent view whose `updateProperties()`
   /// (observation-tracked: UIKit re-runs it when the regions it read change) and
   /// `layoutSubviews()` (window resized) re-publish the region.
   private func attachProbe() {
-    guard observing, let window = Self.activeWindow() else { return }
+    guard observing else { return }
+    guard let window = Self.activeWindow() else {
+      // No scene to watch (transition / backgrounded): drop the stale probe and
+      // tell JS the region is unavailable rather than leaving its last value.
+      probe?.removeFromSuperview()
+      probe = nil
+      publishIfChanged()
+      return
+    }
     if let probe, probe.window === window { publishIfChanged(); return }
     probe?.removeFromSuperview()
     let p = RegionProbe(frame: window.bounds)
@@ -78,8 +88,12 @@ public class FoldRegionModule: Module {
   private func publishIfChanged() {
     let payload = Self.payload(Self.activeWindow())
     let frame = payload["frame"] as? [Double]
-    guard frame != lastFrame else { return }
+    let supported = payload["supported"] as? Bool ?? false
+    // `supported` can flip with the frame unchanged (nil → nil), so key on both;
+    // lastSupported starts nil so the first publish after observing always goes out.
+    guard frame != lastFrame || supported != lastSupported else { return }
     lastFrame = frame
+    lastSupported = supported
     sendEvent("onDivisionRegionChange", payload)
   }
 
