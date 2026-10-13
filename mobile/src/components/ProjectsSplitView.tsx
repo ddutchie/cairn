@@ -566,9 +566,10 @@ export function ProjectsSplitView({
           // True echo (except the spurious first-layout detailOnly with
           // nothing open, which is swallowed): controlled visibility only
           // settles when SwiftUI's reports are acknowledged.
-          columnVisibility={
-            compact ? "automatic" : visibility === "detailOnly" && sel.noteId ? "detailOnly" : visibility
-          }
+          // Same value at every width: switching it on unfold (automatic -> doubleColumn)
+          // made the sidebar open with the expansion and then slide away once JS learned
+          // the width. Collapsed, the split view follows preferredCompactColumn instead.
+          columnVisibility={visibility === "detailOnly" && sel.noteId ? "detailOnly" : visibility}
           onColumnVisibilityChange={(v) => {
             // Swallow the spurious first-layout detailOnly with nothing open;
             // echo everything else back (controlled visibility only settles
