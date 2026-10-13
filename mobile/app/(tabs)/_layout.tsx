@@ -1,6 +1,7 @@
 import { NativeTabs } from "expo-router/native-tabs";
-import { ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
+import { ThemeProvider, DarkTheme, DefaultTheme, usePathname } from "expo-router";
 import { useColorScheme } from "react-native";
+import { resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { useTheme } from "@/theme";
 
 /**
@@ -11,6 +12,12 @@ import { useTheme } from "@/theme";
 export default function TabsLayout() {
   const colorScheme = useColorScheme();
   const t = useTheme();
+  // Re-tapping the Projects tab while it's already showing goes back to the
+  // project list. The tab hosts a SwiftUI split view whose collapsed "stack" is
+  // our own selection state, so the tab bar's built-in pop-to-root has nothing to
+  // pop — reset the selection ourselves. (A tap from another tab just switches.)
+  const pathname = usePathname();
+  const onProjects = pathname === "/projects" || pathname.startsWith("/projects/");
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       {/* tintColor accents the selected tab (icon + label) with our brand
@@ -19,7 +26,14 @@ export default function TabsLayout() {
       {/* sidebarAdaptable: on iPad the tabs can become a sidebar instead of a
           bar floating over the top of the screen (no effect on iPhone/Duo). */}
       <NativeTabs tintColor={t.accent} minimizeBehavior="onScrollDown" sidebarAdaptable>
-        <NativeTabs.Trigger name="projects">
+        <NativeTabs.Trigger
+          name="projects"
+          listeners={{
+            tabPress: () => {
+              if (onProjects) resetProjectsSelection();
+            },
+          }}
+        >
           <NativeTabs.Trigger.Icon sf="folder.fill" md="folder" />
           <NativeTabs.Trigger.Label>Projects</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
