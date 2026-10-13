@@ -310,10 +310,13 @@ panel (the board scrolled sideways, the calendar grid was tiny). Now, on wide wi
 (`mainInDetail` in `ProjectsSplitView`):
 
 - **Overview** and **Notes** are unchanged (overview | item, list | note).
-- **Board** and **Calendar** take the big *detail* column; the project **Overview stays
-  as a narrow status column** beside them (same `ChromeColumn` key as the Overview view,
-  so switching Overview ↔ Board keeps it mounted). The segmented control sits at the top
-  of the status column, so it is always there to switch views.
+- **Board** and **Calendar** take the big *detail* column; the project column beside them
+  becomes a small **status panel** for that view (`ProjectViewStatus`, maths in
+  `lib/project-status.ts`, unit-tested): Board — open (+ done), overdue, due today, high /
+  urgent, and a bar per column; Calendar — today, this week (Sunday-start, the grid's week),
+  this month, overdue, unscheduled (open tasks only). The segmented control sits at the top of
+  the panel, so it is always there to switch views. The panel is re-keyed on `boardVersion`, so
+  editing a task in the canvas refreshes its numbers.
 - Opening a task or note **replaces the canvas** in the detail column; ✕ brings the board
   / calendar back (the canvas is rebuilt — its scroll position isn't kept). Composing a task
   does the same.

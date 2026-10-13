@@ -25,6 +25,8 @@ import { TaskComposer } from "@/components/TaskComposer";
 import { ProjectsTreeSidebar } from "@/components/ProjectsTreeSidebar";
 import { useProjectsList } from "@/components/projects-tree";
 import { ProjectViewSwitcher } from "@/components/ProjectViewSwitcher";
+import { ProjectViewStatus } from "@/components/ProjectViewStatus";
+import { ScreenChrome } from "@/components/screen-chrome";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
   bridgedItems,
@@ -317,9 +319,21 @@ export function ProjectsSplitView({
             onComposeTask={composeTask}
           />
         </ChromeColumn>
-      ) : view === "overview" || mainInDetail ? (
-        // Also the status column beside Board / Calendar (same key, so switching
-        // Overview <-> Board keeps it mounted).
+      ) : mainInDetail ? (
+        // Wide Board / Calendar: a small status panel for the view; the canvas itself
+        // is in the Detail column (emptyDetail below).
+        <ChromeColumn key={`${projectId}:status`} slot={slot("primary")}>
+          <>
+            <ScreenChrome title={project?.name || "Project"} />
+            <ProjectViewStatus
+              key={boardVersion}
+              projectId={projectId}
+              view={view as "board" | "calendar"}
+              switcher={switcher}
+            />
+          </>
+        </ChromeColumn>
+      ) : view === "overview" ? (
         <ChromeColumn key={`${projectId}:overview`} slot={slot("primary")}>
           <ProjectScreen
             nested
