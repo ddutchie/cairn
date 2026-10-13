@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
 import { Stack } from "expo-router";
-import { FileText } from "lucide-react-native";
+import { FileText, FolderOpen } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
   ContentUnavailableView,
@@ -138,6 +138,9 @@ export function ProjectsSplitView({
   const sel = useSelection();
   const project = projects.find((p) => p.id === sel.projectId) ?? projects[0];
   const projectId = project?.id ?? null;
+  // Nothing picked yet: the project views below are placeholders (they still need a
+  // project to build with, so the first one stands in) and a wide window opens the sidebar.
+  const hasSelection = sel.projectId != null;
   // The selected project vanished (deleted or synced away on another device):
   // move the selection to the fallback so the collapsed column and the detail
   // column don't keep pointing into the old project. Skipped while the list
@@ -147,15 +150,6 @@ export function ProjectsSplitView({
     if (stale) setSelection({ projectId: projects[0].id, noteId: null, cardId: null, composing: false });
   }, [stale, projects]);
   const hingeClosed = useHingeStatus() === "closed";
-  // Continuity: the wide layout shows the first project when none was picked. It is only
-  // recorded as the selection when you act in it (switch view, open or compose something),
-  // so folding then keeps you in that project — while a plain unfold from the project list
-  // doesn't jump into a project by itself.
-  const shownProject = useRef<string | null>(null);
-  useEffect(() => {
-    shownProject.current = projectId;
-  }, [projectId]);
-  const claimProject = () => selection.projectId ?? shownProject.current;
   const view = sel.view;
   // SPIKE: compact proxy for the collapsed split view. A visibility/selection
   // hint only — the component tree never swaps, so nothing remounts.
@@ -226,12 +220,12 @@ export function ProjectsSplitView({
   // Collapsed at the root (nothing chosen yet) no row is highlighted: the fallback
   // project only exists so the other columns have something to show when expanded,
   // and a lit row would read as already being inside it.
-  const listProjectId = compact && sel.projectId == null ? null : projectId;
+  const listProjectId = hasSelection ? projectId : null;
   const projectsList = useProjectsList({ projects, projectId: listProjectId, onSelect: onProjectSelect });
   // Switching panels (Overview → Notes, …) closes the open note/task: an item
   // from one panel must not stay selected inside another (a task open in Notes).
   const selectView = useCallback((next: SplitViewKind) => {
-    setSelection({ projectId: claimProject(), view: next, ...(next !== selection.view ? { noteId: null, cardId: null } : {}), composing: false });
+    setSelection({ view: next, ...(next !== selection.view ? { noteId: null, cardId: null } : {}), composing: false });
   }, []);
   const switcher = (
     <ProjectViewSwitcher
@@ -244,10 +238,10 @@ export function ProjectsSplitView({
 
   // SPIKE: opening an item never switches the view out from under the user —
   // the item renders in Detail whatever the Content column shows.
-  const openNote = useCallback((id: string) => setSelection({ projectId: claimProject(), noteId: id, cardId: null, composing: false }), []);
+  const openNote = useCallback((id: string) => setSelection({ noteId: id, cardId: null, composing: false }), []);
   // SPIKE: cards open in the Detail column (wide) or fullscreen (compact) —
   // never in the in-board slide-over anymore, so the right page is never empty.
-  const openCard = useCallback((id: string) => setSelection({ projectId: claimProject(), cardId: id, noteId: null, composing: false }), []);
+  const openCard = useCallback((id: string) => setSelection({ cardId: id, noteId: null, composing: false }), []);
   const overviewNav = useMemo(
     () => ({
       onOpenNote: openNote,
@@ -259,11 +253,11 @@ export function ProjectsSplitView({
   );
   // The list's + composes inline in the detail column (a native modal would
   // park on the wrong page on a Duo — there is no sheet-placement API).
-  const openComposer = useCallback(() => setSelection({ projectId: claimProject(), view: "notes", composing: "note", noteId: null, cardId: null }), []);
+  const openComposer = useCallback(() => setSelection({ view: "notes", composing: "note", noteId: null, cardId: null }), []);
   // New task: composed in the detail column too (the modal would park on the
   // left page of an unfolded Duo). Never switches the view (Board/Calendar).
   const composeTask = useCallback(
-    (column?: string) => setSelection({ projectId: claimProject(), composing: { task: true, ...(column ? { column } : {}) }, noteId: null, cardId: null }),
+    (column?: string) => setSelection({ composing: { task: true, ...(column ? { column } : {}) }, noteId: null, cardId: null }),
     [],
   );
 
@@ -324,7 +318,13 @@ export function ProjectsSplitView({
   // placeholder) is always the Detail column. Both stay mounted across
   // fold/unfold — only the split view's own collapse changes what is shown.
   const contentView =
-      view === "board" ? (
+      !hasSelection ? (
+        // Blank: the sidebar overlays this column while nothing is picked, so the message
+        // goes in the detail column (right), where it can be read.
+        <ChromeColumn key="no-project" slot={slot("primary")}>
+          <View style={{ flex: 1, backgroundColor: t.background }} />
+        </ChromeColumn>
+      ) : view === "board" ? (
         // The board always has the whole project column; its overflow (status blocks, or
         // an open task) is in the Detail column.
         <ChromeColumn
@@ -449,7 +449,11 @@ export function ProjectsSplitView({
   // Detail with nothing open: a per-view action panel, so the right page
   // earns its space instead of sitting blank.
   const emptyDetail =
-    view === "board" ? (
+    !hasSelection ? (
+      <ChromeColumn key="no-project-detail" slot={slot("secondary")}>
+        <DetailActionPanel icon={FolderOpen} title="No project selected" body="Choose a project from the list to see its notes, board and calendar." />
+      </ChromeColumn>
+    ) : view === "board" ? (
       // Wide: the board's status blocks until a task is opened (collapsed, this column
       // only appears with an open item).
       <ChromeColumn key={`${projectId}:board-status`} slot={slot("secondary")}>
@@ -570,12 +574,16 @@ export function ProjectsSplitView({
           // Same value at every width: switching it on unfold (automatic -> doubleColumn)
           // made the sidebar open with the expansion and then slide away once JS learned
           // the width. Collapsed, the split view follows preferredCompactColumn instead.
-          columnVisibility={visibility === "detailOnly" && sel.noteId ? "detailOnly" : visibility}
+          // No project picked: open the sidebar so there is something to choose.
+          columnVisibility={!hasSelection ? "all" : visibility === "detailOnly" && sel.noteId ? "detailOnly" : visibility}
           onColumnVisibilityChange={(v) => {
             // Swallow the spurious first-layout detailOnly with nothing open;
             // echo everything else back (controlled visibility only settles
             // when SwiftUI's reports are acknowledged).
             if (v === "detailOnly" && !selection.noteId) return;
+            // Our own "all" while nothing is picked isn't the user's choice: don't keep it
+            // once a project is chosen (the sidebar then hides to give the views room).
+            if (selection.projectId == null) return;
             setVisibility(v);
           }}
           // Collapsed (compact) the split view is a single column following
@@ -624,8 +632,8 @@ function DetailActionPanel({
   icon: typeof FileText;
   title: string;
   body: string;
-  actionLabel: string;
-  onAction: () => void;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   const t = useTheme();
   return (
@@ -646,12 +654,14 @@ function DetailActionPanel({
       </View>
       <Text style={[typeScale.subtitle, { color: t.textPrimary, fontWeight: "700", textAlign: "center" }]}>{title}</Text>
       <Text style={[typeScale.caption, { color: t.textSecondary, textAlign: "center", lineHeight: 18 }]}>{body}</Text>
+      {actionLabel && onAction ? (
       <PressableScale
         onPress={onAction}
         style={{ marginTop: 6, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, backgroundColor: t.accent }}
       >
         <Text style={[typeScale.control, { color: "#fff", fontWeight: "700" }]}>{actionLabel}</Text>
       </PressableScale>
+      ) : null}
     </View>
   );
 }

@@ -327,7 +327,7 @@ made a view switch a column push — a page swipe — and was dropped).
   is how the Board gets its status. Long card subtitles wrap instead of overflowing.
 - Native collapse: `forceCompactBelow(700)` (`swiftui-modifiers`) lets SwiftUI measure its own width and force compact below 700pt in the same layout pass; the old JS-driven `forceCompactWidth(compact)` left the split view forced compact for a beat after unfolding. The Overview's detail column is always the Recent panel (not a compact-only placeholder) for the same reason: on unfold SwiftUI expands before JS knows the width. Needs a native rebuild.
 - `useHingeStatus() === "closed"` flips `compact` early (the hinge reports before the window
-  shrinks). The first project the wide layout shows as a fallback is recorded as selected only when you act in it (switch view, open/compose something), so folding keeps you in it while a plain unfold from the project list doesn't jump into a project.
+  shrinks). **No project selected** (a wide window on the project list, or after re-tapping the Projects tab): the sidebar opens (`columnVisibility="all"`, our own value is never kept as the user's choice) and the detail column says "No project selected" (the project column is blank: the overlay sidebar covers it). Choosing a project hides the sidebar again. A plain unfold no longer jumps into the first project.
 - The board's first frame can briefly show "No board columns" before its data loads.
 
 ### Split View on the Duo (test pass 2026-10-12)
