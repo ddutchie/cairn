@@ -2,6 +2,7 @@ import { Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useEffect } from "react";
 import { useFold } from "@/lib/use-fold";
+import { useHinge } from "expo-hinge";
 import { useHingeStatus } from "@/lib/hinge";
 import { useDivisionRegion } from "@/lib/division-region";
 import { useFoldOverlay } from "@/lib/dev-flags";
@@ -21,10 +22,11 @@ function Overlay() {
   const { width, height, scale } = useWindowDimensions();
   const i = useSafeAreaInsets();
   const hinge = useHingeStatus();
+  const angle = useHinge()?.angle;
   const fold = useFold();
   const region = useDivisionRegion();
   const source = region === undefined ? "inferred" : region ? "native" : "native:none";
-  const line = `${Math.round(width)}x${Math.round(height)} @${scale}  T${Math.round(i.top)} B${Math.round(i.bottom)} L${Math.round(i.left)} R${Math.round(i.right)}  hinge=${hinge ?? "null"} fold=${source}${fold ? ` ${fold.axis[0]}@${Math.round(fold.position)}±${Math.round(fold.gutter / 2)}` : ""}`;
+  const line = `${Math.round(width)}x${Math.round(height)} @${scale}  T${Math.round(i.top)} B${Math.round(i.bottom)} L${Math.round(i.left)} R${Math.round(i.right)}  hinge=${hinge ?? "null"}${angle != null ? `@${Math.round(angle)}°` : ""} fold=${source}${fold ? ` ${fold.axis[0]}@${Math.round(fold.position)}±${Math.round(fold.gutter / 2)}` : ""}`;
   useEffect(() => {
     console.log("[fold-debug]", line);
   }, [line]);

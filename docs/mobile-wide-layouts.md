@@ -104,10 +104,15 @@ task open beside the board is outlined on its card (`DraggableBoard
 selectedCardId`) — both via `ProjectScreen selectedId`.
 
 ### Hinge (Duo)
-`onHingeChange` (iOS 27.1 SDK) on the split view reports the posture (the crease *geometry* comes from
-`modules/fold-region`, below); the last
-value is cached in `src/lib/hinge.ts` for whoever needs it (currently only the
-chat preview pane). Column widths are SwiftUI's job entirely — no pins: a
+The hinge *status* is fed to the cache in `src/lib/hinge.ts` by **`expo-hinge`** (Expo SDK 58: `useHinge` /
+`getHinge` / `addHingeListener` → `{ angle, status }`, iOS 27.1 via `UIHingeInteraction`, Android 11+ via
+WindowManager). It works from plain JS (no SwiftUI host needed) and seeds synchronously, so the first render
+already knows the pose; the invisible `HingeObserver` and the `onHingeChange` modifiers still call
+`rememberHingeStatus` too (harmless duplicates; the modifiers can go once nothing else needs a host). The
+Fold overlay shows the live angle (`hinge=closed@0°`). expo-hinge says to use hinge state for effects, not
+layout — the crease *geometry* is `modules/fold-region`. Android never reports `closed` (only `unknown` when
+the window doesn't span the fold), so an angle threshold would be needed there. The cache is read by
+`useFold` and the split view (`hingeClosed`). Column widths are SwiftUI's job entirely — no pins: a
 plain number is a FIXED column that can't follow pose changes, and even soft
 `{ min, ideal }` ideals visibly missed the crease across poses while the
 unpinned board always reflowed correctly. So every column is unpinned
