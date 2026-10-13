@@ -143,7 +143,7 @@ builds need `EXPO_USE_PRECOMPILED_MODULES=0`**.
 
 Already done on this branch:
 
-- One adaptive container: a single `NavigationSplitView` (Sidebar = tree,
+- One adaptive container: a single `NavigationSplitView` (Sidebar = project list,
   Content = view, Detail = open note/task or a per-view action panel) always
   mounted on iOS, collapsing to one column when compact via
   `preferredCompactColumn` — no width-switched subtrees, no `Host`-key swaps,
@@ -168,7 +168,7 @@ keeping functionality and state the same.
 
 Direction (✅ SPIKED 2026-10-11, verified on the Duo simulator): **one adaptive
 Projects container** — a single `NavigationSplitView` always mounted for the
-Projects hierarchy (Sidebar = tree, Content = view, Detail = open item), letting
+Projects hierarchy (Sidebar = project list [was a tree], Content = view, Detail = open item), letting
 the system collapse it when compact. Expo's `NavigationSplitView` DOES collapse
 (`preferredCompactColumn` + `onPreferredCompactColumnChange` both work); the
 collapsed column follows the selection depth and the native Back pops the
@@ -246,9 +246,9 @@ Split View resize; delete-selected-from-elsewhere resolves; screenshot each pose
    iOS-only). Open questions for us: where a sketch lives in the data model
    (attachment? note block?), how it syncs (binary blob via the sync folder),
    and how it renders on desktop. Worth a spike doc, not code yet.
-7. **`ReservedRegion` module (if needed).** Only if a custom bar or the graph
-   canvas needs to sit outside the safe area. Our standard-bars-everywhere
-   approach may never need it — prefer that.
+7. **`ReservedRegion` module.** ✅ DONE 2026-10-13: `modules/fold-region` (UIKit
+   `reservedRegions`, division kind) feeds `useFold`; the inferred crease is only the fallback.
+   Verified in every simulator pose and in Split View — see `docs/mobile-wide-layouts.md`.
 7a. **Poses (2026-10-12).** ✅ Laptop pose (horizontal crease) handled for Chat,
    side previews and Calendar via an inferred crease (`src/lib/fold.ts`); book pose
    keeps SwiftUI's hinge-centred columns; the simulator has no distinct tent pose
@@ -258,6 +258,20 @@ Split View resize; delete-selected-from-elsewhere resolves; screenshot each pose
    Camera (no camera features), tent/StandBy postures (no media playback),
    Touch ID changes nothing for us (keychain access is unchanged; no Face ID
    code exists to break).
+
+### 5.8 Status — 2026-10-13
+
+Delivered since the pose work: the real crease (`fold-region`), Split View pass (one real bug:
+filled previews double-inset the side rail), Projects navigation (flat list + segmented view
+switcher, Projects-tab re-tap to root, "No project selected"), wide overflow panels (Overview
+recent+activity, Board status, Calendar day panel), fold/unfold flash fixes (native
+`forceCompactBelow`, constant column structure/visibility, synchronous first-render data), and
+side-inset padding (`useEdgePad`). The decisions and the transition rules are in
+`docs/mobile-wide-layouts.md` ("Fold/unfold transitions: causes and rules").
+
+Still open: iPad run-through of the new Projects layout; book pose + 669pt portrait with the native
+compact threshold; modals in a Split View window; physical-device check of the insets/crease;
+Xcode's App Resizability skill; a crossfade over width-dependent swaps if any flash remains.
 
 ## 6. Open questions
 
