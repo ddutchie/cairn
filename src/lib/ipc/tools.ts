@@ -50,7 +50,7 @@ export const toolsClient = {
     window.electron?.tools?.onOauthCallback(cb) ?? (() => {}),
   /** Subscribe to chat-time "server needs sign-in" signals; returns the unsubscribe function. */
   onAuthRequired: (cb: (e: McpAuthRequiredEvent) => void): (() => void) =>
-    window.electron?.tools?.onAuthRequired(cb) ?? (() => {}),
+    window.electron?.tools?.onAuthRequired?.(cb) ?? (() => {}),
 };
 
 /** OS keychain. There is deliberately no `get`: the renderer only learns whether a secret is set. */
