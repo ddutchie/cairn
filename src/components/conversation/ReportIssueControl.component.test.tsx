@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useCairnStore } from "@/store";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReportIssueControl } from "./ReportIssueControl";
 import type { ConversationMessage } from "@/lib/conversation/message";
 
@@ -33,7 +34,7 @@ describe("ReportIssueControl", () => {
 
   it("opens a prefilled GitHub issue with environment and stats but not the reply by default", async () => {
     const user = userEvent.setup();
-    render(<ReportIssueControl message={message} />);
+    render(<TooltipProvider><ReportIssueControl message={message} /></TooltipProvider>);
     await user.click(screen.getByRole("button", { name: /report an issue/i }));
     await user.type(screen.getByLabelText("What went wrong"), "It looped");
     await user.click(screen.getByRole("button", { name: "Open on GitHub" }));
@@ -52,7 +53,7 @@ describe("ReportIssueControl", () => {
   it("includes the reply and labels the coding agent surface when opted in", async () => {
     useCairnStore.setState({ activeView: "agent" } as never);
     const user = userEvent.setup();
-    render(<ReportIssueControl message={message} />);
+    render(<TooltipProvider><ReportIssueControl message={message} /></TooltipProvider>);
     await user.click(screen.getByRole("button", { name: /report an issue/i }));
     await user.click(screen.getByRole("switch", { name: "Include this reply" }));
     await user.click(screen.getByRole("button", { name: "Open on GitHub" }));

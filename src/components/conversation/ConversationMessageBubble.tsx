@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ReportIssueControl } from "@/components/conversation/ReportIssueControl";
 import { Check, Copy, FileText, FolderOpen, Info, Kanban, RotateCcw, Search } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
@@ -120,41 +121,6 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
             {!isUser && message.isStreaming && <StreamingCursor size="md" />}
           </div>
         )}
-        {/* Per-turn throughput/latency — behind a small info button on settled
-            assistant messages, shown only when derivable (no zero/NaN lines). */}
-        {!isUser && !message.isStreaming && (() => {
-          const segments = messageStatsSegments(message.stats);
-          if (!segments.length) return null;
-          return (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setStatsOpen((v) => !v)}
-                aria-label="Message speed & token stats"
-                aria-expanded={statsOpen}
-                title={statsOpen ? "Hide stats" : "Message stats"}
-                className={cn(
-                  "flex items-center justify-center w-4 h-4 rounded-full border transition-colors flex-shrink-0",
-                  statsOpen
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
-                )}
-              >
-                <Info size={9} />
-              </button>
-              {statsOpen && (
-                <div className="flex items-center gap-1.5 text-[0.607rem] text-[var(--text-tertiary)] font-mono tabular-nums">
-                  {segments.map((seg, i) => (
-                    <React.Fragment key={seg}>
-                      {i > 0 && <span className="opacity-50">·</span>}
-                      <span>{seg}</span>
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
         {message.extraContent}
         {message.contextRefs && message.contextRefs.length > 0 && (
           <div className="flex flex-wrap gap-1">
@@ -164,17 +130,55 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
         {/* Copy/Retry both act on `content`, so they are pointless on a
             reasoning-only or tool-only message — and the empty flex row still
             reserved layout under the thinking panel. */}
-        {hasContent && (
-          <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
-            <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
-              <button onClick={() => copy(message.content)} title="Copy" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
-                {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
-              </button>
-              {!isUser && !message.isStreaming && <ReportIssueControl message={message} />}
-              {isUser && onRetry && <button onClick={() => onRetry(message.content)} title="Retry" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><RotateCcw size={10} /></button>}
+        {hasContent && (() => {
+          // Per-turn throughput/latency sits in the same row as Copy / Report,
+          // behind an info button; only when derivable (no zero/NaN lines).
+          const statsSegments = !isUser && !message.isStreaming ? messageStatsSegments(message.stats) : [];
+          const iconBtn = "p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors";
+          return (
+            <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
+              <div className={cn(
+                "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity",
+                statsOpen && statsSegments.length > 0 && "opacity-100",
+              )}>
+                <Tooltip content={copied ? "Copied" : "Copy"}>
+                  <button onClick={() => copy(message.content)} aria-label="Copy" className={iconBtn}>
+                    {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
+                  </button>
+                </Tooltip>
+                {!isUser && !message.isStreaming && <ReportIssueControl message={message} />}
+                {statsSegments.length > 0 && (
+                  <Tooltip content={statsOpen ? "Hide stats" : "Message stats"}>
+                    <button
+                      type="button"
+                      onClick={() => setStatsOpen((v) => !v)}
+                      aria-label="Message speed & token stats"
+                      aria-expanded={statsOpen}
+                      className={cn(iconBtn, statsOpen && "text-[var(--accent)] bg-[var(--accent-dim)]")}
+                    >
+                      <Info size={10} />
+                    </button>
+                  </Tooltip>
+                )}
+                {isUser && onRetry && (
+                  <Tooltip content="Retry">
+                    <button onClick={() => onRetry(message.content)} aria-label="Retry" className={iconBtn}><RotateCcw size={10} /></button>
+                  </Tooltip>
+                )}
+                {statsOpen && statsSegments.length > 0 && (
+                  <div className="ml-1 flex items-center gap-1.5 text-[0.607rem] text-[var(--text-tertiary)] font-mono tabular-nums">
+                    {statsSegments.map((seg, k) => (
+                      <React.Fragment key={seg}>
+                        {k > 0 && <span className="opacity-50">·</span>}
+                        <span>{seg}</span>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

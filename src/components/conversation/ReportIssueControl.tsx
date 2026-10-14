@@ -5,6 +5,7 @@ import { Flag } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Toggle } from "@/components/ui/toggle";
 import type { ConversationMessage } from "@/lib/conversation/message";
@@ -101,15 +102,16 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Report an issue"
-        aria-label="Report an issue with this reply"
-        className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
-      >
-        <Flag size={10} />
-      </button>
+      <Tooltip content="Report an issue">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Report an issue with this reply"
+          className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
+        >
+          <Flag size={10} />
+        </button>
+      </Tooltip>
       <ModalShell
         open={open}
         onClose={() => setOpen(false)}
