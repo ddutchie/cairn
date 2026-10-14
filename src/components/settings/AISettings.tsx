@@ -8,6 +8,8 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
+import { OutputBudgetWarning } from "./OutputBudgetWarning";
+import { effectiveOutputTokens } from "../../../shared/models/model-catalog";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
 import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
@@ -430,8 +432,8 @@ export function AISettings() {
               description={
                 maxOutputAuto
                   ? advertisedMaxOutput
-                    ? `Auto: a 32K cap, clamped to "${model}"'s ${advertisedMaxOutput.toLocaleString()} output tokens (per models.dev). The model finishes on its own unless its limit is lower. Recommended, especially for reasoning models. Set a value only to cap cost.`
-                    : "Auto: a 32K cap so the model finishes on its own (clamped to the model's output limit when models.dev knows it). Recommended, especially for reasoning models, which need room to think before answering. Set a value only to cap cost per reply."
+                    ? `Auto: up to 32K, clamped to "${model}"'s ${advertisedMaxOutput.toLocaleString()} output tokens (per models.dev) and to a quarter of your context window. The model finishes on its own unless its limit is lower. Recommended, especially for reasoning models. Set a value only to cap cost.`
+                    : "Auto: up to 32K, limited to a quarter of your context window (and the model's output limit when models.dev knows it) so small local models keep room for the conversation. Recommended, especially for reasoning models, which need room to think before answering. Set a value only to cap cost per reply."
                   : advertisedMaxOutput
                     ? `Manual cap on a single reply. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. "${model}" supports up to ${advertisedMaxOutput.toLocaleString()} tokens (models.dev). Tap Auto for the bounded 32K cap.`
                     : "Manual cap on a single reply's length. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. Tap Auto for the bounded 32K cap."
@@ -448,8 +450,17 @@ export function AISettings() {
               autoState={maxOutputAuto ? "detected" : "idle"}
               autoActive={maxOutputAuto}
               autoSuppressesValue
-              suppressedPlaceholder="Auto (32K)"
+              suppressedPlaceholder="Auto"
               onAuto={() => updateAIConfig({ maxOutputAuto: true })}
+            />
+            <OutputBudgetWarning
+              contextWindow={aiConfig.contextLimit ?? 128000}
+              outputTokens={effectiveOutputTokens({
+                auto: maxOutputAuto,
+                manual: aiConfig.maxOutputTokens,
+                modelMaxOutput: advertisedMaxOutput,
+                contextWindow: aiConfig.contextLimit ?? 128000,
+              })}
             />
 
             {/* Subagents — dispatch → research/write architecture. */}

@@ -38,6 +38,8 @@ export const toolsApi = {
     cancelServiceAuth: (id: string) => invokeContract("tools:cancelServiceAuth", { id }),
     /** Fires when a sign-in finishes (loopback listener or cairn://oauth/callback deep link). */
     onOauthCallback: (cb: (e: IpcEvents["tools:oauthCallback"]) => void) => onIpcEvent("tools:oauthCallback", cb),
+    /** Fires when a chat-time MCP connect needs the user to sign in. */
+    onAuthRequired: (cb: (e: IpcEvents["tools:authRequired"]) => void) => onIpcEvent("tools:authRequired", cb),
   },
 
   // ── Secrets (OS keychain). No get() by design — renderer only learns set/not-set.

@@ -127,6 +127,14 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
     clientId?: string,
     /** Fixed redirect URI the provider requires pre-registered (e.g. loopback). */
     fixedRedirectUri?: string,
+    /**
+     * Whether {@link redirectToAuthorization} may open the system browser.
+     * Background connects (chat turns, tool calls) pass false: there is no
+     * loopback listener to receive the callback, so opening the browser would
+     * strand the user on a broken redirect. They surface "sign-in required"
+     * instead and the user signs in via the interactive flow.
+     */
+    private readonly interactive = true,
   ) {
     this._state = state ?? randomUUID();
     this._redirectUri = redirectUri ?? OAUTH_REDIRECT_URI;
@@ -200,6 +208,8 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
   }
 
   redirectToAuthorization(authorizationUrl: URL): void {
+    // Non-interactive connects leave the SDK to throw UnauthorizedError.
+    if (!this.interactive) return;
     // The authorize URL is always https; opens in the system browser.
     void shell.openExternal(authorizationUrl.toString());
   }
@@ -237,6 +247,7 @@ export function makeProvider(
   serverName: string,
   state?: string,
   redirectUri?: string,
+  opts?: { interactive?: boolean },
 ): KeychainOAuthProvider {
   return new KeychainOAuthProvider(
     cfg.id,
@@ -247,6 +258,7 @@ export function makeProvider(
     "mcp",
     cfg.clientId,
     cfg.redirectUri,
+    opts?.interactive ?? true,
   );
 }
 

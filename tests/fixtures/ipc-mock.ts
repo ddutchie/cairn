@@ -386,6 +386,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       signOutService:     noop,
       cancelServiceAuth:  () => Promise.resolve({ cancelled: false }),
       onOauthCallback: makeListener("tools.onOauthCallback"),
+      onAuthRequired: makeListener("tools.onAuthRequired"),
     },
 
     // ── Secrets (OS keychain) ─────────────────────────────────

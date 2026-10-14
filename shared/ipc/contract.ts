@@ -56,7 +56,7 @@ import type {
 } from "../types/coding-agent";
 import type { PdfTheme } from "../notes/pdf-template";
 import type {
-  AuthCompleteResult, AuthStartResult, CustomServiceConfig, ListMcpToolsResult, McpServerConfig, McpTestResult,
+  AuthCompleteResult, AuthStartResult, CustomServiceConfig, ListMcpToolsResult, McpAuthRequiredEvent, McpServerConfig, McpTestResult,
   SecretToolType, ServiceTestResult, ToolAttachment,
 } from "../types/tools";
 import type { ChangeSet, EntitySnapshot } from "../types/snapshot";
@@ -713,6 +713,8 @@ export interface IpcEvents {
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
   "tools:oauthCallback": AuthCompleteResult;
+  /** A background MCP connect was rejected for missing OAuth credentials. */
+  "tools:authRequired": McpAuthRequiredEvent;
   /** Global quick-capture shortcut / tray item fired. */
   "app:quick-capture": undefined;
   "app:migrationProgress": MigrationProgress;

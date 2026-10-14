@@ -8,7 +8,7 @@
 
 import type { McpNotification } from "../../../shared/types/notifications";
 import type {
-  AuthCompleteResult, CustomServiceConfig, McpServerConfig, SecretToolType, ToolAttachment, ToolType,
+  AuthCompleteResult, CustomServiceConfig, McpAuthRequiredEvent, McpServerConfig, SecretToolType, ToolAttachment, ToolType,
 } from "../../../shared/types/tools";
 import { domainCall, type ElectronApi } from "./client";
 
@@ -48,6 +48,9 @@ export const toolsClient = {
   /** Subscribe to sign-in completions; returns the unsubscribe function (a no-op off-Electron). */
   onOauthCallback: (cb: (e: AuthCompleteResult) => void): (() => void) =>
     window.electron?.tools?.onOauthCallback(cb) ?? (() => {}),
+  /** Subscribe to chat-time "server needs sign-in" signals; returns the unsubscribe function. */
+  onAuthRequired: (cb: (e: McpAuthRequiredEvent) => void): (() => void) =>
+    window.electron?.tools?.onAuthRequired?.(cb) ?? (() => {}),
 };
 
 /** OS keychain. There is deliberately no `get`: the renderer only learns whether a secret is set. */

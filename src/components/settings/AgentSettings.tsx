@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { id, cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
+import { OutputBudgetWarning } from "./OutputBudgetWarning";
+import { effectiveOutputTokens } from "../../../shared/models/model-catalog";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
@@ -471,8 +473,8 @@ export function AgentSettings() {
           description={
             maxOutputAutoAgent
               ? advertisedMaxOutputAgent
-                ? `Auto: a 32K cap, clamped to "${modelAgent}"'s ${advertisedMaxOutputAgent.toLocaleString()} output tokens (models.dev). The model finishes on its own unless its limit is lower. Recommended, especially for reasoning models. Set a value only to cap cost.`
-                : "Auto: a 32K cap so the model finishes on its own (the cap is clamped to the model's output limit when models.dev knows it). Recommended, especially for reasoning models, which need room to think before acting. Set a value only to cap cost per turn."
+                ? `Auto: up to 32K, clamped to "${modelAgent}"'s ${advertisedMaxOutputAgent.toLocaleString()} output tokens (models.dev) and to a quarter of your context window. The model finishes on its own unless its limit is lower. Recommended, especially for reasoning models. Set a value only to cap cost.`
+                : "Auto: up to 32K, limited to a quarter of your context window (and the model's output limit when models.dev knows it). Recommended, especially for reasoning models, which need room to think before acting. Set a value only to cap cost per turn."
               : advertisedMaxOutputAgent
                 ? `Manual cap per turn. Reasoning models count their thinking against this, so too low a value can stall them before they act. "${modelAgent}" supports up to ${advertisedMaxOutputAgent.toLocaleString()} tokens (models.dev). Tap Auto for the bounded 32K cap.`
                 : "Manual cap on output tokens per turn. Reasoning models count their thinking against this, so too low a value can stall them. Tap Auto for the bounded 32K cap."
@@ -489,8 +491,17 @@ export function AgentSettings() {
           autoState={maxOutputAutoAgent ? "detected" : "idle"}
           autoActive={maxOutputAutoAgent}
           autoSuppressesValue
-          suppressedPlaceholder="Auto (32K)"
+          suppressedPlaceholder="Auto"
           onAuto={() => updateAgent({ maxOutputAuto: true })}
+        />
+        <OutputBudgetWarning
+          contextWindow={contextLimitAgent ?? 128000}
+          outputTokens={effectiveOutputTokens({
+            auto: maxOutputAutoAgent,
+            manual: agentConfig.maxOutputTokens,
+            modelMaxOutput: advertisedMaxOutputAgent,
+            contextWindow: contextLimitAgent ?? 128000,
+          })}
         />
 
         {/* Session reminders (dsh schedule overlay, opt-in) */}

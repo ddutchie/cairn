@@ -490,6 +490,53 @@ export function normalizeContextLimit(value?: number | null): number {
   return DEFAULT_CONTEXT_LIMIT;
 }
 
+/** Auto output never drops below this (reasoning models need room to think), unless the window is tinier than twice this. */
+const MIN_AUTO_OUTPUT_TOKENS = 4096;
+/** On Auto, output may take at most this share of the context window. */
+const AUTO_OUTPUT_WINDOW_SHARE = 0.25;
+
+/** Share of the message budget (window − output) at which proactive compaction fires. */
+export const COMPACTION_THRESHOLD_RATIO = 0.8;
+
+/** Output share of the window above which compaction starts crowding out the conversation. */
+const OUTPUT_PRESSURE_SHARE = 0.25;
+
+/**
+ * The `max_tokens` a turn will actually reserve, for UI guidance: a manual
+ * value verbatim, or on Auto the model's advertised limit bounded by
+ * {@link AUTO_OUTPUT_TOKEN_CAP} and scaled to the context window (see
+ * {@link resolveMaxOutputTokens}).
+ */
+export function effectiveOutputTokens(opts: {
+  auto: boolean;
+  manual?: number | null;
+  modelMaxOutput?: number | null;
+  contextWindow?: number | null;
+}): number {
+  if (!opts.auto) return resolveMaxOutputTokens(opts.manual) ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  return resolveMaxOutputTokens(null, opts.modelMaxOutput, opts.contextWindow) ?? AUTO_OUTPUT_TOKEN_CAP;
+}
+
+export interface OutputBudgetPressure {
+  /** Tokens left for system prompt + tools + conversation after reserving output. */
+  messageBudget: number;
+  /** Conversation size at which auto-compaction fires. */
+  compactAt: number;
+}
+
+/**
+ * Non-null when the reserved output takes more than a quarter of the context
+ * window, so compaction fires early and often (the system prompt and tool
+ * definitions share the same message budget). Mirrors the engine's budget math
+ * in `electron/cordis/compaction-budget.ts`.
+ */
+export function outputBudgetPressure(contextWindow: number, outputTokens: number): OutputBudgetPressure | null {
+  if (!(contextWindow > 0) || !(outputTokens > 0)) return null;
+  if (outputTokens / contextWindow <= OUTPUT_PRESSURE_SHARE) return null;
+  const messageBudget = Math.max(0, contextWindow - outputTokens);
+  return { messageBudget, compactAt: Math.floor(COMPACTION_THRESHOLD_RATIO * messageBudget) };
+}
+
 /**
  * Resolve the `max_tokens` to send for a chat request.
  *
@@ -505,20 +552,32 @@ export function normalizeContextLimit(value?: number | null): number {
  *    deliberate cost/latency ceiling; honour it.
  *  - Auto + a known `modelMaxOutput` → `min(modelMaxOutput, AUTO_OUTPUT_TOKEN_CAP)`.
  *    A small model (e.g. 8K output) gets 8K; a large one gets capped at 32K.
- *  - Auto + unknown model → `undefined`; the main process falls back to
- *    `AUTO_OUTPUT_TOKEN_CAP`.
+ *  - Auto also scales with `contextWindow` when known: output may take at most
+ *    a quarter of the window (never below 4K, never above half of it). Output
+ *    is reserved out of the window, so a fixed 32K on a 64K local model leaves
+ *    only 32K for the prompt, tools and conversation and compacts constantly.
+ *    128K+ windows are unaffected (the 32K cap is already ≤ a quarter).
+ *  - Auto + unknown model and unknown window → `undefined`; the main process
+ *    falls back to `AUTO_OUTPUT_TOKEN_CAP`.
  */
 export function resolveMaxOutputTokens(
   userOverride?: number | null,
   modelMaxOutput?: number | null,
+  contextWindow?: number | null,
 ): number | undefined {
   // Require >= 1 before flooring: a fractional cap in (0,1) would floor to 0 and
   // send `max_tokens: 0` (a broken cap), which is worse than omitting the field.
   if (typeof userOverride === "number" && Number.isFinite(userOverride) && userOverride >= 1) {
     return Math.floor(userOverride);
   }
-  if (typeof modelMaxOutput === "number" && modelMaxOutput > 0) {
-    return Math.min(modelMaxOutput, AUTO_OUTPUT_TOKEN_CAP);
+  let cap = AUTO_OUTPUT_TOKEN_CAP;
+  const windowKnown = typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow >= 1;
+  if (windowKnown) {
+    const share = Math.max(MIN_AUTO_OUTPUT_TOKENS, Math.floor(contextWindow * AUTO_OUTPUT_WINDOW_SHARE));
+    cap = Math.min(cap, share, Math.max(1, Math.floor(contextWindow / 2)));
   }
-  return undefined;
+  if (typeof modelMaxOutput === "number" && modelMaxOutput > 0) {
+    return Math.min(modelMaxOutput, cap);
+  }
+  return windowKnown ? cap : undefined;
 }

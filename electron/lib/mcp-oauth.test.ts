@@ -48,6 +48,7 @@ import {
   signOut,
   getAccessToken,
   loopbackPortOf,
+  makeProvider,
   OAUTH_REDIRECT_URI,
 } from "./mcp-oauth";
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
@@ -304,5 +305,18 @@ describe("getAccessToken", () => {
     saveServiceTokens({ access_token: "old", token_type: "Bearer", refresh_token: "r", expires_at: Date.now() - 1000 });
     authMock.mockRejectedValueOnce(new Error("refresh failed"));
     expect(await getAccessToken(cfg, "S")).toBeNull();
+  });
+});
+
+describe("non-interactive provider", () => {
+  it("does not open the browser for background connects", async () => {
+    const { shell } = await import("electron");
+    const open = vi.mocked(shell.openExternal);
+    open.mockClear();
+    const url = new URL("https://auth.example.com/authorize");
+    makeProvider({ id: "s", baseUrl: "https://x", transport: "http" }, "S", undefined, undefined, { interactive: false }).redirectToAuthorization(url);
+    expect(open).not.toHaveBeenCalled();
+    makeProvider({ id: "s", baseUrl: "https://x", transport: "http" }, "S").redirectToAuthorization(url);
+    expect(open).toHaveBeenCalledWith(url.toString());
   });
 });

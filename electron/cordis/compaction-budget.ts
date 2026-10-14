@@ -16,9 +16,9 @@
  */
 
 import { symbols, type Context } from "@deepseek-ai/cordis";
+import { COMPACTION_THRESHOLD_RATIO } from "../../shared/models/model-catalog";
 
-/** Share of the message budget at which proactive compaction fires. */
-export const COMPACTION_THRESHOLD_RATIO = 0.8;
+export { COMPACTION_THRESHOLD_RATIO };
 /** dsh-compaction-basic's default summary cap when the route declares no output limit. */
 const DEFAULT_SUMMARY_MAX_TOKENS = 65536;
 
