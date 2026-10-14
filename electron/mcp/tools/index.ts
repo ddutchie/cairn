@@ -24,6 +24,7 @@ import {
 } from "./codebase";
 import { getUserStyle, appendUserStyleObservation } from "../../db/queries";
 import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "./consolidated";
+import { lazy } from "../../host-shared/lazy";
 import {
   RELATIONSHIP_AFFECTING_TOOLS,
   collectEntityIds,
@@ -74,7 +75,8 @@ export function executeHandler(db: Database.Database, workspacePath: string, too
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function dispatchTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
-  const snap = getSnapshot(db);
+  // Loaded on first use only — SQL-backed reads never pay for the full snapshot.
+  const snap = lazy(() => getSnapshot(db));
 
   switch (toolName) {
     case "get_cairn_context":

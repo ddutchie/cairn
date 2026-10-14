@@ -20,6 +20,7 @@ import {
 } from "./host-store";
 import { executeHandler as executeMcpTool } from "../mcp/tools";
 import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "../mcp/tools/consolidated";
+import { lazy } from "../host-shared/lazy";
 
 /**
  * Execute one chat tool. Consolidated (model-facing) tools are translated onto
@@ -42,7 +43,8 @@ export async function executeTool(
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args, callId });
   const host = createHostStore(db);
-  const snap = host.getFullSnapshot() as CairnSnapshot;
+  // Loaded on first use only — most tools forward to SQL-backed handlers.
+  const snap = lazy(() => host.getFullSnapshot() as CairnSnapshot);
 
   const result = await (async () => {
     if (!handlerOnly && CONSOLIDATED_TOOLS.has(name)) {
@@ -127,6 +129,8 @@ export async function executeTool(
       };
     }
     case "get_cairn_context":
+    case "search_notes":
+    case "search_tasks":
     case "get_note":
     case "get_task":
     case "get_idea_flow_rules":

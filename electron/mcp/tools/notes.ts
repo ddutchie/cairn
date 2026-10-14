@@ -4,7 +4,7 @@ import path from "path";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
 import { normalizeNoteTitle } from "../../host-shared/text-utils";
-import { executeSearchNotes } from "../../host-shared/read-tools-pure";
+import { searchNotesSql } from "./sql-reads";
 import { dedupeFoldersCaseInsensitive, normalizeFolderPath } from "../../../shared/notes/folder-tree";
 import { instantiateTemplate, defaultTitleFromTemplate } from "../../../shared/notes/templates";
 import {
@@ -35,8 +35,8 @@ import { traceTool } from "../../lib/tool-trace";
 export const CLOBBER_GUARD_MIN_EXISTING = 200;
 export const CLOBBER_GUARD_SHRINK_RATIO = 0.2;
 
-export function get_note(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const note = snap.notes.find((n) => n.id === args.noteId);
+export function get_note(db: Database.Database, _snap: Snapshot, args: Record<string, any>) {
+  const note = q.getNoteById(db, args.noteId as string);
   if (!note) return { error: "Note not found" };
   return {
     id: note.id,
@@ -54,8 +54,8 @@ export function get_note(db: Database.Database, snap: Snapshot, args: Record<str
   };
 }
 
-export function search_notes(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  return executeSearchNotes(snap, args);
+export function search_notes(db: Database.Database, _snap: Snapshot, args: Record<string, any>) {
+  return searchNotesSql(db, args);
 }
 
 export function list_templates(db: Database.Database, snap: Snapshot, args: Record<string, any>) {

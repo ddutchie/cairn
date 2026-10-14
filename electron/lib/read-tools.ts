@@ -15,23 +15,13 @@
 import type Database from "better-sqlite3";
 import {
   CairnSnapshot,
-  executeGetProjectContextPack,
-  executeSearchNotes as executeSearchNotesPure,
-  executeSearchTasks as executeSearchTasksPure
+  executeGetProjectContextPack
 } from "../host-shared/read-tools-pure";
 
 export { CairnSnapshot };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Args = Record<string, any>;
-
-export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
-  return executeSearchNotesPure(snap, args);
-}
-
-export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
-  return executeSearchTasksPure(snap, args);
-}
 
 /**
  * Dispatch a read-only tool by name. Used by chat-executor.ts for the shared
@@ -49,10 +39,6 @@ export function executeReadTool(
   switch (tool) {
     case "get_project_context_pack":
       return { handled: true, result: executeGetProjectContextPack(snap, args) };
-    case "search_notes":
-      return { handled: true, result: executeSearchNotes(snap, args) };
-    case "search_tasks":
-      return { handled: true, result: executeSearchTasks(snap, args) };
     default:
       return { handled: false };
   }

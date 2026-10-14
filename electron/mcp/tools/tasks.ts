@@ -2,7 +2,7 @@
 import Database from "better-sqlite3";
 import * as q from "../../db/queries";
 import { newId } from "../../db/utils";
-import { executeSearchTasks, executeListOverdueTasks, executeListTasksDue } from "../../host-shared/read-tools-pure";
+import { searchTasksSql, listOverdueTasksSql, listTasksDueSql } from "./sql-reads";
 import {
   Snapshot,
   getCardVersion,
@@ -13,13 +13,16 @@ import {
   writeNoteFile
 } from "../db";
 
-export function get_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  const card = snap.cards.find((c) => c.id === args.cardId);
+export function get_task(db: Database.Database, _snap: Snapshot, args: Record<string, any>) {
+  // Tombstoned (sync-deleted) cards are gone, as they are from the board.
+  const live = db.prepare("SELECT 1 FROM task_cards WHERE id = ? AND deleted_at IS NULL").get(args.cardId);
+  const card = live ? q.getCardById(db, args.cardId as string) : null;
   if (!card) return { error: "Task not found" };
-  const col = snap.columns.find((c) => c.id === card.columnId);
-  const blockingCardIds = snap.cards
-    .filter((c) => Array.isArray(c.blockedByIds) && c.blockedByIds.includes(card.id))
-    .map((c) => c.id);
+  const col = db.prepare("SELECT name, type FROM board_columns WHERE id = ? AND deleted_at IS NULL")
+    .get(card.columnId) as { name: string; type: string } | undefined;
+  const blockingCardIds = (db.prepare(
+    "SELECT c.id FROM task_cards c, json_each(c.blocked_by_ids) b WHERE c.deleted_at IS NULL AND b.value = ?",
+  ).all(card.id) as { id: string }[]).map((r) => r.id);
   return {
     id: card.id, title: card.title, description: card.description,
     priority: card.priority, dueDate: card.dueDate,
@@ -32,8 +35,8 @@ export function get_task(db: Database.Database, snap: Snapshot, args: Record<str
   };
 }
 
-export function search_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  return executeSearchTasks(snap, args);
+export function search_tasks(db: Database.Database, _snap: Snapshot, args: Record<string, any>) {
+  return searchTasksSql(db, args);
 }
 
 export function create_task(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
@@ -191,22 +194,23 @@ export function delete_task(db: Database.Database, snap: Snapshot, args: Record<
   return { deleted: true, id: args.cardId, title: card.title };
 }
 
-export function list_overdue_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  return executeListOverdueTasks(snap, args);
+export function list_overdue_tasks(db: Database.Database, _snap: Snapshot, args: Record<string, any>) {
+  return listOverdueTasksSql(db, args);
 }
 
-export function list_tasks_due(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
-  return executeListTasksDue(snap, args);
+export function list_tasks_due(db: Database.Database, _snap: Snapshot, args: Record<string, any>) {
+  return listTasksDueSql(db, args);
 }
 
-export function list_ready_tasks(db: Database.Database, snap: Snapshot, args: Record<string, any>) {
+export function list_ready_tasks(db: Database.Database, _snap: Snapshot, args: Record<string, any>) {
   // q.getReadyCards returns active non-done cards with no pending blockers.
   // We add columnName here (the query helper doesn't include it) so the MCP
   // surface keeps its existing return shape.
   const readyCards = q.getReadyCards(db, args.projectId as string | undefined);
   if (readyCards.length === 0) return [];
-  // Resolve column names from the snapshot (cheap lookup, avoids a JOIN in queries.ts).
-  const colNameById = new Map(snap.columns.map((c) => [c.id, c.name]));
+  // Resolve column names (one small query, not the whole snapshot).
+  const colNameById = new Map((db.prepare("SELECT id, name FROM board_columns WHERE deleted_at IS NULL").all() as { id: string; name: string }[])
+    .map((c) => [c.id, c.name]));
   return readyCards.map((c) => {
     const out: Record<string, unknown> = {
       id: c.id,

@@ -6,10 +6,7 @@
  */
 
 import { noteDigest } from "../../shared/notes/toc";
-import { matchesQuery } from "../../shared/notes/text";
-import { stripMarkdown } from "./text-utils";
 import { buildNoteMarkdown, buildProjectMarkdown } from "../../shared/notes/export";
-import { isOverdue, isDueWithin } from "../../shared/notes/due";
 import type { BoardColumn, TaskCard } from "../../shared/types/board";
 import type { Note } from "../../shared/types/notes";
 import type { Project, Tag, Workspace } from "../../shared/types/workspace";
@@ -117,84 +114,6 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   };
 }
 
-/** Tag id for a tag name (case-insensitive), for search filters. */
-function tagIdForName(snap: CairnSnapshot, name: string): string | undefined {
-  const lower = name.toLowerCase();
-  return snap.tags.find((t) => t.name.toLowerCase() === lower)?.id;
-}
-
-export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
-  const { query, projectId, limit = 10, offset = 0, updatedAfter, folder, tag, type } = args;
-  const qr = String(query);
-  const tagId = tag ? tagIdForName(snap, String(tag)) : undefined;
-  // Documented contract: an empty query lists all (matching notes). A non-empty
-  // query uses AND-of-terms (every whitespace term must appear in title+body).
-  const listAll = qr.trim().length === 0;
-  const updatedAfterMs = updatedAfter ? new Date(updatedAfter).getTime() : undefined;
-  const matches = snap.notes.filter((n) => {
-    if (n.archivedAt) return false;
-    if (projectId && n.projectId !== projectId) return false;
-    if (folder !== undefined && (n.folder ?? "").toLowerCase() !== String(folder).toLowerCase()) return false;
-    if (type && (n.type ?? "note") !== type) return false;
-    if (tag && !(tagId && n.tagIds?.includes(tagId))) return false;
-    if (updatedAfterMs !== undefined && new Date(n.updatedAt).getTime() < updatedAfterMs) return false;
-    // contentText is only a preview excerpt — search the full body.
-    return listAll || matchesQuery(qr, `${n.title}\n${stripMarkdown(n.content ?? "")}`);
-  });
-  // Sort by updatedAt DESC to ensure stable pagination ordering
-  matches.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  return matches
-    .slice(offset, offset + limit)
-    .map((n) => ({
-      id: n.id,
-      title: n.title,
-      snippet: n.contentText.slice(0, 120),
-      projectId: n.projectId,
-      folder: n.folder ?? "",
-      updatedAt: n.updatedAt,
-    }));
-}
-
-export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
-  const { query, projectId, columnType, limit = 10, assignee, tag } = args;
-  const qr = String(query);
-  const tagId = tag ? tagIdForName(snap, String(tag)) : undefined;
-  const listAll = qr.trim().length === 0; // empty query lists all (matching tasks)
-  return snap.cards
-    .filter((c) => {
-      if (c.archivedAt) return false;
-      if (projectId && c.projectId !== projectId) return false;
-      if (assignee && (c.assignee ?? "").toLowerCase() !== String(assignee).toLowerCase()) return false;
-      if (tag && !(tagId && c.tagIds?.includes(tagId))) return false;
-      if (columnType) {
-        const col = snap.columns.find((col) => col.id === c.columnId);
-        if (!col || col.type !== columnType) return false;
-      }
-      return listAll || matchesQuery(qr, `${c.title}\n${c.description ?? ""}`);
-    })
-    .slice(0, limit)
-    .map((c) => {
-      const col = snap.columns.find((col) => col.id === c.columnId);
-      const limitVal = 400;
-      const desc = c.description ?? "";
-      const truncated = desc.length > limitVal
-        ? desc.slice(0, limitVal) + "\n... (description truncated, use get_task to read full description)"
-        : (c.description ?? null);
-      const out: Record<string, unknown> = {
-        id: c.id,
-        title: c.title,
-        columnId: c.columnId,
-        columnName: col?.name ?? "Unknown",
-        columnType: col?.type ?? "custom",
-        priority: c.priority,
-        projectId: c.projectId,
-      };
-      if (truncated !== null) out.description = truncated;
-      if (c.dueDate) out.dueDate = c.dueDate;
-      return out;
-    });
-}
-
 // ── Export (pure markdown serialisers) ──────────────────────────────────────
 // Assemble the platform-neutral export inputs from the snapshot, then delegate
 // to the shared builders so desktop + mobile produce identical markdown.
@@ -264,47 +183,4 @@ export function serializeProjectMarkdown(snap: CairnSnapshot, projectId: string)
     notes,
   });
   return { markdown, title: project.name };
-}
-
-// ── Due-date-aware task queries ─────────────────────────────────────────────
-// Open (non-done, non-archived) cards filtered by due date. Reuses the shared
-// isOverdue / isDueWithin predicates so semantics match the board & calendar.
-
-function openDatedCards(snap: CairnSnapshot, projectId?: string) {
-  const doneColIds = new Set(snap.columns.filter((c) => c.type === "done").map((c) => c.id));
-  return snap.cards.filter((c) =>
-    !c.archivedAt
-    && c.dueDate
-    && !doneColIds.has(c.columnId)
-    && (!projectId || c.projectId === projectId),
-  );
-}
-
-function shapeDueCard(snap: CairnSnapshot, c: CairnSnapshot["cards"][number]) {
-  const col = snap.columns.find((cc) => cc.id === c.columnId);
-  return {
-    id: c.id,
-    title: c.title,
-    priority: c.priority,
-    dueDate: c.dueDate,
-    columnId: c.columnId,
-    columnName: col?.name ?? "Unknown",
-    projectId: c.projectId,
-  };
-}
-
-export function executeListOverdueTasks(snap: CairnSnapshot, args: Args): unknown {
-  return openDatedCards(snap, args.projectId as string | undefined)
-    .filter((c) => isOverdue(c.dueDate))
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
-    .map((c) => shapeDueCard(snap, c));
-}
-
-export function executeListTasksDue(snap: CairnSnapshot, args: Args): unknown {
-  const days = typeof args.days === "number" ? args.days : 7;
-  const includeOverdue = args.includeOverdue !== false; // default true
-  return openDatedCards(snap, args.projectId as string | undefined)
-    .filter((c) => isDueWithin(c.dueDate, days) || (includeOverdue && isOverdue(c.dueDate)))
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
-    .map((c) => shapeDueCard(snap, c));
 }
