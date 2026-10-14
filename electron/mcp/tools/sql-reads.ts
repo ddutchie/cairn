@@ -205,12 +205,12 @@ export function searchTasksSql(db: Database.Database, args: Args): unknown {
 function openDatedCards(db: Database.Database, projectId?: string) {
   return db.prepare(
     `SELECT c.id, c.title, c.priority, c.due_date AS dueDate, c.column_id AS columnId,
-            coalesce(col.name, 'Unknown') AS columnName, c.project_id AS projectId
+            coalesce(col.name, 'Unknown') AS columnName, col.type AS columnType, c.project_id AS projectId
        FROM task_cards c LEFT JOIN board_columns col ON col.id = c.column_id AND col.deleted_at IS NULL
       WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND c.due_date IS NOT NULL AND c.due_date != ''
         AND coalesce(col.type, '') != 'done' AND (? IS NULL OR c.project_id = ?)
       ORDER BY c.due_date`,
-  ).all(projectId ?? null, projectId ?? null) as Array<{ id: string; title: string; priority: string; dueDate: string; columnId: string; columnName: string; projectId: string }>;
+  ).all(projectId ?? null, projectId ?? null) as Array<{ id: string; title: string; priority: string; dueDate: string; columnId: string; columnName: string; columnType: string | null; projectId: string }>;
 }
 
 export function listOverdueTasksSql(db: Database.Database, args: Args): unknown {

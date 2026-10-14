@@ -208,16 +208,17 @@ export function list_ready_tasks(db: Database.Database, _snap: Snapshot, args: R
   // surface keeps its existing return shape.
   const readyCards = q.getReadyCards(db, args.projectId as string | undefined);
   if (readyCards.length === 0) return [];
-  // Resolve column names (one small query, not the whole snapshot).
-  const colNameById = new Map((db.prepare("SELECT id, name FROM board_columns WHERE deleted_at IS NULL").all() as { id: string; name: string }[])
-    .map((c) => [c.id, c.name]));
+  // Resolve column names + types (one small query, not the whole snapshot).
+  const colById = new Map((db.prepare("SELECT id, name, type FROM board_columns WHERE deleted_at IS NULL").all() as { id: string; name: string; type: string }[])
+    .map((c) => [c.id, c]));
   return readyCards.map((c) => {
     const out: Record<string, unknown> = {
       id: c.id,
       title: c.title,
       priority: c.priority,
       columnId: c.columnId,
-      columnName: colNameById.get(c.columnId) ?? "Unknown",
+      columnName: colById.get(c.columnId)?.name ?? "Unknown",
+      columnType: colById.get(c.columnId)?.type ?? "custom",
       projectId: c.projectId,
     };
     // Ready tasks have no pending blockers by definition — omit empty arrays.

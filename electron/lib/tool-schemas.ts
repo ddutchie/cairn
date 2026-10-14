@@ -332,6 +332,10 @@ export type ToolCategory = "read" | "write" | "delete";
 export function toolCategory(name: string): ToolCategory {
   if (name === "delete" || name.startsWith("delete_")) return "delete";
   if (
+    // codebase_query is read-only (READ in shared/agent/tool-risk.ts) but
+    // matches no get_/list_/search_ prefix — name it explicitly so the MCP
+    // inventory doesn't mislabel it as a write tool.
+    name === "codebase_query" ||
     name.startsWith("get_") ||
     name.startsWith("list_") ||
     name.startsWith("search_")

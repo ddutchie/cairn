@@ -169,8 +169,9 @@ export const TOOLS: ToolDef[] = [
       const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 50) : 20;
       const projectId = str(a.projectId) || undefined;
       if (a.mode === "semantic") {
-        const hits = await semanticHits("tasks", query, Math.min(limit, 20));
-        return isErr(hits) || !projectId ? hits : hits.filter((h) => q.getCard(h.id)?.project_id === projectId);
+        const hits = await semanticHits("tasks", query, projectId ? 50 : Math.min(limit, 20));
+        if (isErr(hits) || !projectId) return hits;
+        return hits.filter((h) => q.getCard(h.id)?.project_id === projectId).slice(0, limit);
       }
       let cards: Parameters<typeof shapeCard>[0][];
       if (a.filter === "ready") cards = q.listReadyCards(projectId);

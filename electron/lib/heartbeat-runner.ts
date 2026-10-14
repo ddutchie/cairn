@@ -145,7 +145,7 @@ function shouldAutoAllowAutomationTool(db: Database.Database, run: AutomationRun
   if (isReadTool(name)) return true;
   if (name === RUN_SCRIPT_TOOL_NAME) return false;
   const target = standingRuleTarget(name, args);
-  if (automation.standingRules.some((r) => standingRuleCoversTool(r.tool, name) && (r.target === undefined || r.target === target))) return true;
+  if (automation.standingRules.some((r) => standingRuleCoversTool(r.tool, name, args) && (r.target === undefined || r.target === target))) return true;
   if (automation.approvalMode === "ask") return false;
   const connectorAware = (automation.requires ?? []).length > 0;
   if (connectorAware && isExternalTool(name)) return false;

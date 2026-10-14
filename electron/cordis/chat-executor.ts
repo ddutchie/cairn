@@ -137,8 +137,6 @@ export async function executeTool(
     case "delete_note":
     case "delete_task":
     case "bulk_update_task_status":
-    case "link_note_to_task":
-    case "unlink_note_from_task":
     case "create_task":
     case "list_ready_tasks":
     case "claim_task":
@@ -147,7 +145,6 @@ export async function executeTool(
     case "list_tasks_due":
     case "list_folders":
     case "list_templates":
-    case "bulk_move_notes":
     case "upsert_project":
     case "delete_project":
     case "create_tag":
@@ -218,6 +215,31 @@ export async function executeTool(
       return executeMcpTool(db, workspacePath, name, args);
     }
     case "tag_note": {
+      const win = getWin?.() ?? null;
+      const noteId = args.noteId as string;
+      aiWriteLock.lock(noteId, win);
+      try {
+        return executeMcpTool(db, workspacePath, name, args);
+      } finally {
+        aiWriteLock.unlock(noteId, win);
+      }
+    }
+    case "bulk_move_notes": {
+      // Writes .md files (one per note) — hold the AI write lock for every
+      // affected note so the editor shows read-only while the move lands,
+      // as rename_note / tag_note already do for single notes.
+      const win = getWin?.() ?? null;
+      const ids = Array.isArray(args.noteIds) ? (args.noteIds as unknown[]).filter((v): v is string => typeof v === "string" && v.length > 0) : [];
+      for (const id of ids) aiWriteLock.lock(id, win);
+      try {
+        return executeMcpTool(db, workspacePath, name, args);
+      } finally {
+        for (const id of ids) aiWriteLock.unlock(id, win);
+      }
+    }
+    case "link_note_to_task":
+    case "unlink_note_from_task": {
+      // Rewrites the linked note's .md (linkedCardIds) — same lock as tag_note.
       const win = getWin?.() ?? null;
       const noteId = args.noteId as string;
       aiWriteLock.lock(noteId, win);

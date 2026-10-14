@@ -108,7 +108,7 @@ function cardsMatching(db: Database.Database, ids: string[], f: { tag?: string; 
 }
 
 function tagIdByName(db: Database.Database, name: string): string | undefined {
-  return (db.prepare("SELECT id FROM tags WHERE lower(name) = lower(?) LIMIT 1").get(name) as { id: string } | undefined)?.id;
+  return (db.prepare("SELECT id FROM tags WHERE lower(name) = lower(?) AND deleted_at IS NULL LIMIT 1").get(name) as { id: string } | undefined)?.id;
 }
 
 /** Note ids (in `ids`) that match the project / folder / type filters. */
@@ -179,7 +179,21 @@ export async function runConsolidatedTool(
       const q = String(args.query ?? "").trim().toLowerCase();
       let cards = res as Args[];
       if (q) cards = cards.filter((c) => q.split(/\s+/).every((t) => String(c.title ?? "").toLowerCase().includes(t)));
-      if (args.columnType) cards = cards.filter((c) => c.columnType === undefined || c.columnType === args.columnType);
+      if (args.columnType) {
+        // The ready/overdue/due readers now include columnType, but resolve
+        // any card still missing it (older shapes) so the filter applies to
+        // every path instead of letting typeless cards through.
+        const missing = cards.filter((c) => c.columnType === undefined).map((c) => c.columnId).filter(Boolean);
+        if (missing.length > 0) {
+          const rows = db.prepare(`SELECT id, type FROM board_columns WHERE id IN (${missing.map(() => "?").join(",")})`)
+            .all(...missing) as { id: string; type: string }[];
+          const typeById = new Map(rows.map((r) => [r.id, r.type]));
+          for (const c of cards) {
+            if (c.columnType === undefined && typeof c.columnId === "string") c.columnType = typeById.get(c.columnId);
+          }
+        }
+        cards = cards.filter((c) => c.columnType === args.columnType);
+      }
       if (args.assignee || args.tag) {
         const keep = cardsMatching(db, cards.map((c) => c.id), args);
         cards = cards.filter((c) => keep.has(c.id));
