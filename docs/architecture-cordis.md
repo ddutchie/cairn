@@ -40,7 +40,7 @@ what is still open after the `feat/cordis-runtime` refactor.
 │  provider), llm-retry, subagent, skills, invariants, tool-skill, commands,              │
 │  command-compact, plan-mode, subagent-spawn, tool-subagent (+continuable                │
 │  delegate, control, list-agents), jobs-local + tool-jobs, storage (+json               │
-│  backend + domain), message-feedback + command-feedback, schedule (opt-in,              │
+│  backend + domain), schedule (opt-in,              │
 │  gated by the `scheduleEnabled` setting). Post-bootstrap `ctx.plugin` mounts            │
 │  (NOT loader entries): session-projection registry, permission-presets and             │
 │  goal stack (service + tool-goal + command-goal + round-driver — both inject            │
@@ -123,8 +123,7 @@ caches it in module-level `sharedCtx`.
 | subagent (+spawn +tool-subagent) | `cordis:cairn:*` wrappers | subagent capability (one-shot `subagent` + continuable `delegate`) |
 | tool-subagent-control + list-agents | `cordis:cairn:*` wrappers | `send_message` / `interrupt_agent` / `list_agents` (model side) |
 | jobs-local + tool-jobs | `cordis:dsh:jobs-local` + `cordis:cairn:tool-jobs` | background-job registry + `job_output`/`job_list`/`job_kill` (required by both background routes) |
-| storage (+json +domain) | dsh builtins | KV hub + JSON-file backend + domain facility (backs message-feedback) |
-| message-feedback + command-feedback | dsh builtins | durable per-message ratings/notes + log-only `/feedback` |
+| storage (+json +domain) | dsh builtins | KV hub + JSON-file backend + domain facility  |
 | schedule (opt-in) | `cordis:dsh:schedule` | session-local reminders, gated by `scheduleEnabled` (restart to apply) |
 | goal stack (post-bootstrap) | dsh `goal` + `tool-goal` + `command-goal` + `goal-round-driver` | same-session objective + model tools + `/goal` + round driver |
 | skills / tool-skill | `cordis:dsh:skills` + `cordis:dsh:tool-skill` | `skills` registry + model skill tool |
@@ -349,7 +348,7 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Subagent messaging | `electron/cordis/subagent-control.ts` (host list/interrupt/message + `subagent:*` IPC), `src/components/conversation/SubagentCatalogAction.tsx` (header catalog) |
 | Background jobs UI | `electron/cordis/jobs-bridge.ts` (registry → `session:projection kind:"jobs"` + `session:job-kill` IPC), `src/components/agent/AgentJobsDock.tsx` |
 | Permissions UI | `electron/cordis/permissions-bridge.ts` (`permissions` projection → `session:permissions` IPC), `src/components/agent/AgentPermissionSelect.tsx` |
-| Goals / feedback / schedule | `electron/cordis/goal-bridge.ts`, `message-feedback.ts`, `schedule-read.ts` + `session:goal|feedback|schedule-list` IPC; `AgentGoalChip.tsx`, `MessageFeedbackControl.tsx`, `SchedulePill.tsx` |
+| Goals / schedule | `electron/cordis/goal-bridge.ts`, `schedule-read.ts` + `session:goal|schedule-list` IPC; `AgentGoalChip.tsx`, `SchedulePill.tsx` |
 | Terminal / LSP / web-fetch | `electron/cordis/terminal-backend.ts` (node-pty over shared `pty-sessions.ts`), `cordis-lsp.ts` (stdio, PATH detect), `dsh-web` seam + `web-fetch-http` (fetch-only, `search: false`) |
 | Export / workflows | `electron/cordis/session-export.ts` (Cairn shim, `/export`), PTC workflow engine (per coding turn) + `workflow`/`ralph` tools |
 | Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |

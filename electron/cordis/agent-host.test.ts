@@ -7,8 +7,6 @@ const mocks = vi.hoisted(() => ({
   shutdownContext: vi.fn(),
   dropChatAgentForThread: vi.fn(),
   readGoalSnapshot: vi.fn(),
-  putMessageFeedback: vi.fn(),
-  getMessageFeedback: vi.fn(),
   listSchedules: vi.fn(),
   openCordisAgent: vi.fn(),
   runCordisCodingLoop: vi.fn(),
@@ -60,10 +58,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./cordis-context", () => ({ getContext: mocks.getContext, getSessionRoot: mocks.getSessionRoot, setSessionRoot: mocks.setSessionRoot, shutdownContext: mocks.shutdownContext, dropChatAgentForThread: mocks.dropChatAgentForThread }));
 vi.mock("./goal-bridge", () => ({ readGoalSnapshot: mocks.readGoalSnapshot }));
-vi.mock("./message-feedback", () => ({
-  putMessageFeedback: mocks.putMessageFeedback,
-  getMessageFeedback: mocks.getMessageFeedback,
-}));
 vi.mock("./schedule-read", () => ({ listSchedules: mocks.listSchedules }));
 vi.mock("./run-cordis-coding", () => ({ openCordisAgent: mocks.openCordisAgent, runCordisCodingLoop: mocks.runCordisCodingLoop }));
 vi.mock("./session-runtime", () => ({ ensureAgentAiAdapter: mocks.ensureAgentAiAdapter }));
@@ -178,20 +172,13 @@ describe("AgentHost", () => {
     expect(mocks.loadSessionMessages).toHaveBeenCalledWith(persistence, expect.any(Function), "session-1", { usageFold: expect.any(Function) });
   });
 
-  it("routes message feedback and schedule reads through the same host", async () => {
-    const input = { sessionId: "session-1", messageId: "message-1", rating: "positive" as const };
-    mocks.putMessageFeedback.mockResolvedValue({ messageId: "message-1" });
-    mocks.getMessageFeedback.mockResolvedValue(null);
+  it("routes schedule reads through the same host", async () => {
     mocks.listSchedules.mockResolvedValue([]);
 
-    await getAgentHost().putMessageFeedback(input);
-    await getAgentHost().getMessageFeedback("session-1", "message-1");
     await getAgentHost().listSchedules("session-1");
 
-    expect(mocks.putMessageFeedback).toHaveBeenCalledWith(context, input);
-    expect(mocks.getMessageFeedback).toHaveBeenCalledWith(context, "session-1", "message-1");
     expect(mocks.listSchedules).toHaveBeenCalledWith(context, "session-1");
-    expect(mocks.getContext).toHaveBeenCalledTimes(3);
+    expect(mocks.getContext).toHaveBeenCalledTimes(1);
   });
 
   it("compacts sessions through the host and disposes the temporary agent", async () => {

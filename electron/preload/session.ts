@@ -3,7 +3,7 @@
 import { invokeContract, onIpcEvent, sendContract } from "./ipc";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import type { SessionProjection } from "../../shared/agent/session-projection";
-import type { CodingSessionCreateInput, PutMessageFeedbackInput } from "../../shared/agent/session-wire";
+import type { CodingSessionCreateInput } from "../../shared/agent/session-wire";
 
 export const sessionApi = {
   // ── Cairn native agent (pi) ───────────────────
@@ -80,10 +80,6 @@ export const sessionApi = {
     /** Current permission-preset select ({options, currentValue}); live changes arrive via onProjection kind:"permissions". ok:false while the presets service is unavailable (switcher hides) */
     permissions: (sessionId: string) => invokeContract("session:permissions", { sessionId }),
     setPermissionPreset: (sessionId: string, preset: string) => invokeContract("session:permissions:set", { sessionId, preset }),
-    /** Rate an assistant message (thumbs + optional note); preserves a stored note unless replaced */
-    feedback: (req: PutMessageFeedbackInput) => invokeContract("session:feedback", req),
-    /** Current rating for one message (null when unrated) */
-    feedbackGet: (sessionId: string, messageId: string) => invokeContract("session:feedback-get", { sessionId, messageId }),
     /** Active session-local reminders (empty when the schedule overlay is off or none) */
     scheduleList: (sessionId: string) => invokeContract("session:schedule-list", { sessionId }),
     /** Workspace-persistent "Always allow" grants */

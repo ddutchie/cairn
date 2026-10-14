@@ -55,8 +55,6 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "subagent:message": true,
   "session:job-kill": true,
   "session:goal": true,
-  "session:feedback": true,
-  "session:feedback-get": true,
   "session:schedule-list": true,
   "cordis:listCommands": true,
   "cordis:executeCommand": false, // slash commands run with the desktop agent config

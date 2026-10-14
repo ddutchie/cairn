@@ -1,6 +1,6 @@
 /**
  * Wire shapes of the agent session runtime (Cordis): replayed transcripts,
- * usage/stats, context ring, subagent catalog, goal, feedback, schedules,
+ * usage/stats, context ring, subagent catalog, goal, schedules,
  * permissions and pending asks. Plain data shared by the Electron main
  * process, the typed IPC contract (`shared/ipc/contract.ts`) and the renderer.
  * The modules that produce them (electron/cordis/*) re-export these names.
@@ -244,26 +244,6 @@ export interface GoalWire {
   maxGoalRounds: number;
   createdAt: number;
   updatedAt: number;
-}
-
-// ── from message-feedback.ts ─────────────────────────────────────────
-
-export type MessageFeedbackRating = "positive" | "negative";
-
-export interface MessageFeedbackItemWire {
-  messageId: string;
-  rating: MessageFeedbackRating;
-  note?: string;
-  version: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface PutMessageFeedbackInput {
-  sessionId: string;
-  messageId: string;
-  rating: MessageFeedbackRating;
-  note?: string;
 }
 
 // ── from schedule-read.ts ────────────────────────────────────────────

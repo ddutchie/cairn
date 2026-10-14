@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { ReportIssueControl } from "@/components/conversation/ReportIssueControl";
 import { Check, Copy, FileText, FolderOpen, Info, Kanban, RotateCcw, Search } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
@@ -169,6 +170,7 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
               <button onClick={() => copy(message.content)} title="Copy" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors">
                 {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
               </button>
+              {!isUser && !message.isStreaming && <ReportIssueControl message={message} />}
               {isUser && onRetry && <button onClick={() => onRetry(message.content)} title="Retry" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><RotateCcw size={10} /></button>}
             </div>
           </div>

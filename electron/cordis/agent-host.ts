@@ -2,12 +2,6 @@ import type { Context } from "@deepseek-ai/cordis";
 import { dropChatAgentForThread, getContext, getSessionRoot, setSessionRoot, shutdownContext } from "./cordis-context";
 import { inspectSession, type InspectablePersistence } from "./session-inspect";
 import { readGoalSnapshot, type GoalWire } from "./goal-bridge";
-import {
-  getMessageFeedback,
-  putMessageFeedback,
-  type MessageFeedbackItemWire,
-  type PutMessageFeedbackInput,
-} from "./message-feedback";
 import { listSchedules, type ScheduleWire } from "./schedule-read";
 import { readPermissionsSnapshot, setPermissionPreset, type PermissionsSelect } from "./permissions-bridge";
 import {
@@ -100,8 +94,6 @@ export interface ExecuteCommandInput extends AgentSessionModel {
 
 export interface AgentHost {
   readGoalSnapshot(sessionId: string): Promise<GoalWire | null>;
-  putMessageFeedback(input: PutMessageFeedbackInput): Promise<MessageFeedbackItemWire>;
-  getMessageFeedback(sessionId: string, messageId: string): Promise<MessageFeedbackItemWire | null>;
   listSchedules(sessionId: string): Promise<ScheduleWire[]>;
   readPermissionsSnapshot(sessionId: string): Promise<PermissionsSelect>;
   /** Switch a coding session's permission preset — live via the service, or queued for the next turn while idle. */
@@ -246,12 +238,6 @@ function createLocalAgentHost(): AgentHost {
   return {
     async readGoalSnapshot(sessionId) {
       return readGoalSnapshot(await context(), sessionId);
-    },
-    async putMessageFeedback(input) {
-      return putMessageFeedback(await context(), input);
-    },
-    async getMessageFeedback(sessionId, messageId) {
-      return getMessageFeedback(await context(), sessionId, messageId);
     },
     async listSchedules(sessionId) {
       return listSchedules(await context(), sessionId);

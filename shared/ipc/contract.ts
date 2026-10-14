@@ -18,7 +18,7 @@
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type {
   AgentSessionMessage, CodingSessionCreateInput, CodingSessionRow, ContextRingResult, ControlResult, GoalWire,
-  MessageFeedbackItemWire, PermissionsSelect, PutMessageFeedbackInput, ScheduleWire, SessionLoadExtras,
+  PermissionsSelect, ScheduleWire, SessionLoadExtras,
   SessionRunningState, SessionTodo, SubagentCatalogView, SubagentScope,
 } from "../agent/session-wire";
 import type { ChatMessage, ChatThread, ChatThreadUpsertInput } from "../types/chat";
@@ -187,11 +187,6 @@ export interface IpcContract {
   };
   "session:job-kill": { args: [req: { jobId: string; sessionId: string }]; result: ControlResult<unknown> };
   "session:goal": { args: [req: { sessionId: string }]; result: ControlResult<GoalWire | null> };
-  "session:feedback": { args: [req: PutMessageFeedbackInput]; result: ControlResult<MessageFeedbackItemWire> };
-  "session:feedback-get": {
-    args: [req: { sessionId: string; messageId: string }];
-    result: ControlResult<MessageFeedbackItemWire | null>;
-  };
   "session:schedule-list": { args: [req: { sessionId: string }]; result: ControlResult<ScheduleWire[]> };
   /** Registry commands (built-in + plugin) for the command palettes. */
   "cordis:listCommands": { args: []; result: Array<{ name: string; description: string }> };
@@ -867,8 +862,6 @@ const CHANNELS: ChannelRecord = {
   "subagent:message": "read",
   "session:job-kill": "read",
   "session:goal": "read",
-  "session:feedback": "read",
-  "session:feedback-get": "read",
   "session:schedule-list": "read",
   "cordis:listCommands": "read",
   "db:workspace:list": "read",
