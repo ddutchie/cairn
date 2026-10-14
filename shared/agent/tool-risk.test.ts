@@ -161,6 +161,13 @@ describe("tool-risk classifier — set membership", () => {
     expect(approvalPreview("mcp__atl1__getAccessibleAtlassianResources", {})).toBe("");
   });
 
+  it("approval cards preview what the consolidated Cairn writes will do", () => {
+    expect(approvalPreview("edit_note", { noteId: "n1", newString: "New text" })).toBe("New text");
+    expect(approvalPreview("update_tasks", { cardIds: ["c1"], title: "Ship it" })).toBe("Ship it");
+    expect(approvalPreview("task_progress", { cardId: "c1", action: "log", message: "Tests green" })).toBe("Tests green");
+    expect(approvalPreview("delete", { type: "note", id: "n9" })).toBe("note n9");
+  });
+
   it("continuable-control tools: delegate/send_message/interrupt_agent are one-off EXEC, list_agents is READ", () => {
     for (const name of ["delegate", "send_message", "interrupt_agent"]) {
       expect(riskForTool(name)).toBe("EXEC");

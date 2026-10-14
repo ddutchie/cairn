@@ -32,7 +32,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   const notes = snap.notes.filter((n) => n.projectId === project.id && !n.archivedAt);
   // Cap pinned notes to the most-recent few with a short excerpt — uncapped this
   // was a context-overflow source (1000 chars × unbounded pinned count). The
-  // agent reads the rest with get_note. `pinnedNotesTotal` signals there's more.
+  // agent reads the rest with get_item. `pinnedNotesTotal` signals there's more.
   const PINNED_CAP = 5;
   const pinnedAll = notes
     .filter((n) => n.isPinned)
@@ -44,11 +44,11 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
       title: n.title,
       folder: n.folder ?? "",
       // Outline (headings) when the note is structured — a compact semantic
-      // summary; short excerpt otherwise. The agent reads full text via get_note.
+      // summary; short excerpt otherwise. The agent reads full text via get_item.
       ...noteDigest(n.content ?? "", 300),
     }));
   // Cap open tasks to a total budget across columns with a short description
-  // preview; the agent uses get_task for full detail.
+  // preview; the agent uses get_item for full detail.
   const TASK_CAP = 20;
   const TASK_PREVIEW = 120;
   let taskBudget = TASK_CAP;
@@ -68,7 +68,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
           taskBudget -= 1;
           const desc = c.description ?? "";
           const truncated = desc.length > TASK_PREVIEW
-            ? desc.slice(0, TASK_PREVIEW) + "… (use get_task for full description)"
+            ? desc.slice(0, TASK_PREVIEW) + "… (use get_item for full description)"
             : (c.description ?? null);
           const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
           if (truncated !== null) t.description = truncated;
@@ -95,7 +95,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
     // Strip `updatedAt` from the emitted shape; keep the sort order.
     .map(({ type, id, title }) => ({ type, id, title }));
   // Omit default `status: "active"` / `priority: "medium"` on the project
-  // (agent's `get_cairn_context` conventions document these as defaults).
+  // (agent's `get_context` conventions document these as defaults).
   const proj: Record<string, unknown> = {
     id: project.id, name: project.name,
   };

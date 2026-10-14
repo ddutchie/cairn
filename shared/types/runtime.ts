@@ -33,7 +33,7 @@ export interface InventoryTool {
   category: InventoryCategory;
   source: InventorySource;
   /** True when the tool registers but is approval-gated on that surface
-   *  (chat's delete_note/delete_task/delete_project via askFilter). */
+   *  (chat's `delete` tool via askFilter). */
   gated?: boolean;
 }
 
