@@ -60,11 +60,10 @@ export const TOOL_SCHEMAS = {
   },
 
   update_user_writing_style: {
-    description: "Append an observation to the user's writing style guide mid-session. Use when the user explicitly asks you to remember a style preference, or you notice a consistent correction worth preserving. Appends to the full guide (section-aware for the canonical 12-section ## N. format), preserving existing content and persona. Prefer explicit user request — do not hallucinate preferences. Check for duplicates before appending. Canonical 12 sections: 1. Voice in one line, 2. Sentence Length & Rhythm, 3. Tone & Register, 4. Openings & Closings, 5. Punctuation Habits, 6. Vocabulary & Phrases, 7. How I Give Feedback or Disagree, 8. Emoji Use, 9. Formatting, 10. Other Distinctive Patterns, 11. Anti-Patterns — Does NOT Sound Like Me, 12. Preserve These Voice Tells. Call get_user_writing_style first to see current guide and choose the right section.",
+    description: "Append an observation to the user's writing style guide. Only when the user asks you to remember a style preference, or you notice a consistent correction — never invent one. Call get_user_writing_style first to avoid duplicates.",
     schema: z.object({
-      mode: z.enum(["append"]).describe('Update mode; currently only "append" is supported.'),
-      section: z.string().optional().describe('Target section of the 12-section guide — use exact heading or number, e.g. "5. Punctuation Habits", "Punctuation", "Emoji Use", or "5". Canonical: 1 Voice in one line, 2 Sentence Length & Rhythm, 3 Tone & Register, 4 Openings & Closings, 5 Punctuation Habits, 6 Vocabulary & Phrases, 7 How I Give Feedback or Disagree, 8 Emoji Use, 9 Formatting, 10 Other Distinctive Patterns, 11 Anti-Patterns, 12 Preserve These Voice Tells. If omitted, appends to end.'),
-      content: z.string().min(1).describe("The observation to append — a concise style rule or voice note, e.g. 'Prefers plain hyphens over em-dashes (—)'. Will be inserted as a bullet in that section."),
+      section: z.string().optional().describe("Guide section by number or heading: 1 Voice, 2 Sentence Length & Rhythm, 3 Tone & Register, 4 Openings & Closings, 5 Punctuation, 6 Vocabulary & Phrases, 7 Feedback & Disagreement, 8 Emoji, 9 Formatting, 10 Other Patterns, 11 Anti-Patterns, 12 Voice Tells. Omit to append at the end."),
+      content: z.string().min(1).describe("Concise style rule, e.g. 'Prefers plain hyphens over em-dashes'"),
     }),
   },
 
@@ -558,6 +557,20 @@ export const TOOL_SCHEMAS = {
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;
 
+/**
+ * Tools the in-app chat does not register. Chat has no filesystem access, and
+ * the codebase symbol index is a coding-agent / external-agent tool: sending
+ * these schemas on every chat turn cost ~540 tokens for tools chat never uses.
+ * Coding sessions and MCP still get them.
+ */
+export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
+  "codebase_reindex",
+  "codebase_search_symbols",
+  "codebase_get_symbol_definition",
+  "codebase_get_references",
+  "codebase_get_file_symbols",
+];
+
 // Chat-only tools (not exposed via MCP)
 export const CHAT_ONLY_TOOLS: ToolName[] = ["get_active_context", "generate_prd", "spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
@@ -590,3 +603,37 @@ const _chatOnlySet = new Set<string>(CHAT_ONLY_TOOLS);
 export const MCP_TOOLS: { name: string; category: ToolCategory }[] = Object.keys(TOOL_SCHEMAS)
   .filter((name) => !_chatOnlySet.has(name))
   .map((name) => ({ name, category: toolCategory(name) }));
+
+/**
+ * JSON Schema for a tool's parameters as sent to the model (chat `TOOLS` and the
+ * MCP `tools/list` response). Drops keywords that cost tokens on every request
+ * but carry no signal for the model (zod still validates server-side).
+ * Validated by electron/lib/tool-schema-optimization.test.ts to preserve tool
+ * selection and argument correctness:
+ *   - `$schema`  — the draft-07 header
+ *   - `pattern`  — e.g. the ~230-tok ISO-8601 regex on datetime fields
+ *   - `minimum` / `maximum` — numeric bounds (esp. the 9e15 integer ceiling)
+ *   - `default`  — informational only, not an instruction
+ *   - `additionalProperties: false` — verbose; models don't rely on it
+ * Field `description` text is deliberately KEPT (it drives arg correctness).
+ */
+export function toolParametersJsonSchema(schema: z.ZodType): Record<string, unknown> {
+  // io:"input" — describe what the CALLER sends: fields with a zod `.default()`
+  // stay optional (the default "output" view marks them required, which forced
+  // models to always pass e.g. search_notes limit/offset).
+  const json = z.toJSONSchema(schema, { target: "draft-07", io: "input" }) as Record<string, unknown>;
+  delete json["$schema"];
+  return stripSchemaNoise(json) as Record<string, unknown>;
+}
+
+function stripSchemaNoise(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripSchemaNoise);
+  if (!node || typeof node !== "object") return node;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (k === "pattern" || k === "minimum" || k === "maximum" || k === "default") continue;
+    if (k === "additionalProperties" && v === false) continue;
+    out[k] = stripSchemaNoise(v);
+  }
+  return out;
+}

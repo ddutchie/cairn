@@ -13,7 +13,7 @@ import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { McpResourceRuntime } from "@deepseek-ai/dsh-mcp-resources";
 import "./ctx-augment";
 import z from "zod";
-import { TOOL_SCHEMAS, createHostStore } from "./host-store";
+import { TOOL_SCHEMAS, createHostStore, toolParametersJsonSchema } from "./host-store";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
 import { executeTool } from "./chat-executor";
 import type { ChatRequest } from "../lib/tools";
@@ -110,7 +110,7 @@ export function buildCairnTool(
   exec: ExecutionCtx,
   ctx?: import("@deepseek-ai/cordis").Context,
 ): ToolDefinition {
-  const jsonSchema = z.toJSONSchema(schema, { target: "draft-07" }) as Record<string, unknown>;
+  const jsonSchema = toolParametersJsonSchema(schema);
   const params = (jsonSchema.properties ?? {}) as Record<string, unknown>;
   const properties: Record<string, VNode> = {};
   for (const [k, v] of Object.entries(params)) {

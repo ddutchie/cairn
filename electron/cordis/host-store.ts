@@ -102,7 +102,7 @@ export const CAIRN_HOST = "cairnHost";
 
 export { newId } from "../db/utils";
 export { buildSystemPrompt, withPersonality, TOOL_LABELS, TOOLS } from "../lib/tools";
-export { TOOL_SCHEMAS } from "../lib/tool-schemas";
+export { TOOL_SCHEMAS, CHAT_EXCLUDED_TOOLS, toolParametersJsonSchema } from "../lib/tool-schemas";
 export { dlog, startPhaseTimer } from "../lib/debug-log";
 export { toolResultError } from "../lib/tool-result";
 export { aiWriteLock } from "../lib/ai-write-lock";

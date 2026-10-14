@@ -12,8 +12,9 @@
 import http from "http";
 import Database from "better-sqlite3";
 import * as z from "zod";
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, toolParametersJsonSchema } from "./lib/tool-schemas";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -125,7 +126,7 @@ function createWorkspaceBinding(initialDbPath: string) {
 
 type WorkspaceBinding = ReturnType<typeof createWorkspaceBinding>;
 
-function buildMcpServer(binding: WorkspaceBinding): McpServer {
+export function buildMcpServer(binding: WorkspaceBinding): McpServer {
   const server = new McpServer({ name: "cairn", version: "1.0.0" });
 
   // Register tools from TOOL_SCHEMAS, excluding chat-only tools
@@ -144,6 +145,20 @@ function buildMcpServer(binding: WorkspaceBinding): McpServer {
       }
     );
   }
+
+  // Serve a token-lean tools/list. The SDK's default listing emits the raw
+  // zod→JSON-Schema output (a `$schema` header per tool, ISO-datetime regexes,
+  // integer bounds, defaults) plus an `execution` block, ~700 tokens of noise an
+  // agent pays on every request. Same trimmed schemas the in-app chat sends;
+  // argument validation on tools/call still runs against the full zod schema.
+  const listedTools = Object.entries(TOOL_SCHEMAS)
+    .filter(([name]) => !chatOnlySet.has(name))
+    .map(([name, { description, schema }]) => ({
+      name,
+      description,
+      inputSchema: toolParametersJsonSchema(schema) as { type: "object"; properties?: Record<string, object>; required?: string[] },
+    }));
+  server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listedTools }));
 
   server.resource("workspaces", "cairn://workspaces", { mimeType: "application/json" }, async () => ({
     contents: [{

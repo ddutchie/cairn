@@ -21,7 +21,7 @@
  * global view.
  */
 
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS } from "./tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS, CHAT_EXCLUDED_TOOLS } from "./tool-schemas";
 import type { InventoryCategory, InventorySource, InventorySurface, InventoryTool } from "../../shared/types/runtime";
 export type { InventoryCategory, InventorySource, InventorySurface, InventoryTool };
 
@@ -156,9 +156,10 @@ export function buildStaticInventory(
   const agentExcluded = new Set<string>(AGENT_EXCLUDED_TOOLS as readonly string[]);
   const allCairn = new Set(Object.keys(TOOL_SCHEMAS));
 
-  // Chat registers every Cairn tool today (CHAT_FORBIDDEN_TOOLS is enforced
-  // via the approval askFilter, not via exclusion) — deletes shown as gated.
-  const chat = cairnTools({ gate: CHAT_GATED_TOOLS });
+  // Chat registers every Cairn tool except CHAT_EXCLUDED_TOOLS (codebase index);
+  // CHAT_FORBIDDEN_TOOLS is enforced via the approval askFilter, not via
+  // exclusion — deletes shown as gated.
+  const chat = cairnTools({ gate: CHAT_GATED_TOOLS, exclude: new Set<string>(CHAT_EXCLUDED_TOOLS) });
 
   // Coding registers every Cairn tool (no exclusion) + the full coding stack.
   const coding = [

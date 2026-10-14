@@ -10,7 +10,7 @@ import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
-import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId, getCachedConfig } from "./host-store";
+import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId, getCachedConfig, CHAT_EXCLUDED_TOOLS } from "./host-store";
 import { chatToolNeedsApproval, resolveChatApprovalPolicy } from "../../shared/agent/chat-approval";
 import type { RunCordisLoopOptions, RunCordisLoopResult } from "./run-cordis-loop";
 import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToolResultView } from "./cordis-context";
@@ -18,6 +18,9 @@ import { readLiveSessionUsage, usageChunkEvent } from "./context-usage";
 import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { foldSessionStats } from "./session-stats";
 import { createTurnStreamStats, onAssistantStream, statsChunkEvent, syntheticChunkEvent } from "./assistant-stream-frames";
+
+/** Cairn tools chat never registers (see CHAT_EXCLUDED_TOOLS). */
+const CHAT_EXCLUDED_TOOL_SET: ReadonlySet<string> = new Set<string>(CHAT_EXCLUDED_TOOLS);
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -336,7 +339,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // part of chat's core job and auto-allow, otherwise every note creation
       // would prompt. This is the risk-scoped policy chosen for per-workspace
       // "Always allow" (see plan note).
-      const disposers = registerCairnTools(ctx, { getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db, req, workspacePath, llmConfig: preparedConfig, getWin: opts.getWin, emit: undefined, emitDone });
+      const disposers = registerCairnTools(ctx, { getDb: () => (ctx.get(CAIRN_DB) as Database) ?? db, req, workspacePath, llmConfig: preparedConfig, getWin: opts.getWin, emit: undefined, emitDone }, { exclude: CHAT_EXCLUDED_TOOL_SET });
       disposers.forEach((dispose) => resources.add(dispose));
       // Doom-loop guard (same as coding): pause on repeated identical calls.
       // Mounted BEFORE the approval plugin — see run-cordis-coding.ts comment
