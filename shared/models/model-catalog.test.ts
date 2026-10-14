@@ -19,6 +19,8 @@ import {
   providerLogoUrlFor,
   supportsImageInput,
   resolveMaxOutputTokens,
+  effectiveOutputTokens,
+  outputBudgetPressure,
   positiveTokenLimit,
   normalizeContextLimit,
 } from "./model-catalog";
@@ -471,5 +473,48 @@ describe("parseCanonicalCatalog / canonicalProviderFor", () => {
     expect(logoProviderFor("deepseek/deepseek-v4-flash", "hpc-ai", canonical)).toBe("deepseek");
     // Canonical ids that don't match still fall through to the heuristic.
     expect(logoProviderFor("claude-opus-4", null, canonical)).toBe("anthropic");
+  });
+});
+
+describe("Auto output scales with the context window", () => {
+  it("keeps the 32K cap on windows of 128K and up", () => {
+    expect(resolveMaxOutputTokens(null, null, 128_000)).toBe(32_000);
+    expect(resolveMaxOutputTokens(null, 64_000, 1_000_000)).toBe(32_000);
+  });
+
+  it("limits output to a quarter of a small window, even for an unknown model", () => {
+    expect(resolveMaxOutputTokens(null, null, 64_000)).toBe(16_000);
+    expect(resolveMaxOutputTokens(null, 8_192, 64_000)).toBe(8_192);
+    expect(resolveMaxOutputTokens(null, 32_000, 32_000)).toBe(8_000);
+  });
+
+  it("floors at 4K but never exceeds half of a tiny window", () => {
+    expect(resolveMaxOutputTokens(null, null, 8_000)).toBe(4_000);
+    expect(resolveMaxOutputTokens(null, null, 4_096)).toBe(2_048);
+  });
+
+  it("honours a manual override regardless of the window", () => {
+    expect(resolveMaxOutputTokens(32_000, null, 64_000)).toBe(32_000);
+  });
+
+  it("stays undefined with no model limit and no window", () => {
+    expect(resolveMaxOutputTokens(null, null, null)).toBeUndefined();
+  });
+});
+
+describe("outputBudgetPressure", () => {
+  it("is null for the default 128K/32K and below a quarter", () => {
+    expect(outputBudgetPressure(128_000, 32_000)).toBeNull();
+    expect(outputBudgetPressure(200_000, 8_192)).toBeNull();
+  });
+
+  it("flags 32K output on a 64K window with the compaction point", () => {
+    expect(outputBudgetPressure(64_000, 32_000)).toEqual({ messageBudget: 32_000, compactAt: 25_600 });
+  });
+
+  it("effectiveOutputTokens matches what a turn sends", () => {
+    expect(effectiveOutputTokens({ auto: true, contextWindow: 64_000 })).toBe(16_000);
+    expect(effectiveOutputTokens({ auto: false, manual: 32_768, contextWindow: 64_000 })).toBe(32_768);
+    expect(effectiveOutputTokens({ auto: false, manual: undefined })).toBe(8_192);
   });
 });

@@ -124,6 +124,9 @@ function serviceOAuthConfigChanged(
 
 /** Reads `ctx.db` at call time so a workspace swap (`reinitialise`) is transparent. */
 export function registerToolsHandlers(ctx: DbContext): void {
+  // Chat-time connects can't open the browser; tell the renderer to offer sign-in.
+  mcpClient.onAuthRequired((e) => broadcastIpcEvent("tools:authRequired", e));
+
   // ── MCP servers ──────────────────────────────────────────────────────────
   registerContractHandle("tools:listMcpServers", (_e, { workspaceId }) =>
     handle(() => q.getMcpServers(ctx.db, workspaceId))

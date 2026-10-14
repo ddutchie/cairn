@@ -656,6 +656,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         maxTokens: resolveMaxOutputTokens(
           aiConfig.maxOutputAuto === false ? aiConfig.maxOutputTokens : undefined,
           getModelInfo(aiConfig.model)?.maxOutput,
+          aiConfig.contextLimit,
         ),
         // Reasoning models get the `developer` system role (OpenAI convention).
         isReasoningModel: getModelInfo(aiConfig.model)?.reasoning === true,

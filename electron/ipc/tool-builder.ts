@@ -88,7 +88,7 @@ function resolveConfig(): AIConfig {
     // 32K cap rather than silently omitting max_tokens.
     maxTokens: cached?.maxOutputAuto === false
       ? (resolveMaxOutputTokens(cached?.maxOutputTokens) ?? AUTO_OUTPUT_TOKEN_CAP)
-      : AUTO_OUTPUT_TOKEN_CAP,
+      : (resolveMaxOutputTokens(null, null, cached?.contextLimit) ?? AUTO_OUTPUT_TOKEN_CAP),
   };
 }
 

@@ -17,6 +17,7 @@ import type { SlashCommand } from "@/lib/slash-commands";
 import { ProviderModelPicker } from "@/components/ui/provider-model-picker";
 import { PersonalityPicker } from "@/components/ui/personality-picker";
 import { ChatApprovalPicker } from "./ChatApprovalPicker";
+import { McpSignInChips } from "./McpSignInChips";
 import { ReasoningEffortPicker } from "@/components/ui/reasoning-effort-picker";
 import { readAttachments, type AttachmentItem } from "@/lib/read-attachments";
 import { cn } from "@/lib/utils";
@@ -145,6 +146,7 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
         {providerModelTarget && <ReasoningEffortPicker target={providerModelTarget} disabled={disabled} />}
         {providerModelTarget === "ai" && <PersonalityPicker disabled={disabled} />}
         {approvalControl ?? (providerModelTarget === "ai" && <ChatApprovalPicker disabled={disabled} />)}
+        <McpSignInChips />
         {statusText && (
           <p className={cn("text-[0.643rem] text-[var(--text-tertiary)] ml-auto shrink-0", isLoading && "text-[var(--text-secondary)]")}>
             {statusText}

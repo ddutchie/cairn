@@ -204,5 +204,11 @@ export type AuthCompleteResult =
   | { status: "unknown_state"; serverId?: undefined }
   | { status: "error"; serverId?: string; error: string };
 
+/** An OAuth MCP server needs sign-in — the `tools:authRequired` event payload. */
+export interface McpAuthRequiredEvent {
+  serverId: string;
+  serverName: string;
+}
+
 /** Keychain namespaces the renderer may address through `secrets:*`. */
 export type SecretToolType = "mcp" | "service" | "llm";

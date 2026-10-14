@@ -551,6 +551,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           maxTokens:   resolveMaxOutputTokens(
             agentConfig.maxOutputAuto === false ? agentConfig.maxOutputTokens : undefined,
             getModelInfo(agentConfig.model)?.maxOutput,
+            agentConfig.contextLimit,
           ),
           ...(() => {
             const effectiveMode = (agentConfig as { mode?: import("../../../shared/agent/approval-mode").Mode }).mode

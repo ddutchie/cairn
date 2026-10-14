@@ -20,6 +20,7 @@
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { resolveSecrets } from "./secure-store";
@@ -112,6 +113,10 @@ function makeTransport(cfg: McpServerRuntimeConfig) {
         redirectUri: cfg.oauthRedirectUri,
       },
       cfg.name ?? cfg.id,
+      undefined,
+      undefined,
+      // Background connect: never open the browser (no loopback listener here).
+      { interactive: false },
     );
     if (cfg.transport === "sse") {
       return new SSEClientTransport(url, { authProvider: provider });
@@ -153,6 +158,30 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
   } finally {
     clearTimeout(timer!);
   }
+}
+
+// ── Sign-in required ─────────────────────────────────────────────────────────
+
+/** An OAuth server rejected a background connect: the user must sign in. */
+export interface McpAuthRequired {
+  serverId: string;
+  serverName: string;
+}
+
+const authRequiredListeners = new Set<(e: McpAuthRequired) => void>();
+
+/** Subscribe to "server needs sign-in" signals; returns the unsubscribe function. */
+export function onAuthRequired(cb: (e: McpAuthRequired) => void): () => void {
+  authRequiredListeners.add(cb);
+  return () => authRequiredListeners.delete(cb);
+}
+
+/** Notify listeners when `e` is an OAuth rejection; returns whether it was. */
+function reportIfAuthError(cfg: McpServerRuntimeConfig, e: unknown): boolean {
+  if (!(e instanceof UnauthorizedError)) return false;
+  const evt = { serverId: cfg.id, serverName: cfg.name ?? cfg.id };
+  for (const cb of authRequiredListeners) cb(evt);
+  return true;
 }
 
 /** Connect (or reuse a cached connection) to a server. Throws on failure. */
@@ -206,6 +235,10 @@ export async function listTools(cfg: McpServerRuntimeConfig): Promise<OpenAITool
     const res = await withTimeout(conn.client.listTools(), CALL_TIMEOUT_MS, `MCP listTools ${cfg.id}`);
     return mcpToolsToOpenAI(cfg.id, (res.tools ?? []) as McpToolDef[]);
   } catch (e) {
+    if (reportIfAuthError(cfg, e)) {
+      console.warn(`[mcp-client] ${cfg.id} needs sign-in; skipping its tools`);
+      return [];
+    }
     console.error(`[mcp-client] listTools failed for ${cfg.id}:`, e instanceof Error ? e.message : e);
     return [];
   }
@@ -236,6 +269,7 @@ export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<Li
       })),
     };
   } catch (e) {
+    reportIfAuthError(cfg, e);
     return { ok: false, tools: [], error: errMsg(e) };
   }
 }
@@ -263,6 +297,9 @@ export async function callTool(
     );
     return stringifyToolResult(res);
   } catch (e) {
+    if (reportIfAuthError(cfg, e)) {
+      return `Error calling ${namespaced}: MCP server "${cfg.name ?? cfg.id}" is not signed in. A Sign in button is shown in the chat; ask the user to sign in, then retry.`;
+    }
     const msg = errMsg(e);
     console.error(`[mcp-client] callTool ${namespaced} failed:`, msg);
     return `Error calling ${namespaced}: ${msg}`;
