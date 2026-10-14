@@ -27,7 +27,7 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
       activeShadow="0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
     >
       <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
+        <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
           <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-[0.625rem] leading-none">
             ▦
           </span>
@@ -113,14 +113,14 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
       activeShadow="0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
     >
       <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2">
+        <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
           <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
             <AlertTriangle size={10} />
           </span>
           Open by priority
         </h2>
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2.5">
         {(
           [
             { key: "urgent", label: "Urgent", color: "var(--danger)", bg: "color-mix(in srgb,var(--danger) 12%, transparent)" },
@@ -151,7 +151,7 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
           );
         })}
       </div>
-      <div className="mt-3 flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-xs text-[var(--text-tertiary)]">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-xs text-[var(--text-tertiary)]">
         <span>WIP — {inProgressCount} in progress</span>
         <span className="font-semibold text-[var(--text-primary)]">
           {wipLimit ? (
@@ -200,7 +200,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
       {notesCount === 0 ? (
         <EmptyState title="No notes yet — capture ideas to see them here" className="py-6" />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-6">
           <div>
             <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
               <Pin size={10} /> Pinned · keeps focus

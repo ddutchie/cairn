@@ -1,5 +1,6 @@
 "use client";
 
+import { MIN_MAIN_CONTENT_WIDTH } from "@/store/slices/ui-layout";
 import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
@@ -130,6 +131,38 @@ export default function Home() {
     if (typeof window === "undefined") return;
     document.documentElement.style.setProperty("--chat-panel-width", `${chatPanelWidth}px`);
   }, [chatPanelWidth]);
+
+  // Publish the dock sidebar's live width on :root so the effective chat width
+  // (--chat-panel-eff, see globals.css) can leave the main column a minimum.
+  // When the window is too narrow for sidebar + the chat's chosen width + a
+  // usable main column, the chat slides to the full content width (overlay)
+  // instead of crushing the main view.
+  const [chatOverlay, setChatOverlay] = useState(false);
+  const overlayRef = useRef(false);
+  useEffect(() => {
+    const sidebar = document.querySelector<HTMLElement>("[data-sidebar]");
+    if (!sidebar) return;
+    const root = document.documentElement;
+    const sync = () => {
+      const sb = sidebar.getBoundingClientRect().width;
+      root.style.setProperty("--dock-sidebar-width", `${sb}px`);
+      const overlay = window.innerWidth >= 768 && window.innerWidth - sb - chatPanelWidth < MIN_MAIN_CONTENT_WIDTH;
+      if (overlay) root.style.setProperty("--chat-panel-eff", "calc(100vw - var(--dock-sidebar-width, 0px))");
+      else root.style.removeProperty("--chat-panel-eff");
+      // Slide (animate left/width) when flipping between side panel and full width.
+      if (overlayRef.current !== overlay) {
+        overlayRef.current = overlay;
+        useCairnStore.getState().setChatSliding(true);
+      }
+      setChatOverlay(overlay);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(sidebar);
+    window.addEventListener("resize", sync);
+    return () => { ro.disconnect(); window.removeEventListener("resize", sync); };
+    // The sidebar only mounts once onboarding resolves — re-run then.
+  }, [onboardingState, chatPanelWidth]);
 
   // Auto-updater state — tracked separately so event order doesn't matter
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
@@ -495,7 +528,7 @@ export default function Home() {
         <DockSidebar />
         <div
           className={cn("flex flex-col flex-1 min-w-0 overflow-hidden", !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out")}
-          style={{ marginRight: (sessionPresentation !== "center" && chatOpen) ? "var(--chat-panel-width, 320px)" : "0px" }}
+          style={{ marginRight: (sessionPresentation !== "center" && chatOpen && !chatOverlay) ? "var(--chat-panel-eff, 320px)" : "0px" }}
         >
           {mainViews}
         </div>

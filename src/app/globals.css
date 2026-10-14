@@ -460,7 +460,7 @@ select:focus {
 
 @media (min-width: 768px) {
   .chat-panel-responsive {
-    width: var(--chat-panel-width, 320px);
+    width: var(--chat-panel-eff, 320px);
     height: auto;
   }
 }
@@ -802,4 +802,10 @@ input[type="url"] {
 .zone-delete.zone-active {
   background: var(--danger);
   color: #fff;
+}
+
+/* Effective chat panel width: the chosen width; page.tsx overrides it inline with
+   the full content width when the window is too narrow for side-by-side. */
+:root {
+  --chat-panel-eff: var(--chat-panel-width, 320px);
 }

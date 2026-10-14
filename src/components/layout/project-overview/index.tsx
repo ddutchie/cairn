@@ -316,14 +316,14 @@ export function ProjectOverview() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative w-full min-w-0 overflow-x-hidden">
-      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full min-w-0">
+      <div className="@container flex-1 overflow-y-auto overflow-x-hidden w-full min-w-0">
         <div
           className="max-w-[1240px] mx-auto w-full px-4 pt-4 md:px-7 md:pt-7 pb-8"
           style={{ paddingBottom: bottomBarHeight ? bottomBarHeight + 32 : undefined }}
         >
           {/* ── masthead — card wraps below on narrow, both full-width when stacked ── */}
-          <div className="flex flex-col lg:flex-row flex-wrap gap-5 items-start mb-4">
-            <div className="flex gap-4 items-start min-w-0 flex-1 min-w-[280px] w-full lg:w-auto">
+          <div className="flex flex-col @4xl:flex-row flex-wrap gap-5 items-start mb-4">
+            <div className="flex gap-4 items-start min-w-0 flex-1 min-w-[280px] w-full @4xl:w-auto">
               <div
                 className="w-[52px] h-[52px] rounded-xl flex items-center justify-center flex-shrink-0 border border-[var(--border)]"
                 style={{
@@ -397,17 +397,17 @@ export function ProjectOverview() {
                   <HeaderToolIcons projectId={project.id} workspaceId={project.workspaceId} />
                 </div>
               </div>
-              <div className="hidden sm:block lg:hidden">
+              <div className="hidden @sm:block @4xl:hidden">
                 <div className="flex items-center gap-1"><ReviewButton project={project} /><ProjectSettingsButton project={project} /></div>
               </div>
-              <div className="hidden lg:flex">
+              <div className="hidden @4xl:flex">
                 <div className="flex items-center gap-1"><ReviewButton project={project} /><ProjectSettingsButton project={project} /></div>
               </div>
             </div>
 
             {/* instrument — lift + tilt on hover */}
             <TiltCard
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full lg:w-[360px] flex-shrink-0"
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full @4xl:w-[360px] flex-shrink-0"
               restShadow="0 6px 20px color-mix(in srgb, black 16%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
               activeShadow="0 14px 36px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)"
             >
@@ -567,7 +567,7 @@ export function ProjectOverview() {
 
           <div id={overviewContentId}>
           {/* ── KPI strip — inline stats, not 4 template cards — shares one hairline container ── */}
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden divide-y sm:divide-y-0 sm:divide-x divide-[var(--border)] flex flex-col sm:flex-row mb-4" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden divide-y @2xl:divide-y-0 @2xl:divide-x divide-[var(--border)] flex flex-col @2xl:flex-row mb-4" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
             <div className="flex-1 p-3.5 relative">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--danger)]" />
               <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Needs attention</div>
@@ -618,9 +618,9 @@ export function ProjectOverview() {
           </div>
 
           {/* ── attention queue — filtered by Focus, honest empty states ── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4" role="list" aria-label="Needs attention">
+          <div className="grid grid-cols-1 @2xl:grid-cols-3 gap-3 mb-4" role="list" aria-label="Needs attention">
             {(focus === "pinned" ? [] : filteredQueue).length === 0 ? (
-              <div className="md:col-span-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] shadow-sm p-4 flex items-center gap-3">
+              <div className="@2xl:col-span-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] shadow-sm p-4 flex items-center gap-3">
                 <span className="w-8 h-8 rounded-full grid place-items-center bg-[var(--success)]/15 text-[var(--success)] border border-[var(--success)]/20">
                   <Kanban size={14} />
                 </span>
@@ -705,7 +705,7 @@ export function ProjectOverview() {
             </div>
 
           {/* ── bento: task flow + priority ───────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_0.95fr] gap-3.5 mb-3.5">
+          <div className="grid grid-cols-1 @4xl:grid-cols-[1.55fr_0.95fr] gap-3.5 mb-3.5 [&>*]:min-w-0">
             <TaskFlowPanel
               flowColumns={flowColumns}
               focus={focus}
@@ -735,7 +735,7 @@ export function ProjectOverview() {
           </div>
           {/* ── delivery: shipped this week + at risk ── */}
           {metrics && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 mb-3.5">
+            <div className="grid grid-cols-1 @4xl:grid-cols-2 gap-3.5 mb-3.5 [&>*]:min-w-0">
               <CollapsibleSection
                 title="Shipped this week"
                 icon={<CheckCircle2 size={12} />}
