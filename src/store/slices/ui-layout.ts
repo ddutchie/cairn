@@ -27,6 +27,7 @@ export const FAVORITE_MODELS_KEY = "favoriteModels";
 export const DEFAULT_CHAT_PANEL_WIDTH = 320; // px  (≈ w-80 at default font scale)
 export const MIN_CHAT_PANEL_WIDTH     = 240; // px
 export const MAX_CHAT_PANEL_WIDTH     = 1000; // px
+export const MIN_MAIN_CONTENT_WIDTH   = 480;  // px — below this the chat slides to full width instead of squeezing the view
 
 // ── Notes sidebar width ───────────────────────────────────────────────────────
 

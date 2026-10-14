@@ -7,6 +7,7 @@ import { SessionPane } from "@/components/agent/SessionPane";
 import { PreviewPane } from "./PreviewPane";
 import { cn } from "@/lib/utils";
 import { MIN_CHAT_PANEL_WIDTH, MAX_CHAT_PANEL_WIDTH } from "@/store/slices/ui";
+import { MIN_MAIN_CONTENT_WIDTH } from "@/store/slices/ui-layout";
 import { useResizableDivider } from "@/hooks/useResizableDivider";
 
 interface UnifiedChatPanelProps {
@@ -98,16 +99,20 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     onStart: () => setChatPanelResizing(true),
     startSize: () => panelRef.current?.offsetWidth ?? 0,
     onMove: (delta, start) => {
+      if (document.documentElement.style.getPropertyValue("--chat-panel-eff")) return; // overlay mode: width isn't adjustable
       // Panel is on the right; dragging left makes it wider. Write the live
       // width straight to :root so BOTH the fixed panel and the centered
       // content margin reflow instantly — no React re-render per mousemove
       // (updating the store per pixel re-renders the whole page tree and can
       // blow React's nested-update limit).
-      const next = Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, start - delta));
+      const sb = parseFloat(document.documentElement.style.getPropertyValue("--dock-sidebar-width")) || 0;
+      const cap = Math.max(MIN_CHAT_PANEL_WIDTH, Math.min(MAX_CHAT_PANEL_WIDTH, window.innerWidth - sb - MIN_MAIN_CONTENT_WIDTH));
+      const next = Math.min(cap, Math.max(MIN_CHAT_PANEL_WIDTH, start - delta));
       document.documentElement.style.setProperty("--chat-panel-width", `${next}px`);
     },
     onEnd: (interrupted) => {
       setChatPanelResizing(false);
+      if (document.documentElement.style.getPropertyValue("--chat-panel-eff")) return; // overlay mode: keep the saved width
       // Interrupted = torn down mid-drag (e.g. the user switched views while
       // resizing) — the panel may be gone, so commit the last dragged width.
       if (!interrupted && panelRef.current) {
@@ -150,7 +155,7 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     // top -1px overlaps header's border-b (both 1px at y=43-44) -> single 1px
     // line continuous across the window. border-t + border-l meet at a clean
     // 90° corner (same element, same color, overlapping pixel, no step).
-    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-[calc(100vw_-_var(--chat-panel-width,320px))] w-[var(--chat-panel-width,320px)] border-t border-l border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]";
+    positioningClasses = "top-[calc(var(--chrome-top)-1px)] left-[calc(100vw_-_var(--chat-panel-eff,320px))] w-[var(--chat-panel-eff,320px)] border-t border-l border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]";
     if (chatOpen) {
       positioningClasses += " opacity-100 translate-x-0";
     } else {

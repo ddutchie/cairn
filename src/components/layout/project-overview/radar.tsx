@@ -47,7 +47,7 @@ export function ProjectHealthRadar({
         <span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)] hidden sm:inline">0 → 1</span>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
+      <div className="flex flex-col @3xl:flex-row gap-8 items-center @3xl:items-start">
         <div className="w-full max-w-[280px] aspect-square flex-shrink-0 mr-2 pl-2">
           <svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`} className="overflow-visible block" role="img" aria-label="Project health radar">
           {/* rings */}
@@ -91,7 +91,7 @@ export function ProjectHealthRadar({
         </div>
 
         <div className="flex-1 min-w-0 w-full">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-2 gap-2">
             {axes.map((ax) => (
               <div key={ax.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2.5">
                 <div className="flex items-center gap-1.5">
