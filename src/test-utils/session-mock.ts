@@ -49,8 +49,6 @@ export function buildSessionMock({ noop, makeListener }: SessionMockHelpers) {
     getTodos: () => Promise.resolve([]),
     goal: () => Promise.resolve({ ok: true, value: null }),
     permissions: () => Promise.resolve({ ok: false, code: "unavailable", message: "mock" }),
-    feedback: () => Promise.resolve({ ok: true, value: { messageId: "mock", rating: "positive", version: "1" } }),
-    feedbackGet: () => Promise.resolve({ ok: true, value: null }),
     scheduleList: () => Promise.resolve({ ok: true, value: [] }),
     listSubagents: () => Promise.resolve({ ok: true, value: { entries: [], parentAvailable: false } }),
     messageSubagent: () => Promise.resolve({ ok: true, value: { messageId: "mock" } }),

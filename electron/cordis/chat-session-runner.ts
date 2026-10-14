@@ -17,7 +17,7 @@ import { dropChatAgentForThread, getContext, resolvePresentationMeta, resolveToo
 import { readLiveSessionUsage, usageChunkEvent } from "./context-usage";
 import { contextPressureTokens } from "../../shared/agent/context-pressure";
 import { foldSessionStats } from "./session-stats";
-import { onAssistantStream } from "./assistant-stream-frames";
+import { createTurnStreamStats, onAssistantStream, statsChunkEvent, syntheticChunkEvent } from "./assistant-stream-frames";
 
 type Collected = { text: string; reasoning: string; pt: number; ct: number; rt: number };
 
@@ -184,6 +184,12 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   const chatAgents = getChatAgentCache();
   let liveText = "";
   let liveReasoning = "";
+  // Turn stats from the live stream frames (dsh ≥0.1.5 logs no assistant/chunk
+  // events for the log fold to time). Emitted just BEFORE the real `turn/end`
+  // is forwarded: the renderer settles the bubble on that event, so a stats
+  // chunk sent after the run would arrive too late to attach.
+  const turnStats = createTurnStreamStats();
+  let statsEmitted = false;
   let currentAttemptSessionId: unknown = null;
   let firstTokenLogged = false;
   const logFirstToken = () => { if (TIMING && !firstTokenLogged) { firstTokenLogged = true; markLog("time-to-first-token (from turn entry)", turnStart); } };
@@ -219,7 +225,16 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
     includeSessionIndex: true,
     sendSubagent: opts.sendSubagent,
       questions: opts.questions,
-    onSessionEvent: (event) => opts.onSessionEvent?.(event),
+    onSessionEvent: (event) => {
+      if (event.type === "turn/end" && !statsEmitted) {
+        const stats = turnStats.snapshot();
+        if (stats) {
+          statsEmitted = true;
+          opts.onSessionEvent?.(statsChunkEvent(stats) as unknown as SessionEvent);
+        }
+      }
+      opts.onSessionEvent?.(event);
+    },
     retainAgent: true,
     setup: async ({ llmConfig: preparedConfig, resources, mount }) => {
       llmConfig = preparedConfig;
@@ -294,8 +309,21 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         ctx,
         (id, header) => id === currentAttemptSessionId && header?.origin !== "subagent",
         {
-          onText: (t) => { noteFirstToken(); liveText += t; opts.onToken?.(t); },
-          onReasoning: (t) => { noteFirstToken(); liveReasoning += t; opts.onThought?.(t); },
+          onFrame: (type) => turnStats.onFrame(type),
+          onUsage: (usage) => turnStats.onUsage(usage),
+          // Deltas reach the renderer as synthetic chunk events (transient,
+          // never logged), the same bridge the coding runner uses; the settled
+          // assistant/message fills any gap.
+          onText: (t) => {
+            noteFirstToken(); turnStats.onDelta(); liveText += t;
+            opts.onSessionEvent?.(syntheticChunkEvent("text-delta", t) as unknown as SessionEvent);
+            opts.onToken?.(t);
+          },
+          onReasoning: (t) => {
+            noteFirstToken(); turnStats.onDelta(); liveReasoning += t;
+            opts.onSessionEvent?.(syntheticChunkEvent("reasoning-delta", t) as unknown as SessionEvent);
+            opts.onThought?.(t);
+          },
         },
       ));
 
@@ -436,7 +464,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // Provider usage carries no breakdown — emit the token meter's view so the
       // live ring matches the reload ring.
       emitBreakdownUsage(ctx, typed.session, opts.onSessionEvent);
-      emitTurnStats(sessionEvents, opts.onSessionEvent);
+      // Fallback for a turn whose `turn/end` was never forwarded live.
+      if (!statsEmitted) emitTurnStats(sessionEvents, opts.onSessionEvent);
       if (TIMING && kind && kind !== "completed") console.log(`[timing] turn/end kind="${kind}" at ${Date.now() - turnStart}ms (attempt did not complete cleanly)`);
       return { ...result, failedKind: kind && kind !== "completed" ? kind : undefined };
     },

@@ -17,7 +17,7 @@
  * backend's verbatim raw artifact, stream the fflate ZIP (session.jsonl +
  * descendants + media), and write it to disk. The command surfaces through the existing
  * `cordis:listCommands` merge, so the palette/command input picks `/export`
- * up with zero renderer changes (same free ride as `/feedback`).
+ * up with zero renderer changes (same free ride as other registry commands).
  *
  * V1 scope: root session only (`includeDescendants: false`); the ZIP lands
  * under the HostStore-owned exports dir (userData/session-exports, per-

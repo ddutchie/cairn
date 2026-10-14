@@ -254,18 +254,6 @@ export function registerSessionRuntimeHandlers(
     return subagentResult(() => getAgentHost().readGoalSnapshot(sessionId));
   }));
 
-  // ── session:feedback{,-get} ─────────────────────────────────────────────
-  // Per-message thumbs ratings + notes on assistant bubbles (dsh
-  // message-feedback sidecar). Same {ok:true,value}|{ok:false,code,message}
-  // envelope as subagent:*. The /feedback command needs no handler — it is an
-  // ENTRY_LIST-mounted command and surfaces via cordis:listCommands.
-  registerContractHandle("session:feedback", (_event, req) => handle(async () => {
-    return subagentResult(() => getAgentHost().putMessageFeedback(req));
-  }));
-  registerContractHandle("session:feedback-get", (_event, req) => handle(async () => {
-    return subagentResult(() => getAgentHost().getMessageFeedback(req.sessionId, req.messageId));
-  }));
-
   // ── session:schedule-list ────────────────────────────────────────────────
   // On-demand active-reminder snapshot for the header alarm pill (polled on
   // header mount + turn end — no standing subscription). Empty list = overlay

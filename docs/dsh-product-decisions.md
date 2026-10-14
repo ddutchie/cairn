@@ -48,12 +48,11 @@ background sends. Sandbox review for model-owned persistent processes is part
 of the work. To implement: publish-check, terminals backend, mount tools,
 wire output/progress into the jobs dock.
 
-### Feedback loop closure — deferred (2026-09-03 decision log, round 2)
-Ratings/notes are stored (`message-feedback` sidecar) but nothing reads them:
-no aggregation, no export, no telemetry backend. Decide what feedback is *for*
-(model routing? prompt tuning? export for fine-tuning?) before building the
-read side. Pairs with `dsh-session-telemetry` (opt-in only — local-first default
-stays `disabled`).
+### Feedback — removed (2026-10-14)
+The `message-feedback` / `command-feedback` services, the thumbs control and the
+`session:feedback*` IPC were removed: ratings were stored but nothing read them.
+Replaced by a per-message "Report an issue" action that opens a prefilled GitHub
+issue in the browser (no token, user reviews before submitting).
 
 ### Model routing — deferred (2026-09-03 decision log, final round confirmed)
 Official `dsh-llm-deepseek` adapter + title-provider variants. The pi-ai twin

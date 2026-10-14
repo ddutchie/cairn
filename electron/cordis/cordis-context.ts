@@ -43,8 +43,6 @@ import { apply as goalRoundDriverApply, inject as goalRoundDriverInject, name as
 import StorageHub from "@deepseek-ai/dsh-storage";
 import { apply as storageJsonApply, inject as storageJsonInject, name as storageJsonName } from "@deepseek-ai/dsh-storage-json";
 import { apply as storageDomainApply, inject as storageDomainInject, name as storageDomainName } from "@deepseek-ai/dsh-storage-domain";
-import MessageFeedbackService from "@deepseek-ai/dsh-message-feedback";
-import { apply as commandFeedbackApply, inject as commandFeedbackInject, name as commandFeedbackName } from "@deepseek-ai/dsh-command-feedback";
 import ScheduleService from "@deepseek-ai/dsh-schedule";
 import CairnSessionController from "./session-controller-shim";
 import { isScheduleEnabled as hostIsScheduleEnabled, resolveHooksConfig } from "./host-store";
@@ -99,13 +97,13 @@ export function __resetContextForTest(): void {
 }
 
 /**
- * Root directory for the message-feedback JSON storage backend (one
- * `message_feedback` unit file). Production persists under userData next to
- * the spill store; vitest uses a per-process tmp dir (parallel workers must
+ * Root directory for the dsh JSON storage backend (one unit file per domain).
+ * The directory keeps its original "feedback-storage" name so existing data
+ * stays put. Production persists under userData next to the spill store; vitest uses a per-process tmp dir (parallel workers must
  * not contend on one shared file — same rationale as the `:memory:`
  * session-query index above).
  */
-function feedbackStorageRoot(): string {
+function storageRoot(): string {
   if (process.env.VITEST) return path.join(os.tmpdir(), `cairn-feedback-storage-${process.pid}`);
   return path.join(process.env.CAIRN_USER_DATA_DIR || electronApp?.getPath?.("userData") || process.cwd(), "feedback-storage");
 }
@@ -178,18 +176,12 @@ export async function getContext(): Promise<Context> {
     // publication, authorization, and awaited cleanup; kill at turn/app end
     // flows through it (see `terminal-backend.ts` header + sandbox review).
     B["dsh:terminal"] = TerminalSessionService;
-    // Per-message feedback sidecar chain (dsh-message-feedback injects
-    // storageDomain + sessionPersistence + sessions — all ENTRY_LIST-resident,
-    // so the whole chain composes as loader entries in dependency order;
-    // no per-turn service is involved). JSON backend (pure fs, no native
-    // binding) over the storage hub + domain facility, then the feedback
-    // service (maxNoteBytes 8192, matching the upstream Web bundle) and the
-    // log-only /feedback command (injects only `commands`).
+    // Storage chain (hub → JSON backend → domain facility), ENTRY_LIST-resident
+    // so dsh services that inject storageDomain compose as loader entries in
+    // dependency order. JSON backend is pure fs (no native binding).
     B["dsh:storage"] = StorageHub;
     B["dsh:storage-json"] = { apply: storageJsonApply, inject: storageJsonInject, name: storageJsonName };
     B["dsh:storage-domain"] = { apply: storageDomainApply, inject: storageDomainInject, name: storageDomainName };
-    B["dsh:message-feedback"] = MessageFeedbackService;
-    B["dsh:command-feedback"] = { apply: commandFeedbackApply, inject: commandFeedbackInject, name: commandFeedbackName };
     // Opt-in schedule overlay (always registered as a builtin so the entry
     // below can reference it; whether it MOUNTS is gated by the setting).
     // dsh-schedule injects only agents/sessions/tools/sessionPersistence —
@@ -317,13 +309,10 @@ export async function getContext(): Promise<Context> {
       // `terminals` inject always resolves; the backend itself mounts per
       // coding turn only (never chat) — see `mountCodingStack`.
       { id: "terminals", name: "cordis:dsh:terminal", config: {} },
-      // Per-message feedback sidecar (see B-map comment above). Order matters:
-      // hub → backend → domain facility → feedback service → /feedback command.
+      // Storage chain (see B-map comment above). Order matters: hub → backend → domain facility.
       { id: "storage", name: "cordis:dsh:storage" },
-      { id: "storage-json", name: "cordis:dsh:storage-json", config: { root: feedbackStorageRoot() } },
+      { id: "storage-json", name: "cordis:dsh:storage-json", config: { root: storageRoot() } },
       { id: "storage-domain", name: "cordis:dsh:storage-domain", config: { backend: "json" } },
-      { id: "message-feedback", name: "cordis:dsh:message-feedback", config: { maxNoteBytes: 8192 } },
-      { id: "command-feedback", name: "cordis:dsh:command-feedback" },
       // Opt-in schedule overlay (session-local reminders — explicitly NOT
       // Cairn's own heartbeat in electron/lib/heartbeat-*, untouched).
       // LOAD-ORDER RULE (upstream): schedule installs only for root agents

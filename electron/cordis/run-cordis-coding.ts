@@ -38,7 +38,7 @@ import { runCordisSession } from "./session-runner";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
-import { onAssistantStream, syntheticChunkEvent } from "./assistant-stream-frames";
+import { createTurnStreamStats, onAssistantStream, statsChunkEvent, syntheticChunkEvent } from "./assistant-stream-frames";
 import { describeTurnEndReason } from "../../shared/agent/turn-end-reason";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 
@@ -168,7 +168,14 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       if (synthetic) opts.onSessionEvent?.(synthetic as unknown as import("@deepseek-ai/dsh-session").SessionEvent);
     } catch { /* the ring is decoration — never break the turn over a breakdown */ }
   };
+  // Turn stats timed from the live stream frames (see chat-session-runner);
+  // emitted just before `turn/end` so the renderer can attach them on settle.
+  const turnStats = createTurnStreamStats();
   const onSessionEvent = (event: import("@deepseek-ai/dsh-session").SessionEvent) => {
+    if (event.type === "turn/end") {
+      const stats = turnStats.snapshot();
+      if (stats) opts.onSessionEvent?.(statsChunkEvent(stats) as unknown as import("@deepseek-ai/dsh-session").SessionEvent);
+    }
     opts.onSessionEvent?.(event);
     if (opts.onSessionEvent && liveSession && (event.type === "assistant/message" || event.type === "tool/result")) {
       if (breakdownTimer !== null) clearTimeout(breakdownTimer);
@@ -308,8 +315,10 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
         ctx,
         (id, header) => id === attemptSessionId && header?.origin !== "subagent",
         {
-          onText: (t) => onSessionEvent(syntheticChunkEvent("text-delta", t) as never),
-          onReasoning: (t) => onSessionEvent(syntheticChunkEvent("reasoning-delta", t) as never),
+          onFrame: (type) => turnStats.onFrame(type),
+          onUsage: (usage) => turnStats.onUsage(usage),
+          onText: (t) => { turnStats.onDelta(); onSessionEvent(syntheticChunkEvent("text-delta", t) as never); },
+          onReasoning: (t) => { turnStats.onDelta(); onSessionEvent(syntheticChunkEvent("reasoning-delta", t) as never); },
         },
       ));
     } catch { /* streaming is decoration — never break the turn */ }

@@ -47,8 +47,6 @@ import "@deepseek-ai/dsh-goal";
 import "@deepseek-ai/dsh-tool-goal";
 import "@deepseek-ai/dsh-command-goal";
 import "@deepseek-ai/dsh-goal-round-driver";
-import "@deepseek-ai/dsh-message-feedback";
-import "@deepseek-ai/dsh-command-feedback";
 import "@deepseek-ai/dsh-lsp";
 import "@deepseek-ai/dsh-web";
 import "@deepseek-ai/dsh-workflow";

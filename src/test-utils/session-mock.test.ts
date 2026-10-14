@@ -41,8 +41,6 @@ const EXPECTED_METHODS = [
   "getTodos",
   "goal",
   "permissions",
-  "feedback",
-  "feedbackGet",
   "scheduleList",
   "listSubagents",
   "messageSubagent",
