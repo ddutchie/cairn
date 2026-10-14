@@ -5,7 +5,7 @@
 
 import type { ID } from "./domain";
 
-export type NoteType = "note" | "dashboard" | "template";
+export type NoteType = "note" | "template";
 
 // A type alias (not an interface) so it stays assignable to Record<string, unknown>.
 export type Note = {
@@ -13,7 +13,7 @@ export type Note = {
   projectId: ID;
   workspaceId: ID;
   title: string;
-  /** Raw markdown (type=note) or HTML string (type=dashboard) */
+  /** Raw markdown */
   content?: string;
   /**
    * Short plain-text EXCERPT of the body (≤200 chars) for previews — not a

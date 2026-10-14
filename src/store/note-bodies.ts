@@ -3,7 +3,7 @@
  *
  * The store holds METADATA for every note (title, preview excerpt, tags, …) but
  * a note's `content` is only present once something needs it: the open editor,
- * a dashboard, template instantiation, AI context, etc. Bodies are fetched via
+ * template instantiation, AI context, etc. Bodies are fetched via
  * `ensureNoteBodies` (notes slice) and kept in a small LRU; pinned ids (open
  * editors/panels) are never evicted. This keeps renderer memory proportional to
  * note COUNT rather than total note size (≈6MB vs ≈40MB+ at 10k notes).

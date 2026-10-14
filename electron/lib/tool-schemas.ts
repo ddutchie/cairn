@@ -306,31 +306,6 @@ export const TOOL_SCHEMAS = {
     schema: z.object({ projectId: sId }),
   },
 
-  // ── Dashboards ────────────────────────────────────────────────────────────────
-
-  create_dashboard: {
-    description: "Create a live HTML dashboard. html must be a self-contained document with inline CSS/JS. Call get_dashboard_constants for the window.cairn API reference.",
-    schema: z.object({
-      projectId: sId,
-      title:     sStr,
-      html:      sStr.describe("Self-contained HTML with inline CSS/JS"),
-    }),
-  },
-
-  update_dashboard: {
-    description: "Update a dashboard's title or HTML.",
-    schema: z.object({
-      noteId: sId,
-      title:  sStrOpt,
-      html:   sStrOpt,
-    }),
-  },
-
-  get_dashboard_constants: {
-    description: "Returns the window.cairn API reference for building dashboards: available helper functions, return shapes, and usage examples. Call before writing dashboard HTML.",
-    schema: z.object({}),
-  },
-
   // ── AI tools (chat-only) ──────────────────────────────────────────────────────
 
   generate_prd: {

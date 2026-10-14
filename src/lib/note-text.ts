@@ -13,17 +13,17 @@ import { markdownToText } from "../../shared/notes/text";
 import { noteExcerpt } from "../../shared/notes/excerpt";
 
 /** Preview excerpt for a note body (what `contentText` should hold). */
-export function excerptFor(content: string, type: Note["type"] = "note"): string {
-  return noteExcerpt(content, type, (md) => markdownToText(md, { rulesAndTables: true }));
+export function excerptFor(content: string): string {
+  return noteExcerpt(content, (md) => markdownToText(md, { rulesAndTables: true }));
 }
 
 const searchTextCache = new WeakMap<Note, string>();
 
-/** `title + plain-text body` for matching a search query (dashboards: title only). */
+/** `title + plain-text body` for matching a search query. */
 export function noteSearchText(note: Note): string {
   let text = searchTextCache.get(note);
   if (text === undefined) {
-    const body = note.type === "dashboard" ? "" : markdownToText(note.content ?? "", { rulesAndTables: true });
+    const body = markdownToText(note.content ?? "", { rulesAndTables: true });
     text = `${note.title}\n${body}`;
     searchTextCache.set(note, text);
   }

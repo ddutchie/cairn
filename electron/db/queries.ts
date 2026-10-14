@@ -22,7 +22,7 @@
  * ── Governance ──────────────────────────────────────────────────────────────
  * This module is imported by BOTH the Electron main process and the esbuild-
  * bundled MCP server (see `electron/mcp/tools/codebase.ts`, `tags.ts`,
- * `projects.ts`, `notes.ts`, `tasks.ts`, `flow.ts`, `dashboards.ts`, `graph.ts`,
+ * `projects.ts`, `notes.ts`, `tasks.ts`, `flow.ts`, `graph.ts`,
  * and `electron/mcp/db.ts`). It is safe to import from `mcp/tools/*` because the
  * only ABI-sensitive operation in better-sqlite3 is constructing the `Database`
  * instance — that happens in `electron/db/client.ts` (Electron), the MCP

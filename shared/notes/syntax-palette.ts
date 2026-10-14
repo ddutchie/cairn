@@ -7,7 +7,6 @@
  *
  *  - desktop `CodeBlock.tsx`      → lowlight/highlight.js `hljs-*` class → colour
  *  - desktop `lib/editor-theme.ts`→ CodeMirror `HighlightStyle` (lezer tags)
- *  - desktop `dashboard-view.tsx` → CodeMirror `HighlightStyle` for HTML editor
  *  - desktop `note-editor.tsx`    → dark→light hex remap for PDF export
  *  - mobile  `CodeBlock.tsx`      → lowlight `hljs-*` class → colour (RN <Text>)
  *

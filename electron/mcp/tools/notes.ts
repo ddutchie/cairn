@@ -465,27 +465,24 @@ export function rename_note(db: Database.Database, snap: Snapshot, workspacePath
     // Write the renamed note file to disk. renameFile:true — this is an explicit
     // rename, so the .md filename is re-derived from the new title (inbound
     // wikilinks were rewritten above). This is the ONE writer that intentionally
-    // renames files. Dashboards are SQLite-only (no .md file), so skip them —
-    // matching the desktop db:note:update guard.
-    if (note.type !== "dashboard") {
-      writeNoteFile(workspacePath, {
-        id: note.id,
-        projectId: note.projectId,
-        workspaceId: note.workspaceId as string,
-        title: newTitle,
-        content: updatedNote?.content ?? note.content as string,
-        tagIds: note.tagIds as string[],
-        linkedNoteIds: note.linkedNoteIds as string[],
-        linkedCardIds: note.linkedCardIds as string[],
-        isPinned: note.isPinned as boolean,
-        folder: (note.folder as string) ?? "",
-        createdAt: note.createdAt as string,
-        updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
-        archivedAt: note.archivedAt as string | undefined,
-        projectName: project?.name ?? note.projectId as string,
-        renameFile: true,
-      });
-    }
+    // renames files.
+    writeNoteFile(workspacePath, {
+      id: note.id,
+      projectId: note.projectId,
+      workspaceId: note.workspaceId as string,
+      title: newTitle,
+      content: updatedNote?.content ?? note.content as string,
+      tagIds: note.tagIds as string[],
+      linkedNoteIds: note.linkedNoteIds as string[],
+      linkedCardIds: note.linkedCardIds as string[],
+      isPinned: note.isPinned as boolean,
+      folder: (note.folder as string) ?? "",
+      createdAt: note.createdAt as string,
+      updatedAt: updatedNote?.updatedAt ?? new Date().toISOString(),
+      archivedAt: note.archivedAt as string | undefined,
+      projectName: project?.name ?? note.projectId as string,
+      renameFile: true,
+    });
   } finally {
     unlockNote(db, noteId as string);
   }

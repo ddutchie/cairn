@@ -3,7 +3,7 @@
  *
  * Tests that each handler returns the correct shape, handles missing/invalid
  * input gracefully (returning { error } rather than throwing), and that the
- * db:mcpQuery bridge dispatches correctly.
+ * shared read-tool dispatcher routes correctly.
  *
  * We import the query layer directly to seed the DB, then call the handler
  * logic through thin wrappers that bypass ipcMain registration.
@@ -63,92 +63,6 @@ describe("get_cairn_context", () => {
     const proj = (result.projects as Array<Record<string, unknown>>).find((p) => p.id === "proj1");
     expect(proj).toBeDefined();
     expect((proj!.columns as unknown[]).length).toBeGreaterThan(0);
-  });
-});
-
-// ── executeReadTool — get_project_summary ─────────────────────────────────────
-
-describe("executeReadTool: get_project_summary", () => {
-  it("returns canonical shape for valid project", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "get_project_summary", { projectId: "proj1" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const r = res.result as Record<string, unknown>;
-    expect(r).toHaveProperty("project");
-    expect(r).toHaveProperty("noteCount", 1);
-    expect(r).toHaveProperty("totalCards", 1);
-    expect(r).toHaveProperty("cardsByColumn");
-    expect(r).toHaveProperty("pinnedNotes");
-    expect(r).toHaveProperty("recentActivity");
-  });
-
-  it("returns { error } for missing project", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "get_project_summary", { projectId: "nope" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    expect(res.result).toHaveProperty("error");
-  });
-});
-
-// ── executeReadTool — list_tasks ──────────────────────────────────────────────
-
-describe("executeReadTool: list_tasks", () => {
-  it("returns { tasksByColumn } keyed by column id (documented dashboard shape)", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "list_tasks", { projectId: "proj1" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const result = res.result as { tasksByColumn: Record<string, Array<Record<string, unknown>>> };
-    expect(result.tasksByColumn).toBeDefined();
-    expect(typeof result.tasksByColumn).toBe("object");
-    // Object.values(...).flat() is the documented usage — must not throw.
-    const all = Object.values(result.tasksByColumn).flat();
-    expect(all.length).toBe(1);
-    expect(all[0]).toMatchObject({ columnId: "col1", columnType: "backlog" });
-    expect(all[0]).toHaveProperty("dueDate");
-    expect(all[0]).toHaveProperty("updatedAt");
-  });
-});
-
-// ── executeReadTool — list_notes ──────────────────────────────────────────────
-
-describe("executeReadTool: list_notes", () => {
-  it("returns notes for project", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "list_notes", { projectId: "proj1" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const notes = res.result as Array<Record<string, unknown>>;
-    expect(notes.length).toBe(1);
-    expect(notes[0].id).toBe("note1");
-  });
-});
-
-// ── executeReadTool — list_recent_activity ────────────────────────────────────
-
-describe("executeReadTool: list_recent_activity", () => {
-  it("returns recentNotes and recentTasks", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "list_recent_activity", { projectId: "proj1" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const result = res.result as Record<string, unknown>;
-    expect(result).toHaveProperty("recentNotes");
-    expect(result).toHaveProperty("recentTasks");
-    expect((result.recentNotes as unknown[]).length).toBe(1);
-    expect((result.recentTasks as unknown[]).length).toBe(1);
   });
 });
 

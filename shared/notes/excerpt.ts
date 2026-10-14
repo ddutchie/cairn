@@ -17,9 +17,8 @@ export const EXCERPT_SOURCE_CHARS = 600;
 
 export function noteExcerpt(
   content: string | null | undefined,
-  type: string | null | undefined,
   strip: (md: string) => string,
 ): string {
-  if (!content || type === "dashboard") return "";
+  if (!content) return "";
   return strip(content.slice(0, EXCERPT_SOURCE_CHARS)).slice(0, NOTE_EXCERPT_CHARS);
 }

@@ -26,98 +26,6 @@ export interface CairnSnapshot {
 
 type Args = Record<string, any>;
 
-export function executeGetProjectSummary(snap: CairnSnapshot, args: Args): unknown {
-  const project = snap.projects.find((p) => p.id === args.projectId);
-  if (!project) return { error: "Project not found" };
-  const columns = snap.columns
-    .filter((c) => c.projectId === args.projectId)
-    .sort((a, b) => a.order - b.order);
-  const notes = snap.notes.filter((n) => n.projectId === args.projectId && !n.archivedAt);
-  const cardsByColumn = columns.map((col) => {
-    const cards = snap.cards.filter((c) => c.columnId === col.id && !c.archivedAt);
-    return {
-      columnName: col.name,
-      columnType: col.type,
-      count: cards.length,
-      cards: cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, dueDate: c.dueDate ?? null })),
-    };
-  });
-  const totalCards = cardsByColumn.reduce((s, c) => s + c.count, 0);
-  const recentActivity = [
-    ...notes.map((n) => ({ type: "note" as const, id: n.id, title: n.title, updatedAt: n.updatedAt })),
-    ...snap.cards
-      .filter((c) => c.projectId === args.projectId && !c.archivedAt)
-      .map((c) => ({ type: "card" as const, id: c.id, title: c.title, updatedAt: c.updatedAt })),
-  ]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 10);
-  return {
-    project: {
-      id: project.id, name: project.name, description: project.description,
-      status: project.status, priority: project.priority, dueDate: project.dueDate ?? null,
-    },
-    noteCount: notes.length,
-    totalCards,
-    cardsByColumn,
-    pinnedNotes: notes.filter((n) => n.isPinned).map((n) => ({ id: n.id, title: n.title })),
-    recentActivity,
-  };
-}
-
-export function executeListTasks(snap: CairnSnapshot, args: Args): unknown {
-  const cols = snap.columns
-    .filter((c) => !args.projectId || c.projectId === args.projectId)
-    .filter((c) => !args.columnType || c.type === args.columnType)
-    .sort((a, b) => a.order - b.order);
-  // Documented contract (get_dashboard_constants / DashboardApiModal):
-  //   { tasksByColumn: { COLUMN_ID: [{ id, title, priority, description,
-  //     dueDate, columnId, columnName, columnType, updatedAt }] } }
-  // Consumers use Object.values(result.tasksByColumn).flat(), so this MUST be
-  // an object keyed by column id — not an array.
-  const tasksByColumn: Record<string, Array<Record<string, unknown>>> = {};
-  for (const col of cols) {
-    tasksByColumn[col.id] = snap.cards
-      .filter((c) => c.columnId === col.id && !c.archivedAt)
-      .map((c) => ({
-        id: c.id,
-        title: c.title,
-        priority: c.priority,
-        description: c.description,
-        dueDate: c.dueDate ?? null,
-        columnId: col.id,
-        columnName: col.name,
-        columnType: col.type,
-        updatedAt: c.updatedAt,
-      }));
-  }
-  return { tasksByColumn };
-}
-
-export function executeListNotes(snap: CairnSnapshot, args: Args): unknown {
-  return snap.notes
-    .filter((n) => !n.archivedAt && (!args.projectId || n.projectId === args.projectId))
-    .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, folder: n.folder ?? "", isPinned: n.isPinned, updatedAt: n.updatedAt }));
-}
-
-export function executeListRecentActivity(snap: CairnSnapshot, args: Args): unknown {
-  const limit = (args.limit as number) ?? 20;
-  const recentNotes = snap.notes
-    .filter((n) => !n.archivedAt
-      && (!args.workspaceId || n.workspaceId === args.workspaceId)
-      && (!args.projectId || n.projectId === args.projectId))
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, limit)
-    .map((n) => ({ id: n.id, title: n.title, projectId: n.projectId, updatedAt: n.updatedAt }));
-  const recentTasks = snap.cards
-    .filter((c) => !c.archivedAt
-      && (!args.workspaceId || c.workspaceId === args.workspaceId)
-      && (!args.projectId || c.projectId === args.projectId))
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, limit)
-    .map((c) => ({ id: c.id, title: c.title, projectId: c.projectId, updatedAt: c.updatedAt }));
-  return { recentNotes, recentTasks };
-}
-
 export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): unknown {
   const project = snap.projects.find((p) => p.id === args.projectId);
   if (!project) return { error: "Project not found" };
@@ -221,7 +129,7 @@ export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
     if (projectId && n.projectId !== projectId) return false;
     if (updatedAfterMs !== undefined && new Date(n.updatedAt).getTime() < updatedAfterMs) return false;
     // contentText is only a preview excerpt — search the full body.
-    return listAll || matchesQuery(qr, `${n.title}\n${n.type === "dashboard" ? "" : stripMarkdown(n.content ?? "")}`);
+    return listAll || matchesQuery(qr, `${n.title}\n${stripMarkdown(n.content ?? "")}`);
   });
   // Sort by updatedAt DESC to ensure stable pagination ordering
   matches.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -324,7 +232,7 @@ export function serializeProjectMarkdown(snap: CairnSnapshot, projectId: string)
     }));
 
   const notes = snap.notes
-    .filter((n) => n.projectId === projectId && !n.archivedAt && n.type !== "dashboard")
+    .filter((n) => n.projectId === projectId && !n.archivedAt)
     .sort((a, b) => (a.folder ?? "").localeCompare(b.folder ?? "") || a.title.localeCompare(b.title))
     .map((n) => ({
       title: n.title,

@@ -76,7 +76,7 @@ export function findLiveNoteByTitle(db: Database.Database, projectId: string, ti
  * note's original on-disk filename stem — Obsidian links imported notes by
  * filename, which can differ from the title). Each distinct target is rewritten
  * to `newTitle`. Candidates are scoped to the renamed note's own workspace and
- * to real notes (dashboards/templates carry no wikilinks). Does NOT write any
+ * to real notes (templates carry no wikilinks). Does NOT write any
  * `.md` files — it only mutates the DB and returns the affected note rows so the
  * caller can persist them to disk (the caller owns file I/O, watcher
  * suppression, and locking). Must be run inside the same transaction as the
@@ -102,7 +102,7 @@ export function rewriteInboundWikilinks(
     | undefined;
   if (!owner) return [];
 
-  // Candidate rows: live NOTES (not dashboards/templates, not the renamed one)
+  // Candidate rows: live NOTES (not templates, not the renamed one)
   // in the same workspace whose content mentions any old target inside a
   // wikilink. Pre-filter in SQL with LIKE to avoid scanning every body in JS;
   // the precise rewrite happens below.
@@ -135,7 +135,7 @@ export function rewriteInboundWikilinks(
 
 export function createNote(db: Database.Database, n: {
   id: string; projectId: string; workspaceId: string; title: string;
-  content?: string; type?: "note" | "dashboard" | "template";
+  content?: string; type?: "note" | "template";
   tagIds?: string[]; isPinned?: boolean; folder?: string;
 }) {
   const now = ts();
@@ -155,7 +155,7 @@ export function createNote(db: Database.Database, n: {
 export function updateNote(db: Database.Database, id: string, patch: Partial<{
   title: string; content: string;
   tagIds: string[]; linkedNoteIds: string[]; linkedCardIds: string[];
-  isPinned: boolean; archivedAt: string; type: "note" | "dashboard" | "template"; folder: string;
+  isPinned: boolean; archivedAt: string; type: "note" | "template"; folder: string;
 }>) {
   const now = ts();
   db.prepare(`
@@ -222,7 +222,7 @@ export function deleteNote(db: Database.Database, id: string) {
  * KEEPS a tombstone row so the sync staleness guard trips (physically removing
  * it made every peer delete op re-apply and re-stage — the "sent=31 never
  * settles" loop). Live reads filter `deleted_at IS NULL`, so tombstones don't
- * show in the UI. Dashboards are excluded (no .md file).
+ * show in the UI.
  */
 export function findTombstonedNotes(
   db: Database.Database,
@@ -405,7 +405,7 @@ export function getNoteBodies(db: Database.Database, ids: string[]): NoteBody[] 
 /**
  * Ids of live notes matching `query` with the renderer's search semantics:
  * AND-of-terms, case-insensitive substring over `title + stripped body`
- * (dashboards: title only). Newest first. A cheap SQL prefilter narrows the
+ * Newest first. A cheap SQL prefilter narrows the
  * rows (ASCII terms only — SQLite's lower() is ASCII-only), then every
  * candidate is verified with the exact JS matcher.
  */
@@ -424,7 +424,7 @@ export function searchNoteIds(db: Database.Database, query: string, opts: { proj
     .prepare(`SELECT id, title, content, type FROM notes WHERE ${where.join(" AND ")} ORDER BY updated_at DESC`)
     .all(...args) as Array<{ id: string; title: string; content: string | null; type: string | null }>;
   return rows
-    .filter((r) => matchesQuery(query, `${r.title}\n${r.type === "dashboard" ? "" : stripMarkdown(r.content ?? "")}`))
+    .filter((r) => matchesQuery(query, `${r.title}\n${stripMarkdown(r.content ?? "")}`))
     .map((r) => r.id);
 }
 

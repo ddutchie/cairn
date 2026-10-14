@@ -25,7 +25,6 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "claim_task", "add_task_progress",
   "spawn_tasks_from_note", "link_note_to_task", "unlink_note_from_task",
   "tag_note", "tag_task", "create_tag", "upsert_project", "delete_project",
-  "create_dashboard", "update_dashboard",
   "create_idea_flow_node", "update_idea_flow_node",
   "create_idea_flow_edge", "delete_idea_flow_edge", "delete_idea_flow_node",
   "layout_idea_flow", "codebase_reindex",
@@ -136,7 +135,7 @@ describe("tool-risk classifier — set membership", () => {
     // Sanity list — the exact names that used to fall through.
     for (const name of [
       "get_cairn_context", "get_project_context_pack", "list_folders",
-      "get_dashboard_constants", "get_knowledge_graph", "get_semantic_neighbors",
+      "get_knowledge_graph", "get_semantic_neighbors",
     ]) {
       expect(needsApproval(name), `${name} should be gate-free (read-only)`).toBe(false);
       expect(riskForTool(name)).toBe("READ");

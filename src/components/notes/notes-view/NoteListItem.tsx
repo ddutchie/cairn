@@ -3,7 +3,7 @@
 import React, { memo } from "react";
 import {
   Pin, PinOff, Trash2, MoreHorizontal, FileText,
-  Archive, FolderInput, FolderSymlink, LayoutDashboard,
+  Archive, FolderInput, FolderSymlink,
 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
 import type { Note } from "@/types";
@@ -57,7 +57,6 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
       >
         <div className="flex items-center gap-1.5">
           {note.isPinned && <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />}
-          {note.type === "dashboard" && <LayoutDashboard size={9} className="text-[var(--text-tertiary)] flex-shrink-0" />}
           <Tooltip content={note.title}>
             <span className={cn("text-xs font-medium truncate flex-1", isActive ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]")}>
               {note.title}
@@ -95,7 +94,7 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <span className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}</span>
+        <span className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
         <div className="flex items-center gap-1.5">
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
         </div>

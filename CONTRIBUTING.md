@@ -17,7 +17,6 @@ This guide covers everything you need to go from zero to a working dev environme
   - [Storage split](#storage-split)
   - [Note file format](#note-file-format)
   - [Data model](#data-model)
-  - [Dashboard rendering](#dashboard-rendering)
   - [Write paths](#write-paths)
   - [Font scaling](#font-scaling)
   - [Analytics canvas pattern](#analytics-canvas-pattern)
@@ -128,7 +127,7 @@ cairn/
 │   │   ├── llm.ts          # callLLM, streamCompletion
 │   │   ├── tools.ts        # TOOLS definitions, buildSystemPrompt
 │   │   ├── context.ts      # buildContextResponse (get_cairn_context)
-│   │   ├── read-tools.ts   # executeReadTool — shared by chat + dashboard bridge
+│   │   ├── read-tools.ts   # executeReadTool — shared read dispatch for chat
 │   │   └── ...
 │   └── shared/
 │       ├── db-mappers.ts   # Row→domain object mappers (toWorkspace, toProject, toNote, etc.)
@@ -146,7 +145,7 @@ cairn/
 │   ├── components/
 │   │   ├── layout/         # Sidebar, topbar, project overview, app-chrome (UpdateBanner, ErrorToasts)
 │   │   ├── kanban/         # Board, columns, cards, card detail
-│   │   ├── notes/          # Note editor, dashboard view, markdown components
+│   │   ├── notes/          # Note editor, markdown components
 │   │   ├── flow/           # Idea Flow canvas + node components
 │   │   ├── graph/          # Knowledge Graph + all analytics canvases + shared analytics modules
 │   │   ├── insights/       # InsightsView (analytics hub)
@@ -185,7 +184,7 @@ cairn/
 | View | Key | Level | Description |
 |------|-----|-------|-------------|
 | Overview | `⌘1` | Project | Project summary — metrics, pinned notes, recent activity |
-| Notes | `⌘2` | Project | Split-pane markdown editor + dashboard renderer |
+| Notes | `⌘2` | Project | Split-pane markdown editor |
 | Extra views | `⌘3`–`⌘9` | Mixed | Walk the visible views in sidebar order (default: Board, Calendar, Idea Flow, Agent, Calendar-all, Knowledge Graph, Insights, Automations, Usage). Hide views in General → Views to compress the range |
 | Board | _(dynamic)_ | Project | Kanban with drag-and-drop |
 | Idea Flow | _(dynamic)_ | Project | Freeform node canvas |
@@ -269,7 +268,6 @@ The `id` in the frontmatter is the stable identifier — **filenames are derived
 Workspace
   └── Project
         ├── Note[]           (.md file + SQLite row, type = "note")
-        ├── Dashboard[]      (SQLite row only, type = "dashboard" — HTML stored in content field)
         ├── BoardColumn[]    (SQLite only)
         │     └── TaskCard[] (SQLite only)
         ├── IdeaFlow         (SQLite only — one per project, auto-created)
@@ -281,31 +279,7 @@ Workspace
 
 Notes and task cards link bidirectionally via `linkedNoteIds` / `linkedCardIds`.
 
-Dashboards are a specialisation of the `notes` table (`type = 'dashboard'`). Their `content` field holds a complete HTML document rather than markdown, so they are never written to `.md` files.
-
-### Dashboard rendering
-
-Dashboards render in a sandboxed `<iframe srcdoc>` inside the Notes panel. The iframe has no network access and no `allow-same-origin`. A lightweight postMessage bridge — `window.cairn.query(tool, args)` — lets dashboard JavaScript request live data from the main process:
-
-```
-Dashboard JS (iframe)
-  │  window.cairn.query('list_tasks', { projectId })
-  │  postMessage → cairn:query
-  ▼
-DashboardView (renderer)
-  │  window.addEventListener('message') → electron.mcpQuery(tool, args)
-  ▼
-db:mcpQuery IPC (main process)
-  │  runs read-only DB query via queries.ts helpers
-  ▼
-DashboardView
-  │  postMessage → cairn:response { result }
-  ▼
-Dashboard JS
-  └─ receives live data, updates DOM
-```
-
-Available query tools inside a dashboard: `get_cairn_context`, `get_project_summary`, `list_tasks`, `list_notes`, `list_recent_activity`, `search_tasks`, `search_notes`.
+Notes can also have `type = 'template'` (reusable note templates). Dashboards (`type = 'dashboard'`, HTML content) were removed in 3.1.3; `electron/db/legacy-dashboards.ts` converts any remaining live row into a markdown note at boot, keeping its HTML in a fenced code block.
 
 ### Write paths
 
@@ -315,11 +289,6 @@ Note write (UI / chat / MCP)
   ├── writeNoteFile()  → <workspace>/<Project>/<Title>.tmp → rename → .md  (atomic)
   └── SQLite upsert   → notes table (type='note', content_text re-derived from markdown,
                          version = version + 1)
-
-Dashboard write (chat / MCP — create_dashboard / update_dashboard)
-  │
-  └── SQLite upsert   → notes table (type='dashboard', content = raw HTML)
-                        (no .md file written — HTML is not markdown)
 
 External .md edit (live)
   │
@@ -374,7 +343,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/lib/tray.ts` | System tray icon, menu, and badge update logic |
 | `electron/lib/ai-write-lock.ts` | Module-level `Set<string>` tracking active in-process AI note writes; fires `note:aiWriteStarted/Ended` IPC |
 | `electron/lib/mcp-poller.ts` | WAL mtime polling → `db:changed` IPC + MCP notification dispatch + `mcp_active_writes` diff for cross-process AI lock events |
-| `electron/lib/read-tools.ts` | `executeReadTool(db, snap, tool, args)` — shared read dispatch used by chat and dashboard bridge |
+| `electron/lib/read-tools.ts` | `executeReadTool(db, snap, tool, args)` — shared read dispatch used by chat |
 | `electron/workspace-config.ts` | Read/write `workspace-config.json`; resolve `cairn.db` path |
 | `electron/notes-files.ts` | Note file I/O: `writeNoteFile` (atomic `.tmp` → rename), `deleteNoteFile`, `parseNoteFile`, `upsertNoteFromFile`, `syncNotesFromDisk` (startup timestamp compare), `cleanStaleTmpFiles` |
 | `electron/file-watcher.ts` | chokidar watcher on workspace root; syncs external `.md` edits to SQLite |
@@ -411,12 +380,10 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `src/hooks/useChatStream.ts` | AI stream lifecycle hook — subscriptions, loading state, `sendStream` |
 | `src/lib/constants.ts` | Shared constants: `COLUMN_COLORS`, `PRIORITY_OPTIONS`, `DEFAULT_AI_CONFIG`, etc. |
 | `src/lib/events.ts` | Typed `CairnEvents` helpers for internal custom event dispatch |
-| `src/types/index.ts` | All shared types: `IpcResult<T>`, `ProjectSummaryResult`, `DashboardQueryMessage`, etc. |
+| `src/types/index.ts` | All shared types: `IpcResult<T>`, etc. |
 | `src/components/onboarding/create-workspace.tsx` | First-launch folder picker + workspace creation |
 | `src/components/layout/MigrationModal.tsx` | Glassmorphism modal blocking interactions and showing progress during workspace migration |
 | `src/components/notes/note-editor.tsx` | Split-pane markdown editor + AI text toolbar |
-| `src/components/notes/dashboard-view.tsx` | Sandboxed iframe renderer; `window.cairn` postMessage bridge |
-| `src/components/notes/dashboard-bootstrap.ts` | Dashboard bootstrap JS builder (`buildBootstrap`, `buildSrcdoc`) |
 | `src/components/layout/project-overview/useProjectMetrics.ts` | Derived metrics hook (due dates, priority counts, activity grouping) |
 | `src/components/settings/settings-view.tsx` | Settings shell; section components in `settings/` directory |
 | `src/components/flow/flow-view.tsx` | Idea Flow canvas — `@xyflow/react` v12, DB sync, suppress-reload mechanism |
@@ -754,7 +721,7 @@ If you're new to the codebase, these are good places to start. Each one is self-
 
 ### 🔴 Electron / SQLite
 
-- **New MCP tool** — pick a missing read-only query (e.g. `list_dashboards`) and add it end-to-end following the 6-step checklist in [Adding a new MCP / AI chat tool](#adding-a-new-mcp--ai-chat-tool).
+- **New MCP tool** — pick a missing read-only query (e.g. `list_tags`) and add it end-to-end following the 6-step checklist in [Adding a new MCP / AI chat tool](#adding-a-new-mcp--ai-chat-tool).
 - **Bug fixes** — check the [open issues](https://github.com/ddutchie/cairn/issues) labelled `good first issue` for the current list.
 
 > **Tip:** if you're unsure which file to touch, drop a question in [Discussions](https://github.com/ddutchie/cairn/discussions) or leave a comment on the issue before writing code.

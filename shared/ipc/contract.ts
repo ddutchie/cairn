@@ -555,8 +555,6 @@ export interface IpcContract {
   "db:changes:get": { args: [req: { since: number | null; feedId: string | null }]; result: ChangeSet };
   /** True once any workspace exists. */
   "db:hasData": { args: []; result: boolean };
-  /** Read-only MCP-style tool call from a dashboard iframe. */
-  "db:mcpQuery": { args: [req: { tool: string; args: Record<string, unknown> }]; result: unknown };
 
   // ── Slash commands ───────────────────────────────────────────────────────
   "db:command:list": { args: [req: { workspaceId?: string }]; result: CustomSlashCommand[] };
@@ -1044,7 +1042,6 @@ const CHANNELS: ChannelRecord = {
   "db:snapshot": "read",
   "db:changes:get": "read",
   "db:hasData": "read",
-  "db:mcpQuery": "read",
   "db:command:list": "read",
   "db:command:create": "write",
   "db:command:update": "write",

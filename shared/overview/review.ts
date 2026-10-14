@@ -89,7 +89,7 @@ export function buildReview<C extends DeliveryCard>(input: ReviewInput<C>): Revi
   const inTime = (iso: string) => new Date(iso).getTime() >= since;
   const created = input.cards.filter((c) => inTime((c as DeliveryCard & { createdAt?: string }).createdAt ?? c.updatedAt) && !c.archivedAt);
   const touchedNotes = input.notes
-    .filter((n) => n.type !== "dashboard" && inTime(n.updatedAt))
+    .filter((n) => inTime(n.updatedAt))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const lines: string[] = [];

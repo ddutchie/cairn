@@ -172,7 +172,6 @@ const OLD_DESKTOP = [
   "## Instructions: For writes call the tool directly; after a write briefly confirm; bold key items; concise.",
   "## Notes: ensure_note (idempotent; omit content to preserve); rename_note (fixes wikilinks); bulk_move_notes; list_folders; folder param; patch_note for edits, append_to_note to add; search_notes empty=all (offset/updatedAfter); search_notes_semantic for concepts; tagNames auto-resolves tags.",
   "## Tasks: update_task with columnId to move; list_ready_tasks for unblocked; blockedBy/unblockFrom; link_note_to_task/unlink; tagNames.",
-  "## Dashboards: create_dashboard; call get_dashboard_constants before writing HTML.",
   "## Idea Flow: prefer note_ref/task_ref; inline-create via data (noteTitle/noteContent or taskTitle/taskDescription/priority); use spatial.nextPosition.",
   "## Knowledge Graph: get_knowledge_graph first; get_neighbors for N-hop; CRITICAL: to suggest connections you MUST call suggest_connections, not prose.",
   "Tone: calm, focused, like a thoughtful co-worker.",
@@ -216,7 +215,6 @@ function mobileTools() {
 const SCENARIOS: { ask: string; expect: string[] }[] = [
   { ask: "Rename the note with id note_42 to 'Q3 Planning'.", expect: ["rename_note"] },
   { ask: "Move the card id card_7 to the Done column (col_done).", expect: ["update_task", "bulk_update_task_status"] },
-  { ask: "Make a dashboard showing task counts per column.", expect: ["create_dashboard", "get_dashboard_constants"] },
   { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes_semantic"] },
   { ask: "Create a task 'Write release notes' in the Todo column (col_todo).", expect: ["create_task"] },
   { ask: "Move notes note_1, note_2 and note_3 into a folder called 'Research'.", expect: ["bulk_move_notes"] },

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
-import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, LayoutDashboard, Kanban } from "lucide-react-native";
+import { FileText, Circle as CircleIcon, Pin, StickyNote, ListTodo, AlertTriangle, Clock3, Folder, FolderCode, Activity, Kanban } from "lucide-react-native";
 import { COLUMN_COLORS, PRIORITY_COLOR, COLUMN_TYPE_ORDER } from "@cairn/shared/ui/constants";
 import { getDueDateStatus, formatRelative, parseIsoLocal, formatDate } from "@cairn/shared/format/date";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -623,11 +623,10 @@ export function OverviewTab({
                   {recentNotes.slice(0, 4).map((n) => {
                     const row = noteById.get(n.id);
                     const preview = row ? stripMarkdown(row.content ?? "").trim().slice(0, 64) : "";
-                    const isDashboard = false; // mobile notes are all type note
                     return (
                       <Pressable key={n.id} onPress={() => nav.onOpenNote(n.id)} style={[styles.noteRow, { borderBottomColor: t.border }]}>
                         <View style={[styles.noteIcon, { backgroundColor: t.surface2, borderColor: t.border }]}>
-                          {isDashboard ? <LayoutDashboard size={10} color={t.textTertiary} /> : <FileText size={10} color={t.textTertiary} />}
+                          <FileText size={10} color={t.textTertiary} />
                         </View>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={[typeScale.control, { color: t.textSecondary, fontWeight: "500", fontSize: 14 }]} numberOfLines={1}>

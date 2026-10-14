@@ -20,7 +20,7 @@ import {
 } from "./host-store";
 import { executeTool as executeMcpTool } from "../mcp/tools";
 
-// ── Static reference constants (returned by get_dashboard_constants / get_idea_flow_rules) ──
+// ── Static reference constants (returned by get_idea_flow_rules) ──
 
 export async function executeTool(
   db: Database.Database,
@@ -39,7 +39,7 @@ export async function executeTool(
   const snap = host.getFullSnapshot() as CairnSnapshot;
 
   const result = await (async () => {
-    // ── Shared read tools (also used by db:mcpQuery and MCP server) ──────────
+    // ── Shared read tools (also used by the MCP server) ──────────
     {
       const res = host.executeReadTool(snap, name, args);
       if (res.handled) return res.result;
@@ -116,9 +116,6 @@ export async function executeTool(
     case "get_cairn_context":
     case "get_note":
     case "get_task":
-    case "create_dashboard":
-    case "update_dashboard":
-    case "get_dashboard_constants":
     case "get_idea_flow_rules":
     case "delete_note":
     case "delete_task":

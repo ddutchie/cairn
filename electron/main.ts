@@ -542,7 +542,7 @@ app.whenReady().then(async () => {
     // would return null and skip removing the orphaned .md file. We still want
     // the live row's data for a `put`.
     const note = getNoteByIdIncludingTombstoned(ctx.db, noteId);
-    if (!note || note.type === "dashboard") return; // dashboards have no .md
+    if (!note) return;
     suppressNextChange(noteId);
     const projectName = getProjectName(ctx.db, note.projectId);
     if (op === "delete" || note.deletedAt || note.archivedAt) {
@@ -589,7 +589,6 @@ app.whenReady().then(async () => {
         if (nested.length === 0) break;
         const n = desktopSync.tombstoneNotesViaSync(ctx.db, nested.map((r: { id: string }) => r.id));
         for (const r of nested) {
-          if (r.type === "dashboard") continue;
           try {
             deleteNoteFile(ctx.workspacePath, getProjectName(ctx.db, r.projectId), r.id);
           } catch { /* file may already be gone */ }

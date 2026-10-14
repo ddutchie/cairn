@@ -6,14 +6,13 @@ const strip = (md: string) => md.replace(/[#*]/g, "").replace(/\s+/g, " ").trim(
 describe("noteExcerpt", () => {
   it("is a bounded plain-text prefix of the body", () => {
     const md = `# Title\n\n**bold** ${"word ".repeat(5000)}`;
-    const ex = noteExcerpt(md, "note", strip);
+    const ex = noteExcerpt(md, strip);
     expect(ex.startsWith("Title bold word")).toBe(true);
     expect(ex.length).toBe(NOTE_EXCERPT_CHARS);
   });
 
-  it("is empty for dashboards and empty bodies", () => {
-    expect(noteExcerpt("<html>…</html>", "dashboard", strip)).toBe("");
-    expect(noteExcerpt("", "note", strip)).toBe("");
-    expect(noteExcerpt(null, "note", strip)).toBe("");
+  it("is empty for empty bodies", () => {
+    expect(noteExcerpt("", strip)).toBe("");
+    expect(noteExcerpt(null, strip)).toBe("");
   });
 });

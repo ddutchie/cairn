@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, FileText, LayoutDashboard, Pin } from "lucide-react";
+import { AlertTriangle, FileText, Pin } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { COLUMN_COLORS } from "@/lib/constants";
@@ -235,11 +235,11 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
                 {recentNotes.slice(0, 4).map((note) => (
                   <li key={note.id} className="flex gap-2.5 items-center py-2 border-b border-[var(--border)]/60 last:border-0">
                     <span className="w-6 h-6 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] flex-shrink-0">
-                      {note.type === "dashboard" ? <LayoutDashboard size={10} /> : <FileText size={10} />}
+                      <FileText size={10} />
                     </span>
                     <button type="button" onClick={() => revealNote(setView, note.id)} className="flex-1 min-w-0 text-left group">
                       <span className="block text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] truncate">{note.title}</span>
-                      <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || (note.type === "dashboard" ? "Dashboard" : "Empty note")}</span>
+                      <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || "Empty note"}</span>
                     </button>
                     <span className="text-xs font-mono text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
                   </li>

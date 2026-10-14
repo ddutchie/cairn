@@ -32,7 +32,6 @@ describe("buildReview", () => {
       notes: [
         { id: "n1", title: "Spec", updatedAt: iso(1), createdAt: iso(9) },
         { id: "n2", title: "Ancient", updatedAt: iso(30), createdAt: iso(30) },
-        { id: "d", title: "Dash", updatedAt: iso(0), createdAt: iso(0), type: "dashboard" },
       ],
     });
     expect(title).toBe("Weekly review — Sep 28, 2026 to Oct 4, 2026");

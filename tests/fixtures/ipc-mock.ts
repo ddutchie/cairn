@@ -334,9 +334,6 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     onAiWriteStarted:          makeListener("onAiWriteStarted"),
     onAiWriteEnded:            makeListener("onAiWriteEnded"),
 
-    // ── Dashboard live query bridge ───────────────────────────
-    mcpQuery: (_tool, _args) => Promise.resolve(null),
-
     // ── Agent ─────────────────────────────────────────────────
     agent: {
       getCodingAgents:  () => Promise.resolve([]),

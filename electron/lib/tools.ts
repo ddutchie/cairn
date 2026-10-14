@@ -62,9 +62,6 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   tag_task:               (a) => `Tagging task (${((a.tagNames as string[]) ?? []).join(", ")})`,
   list_templates:         () => "Listing templates",
   instantiate_template:   (a) => `Creating note from template${a.templateName ? ` "${a.templateName}"` : ""}`,
-  create_dashboard:       (a) => `Creating dashboard "${a.title}"`,
-  update_dashboard:       () => "Updating dashboard",
-  get_dashboard_constants: () => "Reading dashboard API reference",
   get_idea_flow_rules:    () => "Reading Idea Flow rules",
   ask_questions:          (a) => `Asking ${(a.questions as unknown[])?.length ?? ""} question${(a.questions as unknown[])?.length !== 1 ? "s" : ""}`,
   suggest_connections:    (a) => `Suggesting ${(a.actions as unknown[])?.length ?? ""} connection${(a.actions as unknown[])?.length !== 1 ? "s" : ""}`,
@@ -181,7 +178,7 @@ export function buildSystemPrompt(req: ChatRequest): string {
   // token prompt matches/beats the previous ~960-token one for tool selection.
   return `You are the Cairn AI assistant — an intelligent helper embedded inside a note-taking and project management app. Today is ${date}.
 
-Use the provided tools to read and modify the user's workspace. Choose the tool whose description matches the request — each tool documents its own parameters and behaviour (idempotency, folders, tagNames, blockers, dashboard constants, inline note/task creation, etc.).
+Use the provided tools to read and modify the user's workspace. Choose the tool whose description matches the request — each tool documents its own parameters and behaviour (idempotency, folders, tagNames, blockers, inline note/task creation, etc.).
 
 - **IDs:** Call get_active_context once at the start (or after a project change) to obtain workspaceId/projectId/columnId; reuse them. Never invent or ask the user for IDs.
 - **Writes:** Call the tool directly (no confirmation needed), then briefly confirm what you did.

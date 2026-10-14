@@ -24,10 +24,11 @@ import { reindexNotes } from "../embeddings/service";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import { resolveEmbeddingModelId, getDefaultModelId } from "../embeddings/client";
 import * as manifest from "../embeddings/manifest";
-import { syncNotesFromDisk, deleteNoteFile, reconcileProjectFolders } from "../notes-files";
+import { syncNotesFromDisk, deleteNoteFile, writeNoteFile, reconcileProjectFolders } from "../notes-files";
 import { computeSemanticRelationships } from "../db/graph-queries";
 import { reclaimFreeSpace } from "../lib/db-hygiene";
 import { findTombstonedNotes } from "../db/queries";
+import { convertLegacyDashboards } from "../db/legacy-dashboards";
 import { getProjectName } from "../ipc/result-helpers";
 import { saveCachedConfig } from "../lib/config-cache";
 import * as runtime from "../runtime/client";
@@ -346,7 +347,6 @@ export async function runBootSequence(
     try {
       const tombstoned = findTombstonedNotes(ctx.db);
       for (const n of tombstoned) {
-        if (n.type === "dashboard") continue; // no .md file
         try {
           deleteNoteFile(ctx.workspacePath, getProjectName(ctx.db, n.projectId), n.id);
         } catch { /* file may already be gone */ }
@@ -356,6 +356,22 @@ export async function runBootSequence(
       }
     } catch (err) {
       console.error("[boot] Tombstone file cleanup failed:", err);
+    }
+
+    // Dashboards were removed in 3.1.3: rewrite any live ones (including ones a
+    // peer on an older Cairn synced in since the last start) as markdown notes
+    // that keep the HTML in a code block, and give them their .md file. Runs
+    // before the disk scan so the scan sees the fresh files as up to date.
+    try {
+      const converted = convertLegacyDashboards(ctx.db);
+      for (const note of converted) {
+        writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
+      }
+      if (converted.length > 0) {
+        console.log(`[boot] Converted ${converted.length} legacy dashboard(s) to notes.`);
+      }
+    } catch (err) {
+      console.error("[boot] Legacy dashboard conversion failed:", err);
     }
 
     // NOTE: nested conflict-copy junk (`…_conflict_…_conflict_…`) is cleaned up

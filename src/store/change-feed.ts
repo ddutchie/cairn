@@ -22,7 +22,7 @@ let cursor: { feedId: string | null; seq: number | null } = { feedId: null, seq:
 
 /**
  * Emitted after the store has processed a db:changed event. Components that
- * reload their own data (flow view, dashboards, conflict dialog) subscribe here
+ * reload their own data (flow view, conflict dialog) subscribe here
  * instead of raw `db:changed`, so they only reload when a table they show
  * actually changed. `reset` = the store fell back to a full snapshot (treat as
  * "everything may have changed").
