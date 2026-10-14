@@ -46,6 +46,11 @@ const BASE_URL = normalizeV1(
 );
 const MODEL = process.env.PROMPT_TEST_MODEL?.trim() || process.env.TEST_LLM_MODEL?.trim() || "gpt-4o";
 const API_KEY = process.env.PROMPT_TEST_API_KEY?.trim() || process.env.TEST_LLM_API_KEY?.trim() || "";
+// Per-request timeout. Local models can take well over 30s to prefill the
+// ~6k-token tool payload; raise it with PROMPT_TEST_TIMEOUT_MS.
+const REQUEST_TIMEOUT_MS = Number(process.env.PROMPT_TEST_TIMEOUT_MS) || 30_000;
+// Whole-test budget scales with it (each test makes dozens of sequential calls).
+const TEST_TIMEOUT_MS = Math.max(240_000, REQUEST_TIMEOUT_MS * 20);
 
 const tok = (s: string) => encode(s).length;
 
@@ -162,7 +167,7 @@ async function taskToolCall(
       method: "POST",
       headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
       body: JSON.stringify({ model: MODEL, messages, tools, tool_choice: "auto", temperature: 0.2, stream: false }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => "")}`);
     const json = (await res.json()) as {
@@ -204,7 +209,7 @@ async function runConversation(
       method: "POST",
       headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
       body: JSON.stringify({ model: MODEL, messages, tools, tool_choice: "auto", temperature: 0.2, stream: false }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => "")}`);
     const json = (await res.json()) as {
@@ -446,7 +451,7 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS || process.env.CAIRN_LIVE_TE
       notWorseThan(score.aggressive.sel, score.full.sel);
       notWorseThan(score.aggressive.arg, score.full.arg);
     },
-    240_000,
+    TEST_TIMEOUT_MS,
   );
 
   it(
@@ -501,6 +506,6 @@ describe.skipIf(!!process.env.CAIRN_SKIP_LIVE_TESTS || process.env.CAIRN_LIVE_TE
       notWorseThan(score.aggressive.sel, score.full.sel);
       notWorseThan(score.aggressive.arg, score.full.arg);
     },
-    240_000,
+    TEST_TIMEOUT_MS,
   );
 });
