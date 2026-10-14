@@ -15,3 +15,10 @@ export const navigationBarHidden = (hidden = true) => createModifier("navigation
  * iPhone Duo in portrait (~669pt). The value toggles without remounting.
  */
 export const forceCompactWidth = (enabled = true) => createModifier("forceCompactWidth", { enabled });
+
+/**
+ * `forceCompactWidth`, decided natively: SwiftUI measures the view's own width and forces
+ * compact below `threshold` points, so a fold/unfold (or Split View resize) collapses and
+ * expands in the same layout pass instead of waiting for the JS window width.
+ */
+export const forceCompactBelow = (threshold = 700) => createModifier("forceCompactBelow", { threshold });

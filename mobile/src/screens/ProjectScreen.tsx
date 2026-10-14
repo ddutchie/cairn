@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps -- stable callbacks, intentional */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { View, FlatList, StyleSheet, ActionSheetIOS, Alert, Platform, type ListRenderItem } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
@@ -31,7 +31,7 @@ import { ICON_ADD, ICON_CALENDAR } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { DraggableBoard } from "@/components/DraggableBoard";
 import { toast } from "@/components/Toast";
-import { OverviewTab } from "@/components/overview/OverviewTab";
+import { OverviewTab, type OverviewSection } from "@/components/overview/OverviewTab";
 import { EmptyState } from "@/components/EmptyState";
 import { celebrateTaskDone, isDoneColumn } from "@/gamification/rewards";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
@@ -73,6 +73,8 @@ export function ProjectScreen({
   nested = false,
   projectId,
   view,
+  switcher,
+  overviewShow,
   onSelectView,
   onOpenNote,
   onOpenCard,
@@ -86,8 +88,12 @@ export function ProjectScreen({
    * column brings its own navigation bar (see ScreenChrome).
    */
   projectId?: string;
-  /** Split-view column: the section to show; hides the segment control. */
+  /** Split-view column: the section to show; hides the screen's own segment control. */
   view?: Tab;
+  /** Split-view column: the project-view switcher to draw in place of the own segment control. */
+  switcher?: ReactNode;
+  /** Split-view column: render only these Overview blocks (see OverviewTab `show`). */
+  overviewShow?: OverviewSection[];
   /** Split-view column: Overview's "view notes / board" shortcuts. */
   onSelectView?: (view: Tab) => void;
   /** Split-view column: open a note / task beside this one instead of pushing. */
@@ -124,10 +130,12 @@ export function ProjectScreen({
     [onSelectView],
   );
   const [project, setProject] = useState(id ? getProject(id) : null);
-  const [overview, setOverview] = useState<ProjectOverviewData | null>(null);
-  const [notes, setNotes] = useState<NoteRow[]>([]);
-  const [columns, setColumns] = useState<ColumnRow[]>([]);
-  const [cards, setCards] = useState<CardRow[]>([]);
+  // Seeded synchronously (cheap local reads) so the first frame already has the data —
+  // otherwise the Board said "No board columns" for a beat after mounting.
+  const [overview, setOverview] = useState<ProjectOverviewData | null>(() => (id ? getProjectOverview(id) : null));
+  const [notes, setNotes] = useState<NoteRow[]>(() => (id ? listNotes(id) : []));
+  const [columns, setColumns] = useState<ColumnRow[]>(() => (id ? listColumns(id) : []));
+  const [cards, setCards] = useState<CardRow[]>(() => (id ? listCards(id) : []));
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
@@ -414,6 +422,7 @@ export function ProjectScreen({
         ]}
       />
 
+      {switcher != null && <View style={styles.segment}>{switcher}</View>}
       {view == null && (
       <View style={styles.segment}>
         <SegmentedControl
@@ -434,10 +443,11 @@ export function ProjectScreen({
       </View>
       )}
 
-      <View style={[styles.content, view != null && styles.contentNoSegment]}>
+      <View style={[styles.content, view != null && switcher == null && styles.contentNoSegment]}>
         {tab === "overview" ? (
         overview ? (
           <OverviewTab
+            show={overviewShow}
             data={overview}
             bottomPad={listBottomPad}
             onRefresh={onRefresh}

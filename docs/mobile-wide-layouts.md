@@ -24,7 +24,7 @@ in `docs/plans/iphone-duo.md`.
 | Tab bar | bottom bar | **side rail** (84pt right inset) | **floating pill** in the top row |
 | System tab sidebar | no | **no** (idiom gate, see below) | yes (`sidebarAdaptable`) |
 | Projects layout | collapsed split (one column) | split view | split view |
-| Project / view picker | tree sidebar column | tree sidebar column (or its toggle) | tree sidebar column |
+| Project / view picker | project list column + view switcher | project list column (or its toggle) + view switcher | project list column + view switcher |
 | Column buttons | column's SwiftUI bar | each column's SwiftUI bar | stack header (shares the pill's row) |
 
 iOS always mounts one `NavigationSplitView` (`app/(tabs)/projects/index.tsx`
@@ -39,15 +39,20 @@ app/(tabs)/projects/index.tsx      iOS → always <ProjectsSplitView> (collapses
                                    when compact); other platforms keep the
                                    width-switched list
 └─ ProjectsSplitView               one NavigationSplitView, always mounted:
-                                   Sidebar (tree) | Content (view) | Detail
-                                   (open note/task, else a per-view action
-                                   panel — the slot is always reserved)
-   ├─ Sidebar:   ProjectsTreeSidebar (native bar: Projects title, leading
-   │              workspace menu, trailing sync/settings icons + tree list)
-   ├─ Content:   ChromeColumn ▸ ProjectScreen (notes list | board | overview
-   │              | calendar)
+                                   Sidebar (project list) | Content (view) |
+                                   Detail (open note/task, else the view's
+                                   overflow panel — the slot is always reserved)
+   ├─ Sidebar:   ProjectsTreeSidebar (native bar: workspace menu, sync/settings;
+   │              flat project list: own icon, name, "N notes · N tasks")
+   ├─ Content:   ChromeColumn ▸ ProjectViewSwitcher + ProjectScreen (overview |
+   │              notes | board) or ProjectCalendarScreen — the view switcher
+   │              (Overview | Notes | Board | Calendar) is the way to change view
    └─ Detail:    ChromeColumn ▸ NoteDetailScreen | NoteComposer |
-                  CardDetailScreen | DetailActionPanel
+                  CardDetailScreen | TaskComposer, else the overflow panel:
+                  Overview → recent notes + activity (OverviewPanel),
+                  Board → status blocks (OverviewPanel), Calendar →
+                  CalendarDayPanel, Notes → "No note selected",
+                  no project → "No project selected"
 
 app/(tabs)/chat/index.tsx          width ≥ 700 → ChatPreviewPane beside the chat
                                   (the board's old task panel moved to Detail)
@@ -86,23 +91,12 @@ it renders depends on context:
   title while a note is open).
 
 ### Picking a project and view
-The same tree on both wide devices — projects that expand to Overview / Notes /
-Board / Calendar, like Mail's accounts and mailboxes. One model,
-`useProjectsTree` (`src/components/projects-tree.ts`: nodes with count badges,
-the selected path, `select(path)`), feeds two renderers (past and present):
-
-- **iPad system tab sidebar** (`modules/tab-sidebar`, flag-gated, future) —
-  picking a row from any tab opens Projects on it.
-- **Split-view sidebar column** (`ProjectsTreeSidebar`, current) — the tree
-  list under a native column bar: `Projects` title, leading workspace-switcher
-  menu, trailing sync/settings icon buttons (the same `Toolbar` pattern the
-  `ChromeColumn` content columns use). It is the projects entry in every
-  posture: a permanent column when wide, the collapsed column when compact.
-  The old slide-over `ProjectsTreePanel` (and its folder button) is deleted.
-
-The system sidebar stays a feature flag in `modules/tab-sidebar` for a future
-enhancement, not a dependency — the split-view sidebar column serves both
-devices today.
+A **flat project list** in the sidebar column chooses the project; a **segmented control**
+at the top of the project column changes its view — see "Projects navigation" below for
+the model and why the nested tree was dropped. The system tab sidebar
+(`modules/tab-sidebar`, flag-gated) is a possible future renderer for the same list; the
+split-view sidebar column serves both devices today. The old slide-over
+`ProjectsTreePanel` is deleted.
 
 ### The open item
 The note open beside the list is tinted in it (`NoteRowItem selected`), and the
@@ -110,9 +104,16 @@ task open beside the board is outlined on its card (`DraggableBoard
 selectedCardId`) — both via `ProjectScreen selectedId`.
 
 ### Hinge (Duo)
-`onHingeChange` (iOS 27.1 SDK) on the split view reports the posture; the last
-value is cached in `src/lib/hinge.ts` for whoever needs it (currently only the
-chat preview pane). Column widths are SwiftUI's job entirely — no pins: a
+The hinge *status* is fed to the cache in `src/lib/hinge.ts` by **`expo-hinge`** (Expo SDK 58: `useHinge` /
+`getHinge` / `addHingeListener` → `{ angle, status }`, iOS 27.1 via `UIHingeInteraction`, Android 11+ via
+WindowManager). It works from plain JS (no SwiftUI host needed) and seeds synchronously, so the first render
+already knows the pose. It is the *only* source: the invisible `HingeObserver` and the `onHingeChange`
+modifiers were removed (SidePreview and the split view read `useHingeStatus()`). The
+Fold overlay shows the live angle (`hinge=closed@0°`). expo-hinge says to use hinge state for effects, not
+layout — the crease *geometry* is `modules/fold-region`. Android never reports `closed` (only `unknown` when
+the window doesn't span the fold), so `statusFromHinge` (`src/lib/hinge-status.ts`, unit-tested) treats an angle
+below 15° as closed there — untested on a device. The cache is read by
+`useFold` and the split view (`hingeClosed`). Column widths are SwiftUI's job entirely — no pins: a
 plain number is a FIXED column that can't follow pose changes, and even soft
 `{ min, ideal }` ideals visibly missed the crease across poses while the
 unpinned board always reflowed correctly. So every column is unpinned
@@ -128,9 +129,9 @@ hinge. (The board's old task panel is gone — open tasks live in Detail now.)
 
 ## Native additions (what's not stock Expo)
 
-Nothing in `node_modules` is patched. There are two local Expo modules:
+Nothing in `node_modules` is patched. There are three local Expo modules (`swiftui-modifiers`, `tab-sidebar`, `fold-region`):
 
-### `modules/swiftui-modifiers` — `navigationBarHidden()`, `forceCompactWidth()`
+### `modules/swiftui-modifiers` — `navigationBarHidden()`, `forceCompactWidth()`, `forceCompactBelow()`
 Registers custom @expo/ui modifiers via `ViewModifierRegistry` — @expo/ui's own
 extension point, tiny and stable:
 - `navigationBarHidden()` — `.toolbar(.hidden, for: .navigationBar)`; used by
@@ -139,6 +140,22 @@ extension point, tiny and stable:
   while enabled; used by `ProjectsSplitView` below 700pt (see "Projects in a narrow
   regular-width window"). Always the same single environment modifier with a changing
   value, so toggling it never changes the view's identity (no remount).
+- `forceCompactBelow(threshold)` — the same override, decided **natively**: SwiftUI measures the
+  view's own width (`onGeometryChange`) and forces compact below `threshold` in the same layout
+  pass. This is what `ProjectsSplitView` uses (700pt). The JS-flag version lagged a beat behind
+  the window on unfold (see "Fold/unfold transitions"). Starts narrow; the first geometry
+  report corrects a wide start.
+
+### `modules/fold-region` — the real crease (iOS 27.1)
+Exposes the active *division* `ReservedRegion` of the foreground scene's key window, in window
+coordinates, as `getDivisionRegion()` + an `onDivisionRegionChange` event. It calls
+`UIView.reservedRegions(kind:)` through the Objective-C runtime (selectors + KVC), so it builds on
+any Xcode and reports `supported: false` on older iOS. A transparent probe view in the window
+(`updateProperties()` — UIKit re-runs it when the regions it read change — plus `layoutSubviews`)
+re-publishes on pose changes and resizes; events are deduped on frame **and** `supported`.
+JS: `src/lib/division-region.ts` (store, `useDivisionRegion`: `undefined` = API unavailable,
+`null` = available, no active region), `src/lib/fold.ts` (`foldFromRegion` clips the frame to the
+window; `resolveFold` falls back to the inferred `foldGeometry`), `useFold`. Needs a native rebuild.
 
 ### `modules/tab-sidebar` — Mail-style groups in the iPad tab sidebar
 react-native-screens (4.28, also 5.0 alpha) builds its `UITabBarController` from
@@ -220,11 +237,27 @@ Gotchas:
 
 ### How screens avoid the crease (laptop pose)
 
-`src/lib/fold.ts` (`foldGeometry`, pure + tested) infers the crease from hinge
-status and window shape: `partiallyOpen` on an inner-size window → horizontal
-crease at mid-height when portrait, vertical at mid-width when landscape, with a
-~20pt gutter. It assumes the window fills the display (not true in Split View —
-the native `ReservedRegion` frame would replace it; see `docs/plans/iphone-duo.md`).
+`src/lib/fold.ts` (pure + tested) resolves the crease two ways, `resolveFold`:
+
+- **Native (iOS 27.1+)**: the local `modules/fold-region` Expo module reads the
+  active *division* `ReservedRegion` of the foreground scene's key window
+  (`UIView.reservedRegions(kind: .division)`; occlusion = camera, unused) and
+  publishes its frame in window coordinates. `foldFromRegion` clips it to the
+  window and derives axis (wider-than-tall band → horizontal), position (band
+  centre) and gutter (band thickness, margins included). So Split View works: a
+  window clear of the crease gets no fold, one abutting it sees only the sliver.
+  `src/lib/division-region.ts` is the store (`useDivisionRegion`; `undefined` =
+  API unavailable, `null` = available but no active region, e.g. flat or the outer
+  display). The module calls the API through the ObjC runtime (selectors + KVC), so
+  it builds on any Xcode and reports `supported: false` on older iOS; a probe view
+  in the window (`updateProperties`, which UIKit re-runs when the regions it read
+  change, plus `layoutSubviews`) emits `onDivisionRegionChange` on pose changes
+  and resizes, and `useFold` also re-queries on hinge/window change.
+- **Fallback (old iOS, Android, build without the module)**: `foldGeometry` infers
+  from hinge status and window shape: `partiallyOpen` on an inner-size window →
+  horizontal crease at mid-height when portrait, vertical at mid-width when
+  landscape, ~20pt gutter. Wrong in Split View (assumes the window fills the display).
+
 `src/lib/hinge.ts` is now reactive (`useHingeStatus`); `src/lib/use-fold.ts` has
 `useFold()` and `useTopHalf()` (room above a horizontal crease, in a container's
 own coordinates — null once the container already sits below it).
@@ -258,17 +291,159 @@ own coordinates — null once the container already sits below it).
 - Projects (split view) is system-managed; Graph and Overview — see the survey.
 - Debug aid for pose work: Settings → Appearance → Developer → **Fold overlay**
   (dev builds only; `src/lib/dev-flags.ts`, `FoldDebugOverlay`) prints
-  window/insets/hinge along the top and draws the inferred crease band, since
+  window/insets/hinge and the crease source (`fold=native|native:none|inferred`) along the top and draws the crease band, since
   simulator screenshots never show the fold. Persisted in the meta DB, forced
   off in release builds.
+
+### Projects navigation: flat list + view switcher (2026-10-13)
+
+The Projects split view's sidebar used to be a tree (each project expanding to
+Overview / Notes / Board / Calendar rows). Collapsed (phone, folded Duo, narrow
+windows) that meant going Back to the tree to change a project's view. Now:
+
+- The **sidebar is a flat list of projects** (`ProjectsTreeSidebar`,
+  `useProjectsList` in `projects-tree.ts`): the project's own icon (shared Lucide
+  name → SF Symbol, `SF_FOR_ICON`), name and "N notes · N tasks". It only chooses the
+  project; choosing one keeps the current view and closes any open item.
+- A **segmented control** — `ProjectViewSwitcher`: Overview | Notes n | Board n |
+  Calendar — sits at the top of the project column at every width, and sets the same
+  `selection.view` the tree rows did, so fold/unfold continuity is unchanged (the
+  component tree doesn't change; the selection lives in the module-level store).
+  `ProjectScreen` / `ProjectCalendarScreen` take it as a `switcher` prop and draw it
+  (the route copies of `ProjectScreen` keep their own three-segment control).
+- The default view for a fresh selection is Overview (was Notes).
+- **Re-tapping the Projects tab** returns to the project list: the tab hosts a SwiftUI
+  split view whose collapsed stack is our own selection state, so the native tab bar's
+  pop-to-root had nothing to pop; `app/(tabs)/_layout.tsx` listens for `tabPress` on
+  the Projects trigger and calls `resetProjectsSelection()` when it's already focused. Folded
+  that lands on the project list; wide it clears the selection, so the sidebar opens with
+  "No project selected" in the detail column (see "Wide layout" below).
+- The demo seed's project icons are emoji, which aren't Lucide names, so they all fall
+  back to the folder; synced workspaces carry real names.
+
+### Wide layout: main on the left, overflow on the right (2026-10-13)
+
+Every view lives in the **project (content) column at every width**; the detail column
+holds the view's *overflow* on wide windows (`overviewSplit`, `emptyDetail` in
+`ProjectsSplitView`). Switching view is therefore an in-place change in any layout (an
+earlier attempt put Board/Calendar in the detail column to give them room; folded, that
+made a view switch a column push — a page swipe — and was dropped).
+
+| View | Left (project column) | Right (detail column) until an item is open |
+|---|---|---|
+| Overview | masthead, focus, KPI strip, attention queue, task flow, open-by-priority, health radar (`OVERVIEW_STATUS`) | recent notes + activity log (`OVERVIEW_DETAIL`) |
+| Notes | list | note |
+| Board | the board (view switcher on top) | status blocks: KPI strip, task flow, open-by-priority |
+| Calendar | month/week grid, overdue banner and the Unscheduled tray | `CalendarDayPanel`: KPI strip (today / week / month / overdue, `lib/project-status.ts`) and the selected day's tasks |
+
+- Opening a task or note replaces the overflow panel; ✕ brings it back. Collapsed, the detail
+  column only appears with an open item (Back returns), and the Calendar's grid column shows
+  its own day list again (`externalDayList` is off when `compact`).
+- The Calendar keeps the grid and the Unscheduled tray together so drag-to-reschedule still
+  works inside one view; the selected day is shared with the detail panel
+  (`calSelected`), and a reschedule bumps `calVersion` to refresh the panel.
+- The Overview blocks are reusable (`OverviewTab` `show`, `OverviewPanel` loads the data), which
+  is how the Board gets its status. Long card subtitles wrap instead of overflowing.
+- Native collapse: `forceCompactBelow(700)` (`swiftui-modifiers`) lets SwiftUI measure its own width and force compact below 700pt in the same layout pass; the old JS-driven `forceCompactWidth(compact)` left the split view forced compact for a beat after unfolding. The Overview's detail column is always the Recent panel (not a compact-only placeholder) for the same reason: on unfold SwiftUI expands before JS knows the width. Needs a native rebuild.
+- `useHingeStatus() === "closed"` flips `compact` early (the hinge reports before the window
+  shrinks).
+- **No project selected** (a wide window on the project list, or after re-tapping the Projects tab): the sidebar opens (`columnVisibility="all"`, our own value is never kept as the user's choice) and the detail column says "No project selected" (the project column is blank: the overlay sidebar covers it). Choosing a project hides the sidebar again. A plain unfold no longer jumps into the first project.
+
+### Fold/unfold transitions: causes and rules (2026-10-13)
+
+Apple's Duo docs say nothing about how a layout change should *animate*: they say use system
+containers, key layout to size classes / scene bounds (not screen size or orientation), and switch
+a variant by changing a value rather than rebuilding the hierarchy. Everything below was found by
+watching the simulator. A fold/unfold is two events a beat apart — SwiftUI collapses/expands the
+split view with the window, then React Native learns the new width — and every flash was our JS
+state catching up. The rules that came out of it:
+
+1. **Same structure, same keys, same props at every width.** Anything keyed on `compact` that
+   changes what a column *contains* flashes on the beat in between. (Board/Calendar in the
+   detail column when wide and the project column when folded remounted on every fold; the
+   Overview's compact-only "Nothing open" placeholder showed for a frame on unfold.) Where a
+   width-dependent variant is unavoidable it must be cheap: the Overview trims to its status
+   blocks and the Calendar moves its day list out (`externalDayList`).
+2. **Let SwiftUI decide the collapse.** `forceCompactBelow(700)` replaces the JS-flag modifier;
+   `columnVisibility` is a constant (it switched `automatic` → `doubleColumn` once JS caught up,
+   so the sidebar opened with the unfold and then slid away). `useHingeStatus() === "closed"` is
+   used as an *earlier* compact signal when folding (the hinge reports before the window shrinks).
+3. **A view switch must not change the compact column.** Folded, SwiftUI turns a switch between
+   views that live in different columns into a push (page swipe) and a Back — and the animation
+   can't be disabled (`@expo/ui` `animation` has no "none"; the slide is UIKit's). So every view
+   lives in the project column and only the *overflow* is in the detail column.
+4. **Read local data synchronously on first render.** `ProjectScreen` and `ProjectCalendarScreen`
+   seed their state from the SQLite reads (`useState(() => …)`) — loading in an effect gave a
+   "No board columns" frame and a title that settled.
+5. **Don't invent a selection.** The wide layout used to show the first project when none was
+   picked; folding then landed on the project list ("no continuity") and recording it on unfold made
+   a plain unfold jump into a project. Now no selection ⇒ sidebar open + "No project selected" in
+   the detail column (the project column is blank: the overlay sidebar covers it). Re-tapping the
+   Projects tab resets to this state (`tabPress` → `resetProjectsSelection`).
+
+Tried and dropped: Board/Calendar in the detail column with a status panel in the project column
+(roomy when wide, but a push when folded); a nested project → view tree in the sidebar (extra Back
+to change view); `ArrangementView` for the split (see "ArrangementView spiked and killed").
+If a flash remains, the next tool is a short Reanimated crossfade over the width-dependent swaps
+(rule 1's cheap variants), not more state.
+
+### Other decisions from this pass (2026-10-13)
+- **Side-inset padding** — `useEdgePad(base)` (`src/lib/use-edge-pad.ts`): the page padding on a
+  side that has a system inset shrinks to 10pt (the inset is already the margin); the other side
+  keeps `base`. Used by AI settings, Appearance, Tools, Providers, Usage, Sync, Conflicts, Restore.
+  The inset itself is the system's (`R84` on the outer display), never a number we set. Pickers /
+  composers (parked cards) and tab screens (inset by `TabStack`) don't use it.
+- **Filled previews** (`useSidePreview`): when the preview pane fills the window it spans both
+  edges and handles the side rail itself, so the RN wrapper must not also pad the left
+  (`paddingLeft: fills ? 0 : insets.left`) — the double inset clipped the page in the left
+  Split View window.
+- **Measure, don't guess widths**: the usage chart (AI settings) sizes to its card via `onLayout`
+  instead of `window − 48`, which ignored card/page padding and the side rail.
+- **Overview as a set of blocks**: `OverviewTab` takes `show` (a list of `OverviewSection`s) and
+  `header`; `OverviewPanel` loads the data for a block set. Wide Overview = `OVERVIEW_STATUS` left,
+  `OVERVIEW_DETAIL` right; the Board's status panel reuses `kpi / flow / priority`.
+- **Titles**: the split-view Calendar header is just the project name (the switcher already says
+  Calendar); the standalone Calendar route keeps `Project · Calendar`.
+
+### Split View on the Duo (test pass 2026-10-12)
+
+The simulator's Split View is half-screen only: Cairn's window is **469×669** (or the
+full 951×669). The divider doesn't free-resize — drags snap back to 469, or past a
+limit hand Cairn the whole display. Measured with the Fold overlay and `lldb`
+(`recursiveDescription` on the live window — see "Debugging aids"):
+
+- Projects, notes, Chat and Calendar all lay out in the 469pt window (below the 700pt
+  `forceCompactWidth` cut, so Projects drills down; previews that open from Chat /
+  Calendar / Graph / Overview **fill** the window since 469 < `SIDE_PREVIEW_MIN_WIDTH`).
+- The side rail sits on the **left** of the left window (right of the right window).
+  The window reports `L0 R0` safe-area insets there, while a screen's own
+  `useSafeAreaInsets()` reports `left: 84` and the screens' `RNSSafeAreaView` wrapper
+  is laid out at x=84 (385pt wide).
+- **Bug (fixed): filled previews clipped in the left window.** Opening a task or note
+  from Chat / Calendar / Graph / Overview in the 469pt window drew the page ~84pt too
+  far right and ran it off the edge (Title field, Urgent chip cut off). Cause: with a
+  preview open, `useSidePreview`'s `contentStyle` kept `paddingLeft: insets.left`
+  (right padding was already dropped because the SwiftUI pane handles the rail), but
+  a *filled* pane spans both edges and handles the left rail too — so the RN wrapper
+  inset it once (385pt container at x=84) and the SwiftUI `Host`/`NavigationStack`
+  inside inset the content again (hosting view 469pt wide, content placed at +84).
+  Fix: `paddingLeft: fills ? 0 : insets.left`. Notes opened inside the Projects tab
+  were fine in the same window (they aren't hosted in a `SidePreview` pane).
+- Not covered: the app in the right-hand window (rail on the right; same code path
+  as full screen), modals in the split. If a bug like this resurfaces, the view
+  hierarchy dump is the fastest way to see which layer adds the extra inset:
+  `lldb -p <pid> --batch -o 'expr -l objc -O -- [[[[[[UIApplication sharedApplication]
+  connectedScenes] anyObject] windows] firstObject] recursiveDescription]'` (cast
+  `NSStringFromX` calls to `(NSString*)` when building strings; no variadic
+  `appendFormat`).
 
 ### Projects in a narrow regular-width window (portrait Duo, ~669pt)
 
 Regular width but too narrow for three columns: SwiftUI kept only the detail and hid
 the project view behind the sidebar button (open it once and it shows as a scrimmed
-overlay over the detail). `forceCompactWidth(compact)` (local `swiftui-modifiers`,
-`.environment(\.horizontalSizeClass, .compact)`) makes the split view collapse for
-real below 700pt, so the portrait Duo drills tree → view → item with a native Back,
+overlay over the detail). `forceCompactBelow(700)` (local `swiftui-modifiers`, originally the
+JS-flag `forceCompactWidth(compact)`; `.environment(\.horizontalSizeClass, .compact)`) makes the
+split view collapse for real below 700pt, so the portrait Duo drills project list → view → item with a native Back,
 like the folded Duo. It changes only an environment value, so nothing remounts.
 Needs a native rebuild.
 
@@ -305,7 +480,19 @@ ended up under the header (pre-existing, reproduced on the pre-PR commit). Rules
 
 ### Debugging aids and tooling notes (2026-10-12 session)
 - Settings → Appearance → Developer → **Fold overlay** (dev builds; `dev-flags.ts`,
-  `FoldDebugOverlay`) — window/insets/hinge readout plus the inferred crease band.
+  `FoldDebugOverlay`) — window/insets/hinge readout, the crease source (`fold=native` /
+  `native:none` / `inferred`) and geometry (`h@476±20`), plus the crease band.
+- Native view hierarchy: attach `lldb` to the app's pid and print
+  `recursiveDescription` of the key window; walk up from a view with `superview`, comparing
+  `frame` and `convertRect:toView:nil` per layer. That is how the double side-rail inset in
+  filled previews was found (a layer adding the inset a second time shows as a frame at x=84 whose
+  child is still full width). Cast `NSStringFromX(...)` to `(NSString*)`; no variadic `appendFormat`.
+- Metro goes stale (edits not served, logs missing): restart it with `--clear` as a background
+  task, then terminate/relaunch the app. Native module changes need `xcodebuild` +
+  `simctl install` (`EXPO_USE_PRECOMPILED_MODULES=0`).
+- The simulator's Split View is half-screen only (469pt windows) and the pose can't be scripted:
+  fold / unfold / Split View are driven by hand in Device Hub; tap injection stops working after a
+  long session — restart the app before suspecting a bug.
 - Bisect against the pre-PR commit by checking it out (`git checkout --detach
   898c5d7f`) and cold-launching: it separated three pre-existing bugs (rotation
   composer, editor toolbars, Projects empty detail) from the fold work.
@@ -314,8 +501,7 @@ ended up under the header (pre-existing, reproduced on the pre-PR commit). Rules
   (`EXPO_USE_PRECOMPILED_MODULES=0 npx expo run:ios --device <udid> --no-bundler`).
 - Screenshots lag taps; take a second one before judging a state. Tap coordinates are
   device points (the screenshot's pixel width ÷ the device's point width).
-- `onHingeChange` needs a SwiftUI view to hang off: `HingeObserver` (root, invisible)
-  keeps the hinge cache fed when no split view or preview pane is mounted.
+- The hinge cache is fed by `expo-hinge` (no SwiftUI host needed; the old `HingeObserver` is gone).
 
 ## Unifying — getting rid of the native additions
 
@@ -356,7 +542,7 @@ has the pill, so the bridge stays unless we accept the band there.
 ### Recommendation
 Keep the shared JS model and make the renderer the only per-device difference:
 
-1. ✅ The tree data lives in one hook (`useProjectsTree`), and since the
+1. ✅ The project list lives in one hook (`useProjectsList`; it was a tree, `useProjectsTree`, until 2026-10-13), and since the
    panel deletion there is one renderer too (`ProjectsTreeSidebar`), so
    behaviour can't drift.
 2. ✅ `tab-sidebar` sits behind a flag with **A** as the automatic fallback: if
@@ -542,11 +728,27 @@ Today · span.
 - Workspace switcher used `folder` (same as the Projects tab and project
   rows) → `square.stack.3d.up`.
 
-### Still open after the laptop-pose work
+### Still open after the Duo pose / Split View work
 (Checked and not affected: Search's scope bar is UIKit's native search scope — or a
 measured inset — not a `KeyboardStickyView`, so the composer's rotation bug can't occur.)
-- Native `ReservedRegion` frames would replace the inferred crease (needed for Split
-  View multitasking, where the window no longer fills the display).
+- ✅ Native `ReservedRegion` crease (`modules/fold-region`), verified on the Duo simulator
+  (2026-10-12), overlay readout in brackets: closed [`native:none`], laptop [`h@476±20`, 40pt
+  gutter, not the 20pt the inference assumed], book [`v@476±20`], flat [`native:none`], and
+  Split View (469pt window left of the crease) flat [`native:none`] / half-folded [`v@462±7`, a
+  14pt sliver at the window's edge; the inference would have put it at mid-window].
+- ✅ Projects navigation (flat list + switcher), wide overflow panels, no-project state, fold/unfold
+  flash fixes, side-inset padding (this file, 2026-10-13).
+- **Not verified**: iPad (the bridged-header path; `BRIDGE_HEADER` keeps the stack-header
+  buttons, nothing was run there); the book pose and the 669pt portrait unfold after the native
+  `forceCompactBelow` change; modals inside a Split View window; the Android fallbacks for
+  `fold-region`; a physical Duo (the inset and crease numbers come from the simulator profile).
+- The board in the 330pt project column is narrow (it scrolls sideways); if that is a problem the
+  alternative is the board on the right with the status on the left — but that is the
+  detail-column structure rule 3 rules out folded.
+- Calendar rail buttons (Today, Month/Week) stay in the column bar; the unfolded Calendar header is
+  the project name only.
+- Possible polish: a crossfade over the width-dependent content swaps; thin the usage chart's x
+  labels on narrow cards.
 
 ### Still open (need native modifiers in `modules/swiftui-modifiers`)
 - Hide Back while editing (`navigationBarBackButtonHidden`) — standard iOS

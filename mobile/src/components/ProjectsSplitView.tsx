@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
 import { Stack } from "expo-router";
-import { FileText, ListTodo, CalendarDays, LayoutDashboard } from "lucide-react-native";
+import { FileText, FolderOpen } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
   ContentUnavailableView,
@@ -11,12 +11,9 @@ import {
 } from "@expo/ui/swift-ui";
 import {
   navigationSplitViewStyle,
-  onHingeChange,
   tint,
-  type HingeStatus,
   type ViewModifier,
 } from "@expo/ui/swift-ui/modifiers";
-import type { SFSymbol } from "sf-symbols-typescript";
 import { type ProjectSummary } from "@/db/queries";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
@@ -24,7 +21,13 @@ import { CardDetailScreen } from "@/screens/CardDetailScreen";
 import { NoteComposer } from "@/components/NoteComposer";
 import { TaskComposer } from "@/components/TaskComposer";
 import { ProjectsTreeSidebar } from "@/components/ProjectsTreeSidebar";
-import { useProjectsTree } from "@/components/projects-tree";
+import { useProjectsList } from "@/components/projects-tree";
+import { ProjectViewSwitcher } from "@/components/ProjectViewSwitcher";
+import { CalendarDayPanel } from "@/components/CalendarDayPanel";
+import { dayKey } from "@/components/calendar/grid";
+import { OverviewPanel } from "@/components/overview/OverviewPanel";
+import { OVERVIEW_DETAIL, OVERVIEW_STATUS } from "@/components/overview/OverviewTab";
+import { ScreenChrome } from "@/components/screen-chrome";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
   bridgedItems,
@@ -36,8 +39,8 @@ import {
 } from "@/components/screen-chrome";
 import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
-import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
-import { forceCompactWidth } from "@modules/swiftui-modifiers";
+import { useHingeStatus } from "@/lib/hinge";
+import { forceCompactBelow } from "@modules/swiftui-modifiers";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
@@ -65,7 +68,7 @@ interface Selection {
 
 // Module-level so the selection survives the split view unmounting when the
 // Duo folds to the phone layout and remounting when it unfolds.
-let selection: Selection = { projectId: null, view: "notes", noteId: null, cardId: null, composing: false };
+let selection: Selection = { projectId: null, view: "overview", noteId: null, cardId: null, composing: false };
 const listeners = new Set<() => void>();
 function setSelection(next: Partial<Selection>) {
   selection = { ...selection, ...next };
@@ -83,7 +86,7 @@ function useSelection(): Selection {
 
 /** Reset the selection (e.g. after a workspace switch unmounts the data). */
 export function resetProjectsSelection() {
-  setSelection({ projectId: null, view: "notes", noteId: null, cardId: null, composing: false });
+  setSelection({ projectId: null, view: "overview", noteId: null, cardId: null, composing: false });
 }
 
 /**
@@ -104,6 +107,8 @@ export function showProjectInSplitView(projectId: string, view: SplitViewKind = 
 // it — a whole band of wasted height. There the columns hide their bars and
 // their buttons move into the native stack header, which shares the tab bar's
 // row. (The Duo's tab bar is a side rail, so its columns keep their own bars.)
+/** Windows narrower than this collapse to one column (SwiftUI decides natively). */
+const COMPACT_BELOW = 700;
 const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 
 // Feature flag: the projects tree in the iPad's system tab sidebar
@@ -115,13 +120,6 @@ const LEAVE_FOCUS: NavigationSplitViewVisibility = "doubleColumn";
 const BOTH_SLOTS: readonly ChromeSlot[] = ["primary", "secondary"];
 const LIST_SLOT: readonly ChromeSlot[] = ["primary"];
 const NO_SLOTS: readonly ChromeSlot[] = [];
-
-const VIEWS: { id: SplitViewKind; title: string; icon: SFSymbol }[] = [
-  { id: "overview", title: "Overview", icon: "number" },
-  { id: "notes", title: "Notes", icon: "doc.text" },
-  { id: "board", title: "Board", icon: "rectangle.split.3x1" },
-  { id: "calendar", title: "Calendar", icon: "calendar" },
-];
 
 export function ProjectsSplitView({
   projects,
@@ -138,6 +136,9 @@ export function ProjectsSplitView({
   const sel = useSelection();
   const project = projects.find((p) => p.id === sel.projectId) ?? projects[0];
   const projectId = project?.id ?? null;
+  // Nothing picked yet: the project views below are placeholders (they still need a
+  // project to build with, so the first one stands in) and a wide window opens the sidebar.
+  const hasSelection = sel.projectId != null;
   // The selected project vanished (deleted or synced away on another device):
   // move the selection to the fallback so the collapsed column and the detail
   // column don't keep pointing into the old project. Skipped while the list
@@ -146,19 +147,28 @@ export function ProjectsSplitView({
   useEffect(() => {
     if (stale) setSelection({ projectId: projects[0].id, noteId: null, cardId: null, composing: false });
   }, [stale, projects]);
+  const hingeClosed = useHingeStatus() === "closed";
   const view = sel.view;
-  // The Board is wide, so an open task slides in as a panel beside it (inside
-  // the same column, so the board never remounts or moves).
-  const boardFull = view === "board";
+  // SPIKE: compact proxy for the collapsed split view. A visibility/selection
+  // hint only — the component tree never swaps, so nothing remounts.
+  // The hinge reports `closed` a beat before the window shrinks to the outer display;
+  // SwiftUI collapses the split view with the window, so keying on width alone left the
+  // wide-layout columns (the status panel in the project column) showing on the outer
+  // display for a moment before JS caught up. Width still gates unfolding.
+  const compact = width < COMPACT_BELOW || hingeClosed;
+  // Wide Overview: the blocks up to the health radar stay in this column; the recent
+  // notes and activity move to the detail column (beside / instead of "Nothing open").
+  const overviewSplit = !compact && view === "overview";
+  // The Calendar's selected day is shared between the grid (project column) and the day
+  // panel (detail column, wide layouts); a reschedule bumps the version so the panel refreshes.
+  const [calSelected, setCalSelected] = useState(() => dayKey(new Date()));
+  const [calVersion, setCalVersion] = useState(0);
 
   // Bumped when a task changes in the detail column, so the board and the
   // sidebar progress re-read (they otherwise refresh only on focus / sync).
   const [boardVersion, setBoardVersion] = useState(0);
 
   // ── Duo posture ────────────────────────────────────────────────────────────
-  // The hinge status feeds the shared cache (SidePreviewPane and others read
-  // it); column widths are SwiftUI's job, so nothing here branches on it.
-  const [, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
   // Notes only: "detailOnly" is focus mode (the note gets the whole window).
   // Visibility starts at "doubleColumn" (sidebar hidden): on room-short
   // windows SwiftUI asks for it anyway, and starting at "all" opens the
@@ -171,9 +181,6 @@ export function ProjectsSplitView({
   // SwiftUI caps the sidebar column a little short of half the window (~20pt on
   // the Duo). That's fine: the detail screens' own side padding (~38pt) already
   // keeps their content clear of the fold, so no extra inset is added.
-  // SPIKE: compact proxy for the collapsed split view. A visibility/selection
-  // hint only — the component tree never swaps, so nothing remounts.
-  const compact = width < 700;
   // The collapsed column follows the selection depth: tree → project view →
   // open item, mirroring the phone drill-down (projects → project → note).
   const compactColumn: NavigationSplitViewColumn =
@@ -184,7 +191,6 @@ export function ProjectsSplitView({
     else if (col === "sidebar") setSelection({ projectId: null, noteId: null, cardId: null, composing: false });
     // "detail" carries no pop information — the selection already says what's open.
   };
-  const hingeModifier = onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)));
   // No width pins on any column: SwiftUI owns all widths. Explicit pins —
   // fixed numbers and stale-prone ideals alike — visibly missed the crease
   // across poses, while the unpinned board always reflowed correctly. Same treatment everywhere.
@@ -195,33 +201,50 @@ export function ProjectsSplitView({
     setBridged((prev) => (prev[slot] === chrome ? prev : { ...prev, [slot]: chrome }));
   }, []);
 
-  // The projects tree, one model for both renderers: the iPad's system tab
-  // sidebar (the Projects tab is index 0) or the in-app panel.
-  const onTreeSelect = useCallback((id: string, next?: string) => {
+  // The sidebar is a flat list of projects: choosing one keeps the current view
+  // (Overview / Notes / Board / Calendar) and closes any open item; the views
+  // themselves are switched by the segmented control in the project column.
+  const onProjectSelect = useCallback((id: string) => {
     setSelection({
       projectId: id,
-      ...(next ? { view: next as SplitViewKind } : {}),
-      ...(id !== selection.projectId || (next && next !== selection.view) ? { noteId: null, cardId: null } : {}),
+      ...(id !== selection.projectId ? { noteId: null, cardId: null } : {}),
       composing: false,
     });
   }, []);
   // Collapsed at the root (nothing chosen yet) no row is highlighted: the fallback
   // project only exists so the other columns have something to show when expanded,
-  // and a lit "Notes" row would read as already being inside it.
-  const treeProjectId = compact && sel.projectId == null ? null : projectId;
-  const tree = useProjectsTree({ projects, views: VIEWS, projectId: treeProjectId, view, onSelect: onTreeSelect });
-
+  // and a lit row would read as already being inside it.
+  const listProjectId = hasSelection ? projectId : null;
+  const projectsList = useProjectsList({ projects, projectId: listProjectId, onSelect: onProjectSelect });
   // Switching panels (Overview → Notes, …) closes the open note/task: an item
   // from one panel must not stay selected inside another (a task open in Notes).
   const selectView = useCallback((next: SplitViewKind) => {
     setSelection({ view: next, ...(next !== selection.view ? { noteId: null, cardId: null } : {}), composing: false });
   }, []);
+  const switcher = (
+    <ProjectViewSwitcher
+      view={view}
+      noteCount={project?.noteCount ?? 0}
+      cardCount={project?.cardCount ?? 0}
+      onSelect={selectView}
+    />
+  );
+
   // SPIKE: opening an item never switches the view out from under the user —
   // the item renders in Detail whatever the Content column shows.
   const openNote = useCallback((id: string) => setSelection({ noteId: id, cardId: null, composing: false }), []);
   // SPIKE: cards open in the Detail column (wide) or fullscreen (compact) —
   // never in the in-board slide-over anymore, so the right page is never empty.
   const openCard = useCallback((id: string) => setSelection({ cardId: id, noteId: null, composing: false }), []);
+  const overviewNav = useMemo(
+    () => ({
+      onOpenNote: openNote,
+      onOpenCard: openCard,
+      onViewNotes: () => selectView("notes"),
+      onViewBoard: () => selectView("board"),
+    }),
+    [openNote, openCard, selectView],
+  );
   // The list's + composes inline in the detail column (a native modal would
   // park on the wrong page on a Duo — there is no sheet-placement API).
   const openComposer = useCallback(() => setSelection({ view: "notes", composing: "note", noteId: null, cardId: null }), []);
@@ -246,6 +269,7 @@ export function ProjectsSplitView({
         nested
         projectId={projectId}
         view={view as ProjectTab}
+        switcher={switcher}
         selectedId={sel.noteId}
         onSelectView={selectView}
         onOpenNote={openNote}
@@ -256,7 +280,7 @@ export function ProjectsSplitView({
     </ChromeColumn>
   );
 
-  // Column widths are SwiftUI's job (see hingeModifier above) — no pins here.
+  // Column widths are SwiftUI's job (see the hinge note in the docs) — no pins here.
 
   // Closing the note also leaves focus mode, so the list is never left hidden
   // behind an empty detail.
@@ -288,9 +312,15 @@ export function ProjectsSplitView({
   // placeholder) is always the Detail column. Both stay mounted across
   // fold/unfold — only the split view's own collapse changes what is shown.
   const contentView =
-      boardFull ? (
-        // An open card lives in the Detail column now (not a slide-over here),
-        // so the board always has the whole Content column.
+      !hasSelection ? (
+        // Blank: the sidebar overlays this column while nothing is picked, so the message
+        // goes in the detail column (right), where it can be read.
+        <ChromeColumn key="no-project" slot={slot("primary")}>
+          <View style={{ flex: 1, backgroundColor: t.background }} />
+        </ChromeColumn>
+      ) : view === "board" ? (
+        // The board always has the whole project column; its overflow (status blocks, or
+        // an open task) is in the Detail column.
         <ChromeColumn
           key={`${projectId}:board`}
           slot={slot("primary")}
@@ -301,11 +331,25 @@ export function ProjectsSplitView({
             nested
             projectId={projectId}
             view="board"
+            switcher={switcher}
             selectedId={sel.cardId}
             onSelectView={selectView}
             onOpenNote={openNote}
             onOpenCard={openCard}
             onComposeTask={composeTask}
+          />
+        </ChromeColumn>
+      ) : view === "calendar" ? (
+        <ChromeColumn key={`${projectId}:calendar`} slot={slot("primary")}>
+          <ProjectCalendarScreen
+            nested
+            projectId={projectId}
+            switcher={switcher}
+            selectedKey={calSelected}
+            onSelectKey={setCalSelected}
+            externalDayList={!compact}
+            onChanged={() => setCalVersion((n) => n + 1)}
+            onOpenCard={openCard}
           />
         </ChromeColumn>
       ) : view === "overview" ? (
@@ -314,14 +358,12 @@ export function ProjectsSplitView({
             nested
             projectId={projectId}
             view="overview"
+            switcher={switcher}
+            overviewShow={overviewSplit ? OVERVIEW_STATUS : undefined}
             onSelectView={selectView}
             onOpenNote={openNote}
             onOpenCard={openCard}
           />
-        </ChromeColumn>
-      ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`} slot={slot("primary")}>
-          <ProjectCalendarScreen nested projectId={projectId} onOpenCard={openCard} />
         </ChromeColumn>
       ) : (
         // No item open: Detail hosts the action panel below, so the list
@@ -400,19 +442,37 @@ export function ProjectsSplitView({
 
   // Detail with nothing open: a per-view action panel, so the right page
   // earns its space instead of sitting blank.
-  const newTask = () => composeTask();
   const emptyDetail =
-    view === "board" ? (
-      <ChromeColumn key="empty" slot={slot("secondary")}>
-        <DetailActionPanel icon={ListTodo} title="No task selected" body="Pick a task from the board — or start a new one." actionLabel="New task" onAction={newTask} />
+    !hasSelection ? (
+      <ChromeColumn key="no-project-detail" slot={slot("secondary")}>
+        <DetailActionPanel icon={FolderOpen} title="No project selected" body="Choose a project from the list to see its notes, board and calendar." />
+      </ChromeColumn>
+    ) : view === "board" ? (
+      // Wide: the board's status blocks until a task is opened (collapsed, this column
+      // only appears with an open item).
+      <ChromeColumn key={`${projectId}:board-status`} slot={slot("secondary")}>
+        <>
+          <ScreenChrome title="Board status" />
+          <OverviewPanel key={boardVersion} projectId={projectId} show={["kpi", "flow", "priority"]} nav={overviewNav} />
+        </>
       </ChromeColumn>
     ) : view === "calendar" ? (
-      <ChromeColumn key="empty" slot={slot("secondary")}>
-        <DetailActionPanel icon={CalendarDays} title="No task selected" body="Pick a task from the calendar — or start a new one." actionLabel="New task" onAction={newTask} />
+      <ChromeColumn key={`${projectId}:calendar-day`} slot={slot("secondary")}>
+        <>
+          <ScreenChrome title="Selected day" />
+          <CalendarDayPanel key={calVersion} projectId={projectId} selectedKey={calSelected} onOpenCard={openCard} />
+        </>
       </ChromeColumn>
     ) : view === "overview" ? (
-      <ChromeColumn key="empty" slot={slot("secondary")}>
-        <DetailActionPanel icon={LayoutDashboard} title="Nothing open" body="Open a note or task to read it beside the overview." actionLabel="View board" onAction={() => selectView("board")} />
+      // The rest of the Overview (recent notes, activity) in the big column while nothing
+      // is open; opening a note/task replaces it. Not keyed on `compact`: collapsed, this
+      // column is never visible without an open item, and on unfold SwiftUI expands a beat
+      // before JS learns the width, so a compact-only placeholder here flashed.
+      <ChromeColumn key={`${projectId}:overview-detail`} slot={slot("secondary")}>
+        <>
+          <ScreenChrome title="Recent" />
+          <OverviewPanel key={boardVersion} projectId={projectId} show={OVERVIEW_DETAIL} nav={overviewNav} />
+        </>
       </ChromeColumn>
     ) : (
       <ChromeColumn key="empty" slot={slot("secondary")}>
@@ -505,14 +565,19 @@ export function ProjectsSplitView({
           // True echo (except the spurious first-layout detailOnly with
           // nothing open, which is swallowed): controlled visibility only
           // settles when SwiftUI's reports are acknowledged.
-          columnVisibility={
-            compact ? "automatic" : visibility === "detailOnly" && sel.noteId ? "detailOnly" : visibility
-          }
+          // Same value at every width: switching it on unfold (automatic -> doubleColumn)
+          // made the sidebar open with the expansion and then slide away once JS learned
+          // the width. Collapsed, the split view follows preferredCompactColumn instead.
+          // No project picked: open the sidebar so there is something to choose.
+          columnVisibility={!hasSelection ? "all" : visibility === "detailOnly" && sel.noteId ? "detailOnly" : visibility}
           onColumnVisibilityChange={(v) => {
             // Swallow the spurious first-layout detailOnly with nothing open;
             // echo everything else back (controlled visibility only settles
             // when SwiftUI's reports are acknowledged).
             if (v === "detailOnly" && !selection.noteId) return;
+            // Our own "all" while nothing is picked isn't the user's choice: don't keep it
+            // once a project is chosen (the sidebar then hides to give the views room).
+            if (selection.projectId == null) return;
             setVisibility(v);
           }}
           // Collapsed (compact) the split view is a single column following
@@ -530,10 +595,10 @@ export function ProjectsSplitView({
           // the project view behind the sidebar button. Forcing compact width makes
           // the split view collapse like the folded Duo — tree → view → item
           // drill-down — through the real size-class path.
-          modifiers={[tint(t.accent), hingeModifier, navigationSplitViewStyle("automatic"), forceCompactWidth(compact)]}
+          modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(COMPACT_BELOW)]}
         >
           <NavigationSplitView.Sidebar>
-            <ProjectsTreeSidebar title={workspaceName} tree={tree} onWorkspaceSwitched={onWorkspaceSwitched} />
+            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} />
           </NavigationSplitView.Sidebar>
           <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
           {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for
@@ -561,8 +626,8 @@ function DetailActionPanel({
   icon: typeof FileText;
   title: string;
   body: string;
-  actionLabel: string;
-  onAction: () => void;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   const t = useTheme();
   return (
@@ -583,12 +648,14 @@ function DetailActionPanel({
       </View>
       <Text style={[typeScale.subtitle, { color: t.textPrimary, fontWeight: "700", textAlign: "center" }]}>{title}</Text>
       <Text style={[typeScale.caption, { color: t.textSecondary, textAlign: "center", lineHeight: 18 }]}>{body}</Text>
+      {actionLabel && onAction ? (
       <PressableScale
         onPress={onAction}
         style={{ marginTop: 6, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, backgroundColor: t.accent }}
       >
         <Text style={[typeScale.control, { color: "#fff", fontWeight: "700" }]}>{actionLabel}</Text>
       </PressableScale>
+      ) : null}
     </View>
   );
 }

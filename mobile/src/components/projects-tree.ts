@@ -1,62 +1,77 @@
 import { useCallback, useMemo } from "react";
 import type { SFSymbol } from "sf-symbols-typescript";
+import { resolveProjectIconName } from "@cairn/shared/ui/constants";
 import type { ProjectSummary } from "@/db/queries";
 
+// The shared (desktop + phone) project icons are Lucide names; the sidebar is
+// SwiftUI, so each maps to its closest SF Symbol. Keys mirror ICON_MAP in
+// ProjectIcon.tsx. (SF Symbols has no rocket — paperplane is the nearest.)
+const SF_FOR_ICON: Record<string, SFSymbol> = {
+  Layers: "square.stack.3d.up",
+  Folder: "folder",
+  BookOpen: "book",
+  Briefcase: "briefcase",
+  Code2: "chevron.left.forwardslash.chevron.right",
+  Cpu: "cpu",
+  Globe: "globe",
+  Home: "house",
+  Inbox: "tray",
+  Lightbulb: "lightbulb",
+  Map: "map",
+  Mountain: "mountain.2",
+  Pencil: "pencil",
+  Rocket: "paperplane",
+  Star: "star",
+  Target: "target",
+  TreePine: "tree",
+  Waves: "water.waves",
+  Zap: "bolt",
+};
+
 /**
- * The projects tree — projects that expand to their views, like Mail's accounts
- * and mailboxes. One model, one renderer: the split-view sidebar column
- * (`ProjectsTreeSidebar`).
+ * The projects list shown in the split-view sidebar column
+ * (`ProjectsTreeSidebar`): a flat list of projects. Switching between a
+ * project's views (Overview / Notes / Board / Calendar) is the segmented control
+ * at the top of the project column, not rows here — so the same control works at
+ * every width and the sidebar only has one job: choosing the project.
  */
-export interface TreeNode {
+export interface ProjectNode {
   id: string;
   title: string;
-  icon: SFSymbol;
-  /** A count shown beside the row (notes, tasks). */
-  badge?: string;
-  children?: TreeNode[];
-}
-
-export interface TreeView {
-  id: string;
-  title: string;
+  /** "126 notes · 69 tasks". */
+  subtitle: string;
+  /** The project's own icon, as an SF Symbol. */
   icon: SFSymbol;
 }
 
-export interface ProjectsTree {
-  nodes: TreeNode[];
-  /** Ids of the selected row: [projectId, view]. */
-  selectedPath: string[];
-  /** Selects a row by its path: [projectId] or [projectId, view]. */
-  select: (path: string[]) => void;
+export interface ProjectsList {
+  nodes: ProjectNode[];
+  /** The selected project, or null (nothing chosen yet, e.g. the collapsed root). */
+  selectedId: string | null;
+  select: (projectId: string) => void;
 }
 
-export function useProjectsTree({
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export function useProjectsList({
   projects,
-  views,
   projectId,
-  view,
   onSelect,
 }: {
   projects: ProjectSummary[];
-  views: TreeView[];
   projectId: string | null;
-  view: string;
-  onSelect: (projectId: string, view?: string) => void;
-}): ProjectsTree {
+  onSelect: (projectId: string) => void;
+}): ProjectsList {
   const nodes = useMemo(
     () =>
-      projects.map<TreeNode>((p) => ({
+      projects.map<ProjectNode>((p) => ({
         id: p.id,
         title: p.name,
-        icon: "folder",
-        children: views.map((v) => {
-          const count = v.id === "notes" ? p.noteCount : v.id === "board" ? p.cardCount : 0;
-          return { id: v.id, title: v.title, icon: v.icon, ...(count ? { badge: String(count) } : {}) };
-        }),
+        subtitle: `${plural(p.noteCount, "note", "notes")} · ${plural(p.cardCount, "task", "tasks")}`,
+        icon: SF_FOR_ICON[resolveProjectIconName(p.icon)] ?? "folder",
       })),
-    [projects, views],
+    [projects],
   );
-  const selectedPath = useMemo(() => (projectId ? [projectId, view] : []), [projectId, view]);
-  const select = useCallback(([id, next]: string[]) => onSelect(id, next), [onSelect]);
-  return { nodes, selectedPath, select };
+  const select = useCallback((id: string) => onSelect(id), [onSelect]);
+  return { nodes, selectedId: projectId, select };
 }

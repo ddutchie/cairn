@@ -41,6 +41,7 @@ import type { RegistryServiceEntry, RegistryMcpEntry } from "@cairn/shared/chat/
 import { ConnectorLogo } from "@/components/ConnectorLogo";
 import { ModalSafeView } from "@/components/ModalSafeView";
 import { SearchField } from "@/components/SearchField";
+import { useEdgePad } from "@/lib/use-edge-pad";
 
 /**
  * Does a browsable registry entry match the search query? Mirrors desktop's
@@ -91,6 +92,7 @@ function oauthCfg(s: InstalledMcpServer): OAuthServerConfig {
 }
 
 export default function ToolsSettingsScreen() {
+  const edge = useEdgePad(18);
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
@@ -433,7 +435,7 @@ export default function ToolsSettingsScreen() {
           <ActivityIndicator color={t.accent} />
         </View>
       ) : (
-        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        <ScrollView style={styles.body} contentContainerStyle={[styles.bodyContent, edge]}>
           {/* 1. Installed services — expandable per-operation tool toggles */}
           {installed.length > 0 && (
             <View style={styles.section}>

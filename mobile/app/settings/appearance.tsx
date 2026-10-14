@@ -18,6 +18,7 @@ import {
   type as typeScale,
   type Theme,
 } from "@/theme";
+import { useEdgePad } from "@/lib/use-edge-pad";
 
 /**
  * Appearance settings — accent colour + note-text font. Presented as a modal
@@ -26,6 +27,7 @@ import {
  * chat theme lives in AI settings → Tuning.)
  */
 export default function AppearanceSettingsScreen() {
+  const edge = useEdgePad(18);
   const t = useTheme();
   const isDark = useIsDark();
   const accentId = useAccent();
@@ -37,7 +39,7 @@ export default function AppearanceSettingsScreen() {
     <ModalSafeView backgroundColor={t.surface}>
     <ScrollView
       style={styles.flex}
-      contentContainerStyle={styles.body}
+      contentContainerStyle={[styles.body, edge]}
       contentInsetAdjustmentBehavior="automatic"
     >
       <View style={styles.section}>

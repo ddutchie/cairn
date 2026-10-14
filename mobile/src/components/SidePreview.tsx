@@ -5,8 +5,7 @@ import { useRouter } from "expo-router";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
-import { onHingeChange, type HingeStatus } from "@expo/ui/swift-ui/modifiers";
-import { lastHingeStatus, rememberHingeStatus } from "@/lib/hinge";
+import { useHingeStatus } from "@/lib/hinge";
 import { FOLD_GUTTER } from "@/lib/fold";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 // NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
@@ -113,9 +112,13 @@ export function useSidePreview({
     headerShown: !fills,
     // While a preview is open its SwiftUI pane reaches the window edge and
     // handles the side rail itself; the RN padding would double that inset.
+    // Beside/above the body the pane only takes the right edge, so the body
+    // keeps the left inset. When it fills the window it spans both edges, so a
+    // left rail (the left window of a Split View) must not be padded again —
+    // that put the whole page one rail-width too far right and clipped it.
     contentStyle:
       preview != null
-        ? { backgroundColor: t.background, paddingLeft: insets.left }
+        ? { backgroundColor: t.background, paddingLeft: fills ? 0 : insets.left }
         : { backgroundColor: t.background, paddingLeft: insets.left, paddingRight: insets.right },
     title: chrome && (!titleWhenWide || preview != null) ? "" : title,
     headerTransparent: chrome,
@@ -169,12 +172,13 @@ export function SidePreviewLayout({
 }) {
   const { preview, setPreview, fills, stacked, contentPaddingTop } = state;
   const topHalf = useTopHalf();
+  const fold = useFold();
   // Laptop pose: the pane takes the top half (above the crease) and the screen
   // body the bottom half, starting just under the crease's gutter. Collapsed, the
   // body has the whole container instead.
   const collapsed = stacked && collapsePane;
   const stackedHeight = stacked ? topHalf.before : null;
-  const bodyPaddingTop = stacked && preview && !collapsed ? FOLD_GUTTER : contentPaddingTop;
+  const bodyPaddingTop = stacked && preview && !collapsed ? (fold?.gutter ?? FOLD_GUTTER) : contentPaddingTop;
   const pane = SIDE_PREVIEW_SUPPORTED && (
     <SidePreviewPane
       preview={preview}
@@ -240,7 +244,7 @@ export function SidePreviewPane({
 }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [hinge, setHinge] = useState<HingeStatus | null>(lastHingeStatus);
+  const hinge = useHingeStatus();
   // Same split as the Notes split view: half open on a Duo, the pane starts
   // exactly on the fold (each half its own page); fully open (flat), and on
   // iPad, the open item gets the larger share, as SwiftUI's detail column
@@ -293,7 +297,7 @@ export function SidePreviewPane({
   return (
     <Animated.View style={[{ overflow: "hidden" }, frame]}>
       <Host ignoreSafeArea="keyboard" style={fill ? { flex: 1 } : stacked ? { width, height: stackedH } : { width: paneWidth, flex: 1 }}>
-        <NavigationStack modifiers={[onHingeChange((_, next) => setHinge(rememberHingeStatus(next.hinge?.status ?? null)))]}>
+        <NavigationStack>
           {shown.kind === "note" ? (
             <ChromeColumn key={`note:${shown.id}`} leading={[close]} slot="secondary">
               <NoteDetailScreen nested noteId={shown.id} onClose={onClose} />

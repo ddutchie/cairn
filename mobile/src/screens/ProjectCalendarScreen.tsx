@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { View, StyleSheet } from "react-native";
@@ -33,11 +33,25 @@ import { useTheme } from "@/theme";
 export function ProjectCalendarScreen({
   nested = false,
   projectId,
+  switcher,
+  selectedKey,
+  onSelectKey,
+  externalDayList,
+  onChanged,
   onOpenCard,
 }: {
   nested?: boolean;
   /** Split-view column: the project to show (instead of the route param). */
   projectId?: string;
+  /** Split-view column: the project-view switcher drawn above the calendar. */
+  switcher?: ReactNode;
+  /** Split-view column: the selected day lives outside (shared with the day panel beside). */
+  selectedKey?: string;
+  onSelectKey?: (key: string) => void;
+  /** Split-view column: the day's task list is in the detail column, not under the grid. */
+  externalDayList?: boolean;
+  /** Split-view column: a task was rescheduled here (so the day panel can refresh). */
+  onChanged?: () => void;
   /** Split-view column: open a task beside the calendar instead of pushing it. */
   onOpenCard?: (id: string) => void;
 }) {
@@ -46,9 +60,11 @@ export function ProjectCalendarScreen({
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const [cards, setCards] = useState<CalendarCard[]>([]);
-  const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
-  const [name, setName] = useState<string>("");
+  // Seeded synchronously (cheap local reads) so the first frame already has the title and
+  // the grid's tasks instead of settling a beat after mount.
+  const [cards, setCards] = useState<CalendarCard[]>(() => (project ? listCardsWithDueDates(project) : []));
+  const [unscheduled, setUnscheduled] = useState<CalendarCard[]>(() => (project ? listUnscheduledCards(project) : []));
+  const [name, setName] = useState<string>(() => (project ? (getProject(project)?.name ?? "") : ""));
   const [layout, setLayout] = useState<CalendarLayout>("month");
   const [todayNonce, setTodayNonce] = useState(0);
 
@@ -64,8 +80,9 @@ export function ProjectCalendarScreen({
     (cardId: string, dueDate: string | null) => {
       updateTask(cardId, { dueDate });
       load();
+      onChanged?.();
     },
-    [load],
+    [load, onChanged],
   );
 
   const cardHref = useCallback(
@@ -77,7 +94,8 @@ export function ProjectCalendarScreen({
   return (
     <View style={[styles.root, { backgroundColor: t.background }]}>
       <ScreenChrome
-        title={name ? `${name} · Calendar` : "Calendar"}
+        // In the split view the view switcher already says "Calendar"; the standalone route has none.
+        title={switcher != null ? name || "Calendar" : name ? `${name} · Calendar` : "Calendar"}
         right={[
           { kind: "button", key: "today", label: "Today", icon: ICON_TODAY, onPress: toolbarPress(() => setTodayNonce((n) => n + 1)) },
           {
@@ -94,6 +112,7 @@ export function ProjectCalendarScreen({
           },
         ]}
       />
+      {switcher != null && <View style={styles.switcher}>{switcher}</View>}
       <CalendarView
         cards={cards}
         bottomInset={insets.bottom}
@@ -102,6 +121,9 @@ export function ProjectCalendarScreen({
         todayNonce={todayNonce}
         unscheduled={unscheduled}
         onReschedule={reschedule}
+        selectedKey={selectedKey}
+        onSelectKey={onSelectKey}
+        externalDayList={externalDayList}
         onOpenCard={(id) => (onOpenCard ? onOpenCard(id) : router.push(cardHref(id)))}
       />
     </View>
@@ -110,4 +132,6 @@ export function ProjectCalendarScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  // Same insets as ProjectScreen's segment bar, but in flow above the calendar.
+  switcher: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
 });

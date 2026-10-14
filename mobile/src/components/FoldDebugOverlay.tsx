@@ -2,13 +2,15 @@ import { Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useEffect } from "react";
 import { useFold } from "@/lib/use-fold";
+import { useHinge } from "expo-hinge";
 import { useHingeStatus } from "@/lib/hinge";
+import { useDivisionRegion } from "@/lib/division-region";
 import { useFoldOverlay } from "@/lib/dev-flags";
 
 /**
  * Dev-only readout for iPhone Duo pose work: window size, safe-area insets and
- * hinge status along the top, plus a translucent band where the inferred crease
- * is (see `src/lib/fold.ts`) — the simulator's screenshots never draw the fold.
+ * hinge status along the top, plus a translucent band where the crease is — the
+ * OS division region when available, else inferred (see `src/lib/fold.ts`). The simulator's screenshots never draw the fold.
  * Switched on in Settings → Appearance → Developer; absent from release builds.
  */
 export function FoldDebugOverlay() {
@@ -20,8 +22,11 @@ function Overlay() {
   const { width, height, scale } = useWindowDimensions();
   const i = useSafeAreaInsets();
   const hinge = useHingeStatus();
+  const angle = useHinge()?.angle;
   const fold = useFold();
-  const line = `${Math.round(width)}x${Math.round(height)} @${scale}  T${Math.round(i.top)} B${Math.round(i.bottom)} L${Math.round(i.left)} R${Math.round(i.right)}  hinge=${hinge ?? "null"}`;
+  const region = useDivisionRegion();
+  const source = region === undefined ? "inferred" : region ? "native" : "native:none";
+  const line = `${Math.round(width)}x${Math.round(height)} @${scale}  T${Math.round(i.top)} B${Math.round(i.bottom)} L${Math.round(i.left)} R${Math.round(i.right)}  hinge=${hinge ?? "null"}${angle != null ? `@${Math.round(angle)}°` : ""} fold=${source}${fold ? ` ${fold.axis[0]}@${Math.round(fold.position)}±${Math.round(fold.gutter / 2)}` : ""}`;
   useEffect(() => {
     console.log("[fold-debug]", line);
   }, [line]);

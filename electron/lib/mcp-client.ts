@@ -36,6 +36,7 @@ import {
   type OpenAIToolDef,
   type McpToolDef,
 } from "../../shared/chat/mcp-namespace";
+import { encode } from "gpt-tokenizer";
 import { errMsg } from "../host-shared/errors";
 import type { ListMcpToolsResult, McpTestResult, McpToolInfo } from "../../shared/types/tools";
 
@@ -223,7 +224,17 @@ export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<Li
     const conn = await connect(cfg);
     const res = await withTimeout(conn.client.listTools(), CALL_TIMEOUT_MS, `MCP listToolsDetailed ${cfg.id}`);
     const tools = (res.tools ?? []) as McpToolDef[];
-    return { ok: true, tools: tools.map((t) => ({ name: t.name, description: t.description })) };
+    // Measure the def as the model receives it — the input schema is usually
+    // the bulk of the cost, so name + description alone badly undercounts.
+    const defs = mcpToolsToOpenAI(cfg.id, tools);
+    return {
+      ok: true,
+      tools: tools.map((t, i) => ({
+        name: t.name,
+        description: t.description,
+        tokens: encode(JSON.stringify(defs[i])).length,
+      })),
+    };
   } catch (e) {
     return { ok: false, tools: [], error: errMsg(e) };
   }

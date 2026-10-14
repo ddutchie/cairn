@@ -1,19 +1,22 @@
-import { useState } from "react";
 import { useRouter } from "expo-router";
 import {
   Button,
-  DisclosureGroup,
-  Label,
+  HStack,
+  Image,
   List,
   Menu,
   Section,
+  Text,
   Toolbar,
   ToolbarItem,
+  VStack,
 } from "@expo/ui/swift-ui";
 import {
   accessibilityAddTraits,
   background,
   contentShape,
+  font,
+  foregroundStyle,
   frame,
   listStyle,
   navigationBarTitleDisplayMode,
@@ -24,7 +27,7 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
-import type { ProjectsTree, TreeNode } from "@/components/projects-tree";
+import type { ProjectsList } from "@/components/projects-tree";
 import { getActiveSource } from "@/db";
 import { haptics } from "@/haptics";
 import { switchSource } from "@/sync/controller";
@@ -33,22 +36,23 @@ import { useSyncStatus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
 
 /**
- * The projects tree as a real split-view sidebar column — the same model as
- * the list and detail columns, so fold/unfold never unmounts the navigation
- * hierarchy.
+ * The projects list as a real split-view sidebar column — the same model as
+ * the project and item columns, so fold/unfold never unmounts the navigation
+ * hierarchy. Flat: it only chooses the project (a project's views are the
+ * segmented control in its own column).
  *
  * A native column bar (workspace switcher as the title, sync/settings as
- * trailing icon buttons) above the tree list — the same Toolbar pattern the
+ * trailing icon buttons) above the list — the same Toolbar pattern the
  * `ChromeColumn` content columns use.
  */
 export function ProjectsTreeSidebar({
   title,
-  tree,
+  list,
   onWorkspaceSwitched,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
-  tree: ProjectsTree;
+  list: ProjectsList;
   /** Called after the workspace switches so the owner reloads its data. */
   onWorkspaceSwitched: () => void;
 }) {
@@ -56,37 +60,35 @@ export function ProjectsTreeSidebar({
   const router = useRouter();
   const { state: syncState, pending: syncPending } = useSyncStatus();
   const { sources, refresh } = useSyncSources({ mergeActive: true });
-  const [projectId, view] = tree.selectedPath;
-  // The open project starts expanded; others keep whatever the user chose.
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ [projectId]: true });
-  const [seenProject, setSeenProject] = useState(projectId);
-  if (seenProject !== projectId) {
-    setSeenProject(projectId);
-    setExpanded((e) => ({ ...e, [projectId]: true }));
-  }
-
   const syncOffline = syncState === "offline";
   const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
 
   const selectedRow = /^#[0-9a-f]{6}$/i.test(t.accent) ? `${t.accent}33` : t.accent;
-  const row = (p: TreeNode, v: TreeNode) => {
-    const selected = p.id === projectId && v.id === view;
+  const row = (p: ProjectsList["nodes"][number]) => {
+    const selected = p.id === list.selectedId;
     return (
-      <Label
-        key={v.id}
-        title={v.badge ? `${v.title}  ·  ${v.badge}` : v.title}
-        systemImage={v.icon}
+      <HStack
+        key={p.id}
+        spacing={12}
         modifiers={[
           padding({ horizontal: 4, vertical: 6 }),
           frame({ maxWidth: Infinity, alignment: "leading" }),
           contentShape(shapes.rectangle()),
-          onTapGesture(() => tree.select([p.id, v.id])),
+          onTapGesture(() => list.select(p.id)),
           // A tap gesture alone isn't announced as a button; the tint isn't
           // announced as selection. (A Button would restyle the row.)
           accessibilityAddTraits(selected ? ["isButton", "isSelected"] : ["isButton"]),
           ...(selected ? [background(selectedRow, shapes.roundedRectangle({ cornerRadius: 10 }))] : []),
         ]}
-      />
+      >
+        <Image systemName={p.icon} color={t.accent} size={20} />
+        <VStack alignment="leading" spacing={2}>
+          <Text modifiers={[font({ textStyle: "body", weight: "medium" })]}>{p.title}</Text>
+          <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle({ type: "hierarchical", style: "secondary" })]}>
+            {p.subtitle}
+          </Text>
+        </VStack>
+      </HStack>
     );
   };
 
@@ -101,20 +103,7 @@ export function ProjectsTreeSidebar({
       ]}
     >
       <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background)]}>
-        <Section>
-          {tree.nodes.map((p) => (
-            <DisclosureGroup
-              key={p.id}
-              isExpanded={expanded[p.id] ?? false}
-              onIsExpandedChange={(next) => setExpanded((e) => ({ ...e, [p.id]: next }))}
-            >
-              <DisclosureGroup.Label>
-                <Label title={p.title} systemImage={p.id === projectId ? "folder.fill" : "folder"} />
-              </DisclosureGroup.Label>
-              {(p.children ?? []).map((v) => row(p, v))}
-            </DisclosureGroup>
-          ))}
-        </Section>
+        <Section>{list.nodes.map(row)}</Section>
       </List>
       <Toolbar.Content>
         <ToolbarItem placement="topBarLeading">

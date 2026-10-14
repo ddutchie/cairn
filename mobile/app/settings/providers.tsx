@@ -28,6 +28,7 @@ import { ConnectorLogo } from "@/components/ConnectorLogo";
 import { endpointLogoSlug } from "@cairn/shared/models/model-catalog";
 import { getOrFetchLogoSvg, subscribeModelCatalog, getModelCatalogVersion } from "@/chat/models-dev";
 import { SearchField } from "@/components/SearchField";
+import { useEdgePad } from "@/lib/use-edge-pad";
 
 /** name + blurb + category + tags; `q` must already be lowercased + trimmed. */
 function entryMatchesQuery(entry: RegistryProviderEntry, q: string): boolean {
@@ -47,6 +48,7 @@ function entryMatchesQuery(entry: RegistryProviderEntry, q: string): boolean {
  * saved-providers list (managed in AI settings) but are NOT auto-selected.
  */
 export default function ProvidersSettingsScreen() {
+  const edge = useEdgePad(18);
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
@@ -175,7 +177,7 @@ export default function ProvidersSettingsScreen() {
           <ActivityIndicator color={t.accent} />
         </View>
       ) : (
-        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        <ScrollView style={styles.body} contentContainerStyle={[styles.bodyContent, edge]}>
           <View style={styles.section}>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionLabel}>Browse community</Text>

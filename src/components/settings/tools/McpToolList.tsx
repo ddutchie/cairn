@@ -36,13 +36,7 @@ export function McpToolList({ server }: { server: McpServerConfig }) {
 
   const enabledCount = tools.length - tools.filter((t) => disabled.has(t.name)).length;
   const enabledTools = tools.filter((t) => !disabled.has(t.name));
-  const estimateTokens = (list: typeof tools) => {
-    if (list.length === 0) return 0;
-    // Mirrors dsh token-meter estimate: JSON.stringify(tools).length / 4 + overhead per tool
-    // Keep client-side and cheap — no gpt-tokenizer in the renderer.
-    const jsonLen = JSON.stringify(list).length;
-    return Math.ceil(jsonLen / 4) + list.length * 4;
-  };
+  const estimateTokens = (list: typeof tools) => list.reduce((n, t) => n + (t.tokens ?? 0), 0);
   const totalTokens = estimateTokens(tools);
   const enabledTokens = estimateTokens(enabledTools);
   const fmtTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : `${n}`);
@@ -66,7 +60,7 @@ export function McpToolList({ server }: { server: McpServerConfig }) {
             size="xs"
             color={isHeavy ? "var(--warning)" : undefined}
             className="font-mono"
-            title={`Estimated prompt tokens for the tool definitions (JSON length / 4 + overhead). Disable tools to reduce context.`}
+            title={`Estimated prompt tokens for the tool definitions (full definition incl. input schema). Disable tools to reduce context.`}
           >
             {tokenLabel}
           </Badge>
@@ -98,7 +92,7 @@ export function McpToolList({ server }: { server: McpServerConfig }) {
             <ul className="flex flex-col gap-0.5">
               {tools.map((t) => {
                 const isEnabled = !disabled.has(t.name);
-                const oneTokens = Math.ceil(JSON.stringify(t).length / 4) + 4;
+                const oneTokens = t.tokens ?? 0;
                 return (
                   <li key={t.name} className="flex items-start gap-2 py-1">
                     <div className="flex-1 min-w-0">
