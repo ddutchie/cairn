@@ -1,11 +1,10 @@
 import Database from "better-sqlite3";
 import { getSnapshot } from "../db";
-import { getCairnContext, getProjectContextPack, DASHBOARD_CONSTANTS, IDEA_FLOW_RULES } from "./metadata";
+import { getCairnContext, getProjectContextPack, IDEA_FLOW_RULES } from "./metadata";
 import { create_tag, tag_note, tag_task } from "./tags";
 import { upsert_project, delete_project } from "./projects";
 import { get_note, search_notes, ensure_note, append_to_note, patch_note, delete_note, rename_note, bulk_move_notes, list_folders, instantiate_template, list_templates } from "./notes";
 import { get_task, search_tasks, create_task, bulk_update_task_status, link_note_to_task, unlink_note_from_task, delete_task, list_ready_tasks, list_overdue_tasks, list_tasks_due, update_task, claim_task, add_task_progress } from "./tasks";
-import { create_dashboard, update_dashboard } from "./dashboards";
 import {
   get_idea_flow,
   create_idea_flow_node,
@@ -76,15 +75,6 @@ function dispatchTool(db: Database.Database, workspacePath: string, toolName: st
 
     case "search_tasks":
       return search_tasks(db, snap, args);
-
-    case "create_dashboard":
-      return create_dashboard(db, snap, args);
-
-    case "update_dashboard":
-      return update_dashboard(db, snap, args);
-
-    case "get_dashboard_constants":
-      return DASHBOARD_CONSTANTS;
 
     case "get_idea_flow_rules":
       return IDEA_FLOW_RULES;

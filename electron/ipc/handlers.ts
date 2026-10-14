@@ -348,7 +348,7 @@ export function registerAppHandlers(
         updateNoteBody: (id: string, title: string, content: string) => {
           suppressNextChange(id);
           const note = q.updateNote(ctx.db, id, { title, content });
-          if (note && note.type !== "dashboard") {
+          if (note) {
             writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
           }
         },
@@ -356,7 +356,7 @@ export function registerAppHandlers(
           const note = q.getNoteById(ctx.db, id);
           suppressNextChange(id);
           q.deleteNote(ctx.db, id);
-          if (note && note.type !== "dashboard") {
+          if (note) {
             deleteNoteFile(ctx.workspacePath, getProjectName(ctx.db, note.projectId), id);
           }
         },

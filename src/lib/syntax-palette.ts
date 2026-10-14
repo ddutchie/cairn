@@ -4,7 +4,7 @@
  * The canonical palette now lives in `shared/notes/syntax-palette.ts` so the
  * mobile app's CodeBlock renderer can share the exact same colours. This file
  * remains as the desktop import site (`@/lib/syntax-palette`) so the existing
- * consumers (CodeBlock, editor-theme, dashboard-view, PDF export) don't need to
+ * consumers (CodeBlock, editor-theme, PDF export) don't need to
  * change their import paths.
  */
 export {

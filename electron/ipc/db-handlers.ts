@@ -14,8 +14,6 @@ import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { writeNoteFile, deleteProjectNotesDir, renameProjectNotesDir, reconcileProjectFolders } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
-import { executeTool as executeMcpTool } from "../mcp/tools";
-import { executeReadTool } from "../lib/read-tools";
 import { DEFAULT_COLUMNS } from "../db/defaults";
 import { invalidateRelationshipCache, computeAutoRelationships } from "../db/graph-queries";
 import { registerNoteHandlers } from "./db-note-handlers";
@@ -42,20 +40,6 @@ export function registerDbHandlers(ctx: DbContext): void {
   // `get` is a read verb, so the registry never re-broadcasts db:changed for it.
   registerContractHandle("db:changes:get", (e, args) =>
     handle(() => q.getChangesSince(ctx.db, args?.since ?? null, args?.feedId ?? null, e?.sender?.id)));
-
-  // ── Dashboard live query bridge ───────────────────
-  // Executes read-only MCP-style tool calls from dashboard iframes.
-  registerContractHandle("db:mcpQuery", (_e, { tool, args }) => {
-    return handle(() => {
-      if (tool === "get_cairn_context") {
-        return executeMcpTool(ctx.db, ctx.workspacePath, tool, args);
-      }
-      const snap = q.getFullSnapshot(ctx.db);
-      const res = executeReadTool(ctx.db, snap, tool, args);
-      if (res.handled) return res.result;
-      throw new Error(`Unknown or disallowed tool: ${tool}`);
-    });
-  });
 
   // ── Workspaces ────────────────────────────────────
   registerContractHandle("db:workspace:list", () => handle(() => q.getAllWorkspaces(ctx.db)));
@@ -143,7 +127,6 @@ export function registerDbHandlers(ctx: DbContext): void {
         // resolves the destination), then delete the source project's folder.
         if (result.sourceName !== result.targetName) {
           for (const moved of result.movedNotes) {
-            if (moved.type === "dashboard") continue; // dashboards have no .md file
             const note = q.getNoteById(ctx.db, moved.id);
             if (!note) continue;
             try {

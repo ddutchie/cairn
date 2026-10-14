@@ -3,26 +3,6 @@ import Database from "better-sqlite3";
 import { Snapshot } from "../db";
 import { executeGetProjectContextPack } from "../../host-shared/read-tools-pure";
 
-export const DASHBOARD_CONSTANTS = {
-  description: "window.cairn API for Cairn dashboards (rendered in a sandboxed iframe).",
-  rules: [
-    "html must be a complete self-contained document with inline CSS/JS only — no external URLs",
-    "Never hardcode projectId or workspaceId — always use window.cairn.projectId and window.cairn.workspaceId",
-    "Always fetch data dynamically via helpers — never bake in static data",
-  ],
-  helpers: {
-    "window.cairn.projectId": "Active project ID (string)",
-    "window.cairn.workspaceId": "Active workspace ID (string)",
-    "window.cairn.getProjectSummary(projectId?)": "Returns { project, noteCount, totalCards, columns: [{ id, name, type, taskCount, tasks: [{ id, title, priority, dueDate }] }] }",
-    "window.cairn.listTasks(projectId?)": "Returns { tasksByColumn: { COLUMN_ID: [{ id, title, priority, description, dueDate, columnId, columnName, columnType, updatedAt }] } }. Usage: Object.values(result.tasksByColumn).flat()",
-    "window.cairn.listNotes(projectId?)": "Returns [{ id, title, projectId, isPinned, updatedAt }]",
-    "window.cairn.listRecentActivity(opts?)": "Returns { recentNotes: [{ id, title, projectId, updatedAt }], recentTasks: [{ id, title, projectId, updatedAt }] }",
-    "window.cairn.searchTasks(query, projectId?)": "Returns [{ id, title, priority, columnId }]",
-    "window.cairn.searchNotes(query, projectId?)": "Returns [{ id, title, snippet, projectId }]",
-    "window.cairn.getContext()": "Returns { workspaces, projects: [{ id, name, status, priority, columns: [{ id, name, type }] }] }",
-  },
-};
-
 export const IDEA_FLOW_RULES = {
   description: "Idea Flow node types, data shapes, and group conventions.",
   nodeTypes: {
@@ -80,7 +60,6 @@ export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Re
     },
     conventions: {
       notes: "Raw markdown in 'content'. Plain text for search/embeddings is derived automatically — do not set any separate text field.",
-      dashboards: "Use create_dashboard to create an HTML dashboard rendered in a sandboxed iframe inside Cairn. The 'html' field must be a complete, self-contained HTML document. Use inline CSS and JS only — no external URLs. The window.cairn.query(tool, args) API is available for live data from read-only tools.",
       tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks to find work that can start now — it filters out blocked tasks. When you work on a task as an external agent, call claim_task first, then add_task_progress as you go (moveTo=\"review\" or \"done\" when finished).",
       dependencies: "Use update_task with blockedBy to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use update_task with unblockFrom to remove a dependency explicitly.",
       priority: ["low", "medium", "high", "urgent"],

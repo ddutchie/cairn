@@ -20,11 +20,6 @@ function snap(): CairnSnapshot {
         tagIds: ["t1"], linkedNoteIds: [], linkedCardIds: [], isPinned: false,
         type: "note", folder: "specs", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z", version: 1,
       },
-      {
-        id: "dash", projectId: "p1", workspaceId: "ws1", title: "A Dashboard",
-        content: "<html></html>", contentText: "", tagIds: [], linkedNoteIds: [], linkedCardIds: [],
-        isPinned: false, type: "dashboard", folder: "", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", version: 1,
-      },
     ],
     columns: [
       { id: "c1", projectId: "p1", workspaceId: "ws1", name: "Todo", type: "todo", order: 0, createdAt: "", updatedAt: "" },
@@ -71,12 +66,6 @@ describe("serializeProjectMarkdown", () => {
     expect(md).toContain("with details");
     expect(md).toContain("## Notes");
     expect(md).toContain("### specs/Design");
-  });
-
-  it("excludes dashboards from the notes section", () => {
-    const r = serializeProjectMarkdown(snap(), "p1");
-    if (!("markdown" in r)) throw new Error("expected markdown");
-    expect(r.markdown).not.toContain("A Dashboard");
   });
 
   it("omits empty columns (Done has no cards)", () => {

@@ -165,16 +165,16 @@ describe("createNote", () => {
     expect(note.archivedAt == null).toBe(true);
   });
 
-  it("persists type='dashboard' when specified", () => {
+  it("persists type='template' when specified", () => {
     const note = createNote(db, {
-      id: "dash1",
+      id: "tpl1",
       projectId: "proj1",
       workspaceId: "ws1",
-      title: "Dashboard",
-      type: "dashboard",
+      title: "Template",
+      type: "template",
     });
 
-    expect(note.type).toBe("dashboard");
+    expect(note.type).toBe("template");
   });
 
   it("defaults content to empty string when omitted", () => {
@@ -1212,16 +1212,14 @@ describe("rewriteInboundWikilinks", () => {
     );
   });
 
-  it("only rewrites real notes — dashboards/templates are left untouched", () => {
+  it("only rewrites real notes — templates are left untouched", () => {
     mkNote("target", "Old", "body");
-    createNote(db, { id: "dash", projectId: "proj1", workspaceId: "ws1", title: "Dash", content: "[[Old]]", type: "dashboard" });
     createNote(db, { id: "tpl", projectId: "proj1", workspaceId: "ws1", title: "Tpl", content: "[[Old]]", type: "template" });
     mkNote("note", "Note", "[[Old]]");
 
     const updated = rewriteInboundWikilinks(db, "target", "Old", "New");
 
     expect(updated.map((n) => n.id)).toEqual(["note"]);
-    expect(getNoteById(db, "dash")!.content).toBe("[[Old]]");
     expect(getNoteById(db, "tpl")!.content).toBe("[[Old]]");
   });
 

@@ -107,7 +107,6 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "db:snapshot": true,
   "db:changes:get": true,
   "db:hasData": true,
-  "db:mcpQuery": true,
   "db:command:list": true,
   "db:command:create": true,
   "db:command:update": true,

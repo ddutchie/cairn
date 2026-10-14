@@ -134,7 +134,6 @@ FONT_SCALE_KEY = "fontScale"  (localStorage key)
 Workspace
   └── Project
         ├── Note[]           (.md file + SQLite row)
-        ├── Dashboard[]      (SQLite only, type="dashboard", content=HTML)
         ├── BoardColumn[]
         │     └── TaskCard[]
         ├── IdeaFlow
@@ -144,7 +143,7 @@ Workspace
               └── ChatMessage[]
 ```
 
-Notes write to both `.md` files and SQLite simultaneously. Dashboards write to SQLite only (no `.md` file).
+Notes write to both `.md` files and SQLite simultaneously. (Dashboards were removed in 3.1.3; any legacy `type="dashboard"` row is converted to a markdown note at boot by `electron/db/legacy-dashboards.ts`.)
 
 ## Key constraints
 

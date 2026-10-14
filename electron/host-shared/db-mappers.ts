@@ -199,13 +199,14 @@ export function toNote(row: DbRow): Note & { content: string } {
     content: (row.content ?? "") as string,
     // Short plain-text excerpt for previews (see shared/notes/excerpt.ts) —
     // NOT a full mirror; full-text search derives it from `content`.
-    // Dashboards keep an empty excerpt as before.
-    contentText: noteExcerpt(row.content as string | null, row.type as string | null, stripMarkdown),
+    contentText: noteExcerpt(row.content as string | null, stripMarkdown),
     tagIds: p(row.tag_ids) as string[],
     linkedNoteIds: p(row.linked_note_ids) as string[],
     linkedCardIds: p(row.linked_card_ids) as string[],
     isPinned: b(row.is_pinned),
-    type: (row.type ?? "note") as "note" | "dashboard" | "template",
+    // Legacy type='dashboard' rows (removed in 3.1.3; converted at boot by
+    // legacy-dashboards.ts) read as plain notes.
+    type: row.type === "template" ? "template" : "note",
     folder: (row.folder ?? "") as string,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

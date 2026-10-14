@@ -6,7 +6,7 @@
  * v1 design decisions (see plan note §7 "Persona design"):
  *   - The default persona is the KNOWLEDGE-WORK agent: it runs through the
  *     Cordis loop, whose `executeTool` surface is Cairn data tools only
- *     (notes/tasks/tags/idea-flow/dashboards/knowledge-graph) — no bash, no
+ *     (notes/tasks/tags/idea-flow/knowledge-graph) — no bash, no
  *     arbitrary file writes. This keeps a background run's blast radius bounded
  *     to Cairn entities, even when it auto-approves its own writes.
  *   - The run drives the user's saved AI/chat connection (cached `aiConfig`).

@@ -33,7 +33,7 @@ export function isShellTool(name: string): boolean {
 export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
   "get_active_context", "get_cairn_context", "get_project_context_pack",
-  "get_user_writing_style", "get_dashboard_constants",
+  "get_user_writing_style",
   "get_note", "search_notes", "search_notes_semantic", "search_tasks_semantic",
   "get_task", "search_tasks", "list_ready_tasks", "list_overdue_tasks",
   "list_tasks_due", "list_templates", "list_folders",
@@ -60,7 +60,7 @@ export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "session_event_trace", "session_event_read",
 ]);
 
-/** Mutating Cairn-data tools (notes/tasks/tags/boards/dashboards/idea flow). */
+/** Mutating Cairn-data tools (notes/tasks/tags/boards/idea flow). */
 const CAIRN_WRITE_TOOLS = new Set<string>([
   // create_note was removed — the actual tool is ensure_note (create-or-update).
   "ensure_note", "patch_note", "append_to_note", "rename_note",
@@ -69,7 +69,6 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "claim_task", "add_task_progress",
   "spawn_tasks_from_note", "link_note_to_task", "unlink_note_from_task",
   "tag_note", "tag_task", "create_tag", "upsert_project", "delete_project",
-  "create_dashboard", "update_dashboard",
   "create_idea_flow_node", "update_idea_flow_node",
   "create_idea_flow_edge", "delete_idea_flow_edge", "delete_idea_flow_node",
   // layout_idea_flow rewrites node x/y for every node in a flow → mutating.

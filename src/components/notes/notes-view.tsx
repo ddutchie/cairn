@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   FileText, Plus, Search, Wand2,
-  LayoutDashboard, FolderPlus, LayoutTemplate,
+  FolderPlus, LayoutTemplate,
   ChevronDown, ChevronRight, Trash2, X,
 } from "lucide-react";
 import { useCairnStore } from "@/store";
@@ -14,10 +14,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "@/store/slices/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NoteEditor } from "./note-editor";
-import { DashboardView } from "./dashboard-view";
 import { PrdModal } from "./notes-view/PrdModal";
 import { MoveNoteModal } from "./notes-view/MoveNoteModal";
-import { DashboardTemplateModal } from "./DashboardTemplateModal";
 import { useNoteFilter } from "./notes-view/useNoteFilter";
 import { buildFolderTree, type FolderNode } from "./notes-view/buildFolderTree";
 import { NoteListItem } from "./notes-view/NoteListItem";
@@ -97,7 +95,6 @@ export function NotesView() {
   const [moveNoteId, setMoveNoteId]             = useState<string | null>(null);
   const [moveFolderPath, setMoveFolderPath]     = useState<string | null>(null);
   const [showArchivedNotes, setShowArchivedNotes] = useState(false);
-  const [dashboardTemplateOpen, setDashboardTemplateOpen] = useState(false);
   const [deleteNoteId, setDeleteNoteId]         = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen]        = useState(false);
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
@@ -355,20 +352,6 @@ export function NotesView() {
     if (activeProjectId) toggleNotesFolder(activeProjectId, folderPath);
   }, [activeProjectId, toggleNotesFolder]);
 
-  function handleCreateDashboard() {
-    if (!activeProjectId) return;
-    setDashboardTemplateOpen(true);
-  }
-
-  function handleTemplateSelect(html: string, title: string) {
-    if (!activeProjectId) return;
-    const note = createNote(activeProjectId, title, "dashboard");
-    if (html) updateNote(note.id, { content: html, contentText: "" });
-    setActiveNoteId(note.id);
-    setDashboardTemplateOpen(false);
-    setMobileShowEditor(true);
-  }
-
   // Instantiate a new note from a template: substitute {{vars}} and create a
   // normal note (type="note"). No live link back — templates are a starting point.
   async function handleNewFromTemplate(template: Note) {
@@ -569,9 +552,6 @@ export function NotesView() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Tooltip content="New dashboard">
-              <Button variant="ghost" size="icon" onClick={handleCreateDashboard}><LayoutDashboard size={13} /></Button>
-            </Tooltip>
           </div>
         </div>
 
@@ -771,9 +751,7 @@ export function NotesView() {
       {/* Editor pane */}
       <div data-tutorial="notes-editor" className={cn("flex-1 min-w-0 flex flex-col overflow-hidden", mobileShowEditor ? "flex" : "hidden md:flex")}>
         {activeNote ? (
-          activeNote.type === "dashboard"
-            ? <DashboardView note={activeNote} onBack={() => setMobileShowEditor(false)} />
-            : <NoteEditor note={activeNote} onBack={() => setMobileShowEditor(false)} />
+          <NoteEditor note={activeNote} onBack={() => setMobileShowEditor(false)} />
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -781,7 +759,6 @@ export function NotesView() {
               <p className="text-sm text-[var(--text-tertiary)]">Select a note or create a new one</p>
               <div className="flex items-center gap-2 mt-4 justify-center">
                 <Button variant="accent" size="sm" onClick={() => handleCreateNote()}><Plus size={13} /> New Note</Button>
-                <Button variant="ghost" size="sm" onClick={handleCreateDashboard}><LayoutDashboard size={13} /> New Dashboard</Button>
                 {aiEnabled && <Button variant="ghost" size="sm" onClick={() => setPrdModalOpen(true)}><Wand2 size={13} /> Generate PRD</Button>}
               </div>
             </div>
@@ -791,13 +768,6 @@ export function NotesView() {
 
       {prdModalOpen && activeProjectId && activeWorkspaceId && (
         <PrdModal projectId={activeProjectId} workspaceId={activeWorkspaceId} onClose={() => setPrdModalOpen(false)} />
-      )}
-
-      {dashboardTemplateOpen && (
-        <DashboardTemplateModal
-          onSelect={handleTemplateSelect}
-          onClose={() => setDashboardTemplateOpen(false)}
-        />
       )}
 
       {moveNoteId && (

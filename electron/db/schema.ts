@@ -59,12 +59,12 @@ CREATE TABLE IF NOT EXISTS notes (
   project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   title            TEXT NOT NULL,
-  content          TEXT,          -- Raw markdown (type=note) or HTML (type=dashboard)
+  content          TEXT,          -- Raw markdown
   tag_ids          TEXT NOT NULL DEFAULT '[]',
   linked_note_ids  TEXT NOT NULL DEFAULT '[]',
   linked_card_ids  TEXT NOT NULL DEFAULT '[]',
   is_pinned        INTEGER NOT NULL DEFAULT 0,
-  type             TEXT NOT NULL DEFAULT 'note', -- 'note' | 'dashboard'
+  type             TEXT NOT NULL DEFAULT 'note', -- 'note' | 'template' (legacy 'dashboard' rows are converted at boot)
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
   archived_at      TEXT

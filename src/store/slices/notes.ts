@@ -122,7 +122,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       workspaceId: proj?.workspaceId ?? "",
       title,
       content,
-      contentText: excerptFor(content, type),
+      contentText: excerptFor(content),
       tagIds: [],
       linkedNoteIds: [],
       linkedCardIds: [],

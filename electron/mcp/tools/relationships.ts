@@ -32,7 +32,7 @@ const ID_ARRAY_ARG_KEYS = ["noteIds", "cardIds"] as const;
 /**
  * MCP tools that can change a note's or card's content, title, membership, or
  * links — i.e. anything the derived edges are computed from. Read-only tools and
- * tools that only touch non-graph entities (dashboards, flow layout, codebase
+ * tools that only touch non-graph entities (flow layout, codebase
  * index) are deliberately excluded so we don't pay a recompute for nothing.
  */
 export const RELATIONSHIP_AFFECTING_TOOLS = new Set([

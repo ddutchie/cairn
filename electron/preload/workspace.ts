@@ -48,7 +48,4 @@ export const workspaceApi = {
 
   // ── DB change notifications (from MCP writes) ─
   onDbChanged: (cb: () => void) => onIpcEvent("db:changed", () => cb()),
-
-  // ── Dashboard live query bridge ───────────────
-  mcpQuery: (tool: string, args: Record<string, unknown>) => invokeContract("db:mcpQuery", { tool, args }),
 } as const;

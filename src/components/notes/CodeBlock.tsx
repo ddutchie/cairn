@@ -29,9 +29,9 @@ import { ensureLanguage, isLanguageReady, highlightCode, onLanguageReady } from 
 
 type Palette = Record<string, string>;
 
-// Both palettes are derived from the shared `SYNTAX_COLORS` tokens so the four
-// syntax-highlight consumers (CodeBlock, editor-theme, dashboard-view, PDF
-// export) stay in lockstep. `variant` picks the dark/light hex per token.
+// Both palettes are derived from the shared `SYNTAX_COLORS` tokens so the three
+// syntax-highlight consumers (CodeBlock, editor-theme, PDF export) stay in
+// lockstep. `variant` picks the dark/light hex per token.
 function buildPalette(variant: "dark" | "light"): Palette {
   const c = (name: keyof typeof SYNTAX_COLORS) => SYNTAX_COLORS[name][variant];
   return {

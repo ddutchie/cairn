@@ -21,13 +21,11 @@ export function registerNoteHandlers(ctx: DbContext): void {
     const note = q.createNote(ctx.db, {
       ...args,
     });
-    if (note.type !== "dashboard") {
-      suppressNextChange(note.id);
-      writeNoteFile(ctx.workspacePath, {
-        ...note,
-        projectName: getProjectName(ctx.db, note.projectId),
-      });
-    }
+    suppressNextChange(note.id);
+    writeNoteFile(ctx.workspacePath, {
+      ...note,
+      projectName: getProjectName(ctx.db, note.projectId),
+    });
     return note;
   }));
 
@@ -44,9 +42,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
         return q.restoreNote(ctx.db, id);
       })();
       suppressNextChange(id);
-      if (note.type !== "dashboard") {
-        writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
-      }
+      writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
       return note;
     }
     // Did the title actually change? A title edit is an explicit rename → the
@@ -84,19 +80,16 @@ export function registerNoteHandlers(ctx: DbContext): void {
       return u;
     })();
 
-    if (note.type !== "dashboard") {
-      writeNoteFile(ctx.workspacePath, {
-        ...note,
-        projectName: getProjectName(ctx.db, note.projectId),
-        renameFile: titleChanged,
-      });
-    }
+    writeNoteFile(ctx.workspacePath, {
+      ...note,
+      projectName: getProjectName(ctx.db, note.projectId),
+      renameFile: titleChanged,
+    });
     // Persist the .md files of every note whose wikilinks we rewrote. Suppress
     // each so the watcher doesn't echo our own write back into the DB. Each write
     // is isolated — a single failure must not abort the rest (the DB rewrite is
     // already committed; mirrors the db:project:merge relocation loop).
     for (const other of relinked) {
-      if (other.type === "dashboard") continue;
       try {
         suppressNextChange(other.id);
         writeNoteFile(ctx.workspacePath, {
@@ -128,9 +121,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
     // moving a note to root (folder="") is never silently ignored.
     suppressNextChange(id);
     const note = q.moveNoteFolder(ctx.db, id, folder ?? "");
-    if (note.type !== "dashboard") {
-      writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
-    }
+    writeNoteFile(ctx.workspacePath, { ...note, projectName: getProjectName(ctx.db, note.projectId) });
     return note;
   }));
 
@@ -158,7 +149,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
         suppressNextChange(id);
         const note = q.moveNoteToProject(ctx.db, id, projectId);
 
-        if (note.type !== "dashboard" && oldProjectName !== getProjectName(ctx.db, projectId)) {
+        if (oldProjectName !== getProjectName(ctx.db, projectId)) {
           // Failure-safe relocation: write the note into the NEW project folder
           // FIRST, then remove the old copy. If the write throws, roll the DB
           // row back to the old project so ownership and the on-disk file stay
@@ -206,9 +197,7 @@ export function registerNoteHandlers(ctx: DbContext): void {
     if (note) {
       const projectName = getProjectName(ctx.db, note.projectId);
       q.deleteNote(ctx.db, id);
-      if (note.type !== "dashboard") {
-        deleteNoteFile(ctx.workspacePath, projectName, id);
-      }
+      deleteNoteFile(ctx.workspacePath, projectName, id);
     } else {
       q.deleteNote(ctx.db, id);
     }

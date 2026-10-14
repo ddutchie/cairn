@@ -30,7 +30,7 @@ function makeDb(): Database.Database {
   return db;
 }
 
-const mk = (db: Database.Database, id: string, title: string, content: string, projectId = "p1", type?: "note" | "dashboard") =>
+const mk = (db: Database.Database, id: string, title: string, content: string, projectId = "p1", type?: "note" | "template") =>
   createNote(db, { id, projectId, workspaceId: "ws1", title, content, ...(type ? { type } : {}) });
 
 describe("lazy note bodies — main-process queries", () => {
@@ -67,10 +67,9 @@ describe("lazy note bodies — main-process queries", () => {
     expect(searchNoteIds(db, "  ")).toEqual([]);
   });
 
-  it("search scopes to a project and ignores dashboard bodies", () => {
+  it("search scopes to a project", () => {
     mk(db, "n1", "Plan", "roadmap details", "p1");
     mk(db, "n2", "Plan", "roadmap details", "p2");
-    mk(db, "d1", "Board", "<div>roadmap</div>", "p1", "dashboard");
     expect(searchNoteIds(db, "roadmap", { projectId: "p1" })).toEqual(["n1"]);
   });
 
