@@ -368,7 +368,7 @@ export function getNoteForAgent(id: string, fullCharBudget = 1500): unknown {
     totalLines: outline.totalLines,
     intro: intro + (content.length > 400 ? "…" : ""),
     outline: outline.headings,
-    hint: "Large note — call get_note_range(id, startLine, endLine) to read a section, or get_note for the whole thing.",
+    hint: "Large note — call get_item with startLine/endLine to read a section, or full:true for the whole thing.",
   };
 }
 

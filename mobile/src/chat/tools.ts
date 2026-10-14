@@ -15,6 +15,7 @@ import { isToolEnabled } from "./tool-toggles";
 import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./mcp-store";
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
+import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
 
 export interface ToolDef {
   name: string;
@@ -45,244 +46,312 @@ const obj = (props: Record<string, unknown>, required: string[] = []) => ({
 });
 const S = { type: "string" };
 
+// Consolidated toolset (mobile 1.x, mirrors desktop 3.1.3): one tool per intent,
+// with mode/filter/type options instead of near-duplicate tools, and the same
+// names + camelCase arguments as the desktop/MCP tools so the model sees one API.
+// Each tool composes the existing per-operation queries in queries.ts.
+
+const A = { type: "array", items: S };
+const isErr = (r: unknown): r is { error: string } =>
+  !!r && typeof r === "object" && typeof (r as { error?: unknown }).error === "string";
+
+/** Errors from multi-step writes are reported, never swallowed. */
+const summarize = (base: Record<string, unknown>, errors: string[]) =>
+  errors.length > 0 ? { ...base, error: errors.join("; ") } : base;
+
+/** First column of `type` in a project (board order). */
+function columnOfType(projectId: string, type: string): string | undefined {
+  return q.listColumns(projectId).find((c) => c.type === type)?.id;
+}
+
+/** Cards in one project, or every project when none is given. */
+function cardsIn(projectId?: string) {
+  const ids = projectId ? [projectId] : q.listProjects().map((p) => p.id);
+  return ids.flatMap((id) => q.listCards(id));
+}
+
+const shapeCard = (c: { id: string; title: string; priority: string; column_id: string; project_id: string; due_date?: string | null }) => ({
+  id: c.id, title: c.title, priority: c.priority, columnId: c.column_id, projectId: c.project_id,
+  ...(c.due_date ? { dueDate: c.due_date } : {}),
+});
+
+async function semanticHits(kind: "notes" | "tasks", query: string, limit: number) {
+  if (!isAppleEmbeddingsSupported()) {
+    return { error: "On-device semantic search isn't available on this device; use mode 'keyword' instead." };
+  }
+  // Index new/edited items first so the agent searches the SAME fresh index as
+  // the Search tab. Gather the full ranked list per workspace, merge, re-rank
+  // and slice ONCE so a globally strong hit isn't dropped before the merge.
+  await catchUpIndex();
+  const hits: SemanticHit[] = [];
+  for (const ws of q.listWorkspaceIds()) {
+    hits.push(...(await (kind === "notes" ? semanticSearch(ws, query) : semanticSearchTasks(ws, query))));
+  }
+  finalizeRanking(hits);
+  return hits.slice(0, limit).map((h) => ({ id: h.noteId, title: h.title, section: h.sectionTitle, score: h.score }));
+}
+
 export const TOOLS: ToolDef[] = [
   {
-    name: "get_cairn_context",
+    name: "get_context",
     description:
-      "Workspace orientation: all projects (each with their board columns) + tags. Call this FIRST to get ids and structure.",
-    params: "{}",
-    jsonSchema: obj({}),
-    run: () => q.getCairnContext(),
+      "Orientation: all projects with their board columns, plus tags. With projectId: that project's pinned notes, folders, open tasks by column and recent activity. Call first to get ids.",
+    params: '{ "projectId"?: string }',
+    jsonSchema: obj({ projectId: S }),
+    run: (a) => {
+      const projectId = str(a.projectId);
+      if (!projectId) return q.getCairnContext();
+      const pack = q.getProjectContextPack(projectId);
+      return pack && typeof pack === "object" && !isErr(pack) ? { ...(pack as object), folders: q.listFolders(projectId) } : pack;
+    },
   },
   {
-    name: "get_project_context_pack",
+    name: "get_item",
     description:
-      "Rich single-call project summary: project + columns, note count, pinned notes (with content), open tasks grouped by column, and recent activity. Use this to summarize or understand a project.",
-    params: '{ "project_id": string }',
-    jsonSchema: obj({ project_id: S }, ["project_id"]),
-    run: (a) => q.getProjectContextPack(str(a.project_id)),
+      "Read a note or task card by its id: a card's full detail, a note's content, or specific lines of a note (startLine/endLine, 1-based inclusive). Long notes return a line-numbered outline unless you pass a line range or full:true.",
+    params: '{ "id": string, "full"?: boolean, "startLine"?: number, "endLine"?: number }',
+    jsonSchema: obj({ id: S, full: { type: "boolean" }, startLine: { type: "number" }, endLine: { type: "number" } }, ["id"]),
+    run: (a) => {
+      const id = str(a.id);
+      if (q.getNote(id)) {
+        const note = typeof a.startLine === "number"
+          ? q.getNoteRange(id, a.startLine, typeof a.endLine === "number" ? a.endLine : undefined)
+          : a.full === true ? q.getNote(id) : q.getNoteForAgent(id);
+        return { type: "note", ...(note as object) };
+      }
+      const card = q.getCard(id);
+      if (card) return { type: "task", ...card };
+      return { error: `No note or task with id "${id}"` };
+    },
   },
   {
     name: "search_notes",
-    description: "Search notes by text. Returns id, title, folder, project_id.",
-    params: '{ "query": string }',
-    jsonSchema: obj({ query: S }, ["query"]),
-    run: (a) =>
-      q.searchNotes(str(a.query)).map((n) => ({ id: n.id, title: n.title, folder: n.folder, project_id: n.project_id })),
-  },
-  {
-    name: "search_notes_semantic",
     description:
-      "Find notes by MEANING, not just literal keywords — use this when the user asks a conceptual question about their notes (e.g. \"what did I decide about auth\", \"anything on offline sync\") and search_notes' exact-text matching would miss relevant notes. Returns the best-matching notes with a relevance score (0-1) and the matching section title. Follow up with get_note to read a match's full content before answering.",
-    params: '{ "query": string, "limit"?: number }',
-    jsonSchema: obj({ query: S, limit: { type: "number" } }, ["query"]),
+      "Find notes. mode 'keyword' (default) matches words; 'semantic' finds notes by meaning (on-device). Empty query lists a project's notes.",
+    params: '{ "query": string, "mode"?: "keyword"|"semantic", "projectId"?: string, "folder"?: string, "limit"?: number }',
+    jsonSchema: obj({ query: S, mode: { type: "string", enum: ["keyword", "semantic"] }, projectId: S, folder: S, limit: { type: "number" } }, ["query"]),
     run: async (a) => {
-      if (!isAppleEmbeddingsSupported()) {
-        return { error: "On-device semantic search isn't available on this device; use search_notes instead." };
+      const query = str(a.query).trim();
+      const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 50) : 20;
+      const projectId = str(a.projectId) || undefined;
+      const folder = a.folder !== undefined ? str(a.folder).toLowerCase() : undefined;
+      if (a.mode === "semantic") {
+        const hits = await semanticHits("notes", query, projectId || folder !== undefined ? 50 : Math.min(limit, 20));
+        if (isErr(hits) || (!projectId && folder === undefined)) return isErr(hits) ? hits : hits.slice(0, limit);
+        return hits.filter((h) => {
+          const n = q.getNote(h.id);
+          return n && (!projectId || n.project_id === projectId) && (folder === undefined || (n.folder ?? "").toLowerCase() === folder);
+        }).slice(0, limit);
       }
-      // Index any not-yet-embedded notes first (downloads assets on first use),
-      // so the agent searches the SAME fresh index as the user-facing Search tab
-      // — otherwise recently created/edited notes are missed. Idempotent.
-      await catchUpIndex();
-      const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 20) : 8;
-      // Gather the FULL ranked candidate list per workspace, merge, re-rank by
-      // the hybrid `rank`, and slice ONCE — so a note that ranks low within its
-      // workspace but high globally isn't dropped before the merge. Matches the
-      // Search tab.
-      const hits: SemanticHit[] = [];
-      for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearch(ws, str(a.query))));
-      finalizeRanking(hits);
-      return hits.slice(0, limit).map((h) => ({
-        id: h.noteId,
-        title: h.title,
-        section: h.sectionTitle,
-        score: h.score,
-      }));
+      const notes = query ? q.searchNotes(query) : q.listNotes(projectId);
+      return notes
+        .filter((n) => (!projectId || n.project_id === projectId) && (folder === undefined || (n.folder ?? "").toLowerCase() === folder))
+        .slice(0, limit)
+        .map((n) => ({ id: n.id, title: n.title, folder: n.folder, projectId: n.project_id }));
     },
   },
   {
-    name: "search_tasks_semantic",
+    name: "search_tasks",
     description:
-      "Find task cards by MEANING, not just literal keywords — use for conceptual questions about tasks (e.g. \"what's blocking the login work\", \"anything about offline sync\") where search_tasks' exact-text matching would miss related cards. Returns the best-matching cards with a relevance score (0-1). Follow up with get_task to read a card's full detail.",
-    params: '{ "query": string, "limit"?: number }',
-    jsonSchema: obj({ query: S, limit: { type: "number" } }, ["query"]),
+      "Find task cards. mode 'keyword' (default) or 'semantic' (by meaning). filter: 'ready' (unblocked, not done — \"what should I work on?\"), 'overdue', or 'due' (due within dueWithinDays, default 7, including overdue). Empty query lists all matching.",
+    params: '{ "query": string, "mode"?: "keyword"|"semantic", "projectId"?: string, "columnType"?: string, "filter"?: "ready"|"overdue"|"due", "dueWithinDays"?: number, "limit"?: number }',
+    jsonSchema: obj({
+      query: S,
+      mode: { type: "string", enum: ["keyword", "semantic"] },
+      projectId: S,
+      columnType: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done"] },
+      filter: { type: "string", enum: ["ready", "overdue", "due"] },
+      dueWithinDays: { type: "number" },
+      limit: { type: "number" },
+    }, ["query"]),
     run: async (a) => {
-      if (!isAppleEmbeddingsSupported()) {
-        return { error: "On-device semantic search isn't available on this device; use search_tasks instead." };
+      const query = str(a.query).trim();
+      const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 50) : 20;
+      const projectId = str(a.projectId) || undefined;
+      if (a.mode === "semantic") {
+        const hits = await semanticHits("tasks", query, Math.min(limit, 20));
+        return isErr(hits) || !projectId ? hits : hits.filter((h) => q.getCard(h.id)?.project_id === projectId);
       }
-      // Index new/edited cards first (same fresh index as the Search tab).
-      await catchUpIndex();
-      const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(a.limit, 20) : 8;
-      // Full ranked list per workspace, merge, re-rank, slice ONCE (no burying).
-      const hits: SemanticHit[] = [];
-      for (const ws of q.listWorkspaceIds()) hits.push(...(await semanticSearchTasks(ws, str(a.query))));
-      finalizeRanking(hits);
-      return hits.slice(0, limit).map((h) => ({
-        id: h.noteId, // card id
-        title: h.title,
-        section: h.sectionTitle,
-        score: h.score,
-      }));
-    },
-  },
-  {
-    name: "list_notes",
-    description: "List notes in a project (id, title, folder).",
-    params: '{ "project_id": string }',
-    jsonSchema: obj({ project_id: S }, ["project_id"]),
-    run: (a) => q.listNotes(str(a.project_id)).map((n) => ({ id: n.id, title: n.title, folder: n.folder })),
-  },
-  {
-    name: "get_note",
-    description:
-      "Get a note by id. Small notes return full content; large notes return a line-numbered outline + intro (call get_note_range to read a section). Pass full=true to force the entire content.",
-    params: '{ "id": string, "full"?: boolean }',
-    jsonSchema: obj({ id: S, full: { type: "boolean" } }, ["id"]),
-    run: (a) => (a.full === true ? q.getNote(str(a.id)) : q.getNoteForAgent(str(a.id))),
-  },
-  {
-    name: "get_note_range",
-    description:
-      "Read an inclusive line range of a note (1-based). Use after get_note returns an outline, passing the line numbers around the section you need. Omit end_line to read to the end.",
-    params: '{ "id": string, "start_line": number, "end_line"?: number }',
-    jsonSchema: obj({ id: S, start_line: { type: "number" }, end_line: { type: "number" } }, ["id", "start_line"]),
-    run: (a) => {
-      const start = typeof a.start_line === "number" ? a.start_line : 1;
-      const end = typeof a.end_line === "number" ? a.end_line : undefined;
-      return q.getNoteRange(str(a.id), start, end);
+      let cards: Parameters<typeof shapeCard>[0][];
+      if (a.filter === "ready") cards = q.listReadyCards(projectId);
+      else if (a.filter === "overdue" || a.filter === "due") {
+        const days = typeof a.dueWithinDays === "number" ? a.dueWithinDays : 7;
+        cards = q.listCardsWithDueDates(projectId).filter((c) => !c.is_done &&
+          (isOverdue(c.due_date) || (a.filter === "due" && isDueWithin(c.due_date, days))));
+      } else cards = query ? q.searchTasks(query, projectId) : cardsIn(projectId);
+      if (query && a.filter) {
+        const terms = query.toLowerCase().split(/\s+/);
+        cards = cards.filter((c) => terms.every((t) => c.title.toLowerCase().includes(t)));
+      }
+      if (a.columnType) {
+        const types = new Map<string, string>();
+        for (const pid of new Set(cards.map((c) => c.project_id))) for (const col of q.listColumns(pid)) types.set(col.id, col.type);
+        cards = cards.filter((c) => types.get(c.column_id) === a.columnType);
+      }
+      return cards.slice(0, limit).map(shapeCard);
     },
   },
   {
     name: "ensure_note",
     description: "Create or update a note by title within a project. Returns the note id.",
-    params: '{ "project_id": string, "title": string, "content": string, "folder"?: string }',
-    jsonSchema: obj({ project_id: S, title: S, content: S, folder: S }, ["project_id", "title", "content"]),
-    run: (a) => ({ id: q.ensureNote(str(a.project_id), str(a.title), str(a.content), str(a.folder)) }),
+    params: '{ "projectId": string, "title": string, "content": string, "folder"?: string }',
+    jsonSchema: obj({ projectId: S, title: S, content: S, folder: S }, ["projectId", "title", "content"]),
+    run: (a) => ({ id: q.ensureNote(str(a.projectId), str(a.title), str(a.content), str(a.folder)) }),
   },
   {
-    name: "append_to_note",
-    description: "Append markdown text to a note's body.",
-    params: '{ "id": string, "text": string }',
-    jsonSchema: obj({ id: S, text: S }, ["id", "text"]),
-    run: (a) => ({ ok: q.appendToNote(str(a.id), str(a.text)) }),
-  },
-  {
-    name: "patch_note",
-    description: "Replace an exact substring in a note's body (include enough context to be unique).",
-    params: '{ "id": string, "oldString": string, "newString": string }',
-    jsonSchema: obj({ id: S, oldString: S, newString: S }, ["id", "oldString", "newString"]),
-    run: (a) => q.patchNote(str(a.id), str(a.oldString), str(a.newString)),
-  },
-  {
-    name: "rename_note",
+    name: "edit_note",
     description:
-      "Rename a note and rewrite inbound [[wikilinks]] in other notes so links stay intact. Rejects a duplicate title in the same project.",
-    params: '{ "id": string, "newTitle": string }',
-    jsonSchema: obj({ id: S, newTitle: S }, ["id", "newTitle"]),
-    run: (a) => q.renameNote(str(a.id), str(a.newTitle)),
-  },
-  {
-    name: "bulk_move_notes",
-    description: 'Move one or more notes to a folder (use "" for the project root). Returns the count moved.',
-    params: '{ "note_ids": string[], "folder": string }',
-    jsonSchema: obj({ note_ids: { type: "array", items: S }, folder: S }, ["note_ids", "folder"]),
-    run: (a) => ({ moved: q.moveNotesToFolder(Array.isArray(a.note_ids) ? a.note_ids.map(str) : [], str(a.folder)) }),
-  },
-  {
-    name: "move_note_to_project",
-    description:
-      "Move a note to a different project (call get_cairn_context for project ids). The note's owning workspace is updated automatically. Returns the new project_id/workspace_id, or an error.",
-    params: '{ "id": string, "project_id": string }',
-    jsonSchema: obj({ id: S, project_id: S }, ["id", "project_id"]),
+      "Edit a note's text. With oldString: replace that exact text (include enough context to be unique). Without oldString: append newString to the end.",
+    params: '{ "noteId": string, "newString": string, "oldString"?: string }',
+    jsonSchema: obj({ noteId: S, newString: S, oldString: S }, ["noteId", "newString"]),
     run: (a) => {
-      const res = q.moveNoteToProject(str(a.id), str(a.project_id));
-      // Adapt the query's camelCase result to the snake_case field names this
-      // tool documents (and the rest of the tool surface uses); pass errors through.
-      return "error" in res ? res : { project_id: res.projectId, workspace_id: res.workspaceId };
+      const noteId = str(a.noteId);
+      if (str(a.oldString)) return q.patchNote(noteId, str(a.oldString), str(a.newString));
+      return q.appendToNote(noteId, str(a.newString)) ? { ok: true, id: noteId } : { error: "Note not found" };
     },
   },
   {
-    name: "list_folders",
-    description: "List all folder paths used by a project's notes.",
-    params: '{ "project_id": string }',
-    jsonSchema: obj({ project_id: S }, ["project_id"]),
-    run: (a) => q.listFolders(str(a.project_id)),
-  },
-  {
-    name: "delete_note",
-    description: "Delete a note by id. This is a soft delete synced as a tombstone; confirm intent before calling.",
-    params: '{ "id": string }',
-    jsonSchema: obj({ id: S }, ["id"]),
+    name: "update_notes",
+    description:
+      "Change one or more notes: rename (keeps [[wikilinks]] intact), move to a folder or another project, pin, tag, or link/unlink task cards.",
+    params: '{ "noteIds": string[], "title"?: string, "folder"?: string, "projectId"?: string, "isPinned"?: boolean, "tagNames"?: string[], "tagMode"?: "add"|"remove"|"set", "linkCardIds"?: string[], "unlinkCardIds"?: string[] }',
+    jsonSchema: obj({
+      noteIds: A, title: S, folder: S, projectId: S, isPinned: { type: "boolean" },
+      tagNames: A, tagMode: TAG_MODE_SCHEMA, linkCardIds: A, unlinkCardIds: A,
+    }, ["noteIds"]),
     run: (a) => {
-      q.softDeleteNote(str(a.id));
-      return { ok: true };
+      const ids = strArray(a.noteIds);
+      if (ids.length === 0) return { error: "noteIds is required" };
+      if (a.title !== undefined && ids.length > 1) return { error: "title (rename) applies to a single note — pass one noteId" };
+      const errors: string[] = [];
+      const step = (label: string, fn: () => unknown) => {
+        try {
+          const r = fn();
+          if (isErr(r)) errors.push(`${label}: ${r.error}`);
+        } catch (e) {
+          errors.push(`${label}: ${(e as Error).message}`);
+        }
+      };
+      if (a.title !== undefined) step("rename", () => q.renameNote(ids[0], str(a.title)));
+      if (a.folder !== undefined) step("move", () => q.moveNotesToFolder(ids, str(a.folder)));
+      for (const id of ids) {
+        if (str(a.projectId)) step(`move ${id}`, () => q.moveNoteToProject(id, str(a.projectId)));
+        if (typeof a.isPinned === "boolean") step(`pin ${id}`, () => q.pinNote(id, a.isPinned as boolean));
+        if (strArray(a.tagNames).length > 0) step(`tag ${id}`, () => q.tagNote(id, strArray(a.tagNames), tagMode(a.tagMode)));
+        for (const cardId of strArray(a.linkCardIds)) step(`link ${id}→${cardId}`, () => q.linkNoteToTask(id, cardId));
+        for (const cardId of strArray(a.unlinkCardIds)) step(`unlink ${id}→${cardId}`, () => q.unlinkNoteFromTask(id, cardId));
+      }
+      const notes = ids.map((id) => q.getNote(id)).filter((n) => n !== null).map((n) => ({ id: n!.id, title: n!.title }));
+      return summarize(notes.length === 1 ? { ...notes[0], updated: true } : { updated: notes }, errors);
     },
-  },
-  {
-    name: "list_columns",
-    description: "List board columns for a project (id, name).",
-    params: '{ "project_id": string }',
-    jsonSchema: obj({ project_id: S }, ["project_id"]),
-    run: (a) => q.listColumns(str(a.project_id)).map((c) => ({ id: c.id, name: c.name })),
   },
   {
     name: "create_task",
-    description: "Create a task card in a column. priority = low|medium|high|urgent.",
-    params: '{ "project_id": string, "column_id": string, "title": string, "description"?: string, "priority"?: string }',
-    jsonSchema: obj({ project_id: S, column_id: S, title: S, description: S, priority: S }, ["project_id", "column_id", "title"]),
-    run: (a) => ({
-      id: q.createTask(str(a.project_id), str(a.column_id), str(a.title), {
-        description: a.description ? str(a.description) : undefined,
-        priority: a.priority ? str(a.priority) : undefined,
-      }),
-    }),
-  },
-  {
-    name: "search_tasks",
-    description:
-      "Search task cards by text in their title or description. Returns id, title, priority, column_id. Omit query (or pass \"\") to list every card in the project.",
-    params: '{ "project_id": string, "query"?: string }',
-    jsonSchema: obj({ project_id: S, query: S }, ["project_id"]),
+    description: "Create a task card. Place it with columnType (default backlog) or an explicit columnId. priority = low|medium|high|urgent; dueDate as YYYY-MM-DD.",
+    params: '{ "projectId": string, "title": string, "description"?: string, "columnType"?: string, "columnId"?: string, "priority"?: string, "dueDate"?: string, "tagNames"?: string[], "linkNoteIds"?: string[] }',
+    jsonSchema: obj({
+      projectId: S, title: S, description: S,
+      columnType: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done"] },
+      columnId: S, priority: { type: "string", enum: ["low", "medium", "high", "urgent"] }, dueDate: S,
+      tagNames: A, linkNoteIds: A,
+    }, ["projectId", "title"]),
     run: (a) => {
-      const query = str(a.query).trim();
-      const projectId = str(a.project_id);
-      // Actually filter when a query is given (previously this ignored the query
-      // and returned ALL cards — a behavior/name mismatch the model tripped on).
-      // With no query, fall back to listing the whole project.
-      const cards = query
-        ? q.searchTasks(query, projectId)
-        : q.listCards(projectId);
-      return cards.map((c) => ({ id: c.id, title: c.title, priority: c.priority, column_id: c.column_id }));
+      const projectId = str(a.projectId);
+      const columnId = str(a.columnId) || columnOfType(projectId, str(a.columnType) || "backlog") || q.listColumns(projectId)[0]?.id;
+      if (!columnId) return { error: `Project ${projectId} has no board columns` };
+      let id: string;
+      try {
+        id = q.createTask(projectId, columnId, str(a.title), {
+          description: a.description ? str(a.description) : undefined,
+          priority: a.priority ? str(a.priority) : undefined,
+        });
+      } catch (e) {
+        return { error: (e as Error).message };
+      }
+      const errors: string[] = [];
+      if (str(a.dueDate)) q.updateTask(id, { dueDate: str(a.dueDate) });
+      if (strArray(a.tagNames).length > 0) {
+        const r = q.tagTask(id, strArray(a.tagNames), "add");
+        if (isErr(r)) errors.push(`tags: ${r.error}`);
+      }
+      for (const noteId of strArray(a.linkNoteIds)) {
+        const r = q.linkNoteToTask(noteId, id);
+        if (isErr(r)) errors.push(`link ${noteId}: ${r.error}`);
+      }
+      return summarize({ id, title: str(a.title), columnId }, errors);
     },
   },
   {
-    name: "list_ready_tasks",
+    name: "update_tasks",
     description:
-      "List tasks that can be worked on RIGHT NOW — live, not in a Done column, and with no unresolved blockers. Use this to answer \"what should I work on?\". Omit project_id to span all projects in the active workspace.",
-    params: '{ "project_id"?: string }',
-    jsonSchema: obj({ project_id: S }),
+      "Update one or more task cards; only provided fields change. Move with columnType or columnId. Also tags, note links (linkNoteIds/unlinkNoteIds), and archived:true to archive. Set dueDate to \"\" to clear it.",
+    params: '{ "cardIds": string[], "title"?: string, "description"?: string, "priority"?: string, "dueDate"?: string, "assignee"?: string, "columnType"?: string, "columnId"?: string, "archived"?: boolean, "tagNames"?: string[], "tagMode"?: "add"|"remove"|"set", "linkNoteIds"?: string[], "unlinkNoteIds"?: string[] }',
+    jsonSchema: obj({
+      cardIds: A, title: S, description: S,
+      priority: { type: "string", enum: ["low", "medium", "high", "urgent"] }, dueDate: S, assignee: S,
+      columnType: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done"] }, columnId: S,
+      archived: { type: "boolean" }, tagNames: A, tagMode: TAG_MODE_SCHEMA,
+      linkNoteIds: { ...A, description: "Note ids to link to these cards" },
+      unlinkNoteIds: { ...A, description: "Note ids to unlink from these cards" },
+    }, ["cardIds"]),
     run: (a) => {
-      const projectId = str(a.project_id).trim() || undefined;
-      return q.listReadyCards(projectId).map((c) => ({
-        id: c.id,
-        title: c.title,
-        priority: c.priority,
-        column_id: c.column_id,
-        project_id: c.project_id,
-      }));
+      const ids = strArray(a.cardIds);
+      if (ids.length === 0) return { error: "cardIds is required" };
+      const errors: string[] = [];
+      const patch: { title?: string; description?: string; priority?: string; dueDate?: string | null; assignee?: string | null } = {};
+      if (a.title !== undefined) patch.title = str(a.title);
+      if (a.description !== undefined) patch.description = str(a.description);
+      if (a.priority !== undefined) patch.priority = str(a.priority);
+      if (a.dueDate !== undefined) patch.dueDate = str(a.dueDate) || null;
+      if (a.assignee !== undefined) patch.assignee = str(a.assignee) || null;
+      for (const id of ids) {
+        const card = q.getCard(id);
+        if (!card) { errors.push(`${id}: Task not found`); continue; }
+        try {
+          // Move first: it throws for a column outside the card's project, and
+          // the field edits shouldn't land when the move is refused.
+          const columnId = str(a.columnId) || (a.columnType ? columnOfType(card.project_id, str(a.columnType)) : undefined);
+          if (a.columnType && !columnId) throw new Error(`no ${str(a.columnType)} column in its project`);
+          if (columnId) q.moveCardToColumn(id, columnId);
+          if (Object.keys(patch).length > 0) q.updateTask(id, patch);
+          if (a.archived === true) q.archiveCard(id);
+        } catch (e) {
+          errors.push(`${id}: ${(e as Error).message}`);
+          continue;
+        }
+        if (strArray(a.tagNames).length > 0) {
+          const r = q.tagTask(id, strArray(a.tagNames), tagMode(a.tagMode));
+          if (isErr(r)) errors.push(`tag ${id}: ${r.error}`);
+        }
+        for (const noteId of strArray(a.linkNoteIds)) {
+          const r = q.linkNoteToTask(noteId, id);
+          if (isErr(r)) errors.push(`link ${noteId}→${id}: ${r.error}`);
+        }
+        for (const noteId of strArray(a.unlinkNoteIds)) {
+          const r = q.unlinkNoteFromTask(noteId, id);
+          if (isErr(r)) errors.push(`unlink ${noteId}→${id}: ${r.error}`);
+        }
+      }
+      const cards = ids.map((id) => q.getCard(id)).filter((c) => c !== null).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.column_id }));
+      return summarize(cards.length === 1 ? { ...cards[0], updated: true } : { updated: cards }, errors);
     },
   },
   {
-    name: "get_task",
-    description: "Get a task card's full detail by id (title, description, priority, column, due date, assignee, tags).",
-    params: '{ "id": string }',
-    jsonSchema: obj({ id: S }, ["id"]),
-    run: (a) => q.getCard(str(a.id)),
+    name: "delete",
+    description: "Delete a note or task card by id (soft delete, synced as a tombstone). Confirm intent before calling.",
+    params: '{ "type": "note"|"task", "id": string }',
+    jsonSchema: obj({ type: { type: "string", enum: ["note", "task"] }, id: S }, ["type", "id"]),
+    run: (a) => {
+      if (a.type === "note") q.softDeleteNote(str(a.id));
+      else if (a.type === "task") q.deleteCard(str(a.id));
+      else return { error: `Unknown delete type "${str(a.type)}"` };
+      return { ok: true, deleted: str(a.id) };
+    },
   },
   {
     name: "get_user_writing_style",
     description:
-      "Get the user's saved writing style (persona + full guide or condensed cheat sheet). Call BEFORE drafting prose in the user's voice (emails, replies, notes, PRDs). mode 'cheatsheet' (default) returns the condensed reference; 'full' returns the complete guide. Returns configured:false when no style is set up — then write in a natural, clear voice instead.",
+      "The user's writing style, for drafting in their voice. mode 'cheatsheet' (default) or 'full'. configured:false means none is set up — then write naturally; never invent one.",
     params: '{ "mode"?: "cheatsheet" | "full" }',
     jsonSchema: obj({ mode: { type: "string", enum: ["cheatsheet", "full"] } }),
     run: (a) => {
@@ -312,18 +381,18 @@ export const TOOLS: ToolDef[] = [
   {
     name: "update_user_writing_style",
     description:
-      "Append an observation to the user's writing style guide mid-session. Use when the user explicitly asks you to remember a style preference, or you notice a consistent correction worth preserving. Appends to the full guide (section-aware for the canonical 12-section ## N. format). Requires explicit user request or a clear pattern — do not hallucinate preferences.",
-    params: '{ "mode": "append", "section"?: string, "content": string }',
+      "Append a style observation the user asked you to remember (or a consistent correction). Never invent one; call get_user_writing_style first to avoid duplicates.",
+    params: '{ "section"?: string, "content": string }',
     jsonSchema: obj(
       {
-        mode: { type: "string", enum: ["append"] },
-        section: S,
+        section: { type: "string", description: "Guide section by number or heading, e.g. \"5\" or \"Punctuation\"; omit to append at the end" },
         content: S,
       },
-      ["mode", "content"],
+      ["content"],
     ),
     run: (a) => {
-      const mode = str(a.mode);
+      // mode is no longer advertised (append is the only mode); still reject other values.
+      const mode = a.mode === undefined ? "append" : str(a.mode);
       const content = str(a.content);
       const section = a.section !== undefined ? str(a.section) : undefined;
       if (mode !== "append") return { error: `Unsupported mode "${mode}" — only "append" is supported.` };
@@ -333,83 +402,6 @@ export const TOOLS: ToolDef[] = [
       if (!updated) return { ok: true, updated: false, message: reason ?? "No change.", style: row };
       return { ok: true, updated: true, message: section ? `Appended to "${section}".` : "Appended to the guide.", style: row };
     },
-  },
-  {
-    name: "update_task",
-    description:
-      "Update a task card. Any provided field is changed; pass column_id to move it to another column. priority = low|medium|high|urgent. Set due_date to \"\" to clear it.",
-    params:
-      '{ "id": string, "title"?: string, "description"?: string, "priority"?: string, "column_id"?: string, "due_date"?: string, "assignee"?: string }',
-    jsonSchema: obj(
-      { id: S, title: S, description: S, priority: S, column_id: S, due_date: S, assignee: S },
-      ["id"],
-    ),
-    run: (a) => {
-      const patch: { title?: string; description?: string; priority?: string; dueDate?: string | null; assignee?: string | null } = {};
-      if (a.title !== undefined) patch.title = str(a.title);
-      if (a.description !== undefined) patch.description = str(a.description);
-      if (a.priority !== undefined) patch.priority = str(a.priority);
-      if (a.due_date !== undefined) patch.dueDate = str(a.due_date) || null;
-      if (a.assignee !== undefined) patch.assignee = str(a.assignee) || null;
-      // Move first: it throws for a column outside the task's project, and the
-      // field edits shouldn't land when the tool reports an error.
-      if (a.column_id !== undefined && str(a.column_id)) q.moveCardToColumn(str(a.id), str(a.column_id));
-      if (Object.keys(patch).length > 0) q.updateTask(str(a.id), patch);
-      return { ok: true };
-    },
-  },
-  {
-    name: "delete_task",
-    description: "Delete a task card by id. This is a soft delete synced as a tombstone; confirm intent before calling.",
-    params: '{ "id": string }',
-    jsonSchema: obj({ id: S }, ["id"]),
-    run: (a) => {
-      q.deleteCard(str(a.id));
-      return { ok: true };
-    },
-  },
-  {
-    name: "link_note_to_task",
-    description: "Bidirectionally link a note and a task card (creates the note↔task relationship both ways).",
-    params: '{ "note_id": string, "card_id": string }',
-    jsonSchema: obj({ note_id: S, card_id: S }, ["note_id", "card_id"]),
-    run: (a) => q.linkNoteToTask(str(a.note_id), str(a.card_id)),
-  },
-  {
-    name: "unlink_note_from_task",
-    description: "Remove a note↔task link (both directions).",
-    params: '{ "note_id": string, "card_id": string }',
-    jsonSchema: obj({ note_id: S, card_id: S }, ["note_id", "card_id"]),
-    run: (a) => q.unlinkNoteFromTask(str(a.note_id), str(a.card_id)),
-  },
-  {
-    name: "bulk_update_task_status",
-    description: "Move several task cards to the same column in one call (batch triage). Returns how many moved.",
-    params: '{ "card_ids": string[], "target_column_id": string }',
-    jsonSchema: obj({ card_ids: { type: "array", items: S }, target_column_id: S }, ["card_ids", "target_column_id"]),
-    run: (a) => q.bulkUpdateTaskStatus(strArray(a.card_ids), str(a.target_column_id)),
-  },
-  {
-    name: "tag_note",
-    description:
-      "Apply or remove tags on an existing note by tag NAME (tags are created if missing). mode = add (default) | remove | set. Reach for this when asked to organise/categorise notes.",
-    params: '{ "note_id": string, "tag_names": string[], "mode"?: "add"|"remove"|"set" }',
-    jsonSchema: obj(
-      { note_id: S, tag_names: { type: "array", items: S }, mode: TAG_MODE_SCHEMA },
-      ["note_id", "tag_names"],
-    ),
-    run: (a) => q.tagNote(str(a.note_id), strArray(a.tag_names), tagMode(a.mode)),
-  },
-  {
-    name: "tag_task",
-    description:
-      "Apply or remove tags on an existing task card by tag NAME (tags are created if missing). mode = add (default) | remove | set. Reach for this when asked to organise/categorise tasks.",
-    params: '{ "card_id": string, "tag_names": string[], "mode"?: "add"|"remove"|"set" }',
-    jsonSchema: obj(
-      { card_id: S, tag_names: { type: "array", items: S }, mode: TAG_MODE_SCHEMA },
-      ["card_id", "tag_names"],
-    ),
-    run: (a) => q.tagTask(str(a.card_id), strArray(a.tag_names), tagMode(a.mode)),
   },
 ];
 
@@ -424,20 +416,11 @@ export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
  */
 export const WRITE_TOOL_NAMES = new Set<string>([
   "ensure_note",
-  "append_to_note",
-  "patch_note",
-  "rename_note",
-  "bulk_move_notes",
-  "move_note_to_project",
-  "delete_note",
+  "edit_note",
+  "update_notes",
   "create_task",
-  "update_task",
-  "delete_task",
-  "link_note_to_task",
-  "unlink_note_from_task",
-  "bulk_update_task_status",
-  "tag_note",
-  "tag_task",
+  "update_tasks",
+  "delete",
   "update_user_writing_style",
 ]);
 
@@ -447,7 +430,7 @@ export const WRITE_TOOL_NAMES = new Set<string>([
  * are enabled.
  *
  * Built-in tools are never toggled off — they ARE the assistant (turning off
- * e.g. get_cairn_context or search_notes would silently break it), and this
+ * e.g. get_context or search_notes would silently break it), and this
  * matches desktop, where the tool gating only ever applies to external MCP
  * servers / HTTP services, never Cairn's own tools. Installed services + MCP
  * tools are subject to the per-tool toggle map (default ON).
