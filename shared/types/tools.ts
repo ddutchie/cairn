@@ -163,6 +163,8 @@ export const GLOBAL_TOOL_SCOPE = "__global__";
 export interface McpToolInfo {
   name: string;
   description?: string;
+  /** Tokens of the full function def sent to the model (name + description + inputSchema). */
+  tokens?: number;
 }
 
 /** `tools:listMcpTools`: never rejects for a connection failure — `ok: false` + `error`. */
