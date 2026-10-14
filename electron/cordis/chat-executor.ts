@@ -330,7 +330,8 @@ export async function executeTool(
       const mode = args.mode as string | undefined;
       const content = typeof args.content === "string" ? args.content : "";
       const section = typeof args.section === "string" ? args.section : undefined;
-      if (mode !== "append") {
+      // mode is no longer advertised (append is the only mode); still reject other values.
+      if (mode !== undefined && mode !== "append") {
         return { error: `Unsupported mode "${mode}" — only "append" is supported.` };
       }
       if (!content.trim()) {

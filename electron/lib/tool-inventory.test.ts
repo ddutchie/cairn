@@ -7,7 +7,7 @@ import {
   CHAT_DENIED_GLOBAL_TOOLS,
   type InventoryTool,
 } from "./tool-inventory";
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS } from "./tool-schemas";
 import { CHAT_FORBIDDEN_TOOLS } from "../cordis/cairn-tools";
 
 describe("tool-inventory", () => {
@@ -15,10 +15,14 @@ describe("tool-inventory", () => {
     expect(new Set(CHAT_GATED_TOOLS)).toEqual(CHAT_FORBIDDEN_TOOLS);
   });
 
-  it("chat registers all Cairn tools with deletes marked gated (matches chat-session-runner)", () => {
+  it("chat registers all Cairn tools except the codebase index, deletes marked gated (matches chat-session-runner)", () => {
     const inv = buildStaticInventory([]);
     const cairn = inv.chat.filter((t) => t.source === "cairn");
-    expect(cairn.length).toBe(Object.keys(TOOL_SCHEMAS).length);
+    expect(cairn.length).toBe(Object.keys(TOOL_SCHEMAS).length - CHAT_EXCLUDED_TOOLS.length);
+    for (const name of CHAT_EXCLUDED_TOOLS) {
+      expect(cairn.some((t) => t.name === name)).toBe(false);
+      expect(inv.coding.some((t) => t.name === name)).toBe(true);
+    }
     for (const name of CHAT_FORBIDDEN_TOOLS) {
       expect(cairn.find((t) => t.name === name)?.gated).toBe(true);
     }
