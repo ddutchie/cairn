@@ -6,10 +6,7 @@
  */
 
 import { noteDigest } from "../../shared/notes/toc";
-import { matchesQuery } from "../../shared/notes/text";
-import { stripMarkdown } from "./text-utils";
 import { buildNoteMarkdown, buildProjectMarkdown } from "../../shared/notes/export";
-import { isOverdue, isDueWithin } from "../../shared/notes/due";
 import type { BoardColumn, TaskCard } from "../../shared/types/board";
 import type { Note } from "../../shared/types/notes";
 import type { Project, Tag, Workspace } from "../../shared/types/workspace";
@@ -35,7 +32,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   const notes = snap.notes.filter((n) => n.projectId === project.id && !n.archivedAt);
   // Cap pinned notes to the most-recent few with a short excerpt — uncapped this
   // was a context-overflow source (1000 chars × unbounded pinned count). The
-  // agent reads the rest with get_note. `pinnedNotesTotal` signals there's more.
+  // agent reads the rest with get_item. `pinnedNotesTotal` signals there's more.
   const PINNED_CAP = 5;
   const pinnedAll = notes
     .filter((n) => n.isPinned)
@@ -47,11 +44,11 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
       title: n.title,
       folder: n.folder ?? "",
       // Outline (headings) when the note is structured — a compact semantic
-      // summary; short excerpt otherwise. The agent reads full text via get_note.
+      // summary; short excerpt otherwise. The agent reads full text via get_item.
       ...noteDigest(n.content ?? "", 300),
     }));
   // Cap open tasks to a total budget across columns with a short description
-  // preview; the agent uses get_task for full detail.
+  // preview; the agent uses get_item for full detail.
   const TASK_CAP = 20;
   const TASK_PREVIEW = 120;
   let taskBudget = TASK_CAP;
@@ -71,7 +68,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
           taskBudget -= 1;
           const desc = c.description ?? "";
           const truncated = desc.length > TASK_PREVIEW
-            ? desc.slice(0, TASK_PREVIEW) + "… (use get_task for full description)"
+            ? desc.slice(0, TASK_PREVIEW) + "… (use get_item for full description)"
             : (c.description ?? null);
           const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
           if (truncated !== null) t.description = truncated;
@@ -98,7 +95,7 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
     // Strip `updatedAt` from the emitted shape; keep the sort order.
     .map(({ type, id, title }) => ({ type, id, title }));
   // Omit default `status: "active"` / `priority: "medium"` on the project
-  // (agent's `get_cairn_context` conventions document these as defaults).
+  // (agent's `get_context` conventions document these as defaults).
   const proj: Record<string, unknown> = {
     id: project.id, name: project.name,
   };
@@ -115,71 +112,6 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
     openTasks: openCards,
     recentActivity,
   };
-}
-
-export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
-  const { query, projectId, limit = 10, offset = 0, updatedAfter } = args;
-  const qr = String(query);
-  // Documented contract: an empty query lists all (matching notes). A non-empty
-  // query uses AND-of-terms (every whitespace term must appear in title+body).
-  const listAll = qr.trim().length === 0;
-  const updatedAfterMs = updatedAfter ? new Date(updatedAfter).getTime() : undefined;
-  const matches = snap.notes.filter((n) => {
-    if (n.archivedAt) return false;
-    if (projectId && n.projectId !== projectId) return false;
-    if (updatedAfterMs !== undefined && new Date(n.updatedAt).getTime() < updatedAfterMs) return false;
-    // contentText is only a preview excerpt — search the full body.
-    return listAll || matchesQuery(qr, `${n.title}\n${stripMarkdown(n.content ?? "")}`);
-  });
-  // Sort by updatedAt DESC to ensure stable pagination ordering
-  matches.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  return matches
-    .slice(offset, offset + limit)
-    .map((n) => ({
-      id: n.id,
-      title: n.title,
-      snippet: n.contentText.slice(0, 120),
-      projectId: n.projectId,
-      folder: n.folder ?? "",
-      updatedAt: n.updatedAt,
-    }));
-}
-
-export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
-  const { query, projectId, columnType, limit = 10 } = args;
-  const qr = String(query);
-  const listAll = qr.trim().length === 0; // empty query lists all (matching tasks)
-  return snap.cards
-    .filter((c) => {
-      if (c.archivedAt) return false;
-      if (projectId && c.projectId !== projectId) return false;
-      if (columnType) {
-        const col = snap.columns.find((col) => col.id === c.columnId);
-        if (!col || col.type !== columnType) return false;
-      }
-      return listAll || matchesQuery(qr, `${c.title}\n${c.description ?? ""}`);
-    })
-    .slice(0, limit)
-    .map((c) => {
-      const col = snap.columns.find((col) => col.id === c.columnId);
-      const limitVal = 400;
-      const desc = c.description ?? "";
-      const truncated = desc.length > limitVal
-        ? desc.slice(0, limitVal) + "\n... (description truncated, use get_task to read full description)"
-        : (c.description ?? null);
-      const out: Record<string, unknown> = {
-        id: c.id,
-        title: c.title,
-        columnId: c.columnId,
-        columnName: col?.name ?? "Unknown",
-        columnType: col?.type ?? "custom",
-        priority: c.priority,
-        projectId: c.projectId,
-      };
-      if (truncated !== null) out.description = truncated;
-      if (c.dueDate) out.dueDate = c.dueDate;
-      return out;
-    });
 }
 
 // ── Export (pure markdown serialisers) ──────────────────────────────────────
@@ -251,47 +183,4 @@ export function serializeProjectMarkdown(snap: CairnSnapshot, projectId: string)
     notes,
   });
   return { markdown, title: project.name };
-}
-
-// ── Due-date-aware task queries ─────────────────────────────────────────────
-// Open (non-done, non-archived) cards filtered by due date. Reuses the shared
-// isOverdue / isDueWithin predicates so semantics match the board & calendar.
-
-function openDatedCards(snap: CairnSnapshot, projectId?: string) {
-  const doneColIds = new Set(snap.columns.filter((c) => c.type === "done").map((c) => c.id));
-  return snap.cards.filter((c) =>
-    !c.archivedAt
-    && c.dueDate
-    && !doneColIds.has(c.columnId)
-    && (!projectId || c.projectId === projectId),
-  );
-}
-
-function shapeDueCard(snap: CairnSnapshot, c: CairnSnapshot["cards"][number]) {
-  const col = snap.columns.find((cc) => cc.id === c.columnId);
-  return {
-    id: c.id,
-    title: c.title,
-    priority: c.priority,
-    dueDate: c.dueDate,
-    columnId: c.columnId,
-    columnName: col?.name ?? "Unknown",
-    projectId: c.projectId,
-  };
-}
-
-export function executeListOverdueTasks(snap: CairnSnapshot, args: Args): unknown {
-  return openDatedCards(snap, args.projectId as string | undefined)
-    .filter((c) => isOverdue(c.dueDate))
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
-    .map((c) => shapeDueCard(snap, c));
-}
-
-export function executeListTasksDue(snap: CairnSnapshot, args: Args): unknown {
-  const days = typeof args.days === "number" ? args.days : 7;
-  const includeOverdue = args.includeOverdue !== false; // default true
-  return openDatedCards(snap, args.projectId as string | undefined)
-    .filter((c) => isDueWithin(c.dueDate, days) || (includeOverdue && isOverdue(c.dueDate)))
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
-    .map((c) => shapeDueCard(snap, c));
 }

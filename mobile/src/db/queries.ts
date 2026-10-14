@@ -368,7 +368,7 @@ export function getNoteForAgent(id: string, fullCharBudget = 1500): unknown {
     totalLines: outline.totalLines,
     intro: intro + (content.length > 400 ? "…" : ""),
     outline: outline.headings,
-    hint: "Large note — call get_note_range(id, startLine, endLine) to read a section, or get_note for the whole thing.",
+    hint: "Large note — call get_item with startLine/endLine to read a section, or full:true for the whole thing.",
   };
 }
 
@@ -891,7 +891,7 @@ export function deleteCard(cardId: string): void {
 
 /**
  * Workspace orientation — projects (with their columns) + tags. Mirrors the
- * desktop get_cairn_context so the agent can get IDs + structure in one call.
+ * desktop get_context so the agent can get IDs + structure in one call.
  */
 export function getCairnContext(): unknown {
   const db = getDb();
@@ -917,7 +917,7 @@ export function getCairnContext(): unknown {
 /**
  * Rich single-call project summary — project + columns, noteCount, pinned notes
  * (with truncated content), open tasks grouped by column, recent activity.
- * Mirrors the desktop get_project_context_pack so the mobile agent can produce
+ * Mirrors the desktop get_context (with projectId) so the mobile agent can produce
  * an equally rich project summary.
  */
 export function getProjectContextPack(projectId: string): unknown {
@@ -940,7 +940,7 @@ export function getProjectContextPack(projectId: string): unknown {
   );
 
   // Cap pinned notes: 5 most-recent (notes are already ORDER BY updated_at DESC)
-  // with a short excerpt. The model uses get_note to read the rest. Uncapped this
+  // with a short excerpt. The model uses get_item to read the rest. Uncapped this
   // was a major context-overflow source (1000 chars × unbounded count).
   const PINNED_CAP = 5;
   const pinnedAll = notes.filter((n) => n.is_pinned);
@@ -949,7 +949,7 @@ export function getProjectContextPack(projectId: string): unknown {
     title: n.title,
     folder: n.folder ?? "",
     // Outline (headings) when the note is structured — a compact semantic
-    // summary; short excerpt otherwise. The model reads full text via get_note.
+    // summary; short excerpt otherwise. The model reads full text via get_item.
     ...noteDigest(n.content ?? "", 300),
   }));
 
@@ -960,7 +960,7 @@ export function getProjectContextPack(projectId: string): unknown {
   );
 
   // Cap open tasks to a total budget across columns, with a short description
-  // preview. The model uses get_task for full detail.
+  // preview. The model uses get_item for full detail.
   const TASK_CAP = 20;
   const TASK_PREVIEW = 120;
   let taskBudget = TASK_CAP;
@@ -976,7 +976,7 @@ export function getProjectContextPack(projectId: string): unknown {
           taskBudget -= 1;
           const desc = c.description ?? "";
           const t: Record<string, unknown> = { id: c.id, title: c.title, priority: c.priority };
-          if (desc) t.description = desc.length > TASK_PREVIEW ? desc.slice(0, TASK_PREVIEW) + "… (use get_task)" : desc;
+          if (desc) t.description = desc.length > TASK_PREVIEW ? desc.slice(0, TASK_PREVIEW) + "… (use get_item)" : desc;
           if (c.due_date) t.dueDate = c.due_date;
           return t;
         }),

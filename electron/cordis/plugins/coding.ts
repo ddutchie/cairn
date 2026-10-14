@@ -146,7 +146,7 @@ export function cairnCodingPlugin(ctx: Context, config: CairnCodingConfig): void
       // ── note-updated: after a note-write tool, push fresh note content so the
       // plan task list updates live (mirrors builtin NOTE_WRITE_TOOLS handling).
       const host = getHost(ctx);
-      if (ok && host && ["ensure_note", "patch_note", "append_to_note"].includes(name)) {
+      if (ok && host && ["ensure_note", "edit_note"].includes(name)) {
         try {
           const parsed = JSON.parse(output) as { id?: string };
           if (parsed?.id) {

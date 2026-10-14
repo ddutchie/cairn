@@ -84,7 +84,7 @@ async function endpointUp(): Promise<boolean> {
 
 /**
  * Send a user turn and return the first NON-orientation tool the model selects.
- * Both prompts mandate calling get_active_context first, so we satisfy that with
+ * Both prompts mandate calling get_context first, so we satisfy that with
  * a canned result and continue until the model picks a task tool (or answers
  * with text). Up to `maxHops` model calls. We never execute real tools.
  */
@@ -110,7 +110,7 @@ async function taskToolCall(
     { role: "user", content: userText },
   ];
 
-  const ORIENTATION = new Set(["get_active_context", "get_cairn_context", "get_project_context_pack"]);
+  const ORIENTATION = new Set(["get_context"]);
 
   for (let hop = 0; hop < maxHops; hop++) {
     const res = await fetch(`${BASE_URL}/chat/completions`, {
@@ -199,7 +199,7 @@ const OLD_MOBILE = [
 const PROD_MOBILE = [
   "You are Cairn's mobile assistant for the user's notes and tasks; writes sync to their desktop.",
   `The current date is ${humanDate} (${isoDate}). Resolve relative dates like "tomorrow"/"next week" against it, and pass dates to tools as YYYY-MM-DD.`,
-  "Call get_cairn_context first to get project ids, columns, and tags (there is no separate 'list projects' tool), then reuse them — never invent an id. Choose the tool whose description matches the request.",
+  "Call get_context first to get project ids, columns, and tags (there is no separate 'list projects' tool), then reuse them — never invent an id. Choose the tool whose description matches the request.",
   "When you mention a specific note or task, link it as [[id]] using its exact id (it renders as the title and can't be confused with a same-titled item); if you don't have the id, [[Title]] also works. After a write, briefly confirm. Answer in concise markdown.",
 ].join(" ");
 
@@ -213,29 +213,29 @@ function mobileTools() {
 // Realistic requests → the tool we EXPECT the model to select. Asks give the
 // target id where relevant so the decision isn't masked by a read-first lookup.
 const SCENARIOS: { ask: string; expect: string[] }[] = [
-  { ask: "Rename the note with id note_42 to 'Q3 Planning'.", expect: ["rename_note"] },
-  { ask: "Move the card id card_7 to the Done column (col_done).", expect: ["update_task", "bulk_update_task_status"] },
-  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes_semantic"] },
+  { ask: "Rename the note with id note_42 to 'Q3 Planning'.", expect: ["update_notes"] },
+  { ask: "Move the card id card_7 to the Done column (col_done).", expect: ["update_tasks"] },
+  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes"] },
   { ask: "Create a task 'Write release notes' in the Todo column (col_todo).", expect: ["create_task"] },
-  { ask: "Move notes note_1, note_2 and note_3 into a folder called 'Research'.", expect: ["bulk_move_notes"] },
-  { ask: "Add a node to the idea canvas in project proj_1 for a new caching-layer idea.", expect: ["create_idea_flow_node"] },
-  { ask: "Delete the note with id note_9.", expect: ["delete_note"] },
-  { ask: "Link note note_5 to card card_2.", expect: ["link_note_to_task"] },
-  { ask: "Add a tag called 'urgent' to the workspace.", expect: ["create_tag"] },
+  { ask: "Move notes note_1, note_2 and note_3 into a folder called 'Research'.", expect: ["update_notes"] },
+  { ask: "Add a node to the idea canvas in project proj_1 for a new caching-layer idea.", expect: ["edit_idea_flow"] },
+  { ask: "Delete the note with id note_9.", expect: ["delete"] },
+  { ask: "Link note note_5 to card card_2.", expect: ["update_tasks", "update_notes"] },
+  { ask: "Tag card card_2 with 'urgent'.", expect: ["update_tasks"] },
 ];
 
-/** Mobile lacks idea-flow, dashboards, tags, linking → mobile-appropriate asks. */
+/** Mobile lacks idea-flow and the knowledge graph → mobile-appropriate asks. */
 const MOBILE_SCENARIOS: { ask: string; expect: string[] }[] = [
-  { ask: "Rename the note with id note_42 to 'Q3 Planning'.", expect: ["rename_note"] },
-  { ask: "Move the card id card_7 to the Done column (col_done).", expect: ["update_task"] },
-  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes_semantic"] },
+  { ask: "Rename the note with id note_42 to 'Q3 Planning'.", expect: ["update_notes"] },
+  { ask: "Move the card id card_7 to the Done column (col_done).", expect: ["update_tasks"] },
+  { ask: "What notes talk about authentication? Search by meaning, not keywords.", expect: ["search_notes"] },
   { ask: "Create a task 'Write release notes' in the Todo column (col_todo).", expect: ["create_task"] },
-  { ask: "Move notes note_1, note_2 and note_3 into a folder called 'Research'.", expect: ["bulk_move_notes"] },
-  { ask: "Delete the note with id note_9.", expect: ["delete_note"] },
-  { ask: "Delete the card with id card_3.", expect: ["delete_task"] },
-  { ask: "Show me the full detail of task card_8.", expect: ["get_task"] },
-  { ask: "Append 'See follow-up below.' to note note_2.", expect: ["append_to_note"] },
-  { ask: "What folders exist in project proj_1?", expect: ["list_folders"] },
+  { ask: "Move notes note_1, note_2 and note_3 into a folder called 'Research'.", expect: ["update_notes"] },
+  { ask: "Delete the note with id note_9.", expect: ["delete"] },
+  { ask: "Delete the card with id card_3.", expect: ["delete"] },
+  { ask: "Show me the full detail of task card_8.", expect: ["get_item"] },
+  { ask: "Append 'See follow-up below.' to note note_2.", expect: ["edit_note"] },
+  { ask: "Pin note note_2.", expect: ["update_notes"] },
 ];
 
 const hit = (name: string | null, want: string[]) => (name && want.includes(name) ? 1 : 0);

@@ -29,6 +29,7 @@ import { createAutomation, createAutomationRun, getAutomationById, type Automati
 import {
   isExternalTool,
   isReadTool,
+  standingRuleCoversTool,
   standingRuleTarget,
   recordStandingAllowance,
   sanitizeStandingRules,
@@ -76,6 +77,9 @@ describe("isReadTool", () => {
     for (const name of ["ensure_note", "create_task", "delete_note", "bash", "write", "run_script", "update_task"]) {
       expect(isReadTool(name), name).toBe(false);
     }
+  });
+  it("treats codebase_query as read-only (READ in shared/agent/tool-risk.ts)", () => {
+    expect(isReadTool("codebase_query")).toBe(true);
   });
 });
 
@@ -223,5 +227,72 @@ describe("sanitizeStandingRules", () => {
 describe("APPROVAL_TIMEOUT_MS", () => {
   it("is 10 minutes (fail-closed budget for the interactive HITL seam)", () => {
     expect(APPROVAL_TIMEOUT_MS).toBe(10 * 60_000);
+  });
+});
+
+describe("standingRuleCoversTool (legacy sub-action matching)", () => {
+  // Legacy (pre-consolidation) rules name the per-operation tool; they keep
+  // applying to the consolidated tool that replaced them — but ONLY for the
+  // matching sub-action. A rule saved for `delete_note` must never approve
+  // `delete {type:"project"}`, a `tag_note` rule must never approve an
+  // `update_notes` rename/move, and a `claim_task` rule must never approve a
+  // `task_progress {action:"log", moveTo:"done"}`.
+  it("exact tool-name matches are unaffected", () => {
+    expect(standingRuleCoversTool("delete", "delete", { type: "project", id: "p1" })).toBe(true);
+    expect(standingRuleCoversTool("update_notes", "update_notes", { noteIds: ["n1"] })).toBe(true);
+    expect(standingRuleCoversTool("delete_note", "delete_note")).toBe(true);
+  });
+
+  it("delete_note rules only cover note deletes", () => {
+    expect(standingRuleCoversTool("delete_note", "delete", { type: "note", id: "n1" })).toBe(true);
+    expect(standingRuleCoversTool("delete_note", "delete", { type: "project", id: "p1" })).toBe(false);
+    expect(standingRuleCoversTool("delete_note", "delete", { type: "task", id: "c1" })).toBe(false);
+    expect(standingRuleCoversTool("delete_note", "delete", { type: "flow_node", id: "f1" })).toBe(false);
+    expect(standingRuleCoversTool("delete_task", "delete", { type: "task", id: "c1" })).toBe(true);
+    expect(standingRuleCoversTool("delete_task", "delete", { type: "note", id: "n1" })).toBe(false);
+    expect(standingRuleCoversTool("delete_idea_flow_node", "delete", { type: "flow_node", id: "f1" })).toBe(true);
+    expect(standingRuleCoversTool("delete_idea_flow_node", "delete", { type: "note", id: "n1" })).toBe(false);
+  });
+
+  it("update_notes rules only cover their sub-action", () => {
+    expect(standingRuleCoversTool("tag_note", "update_notes", { noteIds: ["n1"], tagNames: ["x"] })).toBe(true);
+    expect(standingRuleCoversTool("tag_note", "update_notes", { noteIds: ["n1"], title: "New" })).toBe(false);
+    expect(standingRuleCoversTool("tag_note", "update_notes", { noteIds: ["n1"], folder: "f" })).toBe(false);
+    expect(standingRuleCoversTool("rename_note", "update_notes", { noteIds: ["n1"], title: "New" })).toBe(true);
+    expect(standingRuleCoversTool("rename_note", "update_notes", { noteIds: ["n1"], folder: "f" })).toBe(false);
+    expect(standingRuleCoversTool("bulk_move_notes", "update_notes", { noteIds: ["n1"], folder: "f" })).toBe(true);
+    expect(standingRuleCoversTool("link_note_to_task", "update_notes", { noteIds: ["n1"], linkCardIds: ["c1"] })).toBe(true);
+    expect(standingRuleCoversTool("link_note_to_task", "update_notes", { noteIds: ["n1"], unlinkCardIds: ["c1"] })).toBe(false);
+  });
+
+  it("task_progress rules only cover their action", () => {
+    expect(standingRuleCoversTool("claim_task", "task_progress", { cardId: "c1", action: "claim" })).toBe(true);
+    expect(standingRuleCoversTool("claim_task", "task_progress", { cardId: "c1", action: "log", moveTo: "done" })).toBe(false);
+    expect(standingRuleCoversTool("add_task_progress", "task_progress", { cardId: "c1", action: "log" })).toBe(true);
+    expect(standingRuleCoversTool("add_task_progress", "task_progress", { cardId: "c1", action: "claim" })).toBe(false);
+  });
+
+  it("update_tasks rules only cover their sub-action", () => {
+    expect(standingRuleCoversTool("tag_task", "update_tasks", { cardIds: ["c1"], tagNames: ["x"] })).toBe(true);
+    expect(standingRuleCoversTool("tag_task", "update_tasks", { cardIds: ["c1"], priority: "high" })).toBe(false);
+    expect(standingRuleCoversTool("bulk_update_task_status", "update_tasks", { cardIds: ["c1"], columnType: "done" })).toBe(true);
+    expect(standingRuleCoversTool("bulk_update_task_status", "update_tasks", { cardIds: ["c1"], priority: "high" })).toBe(false);
+    expect(standingRuleCoversTool("update_task", "update_tasks", { cardIds: ["c1"], priority: "high" })).toBe(true);
+    expect(standingRuleCoversTool("update_task", "update_tasks", { cardIds: ["c1"], tagNames: ["x"] })).toBe(false);
+  });
+
+  it("edit_idea_flow rules only cover their op kind", () => {
+    const addNode = { projectId: "p", ops: [{ op: "add_node" }] };
+    const delEdge = { projectId: "p", ops: [{ op: "delete_edge" }] };
+    expect(standingRuleCoversTool("create_idea_flow_node", "edit_idea_flow", addNode)).toBe(true);
+    expect(standingRuleCoversTool("create_idea_flow_node", "edit_idea_flow", delEdge)).toBe(false);
+    expect(standingRuleCoversTool("delete_idea_flow_edge", "edit_idea_flow", delEdge)).toBe(true);
+    expect(standingRuleCoversTool("layout_idea_flow", "edit_idea_flow", { projectId: "p", ops: [], layout: "LR" })).toBe(true);
+    expect(standingRuleCoversTool("layout_idea_flow", "edit_idea_flow", addNode)).toBe(false);
+  });
+
+  it("unrelated legacy tools never cover", () => {
+    expect(standingRuleCoversTool("delete_note", "update_notes", { noteIds: ["n1"] })).toBe(false);
+    expect(standingRuleCoversTool("claim_task", "delete", { type: "task", id: "c1" })).toBe(false);
   });
 });

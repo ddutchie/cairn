@@ -19,17 +19,10 @@ import { APPROVAL_SAFE_TOOLS, riskForTool, approvalGrantScope, approvalPreview, 
 // internally, re-declared here so the coverage assertion doesn't have to
 // import a private symbol.
 const CAIRN_WRITE_TOOLS = new Set<string>([
-  "ensure_note", "patch_note", "append_to_note", "rename_note",
-  "delete_note", "bulk_move_notes", "instantiate_template",
-  "create_task", "update_task", "delete_task", "bulk_update_task_status",
-  "claim_task", "add_task_progress",
-  "spawn_tasks_from_note", "link_note_to_task", "unlink_note_from_task",
-  "tag_note", "tag_task", "create_tag", "upsert_project", "delete_project",
-  "create_idea_flow_node", "update_idea_flow_node",
-  "create_idea_flow_edge", "delete_idea_flow_edge", "delete_idea_flow_node",
-  "layout_idea_flow", "codebase_reindex",
-  "generate_prd", "suggest_connections",
-  "update_user_writing_style",
+  "ensure_note", "edit_note", "update_notes",
+  "create_task", "update_tasks", "task_progress", "spawn_tasks_from_note",
+  "upsert_project", "delete", "edit_idea_flow",
+  "codebase_reindex", "suggest_connections", "update_user_writing_style",
 ]);
 const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
 // dsh coding-stack tools are registered by mountCodingStack, not
@@ -134,8 +127,7 @@ describe("tool-risk classifier — set membership", () => {
   it("read-only Cairn tools do NOT prompt for approval", () => {
     // Sanity list — the exact names that used to fall through.
     for (const name of [
-      "get_cairn_context", "get_project_context_pack", "list_folders",
-      "get_knowledge_graph", "get_semantic_neighbors",
+      "get_context", "get_item", "get_graph", "codebase_query",
     ]) {
       expect(needsApproval(name), `${name} should be gate-free (read-only)`).toBe(false);
       expect(riskForTool(name)).toBe("READ");
@@ -167,6 +159,13 @@ describe("tool-risk classifier — set membership", () => {
     expect(approvalPreview("pwsh", { command: "git status" })).toBe("git status");
     // A connector call with no arguments has no preview, never a bare "{}".
     expect(approvalPreview("mcp__atl1__getAccessibleAtlassianResources", {})).toBe("");
+  });
+
+  it("approval cards preview what the consolidated Cairn writes will do", () => {
+    expect(approvalPreview("edit_note", { noteId: "n1", newString: "New text" })).toBe("New text");
+    expect(approvalPreview("update_tasks", { cardIds: ["c1"], title: "Ship it" })).toBe("Ship it");
+    expect(approvalPreview("task_progress", { cardId: "c1", action: "log", message: "Tests green" })).toBe("Tests green");
+    expect(approvalPreview("delete", { type: "note", id: "n9" })).toBe("note n9");
   });
 
   it("continuable-control tools: delegate/send_message/interrupt_agent are one-off EXEC, list_agents is READ", () => {

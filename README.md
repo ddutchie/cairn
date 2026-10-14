@@ -182,9 +182,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Available MCP tools
 
-The MCP surface is derived from the same schemas the in-app agents use (`electron/lib/tool-schemas.ts` — everything except chat-only tools such as `ask_questions` and `suggest_connections`), across notes, tasks, projects, dashboards, Idea Flow, knowledge graph, tags, and codebase search. The authoritative live list is always in the app under **Settings → AI → MCP**, which shows every tool with its read/write/delete category — this file does not duplicate that list so it can't rot.
+The MCP surface is derived from the same schemas the in-app agents use (`electron/lib/tool-schemas.ts` — everything except chat-only tools such as `ask_questions` and `suggest_connections`), across notes, tasks, projects, Idea Flow, the knowledge graph, and codebase search — one tool per intent (about 20 in all). The authoritative live list is always in the app under **Settings → AI → MCP**, which shows every tool with its read/write/delete category — this file does not duplicate that list so it can't rot.
 
-> **Agent tip:** call `get_cairn_context` at the start of a session for all workspace/project/column IDs. Use `list_ready_tasks` instead of `search_tasks` when you want to know what work can actually start — it filters out anything blocked by an unresolved dependency. Use `update_task` with `blockedBy`/`unblockFrom` to manage task dependencies.
+> **Agent tip:** call `get_context` at the start of a session for all workspace/project/column IDs. Use `search_tasks` with `filter: "ready"` when you want to know what work can actually start — it skips anything blocked by an unresolved dependency. Use `update_tasks` with `blockedBy`/`unblockFrom` to manage task dependencies.
 
 ## Keyboard shortcuts
 

@@ -22,7 +22,6 @@ export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 
 /** Read-only tool names are never gated — they can't change state. */
 const READ_TOOL_PREFIXES = ["get_", "list_", "search_"];
-
 /**
  * True for external-tool names (namespaced MCP `mcp__…` / service `svc__…`
  * calls). Mirrors isExternalToolName in external-tools.ts — kept local so the
@@ -33,6 +32,9 @@ export function isExternalTool(name: string): boolean {
 }
 
 export function isReadTool(name: string): boolean {
+  // codebase_query is read-only (READ in shared/agent/tool-risk.ts) but
+  // matches no prefix — name it explicitly so automations don't gate it.
+  if (name === "codebase_query") return true;
   return READ_TOOL_PREFIXES.some((p) => name.startsWith(p));
 }
 
@@ -50,9 +52,121 @@ export function standingRuleTarget(tool: string, args: Record<string, unknown>):
   if (tool === "bash" || tool === "pwsh") {
     return typeof args.command === "string" && args.command ? args.command : undefined;
   }
-  const target = [args.path, args.noteId, args.cardId, args.title]
+  // Single-item lists (update_tasks cardIds, update_notes noteIds) and the
+  // generic delete's `id` target one entity just like noteId/cardId did.
+  const single = (v: unknown) => (Array.isArray(v) && v.length === 1 ? v[0] : undefined);
+  const target = [args.path, args.noteId, args.cardId, single(args.noteIds), single(args.cardIds), args.id, args.title]
     .find((v): v is string => typeof v === "string" && v.length > 0);
   return target;
+}
+
+/**
+ * Tool names whose standing rules also cover a consolidated tool. Rules saved
+ * before the toolset was consolidated (v3.1.3) name the per-operation tools;
+ * they keep applying to the tool that replaced them.
+ */
+const LEGACY_RULE_TOOLS: Record<string, readonly string[]> = {
+  edit_note:    ["patch_note", "append_to_note"],
+  update_notes: ["rename_note", "bulk_move_notes", "tag_note", "link_note_to_task", "unlink_note_from_task"],
+  update_tasks: ["update_task", "bulk_update_task_status", "tag_task", "link_note_to_task", "unlink_note_from_task"],
+  task_progress: ["claim_task", "add_task_progress"],
+  ensure_note:  ["instantiate_template"],
+  edit_idea_flow: ["create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_node", "delete_idea_flow_edge", "layout_idea_flow"],
+  delete:       ["delete_note", "delete_task", "delete_project", "delete_idea_flow_node", "delete_idea_flow_edge"],
+};
+
+/**
+ * Does a standing rule recorded for `ruleTool` cover a call to `tool`?
+ *
+ * Legacy (pre-consolidation) rules name the per-operation tool; they keep
+ * applying to the consolidated tool that replaced them — but ONLY for the
+ * matching sub-action. Without the args check a rule saved for `delete_note`
+ * would also approve `delete {type:"project"}` (wiping a whole project), a
+ * `tag_note` rule would approve any `update_notes` rename/move, and a
+ * `claim_task` rule would approve `task_progress {action:"log", moveTo:"done"}`.
+ * Exact (non-legacy) tool-name matches are unaffected.
+ */
+export function standingRuleCoversTool(ruleTool: string, tool: string, args: Record<string, unknown> = {}): boolean {
+  if (ruleTool === tool) return true;
+  if (!(LEGACY_RULE_TOOLS[tool]?.includes(ruleTool) ?? false)) return false;
+  return legacyRuleMatchesSubAction(ruleTool, tool, args);
+}
+
+/** Non-empty string list helper for sub-action matching below. */
+function hasIds(v: unknown): boolean {
+  return Array.isArray(v) && v.some((e) => typeof e === "string" && (e as string).length > 0);
+}
+
+/**
+ * True when the consolidated call's arguments actually exercise the operation
+ * the legacy rule was recorded for. Unknown/absent sub-action markers fail
+ * closed (no coverage) — a standing rule must never approve an action the
+ * user never explicitly allowed.
+ */
+function legacyRuleMatchesSubAction(ruleTool: string, tool: string, args: Record<string, unknown>): boolean {
+  switch (tool) {
+    case "delete": {
+      switch (ruleTool) {
+        case "delete_note":  return args.type === "note";
+        case "delete_task":  return args.type === "task";
+        case "delete_project": return args.type === "project";
+        case "delete_idea_flow_node": return args.type === "flow_node";
+        case "delete_idea_flow_edge": return args.type === "flow_edge";
+        default: return false;
+      }
+    }
+    case "update_notes": {
+      switch (ruleTool) {
+        case "rename_note":          return args.title !== undefined;
+        case "bulk_move_notes":      return args.folder !== undefined;
+        case "tag_note":             return hasIds(args.tagNames);
+        case "link_note_to_task":    return hasIds(args.linkCardIds);
+        case "unlink_note_from_task": return hasIds(args.unlinkCardIds);
+        default: return false;
+      }
+    }
+    case "update_tasks": {
+      switch (ruleTool) {
+        case "update_task":
+          return args.title !== undefined || args.description !== undefined ||
+            args.priority !== undefined || args.dueDate !== undefined ||
+            args.assignee !== undefined || args.archived !== undefined ||
+            args.columnType !== undefined || args.columnId !== undefined ||
+            hasIds(args.blockedBy) || hasIds(args.unblockFrom);
+        case "bulk_update_task_status":
+          return args.columnType !== undefined || args.columnId !== undefined;
+        case "tag_task":
+          return hasIds(args.tagNames);
+        case "link_note_to_task":
+          return hasIds(args.linkNoteIds);
+        case "unlink_note_from_task":
+          return hasIds(args.unlinkNoteIds);
+        default: return false;
+      }
+    }
+    case "task_progress": {
+      if (ruleTool === "claim_task") return args.action === "claim";
+      if (ruleTool === "add_task_progress") return args.action === "log";
+      return false;
+    }
+    case "edit_idea_flow": {
+      const ops = Array.isArray(args.ops) ? (args.ops as Array<{ op?: unknown }>) : [];
+      const kinds = new Set(ops.map((o) => o?.op));
+      switch (ruleTool) {
+        case "create_idea_flow_node": return kinds.has("add_node");
+        case "update_idea_flow_node": return kinds.has("update_node");
+        case "create_idea_flow_edge": return kinds.has("add_edge");
+        case "delete_idea_flow_node": return kinds.has("delete_node");
+        case "delete_idea_flow_edge": return kinds.has("delete_edge");
+        case "layout_idea_flow":      return args.layout !== undefined;
+        default: return false;
+      }
+    }
+    // edit_note (patch/append) and ensure_note (instantiate_template) have no
+    // narrower sub-action to distinguish — the legacy rule covers the call.
+    default:
+      return true;
+  }
 }
 
 /**

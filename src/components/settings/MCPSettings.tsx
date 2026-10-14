@@ -30,7 +30,7 @@ export function McpSettingsTab() {
           <div className="space-y-3">
             <SurfaceToolsPanel
               tools={mcpTools}
-              footnote="External clients get the broader surface — including get_cairn_context for fresh sessions."
+              footnote="External clients get every Cairn tool except the chat-only ones (ask_questions, suggest_connections, spawn_tasks_from_note)."
             />
             <ToolsLegend />
           </div>

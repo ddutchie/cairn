@@ -143,7 +143,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   maxOutputTokens: 8192,
   maxOutputAuto: true,
   // Default OFF: with auto-approve on, the coding agent runs bash / write /
-  // edit / delete_note / delete_project etc. with no prompt, which combined
+  // edit / delete etc. with no prompt, which combined
   // with prompt injection (a crafted README, an MCP tool result, a community
   // automation recipe) is arbitrary code execution as the user with no UI
   // shown. Users can opt in per-session from Agent Settings.

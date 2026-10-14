@@ -181,8 +181,8 @@ export function seedChat(): void {
     content:
       "The research note argues for one tree with two layouts, keeping selection in state so folding never loses your place. I added that to the **Projects split view** task.",
     tools: [
-      ...(note ? [{ tool: "get_note", ok: true, ref: { kind: "note" as const, id: note.id } }] : []),
-      ...(card ? [{ tool: "update_task", ok: true, ref: { kind: "card" as const, id: card.id } }] : []),
+      ...(note ? [{ tool: "get_item", ok: true, ref: { kind: "note" as const, id: note.id } }] : []),
+      ...(card ? [{ tool: "update_tasks", ok: true, ref: { kind: "card" as const, id: card.id } }] : []),
     ],
   });
 }

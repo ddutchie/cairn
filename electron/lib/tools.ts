@@ -5,7 +5,7 @@
  * Do not hand-edit tool parameters here — edit tool-schemas.ts instead.
  */
 
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS, toolParametersJsonSchema } from "./tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, toolParametersJsonSchema } from "./tool-schemas";
 import { MAX_PERSONALITY_PROMPT_CHARS } from "../../shared/chat/registry-schema";
 import type { ToolName } from "./tool-schemas";
 
@@ -14,69 +14,42 @@ export type ToolArgs = Record<string, any>;
 
 // Human-readable labels for each tool call, shown in the UI
 export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
-  get_cairn_context:          () => "Reading workspace context",
-  get_project_context_pack:   () => "Reading project context pack",
-  get_active_context:         () => "Reading active context",
+  get_context:            (a) => a.projectId ? "Reading project context" : "Reading workspace context",
+  get_item:               () => "Reading item",
+  search_notes:           (a) => `${a.mode === "semantic" ? "Semantic search" : "Searching notes"} for "${a.query}"`,
+  search_tasks:           (a) => a.filter ? `Listing ${a.filter} tasks` : `${a.mode === "semantic" ? "Semantic task search" : "Searching tasks"} for "${a.query}"`,
+  ensure_note:            (a) => a.templateId ? `Creating note "${a.title}" from template` : `Ensuring note "${a.title}"`,
+  edit_note:              (a) => a.oldString ? "Editing note" : "Appending to note",
+  update_notes:           (a) => {
+    const n = (a.noteIds as string[] | undefined)?.length ?? 0;
+    return a.title ? `Renaming note to "${a.title}"` : a.folder !== undefined ? `Moving ${n} note${n === 1 ? "" : "s"}` : `Updating ${n} note${n === 1 ? "" : "s"}`;
+  },
+  create_task:            (a) => `Creating task "${a.title}"`,
+  update_tasks:           (a) => {
+    const n = (a.cardIds as string[] | undefined)?.length ?? 0;
+    if (a.archived === true) return "Archiving task";
+    if (a.archived === false) return "Restoring task";
+    if (a.columnType || a.columnId) return `Moving ${n} task${n === 1 ? "" : "s"}`;
+    return `Updating ${n} task${n === 1 ? "" : "s"}`;
+  },
+  task_progress:          (a) => a.action === "claim" ? `Claiming task as ${a.agent ?? "agent"}` : a.moveTo ? `Logging progress (→ ${a.moveTo})` : "Logging task progress",
+  upsert_project:         (a) => a.projectId ? `Updating project "${a.projectId}"` : `Creating project "${a.name}"`,
+  delete:                 (a) => `Deleting ${String(a.type ?? "item").replace("flow_", "Idea Flow ")}`,
+  get_idea_flow:          () => "Reading Idea Flow",
+  edit_idea_flow:         (a) => `Editing Idea Flow (${(a.ops as unknown[] | undefined)?.length ?? 0} change${(a.ops as unknown[] | undefined)?.length === 1 ? "" : "s"})`,
+  get_graph:              (a) => a.nodeId ? (a.semantic ? "Finding related notes" : `Getting neighbours of ${a.nodeId}`) : "Reading knowledge graph",
   get_user_writing_style:     (a) => (a.mode === "full" ? "Reading your full writing style" : "Reading your writing style cheat sheet"),
   update_user_writing_style:  (a) => a.section ? `Updating writing style (${a.section})` : "Updating writing style",
-  get_note:               () => "Reading note",
-  search_notes:           (a) => `Searching notes for "${a.query}"`,
-  search_notes_semantic:  (a) => `Semantic search for "${a.query}"`,
-  search_tasks_semantic:  (a) => `Semantic task search for "${a.query}"`,
-  search_tasks:           (a) => `Searching tasks for "${a.query}"`,
-  get_task:               () => "Reading task",
-  ensure_note:            (a) => `Ensuring note "${a.title}"`,
-  append_to_note:         () => "Appending to note",
-  patch_note:             () => "Patching note",
-  create_task:            (a) => `Creating task "${a.title}"`,
-  bulk_update_task_status:   (a) => `Moving ${(a.cardIds as string[])?.length ?? 0} tasks`,
-  update_task:            (a) => a.archived === true ? "Archiving task" : a.archived === false ? "Restoring task" : a.blockedBy ? "Blocking task" : a.unblockFrom ? "Unblocking task" : "Updating task",
-  list_ready_tasks:       () => "Listing ready tasks",
-  claim_task:             (a) => `Claiming task as ${a.agent ?? "agent"}`,
-  add_task_progress:      (a) => a.moveTo ? `Logging progress (→ ${a.moveTo})` : "Logging task progress",
-  list_overdue_tasks:     () => "Listing overdue tasks",
-  list_tasks_due:         (a) => `Listing tasks due${typeof a.days === "number" ? ` in ${a.days}d` : " soon"}`,
-  upsert_project:         (a) => a.projectId ? `Updating project "${a.projectId}"` : `Creating project "${a.name}"`,
-  delete_project:         (a) => `Deleting project "${a.projectId}"`,
-  delete_note:            () => "Deleting note",
-  rename_note:            (a) => `Renaming note to "${a.newTitle}"`,
-  bulk_move_notes:        (a) => `Moving ${(a.noteIds as string[])?.length ?? 0} notes`,
-  list_folders:           () => "Listing subfolders",
-  delete_task:            () => "Deleting task",
-  generate_prd:           (a) => `Generating PRD "${a.title}"`,
-  spawn_tasks_from_note:  () => "Spawning tasks from note",
-  link_note_to_task:      () => "Linking note to task",
-  unlink_note_from_task:   () => "Unlinking note from task",
-  get_idea_flow:          () => "Reading Idea Flow",
-  create_idea_flow_node:  (a) => `Adding ${(a.type as string) ?? "node"} to Idea Flow`,
-  update_idea_flow_node:  () => "Updating Idea Flow node",
-  delete_idea_flow_node:  () => "Removing node from Idea Flow",
-  create_idea_flow_edge:  () => "Connecting nodes in Idea Flow",
-  delete_idea_flow_edge:  () => "Removing connection from Idea Flow",
-  layout_idea_flow:       () => "Auto-arranging Idea Flow",
-  get_knowledge_graph:    () => "Reading knowledge graph",
-  get_neighbors:          (a) => `Getting neighbours of ${(a.nodeId as string) ?? "node"}`,
-  create_tag:             (a) => `Creating tag "${a.name}"`,
-  tag_note:               (a) => `Tagging note (${((a.tagNames as string[]) ?? []).join(", ")})`,
-  tag_task:               (a) => `Tagging task (${((a.tagNames as string[]) ?? []).join(", ")})`,
-  list_templates:         () => "Listing templates",
-  instantiate_template:   (a) => `Creating note from template${a.templateName ? ` "${a.templateName}"` : ""}`,
-  get_idea_flow_rules:    () => "Reading Idea Flow rules",
+  codebase_reindex:       (a) => `Indexing codebase folder "${a.folder}"`,
+  codebase_query:         (a) => `Codebase ${a.action ?? "query"}: "${a.query}"`,
   ask_questions:          (a) => `Asking ${(a.questions as unknown[])?.length ?? ""} question${(a.questions as unknown[])?.length !== 1 ? "s" : ""}`,
   suggest_connections:    (a) => `Suggesting ${(a.actions as unknown[])?.length ?? ""} connection${(a.actions as unknown[])?.length !== 1 ? "s" : ""}`,
-  codebase_reindex:               (a) => `Indexing codebase folder "${a.folder}"`,
-  codebase_search_symbols:        (a) => `Searching codebase symbols for "${a.query}"`,
-  codebase_get_symbol_definition: (a) => `Getting definition of symbol "${a.name}"`,
-  codebase_get_references:        (a) => `Finding references for symbol "${a.name}"`,
-  codebase_get_file_symbols:      (a) => `Listing symbols in "${a.filePath}"`,
+  spawn_tasks_from_note:  () => "Spawning tasks from note",
 };
 
 // Tool definitions for the AI (OpenAI function calling format)
 // Derived from TOOL_SCHEMAS — do not edit manually.
-const _agentExcluded = new Set<string>(AGENT_EXCLUDED_TOOLS);
-
 export const TOOLS = (Object.entries(TOOL_SCHEMAS) as [ToolName, (typeof TOOL_SCHEMAS)[ToolName]][])
-  .filter(([name]) => !_agentExcluded.has(name))
   .map(([name, { description, schema }]) => ({
     type: "function" as const,
     function: {
@@ -145,7 +118,7 @@ export function buildSystemPrompt(req: ChatRequest): string {
 
 Use the provided tools to read and modify the user's workspace. Choose the tool whose description matches the request — each tool documents its own parameters and behaviour (idempotency, folders, tagNames, blockers, inline note/task creation, etc.).
 
-- **IDs:** Call get_active_context once at the start (or after a project change) to obtain workspaceId/projectId/columnId; reuse them. Never invent or ask the user for IDs.
+- **IDs:** Call get_context once at the start (or after a project change) to obtain workspaceId/projectId/columnId; reuse them. Never invent or ask the user for IDs.
 - **Writes:** Call the tool directly (no confirmation needed), then briefly confirm what you did.
 - **Suggesting connections:** When proposing new links, wikilinks, note↔card links, or tags, you MUST call \`suggest_connections\` (the UI renders "Apply" buttons) rather than describing them in prose.
 - **Rendering:** Replies are markdown — use bold, lists, tables, fenced code (with language), and mermaid fenced blocks for diagrams. Keep replies concise and actionable.
@@ -199,9 +172,9 @@ export function buildPrdSystemPrompt(projectId: string): string {
 ## Your workflow — follow this order exactly
 
 1. **Gather context first.**
-   Call get_project_context_pack with projectId="${projectId}" immediately.
+   Call get_context with projectId="${projectId}" immediately.
    Scan the returned notes for architecture docs, tech specs, or anything describing the product or stack.
-   Call get_note on any relevant notes to read their full content.
+   Call get_item on any relevant notes to read their full content.
 
 2. **Ask focused clarifying questions.**
    Based on the user's description and the context you found, ask 2–4 targeted questions whose answers would materially improve the PRD.

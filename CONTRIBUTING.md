@@ -126,7 +126,7 @@ cairn/
 │   ├── lib/
 │   │   ├── llm.ts          # callLLM, streamCompletion
 │   │   ├── tools.ts        # TOOLS definitions, buildSystemPrompt
-│   │   ├── context.ts      # buildContextResponse (get_cairn_context)
+│   │   ├── context.ts      # buildContextResponse (get_context)
 │   │   ├── read-tools.ts   # executeReadTool — shared read dispatch for chat
 │   │   └── ...
 │   └── shared/
@@ -308,7 +308,7 @@ External .md edit (startup — Cairn was closed)
 
 The renderer's `note-editor.tsx` subscribes to both events and flips the CM6 editor into `readOnly` mode via a `Compartment` — no editor recreation, undo history preserved.
 
-**Optimistic concurrency.** Both `notes` and `task_cards` carry a `version INTEGER` (migrations v12/v13) that increments on every write. MCP tools that mutate notes or tasks accept an optional `expectedVersion` argument and return a conflict error if the row version has advanced since the caller last read it. `get_note` and `get_task` both return the current `version`.
+**Optimistic concurrency.** Both `notes` and `task_cards` carry a `version INTEGER` (migrations v12/v13) that increments on every write. MCP tools that mutate notes or tasks accept an optional `expectedVersion` argument and return a conflict error if the row version has advanced since the caller last read it. `get_item` returns the current `version` for both.
 
 ### Font scaling
 
@@ -361,7 +361,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/cordis/plugins/` | Cairn-owned Cordis plugins, including workspace context and context-ring projections |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
-| `electron/cordis/chat-executor.ts` | `executeTool` — canonical tool implementations (incl. `get_cairn_context`) |
+| `electron/cordis/chat-executor.ts` | `executeTool` — chat tool execution (consolidated tools via `mcp/tools/consolidated.ts`, plus chat-only tools) |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
 | `electron/db/queries.ts` | Single source of truth for all SQL query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`). Imported by both the Electron main process and the MCP server (`electron/mcp/tools/*`) — the only ABI-sensitive operation is `new Database(...)` which happens once in `mcp-server.ts` |
 | `electron/host-shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
@@ -600,13 +600,13 @@ Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is 
 
 ### Adding a new MCP / AI chat tool
 
-1. Add the Zod schema to `electron/lib/tool-schemas.ts` — `TOOL_SCHEMAS`, and `CHAT_ONLY_TOOLS` if it should be agent/chat only
-2. Add a human-readable `TOOL_LABELS` entry in `electron/lib/tools.ts` (the `TOOLS` array is auto-derived from `TOOL_SCHEMAS`)
-3. Add the executor case to `electron/cordis/chat-executor.ts`
-4. Add the MCP executor case to `electron/mcp/tools/` (the appropriate tool file: `notes.ts`, `tasks.ts`, `flow.ts`, etc. — delegate to `q.*` helpers from `db/queries.ts`)
-5. Add a corresponding query helper to `electron/db/queries.ts` if needed
+> **First, prefer extending an existing tool.** The model-facing set is consolidated — one tool per intent, with `mode` / `filter` / `action` / `type` enums (`search_tasks filter:"overdue"`, `task_progress action:"claim"`, `delete type:"note"`). Every tool's schema is sent on every request, so a new parameter on an existing tool is far cheaper than a new tool. Run the live A/B test (`electron/lib/tool-schema-optimization.test.ts`, `CAIRN_LIVE_TESTS=1`) to catch tool-selection regressions.
 
-> **Consolidation pattern:** prefer extending an existing tool over adding a new one. `update_task` handles archive/restore (`archived: true/false`) and block/unblock (`blockedBy`/`unblockFrom`) in addition to field updates. `upsert_project` handles both create (no `projectId`) and update (with `projectId`). Follow the same pattern to keep the tool surface small.
+1. Add or extend the Zod schema in `electron/lib/tool-schemas.ts` — `TOOL_SCHEMAS`, and `CHAT_ONLY_TOOLS` / `CHAT_EXCLUDED_TOOLS` if it is surface-specific
+2. Add a `TOOL_LABELS` entry in `electron/lib/tools.ts` (the `TOOLS` array is auto-derived), a `humanizeTool` case in `src/lib/humanize-tool.ts`, and classify it in `shared/agent/tool-risk.ts`
+3. Implement it: a per-operation handler in `electron/mcp/tools/` (`notes.ts`, `tasks.ts`, `flow.ts`, … — delegate to `q.*` helpers from `db/queries.ts`), routed from `electron/mcp/tools/consolidated.ts` when the tool is a consolidated one
+4. If chat needs extra behaviour (AI write locks, active context), add it in `electron/cordis/chat-executor.ts`
+5. Add a corresponding query helper to `electron/db/queries.ts` if needed
 
 ### Adding a new database table
 

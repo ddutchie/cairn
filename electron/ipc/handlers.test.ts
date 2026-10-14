@@ -66,47 +66,8 @@ describe("get_cairn_context", () => {
   });
 });
 
-// ── executeReadTool — search_notes ────────────────────────────────────────────
-
-describe("executeReadTool: search_notes", () => {
-  it("finds matching notes by contentText", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "search_notes", { query: "body" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const notes = res.result as Array<Record<string, unknown>>;
-    expect(notes.length).toBe(1);
-    expect(notes[0].id).toBe("note1");
-  });
-
-  it("returns empty for no match", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "search_notes", { query: "zzznomatch" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    expect((res.result as unknown[]).length).toBe(0);
-  });
-});
-
-// ── executeReadTool — search_tasks ────────────────────────────────────────────
-
-describe("executeReadTool: search_tasks", () => {
-  it("finds matching tasks", () => {
-    const db = makeDb();
-    seed(db);
-    const snap = q.getFullSnapshot(db) as Parameters<typeof executeReadTool>[1];
-    const res = executeReadTool(db, snap, "search_tasks", { query: "Task" });
-    expect(res.handled).toBe(true);
-    if (!res.handled) return;
-    const tasks = res.result as Array<Record<string, unknown>>;
-    expect(tasks.length).toBe(1);
-    expect(tasks[0].id).toBe("card1");
-  });
-});
+// Search is SQL-backed (electron/mcp/tools/sql-reads.ts) and no longer part of
+// the snapshot read dispatcher; see sql-reads.test.ts.
 
 // ── executeReadTool — unknown tool ────────────────────────────────────────────
 

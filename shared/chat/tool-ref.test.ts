@@ -69,3 +69,24 @@ describe("toolRef", () => {
     }
   });
 });
+
+describe("toolRef — consolidated tools", () => {
+  it("get_item opens a note or a card depending on the result type", () => {
+    expect(toolRef("get_item", { id: "n1" }, { type: "note", id: "n1" })).toEqual({ kind: "note", id: "n1" });
+    expect(toolRef("get_item", { id: "c1" }, { type: "task", id: "c1" })).toEqual({ kind: "card", id: "c1" });
+  });
+
+  it("edit_note opens the edited note", () => {
+    expect(toolRef("edit_note", { noteId: "n2", newString: "x" }, { ok: true })).toEqual({ kind: "note", id: "n2" });
+  });
+
+  it("update_notes / update_tasks open their target only for a single-item call", () => {
+    expect(toolRef("update_notes", { noteIds: ["n3"] }, {})).toEqual({ kind: "note", id: "n3" });
+    expect(toolRef("update_notes", { noteIds: ["n3", "n4"] }, {})).toBeUndefined();
+    expect(toolRef("update_tasks", { cardIds: ["c2"] }, {})).toEqual({ kind: "card", id: "c2" });
+  });
+
+  it("never navigates on an error", () => {
+    expect(toolRef("update_tasks", { cardIds: ["c2"] }, { error: "nope" })).toBeUndefined();
+  });
+});

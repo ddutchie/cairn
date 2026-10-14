@@ -3,11 +3,10 @@ import { chatToolNeedsApproval, resolveChatApprovalPolicy } from "./chat-approva
 
 describe("chat approval policy", () => {
   it("safe: deletes and connectors ask; other Cairn writes run", () => {
-    expect(chatToolNeedsApproval("delete_note", "safe")).toBe(true);
-    expect(chatToolNeedsApproval("delete_project", "safe")).toBe(true);
+    expect(chatToolNeedsApproval("delete", "safe")).toBe(true);
     expect(chatToolNeedsApproval("mcp__jira__createIssue", "safe")).toBe(true);
     expect(chatToolNeedsApproval("ensure_note", "safe")).toBe(false);
-    expect(chatToolNeedsApproval("update_task", "safe")).toBe(false);
+    expect(chatToolNeedsApproval("update_tasks", "safe")).toBe(false);
   });
 
   it("external: only connectors (and shell-capable delegation) ask", () => {

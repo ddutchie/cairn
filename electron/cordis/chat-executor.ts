@@ -18,10 +18,16 @@ import {
   aiWriteLock,
   toolResultError,
 } from "./host-store";
-import { executeTool as executeMcpTool } from "../mcp/tools";
+import { executeHandler as executeMcpTool } from "../mcp/tools";
+import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "../mcp/tools/consolidated";
+import { lazy } from "../host-shared/lazy";
 
-// ── Static reference constants (returned by get_idea_flow_rules) ──
-
+/**
+ * Execute one chat tool. Consolidated (model-facing) tools are translated onto
+ * the per-operation handlers by `runConsolidatedTool`, which calls back in here
+ * with `handlerOnly` set so each handler keeps chat's own behaviour (AI write
+ * locks, the active-context read) without re-entering the adapter.
+ */
 export async function executeTool(
   db: Database.Database,
   req: ChatRequest,
@@ -33,12 +39,21 @@ export async function executeTool(
   getWin?: () => BrowserWindow | null,
   emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void,
   callId?: string,
+  handlerOnly = false,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args, callId });
   const host = createHostStore(db);
-  const snap = host.getFullSnapshot() as CairnSnapshot;
+  // Loaded on first use only — most tools forward to SQL-backed handlers.
+  const snap = lazy(() => host.getFullSnapshot() as CairnSnapshot);
 
   const result = await (async () => {
+    if (!handlerOnly && CONSOLIDATED_TOOLS.has(name)) {
+      return runConsolidatedTool(
+        db, name, args,
+        (handler, a) => executeTool(db, req, workspacePath, llmConfig, handler, a, undefined, getWin, undefined, undefined, true),
+        { surface: "chat", activeWorkspaceId: req.workspaceId ?? undefined },
+      );
+    }
     // ── Shared read tools (also used by the MCP server) ──────────
     {
       const res = host.executeReadTool(snap, name, args);
@@ -114,14 +129,14 @@ export async function executeTool(
       };
     }
     case "get_cairn_context":
+    case "search_notes":
+    case "search_tasks":
     case "get_note":
     case "get_task":
     case "get_idea_flow_rules":
     case "delete_note":
     case "delete_task":
     case "bulk_update_task_status":
-    case "link_note_to_task":
-    case "unlink_note_from_task":
     case "create_task":
     case "list_ready_tasks":
     case "claim_task":
@@ -130,7 +145,6 @@ export async function executeTool(
     case "list_tasks_due":
     case "list_folders":
     case "list_templates":
-    case "bulk_move_notes":
     case "upsert_project":
     case "delete_project":
     case "create_tag":
@@ -201,6 +215,31 @@ export async function executeTool(
       return executeMcpTool(db, workspacePath, name, args);
     }
     case "tag_note": {
+      const win = getWin?.() ?? null;
+      const noteId = args.noteId as string;
+      aiWriteLock.lock(noteId, win);
+      try {
+        return executeMcpTool(db, workspacePath, name, args);
+      } finally {
+        aiWriteLock.unlock(noteId, win);
+      }
+    }
+    case "bulk_move_notes": {
+      // Writes .md files (one per note) — hold the AI write lock for every
+      // affected note so the editor shows read-only while the move lands,
+      // as rename_note / tag_note already do for single notes.
+      const win = getWin?.() ?? null;
+      const ids = Array.isArray(args.noteIds) ? (args.noteIds as unknown[]).filter((v): v is string => typeof v === "string" && v.length > 0) : [];
+      for (const id of ids) aiWriteLock.lock(id, win);
+      try {
+        return executeMcpTool(db, workspacePath, name, args);
+      } finally {
+        for (const id of ids) aiWriteLock.unlock(id, win);
+      }
+    }
+    case "link_note_to_task":
+    case "unlink_note_from_task": {
+      // Rewrites the linked note's .md (linkedCardIds) — same lock as tag_note.
       const win = getWin?.() ?? null;
       const noteId = args.noteId as string;
       aiWriteLock.lock(noteId, win);
@@ -360,13 +399,15 @@ export async function executeTool(
     
     // For note tools, the result contains ID and title.
     const isNote = [
-      "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template"
-    ].includes(name);
+      "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template",
+      "edit_note", "update_notes",
+    ].includes(name) || (name === "get_item" && resObj.type === "note");
     
     // For task tools, the result contains ID and title.
     const isTask = [
-      "get_task", "create_task", "update_task", "claim_task", "add_task_progress"
-    ].includes(name);
+      "get_task", "create_task", "update_task", "claim_task", "add_task_progress",
+      "update_tasks", "task_progress",
+    ].includes(name) || (name === "get_item" && resObj.type === "task");
     
     if (isNote && typeof resObj.id === "string" && typeof resObj.title === "string") {
       cairnRef = { type: "note", id: resObj.id, title: resObj.title };

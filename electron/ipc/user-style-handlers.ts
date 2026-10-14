@@ -28,15 +28,14 @@ import { errMsg } from "../host-shared/errors";
 /**
  * Read-only tool set for the "analyse my notes & tasks" generation path. The
  * model may search/read the user's actual notes and tasks to ground the guide —
- * nothing else. No get_active_context (IDs are passed in the prompt), no write
+ * nothing else. IDs are passed in the prompt, no write
  * tools, so generation can never mutate anything.
  */
 export const WRITING_STYLE_TOOLS = new Set([
-  "get_project_context_pack",
+  "get_context",
   "search_notes",
-  "get_note",
+  "get_item",
   "search_tasks",
-  "get_task",
 ]);
 
 /** Read-only TOOLS subset for the analyse path (exported for the live test). */

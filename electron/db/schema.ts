@@ -164,6 +164,26 @@ CREATE TRIGGER IF NOT EXISTS trg_notes_fts_au AFTER UPDATE ON notes BEGIN
   INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.rowid, old.title, coalesce(old.content, ''));
   INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, coalesce(new.content, ''));
 END;
+-- Full-text search over task title + description (v63). Same external-content
+-- pattern as notes_fts; the update trigger only fires when the indexed text
+-- changes, so column moves, priority edits and sync stamps don't churn it.
+CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+  title,
+  description,
+  content='task_cards',
+  content_rowid='rowid',
+  tokenize='unicode61'
+);
+CREATE TRIGGER IF NOT EXISTS trg_tasks_fts_ai AFTER INSERT ON task_cards BEGIN
+  INSERT INTO tasks_fts(rowid, title, description) VALUES (new.rowid, new.title, coalesce(new.description, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS trg_tasks_fts_ad AFTER DELETE ON task_cards BEGIN
+  INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.rowid, old.title, coalesce(old.description, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS trg_tasks_fts_au AFTER UPDATE OF title, description ON task_cards BEGIN
+  INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.rowid, old.title, coalesce(old.description, ''));
+  INSERT INTO tasks_fts(rowid, title, description) VALUES (new.rowid, new.title, coalesce(new.description, ''));
+END;
 `;
 
 // ── Versioned migrations ──────────────────────────────────────────────────────
@@ -1653,6 +1673,33 @@ const MIGRATIONS: Migration[] = [
         INSERT INTO sync_pending (entity, entity_id, op) VALUES ('attachments', OLD.id, 'delete');
       END;
     `);
+  },
+
+  // v63: FTS5 task search (tasks_fts). The base schema creates it for fresh
+  // installs; an existing install gets the table + triggers here, and 'rebuild'
+  // (re)indexes every row from task_cards — idempotent, so it is safe whether
+  // or not the base schema already created the table this startup.
+  (db) => {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+        title,
+        description,
+        content='task_cards',
+        content_rowid='rowid',
+        tokenize='unicode61'
+      );
+      CREATE TRIGGER IF NOT EXISTS trg_tasks_fts_ai AFTER INSERT ON task_cards BEGIN
+        INSERT INTO tasks_fts(rowid, title, description) VALUES (new.rowid, new.title, coalesce(new.description, ''));
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_tasks_fts_ad AFTER DELETE ON task_cards BEGIN
+        INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.rowid, old.title, coalesce(old.description, ''));
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_tasks_fts_au AFTER UPDATE OF title, description ON task_cards BEGIN
+        INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.rowid, old.title, coalesce(old.description, ''));
+        INSERT INTO tasks_fts(rowid, title, description) VALUES (new.rowid, new.title, coalesce(new.description, ''));
+      END;
+    `);
+    db.prepare("INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild')").run();
   },
 ];
 

@@ -71,7 +71,7 @@ function buildExecuteModePrompt(ctx: AgentPromptContext): string {
     : "";
 
   const taskSection = ctx.taskTitle
-    ? `\n\nThe active task is **"${ctx.taskTitle}"**. If you don't already have column IDs in context from earlier this session, call \`get_active_context\` to obtain them, then immediately move this task to the **In Progress** column via \`update_task\` (pass \`columnId\`). When your work is complete, move it to **Review** (or **Done** if it is fully resolved).`
+    ? `\n\nThe active task is **"${ctx.taskTitle}"**. If you don't already have column IDs in context from earlier this session, call \`get_context\` to obtain them, then immediately move this task to the **In Progress** column via \`update_tasks\` (pass \`columnType: "in_progress"\`). When your work is complete, move it to **Review** (or **Done** if it is fully resolved).`
     : "";
 
   return `You are the Cairn coding agent — an expert software engineer embedded inside the Cairn desktop app.
@@ -89,17 +89,17 @@ All file tools are scoped to the code directory above. Use relative paths such a
 You MUST follow this workflow on every session — it is not optional:
 
 **1. Orient (first thing, once per session)**
-Call \`get_active_context\` to get column IDs and project state. The IDs are stable for the session — you do not need to call it again before each write.
-If there is an active task, immediately move it to In Progress with \`update_task\` (pass \`columnId\`).
+Call \`get_context\` to get column IDs and project state. The IDs are stable for the session — you do not need to call it again before each write.
+If there is an active task, immediately move it to In Progress with \`update_tasks\` (pass \`columnType: "in_progress"\`).
 
 **2. Document as you go**
 - When you discover something significant (a bug, a design decision, an architectural insight, a gotcha), write a note immediately. Do not wait until the end.
 - **Always use \`ensure_note\` to write notes** — it creates the note if it doesn't exist, or updates it if it does. This ensures re-running the same task updates the same note rather than creating duplicates.
 - Note titles should be specific and stable so \`ensure_note\` can match them: "Bug: X causes Y in Z", "Decision: use approach A over B", "Finding: module X has no tests", "Agent session: <task>".
-- Use \`append_to_note\` only when you want to add content without replacing what's already there.
+- Use \`edit_note\` without \`oldString\` only when you want to append content without replacing what's already there.
 
 **3. Check off plan tasks as you complete them**
-If this session was started from an approved plan (a PRD note with a \`## Tasks\` checklist), you MUST check off each task as you finish it. Use \`patch_note\` to replace \`- [ ] Task description\` with \`- [x] Task description\` in the PRD note immediately after completing each task. This updates the live task list visible in the UI. Do this after each task, not all at once at the end.
+If this session was started from an approved plan (a PRD note with a \`## Tasks\` checklist), you MUST check off each task as you finish it. Use \`edit_note\` to replace \`- [ ] Task description\` with \`- [x] Task description\` in the PRD note immediately after completing each task. This updates the live task list visible in the UI. Do this after each task, not all at once at the end.
 
 **4. Capture out-of-scope work**
 If you discover issues or improvements beyond the current task, create a task for each with \`create_task\`. Set priority appropriately. Do not silently ignore things that need fixing.

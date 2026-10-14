@@ -37,6 +37,36 @@ export const CARD_TOOLS: Record<string, "args" | "result"> = {
   update_task: "args",
 };
 
+/** First string of `key` when it is a ONE-item list (a multi-item call has no single target). */
+function single(obj: unknown, key: string): string | null {
+  const v = obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return Array.isArray(v) && v.length === 1 && typeof v[0] === "string" && v[0] ? v[0] : null;
+}
+
+function field(obj: unknown, key: string): string | null {
+  const v = obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return typeof v === "string" && v ? v : null;
+}
+
+/**
+ * Refs for the consolidated toolset (get_item, edit_note, update_notes,
+ * update_tasks). Returns null for any other tool so the per-operation maps
+ * below (kept for older transcripts) handle it.
+ */
+function consolidatedRef(tool: string, args: unknown, result: unknown): ToolRef | undefined | null {
+  const ref = (kind: ToolRef["kind"], id: string | null) => (id ? { kind, id } : undefined);
+  switch (tool) {
+    case "get_item": {
+      const type = field(result, "type");
+      return type === "note" ? ref("note", field(args, "id")) : type === "task" ? ref("card", field(args, "id")) : undefined;
+    }
+    case "edit_note": return ref("note", field(args, "noteId"));
+    case "update_notes": return ref("note", single(args, "noteIds"));
+    case "update_tasks": return ref("card", single(args, "cardIds"));
+    default: return null;
+  }
+}
+
 /** Pull a string `id` field out of an unknown args/result object. */
 export function idFrom(obj: unknown): string | null {
   if (obj && typeof obj === "object" && "id" in obj) {
@@ -54,6 +84,8 @@ export function idFrom(obj: unknown): string | null {
 export function toolRef(tool: string, args: unknown, result: unknown): ToolRef | undefined {
   // Never navigate to an errored tool.
   if (result && typeof result === "object" && "error" in (result as object)) return undefined;
+  const consolidated = consolidatedRef(tool, args, result);
+  if (consolidated !== null) return consolidated;
   const noteWhere = NOTE_TOOLS[tool];
   if (noteWhere) {
     const id = idFrom(noteWhere === "args" ? args : result);
