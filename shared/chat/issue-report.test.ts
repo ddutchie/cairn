@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildIssueBody, buildIssueUrl, ISSUE_REPO, ISSUE_URL_MAX } from "./issue-report";
+import { buildIssueBody, buildIssueUrl, ISSUE_REPO, ISSUE_TITLE_MAX, ISSUE_URL_MAX } from "./issue-report";
 
 const env = { appVersion: "3.1.2", platform: "macOS", model: "qwen3", contextWindow: 65536, maxOutput: "Auto" as const };
 
@@ -95,6 +95,21 @@ describe("buildIssueUrl", () => {
   it("trims runaway notes as a last resort", () => {
     const { url, truncated } = buildIssueUrl({ title: "t", notes: "é".repeat(20000), env });
     expect(url.length).toBeLessThanOrEqual(ISSUE_URL_MAX);
+    expect(truncated).toBe(true);
+  });
+
+  it("bounds an unreasonably long title so the link still fits", () => {
+    const { url, truncated } = buildIssueUrl({ title: "é".repeat(20000), notes: "n", env });
+    expect(url.length).toBeLessThanOrEqual(ISSUE_URL_MAX);
+    expect(new URL(url).searchParams.get("title")).toHaveLength(ISSUE_TITLE_MAX);
+    expect(truncated).toBe(true);
+  });
+
+  it("drops the optional setup list when it alone overflows the limit", () => {
+    const mcpServers = Array.from({ length: 400 }, (_, i) => ({ name: `server-${i}-${"x".repeat(30)}`, enabled: true }));
+    const { url, truncated } = buildIssueUrl({ title: "t", notes: "n", env: { ...env, setup: { mcpServers, skills: [] } } });
+    expect(url.length).toBeLessThanOrEqual(ISSUE_URL_MAX);
+    expect(new URL(url).searchParams.get("body")).not.toContain("MCP servers");
     expect(truncated).toBe(true);
   });
 });

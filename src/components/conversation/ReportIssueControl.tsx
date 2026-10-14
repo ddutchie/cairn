@@ -9,7 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Toggle } from "@/components/ui/toggle";
 import type { ConversationMessage } from "@/lib/conversation/message";
-import { buildIssueUrl, ISSUE_REPO, type IssueEnv, type IssueSetup } from "../../../shared/chat/issue-report";
+import { buildIssueUrl, ISSUE_REPO, ISSUE_TITLE_MAX, type IssueEnv, type IssueSetup } from "../../../shared/chat/issue-report";
 
 function platformName(): string {
   if (typeof navigator === "undefined") return "unknown";
@@ -130,6 +130,7 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Title (optional)"
+            maxLength={ISSUE_TITLE_MAX}
             aria-label="Issue title"
           />
           <textarea

@@ -9,6 +9,8 @@
 export const ISSUE_REPO = "ddutchie/cairn";
 /** Conservative cap on the full URL length; GitHub 414s a little above 8K. */
 export const ISSUE_URL_MAX = 7000;
+/** GitHub accepts far longer titles; this keeps the link (and the issue list) sane. */
+export const ISSUE_TITLE_MAX = 150;
 
 /** Opt-in: what the user has connected. Names only, never URLs, headers or args. */
 export interface IssueSetup {
@@ -126,20 +128,28 @@ function toUrl(title: string, body: string): string {
 
 /** Builds the link, trimming the reply (then the notes) until it fits. */
 export function buildIssueUrl(draft: IssueDraft): { url: string; truncated: boolean } {
-  const title = draft.title.trim() || "Issue with an assistant reply";
+  const rawTitle = draft.title.trim();
+  const title = rawTitle.slice(0, ISSUE_TITLE_MAX) || "Issue with an assistant reply";
   let reply = draft.reply?.trim() ?? "";
   let notes = draft.notes;
-  let truncated = false;
-  let url = toUrl(title, buildIssueBody({ ...draft, notes, reply }));
+  let truncated = rawTitle.length > ISSUE_TITLE_MAX;
+  let env = draft.env;
+  let url = toUrl(title, buildIssueBody({ ...draft, env, notes, reply }));
   while (url.length > ISSUE_URL_MAX && reply.length > 0) {
     reply = reply.length < 200 ? "" : reply.slice(0, Math.floor(reply.length * 0.7));
     truncated = true;
-    url = toUrl(title, buildIssueBody({ ...draft, notes, reply }, reply.length > 0));
+    url = toUrl(title, buildIssueBody({ ...draft, env, notes, reply }, reply.length > 0));
   }
   while (url.length > ISSUE_URL_MAX && notes.length > 200) {
     notes = notes.slice(0, Math.floor(notes.length * 0.7));
     truncated = true;
-    url = toUrl(title, buildIssueBody({ ...draft, notes, reply }));
+    url = toUrl(title, buildIssueBody({ ...draft, env, notes, reply }));
+  }
+  // Last resort: the optional setup list (server names are unbounded) goes first.
+  if (url.length > ISSUE_URL_MAX && env.setup) {
+    env = { ...env, setup: undefined };
+    truncated = true;
+    url = toUrl(title, buildIssueBody({ ...draft, env, notes, reply }, reply.length > 0));
   }
   return { url, truncated };
 }
