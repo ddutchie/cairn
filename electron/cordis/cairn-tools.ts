@@ -143,7 +143,7 @@ export function buildCairnTool(
       // (tool projection) — those chips belong to the parent
       // chat bubble. A child session (header.origin === 'subagent') is already
       // bridged to session:subagent-tool-call by cairnSubagentPlugin via session/event.
-      // Without this guard, a subagent's get_active_context/get_note leaked chips
+      // Without this guard, a subagent's get_context/get_item leaked chips
       // into the main chat (the "tool chips spread between subagent and main" bug).
       const rc = runContext as unknown as { agent?: { session?: { header?: { origin?: string } } } } | undefined;
       const isSubagentCall = rc?.agent?.session?.header?.origin === "subagent";
@@ -196,13 +196,11 @@ export function buildCairnTool(
  *  assistant would run without confirmation. The coding agent, on which
  *  deletions are gated, still registers these normally.
  *
- *  Read-only counterparts (get_note, get_task, get_project_context_pack, …)
- *  and non-destructive writes (upsert_project, update_task, etc.) are NOT on
+ *  Read-only tools (get_item, get_context, …) and non-destructive writes
+ *  (upsert_project, update_tasks, etc.) are NOT on
  *  this list — the chat can still create/update, just not delete. */
 export const CHAT_FORBIDDEN_TOOLS = new Set([
-  "delete_note",
-  "delete_task",
-  "delete_project",
+  "delete",
 ]);
 
 /**

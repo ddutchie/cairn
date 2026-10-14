@@ -292,9 +292,9 @@ function buildPrdSystemPrompt(projectId: string): string {
 ## Your workflow — follow this order exactly
 
 1. **Gather context first.**
-   Call get_project_context_pack with projectId="${projectId}" immediately.
+   Call get_context with projectId="${projectId}" immediately.
    Scan the returned notes for architecture docs, tech specs, or anything describing the product or stack.
-   Call get_note on any relevant notes to read their full content.
+   Call get_item on any relevant notes to read their full content.
 
 2. **Ask clarifying questions using the ask_questions tool.**
    Do NOT write questions as prose. You MUST call the ask_questions tool with 2–4 targeted questions.

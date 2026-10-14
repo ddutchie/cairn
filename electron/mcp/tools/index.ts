@@ -23,6 +23,7 @@ import {
   codebase_get_file_symbols
 } from "./codebase";
 import { getUserStyle, appendUserStyleObservation } from "../../db/queries";
+import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "./consolidated";
 import {
   RELATIONSHIP_AFFECTING_TOOLS,
   collectEntityIds,
@@ -31,7 +32,19 @@ import {
 } from "./relationships";
 
 /**
- * Execute one MCP tool.
+ * Execute one model-facing tool (the consolidated set in TOOL_SCHEMAS).
+ * Consolidated tools are translated onto the per-operation handlers by
+ * `runConsolidatedTool`; any other name runs its handler directly.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
+  if (!CONSOLIDATED_TOOLS.has(toolName)) return executeHandler(db, workspacePath, toolName, args);
+  return runConsolidatedTool(db, toolName, args, (name, a) => executeHandler(db, workspacePath, name, a), { surface: "mcp" });
+}
+
+/**
+ * Execute one per-operation handler (internal names such as `patch_note`,
+ * `link_note_to_task`) — the building blocks the consolidated tools call.
  *
  * Wraps `dispatchTool` so that any tool which mutates a note or card also
  * refreshes the derived `relationship_cache`. The Electron IPC write path does
@@ -40,7 +53,7 @@ import {
  * DB-persisted staleness that outlives an MCP restart).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function executeTool(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
+export function executeHandler(db: Database.Database, workspacePath: string, toolName: string, args: Record<string, any>): unknown {
   // Some tools (delete_project) destroy the rows whose cache we must invalidate,
   // so capture those ids BEFORE dispatch — they're unrecoverable afterwards.
   const preDeleteIds = RELATIONSHIP_AFFECTING_TOOLS.has(toolName)

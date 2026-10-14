@@ -25,7 +25,7 @@ import { config as loadDotenv } from "dotenv";
 import { encode } from "gpt-tokenizer";
 import * as z from "zod";
 import { TOOLS } from "./tools";
-import { TOOL_SCHEMAS, AGENT_EXCLUDED_TOOLS } from "./tool-schemas";
+import { TOOL_SCHEMAS } from "./tool-schemas";
 import { parseMobileTools } from "./mobile-tools-fixture";
 
 loadDotenv({ path: path.resolve(__dirname, "../../.env.test"), override: false });
@@ -97,9 +97,7 @@ function compressSchema(node: unknown, level: "safe" | "aggressive", key?: strin
  * un-stripped payload. `TOOLS` (imported) is the current production ("safe").
  */
 function fullOpenaiTools() {
-  const excluded = new Set<string>(AGENT_EXCLUDED_TOOLS);
   return Object.entries(TOOL_SCHEMAS)
-    .filter(([name]) => !excluded.has(name))
     .map(([name, def]) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const json = z.toJSONSchema((def as any).schema, { target: "draft-07" }) as Record<string, unknown>;
@@ -160,7 +158,7 @@ async function taskToolCall(
     { role: "system", content: systemPrompt },
     { role: "user", content: userText },
   ];
-  const ORIENTATION = new Set(["get_active_context", "get_cairn_context", "get_project_context_pack"]);
+  const ORIENTATION = new Set(["get_context"]);
 
   for (let hop = 0; hop < maxHops; hop++) {
     const res = await fetch(`${BASE_URL}/chat/completions`, {
@@ -241,6 +239,7 @@ const SYS = "You are the Cairn AI assistant. Use the tools to act on the workspa
 // Single-turn scenarios probe BOTH selection and argument correctness. `check`
 // validates the captured args (the part schema compression could plausibly
 // break). Deliberately weighted toward multi-field / nested / enum / date args.
+const has = (x: unknown, v: string) => Array.isArray(x) && x.map(String).includes(v);
 const SCENARIOS: { ask: string; expect: string[]; check: (a: Record<string, unknown>) => boolean; note: string }[] = [
   {
     ask: "Find notes updated since 2025-01-01 that mention 'auth'.",
@@ -251,61 +250,61 @@ const SCENARIOS: { ask: string; expect: string[]; check: (a: Record<string, unkn
   {
     ask: "Create a task 'Ship v2' in the Todo column with high priority, due 2026-03-01.",
     expect: ["create_task"],
-    check: (a) => a.columnId === "col_todo" && a.priority === "high" && typeof a.title === "string" && /2026-03-01/.test(String(a.dueDate ?? "")),
-    note: "enum priority + id + due date",
+    check: (a) => (a.columnId === "col_todo" || a.columnType === "todo") && a.priority === "high" && typeof a.title === "string" && /2026-03-01/.test(String(a.dueDate ?? "")),
+    note: "enum priority + column + due date",
   },
   {
     ask: "Move card card_9 to Done.",
-    expect: ["update_task", "bulk_update_task_status"],
-    check: (a) => (a.cardId === "card_9" || String(JSON.stringify(a.cardIds)).includes("card_9")) && (a.columnId === "col_done" || a.targetColumnId === "col_done"),
-    note: "id + column",
+    expect: ["update_tasks"],
+    check: (a) => has(a.cardIds, "card_9") && (a.columnId === "col_done" || a.columnType === "done"),
+    note: "id list + column",
   },
   {
     ask: "Suggest linking note note_1 ('Auth') to card card_2 ('Login bug').",
     expect: ["suggest_connections"],
     check: (a) => Array.isArray(a.actions) && (a.actions as { type?: string }[]).some((x) => x?.type === "link_note_card"),
-    note: "nested actions[] w/ correct action type (348-tok schema)",
+    note: "nested actions[] w/ correct action type",
   },
   {
     ask: "Rename note note_5 to 'Roadmap 2026'.",
-    expect: ["rename_note"],
-    check: (a) => a.noteId === "note_5" && a.newTitle === "Roadmap 2026",
-    note: "two required strings",
+    expect: ["update_notes"],
+    check: (a) => has(a.noteIds, "note_5") && a.title === "Roadmap 2026",
+    note: "rename via update_notes",
   },
   {
     ask: "Add an idea node titled 'Caching layer' with body 'use LRU' to the canvas in proj_1.",
-    expect: ["create_idea_flow_node"],
-    check: (a) => a.projectId === "proj_1" && a.type === "idea" && !!(a.data as { title?: string })?.title,
-    note: "enum type + nested data.title (217-tok schema)",
+    expect: ["edit_idea_flow"],
+    check: (a) => a.projectId === "proj_1" && Array.isArray(a.ops) && (a.ops as { op?: string; type?: string; data?: { title?: string } }[]).some((o) => o.op === "add_node" && o.type === "idea" && !!o.data?.title),
+    note: "ops[] add_node w/ nested data.title",
   },
   {
     ask: "Block card card_9 on card card_2.",
-    expect: ["update_task"],
-    check: (a) => a.cardId === "card_9" && a.blockedBy === "card_2",
-    note: "blockedBy dependency arg (no describe hint in aggressive)",
+    expect: ["update_tasks"],
+    check: (a) => has(a.cardIds, "card_9") && has(a.blockedBy, "card_2"),
+    note: "blockedBy list",
   },
   {
     ask: "Unlink note note_1 from card card_2.",
-    expect: ["unlink_note_from_task"],
-    check: (a) => a.noteId === "note_1" && a.cardId === "card_2",
-    note: "two id args, distinct fields",
+    expect: ["update_tasks", "update_notes"],
+    check: (a) => (has(a.cardIds, "card_2") && has(a.unlinkNoteIds, "note_1")) || (has(a.noteIds, "note_1") && has(a.unlinkCardIds, "card_2")),
+    note: "unlink from either side",
   },
   {
-    ask: "Tag note note_5 with 'urgent' and 'q3' using ensure_note tagNames.",
-    expect: ["ensure_note"],
-    check: (a) => Array.isArray(a.tagNames) && (a.tagNames as string[]).includes("urgent"),
-    note: "tagNames string array (no per-item describe)",
+    ask: "Tag note note_5 with 'urgent' and 'q3'.",
+    expect: ["update_notes"],
+    check: (a) => has(a.noteIds, "note_5") && has(a.tagNames, "urgent") && has(a.tagNames, "q3"),
+    note: "tagNames string array",
   },
   {
     ask: "Move notes note_1 and note_5 into the 'Research' folder.",
-    expect: ["bulk_move_notes"],
+    expect: ["update_notes"],
     check: (a) => Array.isArray(a.noteIds) && (a.noteIds as string[]).length === 2 && a.folder === "Research",
     note: "id array + folder",
   },
   {
     ask: "Set the due date of card card_9 to 2026-05-01 and assign it to Alex.",
-    expect: ["update_task"],
-    check: (a) => a.cardId === "card_9" && /2026-05-01/.test(String(a.dueDate ?? "")) && String(a.assignee ?? "").includes("Alex"),
+    expect: ["update_tasks"],
+    check: (a) => has(a.cardIds, "card_9") && /2026-05-01/.test(String(a.dueDate ?? "")) && String(a.assignee ?? "").includes("Alex"),
     note: "date + assignee multi-field update",
   },
   {
@@ -343,14 +342,13 @@ const MULTI_TURN: MultiTurn[] = [
     name: "search → open → append",
     ask: "Find the note about authentication, then append a line 'Reviewed 2026-01-05.' to it.",
     resultFor: (name) => {
-      if (name === "search_notes" || name === "search_notes_semantic")
-        return [{ id: "note_77", title: "Auth design", folder: "" }];
-      if (name === "get_note") return { id: "note_77", title: "Auth design", content: "# Auth design\n..." };
+      if (name === "search_notes") return [{ id: "note_77", title: "Auth design", folder: "" }];
+      if (name === "get_item") return { type: "note", id: "note_77", title: "Auth design", content: "# Auth design\n..." };
       return { ok: true };
     },
     steps: [
-      { expect: ["search_notes", "search_notes_semantic"], check: () => true, note: "find the note" },
-      { expect: ["append_to_note"], check: (a) => a.id === "note_77" || a.noteId === "note_77", note: "append to the id returned by search" },
+      { expect: ["search_notes"], check: () => true, note: "find the note" },
+      { expect: ["edit_note"], check: (a) => a.noteId === "note_77" && !a.oldString, note: "append to the id returned by search" },
     ],
   },
   {
@@ -358,8 +356,8 @@ const MULTI_TURN: MultiTurn[] = [
     ask: "Create a task 'Fix flaky test' in Todo, then immediately move it to In Progress (col_prog).",
     resultFor: (name) => (name === "create_task" ? { id: "card_new1" } : { ok: true }),
     steps: [
-      { expect: ["create_task"], check: (a) => a.columnId === "col_todo", note: "create in Todo" },
-      { expect: ["update_task", "bulk_update_task_status"], check: (a) => (a.cardId === "card_new1" || String(JSON.stringify(a.cardIds)).includes("card_new1")) && (a.columnId === "col_prog" || a.targetColumnId === "col_prog"), note: "move the NEW id to In Progress" },
+      { expect: ["create_task"], check: (a) => a.columnId === "col_todo" || a.columnType === "todo", note: "create in Todo" },
+      { expect: ["update_tasks"], check: (a) => has(a.cardIds, "card_new1") && (a.columnId === "col_prog" || a.columnType === "in_progress"), note: "move the NEW id to In Progress" },
     ],
   },
   {
@@ -368,7 +366,7 @@ const MULTI_TURN: MultiTurn[] = [
     resultFor: (name) => (name === "ensure_note" ? { id: "note_new2" } : { ok: true }),
     steps: [
       { expect: ["ensure_note"], check: (a) => a.projectId === "proj_1" && a.title === "Repro steps", note: "create the note" },
-      { expect: ["link_note_to_task"], check: (a) => (a.noteId === "note_new2") && a.cardId === "card_2", note: "link NEW note id to the card" },
+      { expect: ["update_tasks", "update_notes"], check: (a) => (has(a.cardIds, "card_2") && has(a.linkNoteIds, "note_new2")) || (has(a.noteIds, "note_new2") && has(a.linkCardIds, "card_2")), note: "link NEW note id to the card" },
     ],
   },
 ];

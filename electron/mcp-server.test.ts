@@ -183,7 +183,7 @@ describe.skipIf(!fs.existsSync(BUNDLE_PATH))("MCP server — workspace binding",
 
       try {
         await client.init();
-        const ctx = await client.call("get_cairn_context");
+        const ctx = await client.call("get_context");
         const runtime = ctx.runtime as { dbPath: string; workspacePath: string };
         expect(runtime.dbPath).toBe(path.join(ws, "cairn.db"));
         expect(runtime.workspacePath).toBe(ws);
@@ -233,7 +233,7 @@ describe.skipIf(!fs.existsSync(BUNDLE_PATH))("MCP server — workspace binding",
       try {
         await client.init();
 
-        const before = await client.call("get_cairn_context");
+        const before = await client.call("get_context");
         expect((before.runtime as { workspacePath: string }).workspacePath).toBe(first);
         expect((before.projects as Array<{ name: string }>).map((p) => p.name)).toEqual(["Project first"]);
 
@@ -243,7 +243,7 @@ describe.skipIf(!fs.existsSync(BUNDLE_PATH))("MCP server — workspace binding",
         // stat the config repeatedly — wait past that window.
         await new Promise((r) => setTimeout(r, 1_400));
 
-        const after = await client.call("get_cairn_context");
+        const after = await client.call("get_context");
         expect(
           (after.runtime as { workspacePath: string }).workspacePath,
           "the MCP server kept reading the abandoned workspace after the app switched folders",

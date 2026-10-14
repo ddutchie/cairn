@@ -21,271 +21,156 @@ const sStr         = z.string();
 const sStrOpt      = z.string().optional();
 const sNumOpt      = z.number().optional();
 const sBoolOpt     = z.boolean().optional();
-const sTagIds      = z.array(z.string()).optional().describe("Tag IDs (from get_active_context)");
 const sTagNames    = z.array(z.string()).optional().describe("Tag names to automatically resolve or create");
 const sPriority    = z.enum(["low", "medium", "high", "urgent"]).optional();
 const sStatus      = z.enum(["active", "on_hold", "completed", "archived"]).optional();
 const sColType     = z.enum(["backlog", "todo", "in_progress", "review", "done"]).optional();
 const sDueDate     = z.string().optional().describe("ISO date e.g. 2026-05-01, or empty to clear");
-const sColor       = z.string().optional().describe("Hex colour e.g. #6366f1");
 
 // ── Tool schema map ────────────────────────────────────────────────────────────
-// Each entry: { description, schema (Zod object shape for McpServer.tool) }
-// tools.ts derives the OpenAI TOOLS array from these via z.toJSONSchema().
+// Each entry: { description, schema (Zod object shape for McpServer.tool) }.
+// Consolidated toolset (v3.1.3): one tool per intent, with mode/filter/action
+// enums instead of near-duplicate tools. The executors translate these onto the
+// per-operation handlers in electron/mcp/tools/* (see mcp/tools/consolidated.ts).
+
+const sTagMode    = z.enum(["add", "remove", "set"]).optional().describe("How tagNames apply: add (default), remove, or set (replace all)");
+const sIdList     = z.array(z.string());
 
 export const TOOL_SCHEMAS = {
 
-  // ── Read / context ───────────────────────────────────────────────────────────
+  // ── Context & reads ──────────────────────────────────────────────────────────
 
-  get_cairn_context: {
-    description: "Full workspace orientation: projects, columns, tags, conventions. Call once at MCP session start.",
-    schema: z.object({}),
+  get_context: {
+    description: "Orientation: workspace, projects, board columns, tags, conventions. With projectId: that project's pinned notes, folders, templates, open tasks and recent activity. Call first to get IDs.",
+    schema: z.object({ projectId: sIdOpt }),
   },
 
-  get_project_context_pack: {
-    description: "Project metadata, columns, pinned notes, open tasks, recent activity in one call.",
-    schema: z.object({ projectId: sId }),
-  },
-
-  get_active_context: {
-    description: "Active workspace, project, column IDs, recent notes/tasks, and tags. Call first to get IDs.",
-    schema: z.object({}),
-  },
-
-  get_user_writing_style: {
-    description: "Return the user's personal writing style — their persona plus a style guide to match when drafting or rewriting content IN the user's voice (emails, notes, PRDs, replies). Prefer the condensed 'cheatsheet' for everyday drafting; request 'full' for long-form work or deep analysis. Returns configured:false when the user hasn't set one up — never invent a style.",
-    schema: z.object({
-      mode: z.enum(["cheatsheet", "full"]).optional().describe("'cheatsheet' (default) = condensed one-page reference; 'full' = the complete style guide"),
-    }),
-  },
-
-  update_user_writing_style: {
-    description: "Append an observation to the user's writing style guide. Only when the user asks you to remember a style preference, or you notice a consistent correction — never invent one. Call get_user_writing_style first to avoid duplicates.",
-    schema: z.object({
-      section: z.string().optional().describe("Guide section by number or heading: 1 Voice, 2 Sentence Length & Rhythm, 3 Tone & Register, 4 Openings & Closings, 5 Punctuation, 6 Vocabulary & Phrases, 7 Feedback & Disagreement, 8 Emoji, 9 Formatting, 10 Other Patterns, 11 Anti-Patterns, 12 Voice Tells. Omit to append at the end."),
-      content: z.string().min(1).describe("Concise style rule, e.g. 'Prefers plain hyphens over em-dashes'"),
-    }),
-  },
-
-  get_note: {
-    description: "Get the full content of a note by ID.",
-    schema: z.object({ noteId: sId }),
+  get_item: {
+    description: "Full content of a note or task card by id (type is detected from the id).",
+    schema: z.object({ id: sId }),
   },
 
   search_notes: {
-    description: "Search notes by text query. Empty query returns all notes.",
+    description: "Find notes. mode 'keyword' (default) matches words in title/body; 'semantic' finds related meaning via local embeddings. Empty query lists notes, newest first. type 'template' lists note templates.",
     schema: z.object({
       query:        sStr,
+      mode:         z.enum(["keyword", "semantic"]).optional(),
       projectId:    sIdOpt,
+      folder:       sStrOpt.describe("Only notes in this folder"),
+      tag:          sStrOpt.describe("Only notes with this tag name"),
+      type:         z.enum(["note", "template"]).optional(),
+      updatedAfter: z.iso.datetime({ offset: true }).optional().describe("ISO datetime; only notes updated after it"),
       limit:        z.number().optional().default(10),
       offset:       z.number().int().nonnegative().optional().default(0).describe("Pagination offset (default 0)"),
-      updatedAfter: z.iso.datetime({ offset: true }).optional().describe("ISO datetime string filter to find notes updated after this date"),
     }),
   },
 
   search_tasks: {
-    description: "Search tasks by text query. Empty query returns all tasks.",
+    description: "Find task cards. mode 'keyword' (default) or 'semantic'. filter: 'ready' (unblocked, not done), 'overdue', or 'due' (due within dueWithinDays, default 7, including overdue). Empty query lists all matching.",
     schema: z.object({
-      query:      sStr,
-      projectId:  sIdOpt,
-      columnType: sColType,
-      limit:      z.number().optional().default(10),
+      query:         sStr,
+      mode:          z.enum(["keyword", "semantic"]).optional(),
+      projectId:     sIdOpt,
+      columnType:    sColType,
+      filter:        z.enum(["ready", "overdue", "due"]).optional(),
+      dueWithinDays: z.number().int().min(0).optional(),
+      assignee:      sStrOpt,
+      tag:           sStrOpt.describe("Only cards with this tag name"),
+      limit:         z.number().optional().default(10),
     }),
-  },
-
-  get_task: {
-    description: "Task card detail: title, description, priority, dueDate, column, linked notes.",
-    schema: z.object({ cardId: sId }),
   },
 
   // ── Notes ────────────────────────────────────────────────────────────────────
 
   ensure_note: {
-    description: "Create-or-update a note by title+projectId. Idempotent — safe to call repeatedly. Content is optional; if omitted on update, existing content is preserved. As a safety guard, an update that would drastically shrink an existing note is rejected unless overwrite:true is set.",
+    description: "Create-or-update a note by title+projectId (idempotent). Omitted content is preserved on update; a drastic shrink is rejected unless overwrite:true. templateId creates the note from a template (search_notes type:'template'), filling date/title placeholders.",
     schema: z.object({
-      projectId: sId,
-      title:     sStr,
-      content:   sStrOpt.describe("Markdown content. If omitted on update, existing content is preserved."),
-      tagIds:    sTagIds,
-      tagNames:  sTagNames,
-      isPinned:  sBoolOpt,
-      folder:    sStrOpt.describe("Subfolder path. Empty = project root."),
-      overwrite: sBoolOpt.describe("Set true to allow replacing a note's content with much shorter content (bypasses the accidental-clobber guard)."),
+      projectId:  sId,
+      title:      sStr,
+      content:    sStrOpt.describe("Markdown"),
+      templateId: sIdOpt,
+      folder:     sStrOpt.describe("Subfolder path; empty = project root"),
+      tagNames:   sTagNames,
+      isPinned:   sBoolOpt,
+      overwrite:  sBoolOpt.describe("Allow replacing content with much shorter content"),
     }),
   },
 
-  append_to_note: {
-    description: "Append text to a note without replacing existing content.",
-    schema: z.object({
-      noteId:    sId,
-      content:   sStr,
-      separator: sStrOpt.describe("Between existing and new content (default: blank line)"),
-    }),
-  },
-
-  patch_note: {
-    description: "Replace an exact string inside a note. Include surrounding context to make oldString unique.",
+  edit_note: {
+    description: "Edit a note's text. With oldString: replace that exact text (include surrounding context so it is unique). Without oldString: append newString to the end.",
     schema: z.object({
       noteId:     sId,
-      oldString:  sStr,
       newString:  sStr,
+      oldString:  sStrOpt,
       replaceAll: sBoolOpt,
     }),
   },
 
-  delete_note: {
-    description: "Permanently delete a note. Cannot be undone.",
-    schema: z.object({ noteId: sId }),
-  },
-
-  rename_note: {
-    description: "Safely rename a note and update all incoming wikilink references in other notes to keep links intact.",
+  update_notes: {
+    description: "Change one or more notes: rename (updates incoming [[wikilinks]]), move to a folder, tag, pin, or link/unlink task cards.",
     schema: z.object({
-      noteId:   sId,
-      newTitle: sStr.describe("The new title for the note"),
-    }),
-  },
-
-  bulk_move_notes: {
-    description: "Move multiple notes to a subfolder at once.",
-    schema: z.object({
-      noteIds: z.array(z.string()).describe("IDs of the notes to move"),
-      folder:  sStr.describe("Subfolder path. Empty = project root."),
-    }),
-  },
-
-  list_folders: {
-    description: "List all folders defined inside the notes of a project.",
-    schema: z.object({
-      projectId: sId,
+      noteIds:       sIdList,
+      title:         sStrOpt.describe("New title (single note only)"),
+      folder:        sStrOpt.describe("Move to this folder; empty = project root"),
+      tagNames:      sTagNames,
+      tagMode:       sTagMode,
+      isPinned:      sBoolOpt,
+      linkCardIds:   sIdList.optional().describe("Card ids to link to these notes"),
+      unlinkCardIds: sIdList.optional().describe("Card ids to unlink from these notes"),
     }),
   },
 
   // ── Tasks ─────────────────────────────────────────────────────────────────────
 
   create_task: {
-    description: "Create a task card in a board column.",
+    description: "Create a task card. Place it with columnType (default backlog) or an explicit columnId.",
     schema: z.object({
-      columnId:    sId,
       projectId:   sId,
       title:       sStr,
       description: sStrOpt,
+      columnType:  sColType,
+      columnId:    sIdOpt,
       priority:    sPriority,
       dueDate:     sDueDate,
-      tagIds:      sTagIds,
       tagNames:    sTagNames,
+      linkNoteIds: sIdList.optional().describe("Notes to link to the new card"),
     }),
   },
 
-  update_task: {
-    description: "Update a task card. Only provided fields are changed. Use archived=true/false to archive or restore. Use blockedBy to add a blocker, unblockFrom to remove one.",
+  update_tasks: {
+    description: "Update one or more task cards; only provided fields change. Move with columnType or columnId (moving to done unblocks dependents). Also tags, links to notes, blockers, archive/restore.",
     schema: z.object({
-      cardId:       sId,
-      title:        sStrOpt,
-      description:  sStrOpt,
-      priority:     sPriority,
-      dueDate:      sDueDate,
-      columnId:     sIdOpt.describe("Move to this column"),
-      assignee:     sStrOpt.describe("Assignee name, or empty to clear"),
-      tagIds:       sTagIds,
-      tagNames:     sTagNames,
-      archived:     sBoolOpt.describe("true=archive, false=restore"),
-      blockedBy:    sIdOpt.describe("Add this card as a blocker (same project, circular deps rejected)"),
-      unblockFrom:  sIdOpt.describe("Remove this card from blockers"),
+      cardIds:       sIdList,
+      title:         sStrOpt,
+      description:   sStrOpt,
+      priority:      sPriority,
+      dueDate:       sDueDate,
+      columnType:    sColType,
+      columnId:      sIdOpt,
+      assignee:      sStrOpt.describe("Assignee name, or empty to clear"),
+      archived:      sBoolOpt.describe("true = archive, false = restore"),
+      tagNames:      sTagNames,
+      tagMode:       sTagMode,
+      linkNoteIds:   sIdList.optional().describe("Note ids to link to these cards"),
+      unlinkNoteIds: sIdList.optional().describe("Note ids to unlink from these cards"),
+      blockedBy:     sIdList.optional().describe("Cards that block these (same project; circular deps rejected)"),
+      unblockFrom:   sIdList.optional().describe("Blockers to remove"),
     }),
   },
 
-  bulk_update_task_status: {
-    description: "Move multiple task cards to the same column in one call.",
-    schema: z.object({
-      cardIds:        z.array(z.string()).describe("Task card IDs to move"),
-      targetColumnId: sId,
-    }),
-  },
-
-  claim_task: {
-    description: "Claim a task before working on it: sets the assignee to your agent label, logs it under the card's '## Progress' section, and moves it from Backlog/To Do to In Progress. Refuses if another agent holds it unless force=true.",
-    schema: z.object({
-      cardId:           sId,
-      agent:            z.string().describe("Short label for who is working on it, e.g. \"Claude Code\""),
-      force:            sBoolOpt.describe("Take over a task claimed by someone else"),
-      moveToInProgress: sBoolOpt.describe("Move Backlog/To Do cards to In Progress (default true)"),
-    }),
-  },
-
-  add_task_progress: {
-    description: "Log a progress update on a task (appended under its '## Progress' section, visible in card detail). Optionally move it to the project's review or done column when you finish — done also unblocks dependent tasks.",
+  task_progress: {
+    description: "Agent work log on a card. 'claim': set the assignee to your agent label and move Backlog/To Do cards to In Progress (refuses if another agent holds it unless force). 'log': append a one-line update under '## Progress'; moveTo review/done when finished.",
     schema: z.object({
       cardId:  sId,
-      message: z.string().describe("One-line update: what changed, what's next, or what's blocking"),
-      agent:   sStrOpt.describe("Who is reporting (defaults to the card's assignee)"),
-      moveTo:  z.enum(["in_progress", "review", "done"]).optional().describe("Also move the card to the first column of this type"),
+      action:  z.enum(["claim", "log"]),
+      agent:   sStrOpt.describe("Who is working, e.g. \"Claude Code\""),
+      message: sStrOpt.describe("For log: what changed, what's next, or what's blocking"),
+      moveTo:  z.enum(["in_progress", "review", "done"]).optional(),
+      force:   sBoolOpt.describe("Take over a card claimed by someone else"),
     }),
   },
 
-  delete_task: {
-    description: "Permanently delete a task card. Cannot be undone.",
-    schema: z.object({ cardId: sId }),
-  },
-
-  link_note_to_task: {
-    description: "Bidirectionally link a note and a task card.",
-    schema: z.object({
-      noteId: sId,
-      cardId: sId,
-    }),
-  },
-
-  unlink_note_from_task: {
-    description: "Bidirectionally remove a link between a note and a task card.",
-    schema: z.object({
-      noteId: sId,
-      cardId: sId,
-    }),
-  },
-
-  list_ready_tasks: {
-    description: "Return only unblocked, active tasks — tasks with no pending blockers and not in a done column. Use this to find work that can start right now.",
-    schema: z.object({
-      projectId: sId.optional(),
-    }),
-  },
-
-  list_overdue_tasks: {
-    description: "List open tasks whose due date is in the past (excludes done/archived cards), soonest-overdue first. Use for 'what's overdue?'.",
-    schema: z.object({
-      projectId: sId.optional().describe("Limit to one project; omit for the whole workspace."),
-    }),
-  },
-
-  list_tasks_due: {
-    description: "List open tasks due within the next N days (default 7), excluding done/archived cards. By default also includes overdue tasks. Use for 'what's due this week?'.",
-    schema: z.object({
-      projectId:      sId.optional(),
-      days:           z.number().int().min(0).optional().describe("Window size in days (default 7). 0 = due today only."),
-      includeOverdue: z.boolean().optional().describe("Include already-overdue tasks too (default true)."),
-    }),
-  },
-
-  instantiate_template: {
-    description: "Create a new note from a saved template, filling in date/title placeholders. Templates are per-project notes of type 'template' (find them with list_templates). Use this when asked to 'start my weekly review', 'new meeting notes', etc.",
-    schema: z.object({
-      projectId:    sId,
-      templateId:   sIdOpt.describe("Template note id (preferred). Omit to match by name."),
-      templateName: sStrOpt.describe("Template name to match (case-insensitive) when templateId is not given."),
-      title:        sStrOpt.describe("Title for the new note; defaults to the template name with date vars filled."),
-      folder:       sStrOpt.describe("Optional folder for the new note."),
-    }),
-  },
-
-  list_templates: {
-    description: "List the reusable note templates in a project (notes of type 'template'). Returns id, name, and a content preview.",
-    schema: z.object({
-      projectId: sId,
-    }),
-  },
-
-  // ── Projects ──────────────────────────────────────────────────────────────────
+  // ── Projects & delete ─────────────────────────────────────────────────────────
 
   upsert_project: {
     description: "Create or update a project. Omit projectId to create (auto-creates default columns); provide projectId to update existing fields.",
@@ -300,175 +185,82 @@ export const TOOL_SCHEMAS = {
     }),
   },
 
-  delete_project: {
-    description: "Permanently delete a project and all its contents. Cannot be undone.",
-    schema: z.object({ projectId: sId }),
-  },
-
-  // ── AI tools (chat-only) ──────────────────────────────────────────────────────
-
-  generate_prd: {
-    description: "Generate a PRD note from a plain-language description.",
+  delete: {
+    description: "Permanently delete a note, task card, project (with all its contents), idea-flow node, or idea-flow edge. Cannot be undone.",
     schema: z.object({
-      projectId:    sId,
-      title:        sStr,
-      requirements: sStr.describe("Plain-language description of what to build"),
-    }),
-  },
-
-  spawn_tasks_from_note: {
-    description: "Read a PRD/spec note and create task cards from it. Links tasks to the note.",
-    schema: z.object({
-      noteId:   sId,
-      columnId: sId.describe("Column for new tasks (Backlog by default)"),
+      type: z.enum(["note", "task", "project", "flow_node", "flow_edge"]),
+      id:   sId,
     }),
   },
 
   // ── Idea Flow ─────────────────────────────────────────────────────────────────
 
   get_idea_flow: {
-    description: "Get the Idea Flow graph: nodes (with note/task content), edges, spatial bounds, and nextPosition. Call before making changes. Call get_idea_flow_rules for node type and group conventions.",
+    description: "Get the Idea Flow graph: nodes (with note/task content), edges, spatial bounds, and nextPosition. Call before making changes.",
     schema: z.object({ projectId: sId }),
   },
 
-  create_idea_flow_node: {
-    description: "Add a node to the Idea Flow. Types: idea, note_ref, task_ref, url, ai_summary, group. If type is note_ref/task_ref and the backing note/task does not exist, provide noteTitle/noteContent or taskTitle/taskDescription inside data to inline-create and link them in a single call. edges[] wires connections in the same call.",
+  edit_idea_flow: {
+    description: "Apply Idea Flow ops in order, then optionally auto-layout. ops: add_node {type, data, x?, y?, parentId?, ref?} — types: idea {title, body}, note_ref {noteId | noteTitle, noteContent?}, task_ref {cardId | taskTitle, taskDescription?}, url {url, title?}, ai_summary {content}, group {label?, color?}; update_node {nodeId, data?, x?, y?} (data is merged); add_edge {source, target, label?}; delete_node {nodeId}; delete_edge {edgeId}. Any nodeId/parentId/source/target may name an earlier op's ref. Place new nodes from get_idea_flow's spatial.nextPosition; child x/y are relative to their group. Don't connect edges to groups.",
     schema: z.object({
       projectId: sId,
-      type:      z.enum(["idea", "note_ref", "task_ref", "group", "url", "ai_summary"]),
-      x:         sNumOpt,
-      y:         sNumOpt,
-      width:     sNumOpt,
-      height:    sNumOpt,
-      parentId:  sIdOpt.describe("Parent group node ID"),
-      data:      z.object({}).passthrough().optional().describe("idea={title,body} note_ref={noteId?, noteTitle?, noteContent?, folder?, tagNames?} task_ref={cardId?, taskTitle?, taskDescription?, priority?, tagNames?} group={label?,color?} url={url,title?,description?} ai_summary={content}"),
-      edges:     z.array(z.object({}).passthrough()).optional().describe("[{targetNodeId,label?}] or [{sourceNodeId,label?}]"),
+      ops:       z.array(z.object({ op: z.enum(["add_node", "update_node", "add_edge", "delete_node", "delete_edge"]) }).passthrough()),
+      layout:    z.enum(["LR", "TB"]).optional().describe("Auto-arrange afterwards (LR or TB)"),
     }),
   },
 
-  update_idea_flow_node: {
-    description: "Update a node's data and/or position. data fields are merged, not replaced.",
+  // ── Knowledge graph ───────────────────────────────────────────────────────────
+
+  get_graph: {
+    description: "Knowledge graph. With nodeId (note, card, project or tag id): its N-hop neighbourhood (depth 1–3, default 1); semantic:true instead returns notes similar in meaning. Without nodeId: the whole workspace graph — scope with projectIds.",
     schema: z.object({
-      nodeId: sId,
-      x:      sNumOpt,
-      y:      sNumOpt,
-      width:  sNumOpt,
-      height: sNumOpt,
-      data:   z.object({}).passthrough().optional().describe("Partial data to merge"),
-    }),
-  },
-
-  delete_idea_flow_node: {
-    description: "Delete a node and all its edges from the Idea Flow.",
-    schema: z.object({ nodeId: sId }),
-  },
-
-  create_idea_flow_edge: {
-    description: "Connect two Idea Flow nodes.",
-    schema: z.object({
-      sourceNodeId: sId,
-      targetNodeId: sId,
-      label:        sStrOpt,
-    }),
-  },
-
-  delete_idea_flow_edge: {
-    description: "Remove an Idea Flow edge.",
-    schema: z.object({ edgeId: sId }),
-  },
-
-  layout_idea_flow: {
-    description: "Auto-arrange Idea Flow nodes with Dagre. Call after bulk-creating nodes.",
-    schema: z.object({
-      projectId: sId,
-      direction: z.enum(["LR", "TB"]).optional().describe("LR (default) or TB"),
-    }),
-  },
-
-  get_idea_flow_rules: {
-    description: "Returns Idea Flow conventions: node type data shapes, group rules, spatial positioning. Call before creating nodes if unfamiliar.",
-    schema: z.object({}),
-  },
-
-  // ── Knowledge Graph ───────────────────────────────────────────────────────────
-
-  get_knowledge_graph: {
-    description: "Full workspace knowledge graph: all projects, notes, cards, and tags as nodes with relationships as edges. Scope with projectIds to reduce size.",
-    schema: z.object({
-      workspaceId: sId,
-      projectIds:  z.array(z.string()).optional(),
-      includeAuto: sBoolOpt.describe("Include auto-discovered edges (co-mention, keyword, assignee). Default true."),
+      nodeId:      sIdOpt,
+      depth:       z.number().optional(),
+      semantic:    sBoolOpt,
+      projectIds:  sIdList.optional(),
       nodeTypes:   z.array(z.enum(["project", "note", "card", "tag"])).optional(),
       edgeTypes:   z.array(z.string()).optional(),
+      includeAuto: sBoolOpt.describe("Include auto-discovered edges (co-mention, keyword, assignee). Default true."),
     }),
   },
 
-  get_neighbors: {
-    description: "N-hop neighbourhood around a node in the knowledge graph. Prefer over get_knowledge_graph for focused research.",
+  // ── Writing style ─────────────────────────────────────────────────────────────
+
+  get_user_writing_style: {
+    description: "Return the user's personal writing style — their persona plus a style guide to match when drafting or rewriting content IN the user's voice (emails, notes, PRDs, replies). Prefer the condensed 'cheatsheet' for everyday drafting; request 'full' for long-form work or deep analysis. Returns configured:false when the user hasn't set one up — never invent a style.",
     schema: z.object({
-      workspaceId: sId,
-      nodeId:      sId.describe("Note ID, card ID, project ID, or tag ID"),
-      depth:       z.number().optional().describe("Hops (1–3, default 1)"),
-      edgeTypes:   z.array(z.string()).optional(),
+      mode: z.enum(["cheatsheet", "full"]).optional().describe("'cheatsheet' (default) = condensed one-page reference; 'full' = the complete style guide"),
     }),
   },
-
-  get_semantic_neighbors: {
-    description: "Find notes semantically related to a given note via local embeddings. Returns related notes with similarity scores and matching section titles. Use this to discover connections that keyword search or wikilinks would miss — e.g. notes about similar topics written in different words.",
+  update_user_writing_style: {
+    description: "Append an observation to the user's writing style guide. Only when the user asks you to remember a style preference, or you notice a consistent correction — never invent one. Call get_user_writing_style first to avoid duplicates.",
     schema: z.object({
-      workspaceId: sId,
-      noteId: sId.describe("The note ID to find semantic neighbors for"),
+      section: z.string().optional().describe("Guide section by number or heading: 1 Voice, 2 Sentence Length & Rhythm, 3 Tone & Register, 4 Openings & Closings, 5 Punctuation, 6 Vocabulary & Phrases, 7 Feedback & Disagreement, 8 Emoji, 9 Formatting, 10 Other Patterns, 11 Anti-Patterns, 12 Voice Tells. Omit to append at the end."),
+      content: z.string().min(1).describe("Concise style rule, e.g. 'Prefers plain hyphens over em-dashes'"),
     }),
   },
 
-  search_notes_semantic: {
-    description: "Semantic search over notes using local embeddings. Sends a natural-language query, embeds it, and returns matching notes ranked by cosine similarity. Use this when keyword search (search_notes) would miss conceptually related notes — e.g. querying 'auth flow' should find notes titled 'Login pipeline'. Requires embeddings to be enabled and indexed. Returns noteId, title, score (0–1), sectionTitle for each match.",
+  // ── Codebase index (coding + MCP; not chat) ───────────────────────────────────
+
+  codebase_reindex: {
+    description: "Scan and semantic-index a codebase folder. Updates the SQLite cache of file paths, classes, functions, methods, docstrings, and call dependencies. Unchanged files are skipped via a content hash; pass force:true to drop the cache and re-parse everything.",
     schema: z.object({
-      workspaceId: sId,
-      query:      sStr.describe("Natural-language query"),
-      k:          z.number().int().min(1).max(100).optional().describe("Max results (default: 5, max: 100)"),
+      folder: sStr.describe("Absolute path to the codebase root folder"),
+      force:  z.boolean().optional().describe("Re-parse every file even if unchanged (rebuild the index)."),
     }),
   },
 
-  search_tasks_semantic: {
-    description: "Semantic search over task cards using local embeddings. Embeds a natural-language query and returns matching cards ranked by similarity — use when keyword search (search_tasks) would miss conceptually related cards (e.g. 'login is broken' should find a card titled 'Auth token refresh bug'). Requires embeddings enabled + indexed. Returns cardId, title, score (0–1), sectionTitle per match.",
+  codebase_query: {
+    description: "Query the codebase index. action 'search': symbols (classes, functions, methods…) by name or docstring; 'definition': a symbol's signature, lines and docstring; 'references': its callers and callees; 'file': every symbol in a file.",
     schema: z.object({
-      workspaceId: sId,
-      query:      sStr.describe("Natural-language query"),
-      k:          z.number().int().min(1).max(100).optional().describe("Max results (default: 5, max: 100)"),
+      action: z.enum(["search", "definition", "references", "file"]),
+      query:  sStr.describe("Search text, exact symbol name, or absolute file path (for 'file')"),
+      folder: sStrOpt.describe("Absolute path to limit scope"),
+      limit:  sNumOpt.describe("Max matches for 'search' (default 50)"),
     }),
   },
 
-  // ── Tags ──────────────────────────────────────────────────────────────────────
-
-  create_tag: {
-    description: "Create a workspace tag. Check get_active_context for existing tags first to avoid duplicates.",
-    schema: z.object({
-      workspaceId: sId,
-      name:        sStr,
-      color:       sColor,
-    }),
-  },
-
-  tag_note: {
-    description: "Apply or remove tags on an existing note by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise notes.",
-    schema: z.object({
-      noteId:   sId,
-      tagNames: z.array(z.string().trim().min(1)).min(1).describe("Non-empty tag names to add, remove, or set (resolved to ids; created if missing)"),
-      mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
-    }),
-  },
-
-  tag_task: {
-    description: "Apply or remove tags on an existing task card by tag NAME (tags are created if they don't exist yet). Use mode 'add' to add tags, 'remove' to remove them, or 'set' to replace all tags. This is the tool to reach for when asked to organise/categorise tasks.",
-    schema: z.object({
-      cardId:   sId,
-      tagNames: z.array(z.string().trim().min(1)).min(1).describe("Non-empty tag names to add, remove, or set (resolved to ids; created if missing)"),
-      mode:     z.enum(["add", "remove", "set"]).optional().describe("add (default) | remove | set"),
-    }),
-  },
-
-  // ── Interactive clarification (chat-only, renderer-handled) ─────────────────
+  // ── Chat-only ────────────────────────────────────────────────────────────────
 
   ask_questions: {
     description: "Present a structured list of clarifying questions to the user as an inline form. Each question gets its own labeled text input. The user fills in all answers and submits them together. Use this instead of asking questions in prose.",
@@ -480,7 +272,6 @@ export const TOOL_SCHEMAS = {
       })).describe("2–4 targeted questions"),
     }),
   },
-
   suggest_connections: {
     description: "Emit a structured list of suggested connections for the Knowledge Graph Assistant panel. Call this AFTER writing your prose analysis to surface actionable items the user can apply with one click. Each action targets a specific node by its ID from the graph snapshot.",
     schema: z.object({
@@ -510,46 +301,11 @@ export const TOOL_SCHEMAS = {
       })).describe("List of suggested connection actions, max 8"),
     }),
   },
-
-  // ── Codebase Semantic Indexer ─────────────────────────────────────────────────
-
-  codebase_reindex: {
-    description: "Scan and semantic-index a codebase folder. Updates the SQLite cache of file paths, classes, functions, methods, docstrings, and call dependencies. Unchanged files are skipped via a content hash; pass force:true to drop the cache and re-parse everything.",
+  spawn_tasks_from_note: {
+    description: "Read a PRD/spec note and create task cards from it. Links tasks to the note.",
     schema: z.object({
-      folder: sStr.describe("Absolute path to the codebase root folder"),
-      force:  z.boolean().optional().describe("Re-parse every file even if unchanged (rebuild the index)."),
-    }),
-  },
-
-  codebase_search_symbols: {
-    description: "Search for classes, functions, methods, interfaces, or structs by name or docstring query.",
-    schema: z.object({
-      query:  sStr.describe("The name or text to search for"),
-      folder: sStrOpt.describe("Optional absolute path to limit the search scope"),
-      limit:  sNumOpt.describe("Max number of matches (default: 50)"),
-    }),
-  },
-
-  codebase_get_symbol_definition: {
-    description: "Lookup the definition signature, line numbers, and docstring of a symbol by its name.",
-    schema: z.object({
-      name:   sStr.describe("Exact name of the symbol"),
-      folder: sStrOpt.describe("Optional absolute path to limit search scope"),
-    }),
-  },
-
-  codebase_get_references: {
-    description: "Find incoming references and outgoing dependencies (call graph) for a given symbol name.",
-    schema: z.object({
-      name:   sStr.describe("Name of the symbol"),
-      folder: sStrOpt.describe("Optional absolute path to limit search scope"),
-    }),
-  },
-
-  codebase_get_file_symbols: {
-    description: "List all classes, functions, methods, interfaces, or structs defined in a specific file.",
-    schema: z.object({
-      filePath: sStr.describe("Absolute path to the file"),
+      noteId:   sId,
+      columnId: sId.describe("Column for new tasks (Backlog by default)"),
     }),
   },
 
@@ -565,30 +321,16 @@ export type ToolName = keyof typeof TOOL_SCHEMAS;
  */
 export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
   "codebase_reindex",
-  "codebase_search_symbols",
-  "codebase_get_symbol_definition",
-  "codebase_get_references",
-  "codebase_get_file_symbols",
+  "codebase_query",
 ];
 
 // Chat-only tools (not exposed via MCP)
-export const CHAT_ONLY_TOOLS: ToolName[] = ["get_active_context", "generate_prd", "spawn_tasks_from_note", "ask_questions", "suggest_connections"];
-
-/**
- * Tools excluded only from in-app agents (chat + session) but kept in MCP.
- * External MCP clients (Claude Desktop, etc.) benefit from the broader surface.
- *
- *   get_cairn_context  → useful for fresh MCP sessions; agents use get_project_context_pack
- */
-export const AGENT_EXCLUDED_TOOLS: ToolName[] = [
-  "get_cairn_context",
-  "get_idea_flow_rules",
-];
+export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections"];
 
 export type ToolCategory = "read" | "write" | "delete";
 
-function toolCategory(name: string): ToolCategory {
-  if (name.startsWith("delete_")) return "delete";
+export function toolCategory(name: string): ToolCategory {
+  if (name === "delete" || name.startsWith("delete_")) return "delete";
   if (
     name.startsWith("get_") ||
     name.startsWith("list_") ||

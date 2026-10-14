@@ -14,7 +14,7 @@ import { applySchema, applySchemaThrough } from "./schema";
 import {
   changeFeedHead, createCard, createColumn, createProject, createWorkspace, getCardById, getCards, getColumns, updateCard,
 } from "./queries";
-import { executeTool } from "../mcp-server";
+import { executeHandler } from "../mcp/tools";
 
 function seed(db: Database.Database) {
   createWorkspace(db, { id: "ws", name: "W" });
@@ -50,7 +50,7 @@ describe("card column guard", () => {
 
   describe("MCP tools", () => {
     let wp: string;
-    const run = (name: string, args: Record<string, unknown>) => executeTool(db, wp, name, args) as Record<string, unknown>;
+    const run = (name: string, args: Record<string, unknown>) => executeHandler(db, wp, name, args) as Record<string, unknown>;
     beforeEach(() => { wp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-colproj-")); });
     afterEach(() => fs.rmSync(wp, { recursive: true, force: true }));
 

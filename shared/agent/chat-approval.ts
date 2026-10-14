@@ -4,7 +4,7 @@
  * Chat has no sandbox (unlike coding sessions, whose permission preset is the
  * guard), so its policy is chosen per tool class:
  *
- *   - "safe"      → deletes (notes/tasks/projects), connectors (MCP/service)
+ *   - "safe"      → deletes (the `delete` tool), connectors (MCP/service)
  *                   and shell-capable delegation ask. Everything else runs.
  *   - "external"  → connectors and shell-capable delegation ask; Cairn data
  *                   tools, deletes included, always run.
@@ -25,7 +25,7 @@ export const CHAT_APPROVAL_OPTIONS: ReadonlyArray<{ value: ChatApprovalPolicy; l
 ];
 
 /** Cairn deletions gated under "safe". */
-export const CHAT_DELETE_TOOLS: ReadonlySet<string> = new Set(["delete_note", "delete_task", "delete_project"]);
+export const CHAT_DELETE_TOOLS: ReadonlySet<string> = new Set(["delete"]);
 
 export function isChatApprovalPolicy(value: unknown): value is ChatApprovalPolicy {
   return value === "safe" || value === "external" || value === "allow-all";

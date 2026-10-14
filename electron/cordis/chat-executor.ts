@@ -18,10 +18,15 @@ import {
   aiWriteLock,
   toolResultError,
 } from "./host-store";
-import { executeTool as executeMcpTool } from "../mcp/tools";
+import { executeHandler as executeMcpTool } from "../mcp/tools";
+import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "../mcp/tools/consolidated";
 
-// ── Static reference constants (returned by get_idea_flow_rules) ──
-
+/**
+ * Execute one chat tool. Consolidated (model-facing) tools are translated onto
+ * the per-operation handlers by `runConsolidatedTool`, which calls back in here
+ * with `handlerOnly` set so each handler keeps chat's own behaviour (AI write
+ * locks, the active-context read) without re-entering the adapter.
+ */
 export async function executeTool(
   db: Database.Database,
   req: ChatRequest,
@@ -33,12 +38,20 @@ export async function executeTool(
   getWin?: () => BrowserWindow | null,
   emitDone?: (event: { tool: string; cairnRef?: { type: "note" | "task"; id: string; title: string }; externalRef?: { url: string; title?: string; snippet?: string }; output?: string; callId?: string; ok?: boolean; error?: string }) => void,
   callId?: string,
+  handlerOnly = false,
 ): Promise<unknown> {
   emit?.({ tool: name, label: TOOL_LABELS[name]?.(args) ?? name, args, callId });
   const host = createHostStore(db);
   const snap = host.getFullSnapshot() as CairnSnapshot;
 
   const result = await (async () => {
+    if (!handlerOnly && CONSOLIDATED_TOOLS.has(name)) {
+      return runConsolidatedTool(
+        db, name, args,
+        (handler, a) => executeTool(db, req, workspacePath, llmConfig, handler, a, undefined, getWin, undefined, undefined, true),
+        { surface: "chat", activeWorkspaceId: req.workspaceId ?? undefined },
+      );
+    }
     // ── Shared read tools (also used by the MCP server) ──────────
     {
       const res = host.executeReadTool(snap, name, args);
@@ -360,13 +373,15 @@ export async function executeTool(
     
     // For note tools, the result contains ID and title.
     const isNote = [
-      "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template"
-    ].includes(name);
+      "get_note", "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template",
+      "edit_note", "update_notes",
+    ].includes(name) || (name === "get_item" && resObj.type === "note");
     
     // For task tools, the result contains ID and title.
     const isTask = [
-      "get_task", "create_task", "update_task", "claim_task", "add_task_progress"
-    ].includes(name);
+      "get_task", "create_task", "update_task", "claim_task", "add_task_progress",
+      "update_tasks", "task_progress",
+    ].includes(name) || (name === "get_item" && resObj.type === "task");
     
     if (isNote && typeof resObj.id === "string" && typeof resObj.title === "string") {
       cairnRef = { type: "note", id: resObj.id, title: resObj.title };

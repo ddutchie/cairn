@@ -60,8 +60,8 @@ export function getCairnContext(db: Database.Database, snap: Snapshot, _args: Re
     },
     conventions: {
       notes: "Raw markdown in 'content'. Plain text for search/embeddings is derived automatically — do not set any separate text field.",
-      tasks: "Always provide columnId (not just projectId) when creating a task. Use list_ready_tasks to find work that can start now — it filters out blocked tasks. When you work on a task as an external agent, call claim_task first, then add_task_progress as you go (moveTo=\"review\" or \"done\" when finished).",
-      dependencies: "Use update_task with blockedBy to mark a task as blocked by another (same project only). Circular dependencies are rejected. When a blocker is moved to a done column or archived it is automatically treated as resolved. Use update_task with unblockFrom to remove a dependency explicitly.",
+      tasks: "Place new tasks with create_task columnType (or columnId). Use search_tasks filter:'ready' to find work that can start now — it skips blocked tasks. When you work on a task as an external agent, call task_progress action:'claim' first, then action:'log' as you go (moveTo 'review' or 'done' when finished).",
+      dependencies: "Use update_tasks blockedBy to mark tasks as blocked by others (same project only). Circular dependencies are rejected. A blocker moved to a done column or archived counts as resolved. Use update_tasks unblockFrom to remove a dependency explicitly.",
       priority: ["low", "medium", "high", "urgent"],
       projectStatus: ["active", "on_hold", "completed", "archived"],
       columnTypes: ["backlog", "todo", "in_progress", "review", "done", "custom"],

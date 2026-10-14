@@ -621,7 +621,7 @@ export function registerSessionRuntimeHandlers(
     };
 
     await runSession(session, systemPrompt, llmConfig, "execute", toolCtx, ctx, send, {
-      message: `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_note if needed.`,
+      message: `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_item if needed.`,
       projectId,
       workspaceId,
       autoApprove: llmConfig.autoApprove,

@@ -50,9 +50,32 @@ export function standingRuleTarget(tool: string, args: Record<string, unknown>):
   if (tool === "bash" || tool === "pwsh") {
     return typeof args.command === "string" && args.command ? args.command : undefined;
   }
-  const target = [args.path, args.noteId, args.cardId, args.title]
+  // Single-item lists (update_tasks cardIds, update_notes noteIds) and the
+  // generic delete's `id` target one entity just like noteId/cardId did.
+  const single = (v: unknown) => (Array.isArray(v) && v.length === 1 ? v[0] : undefined);
+  const target = [args.path, args.noteId, args.cardId, single(args.noteIds), single(args.cardIds), args.id, args.title]
     .find((v): v is string => typeof v === "string" && v.length > 0);
   return target;
+}
+
+/**
+ * Tool names whose standing rules also cover a consolidated tool. Rules saved
+ * before the toolset was consolidated (v3.1.3) name the per-operation tools;
+ * they keep applying to the tool that replaced them.
+ */
+const LEGACY_RULE_TOOLS: Record<string, readonly string[]> = {
+  edit_note:    ["patch_note", "append_to_note"],
+  update_notes: ["rename_note", "bulk_move_notes", "tag_note", "link_note_to_task", "unlink_note_from_task"],
+  update_tasks: ["update_task", "bulk_update_task_status", "tag_task", "link_note_to_task", "unlink_note_from_task"],
+  task_progress: ["claim_task", "add_task_progress"],
+  ensure_note:  ["instantiate_template"],
+  edit_idea_flow: ["create_idea_flow_node", "update_idea_flow_node", "create_idea_flow_edge", "delete_idea_flow_node", "delete_idea_flow_edge", "layout_idea_flow"],
+  delete:       ["delete_note", "delete_task", "delete_project"],
+};
+
+/** Does a standing rule recorded for `ruleTool` cover a call to `tool`? */
+export function standingRuleCoversTool(ruleTool: string, tool: string): boolean {
+  return ruleTool === tool || (LEGACY_RULE_TOOLS[tool]?.includes(ruleTool) ?? false);
 }
 
 /**

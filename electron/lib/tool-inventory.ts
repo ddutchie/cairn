@@ -7,8 +7,8 @@
  * computes what each surface actually registers, from the same sources the
  * loops use:
  *
- *   - Cairn data tools: `TOOL_SCHEMAS` (+ `CHAT_ONLY_TOOLS`,
- *     `AGENT_EXCLUDED_TOOLS` from `./tool-schemas`, and the chat-gated
+ *   - Cairn data tools: `TOOL_SCHEMAS` (+ `CHAT_ONLY_TOOLS` and
+ *     `CHAT_EXCLUDED_TOOLS` from `./tool-schemas`, and the chat-gated
  *     deletes from `../cordis/cairn-tools.ts` `CHAT_FORBIDDEN_TOOLS`).
  *   - Coding filesystem/exec tools: static manifest mirroring
  *     `mountCodingStack` in `../cordis/cordis-coding-tools.ts` (per-turn
@@ -21,7 +21,7 @@
  * global view.
  */
 
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, AGENT_EXCLUDED_TOOLS, CHAT_EXCLUDED_TOOLS } from "./tool-schemas";
+import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, toolCategory } from "./tool-schemas";
 import type { InventoryCategory, InventorySource, InventorySurface, InventoryTool } from "../../shared/types/runtime";
 export type { InventoryCategory, InventorySource, InventorySurface, InventoryTool };
 
@@ -33,9 +33,7 @@ export type { InventoryCategory, InventorySource, InventorySurface, InventoryToo
  * Kept local so this module stays dsh-free; a test pins the two in sync.
  */
 export const CHAT_GATED_TOOLS: ReadonlySet<string> = new Set([
-  "delete_note",
-  "delete_task",
-  "delete_project",
+  "delete",
 ]);
 
 /**
@@ -47,9 +45,7 @@ export const CHAT_GATED_TOOLS: ReadonlySet<string> = new Set([
 export const CHAT_DENIED_GLOBAL_TOOLS: readonly string[] = ["skill"];
 
 function cairnCategory(name: string): InventoryCategory {
-  if (name.startsWith("delete_")) return "delete";
-  if (name.startsWith("get_") || name.startsWith("list_") || name.startsWith("search_")) return "read";
-  return "write";
+  return toolCategory(name);
 }
 
 export interface CodingStackTool {
@@ -153,7 +149,6 @@ export function buildStaticInventory(
   opts: { chatDeny?: readonly string[] } = {},
 ): Record<InventorySurface, InventoryTool[]> {
   const chatOnly = new Set<string>(CHAT_ONLY_TOOLS as readonly string[]);
-  const agentExcluded = new Set<string>(AGENT_EXCLUDED_TOOLS as readonly string[]);
   const allCairn = new Set(Object.keys(TOOL_SCHEMAS));
 
   // Chat registers every Cairn tool except CHAT_EXCLUDED_TOOLS (codebase index);
@@ -175,10 +170,6 @@ export function buildStaticInventory(
   // MCP advertises every Cairn tool except chat-only ones.
   const mcp = cairnTools({ exclude: chatOnly });
 
-  // `AGENT_EXCLUDED_TOOLS` (get_cairn_context, get_idea_flow_rules) documents
-  // the legacy OpenAI-array exclusion; the Cordis loops register everything.
-  // Surface it so the UI can footnote the difference instead of hiding it.
-  void agentExcluded;
 
   const withGlobal = (list: InventoryTool[]): InventoryTool[] => [...list, ...globalTools];
   const chatDeny = new Set(opts.chatDeny ?? CHAT_DENIED_GLOBAL_TOOLS);

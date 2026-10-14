@@ -117,9 +117,16 @@ export function executeGetProjectContextPack(snap: CairnSnapshot, args: Args): u
   };
 }
 
+/** Tag id for a tag name (case-insensitive), for search filters. */
+function tagIdForName(snap: CairnSnapshot, name: string): string | undefined {
+  const lower = name.toLowerCase();
+  return snap.tags.find((t) => t.name.toLowerCase() === lower)?.id;
+}
+
 export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
-  const { query, projectId, limit = 10, offset = 0, updatedAfter } = args;
+  const { query, projectId, limit = 10, offset = 0, updatedAfter, folder, tag, type } = args;
   const qr = String(query);
+  const tagId = tag ? tagIdForName(snap, String(tag)) : undefined;
   // Documented contract: an empty query lists all (matching notes). A non-empty
   // query uses AND-of-terms (every whitespace term must appear in title+body).
   const listAll = qr.trim().length === 0;
@@ -127,6 +134,9 @@ export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
   const matches = snap.notes.filter((n) => {
     if (n.archivedAt) return false;
     if (projectId && n.projectId !== projectId) return false;
+    if (folder !== undefined && (n.folder ?? "").toLowerCase() !== String(folder).toLowerCase()) return false;
+    if (type && (n.type ?? "note") !== type) return false;
+    if (tag && !(tagId && n.tagIds?.includes(tagId))) return false;
     if (updatedAfterMs !== undefined && new Date(n.updatedAt).getTime() < updatedAfterMs) return false;
     // contentText is only a preview excerpt — search the full body.
     return listAll || matchesQuery(qr, `${n.title}\n${stripMarkdown(n.content ?? "")}`);
@@ -146,13 +156,16 @@ export function executeSearchNotes(snap: CairnSnapshot, args: Args): unknown {
 }
 
 export function executeSearchTasks(snap: CairnSnapshot, args: Args): unknown {
-  const { query, projectId, columnType, limit = 10 } = args;
+  const { query, projectId, columnType, limit = 10, assignee, tag } = args;
   const qr = String(query);
+  const tagId = tag ? tagIdForName(snap, String(tag)) : undefined;
   const listAll = qr.trim().length === 0; // empty query lists all (matching tasks)
   return snap.cards
     .filter((c) => {
       if (c.archivedAt) return false;
       if (projectId && c.projectId !== projectId) return false;
+      if (assignee && (c.assignee ?? "").toLowerCase() !== String(assignee).toLowerCase()) return false;
+      if (tag && !(tagId && c.tagIds?.includes(tagId))) return false;
       if (columnType) {
         const col = snap.columns.find((col) => col.id === c.columnId);
         if (!col || col.type !== columnType) return false;

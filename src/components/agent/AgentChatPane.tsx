@@ -49,9 +49,11 @@ import { useSessionConversation } from "@/hooks/useSessionConversation";
 
 const NOTE_TOOLS = new Set([
   "create_note", "ensure_note", "update_note", "patch_note", "append_to_note", "get_note",
+  "edit_note", "update_notes",
 ]);
 const TASK_TOOLS = new Set([
   "create_task", "update_task", "update_task_status", "get_task",
+  "update_tasks", "task_progress",
 ]);
 // Read-only tools — output is never useful to show; suppress it entirely
 const READ_ONLY_TOOLS = new Set([
@@ -60,15 +62,28 @@ const READ_ONLY_TOOLS = new Set([
   "list_notes", "get_note", "search_notes",
   "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
   "get_idea_flow",
+  "get_context", "get_item", "get_graph",
 ]);
+
+/** `type` ("note" | "task") from a get_item result, or undefined. */
+function getItemType(output: unknown): string | undefined {
+  try {
+    const parsed = typeof output === "string" ? JSON.parse(output) : output;
+    return typeof parsed?.type === "string" ? parsed.type : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function extractCairnRef(
   toolName: string,
   output: string | undefined,
 ): { type: "note" | "task"; id: string; title: string } | undefined {
   if (!output) return undefined;
-  const isNote = NOTE_TOOLS.has(toolName);
-  const isTask = TASK_TOOLS.has(toolName);
+  // get_item reads a note OR a task; its result says which.
+  const itemType = toolName === "get_item" ? getItemType(output) : undefined;
+  const isNote = NOTE_TOOLS.has(toolName) || itemType === "note";
+  const isTask = TASK_TOOLS.has(toolName) || itemType === "task";
   if (!isNote && !isTask) return undefined;
   try {
     const parsed = JSON.parse(output);

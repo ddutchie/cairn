@@ -487,9 +487,9 @@ describe("parity (b): risk class + approval gating matrix", () => {
   });
   it("read vs exec controls behave identically regardless of bridge (same names → same gates)", () => {
     const cases: Array<{ name: string; args?: Record<string, unknown>; risk: string; auto: boolean; interactive: boolean }> = [
-      { name: "get_note", risk: "READ", auto: false, interactive: false },
+      { name: "get_item", risk: "READ", auto: false, interactive: false },
       { name: "search_notes", risk: "READ", auto: false, interactive: false },
-      { name: "codebase_search_symbols", risk: "READ", auto: false, interactive: false },
+      { name: "codebase_query", risk: "READ", auto: false, interactive: false },
       { name: "write", risk: "WRITE_LOCAL", auto: false, interactive: true },
       { name: "ensure_note", risk: "WRITE_LOCAL", auto: false, interactive: true },
       { name: "bash", risk: "EXEC", auto: false, interactive: true },

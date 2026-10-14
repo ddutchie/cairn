@@ -133,8 +133,53 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
       return project ? { pre: "Re-laid out the idea flow for", obj: short(project) } : { pre: "Re-laid out the idea flow" };
     }
     case "generate_prd": return { pre: "Drafted PRD", obj: short(args.title, "a plan") };
-    case "search_notes": return { pre: "Searched notes for", obj: `“${short(args.query, "a phrase")}”` };
-    case "search_tasks": return { pre: "Searched tasks for", obj: `“${short(args.query, "a phrase")}”` };
+    case "search_notes": return { pre: args.mode === "semantic" ? "Searched notes by meaning for" : "Searched notes for", obj: `“${short(args.query, "a phrase")}”` };
+    case "search_tasks": return typeof args.filter === "string"
+      ? { pre: `Listed ${args.filter} tasks` }
+      : { pre: args.mode === "semantic" ? "Searched tasks by meaning for" : "Searched tasks for", obj: `“${short(args.query, "a phrase")}”` };
+    // ── Consolidated toolset (v3.1.3+); the per-operation names above stay for older transcripts ──
+    case "get_context": return typeof args.projectId === "string" && args.projectId.trim()
+      ? { pre: "Read project context for", obj: named("project", args.projectId, "a project") }
+      : { pre: "Read workspace context" };
+    case "get_item": {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      const noteTitle = id ? lookup.note?.(id) : undefined;
+      if (noteTitle?.trim()) return { pre: "Read note", obj: short(noteTitle) };
+      const taskTitle = id ? lookup.task?.(id) : undefined;
+      return { pre: taskTitle?.trim() ? "Read task" : "Read", obj: short(taskTitle?.trim() ? taskTitle : id, "an item") };
+    }
+    case "edit_note": return typeof args.oldString === "string" && args.oldString
+      ? { pre: "Updated note", obj: note() }
+      : { pre: "Added to note", obj: note() };
+    case "update_notes": {
+      const ids = Array.isArray(args.noteIds) ? args.noteIds : [];
+      const one = ids.length === 1 ? named("note", ids[0], "a note") : count(ids, "note");
+      if (typeof args.title === "string" && args.title.trim()) return { pre: "Renamed note", obj: one, post: `to “${short(args.title)}”` };
+      if (typeof args.folder === "string") return { pre: "Moved", obj: one, post: args.folder.trim() ? `to ${short(args.folder)}` : "to the project root" };
+      return { pre: "Updated", obj: one };
+    }
+    case "update_tasks": {
+      const ids = Array.isArray(args.cardIds) ? args.cardIds : [];
+      const one = ids.length === 1 ? named("task", ids[0], "a task") : count(ids, "task");
+      const column = typeof args.columnId === "string" ? lookup.column?.(args.columnId) : undefined;
+      if (column) return { pre: "Moved", obj: one, post: `to ${short(column)}` };
+      if (typeof args.columnType === "string") return { pre: "Moved", obj: one, post: `to ${args.columnType.replace("_", " ")}` };
+      if (args.archived === true) return { pre: "Archived", obj: one };
+      return { pre: "Updated", obj: one };
+    }
+    case "task_progress": return args.action === "claim"
+      ? { pre: "Claimed task", obj: task() }
+      : { pre: "Logged progress on", obj: task(), post: typeof args.moveTo === "string" ? `(→ ${args.moveTo.replace("_", " ")})` : undefined };
+    case "delete": {
+      const kind = args.type === "task" ? "task" : args.type === "project" ? "project" : args.type === "note" ? "note" : undefined;
+      if (kind) return { pre: `Deleted ${kind}`, obj: named(kind, args.id, `a ${kind}`) };
+      return { pre: args.type === "flow_edge" ? "Removed an idea flow connection" : "Deleted an idea flow node" };
+    }
+    case "edit_idea_flow": return { pre: "Updated the idea flow", post: Array.isArray(args.ops) ? `(${args.ops.length} change${args.ops.length === 1 ? "" : "s"})` : undefined };
+    case "get_graph": return typeof args.nodeId === "string" && args.nodeId
+      ? { pre: args.semantic ? "Found notes related to" : "Explored connections of", obj: short(lookup.note?.(args.nodeId) ?? lookup.task?.(args.nodeId) ?? args.nodeId) }
+      : { pre: "Read the knowledge graph" };
+    case "codebase_query": return { pre: "Searched the codebase for", obj: `“${short(args.query, "a symbol")}”` };
     default: {
       if (/^(?:mcp|svc)__/.test(name)) return humanizeConnectorAction(name, args);
       return { pre: "Used", obj: short(name, "a tool") };

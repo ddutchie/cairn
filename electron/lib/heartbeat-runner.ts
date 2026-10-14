@@ -35,7 +35,7 @@ import {
   type Automation,
   type AutomationRun,
 } from "../db/automation-queries";
-import { isReadTool, isExternalTool, standingRuleTarget, recordStandingAllowance } from "./automation-approval";
+import { isReadTool, isExternalTool, standingRuleTarget, standingRuleCoversTool, recordStandingAllowance } from "./automation-approval";
 import { getExternalToolDefs, checkRequirements, externalToolLabel } from "./external-tools";
 import { createSessionEventFold } from "../../shared/agent/session-event-fold";
 import {
@@ -145,7 +145,7 @@ function shouldAutoAllowAutomationTool(db: Database.Database, run: AutomationRun
   if (isReadTool(name)) return true;
   if (name === RUN_SCRIPT_TOOL_NAME) return false;
   const target = standingRuleTarget(name, args);
-  if (automation.standingRules.some((r) => r.tool === name && (r.target === undefined || r.target === target))) return true;
+  if (automation.standingRules.some((r) => standingRuleCoversTool(r.tool, name) && (r.target === undefined || r.target === target))) return true;
   if (automation.approvalMode === "ask") return false;
   const connectorAware = (automation.requires ?? []).length > 0;
   if (connectorAware && isExternalTool(name)) return false;
@@ -478,11 +478,11 @@ export async function runAutomation(
 
   // Collect notes/cards the run CREATED or CHANGED so they can be surfaced as
   // navigable artifacts (the loop's emitToolCallDone carries a cairnRef for
-  // note/task tools). Only WRITE tools count — get_note/get_task are reads and
+  // note/task tools). Only WRITE tools count — get_item is a read and
   // must not be listed as artifacts. Persisted on the run row at completion.
   const ARTIFACT_TOOLS = new Set([
-    "ensure_note", "patch_note", "append_to_note", "rename_note", "instantiate_template",
-    "create_task", "update_task", "bulk_update_task_status", "claim_task", "add_task_progress",
+    "ensure_note", "edit_note", "update_notes",
+    "create_task", "update_tasks", "task_progress",
   ]);
   const artifacts: Array<{ type: "note" | "task"; id: string; title: string }> = [];
   const recordArtifact = (tool: string, ref: { type: "note" | "task"; id: string; title: string } | undefined) => {

@@ -59,14 +59,14 @@ You help users build meaningful connections between their notes, tasks, and proj
 
 ## GETTING COMPLETE CONTEXT & EXISTING CONNECTIONS FIRST (CRITICAL):
 - The graph snapshot provided in the prompt is **TRUNCATED** to conserve context tokens. It lists at most 80 nodes and 60 wikilinks.
-- **BEFORE proposing any connection suggestions**, check if the workspace has more nodes/edges than shown in the snapshot. If the snapshot lists "(none)", shows truncated counts, or you suspect there are more existing notes/connections, **you MUST call \`get_knowledge_graph\` first** to fetch the full, comprehensive list of nodes and relationships.
-- Proposing duplicate links that already exist is a system violation. Always check the full list of existing links/edges using \`get_knowledge_graph\` first to be absolutely certain you aren't suggesting a connection that already exists.
+- **BEFORE proposing any connection suggestions**, check if the workspace has more nodes/edges than shown in the snapshot. If the snapshot lists "(none)", shows truncated counts, or you suspect there are more existing notes/connections, **you MUST call \`get_graph\` first** to fetch the full, comprehensive list of nodes and relationships.
+- Proposing duplicate links that already exist is a system violation. Always check the full list of existing links/edges using \`get_graph\` first to be absolutely certain you aren't suggesting a connection that already exists.
 
 # CRITICAL MANDATE ON TOOL CALLS:
 - **YOU MUST CALL THE \`suggest_connections\` TOOL** whenever you propose any connection (adding a wikilink, linking two notes, linking a note to a task card, or tagging).
 - **NEVER merely describe suggested connections in your prose.** If you recommend a link or tag, you **must** emit it via a \`suggest_connections\` tool call. The user cannot click or apply prose text; they need the interactive tool-generated cards.
 - **PROSE LIMITATION:** Use your prose *only* to explain high-level insights, structural analysis, patterns, or clusters. Do not duplicate the connection details as a standard markdown list of bullet points in your chat bubble — the UI will render interactive one-click "Apply" buttons for each action you send via the tool.
-- Use node IDs exactly as they appear in the graph snapshot or from the \`get_knowledge_graph\` tool call. Limit to 8 connection actions maximum per tool call.
+- Use node IDs exactly as they appear in the graph snapshot or from the \`get_graph\` tool call. Limit to 8 connection actions maximum per tool call.
 
 ## Action Types in \`suggest_connections\`:
 1. **\`add_wikilink\`**: Inserts [[targetTitle]] into \`sourceNoteId\`.
@@ -238,7 +238,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     if (isLoading) stopStream();
     clearQuestions();
     await clearThreadMessages(threadId);
-    // Restore the thread's project/workspace so the next turn's get_active_context
+    // Restore the thread's project/workspace so the next turn's get_context
     // and project-scoped tools still resolve (clearThreadMessages keeps the thread
     // row but the in-memory Context's per-turn mount would otherwise lose it).
     if (projectIdToRestore) {
