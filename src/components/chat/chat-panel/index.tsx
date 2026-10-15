@@ -366,23 +366,17 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // Initialise / switch thread when the project changes.
   // When the user switches projects, the active chat thread should follow —
   // if the current thread belongs to a different project, find or create one
-  // scoped to the new project. Never switches while a stream is in-flight.
-  const prevProjectIdRef = useRef<string | null | undefined>(activeProjectId);
-  const prevWorkspaceIdRef = useRef<string | null | undefined>(activeWorkspaceId);
+  // scoped to the new project. Switching freely mid-turn is safe: in-flight
+  // turns complete in the background into their own thread (per-session live
+  // state), so this no longer blocks on isLoading — blocking is what left a
+  // foreign-workspace thread mounted after a project switch.
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    if (isLoadingRef.current) return;
 
-    const prevProject = prevProjectIdRef.current;
-    const prevWorkspace = prevWorkspaceIdRef.current;
-    prevProjectIdRef.current = activeProjectId;
-    prevWorkspaceIdRef.current = activeWorkspaceId;
-
-    const projectOrWorkspaceChanged =
-      prevWorkspace !== activeWorkspaceId || prevProject !== activeProjectId;
-
-    // If within the same project and workspace, preserve user selection
-    if (!projectOrWorkspaceChanged && activeChatThreadId) {
+    // Preserve any explicit selection that is already in scope — including a
+    // cross-project jump (e.g. from a sidebar pin) that changes project and
+    // thread in the same commit.
+    if (activeChatThreadId) {
       const currentThread = useCairnStore.getState().chatThreads.find(
         (t) => t.id === activeChatThreadId,
       );

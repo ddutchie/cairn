@@ -48,41 +48,57 @@ export interface UseChatStreamResult {
 export function useChatStream(threadId: string | null): UseChatStreamResult {
   const addMessage = useCairnStore((state) => state.addMessage);
   const setThreadUsage = useCairnStore((state) => state.setThreadUsage);
-  const pendingActionsRef = useRef<SuggestedAction[]>([]);
-  // The suggest_connections call whose args are currently staged. The executor
-  // validates args and can reject a typeless call — without tracking this, a
-  // failed call with no model retry would leave invalid actions persisted in
-  // the Apply cards at turn end.
-  const pendingActionsCallIdRef = useRef<string | undefined>(undefined);
+  const pendingActionsRef = useRef(new Map<string, SuggestedAction[]>());
+  // The suggest_connections call staged per session. The executor validates
+  // args and can reject a typeless call — without tracking this, a failed call
+  // with no model retry would leave invalid actions persisted in the Apply
+  // cards at turn end. Keyed by session so a thread switch can't leak one
+  // thread's staged cards into another's turn.
+  const pendingActionsCallIdRef = useRef(new Map<string, string | undefined>());
+  const stagedActions = (sessionId: string | undefined): SuggestedAction[] =>
+    pendingActionsRef.current.get(sessionId ?? "\0unscoped") ?? [];
+  const clearStagedActions = (sessionId: string | undefined) => {
+    const key = sessionId ?? "\0unscoped";
+    pendingActionsRef.current.delete(key);
+    pendingActionsCallIdRef.current.delete(key);
+  };
+  /** Thread a turn belongs to: parsed from its own session id, so a turn that
+   *  overlaps a thread switch still lands in its own thread. */
+  const threadForTurn = (sessionId: string | undefined): string | null => {
+    if (sessionId?.startsWith("chat-")) return sessionId.slice("chat-".length) || null;
+    return threadId;
+  };
   const controller = useSessionConversation({
     sessionId: threadId ? `chat-${threadId}` : null,
     acceptUnscopedEvents: true,
     adapter: {
       trackToolCall: (call) => call.name !== "ask_questions",
-      onToolCall: (call) => {
+      onToolCall: (call, sessionId) => {
         // The controller handles ask_questions via the typed question projection;
         // here we only capture suggest_connections' inline action payload.
         if (call.name === "suggest_connections") {
-          pendingActionsRef.current = (call.args?.actions ?? []) as SuggestedAction[];
-          pendingActionsCallIdRef.current = call.callId;
+          const key = sessionId ?? "\0unscoped";
+          pendingActionsRef.current.set(key, (call.args?.actions ?? []) as SuggestedAction[]);
+          pendingActionsCallIdRef.current.set(key, call.callId);
         }
       },
-      onToolResult: (result) => {
+      onToolResult: (result, sessionId) => {
         // A rejected suggest_connections call (e.g. missing action `type`)
         // stages nothing usable — drop its payload so only the model's retry
         // (which overwrites via onToolCall) or nothing renders.
+        const key = sessionId ?? "\0unscoped";
         if (
           result.callId !== undefined &&
-          result.callId === pendingActionsCallIdRef.current &&
+          result.callId === pendingActionsCallIdRef.current.get(key) &&
           (result.error !== undefined || result.ok === false)
         ) {
-          pendingActionsRef.current = [];
-          pendingActionsCallIdRef.current = undefined;
+          clearStagedActions(sessionId);
         }
       },
       onUsage: (usage) => { if (threadId) setThreadUsage(threadId, usage as never); },
-      onTurnEnd: (reason, snapshot, detail) => {
-        if (!threadId) return;
+      onTurnEnd: (reason, snapshot, detail, sessionId) => {
+        const turnThreadId = threadForTurn(sessionId);
+        if (!turnThreadId) return;
         // Surface turn failures (blocked / error / max-tokens) — previously swallowed.
         // `detail` carries the structured failure message (as in AgentChatPane);
         // `reason` alone only ever said "error" and hid the cause.
@@ -90,18 +106,18 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
           const msg = detail ? `Turn ended: ${reason} — ${detail}` : `Turn ended: ${reason}`;
           // Don't add empty assistant bubble if we already have text; surface as system notice
           if (!snapshot.text.trim()) {
-            addMessage(threadId, "system", msg, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined as never);
+            addMessage(turnThreadId, "system", msg, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined as never);
           } else {
             // Append reason to assistant reasoning so user sees why it stopped
-            addMessage(threadId, "assistant", snapshot.text, snapshot.assistant?.contextRefs as never, snapshot.toolCalls as never, pendingActionsRef.current, snapshot.thought ? `${snapshot.thought}\n\n[${msg}]` : `[${msg}]`, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
-            pendingActionsRef.current = []; pendingActionsCallIdRef.current = undefined;
+            addMessage(turnThreadId, "assistant", snapshot.text, snapshot.assistant?.contextRefs as never, snapshot.toolCalls as never, stagedActions(sessionId), snapshot.thought ? `${snapshot.thought}\n\n[${msg}]` : `[${msg}]`, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
+            clearStagedActions(sessionId);
             return;
           }
         }
         const assistant = snapshot.assistant;
-        addMessage(threadId, "assistant", snapshot.text, assistant?.contextRefs as never, snapshot.toolCalls as never, pendingActionsRef.current, snapshot.thought, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
-        if (assistant?.usage) setThreadUsage(threadId, assistant.usage as never);
-        pendingActionsRef.current = []; pendingActionsCallIdRef.current = undefined;
+        addMessage(turnThreadId, "assistant", snapshot.text, assistant?.contextRefs as never, snapshot.toolCalls as never, stagedActions(sessionId), snapshot.thought, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
+        if (assistant?.usage) setThreadUsage(turnThreadId, assistant.usage as never);
+        clearStagedActions(sessionId);
         if (snapshot.toolCalls.some((tool) => !["suggest_connections", "ask_questions"].includes(tool.tool) && !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")) || snapshot.subagents.some((agent) => (agent.toolCalls ?? []).some((tool) => !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")))) {
           useCairnStore.getState().hydrateFromElectron(true).catch((error) => console.error("[useChatStream] post-write hydrate failed", error));
         }
@@ -115,7 +131,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       projectId: req.projectId ?? undefined, workspaceId: req.workspaceId ?? undefined,
       attachments: req.images, history: req.history, systemPrompt: req.systemPrompt,
       personality: req.personality, approvalPolicy: req.approvalPolicy, useSubagents: req.useSubagents, config: req.config,
-    }));
+    }), `chat-${req.threadId}`);
     if (threadId) setThreadUsage(threadId, undefined);
   }
 
