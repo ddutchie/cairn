@@ -16,6 +16,9 @@ vi.mock("expo-crypto", () => ({ randomUUID: () => "session-uuid" }));
 vi.mock("@/db", () => ({ getMeta: (k: string) => h.meta.get(k) ?? null, setMeta: (k: string, v: string) => h.meta.set(k, v) }));
 vi.mock("../providers-registry", () => ({ fetchProvidersManifest: async () => undefined, getRegistryProviders: () => [] }));
 vi.mock("../models-dev", () => ({ contextLimitForModel: async () => 128_000 }));
+// Token counting pulls in js-tiktoken, a mobile-only dependency CI doesn't install.
+vi.mock("../tokens", () => ({ countTextTokens: (t: string) => t.length }));
+vi.mock("../token-breakdown", () => ({ estimatePromptTokens: () => 0 }));
 
 const { listModels, getKeyInfo, makeOpenAIProvider, providerErrorDetail } = await import("./openai");
 
