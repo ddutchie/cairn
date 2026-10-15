@@ -30,6 +30,6 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "scripts", "electron", "shared", "mobile", "scratch"]
+  "exclude": ["node_modules", "out", "scripts", "electron", "shared", "mobile", "scratch"]
 }
 
