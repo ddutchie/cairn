@@ -8,6 +8,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { sortTagsByUsage } from "@/lib/tag-utils";
+import { parseWikilinks } from "@/lib/wikilink-parser";
 import { revealNote } from "@/lib/events";
 import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -75,6 +76,28 @@ export function CardDetailBody({
     [projectTags, projectNotes, projectCards],
   );
   const otherProjects  = useMemo(() => card ? (activeWorkspaceId ? getWorkspaceProjects(activeWorkspaceId) : projects).filter((p) => p.id !== card.projectId && !p.archivedAt) : [], [card, activeWorkspaceId, getWorkspaceProjects, projects]);
+  // Notes referenced via [[wikilink]] in the description that aren't explicitly
+  // linked yet. Derived (regex scan, preferring same-project title matches) —
+  // never auto-written to `linkedNoteIds`, which would dirty the card on every
+  // keystroke. Rendered below as a one-click "link" suggestion list.
+  const mentionedNotes = useMemo(() => {
+    if (!card?.description?.includes("[[")) return [];
+    const seen = new Set<string>();
+    const out: typeof notes = [];
+    for (const wl of parseWikilinks(card.description)) {
+      const lower = wl.title.toLowerCase();
+      const target =
+        projectNotes.find((n) => !n.archivedAt && n.title.toLowerCase() === lower) ??
+        // Same workspace only — linkNoteToCard doesn't validate workspace IDs,
+        // so a same-title note from another workspace must never surface here.
+        notes.find((n) => n.workspaceId === card.workspaceId && !n.archivedAt && n.title.toLowerCase() === lower);
+      if (!target || seen.has(target.id)) continue;
+      if (card.linkedNoteIds.includes(target.id)) continue;
+      seen.add(target.id);
+      out.push(target);
+    }
+    return out;
+  }, [card, projectNotes, notes]);
 
   if (!card) return null;
 
@@ -207,6 +230,29 @@ export function CardDetailBody({
                 </Tooltip>
               </div>
             ))}
+            {mentionedNotes.length > 0 && (
+              <div className="pt-1">
+                <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-1.5">Mentioned in description</p>
+                <div className="space-y-1.5">
+                  {mentionedNotes.map((note) => (
+                    <div key={note.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-dashed border-[var(--border)] group">
+                      <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                      <span className="text-xs text-[var(--text-secondary)] flex-1 truncate" title={note.title}>{note.title}</span>
+                      <Tooltip content="Link note to this card">
+                        <button onClick={() => linkNoteToCard(note.id, cardId)} className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label={`Link note ${note.title}`}>
+                          <Link size={11} aria-hidden="true" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Open note">
+                        <button onClick={() => { revealNote(setView, note.id); onClose?.(); }} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
+                          <ExternalLink size={11} aria-hidden="true" />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {projectNotes.filter((n) => !card.linkedNoteIds.includes(n.id)).length > 0 && (
               <details className="group">
                 <summary className="text-xs text-[var(--text-tertiary)] cursor-pointer hover:text-[var(--accent)] transition-colors list-none flex items-center gap-1">

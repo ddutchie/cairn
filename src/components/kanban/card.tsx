@@ -18,6 +18,7 @@ import { useCairnStore } from "@/store";
 import type { TaskCard } from "@/types";
 import { PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { CardDescriptionPreview } from "./card-description-preview";
 import { CardAgentBadge } from "./card-agent-badge";
 
 interface KanbanCardProps {
@@ -85,24 +86,27 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
           {card.title}
         </p>
 
-        {/* Description — plain-text preview when collapsed, full markdown only
-            when expanded. Rendering the heavy remark/rehype/KaTeX pipeline for
-            every card up front blocked the Board mount (~350ms INP); the
-            collapsed card only shows ~2 truncated lines anyway, where full
-            markdown formatting adds no value. */}
+        {/* Description — lightweight wikilink preview when collapsed, full
+            markdown only when expanded. Rendering the heavy remark/rehype/
+            KaTeX pipeline for every card up front blocked the Board mount
+            (~350ms INP); the collapsed card only shows ~2 truncated lines,
+            where a regex wikilink scan is enough. */}
         {description && (
           <div
             ref={descRef}
             className={cn(
               "text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed",
               "[&_.prose-cairn]:!py-0 [&_.prose-cairn_p]:!my-0",
-              expanded ? "max-h-80 overflow-y-auto pr-1" : "max-h-10 overflow-hidden"
+              // Keyboard focus inside the collapsed preview releases the clamp
+              // (see CardDescriptionPreview) — the container must grow with it
+              // or the focused pill stays clipped by max-h-10/overflow-hidden.
+              expanded ? "max-h-80 overflow-y-auto pr-1" : "max-h-10 overflow-hidden focus-within:max-h-80 focus-within:overflow-y-auto"
             )}
           >
             {expanded ? (
               <NoteMarkdownPreview content={description} className="!px-0 !py-0" />
             ) : (
-              <p className="whitespace-pre-wrap break-words line-clamp-2 m-0">{description}</p>
+              <CardDescriptionPreview content={description} projectId={card.projectId} workspaceId={card.workspaceId} />
             )}
           </div>
         )}

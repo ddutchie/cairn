@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject, modKey, buildShortcutMap } from "../sidebar-utils";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
+import { RunningChatPins, usePinnedChatThreads } from "./RunningChatPins";
 import { ProjectCreateForm } from "../sidebar/ProjectCreateForm";
 import { useProjectMetrics } from "../project-overview/useProjectMetrics";
 import { useRadarAxes } from "../project-overview/radar";
@@ -97,6 +98,7 @@ export function DockSidebar() {
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const chatPins = usePinnedChatThreads();
 
   const commitCreateProject = useCallback(async () => {
     if (!activeWorkspaceId || !newProjectName.trim()) { setCreatingProject(false); return; }
@@ -461,6 +463,9 @@ export function DockSidebar() {
               {workspaceToolsCollapsed && notificationUnreadCount > 0 && (
                 <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-hidden="true" />
               )}
+              {workspaceToolsCollapsed && notificationUnreadCount === 0 && chatPins.length > 0 && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-hidden="true" />
+              )}
               {/* hidden count for a11y when collapsed */}
               {workspaceToolsCollapsed && notificationUnreadCount > 0 && (
                 <span className="sr-only">{notificationUnreadCount} unread notifications</span>
@@ -477,6 +482,7 @@ export function DockSidebar() {
             >
               <div className="overflow-hidden">
                 <div className="px-2 pb-2 space-y-0.5">
+                  <RunningChatPins />
                   {/* Automations — prominent, above workspace views */}
                   <button onClick={() => setView("automations")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                     <Zap size={13} /><span>Automations</span>

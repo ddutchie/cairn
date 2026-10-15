@@ -24,6 +24,10 @@ export interface ChatSlice {
   activeChatThreadId: string | null;
   /** Projected titles from dsh's session/title fold (null = no title yet). Chat-only. */
   projectedTitles: Record<string, string | null>;
+  /** Threads with assistant/system output the user hasn't opened yet (e.g. a
+   *  background turn that finished while another thread was active). Cleared
+   *  when the thread becomes active. Drives the sidebar pins. */
+  unreadThreadIds: string[];
 
   getOrCreateThread: (workspaceId: ID, projectId?: ID) => ChatThread;
   setActiveChatThreadId: (threadId: string | null) => void;
@@ -73,13 +77,17 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   chatMessages: [],
   activeChatThreadId: null,
   projectedTitles: {},
+  unreadThreadIds: [],
 
   setProjectedTitle(threadId, title) {
     set((s) => ({ projectedTitles: { ...s.projectedTitles, [threadId]: title } }));
   },
 
   setActiveChatThreadId(threadId) {
-    set({ activeChatThreadId: threadId });
+    set((s) => ({
+      activeChatThreadId: threadId,
+      unreadThreadIds: threadId ? s.unreadThreadIds.filter((id) => id !== threadId) : s.unreadThreadIds,
+    }));
     // Persist so the last-active thread is restored across restarts. SQLite is
     // the durable source of truth for the threads themselves (see loadChatFromDb);
     // this pointer just remembers which one to re-select.
@@ -345,6 +353,13 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       chatThreads: s.chatThreads.map((t) =>
         t.id === threadId ? { ...t, updatedAt: now() } : t
       ),
+      // Background turns land here while another thread is open — pin the
+      // thread as unread so the user can find it. User messages are always
+      // composed in the active thread, so only model/system output marks.
+      unreadThreadIds:
+        (role === "assistant" || role === "system") && threadId !== s.activeChatThreadId && !s.unreadThreadIds.includes(threadId)
+          ? [...s.unreadThreadIds, threadId]
+          : s.unreadThreadIds,
     }));
     get().persist();
     // Chat transcripts are persisted by dsh's JSONL session log (session-as-truth,
