@@ -4,6 +4,8 @@ import { CheckCircle, ChevronDown, ChevronRight, ExternalLink } from "lucide-rea
 import { useRouter } from "expo-router";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
 import { extractExternalRefs, isHttpUrl, type ExternalRef } from "@cairn/shared/chat/external-ref";
+import { humanizeToolCall, type HumanizeLookup } from "@/chat/humanize-tool";
+import { getNote, getCard, getProject } from "@/db/queries";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { haptics } from "@/haptics";
 import type { ToolCall } from "@/db/chat-store";
@@ -47,10 +49,18 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
       brandColor: service.brandColor ?? entry?.brandColor,
     };
   }
+  // Title lookups for humanized chip labels ("Read note X", not "Get item").
+  // Sync indexed row fetches, like the tool executors use — a trail holds a
+  // handful of chips, and a deleted item simply falls back to its id.
+  const lookup = useMemo<HumanizeLookup>(() => ({
+    noteTitle: (id) => getNote(id)?.title ?? undefined,
+    taskTitle: (id) => getCard(id)?.title ?? undefined,
+    projectName: (id) => getProject(id)?.name ?? undefined,
+  }), []);
   return (
     <View style={styles.toolTrail}>
       {tools.map((tt, i) => {
-        const label = prettifyToolLabel(tt.tool, { prettifyBare: true });
+        const label = humanizeToolCall(tt.tool, tt.args ?? {}, tt.ref ?? undefined, lookup);
         const connector = Object.entries(connectors).find(([prefix]) => tt.tool.startsWith(prefix))?.[1];
         if (tt.running) {
           // Tool is executing — show a spinner chip until its result arrives.
@@ -78,7 +88,7 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
               }}
             >
               <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
-              <Text style={[styles.toolChipText, styles.toolChipLink]}>{label}</Text>
+              <Text style={[styles.toolChipText, styles.toolChipLink]} numberOfLines={1}>{label}</Text>
               <ChevronRight size={10} color={t.accent} />
             </Pressable>
           );
@@ -110,7 +120,7 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
         return (
           <View key={i} style={styles.toolChip}>
             <CheckCircle size={10} color={tt.ok ? t.accent : t.danger} />
-            <Text style={styles.toolChipText}>{label}</Text>
+            <Text style={styles.toolChipText} numberOfLines={1}>{label}</Text>
           </View>
         );
       })}
