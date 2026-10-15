@@ -224,7 +224,7 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "app:saveEmbeddingsSettings": false,
   "app:modelPricing": true,
   "app:noTemperatureModels": true,
-  "app:endpointProtocols": true,
+  "app:endpointProtocols": false, // steers every desktop OpenCode session's API + base URL
   "updater:install": false,
 
   // ── AI helpers ──

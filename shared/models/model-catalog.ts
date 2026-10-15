@@ -13,6 +13,8 @@
  * /logos/{provider}.svg.
  */
 
+import { isOpencodeEndpoint } from "../agent/app-identity";
+
 /** Per-model info extracted from the models.dev catalog. */
 export interface ModelInfo {  /** Context window in tokens (limit.context). */
   context: number | null;
@@ -624,9 +626,9 @@ export function parseEndpointProtocols(catalog: unknown): Record<string, WirePro
 
 /** The models.dev slug for an OpenCode base URL, or null for any other endpoint. */
 export function opencodeSlugForBaseUrl(baseUrl: string): (typeof OPENCODE_SLUGS)[number] | null {
-  const url = baseUrl.toLowerCase();
-  if (!url.includes("opencode.ai")) return null;
-  return /\/go(\/|$)/.test(url.replace(/^https?:\/\/[^/]+/, "")) ? "opencode-go" : "opencode";
+  if (!isOpencodeEndpoint(baseUrl)) return null;
+  const path = baseUrl.toLowerCase().replace(/^(?:[a-z][a-z0-9+.-]*:\/\/)?[^/]*/, "");
+  return /\/go(\/|$)/.test(path) ? "opencode-go" : "opencode";
 }
 
 /**

@@ -27,6 +27,7 @@ import {
   parseCanonicalCatalog,
   parseEndpointProtocols,
   parseModelCatalog,
+  opencodeSlugForBaseUrl,
   protocolForEndpointModel,
   providerLogoUrl,
   type ModelInfo,
@@ -240,6 +241,9 @@ async function ensureMap(): Promise<InfoMap> {
  * the caller keeps its usual protocol choice.
  */
 export async function endpointProtocolForModel(baseUrl: string, model: string): Promise<WireProtocol | null> {
+  // Only OpenCode dictates a protocol — don't fetch the catalog for anyone else
+  // (offline with no cache, that fetch would otherwise repeat on every chat).
+  if (!opencodeSlugForBaseUrl(baseUrl)) return null;
   if (!protocolCache) await ensureMap();
   return protocolForEndpointModel(protocolCache, baseUrl, model);
 }

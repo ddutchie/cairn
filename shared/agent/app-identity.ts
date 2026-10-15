@@ -23,9 +23,14 @@ export function createAppIdentity(version: string): { userAgent: string; identit
   };
 }
 
-/** True when the base URL targets the OpenCode Zen proxy (opencode.ai). */
+/**
+ * True when the URL's host is opencode.ai or a subdomain of it — never a
+ * lookalike such as opencode.ai.example.com. Parsed by regex rather than
+ * `new URL()` so it behaves the same under React Native as in Node.
+ */
 export function isOpencodeEndpoint(baseUrl: string): boolean {
-  return baseUrl.toLowerCase().includes("opencode.ai");
+  const host = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/?#]*@)?([^/?#:]+)/i.exec(baseUrl.trim())?.[1]?.toLowerCase();
+  return host === "opencode.ai" || (host?.endsWith(".opencode.ai") ?? false);
 }
 
 // ── Opencode session affinity ────────────────────────────────────────────

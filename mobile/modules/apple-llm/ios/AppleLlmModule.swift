@@ -255,10 +255,10 @@ public class AppleLlmModule: Module {
   /// built against a pre-iOS-27 SDK (PCC symbols compiled out via CAIRN_PCC_SDK).
   private static func serverAvailabilityState() -> (available: Bool, reason: String) {
     #if CAIRN_PCC_SDK
-    // The PCC entitlement is opt-in (EXPO_PUBLIC_PCC), but PCC reports
-    // `.available` without it — and a request from an unentitled build traps
-    // inside FoundationModels instead of throwing. withPrivateCloudCompute writes
-    // this marker alongside the entitlement, so only entitled builds use PCC.
+    // withPrivateCloudCompute adds the PCC entitlement by default (opt out with
+    // EXPO_PUBLIC_PCC=0), and writes this marker alongside it. PCC reports
+    // `.available` even without the entitlement, and a request from such a build
+    // traps inside FoundationModels instead of throwing — so no marker, no PCC.
     guard Bundle.main.object(forInfoDictionaryKey: "CairnPrivateCloudCompute") as? Bool == true else {
       return (false, "This build isn't set up for Private Cloud Compute.")
     }

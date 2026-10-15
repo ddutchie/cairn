@@ -559,6 +559,7 @@ describe("OpenCode per-model wire protocol", () => {
 
   it("leaves other endpoints and an unloaded catalog to the configured protocol", () => {
     expect(protocolForEndpointModel(protocols, "https://api.openai.com/v1", "gpt-5")).toBeNull();
+    expect(protocolForEndpointModel(protocols, "https://opencode.ai.example.com/zen/go/v1", "muse-spark-1.3-contributor")).toBeNull();
     expect(protocolForEndpointModel(null, "https://opencode.ai/zen/go/v1", "muse-spark-1.3-contributor")).toBeNull();
   });
 });
