@@ -22,6 +22,7 @@ import { syncNow, pendingCount, type SyncResult } from "./sync";
 import { conflictCount } from "@/db/queries";
 import { onLocalWrite } from "./write-signal";
 import { setActiveSource, getActiveSource } from "@/db";
+import { isDemoSource, openDemoWorkspace } from "@/dev/demo-seed";
 
 const INTERVAL_MS = 25_000; // light periodic sync while foregrounded
 const WRITE_DEBOUNCE_MS = 1_500; // coalesce bursts of local edits into one sync
@@ -90,7 +91,13 @@ export function getSnapshot(): SyncSnapshot {
  */
 export function switchSource(workspaceId: string): void {
   if (getActiveSource() === workspaceId) return;
-  setActiveSource(workspaceId);
+  // The dev demo source seeds itself on first open; anything else is a real
+  // source, whose auto-sync may never have started (the app launched on demo).
+  if (isDemoSource(workspaceId)) openDemoWorkspace();
+  else {
+    setActiveSource(workspaceId);
+    startAutoSync();
+  }
   refreshCounts();
   snapshot = { ...snapshot, state: "idle", lastResult: null };
   emit();

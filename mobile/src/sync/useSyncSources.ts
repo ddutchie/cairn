@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import { getActiveSource, getActiveSourceName, getDeviceId } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "@/sync/folder";
 import { listSources, type SyncSource } from "@/sync/fs-transport";
+import { mergeSwitcherSources } from "@/sync/switcher-sources";
+import { DEMO_WORKSPACE_ID } from "@/dev/demo-seed";
 
 interface UseSyncSourcesOptions {
   /**
@@ -40,7 +42,9 @@ interface UseSyncSourcesResult {
  */
 export function useSyncSources(opts: UseSyncSourcesOptions = {}): UseSyncSourcesResult {
   const { mergeActive = false, gateOnICloud = false } = opts;
-  const [sources, setSources] = useState<SyncSource[]>([]);
+  // The switcher starts with the active workspace listed (not empty) so its
+  // menu has something to show before — or without — a folder scan.
+  const [sources, setSources] = useState<SyncSource[]>(() => (mergeActive ? withActiveMerged([]) : []));
   const [loading, setLoading] = useState(gateOnICloud);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +62,7 @@ export function useSyncSources(opts: UseSyncSourcesOptions = {}): UseSyncSources
         if (gateOnICloud) {
           setError("Couldn't open the iCloud Cairn folder.");
           setSources([]);
-        }
+        } else if (mergeActive) setSources(withActiveMerged([]));
         return;
       }
       const found = await listSources(folder, getDeviceId());
@@ -76,17 +80,14 @@ export function useSyncSources(opts: UseSyncSourcesOptions = {}): UseSyncSources
 
 /**
  * Ensure the active source is present (it may not be in the scan yet) and sort
- * by display name — the header switcher's ordering. Keyed by id so a scanned
- * entry wins over the injected active stub.
+ * by display name — the header switcher's ordering. Dev builds also list the
+ * local demo workspace so switching can be exercised without iCloud.
  */
 function withActiveMerged(found: SyncSource[]): SyncSource[] {
   const active = getActiveSource();
-  const byId = new Map<string, SyncSource>();
-  for (const s of found) byId.set(s.workspaceId, s);
-  if (active && !byId.has(active)) {
-    byId.set(active, { workspaceId: active, name: getActiveSourceName() });
-  }
-  return [...byId.values()].sort((a, b) =>
-    (a.name ?? a.workspaceId).localeCompare(b.name ?? b.workspaceId),
+  return mergeSwitcherSources(
+    found,
+    active ? { workspaceId: active, name: getActiveSourceName() } : null,
+    __DEV__ ? [{ workspaceId: DEMO_WORKSPACE_ID, name: "Demo" }] : [],
   );
 }

@@ -1,10 +1,13 @@
-import { useRouter } from "expo-router";
+import { useCallback } from "react";
+import { Image as RNImage, type ImageSourcePropType } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   Button,
   HStack,
   Image,
   List,
   Menu,
+  RNHostView,
   Section,
   Text,
   Toolbar,
@@ -28,6 +31,7 @@ import {
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import type { ProjectsList } from "@/components/projects-tree";
+import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { getActiveSource } from "@/db";
 import { haptics } from "@/haptics";
 import { switchSource } from "@/sync/controller";
@@ -60,6 +64,13 @@ export function ProjectsTreeSidebar({
   const router = useRouter();
   const { state: syncState, pending: syncPending } = useSyncStatus();
   const { sources, refresh } = useSyncSources({ mergeActive: true });
+  // Discover workspaces whenever the sidebar shows: sync never scans for new
+  // ones, and without a scan the switcher menu only knows the active workspace.
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
   const syncOffline = syncState === "offline";
   const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
 
@@ -108,7 +119,19 @@ export function ProjectsTreeSidebar({
       <Toolbar.Content>
         <ToolbarItem placement="topBarLeading">
           {/* Not "folder": that's the Projects tab and every project row. */}
-          <Menu label={title} systemImage="square.stack.3d.up">
+          {/* The Cairn glyph, like the old Projects header switcher. */}
+          <Menu
+            label={
+              <RNHostView matchContents>
+                <RNImage
+                  source={ICON_CAIRN as ImageSourcePropType}
+                  tintColor={t.accent}
+                  style={{ width: 22, height: 22 }}
+                  accessibilityLabel={`Switch workspace, ${title}`}
+                />
+              </RNHostView>
+            }
+          >
             {sources.map((s) => (
               <Button
                 key={s.workspaceId}

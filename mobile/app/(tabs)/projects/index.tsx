@@ -20,6 +20,15 @@ import { useTheme, elevation, type as typeScale } from "@/theme";
 
 const SPLIT_MIN_WIDTH = 700;
 
+/** Project summaries for the active workspace, or null if the DB isn't ready. */
+function readProjects(): ProjectSummary[] | null {
+  try {
+    return listProjectSummaries();
+  } catch {
+    return null;
+  }
+}
+
 export default function ProjectsScreen() {
   const router = useRouter();
   const t = useTheme();
@@ -27,14 +36,17 @@ export default function ProjectsScreen() {
   const contentStyle = useTabContentStyle();
   const split = width >= SPLIT_MIN_WIDTH;
   const syncBadge = useSyncBadge();
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  // The read is synchronous SQLite, so do it in the initializer: a first frame
+  // without data would paint the loading header before the sidebar replaces it.
+  const [initial] = useState(readProjects);
+  const [projects, setProjects] = useState<ProjectSummary[]>(() => initial ?? []);
   // The active workspace name doubles as the header title; it changes when the
   // user switches workspace from the header-left menu, so track it in state and
   // refresh it on focus / data change alongside the project list.
   const [workspaceName, setWorkspaceName] = useState<string | null>(() => getActiveSourceName());
   // Distinguish "still loading the first read" from "genuinely no projects" so
   // we show a skeleton instead of the empty state on cold start.
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(initial != null);
 
   const load = useCallback(() => {
     setProjects(listProjectSummaries());
@@ -80,9 +92,10 @@ export default function ProjectsScreen() {
   if (!loaded) {
     return (
       <TabScreen>
-        {/* Not when wide: the split view sets its own header items, and these
-            unmounting after it mounts would clear them. */}
-        {split ? null : header}
+        {/* Not where the split view renders next (always on iOS): it sets its
+            own header items, and these unmounting after it mounts would clear
+            them — and the old header menu would flash before the sidebar. */}
+        {Platform.OS === "ios" || split ? null : header}
         <SkeletonList count={6} />
       </TabScreen>
     );
