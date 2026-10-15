@@ -16,6 +16,8 @@
  */
 
 import type { ChatPopoutPayload } from "../agent/chat-popout";
+import type { WireProtocol } from "../models/model-catalog";
+import type { ProbeProtocol, ProtocolAvailability } from "../chat/protocol-probe";
 import type {
   AgentSessionMessage, CodingSessionCreateInput, CodingSessionRow, ContextRingResult, ControlResult, GoalWire,
   PermissionsSelect, ScheduleWire, SessionLoadExtras,
@@ -476,6 +478,8 @@ export interface IpcContract {
   "app:modelPricing": { args: [map: Record<string, ModelPrice> | null]; result: { ok: true } };
   /** Model ids that must never be sent a temperature. */
   "app:noTemperatureModels": { args: [ids: string[] | null]; result: { ok: true } };
+  /** models.dev per-model wire protocols for endpoints that dictate one (OpenCode). */
+  "app:endpointProtocols": { args: [map: Record<string, WireProtocol> | null]; result: { ok: true } };
 
   // ── AI helpers (reject when AI isn't configured or the model call fails) ──
   /** Generates a PRD and saves it as a note in the project. */
@@ -499,6 +503,8 @@ export interface IpcContract {
   "ai:fetchModels": { args: [endpoint: AiEndpoint]; result: string[] };
   /** Remaining credits, or null when the provider doesn't expose them (never rejects for that). */
   "ai:fetchKeyInfo": { args: [endpoint: AiEndpoint]; result: CreditInfo | null };
+  /** Which wire protocols the endpoint offers for `model` (validation-only probes, no generation). */
+  "ai:probeProtocols": { args: [req: AiEndpoint & { model: string }]; result: Record<ProbeProtocol, ProtocolAvailability> };
 
   // ── Auto-updater ─────────────────────────────────────────────────────────
   /** Quits and installs the downloaded update. */
@@ -1006,12 +1012,14 @@ const CHANNELS: ChannelRecord = {
   "app:saveEmbeddingsSettings": "read",
   "app:modelPricing": "read",
   "app:noTemperatureModels": "read",
+  "app:endpointProtocols": "read",
   "ai:generatePrd": "read",
   "ai:generateCommitMessage": "read",
   "ai:generatePrDescription": "read",
   "ai:explainArchitecture": "read",
   "ai:fetchModels": "read",
   "ai:fetchKeyInfo": "read",
+  "ai:probeProtocols": "read",
   "updater:install": "read",
   "agent:getCodingAgents": "read",
   "agent:saveCodingAgent": "read",

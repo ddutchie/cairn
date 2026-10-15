@@ -20,7 +20,7 @@
  * expo/fetch + SQLite app_settings for the browser fetch + localStorage.
  */
 
-import { logoProviderFor, lookupModelInfo, normalizeModelInfo, parseCanonicalCatalog, parseModelCatalog, providerLogoUrl, type ModelInfo } from "../../shared/models/model-catalog";
+import { logoProviderFor, lookupModelInfo, normalizeModelInfo, parseCanonicalCatalog, parseEndpointProtocols, parseModelCatalog, protocolForEndpointModel, providerLogoUrl, type ModelInfo, type WireProtocol } from "../../shared/models/model-catalog";
 
 const API_URL = "https://models.dev/api.json";
 // v3: bumped when the parsed ModelInfo shape gains a field (cacheRead/cacheWrite)
@@ -29,6 +29,10 @@ const API_URL = "https://models.dev/api.json";
 const CACHE_KEY = "ai.modelInfo.cache.v3"; // JSON { [modelId]: ModelInfo }
 const CACHE_AT_KEY = "ai.modelInfo.cachedAt.v3";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
+// Per-model wire protocols for endpoints that dictate one (OpenCode), parsed
+// from the same api.json fetch. A catalog cache without this key predates it,
+// so it's treated as stale and re-fetched once.
+const PROTOCOL_CACHE_KEY = "ai.endpointProtocols.v1"; // JSON { ["<slug>/<model>"]: WireProtocol }
 // Canonical owner map (models.json): id → provider slug for logo resolution.
 // Tiny (282 entries) and keyed by canonical "<provider>/<model>" ids, so it's
 // cached separately with its own freshness window.
@@ -47,6 +51,7 @@ export const DEFAULT_CONTEXT_LIMIT = 128000;
 type InfoMap = Record<string, ModelInfo>;
 
 let memoryCache: InfoMap | null = null;
+let protocolCache: Record<string, WireProtocol> | null = null;
 let inflight: Promise<InfoMap> | null = null;
 // Canonical <provider>/<model> → owner-provider map, loaded alongside the info
 // map. Best-effort; null until it's loaded once (falls back to the shared
@@ -103,8 +108,10 @@ function loadCache(): InfoMap | null {
   const at = Number(readSetting(CACHE_AT_KEY) ?? 0);
   if (!at || Date.now() - at > CACHE_TTL_MS) return null;
   const raw = readSetting(CACHE_KEY);
-  if (!raw) return null;
+  const rawProtocols = readSetting(PROTOCOL_CACHE_KEY);
+  if (!raw || !rawProtocols) return null;
   try {
+    protocolCache = JSON.parse(rawProtocols) as Record<string, WireProtocol>;
     const parsed = JSON.parse(raw) as Record<string, ModelInfo>;
     const map: InfoMap = {};
     for (const [id, info] of Object.entries(parsed)) {
@@ -188,10 +195,13 @@ async function ensureMap(): Promise<InfoMap> {
     try {
       const res = await fetch(API_URL, { headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(`models.dev ${res.status}`);
-      const map = parseModelCatalog(await res.json());
+      const catalog: unknown = await res.json();
+      const map = parseModelCatalog(catalog);
       memoryCache = map;
+      protocolCache = parseEndpointProtocols(catalog);
       version += 1;
       writeSetting(CACHE_KEY, JSON.stringify(map));
+      writeSetting(PROTOCOL_CACHE_KEY, JSON.stringify(protocolCache));
       writeSetting(CACHE_AT_KEY, String(Date.now()));
       emit();
       pushModelPricingToMain();
@@ -365,6 +375,15 @@ export function getNoTemperatureModels(): string[] {
   return out;
 }
 
+/**
+ * The protocol `model` must use at `baseUrl` when the endpoint dictates one
+ * (OpenCode), else null — the provider's own API-protocol setting applies.
+ * Also null until the catalog has loaded (subscribeModelCatalog to re-read).
+ */
+export function endpointProtocolFor(baseUrl: string, model: string): WireProtocol | null {
+  return protocolForEndpointModel(protocolCache, baseUrl, model);
+}
+
 /** Push the pricing map to the Electron main process (usage recorder). */
 export function pushModelPricingToMain(): void {
   if (typeof window === "undefined" || !window.electron?.usage?.setPricing) return;
@@ -379,6 +398,13 @@ export function pushModelPricingToMain(): void {
   // automations) gate temperature on the model capability like the renderer.
   try {
     window.electron.usage?.setNoTemperatureModels?.(getNoTemperatureModels()).catch(() => {});
+  } catch {
+    // best-effort
+  }
+  // And the per-model wire protocols, so main mounts the api an OpenCode model
+  // actually speaks (it answers any other with "does not support this protocol").
+  try {
+    if (protocolCache) window.electron.usage?.setEndpointProtocols?.(protocolCache).catch(() => {});
   } catch {
     // best-effort
   }

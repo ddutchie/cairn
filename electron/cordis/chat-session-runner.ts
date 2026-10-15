@@ -8,6 +8,7 @@ import { cairnDoomLoopPlugin } from "./plugins/doom-loop";
 import { getChatAgentCache } from "./chat-agent-cache";
 import { extractCairnRef } from "./session-replay";
 import { openCordisSessionAgent } from "./session-agent";
+import { effortForMountedApi } from "./session-runtime";
 import { runCordisTurn, type CordisTurnAgent } from "./session-turn";
 import { runCordisSession } from "./session-runner";
 import { buildSystemPrompt, withPersonality, startPhaseTimer, createHostStore, setCurrentOpencodeSessionId, getCachedConfig, CHAT_EXCLUDED_TOOLS } from "./host-store";
@@ -394,7 +395,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
         // Selection ref can be mutated without a resume; session-turn's
         // pre-followup whenIdle serializes against an in-flight turn.
         if (cached.selectionRef?.current) {
-          cached.selectionRef.current.reasoningEffort = preparedConfig.reasoningEffort;
+          cached.selectionRef.current.reasoningEffort = effortForMountedApi(preparedConfig.reasoningEffort);
         }
         // Return the live agent directly — runCordisTurn will await whenIdle
         // before followup, so no double-wait here (P0-3 double-wait hangs when

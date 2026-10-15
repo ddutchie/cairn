@@ -10,7 +10,7 @@ import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { queryUsageOverview, queryRecentUsage, queryUsageThreads, clearLlmUsage, type UsageQueryFilter } from "../db/usage-queries";
 import { getAgentHost } from "../cordis/agent-host";
-import { setModelPricing, setNoTemperatureModels } from "../lib/model-pricing";
+import { setModelPricing, setNoTemperatureModels, setEndpointProtocols } from "../lib/model-pricing";
 
 export type { UsageRangeArgs } from "../../shared/types/usage";
 import type { UsageRangeArgs } from "../../shared/types/usage";
@@ -30,6 +30,15 @@ export function registerUsageHandlers(ctx: DbContext): void {
   registerContractHandle("app:noTemperatureModels", (_e, ids) => {
     return handle(() => {
       setNoTemperatureModels(ids);
+      return { ok: true };
+    });
+  });
+
+  // Per-model wire protocols (OpenCode serves each model over one protocol), so
+  // main-side request paths mount the api the model actually speaks.
+  registerContractHandle("app:endpointProtocols", (_e, map) => {
+    return handle(() => {
+      setEndpointProtocols(map);
       return { ok: true };
     });
   });

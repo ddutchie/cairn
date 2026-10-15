@@ -10,6 +10,7 @@
 
 export type { ModelPrice } from "../../shared/types/app";
 import type { ModelPrice } from "../../shared/types/app";
+import { protocolForEndpointModel, type WireProtocol } from "../../shared/models/model-catalog";
 
 let pricing: Record<string, ModelPrice> | null = null;
 
@@ -133,4 +134,47 @@ export function estimateCostUsd(
     (read / 1e6) * cacheReadPrice +
     (write / 1e6) * cacheWritePrice;
   return promptCost + (completionTokens / 1e6) * output;
+}
+
+// ── Per-model wire protocol (OpenCode) ───────────────────────────────────────
+// OpenCode serves each model over exactly one protocol; models.dev records the
+// exceptions to Chat Completions. The renderer parses them from its catalog and
+// pushes the map here so every main-side request path can honour it.
+
+let endpointProtocols: Record<string, WireProtocol> | null = null;
+
+export function setEndpointProtocols(map: Record<string, WireProtocol> | null): void {
+  endpointProtocols = map && Object.keys(map).length > 0 ? map : null;
+}
+
+/** Protocols a caller may configure (the provider apiMode). */
+type ConfiguredApi = "openai-completions" | "openai-responses" | "anthropic-messages";
+/** Protocols the patched harness can mount (dsh-llm-pi-ai + Cairn's Gemini patch). */
+export type PiApi = ConfiguredApi | "google-generative-ai";
+
+/**
+ * The pi-ai api to mount for `model` at `baseUrl`: the endpoint's own protocol
+ * when it dictates one (OpenCode), else the provider's configured `api`.
+ * Deterministic per model, so a resumed session replays under the same api.
+ * Gemini-only models mount Google's generateContent API, which the harness
+ * serves through patches/@deepseek-ai+dsh-llm-pi-ai.
+ */
+export function wireApiFor(baseUrl: string, model: string, api: ConfiguredApi): PiApi {
+  const protocol = protocolForEndpointModel(endpointProtocols, baseUrl, model);
+  if (protocol === "responses") return "openai-responses";
+  if (protocol === "anthropic-messages") return "anthropic-messages";
+  if (protocol === "google") return "google-generative-ai";
+  if (protocol === "completions") return "openai-completions";
+  return api;
+}
+
+/**
+ * The base URL to mount `api` on. OpenCode Go's `/zen/go/v1` gateway has no
+ * Gemini route (404 for `models/<id>:streamGenerateContent`); its inference
+ * host `/inference/go/v1` — the base models.dev lists for opencode-go — serves
+ * every protocol, Gemini included. Zen's `/zen/v1` serves Gemini itself.
+ */
+export function wireBaseUrlFor(baseUrl: string, api: PiApi): string {
+  if (api !== "google-generative-ai") return baseUrl;
+  return baseUrl.replace(/^(https?:\/\/(?:[^/]*\.)?opencode\.ai)\/zen\/go(?=\/|$)/i, "$1/inference/go");
 }

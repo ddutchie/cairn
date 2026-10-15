@@ -581,3 +581,66 @@ export function resolveMaxOutputTokens(
   }
   return windowKnown ? cap : undefined;
 }
+
+// ── Per-model wire protocol (OpenCode) ───────────────────────────────────────
+// OpenCode's gateways serve each model over exactly one protocol and answer
+// anything else with "Model does not support this protocol" (HTTP 400). The
+// default is Chat Completions; models.dev records the exceptions as a per-model
+// `provider.npm` SDK package (@ai-sdk/openai → Responses, @ai-sdk/anthropic →
+// Anthropic Messages, @ai-sdk/google → Gemini). A family pattern can't stand in
+// for this data: e.g. qwen3-coder stays on Chat Completions while qwen3.6-plus
+// is Anthropic-only.
+
+/** The wire protocol a model must be called with. */
+export type WireProtocol = "completions" | "responses" | "anthropic-messages" | "google";
+
+/** models.dev provider slugs for OpenCode's gateways. */
+const OPENCODE_SLUGS = ["opencode", "opencode-go"] as const;
+
+const NPM_PROTOCOL: Record<string, WireProtocol> = {
+  "@ai-sdk/openai": "responses",
+  "@ai-sdk/anthropic": "anthropic-messages",
+  "@ai-sdk/google": "google",
+};
+
+/**
+ * `"<slug>/<model>" → protocol` for every OpenCode model that is NOT on the
+ * default Chat Completions protocol. Compact enough to cache and push over IPC.
+ */
+export function parseEndpointProtocols(catalog: unknown): Record<string, WireProtocol> {
+  const out: Record<string, WireProtocol> = {};
+  if (!catalog || typeof catalog !== "object") return out;
+  for (const slug of OPENCODE_SLUGS) {
+    const models = (catalog as Record<string, { models?: Record<string, { provider?: { npm?: unknown } }> }>)[slug]?.models;
+    if (!models || typeof models !== "object") continue;
+    for (const [id, model] of Object.entries(models)) {
+      const npm = model?.provider?.npm;
+      const protocol = typeof npm === "string" ? NPM_PROTOCOL[npm] : undefined;
+      if (protocol) out[`${slug}/${id}`] = protocol;
+    }
+  }
+  return out;
+}
+
+/** The models.dev slug for an OpenCode base URL, or null for any other endpoint. */
+export function opencodeSlugForBaseUrl(baseUrl: string): (typeof OPENCODE_SLUGS)[number] | null {
+  const url = baseUrl.toLowerCase();
+  if (!url.includes("opencode.ai")) return null;
+  return /\/go(\/|$)/.test(url.replace(/^https?:\/\/[^/]+/, "")) ? "opencode-go" : "opencode";
+}
+
+/**
+ * The protocol `model` must use at `baseUrl`, or null when the endpoint doesn't
+ * dictate one (not OpenCode) — the caller then keeps its configured protocol.
+ * An OpenCode model the catalog doesn't list as an exception is Chat Completions.
+ */
+export function protocolForEndpointModel(
+  protocols: Record<string, WireProtocol> | null | undefined,
+  baseUrl: string,
+  model: string,
+): WireProtocol | null {
+  const slug = opencodeSlugForBaseUrl(baseUrl);
+  if (!slug || !model || !protocols) return null;
+  const id = model.trim().replace(/^(opencode(-go)?)\//i, "");
+  return protocols[`${slug}/${id}`] ?? "completions";
+}

@@ -36,8 +36,7 @@ import {
   type StreamOptions,
   type UIMessage,
 } from "./types";
-import { CAIRN_USER_AGENT, isOpencodeEndpoint } from "../cairn-identity";
-import { getOpencodeSessionId } from "../opencode-session";
+import { providerHeaders } from "../opencode-session";
 
 // ── stream translation ──────────────────────────────────────────────────────
 
@@ -57,10 +56,6 @@ function makeStreamer(config: OpenAIConfig) {
     const body = buildChatCompletionsBody(config, messages, tools, options);
 
     const url = new URL("chat/completions", config.baseUrl.replace(/\/?$/, "/")).toString();
-    const isOpencode = isOpencodeEndpoint(config.baseUrl);
-    const opencodeHeaders: Record<string, string> = isOpencode
-      ? { "User-Agent": CAIRN_USER_AGENT, "x-opencode-session": getOpencodeSessionId() }
-      : { "User-Agent": CAIRN_USER_AGENT };
     const send = (payload: Record<string, unknown>) =>
       expoFetch(url, {
         method: "POST",
@@ -68,7 +63,7 @@ function makeStreamer(config: OpenAIConfig) {
           "Content-Type": "application/json",
           Accept: "text/event-stream",
           Authorization: `Bearer ${config.apiKey}`,
-          ...opencodeHeaders,
+          ...providerHeaders(config.baseUrl),
         },
         body: JSON.stringify(payload),
         signal,
@@ -87,8 +82,7 @@ function makeStreamer(config: OpenAIConfig) {
       res = await send(rest);
     }
     if (!res.ok || !res.body) {
-      const detail = res.ok ? "no response body" : `HTTP ${res.status}`;
-      throw new Error(`OpenAI provider error (${detail})`);
+      throw new Error(`OpenAI provider error (${await providerErrorDetail(res)})`);
     }
 
     const reader = res.body.getReader();
@@ -273,6 +267,29 @@ function makeStreamer(config: OpenAIConfig) {
   };
 }
 
+/**
+ * "HTTP 400: <the provider's own message>" for a failed response. Gateways put
+ * the reason (unsupported field, bad tool schema, unknown model…) in the body;
+ * without it a 400 is undiagnosable from the phone. Never throws.
+ */
+export async function providerErrorDetail(res: { ok: boolean; status: number; text?: () => Promise<string> }): Promise<string> {
+  if (res.ok) return "no response body";
+  let message = "";
+  try {
+    const raw = (await res.text?.()) ?? "";
+    try {
+      const json = JSON.parse(raw) as { error?: { message?: string } | string; message?: string };
+      message = (typeof json.error === "string" ? json.error : json.error?.message) ?? json.message ?? raw;
+    } catch {
+      message = raw;
+    }
+  } catch {
+    // body unreadable — the status alone will have to do
+  }
+  message = message.replace(/\s+/g, " ").trim().slice(0, 300);
+  return message ? `HTTP ${res.status}: ${message}` : `HTTP ${res.status}`;
+}
+
 /** Build an OpenAI-compatible provider bound to a resolved config. */
 export function makeOpenAIProvider(config: OpenAIConfig): ChatProvider {
   return { name: "OpenAI-compatible", stream: makeStreamer(config) };
@@ -289,7 +306,7 @@ export async function listModels(baseUrl: string, apiKey: string): Promise<strin
   const url = new URL("models", baseUrl.replace(/\/?$/, "/")).toString();
   const res = await expoFetch(url, {
     method: "GET",
-    headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+    headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}`, ...providerHeaders(baseUrl) },
   });
   if (!res.ok) {
     throw new Error(
@@ -338,7 +355,7 @@ export async function getKeyInfo(baseUrl: string, apiKey: string): Promise<Provi
   try {
     res = await expoFetch(url, {
       method: "GET",
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}`, ...providerHeaders(baseUrl) },
     });
   } catch {
     return null; // offline / DNS / TLS — treat as "not supported"

@@ -224,6 +224,7 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "app:saveEmbeddingsSettings": false,
   "app:modelPricing": true,
   "app:noTemperatureModels": true,
+  "app:endpointProtocols": true,
   "updater:install": false,
 
   // ── AI helpers ──
@@ -232,6 +233,7 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "ai:generatePrDescription": true,
   "ai:explainArchitecture": true,
   "ai:fetchModels": false, // sends a stored key to a caller-chosen base URL
+  "ai:probeProtocols": false, // same: sends a stored key to a caller-chosen base URL
   "ai:fetchKeyInfo": false,
 
   // ── Coding agent: code views read-only; no PTYs, file writes or agent config ──

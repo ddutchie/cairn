@@ -20,7 +20,55 @@ import {
   getOrFetchLogoSvg,
   subscribeModelCatalog,
   getModelCatalogVersion,
+  endpointProtocolFor,
 } from "@/lib/models-dev";
+import { opencodeSlugForBaseUrl, type WireProtocol } from "../../../shared/models/model-catalog";
+import type { ProbeProtocol, ProtocolAvailability } from "../../../shared/chat/protocol-probe";
+
+const PROTOCOL_LABEL: Record<WireProtocol, string> = {
+  completions: "Chat Completions",
+  responses: "Responses",
+  "anthropic-messages": "Anthropic Messages",
+  google: "Gemini",
+};
+
+const AVAILABILITY_TAG: Record<ProtocolAvailability, string | null> = {
+  available: "available",
+  unsupported: "not for this model",
+  missing: "not offered",
+  auth: null,
+  unknown: null,
+};
+
+/**
+ * Which wire protocols the endpoint offers for `model`, probed in main (stored
+ * key resolved there) once base URL and model are set, debounced while typing.
+ * null until a probe has answered for the current inputs.
+ */
+function useProtocolAvailability(baseUrl: string, apiKey: string, model: string, enabled: boolean) {
+  const [result, setResult] = useState<{ key: string; value: Record<ProbeProtocol, ProtocolAvailability> } | null>(null);
+  const [probing, setProbing] = useState(false);
+  const key = `${baseUrl.trim()}|${model.trim()}|${apiKey}`;
+  useEffect(() => {
+    const probe = window.electron?.ai?.probeProtocols;
+    if (!enabled || !baseUrl.trim() || !model.trim() || !probe) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setProbing(true);
+      try {
+        const value = await probe({ baseUrl: baseUrl.trim(), apiKey, model: model.trim() });
+        if (!cancelled) setResult({ key, value });
+      } catch {
+        // Best-effort: the picker just shows no availability tags.
+      } finally {
+        if (!cancelled) setProbing(false);
+      }
+    }, 800);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled]);
+  return { availability: result?.key === key ? result.value : null, probing };
+}
 
 /** Normalize an endpoint URL for keyed matching (trailing slash + case). */
 function normBaseUrl(url: string): string {
@@ -334,6 +382,19 @@ function ProviderForm({
 
   const canSave = name.trim().length > 0 && baseUrl.trim().length > 0 && !saving;
 
+  // OpenCode serves each model over one protocol and main mounts that one
+  // whatever apiMode says (wireApiFor), so the picker shows the per-model choice
+  // instead of a setting that has no effect. Re-read when models.dev lands.
+  useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
+  const perModelEndpoint = opencodeSlugForBaseUrl(baseUrl) !== null;
+  const dictated = perModelEndpoint ? endpointProtocolFor(baseUrl, model) : null;
+  const { availability, probing } = useProtocolAvailability(baseUrl, keyForFetch, model, !perModelEndpoint);
+  const tagFor = (p: ProbeProtocol) => (availability ? AVAILABILITY_TAG[availability[p]] : null);
+  const selectedOffline = availability && availability[apiMode] !== "available" && availability[apiMode] !== "unknown" && availability[apiMode] !== "auth";
+  const better = selectedOffline
+    ? (["completions", "responses", "anthropic-messages"] as const).find((p) => availability?.[p] === "available")
+    : undefined;
+
   async function handleSave() {
     if (!canSave) return;
     setSaving(true);
@@ -397,19 +458,59 @@ function ProviderForm({
         </label>
         <div className="flex flex-col gap-1">
           <span className="text-[0.714rem] text-[var(--text-tertiary)]">API protocol</span>
-          <Select<ApiMode>
-            value={apiMode}
-            onChange={setApiMode}
-            size="md"
-            ariaLabel="API protocol"
-            className="w-full"
-            options={[
-              { value: "completions", label: "Chat Completions (/v1/chat/completions)" },
-              { value: "responses", label: "Responses (/v1/responses)" },
-              { value: "anthropic-messages", label: "Anthropic Messages (/v1/messages)" },
-            ]}
-          />
-          <span className="text-[0.643rem] text-[var(--text-tertiary)]">Wire protocol this endpoint speaks. Pinned, not auto-detected.</span>
+          {perModelEndpoint ? (
+            <>
+              <div className="px-2.5 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]">
+                Automatic — {dictated ? PROTOCOL_LABEL[dictated] : "picked per model"}
+              </div>
+              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+                OpenCode serves each model over one API, so Cairn picks it per model{dictated && model.trim() ? ` (${model.trim()} uses ${PROTOCOL_LABEL[dictated]})` : ""}.
+              </span>
+            </>
+          ) : (
+            <>
+              <Select<ApiMode>
+                value={apiMode}
+                onChange={setApiMode}
+                size="md"
+                ariaLabel="API protocol"
+                className="w-full"
+                options={([
+                  ["completions", "Chat Completions (/v1/chat/completions)"],
+                  ["responses", "Responses (/v1/responses)"],
+                  ["anthropic-messages", "Anthropic Messages (/v1/messages)"],
+                ] as const).map(([value, label]) => ({
+                  value,
+                  label: (
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate">{label}</span>
+                      {tagFor(value) && (
+                        <span className={cn("shrink-0 text-[0.643rem]", availability?.[value] === "available" ? "text-[var(--success)]" : "text-[var(--text-tertiary)]")}>
+                          {tagFor(value)}
+                        </span>
+                      )}
+                    </span>
+                  ),
+                }))}
+              />
+              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+                {probing
+                  ? "Checking which APIs this endpoint offers…"
+                  : availability?.[apiMode] === "auth"
+                    ? "Couldn't check the APIs — the endpoint refused the key."
+                    : better
+                      ? (
+                        <>
+                          {model.trim()} isn&apos;t available over {PROTOCOL_LABEL[apiMode]} here.{" "}
+                          <button type="button" onClick={() => setApiMode(better)} className="text-[var(--accent)] hover:underline cursor-pointer">
+                            Use {PROTOCOL_LABEL[better]}
+                          </button>
+                        </>
+                      )
+                      : "Wire protocol this endpoint speaks. Pinned per provider; checked against the model above."}
+              </span>
+            </>
+          )}
         </div>
       </div>
       {keyInfo && (

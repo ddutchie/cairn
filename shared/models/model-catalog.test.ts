@@ -6,6 +6,8 @@
 import { describe, expect, it } from "vitest";
 import {
   formatModelCost,
+  parseEndpointProtocols,
+  protocolForEndpointModel,
   logoProviderFor,
   endpointLogoSlug,
   lookupModelInfo,
@@ -516,5 +518,47 @@ describe("outputBudgetPressure", () => {
     expect(effectiveOutputTokens({ auto: true, contextWindow: 64_000 })).toBe(16_000);
     expect(effectiveOutputTokens({ auto: false, manual: 32_768, contextWindow: 64_000 })).toBe(32_768);
     expect(effectiveOutputTokens({ auto: false, manual: undefined })).toBe(8_192);
+  });
+});
+
+describe("OpenCode per-model wire protocol", () => {
+  // Shapes as published by models.dev: the provider default is Chat Completions;
+  // exceptions carry their own SDK package under `provider.npm`.
+  const catalog = {
+    "opencode-go": {
+      npm: "@ai-sdk/openai-compatible",
+      models: {
+        "muse-spark-1.3-contributor": { provider: { npm: "@ai-sdk/openai" } },
+        "qwen3.6-plus": { provider: { npm: "@ai-sdk/anthropic" } },
+        "gemini-4-argon-contributor": { provider: { npm: "@ai-sdk/google" } },
+        "deepseek-v4-flash": {},
+      },
+    },
+    opencode: { models: { "qwen3-coder": {}, "claude-sonnet-5": { provider: { npm: "@ai-sdk/anthropic" } } } },
+    openai: { models: { "gpt-5": { provider: { npm: "@ai-sdk/openai" } } } },
+  };
+  const protocols = parseEndpointProtocols(catalog);
+
+  it("keeps only OpenCode models off the default protocol", () => {
+    expect(protocols).toEqual({
+      "opencode-go/muse-spark-1.3-contributor": "responses",
+      "opencode-go/qwen3.6-plus": "anthropic-messages",
+      "opencode-go/gemini-4-argon-contributor": "google",
+      "opencode/claude-sonnet-5": "anthropic-messages",
+    });
+  });
+
+  it("resolves per model on the Go and Zen endpoints", () => {
+    const go = "https://opencode.ai/zen/go/v1";
+    expect(protocolForEndpointModel(protocols, go, "muse-spark-1.3-contributor")).toBe("responses");
+    expect(protocolForEndpointModel(protocols, go, "opencode-go/qwen3.6-plus")).toBe("anthropic-messages");
+    expect(protocolForEndpointModel(protocols, go, "deepseek-v4-flash")).toBe("completions");
+    expect(protocolForEndpointModel(protocols, "https://opencode.ai/zen/v1", "claude-sonnet-5")).toBe("anthropic-messages");
+    expect(protocolForEndpointModel(protocols, "https://opencode.ai/zen/v1", "qwen3-coder")).toBe("completions");
+  });
+
+  it("leaves other endpoints and an unloaded catalog to the configured protocol", () => {
+    expect(protocolForEndpointModel(protocols, "https://api.openai.com/v1", "gpt-5")).toBeNull();
+    expect(protocolForEndpointModel(null, "https://opencode.ai/zen/go/v1", "muse-spark-1.3-contributor")).toBeNull();
   });
 });

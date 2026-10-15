@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { apply as llmPiAiApply, inject as llmPiAiInject, name as llmPiAiName, Config as LlmPiAiConfig } from "@deepseek-ai/dsh-llm-pi-ai";
 import { APP_IDENTITY } from "@deepseek-ai/dsh-llm";
-import { CAIRN_APP_IDENTITY, createHostStore } from "./host-store";
+import { CAIRN_APP_IDENTITY, createHostStore, wireApiFor, wireBaseUrlFor, type PiApi } from "./host-store";
 import type { LLMConfig } from "../lib/llm";
 import { type ApiMode } from "../lib/llm-transport";
 import type { Database } from "better-sqlite3";
@@ -23,7 +23,7 @@ APP_IDENTITY.version = CAIRN_APP_IDENTITY.version;
 APP_IDENTITY.url = CAIRN_APP_IDENTITY.url;
 
 let piAiDisposer: (() => Promise<void>) | null = null;
-let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" | "anthropic-messages"; contextWindow?: number; maxTokens?: number; reasoning?: boolean } | null = null;
+let lastPiAiConfig: { baseUrl: string; model: string; apiKey: string; api: PiApi; contextWindow?: number; maxTokens?: number; reasoning?: boolean } | null = null;
 
 export interface CordisDisposerStack {
   mount: (ctx: Context, plugin: unknown, config?: unknown) => Promise<void>;
@@ -155,7 +155,11 @@ export async function prepareCordisRuntime(ctx: Context, input: LLMConfig): Prom
 }
 
 /** Mount or update the Cairn provider route for the current model endpoint. */
-export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" | "anthropic-messages"; contextWindow?: number; maxTokens?: number; reasoning?: boolean }): Promise<void> {
+export async function ensureAgentAiAdapter(ctx: Context, requested: { baseUrl: string; model: string; apiKey: string; api: "openai-completions" | "openai-responses" | "anthropic-messages"; contextWindow?: number; maxTokens?: number; reasoning?: boolean }): Promise<void> {
+  // Endpoints that serve each model over one protocol (OpenCode) override the
+  // provider's apiMode; every mount path goes through here, so all of them agree.
+  const api = wireApiFor(requested.baseUrl, requested.model, requested.api);
+  const config = { ...requested, api, baseUrl: wireBaseUrlFor(requested.baseUrl, api) };
   const same = piAiDisposer && lastPiAiConfig
     && lastPiAiConfig.baseUrl === config.baseUrl
     && lastPiAiConfig.model === config.model
@@ -188,8 +192,17 @@ export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: stri
         // non-reasoning (supports only "off") and any effort throws
         // UNSUPPORTED_REASONING_EFFORT. The dict maps each offered level to its
         // wire spelling; "off": null = "supported, send nothing".
+        //
+        // Responses leaves "off" undeclared: pi-ai's Responses client sends
+        // `reasoning.effort: "none"` whenever `off` is absent from its level map
+        // (which is what a declared `off: null` becomes), and models such as
+        // muse-spark reject "none". Undeclared pins `off` to null, so a default
+        // turn sends no reasoning field and the model uses its own default.
+        // Callers drop an explicit "off" for Responses (effortForMountedApi).
         ...(config.reasoning
-          ? { reasoningEfforts: { off: null, low: "low", medium: "medium", high: "high" } as const }
+          ? config.api === "openai-responses"
+            ? { reasoningEfforts: { low: "low", medium: "medium", high: "high" } as const }
+            : { reasoningEfforts: { off: null, low: "low", medium: "medium", high: "high" } as const }
           : {}),
       }],
       apiKeyEnv: "CAIRN_LLM_API_KEY",
@@ -201,4 +214,15 @@ export async function ensureAgentAiAdapter(ctx: Context, config: { baseUrl: stri
   applyCompactionBudget(ctx, "cairn", config.model, config.contextWindow ?? 128000, config.maxTokens ?? 32768);
   piAiDisposer = async () => { try { const resolved = await handle; resolved.dispose(); } catch { /* noop */ } };
   lastPiAiConfig = config;
+}
+
+/**
+ * The reasoning effort to hand the harness for the currently mounted api.
+ * Responses models are declared without "off" (see ensureAgentAiAdapter), so an
+ * explicit "off" becomes "no effort" — the model's own default — rather than a
+ * level the route would reject.
+ */
+export function effortForMountedApi<T extends string>(effort: T | undefined): T | undefined {
+  if (effort === "off" && lastPiAiConfig?.api === "openai-responses") return undefined;
+  return effort;
 }
