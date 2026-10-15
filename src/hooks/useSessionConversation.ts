@@ -186,13 +186,18 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   useEffect(() => cancelStreamFlush, []);
 
   useEffect(() => {
-    sessionIdRef.current = sessionId;
     adapterRef.current = adapter;
+  });
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
     // Show the newly active session's live state — never the previous
-    // session's partial stream (the cross-thread "bleed").
+    // session's partial stream (the cross-thread "bleed"). Must run ONLY on
+    // session change: the adapter object is inline (new identity every
+    // render), so syncing on it would setState → re-render → loop forever.
     cancelStreamFlush();
     syncSessionUI(sessionId);
-  }, [sessionId, adapter]);
+  }, [sessionId]);
 
   const clearQuestionsFor = (id: string | null) => {
     if (!id) return;
