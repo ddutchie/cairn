@@ -135,16 +135,17 @@ export function ActionsList({ actions }: ActionsListProps) {
     const affectedIds: string[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const a = action as any;
-    
-    // Resolve primary entity IDs defensively
-    const sourceNoteId = a.sourceNoteId || a.noteId || a.nodeId;
-    const targetNoteId = a.targetNoteId || a.cardId || a.nodeId;
-    const noteId = a.noteId || a.sourceNoteId || a.nodeId;
-    const cardId = a.cardId || a.targetNoteId;
-    const nodeId = a.nodeId || a.sourceNoteId || a.noteId;
+
+    // Actions are normalized to canonical IDs before apply (see
+    // normalizeSuggestedAction) — read them directly so a wrong-field alias
+    // can never link the wrong pair.
+    const sourceNoteId: string | undefined = a.sourceNoteId;
+    const targetNoteId: string | undefined = a.targetNoteId;
+    const nodeId: string | undefined = a.nodeId;
 
     switch (action.type) {
       case "add_wikilink": {
+        if (!sourceNoteId) throw new Error("IDs missing");
         const note = notes.find((n) => n.id === sourceNoteId);
         if (!note) throw new Error("Note not found");
         const targetTitle = a.targetTitle || a.cardTitle || a.noteTitle || "";
@@ -159,6 +160,7 @@ export function ActionsList({ actions }: ActionsListProps) {
         break;
       }
       case "link_note_note": {
+        if (!sourceNoteId || !targetNoteId) throw new Error("IDs missing");
         const src = notes.find((n) => n.id === sourceNoteId);
         const tgt = notes.find((n) => n.id === targetNoteId);
         if (!src || !tgt) throw new Error("Note not found");
@@ -168,6 +170,10 @@ export function ActionsList({ actions }: ActionsListProps) {
         break;
       }
       case "link_note_card": {
+        // Actions reaching here were normalized to canonical noteId/cardId;
+        // fail loudly instead of linking the wrong pair.
+        const noteId = a.noteId;
+        const cardId = a.cardId;
         if (!noteId || !cardId) throw new Error("IDs missing");
         linkNoteToCard(noteId, cardId);
         affectedIds.push(noteId, cardId);
@@ -180,10 +186,12 @@ export function ActionsList({ actions }: ActionsListProps) {
         const tag = existingTag ?? createTag(activeWorkspaceId, action.tagName);
         if (action.nodeType === "note") {
           const note = notes.find((n) => n.id === nodeId);
-          if (note) updateNote(nodeId, { tagIds: Array.from(new Set([...note.tagIds, tag.id])) });
+          if (!note) throw new Error("Note not found");
+          updateNote(nodeId, { tagIds: Array.from(new Set([...note.tagIds, tag.id])) });
         } else {
           const card = cards.find((c) => c.id === nodeId);
-          if (card) updateCard(nodeId, { tagIds: Array.from(new Set([...card.tagIds, tag.id])) });
+          if (!card) throw new Error("Card not found");
+          updateCard(nodeId, { tagIds: Array.from(new Set([...card.tagIds, tag.id])) });
         }
         affectedIds.push(nodeId);
         break;

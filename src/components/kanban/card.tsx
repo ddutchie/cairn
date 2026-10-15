@@ -97,13 +97,16 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
             className={cn(
               "text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed",
               "[&_.prose-cairn]:!py-0 [&_.prose-cairn_p]:!my-0",
-              expanded ? "max-h-80 overflow-y-auto pr-1" : "max-h-10 overflow-hidden"
+              // Keyboard focus inside the collapsed preview releases the clamp
+              // (see CardDescriptionPreview) — the container must grow with it
+              // or the focused pill stays clipped by max-h-10/overflow-hidden.
+              expanded ? "max-h-80 overflow-y-auto pr-1" : "max-h-10 overflow-hidden focus-within:max-h-80 focus-within:overflow-y-auto"
             )}
           >
             {expanded ? (
               <NoteMarkdownPreview content={description} className="!px-0 !py-0" />
             ) : (
-              <CardDescriptionPreview content={description} projectId={card.projectId} />
+              <CardDescriptionPreview content={description} projectId={card.projectId} workspaceId={card.workspaceId} />
             )}
           </div>
         )}

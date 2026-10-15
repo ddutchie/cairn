@@ -31,22 +31,62 @@ export function normalizeSuggestedAction(action: SuggestedAction): SuggestedActi
   const valid = ["add_wikilink", "link_note_note", "link_note_card", "add_tag"].includes(a.type);
 
   if (!valid) {
+    const cardSide =
+      has(a.cardId) || (a.nodeType === "card" && has(a.nodeId));
+    const noteSide =
+      has(a.noteId) || has(a.sourceNoteId) || has(a.targetNoteId) ||
+      (a.nodeType === "note" && has(a.nodeId)) ||
+      (has(a.nodeId) && a.nodeType !== "card" && cardSide);
     if (has(a.tagName)) a.type = "add_tag";
-    else if (has(a.cardId) && (has(a.noteId) || has(a.targetNoteId) || has(a.sourceNoteId) || (has(a.nodeId) && a.nodeType !== "card"))) a.type = "link_note_card";
+    else if (cardSide && noteSide) a.type = "link_note_card";
     else if (has(a.targetNoteId)) a.type = "link_note_note";
     else if (has(a.sourceNoteId)) a.type = "add_wikilink";
   }
 
   if (a.type === "link_note_card") {
-    a.noteId ??= a.sourceNoteId ?? (a.nodeType === "note" ? a.nodeId : undefined) ?? a.targetNoteId;
-    a.noteTitle ??= a.sourceTitle ?? (a.nodeType === "note" ? a.nodeTitle : undefined) ?? a.targetTitle;
-    a.cardId ??= a.targetNoteId ?? (a.nodeType === "card" ? a.nodeId : undefined);
-    a.cardTitle ??= a.targetTitle ?? (a.nodeType === "card" ? a.nodeTitle : undefined);
+    // Note side — prefer an explicit note-side id. targetNoteId doubles as
+    // the note side when nothing else identifies it (the observed typeless
+    // shape); a bare nodeId alongside cardId is likewise the note side.
+    // The title follows whichever id was selected so label and Apply agree.
+    const srcNoteId = str(a.noteId) ?? str(a.sourceNoteId) ?? (a.nodeType === "note" ? str(a.nodeId) : undefined);
+    const tgtNoteId = str(a.targetNoteId);
+    const noteId = srcNoteId ?? tgtNoteId ?? str(a.nodeId);
+    a.noteId = noteId;
+    if (!has(a.noteTitle)) {
+      a.noteTitle =
+        noteId !== undefined && noteId === tgtNoteId ? str(a.targetTitle) :
+        noteId !== undefined && noteId === str(a.nodeId) && a.nodeType !== "card" ? str(a.nodeTitle) :
+        str(a.sourceTitle);
+    }
+    // Card side — targetNoteId is never a card here: when it identified the
+    // note side it is already consumed above, otherwise it is unrelated.
+    const cardId = str(a.cardId) ?? (a.nodeType === "card" ? str(a.nodeId) : undefined);
+    a.cardId = cardId;
+    if (!has(a.cardTitle)) {
+      a.cardTitle =
+        cardId !== undefined && cardId === tgtNoteId ? str(a.targetTitle) :
+        cardId !== undefined && cardId === str(a.nodeId) ? str(a.nodeTitle) :
+        str(a.cardTitle);
+    }
   } else if (a.type === "link_note_note") {
     a.sourceNoteId ??= a.noteId ?? a.nodeId;
     a.sourceTitle ??= a.noteTitle ?? a.nodeTitle;
+    // A bare nodeId is the second note when it isn't already the source.
+    a.targetNoteId ??= a.nodeId !== a.sourceNoteId ? a.nodeId : undefined;
+  } else if (a.type === "add_wikilink") {
+    a.sourceNoteId ??= a.noteId ?? (a.nodeType !== "card" ? a.nodeId : undefined);
+    a.targetTitle ??= a.cardTitle ?? a.noteTitle ?? a.nodeTitle;
   } else if (a.type === "add_tag") {
     a.nodeId ??= a.noteId ?? a.cardId ?? a.sourceNoteId;
+    // applyAction tags the note branch unless nodeType is exactly "card",
+    // so only infer nodeType from an unambiguous signal — otherwise leave it
+    // unset and let apply reject instead of reporting a false success.
+    if (!has(a.nodeType)) {
+      const looksNote = has(a.noteId) || has(a.sourceNoteId);
+      const looksCard = has(a.cardId);
+      if (looksNote && !looksCard) a.nodeType = "note";
+      else if (looksCard && !looksNote) a.nodeType = "card";
+    }
   }
   return a as SuggestedAction;
 }

@@ -88,7 +88,9 @@ export function CardDetailBody({
       const lower = wl.title.toLowerCase();
       const target =
         projectNotes.find((n) => !n.archivedAt && n.title.toLowerCase() === lower) ??
-        notes.find((n) => !n.archivedAt && n.title.toLowerCase() === lower);
+        // Same workspace only — linkNoteToCard doesn't validate workspace IDs,
+        // so a same-title note from another workspace must never surface here.
+        notes.find((n) => n.workspaceId === card.workspaceId && !n.archivedAt && n.title.toLowerCase() === lower);
       if (!target || seen.has(target.id)) continue;
       if (card.linkedNoteIds.includes(target.id)) continue;
       seen.add(target.id);

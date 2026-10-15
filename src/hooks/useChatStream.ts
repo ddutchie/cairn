@@ -49,6 +49,11 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   const addMessage = useCairnStore((state) => state.addMessage);
   const setThreadUsage = useCairnStore((state) => state.setThreadUsage);
   const pendingActionsRef = useRef<SuggestedAction[]>([]);
+  // The suggest_connections call whose args are currently staged. The executor
+  // validates args and can reject a typeless call — without tracking this, a
+  // failed call with no model retry would leave invalid actions persisted in
+  // the Apply cards at turn end.
+  const pendingActionsCallIdRef = useRef<string | undefined>(undefined);
   const controller = useSessionConversation({
     sessionId: threadId ? `chat-${threadId}` : null,
     acceptUnscopedEvents: true,
@@ -59,6 +64,20 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         // here we only capture suggest_connections' inline action payload.
         if (call.name === "suggest_connections") {
           pendingActionsRef.current = (call.args?.actions ?? []) as SuggestedAction[];
+          pendingActionsCallIdRef.current = call.callId;
+        }
+      },
+      onToolResult: (result) => {
+        // A rejected suggest_connections call (e.g. missing action `type`)
+        // stages nothing usable — drop its payload so only the model's retry
+        // (which overwrites via onToolCall) or nothing renders.
+        if (
+          result.callId !== undefined &&
+          result.callId === pendingActionsCallIdRef.current &&
+          (result.error !== undefined || result.ok === false)
+        ) {
+          pendingActionsRef.current = [];
+          pendingActionsCallIdRef.current = undefined;
         }
       },
       onUsage: (usage) => { if (threadId) setThreadUsage(threadId, usage as never); },
@@ -75,14 +94,14 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
           } else {
             // Append reason to assistant reasoning so user sees why it stopped
             addMessage(threadId, "assistant", snapshot.text, snapshot.assistant?.contextRefs as never, snapshot.toolCalls as never, pendingActionsRef.current, snapshot.thought ? `${snapshot.thought}\n\n[${msg}]` : `[${msg}]`, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
-            pendingActionsRef.current = [];
+            pendingActionsRef.current = []; pendingActionsCallIdRef.current = undefined;
             return;
           }
         }
         const assistant = snapshot.assistant;
         addMessage(threadId, "assistant", snapshot.text, assistant?.contextRefs as never, snapshot.toolCalls as never, pendingActionsRef.current, snapshot.thought, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
         if (assistant?.usage) setThreadUsage(threadId, assistant.usage as never);
-        pendingActionsRef.current = [];
+        pendingActionsRef.current = []; pendingActionsCallIdRef.current = undefined;
         if (snapshot.toolCalls.some((tool) => !["suggest_connections", "ask_questions"].includes(tool.tool) && !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")) || snapshot.subagents.some((agent) => (agent.toolCalls ?? []).some((tool) => !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")))) {
           useCairnStore.getState().hydrateFromElectron(true).catch((error) => console.error("[useChatStream] post-write hydrate failed", error));
         }

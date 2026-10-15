@@ -18,7 +18,7 @@ import { revealNote, revealCard } from "@/lib/events";
  * Full markdown is still used for the expanded card (`card.tsx`) and the
  * card-detail modal (`card-detail-body.tsx`), where only one instance renders.
  */
-function CardDescriptionPreviewImpl({ content, projectId }: { content: string; projectId?: string }) {
+function CardDescriptionPreviewImpl({ content, projectId, workspaceId }: { content: string; projectId?: string; workspaceId?: string }) {
   const { notes, cards, setView } = useCairnStore(
     useShallow((s) => ({ notes: s.notes, cards: s.cards, setView: s.setView })),
   );
@@ -35,19 +35,23 @@ function CardDescriptionPreviewImpl({ content, projectId }: { content: string; p
     const findNote = (title: string) => {
       const lower = title.toLowerCase();
       // Prefer a same-project match so duplicate titles resolve locally.
+      // Fallbacks stay inside the card's workspace — resolving (and revealing)
+      // a same-title note from another workspace would be a wrong link.
+      const inWorkspace = (n: { projectId: string; workspaceId: string; archivedAt?: string; title: string }) =>
+        (!workspaceId || n.workspaceId === workspaceId) && !n.archivedAt && n.title.toLowerCase() === lower;
       const local = projectId
         ? notes.find((n) => n.projectId === projectId && !n.archivedAt && n.title.toLowerCase() === lower)
         : undefined;
-      return (
-        local ?? notes.find((n) => !n.archivedAt && n.title.toLowerCase() === lower)
-      );
+      return local ?? notes.find(inWorkspace);
     };
     const findCard = (title: string) => {
       const lower = title.toLowerCase();
+      const inWorkspace = (c: { projectId: string; workspaceId: string; archivedAt?: string; title: string }) =>
+        (!workspaceId || c.workspaceId === workspaceId) && !c.archivedAt && c.title.toLowerCase() === lower;
       const local = projectId
         ? cards.find((c) => c.projectId === projectId && !c.archivedAt && c.title.toLowerCase() === lower)
         : undefined;
-      return local ?? cards.find((c) => !c.archivedAt && c.title.toLowerCase() === lower);
+      return local ?? cards.find(inWorkspace);
     };
 
     const out: Seg[] = [];
@@ -71,14 +75,16 @@ function CardDescriptionPreviewImpl({ content, projectId }: { content: string; p
       out.push({ kind: "text", text: content.slice(cursor), key: "t-tail" });
     }
     return out;
-  }, [content, notes, cards, projectId]);
+  }, [content, notes, cards, projectId, workspaceId]);
 
   if (!segments) {
     return <p className="whitespace-pre-wrap break-words line-clamp-2 m-0">{content}</p>;
   }
 
   return (
-    <p className="whitespace-pre-wrap break-words line-clamp-2 m-0">
+    // Buttons past the second line are tab-reachable: release the clamp while
+    // focus is inside so keyboard users never focus a fully hidden control.
+    <p className="whitespace-pre-wrap break-words line-clamp-2 focus-within:line-clamp-none m-0">
       {segments.map((seg) => {
         if (seg.kind === "text") return <React.Fragment key={seg.key}>{seg.text}</React.Fragment>;
         const targetId = seg.noteId ?? seg.cardId;

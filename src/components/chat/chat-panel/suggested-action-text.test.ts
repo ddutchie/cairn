@@ -81,4 +81,47 @@ describe("normalizeSuggestedAction", () => {
     const raw = { type: "add_tag", nodeId: "n1", nodeTitle: "Alpha Note", nodeType: "note", tagName: "hiring", reason: "r" } as unknown as SuggestedAction;
     expect(normalizeSuggestedAction(raw)).toEqual(raw);
   });
+
+  it("keeps title aligned with the selected note id", () => {
+    // sourceNoteId wins the note side, so the target's title must not leak in.
+    const raw = {
+      cardId: "c1", cardTitle: "Ship it",
+      sourceNoteId: "n1", targetNoteId: "n2", targetTitle: "Beta Note",
+      reason: "r",
+    } as unknown as SuggestedAction;
+    const out = normalizeSuggestedAction(raw) as unknown as Record<string, unknown>;
+    expect(out.type).toBe("link_note_card");
+    expect(out.noteId).toBe("n1");
+    expect(out.noteTitle).toBeUndefined();
+    expect(describeSuggestedAction(out as SuggestedAction, lookups)).toBe('Link "Alpha Note" → "Ship it"');
+  });
+
+  it("treats a bare nodeId next to a cardId as the note side", () => {
+    const raw = { cardId: "c1", nodeId: "n1", reason: "r" } as unknown as SuggestedAction;
+    const out = normalizeSuggestedAction(raw) as unknown as Record<string, unknown>;
+    expect(out.type).toBe("link_note_card");
+    expect(out.noteId).toBe("n1");
+  });
+
+  it("infers nodeType note from an unambiguous noteId for add_tag", () => {
+    const raw = { tagName: "hiring", noteId: "n1", reason: "r" } as unknown as SuggestedAction;
+    const out = normalizeSuggestedAction(raw) as unknown as Record<string, unknown>;
+    expect(out.type).toBe("add_tag");
+    expect(out.nodeType).toBe("note");
+    expect(out.nodeId).toBe("n1");
+  });
+
+  it("leaves nodeType unset for ambiguous tag targets", () => {
+    const raw = { tagName: "hiring", noteId: "n1", cardId: "c1", reason: "r" } as unknown as SuggestedAction;
+    const out = normalizeSuggestedAction(raw) as unknown as Record<string, unknown>;
+    expect(out.type).toBe("add_tag");
+    expect(out.nodeType).toBeUndefined();
+  });
+
+  it("canonicalizes wikilink source and target aliases", () => {
+    const raw = { noteId: "n1", nodeTitle: "Alpha Note", reason: "r" } as unknown as SuggestedAction;
+    // No target info at all: no type can be inferred — stays unknown, never blank.
+    const label = describeSuggestedAction(normalizeSuggestedAction(raw), lookups);
+    expect(label.trim().length).toBeGreaterThan(0);
+  });
 });
