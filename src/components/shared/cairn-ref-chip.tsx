@@ -24,6 +24,18 @@ export const CAIRN_NOTE_ACTIONS: Record<string, string> = {
   patch_note:      "Patched note",
   append_to_note:  "Appended to note",
   get_note:        "Read note",
+  rename_note:     "Renamed note",
+  tag_note:        "Tagged note",
+  bulk_move_notes: "Moved notes",
+  link_note_to_task:      "Linked note",
+  unlink_note_from_task:  "Unlinked note",
+  instantiate_template: "Created note from template",
+  delete_note:     "Deleted note",
+  // Consolidated toolset (v3.1.3+); the per-operation names above stay for older transcripts.
+  get_item:     "Read note",
+  edit_note:    "Updated note",
+  update_notes: "Updated note",
+  delete:       "Deleted note",
 };
 
 export const CAIRN_TASK_ACTIONS: Record<string, string> = {
@@ -31,7 +43,30 @@ export const CAIRN_TASK_ACTIONS: Record<string, string> = {
   update_task:        "Updated task",
   update_task_status: "Moved task",
   get_task:           "Read task",
+  delete_task:        "Deleted task",
+  claim_task:         "Claimed task",
+  add_task_progress:  "Logged progress",
+  tag_task:           "Tagged task",
+  bulk_update_task_status: "Moved tasks",
+  // Consolidated toolset (v3.1.3+); the per-operation names above stay for older transcripts.
+  get_item:      "Read task",
+  update_tasks:  "Updated task",
+  task_progress: "Updated task",
+  delete:        "Deleted task",
 };
+
+/**
+ * Action label for a note/task chip ("Read note", "Deleted task", …).
+ * Falls back to "Updated …" for tool names the maps don't know (e.g. a tool
+ * added without updating this file) — never blank. Every tool that can
+ * produce a ref (NOTE_TOOLS / TASK_TOOLS, plus get_item) must have an entry
+ * above, otherwise a read can render as an edit.
+ */
+export function cairnActionLabel(toolName: string, type: "note" | "task"): string {
+  return type === "note"
+    ? (CAIRN_NOTE_ACTIONS[toolName] ?? "Updated note")
+    : (CAIRN_TASK_ACTIONS[toolName] ?? "Updated task");
+}
 
 // ── Shared chip component ────────────────────────────────────────────────────
 
@@ -93,9 +128,7 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
   const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
   const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
   const isNote = cairnRef.type === "note";
-  const actionLabel = isNote
-    ? (CAIRN_NOTE_ACTIONS[toolName] ?? "Updated note")
-    : (CAIRN_TASK_ACTIONS[toolName] ?? "Updated task");
+  const actionLabel = cairnActionLabel(toolName, cairnRef.type);
 
   function handleClick() {
     if (sessionPresentation === "center") {
