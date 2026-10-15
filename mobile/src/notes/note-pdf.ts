@@ -166,16 +166,20 @@ export function noteMarkdownToPdfHtml(
 }
 
 export type PdfExportResult =
+  | { ok: true; previewed: true }
   | { ok: true; shared: true }
   | { ok: true; shared: false; fileUri: string }
   | { ok: false; error: string };
 
 /**
- * Generate a PDF from a note's markdown and open the system share sheet
- * (which includes Print / Save to Files / AirDrop on iOS). Mirrors the desktop
- * "export as PDF" intent. `theme` should follow the app's current colour scheme.
- * `fontFamily` is a CSS font-family stack for the note text (system fonts only —
- * bundled webfonts don't load in expo-print). Defaults to the platform sans.
+ * Generate a PDF from a note's markdown and open it in the platform preview
+ * flow (Quick Look on iOS, viewer intent on Android), which carries its own
+ * share/print actions. Falls back to the system share sheet (which includes
+ * Print / Save to Files / AirDrop on iOS) when preview isn't available.
+ * Mirrors the desktop "export as PDF" intent. `theme` should follow the app's
+ * current colour scheme. `fontFamily` is a CSS font-family stack for the note
+ * text (system fonts only — bundled webfonts don't load in expo-print).
+ * Defaults to the platform sans.
  */
 export async function exportNoteToPdf(
   title: string,
@@ -199,6 +203,19 @@ export async function exportNoteToPdf(
       shareUri = named.uri;
     } catch {
       /* keep the original uri */
+    }
+
+    // Prefer the platform preview flow (Quick Look on iOS): it renders the
+    // PDF in-app with its own share/print actions. Fall back to the share
+    // sheet when preview isn't available on this device.
+    try {
+      const file = new File(shareUri);
+      if (await file.canPreview()) {
+        await file.preview();
+        return { ok: true, previewed: true };
+      }
+    } catch {
+      /* fall through to the share sheet */
     }
 
     if (await Sharing.isAvailableAsync()) {

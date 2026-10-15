@@ -8,8 +8,9 @@ import { NavigationStack } from "@expo/ui/swift-ui";
 import { useHingeStatus } from "@/lib/hinge";
 import { FOLD_GUTTER } from "@/lib/fold";
 import { useFold, useTopHalf } from "@/lib/use-fold";
-// NOTE (SDK 58): useHeaderHeight has no public expo-router export (see app/picker/due-date.tsx).
-import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
+// useHeaderHeight is re-exported from the public expo-router/react-navigation
+// subpath (see the package exports map) — no deep import into build internals.
+import { useHeaderHeight } from "expo-router/react-navigation";
 import { useTheme } from "@/theme";
 import { ChromeColumn } from "@/components/screen-chrome";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";

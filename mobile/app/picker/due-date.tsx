@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-// NOTE (SDK 58): useHeaderHeight has no public expo-router export, and the
-// directory-style deep import no longer resolves through the package exports
-// map — the explicit /index file path does. Revisit if it moves again.
-import { useHeaderHeight } from "expo-router/build/react-navigation/elements/index";
+// useHeaderHeight is re-exported from the public expo-router/react-navigation
+// subpath (see the package exports map) — no deep import into build internals.
+import { useHeaderHeight } from "expo-router/react-navigation";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
