@@ -23,6 +23,8 @@ import {
 import { makeOpenAIProvider } from "./openai";
 import { makeResponsesProvider, supportsResponses } from "./responses";
 import { isRorkAvailable, rorkProvider } from "./rork";
+import { endpointProtocolForModel } from "../models-dev";
+import type { WireProtocol } from "@cairn/shared/models/model-catalog";
 import type { ChatProvider } from "./types";
 
 export * from "./types";
@@ -34,6 +36,15 @@ export class NoProviderError extends Error {
       "No AI provider configured. Enable Apple Intelligence, or add an OpenAI-compatible base URL and API key in Settings.",
     );
     this.name = "NoProviderError";
+  }
+}
+
+/** The chosen model only speaks a protocol this app has no client for yet. */
+export class UnsupportedModelProtocolError extends Error {
+  constructor(model: string, protocol: Exclude<WireProtocol, "completions" | "responses">) {
+    const api = protocol === "anthropic-messages" ? "Anthropic Messages" : "Gemini";
+    super(`${model} only works over the ${api} API, which Cairn on iPhone doesn't support yet. Pick another model in AI settings.`);
+    this.name = "UnsupportedModelProtocolError";
   }
 }
 
@@ -54,7 +65,13 @@ function appleProviderOrNull(): ChatProvider | null {
  * else Chat Completions. The probe is a single cheap request and never throws.
  */
 async function openaiCompatible(config: OpenAIConfig): Promise<ChatProvider> {
-  if (await supportsResponses(config.baseUrl, config.apiKey)) {
+  // OpenCode serves each model over exactly one protocol (models.dev records
+  // which), so the model decides — no probe, which can't see the model anyway.
+  const protocol = await endpointProtocolForModel(config.baseUrl, config.model);
+  if (protocol === "responses") return makeResponsesProvider(config);
+  if (protocol === "completions") return makeOpenAIProvider(config);
+  if (protocol) throw new UnsupportedModelProtocolError(config.model, protocol);
+  if (await supportsResponses(config.baseUrl, config.apiKey, config.model)) {
     return makeResponsesProvider(config);
   }
   return makeOpenAIProvider(config);

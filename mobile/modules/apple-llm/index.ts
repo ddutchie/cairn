@@ -94,9 +94,9 @@ export function appleLlmUnavailableReason(): string {
 
 /**
  * Whether Private Cloud Compute (the server model) can run right now: an iOS 27+
- * SDK build on an eligible iOS 27+ device with PCC ready. False on the current
- * EAS image (built against the iOS 26 SDK — PCC compiled out), so shipped builds
- * simply won't offer PCC until an iOS 27 SDK build is produced.
+ * SDK build that carries the PCC entitlement (EXPO_PUBLIC_PCC=1 at prebuild),
+ * on an eligible iOS 27+ device with PCC ready. False for unentitled builds:
+ * PCC claims to be available there, but requests trap inside FoundationModels.
  */
 export function isAppleServerAvailable(): boolean {
   try {

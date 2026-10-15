@@ -55,8 +55,8 @@ export async function openCordisSessionAgent(
   // correct apiMode-pinned adapter. Upstream dsh-command-compact does not
   // re-resolve apiMode per turn; Cairn pins it from the saved provider so
   // replay is stable.
+  const { ensureAgentAiAdapter, effortForMountedApi } = await import("./session-runtime");
   try {
-    const { ensureAgentAiAdapter } = await import("./session-runtime");
     const api = llmConfig.apiMode === "responses"
       ? "openai-responses" as const
       : llmConfig.apiMode === "anthropic-messages"
@@ -81,7 +81,7 @@ export async function openCordisSessionAgent(
     // Pass reasoning effort into the harness's model selection so it lands on the
     // request header (installModelSelection → agent/request). Only reasoning-capable
     // models are given an effort by the caller; absent = the model's own default.
-    ...(llmConfig.reasoningEffort ? { reasoningEffort: llmConfig.reasoningEffort } : {}),
+    ...(effortForMountedApi(llmConfig.reasoningEffort) ? { reasoningEffort: effortForMountedApi(llmConfig.reasoningEffort) } : {}),
   };
   // The mutable ref dsh reads on every step. Retained-agent callers keep this and
   // mutate `.current` to change model/effort between turns without a resume.

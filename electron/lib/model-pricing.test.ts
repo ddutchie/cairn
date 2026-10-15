@@ -2,7 +2,7 @@
  * Unit tests for electron/lib/model-pricing.ts
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   setModelPricing,
   setNoTemperatureModels,
@@ -10,6 +10,9 @@ import {
   resolveTemperatureForModel,
   pricePerMillion,
   estimateCostUsd,
+  setEndpointProtocols,
+  wireApiFor,
+  wireBaseUrlFor,
 } from "./model-pricing";
 
 const PRICING = {
@@ -117,5 +120,34 @@ describe("temperature capability gate", () => {
   it("clears the gate when given an empty list", () => {
     setNoTemperatureModels([]);
     expect(supportsTemperature("gpt-5.6-luna")).toBe(true);
+  });
+});
+
+// OpenCode serves each model over one protocol: wireApiFor must mount the api the
+// model speaks, and leave other endpoints (and an unloaded catalog) alone.
+const GO = "https://opencode.ai/zen/go/v1";
+
+afterEach(() => setEndpointProtocols(null));
+
+describe("wireApiFor", () => {
+  it("overrides the configured api with the model's protocol on OpenCode", () => {
+    setEndpointProtocols({ "opencode-go/muse-spark-1.3-contributor": "responses", "opencode-go/qwen3.6-plus": "anthropic-messages" });
+    expect(wireApiFor(GO, "muse-spark-1.3-contributor", "openai-completions")).toBe("openai-responses");
+    expect(wireApiFor(GO, "qwen3.6-plus", "openai-completions")).toBe("anthropic-messages");
+    expect(wireApiFor(GO, "deepseek-v4-flash", "openai-responses")).toBe("openai-completions");
+  });
+
+  it("keeps the configured api elsewhere and before the catalog loads", () => {
+    expect(wireApiFor(GO, "muse-spark-1.3-contributor", "openai-completions")).toBe("openai-completions");
+    setEndpointProtocols({ "opencode-go/muse-spark-1.3-contributor": "responses" });
+    expect(wireApiFor("https://api.openai.com/v1", "gpt-5", "openai-responses")).toBe("openai-responses");
+  });
+});
+
+describe("wireBaseUrlFor", () => {
+  it("moves Gemini on OpenCode Go to the inference host, which has the Gemini route", () => {
+    expect(wireBaseUrlFor("https://opencode.ai/zen/go/v1", "google-generative-ai")).toBe("https://opencode.ai/inference/go/v1");
+    expect(wireBaseUrlFor("https://opencode.ai/zen/v1", "google-generative-ai")).toBe("https://opencode.ai/zen/v1");
+    expect(wireBaseUrlFor("https://opencode.ai/zen/go/v1", "openai-completions")).toBe("https://opencode.ai/zen/go/v1");
   });
 });

@@ -17,19 +17,18 @@
 import { fetch as expoFetch } from "expo/fetch";
 import {
   buildResponsesBody,
-  classifyResponsesProbe,
   isEndpointNotFound,
   isResponsesEndpoint,
 } from "@cairn/shared/chat/responses";
+import { classifyProtocolProbe, protocolProbeRequest } from "@cairn/shared/chat/protocol-probe";
 import type { OpenAIConfig } from "../ai-config";
 import { contextLimitForModel } from "../models-dev";
 import { estimatePromptTokens } from "../token-breakdown";
 import { countTextTokens } from "../tokens";
 import { mapMessage, mapTools } from "./openai-body";
-import { makeOpenAIProvider } from "./openai";
+import { makeOpenAIProvider, providerErrorDetail } from "./openai";
 import type { AiTool, ChatProvider, ChatUsage, StreamEvent, StreamOptions, UIMessage } from "./types";
-import { CAIRN_USER_AGENT, isOpencodeEndpoint } from "../cairn-identity";
-import { getOpencodeSessionId } from "../opencode-session";
+import { providerHeaders } from "../opencode-session";
 
 interface ToolAccum {
   id: string;
@@ -54,17 +53,13 @@ function makeResponsesStreamer(config: OpenAIConfig) {
     });
 
     const url = new URL("responses", config.baseUrl.replace(/\/?$/, "/")).toString();
-    const isOpencode = isOpencodeEndpoint(config.baseUrl);
-    const opencodeHeaders: Record<string, string> = isOpencode
-      ? { "User-Agent": CAIRN_USER_AGENT, "x-opencode-session": getOpencodeSessionId() }
-      : { "User-Agent": CAIRN_USER_AGENT };
     const res = await expoFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
         Authorization: `Bearer ${config.apiKey}`,
-        ...opencodeHeaders,
+        ...providerHeaders(config.baseUrl),
       },
       body: JSON.stringify(body),
       signal,
@@ -78,8 +73,7 @@ function makeResponsesStreamer(config: OpenAIConfig) {
         yield* makeOpenAIProvider(config).stream(messages, tools, signal, options);
         return;
       }
-      const detail = res.ok ? "no response body" : `HTTP ${res.status}`;
-      throw new Error(`Responses provider error (${detail})`);
+      throw new Error(`Responses provider error (${await providerErrorDetail(res)})`);
     }
 
     const reader = res.body.getReader();
@@ -275,40 +269,39 @@ export function makeResponsesProvider(config: OpenAIConfig): ChatProvider {
 const supportsCache = new Map<string, Promise<boolean>>();
 
 /**
- * Whether the configured endpoint serves `/responses`. OpenAI-native / Azure
- * endpoints answer true without I/O; anything else is probed once with a
- * route-semantics check — an empty body that a Responses endpoint rejects on
- * missing-model validation (before any inference), so nothing metered runs and
- * the status must positively confirm the route. Never throws.
+ * Whether the configured endpoint serves `/responses` FOR THIS MODEL. OpenAI-
+ * native / Azure endpoints answer true without I/O; anything else is probed once
+ * per base URL + model with a validation-only request (empty input, minimal
+ * output cap — see shared/chat/protocol-probe), so nothing metered runs. The
+ * model matters: gateways such as OpenCode serve each model over one protocol,
+ * which an empty-body probe can't see. Never throws.
  */
-export async function supportsResponses(baseUrl: string, apiKey: string): Promise<boolean> {
+export async function supportsResponses(baseUrl: string, apiKey: string, model: string): Promise<boolean> {
   if (isResponsesEndpoint(baseUrl)) return true;
   const key = baseUrl.replace(/\/?$/, "/");
-  const cached = supportsCache.get(key);
+  const cacheKey = `${key}|${model}`;
+  const cached = supportsCache.get(cacheKey);
   if (cached) return cached;
   const pending = (async () => {
-    const url = new URL("responses", key).toString();
+    const probe = protocolProbeRequest("responses", model);
+    const url = new URL(probe.path, key).toString();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      const isOpencode = isOpencodeEndpoint(key);
-      const opencodeHeaders: Record<string, string> = isOpencode
-        ? { "User-Agent": CAIRN_USER_AGENT, "x-opencode-session": getOpencodeSessionId() }
-        : { "User-Agent": CAIRN_USER_AGENT };
       const res = await expoFetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, ...opencodeHeaders },
-        body: JSON.stringify({}),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, ...providerHeaders(key) },
+        body: JSON.stringify(probe.body),
         signal: controller.signal,
       });
       const bodyText = await res.text().catch(() => "");
-      return classifyResponsesProbe(res.status, bodyText);
+      return classifyProtocolProbe(res.status, bodyText) === "available";
     } catch {
       return false;
     } finally {
       clearTimeout(timer);
     }
   })();
-  supportsCache.set(key, pending);
+  supportsCache.set(cacheKey, pending);
   return pending;
 }

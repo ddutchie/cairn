@@ -19,6 +19,8 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { fetchProvidersManifest } from "../lib/community-registry";
 import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
 import { getAgentHost } from "../cordis/agent-host";
+import { CAIRN_USER_AGENT } from "../lib/cairn-identity";
+import { PROBE_PROTOCOLS, classifyProtocolProbe, protocolProbeRequest, type ProbeProtocol, type ProtocolAvailability } from "../../shared/chat/protocol-probe";
 
 function resolveConfig(
   config: { baseUrl?: string; model?: string; apiKey?: string } | undefined,
@@ -137,6 +139,41 @@ export function registerAiHandlers(ctx: DbContext): void {
         } finally {
           clearTimeout(timer);
         }
+      })
+  );
+
+  // ── Wire protocol availability ───────────────────
+  // Drives the provider editor's API-protocol picker: one validation-only probe
+  // per protocol (empty input, 1-token cap — see shared/chat/protocol-probe), run
+  // in parallel with the stored key resolved here. Never rejects: a network
+  // failure is just "unknown" for that protocol.
+  registerContractHandle(
+    "ai:probeProtocols",
+    async (_e, args) =>
+      handle(async () => {
+        const url = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
+        const realKey = resolveLlmApiKey(args.apiKey);
+        const probe = async (protocol: ProbeProtocol): Promise<ProtocolAvailability> => {
+          const req = protocolProbeRequest(protocol, args.model);
+          try {
+            const res = await fetch(buildApiUrl(url, req.path), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "User-Agent": CAIRN_USER_AGENT,
+                ...(realKey ? { Authorization: `Bearer ${realKey}`, "x-api-key": realKey } : {}),
+                ...req.headers,
+              },
+              body: JSON.stringify(req.body),
+              signal: AbortSignal.timeout(10_000),
+            });
+            return classifyProtocolProbe(res.status, await res.text().catch(() => ""));
+          } catch {
+            return "unknown";
+          }
+        };
+        const results = await Promise.all(PROBE_PROTOCOLS.map(async (p) => [p, await probe(p)] as const));
+        return Object.fromEntries(results) as Record<ProbeProtocol, ProtocolAvailability>;
       })
   );
 

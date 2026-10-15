@@ -255,6 +255,13 @@ public class AppleLlmModule: Module {
   /// built against a pre-iOS-27 SDK (PCC symbols compiled out via CAIRN_PCC_SDK).
   private static func serverAvailabilityState() -> (available: Bool, reason: String) {
     #if CAIRN_PCC_SDK
+    // withPrivateCloudCompute adds the PCC entitlement by default (opt out with
+    // EXPO_PUBLIC_PCC=0), and writes this marker alongside it. PCC reports
+    // `.available` even without the entitlement, and a request from such a build
+    // traps inside FoundationModels instead of throwing — so no marker, no PCC.
+    guard Bundle.main.object(forInfoDictionaryKey: "CairnPrivateCloudCompute") as? Bool == true else {
+      return (false, "This build isn't set up for Private Cloud Compute.")
+    }
     if #available(iOS 27.0, *) {
       switch PrivateCloudComputeLanguageModel().availability {
       case .available:
@@ -278,7 +285,7 @@ public class AppleLlmModule: Module {
   /// PCC daily-quota snapshot as JSON (see the `quotaStatus` Function doc).
   private static func quotaStatusJson() -> String {
     #if CAIRN_PCC_SDK
-    if #available(iOS 27.0, *) {
+    if serverAvailabilityState().available, #available(iOS 27.0, *) {
       let model = PrivateCloudComputeLanguageModel()
       if case .available = model.availability {
         let usage = model.quotaUsage
@@ -317,7 +324,7 @@ public class AppleLlmModule: Module {
   /// Present the system iCloud+ upgrade sheet. Returns whether a suggestion was shown.
   private static func showQuotaUpgrade() -> Bool {
     #if CAIRN_PCC_SDK
-    if #available(iOS 27.0, *), case .available = PrivateCloudComputeLanguageModel().availability {
+    if serverAvailabilityState().available, #available(iOS 27.0, *) {
       if let suggestion = PrivateCloudComputeLanguageModel().quotaUsage.limitIncreaseSuggestion {
         suggestion.show()
         return true

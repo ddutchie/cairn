@@ -4,6 +4,7 @@ import { invokeContract } from "./ipc";
 import type { IpcArgs } from "../../shared/ipc/contract";
 import type { AiEndpoint, AiRequestConfig, ModelPrice } from "../../shared/types/app";
 import type { UsageRangeArgs } from "../../shared/types/usage";
+import type { WireProtocol } from "../../shared/models/model-catalog";
 
 export const aiApi = {
   // ── AI helpers ────────────────────────────────
@@ -17,6 +18,8 @@ export const aiApi = {
       invokeContract("ai:explainArchitecture", args),
     fetchModels: (args: AiEndpoint) => invokeContract("ai:fetchModels", args),
     fetchKeyInfo: (args: AiEndpoint) => invokeContract("ai:fetchKeyInfo", args),
+    /** Which wire protocols the endpoint offers for a model (no generation). */
+    probeProtocols: (args: AiEndpoint & { model: string }) => invokeContract("ai:probeProtocols", args),
   },
 
   // ── Usage statistics (LLM/agent usage log) ─────
@@ -30,5 +33,7 @@ export const aiApi = {
     setPricing: (map: Record<string, ModelPrice>) => invokeContract("app:modelPricing", map),
     /** Push model ids that declare they don't support temperature control. */
     setNoTemperatureModels: (ids: string[]) => invokeContract("app:noTemperatureModels", ids),
+    /** Push the per-model wire protocols for endpoints that dictate one (OpenCode). */
+    setEndpointProtocols: (map: Record<string, WireProtocol>) => invokeContract("app:endpointProtocols", map),
   },
 } as const;

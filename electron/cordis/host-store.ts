@@ -107,6 +107,7 @@ export { dlog, startPhaseTimer } from "../lib/debug-log";
 export { toolResultError } from "../lib/tool-result";
 export { aiWriteLock } from "../lib/ai-write-lock";
 export { CAIRN_APP_IDENTITY, setCurrentOpencodeSessionId, getCurrentOpencodeSessionId } from "../lib/cairn-identity";
+export { wireApiFor, wireBaseUrlFor, type PiApi } from "../lib/model-pricing";
 export { isSecretFile, bashReferencesSecretFile } from "../lib/coding-tools/secrets";
 export { getBashExecutable } from "../lib/coding-tools/bash";
 export { discoverSkills, loadSkill } from "../lib/skills";

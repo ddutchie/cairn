@@ -9,6 +9,7 @@ import type { UsageSource } from "../db/usage-queries";
 import { buildResponsesBody, parseResponsesOutput } from "./responses";
 import { resolveTemperatureForModel } from "./model-pricing";
 import { CAIRN_USER_AGENT, isOpencodeEndpoint, opencodeSessionHeaders } from "./cairn-identity";
+import { wireApiFor } from "./model-pricing";
 
 /**
  * Normalise a user-supplied base URL by stripping trailing slashes.
@@ -249,11 +250,19 @@ export async function callLLM(
   ];
 
   // Resolve the wire protocol once (dynamic import breaks the llm ↔ llm-transport
-  // module cycle). Responses-capable providers (OpenAI / Azure, or anything the
-  // probe discovers) take the /v1/responses path; everything else stays on
+  // module cycle). Pinned from the provider's apiMode like every other path —
+  // never probed (an empty-body probe can't tell whether the MODEL is served
+  // there). This path has no Anthropic Messages client, so that mode stays on
   // chat-completions.
-  const { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT } = await import("./llm-transport");
-  let transport = await resolveTransport(config.baseUrl, config.apiKey);
+  const { resolveTransport, markCompletionsOnly, isEndpointNotFound, COMPLETIONS_TRANSPORT, RESPONSES_TRANSPORT } = await import("./llm-transport");
+  const pinnedMode = config.apiMode === "responses" ? "responses" : "completions";
+  let transport = await resolveTransport(config.baseUrl, config.apiKey, undefined, pinnedMode);
+  // An endpoint that serves each model over one protocol (OpenCode) decides per
+  // model, not per base URL. This path has no Anthropic Messages client, so an
+  // Anthropic-only model keeps the probed transport (its 400 says why).
+  const modelApi = wireApiFor(config.baseUrl, config.model, transport.mode === "responses" ? "openai-responses" : "openai-completions");
+  if (modelApi === "openai-responses") transport = RESPONSES_TRANSPORT;
+  else if (modelApi === "openai-completions") transport = COMPLETIONS_TRANSPORT;
 
   if (transport.mode === "responses") {
     const rbody = buildResponsesBody({

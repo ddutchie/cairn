@@ -25,9 +25,13 @@ import {
   lookupModelInfo,
   normalizeModelInfo,
   parseCanonicalCatalog,
+  parseEndpointProtocols,
   parseModelCatalog,
+  opencodeSlugForBaseUrl,
+  protocolForEndpointModel,
   providerLogoUrl,
   type ModelInfo,
+  type WireProtocol,
 } from "@cairn/shared/models/model-catalog";
 import { getDb } from "../db";
 
@@ -37,6 +41,10 @@ const API_URL = "https://models.dev/api.json";
 const CACHE_KEY = "ai.modelInfo.cache.v2"; // JSON { [modelId]: ModelInfo }
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // refresh weekly
 const CACHE_AT_KEY = "ai.modelInfo.cachedAt.v2";
+// Per-model wire protocols for endpoints that dictate one (OpenCode), parsed
+// from the same api.json fetch. A catalog cache without this key predates it,
+// so it's treated as stale and re-fetched once.
+const PROTOCOL_CACHE_KEY = "ai.endpointProtocols.v1"; // JSON { ["<slug>/<model>"]: WireProtocol }
 // Canonical owner map (models.json): id → provider slug for logo resolution.
 // Tiny (282 entries) and keyed by canonical "<provider>/<model>" ids, so it's
 // cached separately with its own freshness window.
@@ -50,6 +58,7 @@ export const DEFAULT_CONTEXT_LIMIT = 65536;
 type InfoMap = Record<string, ModelInfo>;
 
 let memoryCache: InfoMap | null = null;
+let protocolCache: Record<string, WireProtocol> | null = null;
 let inflight: Promise<InfoMap> | null = null;
 // Canonical <provider>/<model> → owner-provider map, loaded alongside the info
 // map. Best-effort; null until it's loaded once (falls back to the shared
@@ -118,8 +127,10 @@ function loadCache(): InfoMap | null {
   const at = Number(readSetting(CACHE_AT_KEY) ?? 0);
   if (!at || Date.now() - at > CACHE_TTL_MS) return null;
   const raw = readSetting(CACHE_KEY);
-  if (!raw) return null;
+  const rawProtocols = readSetting(PROTOCOL_CACHE_KEY);
+  if (!raw || !rawProtocols) return null;
   try {
+    protocolCache = JSON.parse(rawProtocols) as Record<string, WireProtocol>;
     const parsed = JSON.parse(raw) as Record<string, ModelInfo>;
     const map: InfoMap = {};
     for (const [id, info] of Object.entries(parsed)) {
@@ -202,8 +213,11 @@ async function ensureMap(): Promise<InfoMap> {
     try {
       const res = await expoFetch(API_URL, { headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(`models.dev ${res.status}`);
-      const map = parseModelCatalog(await res.json());
+      const catalog: unknown = await res.json();
+      const map = parseModelCatalog(catalog);
       memoryCache = map;
+      protocolCache = parseEndpointProtocols(catalog);
+      writeSetting(PROTOCOL_CACHE_KEY, JSON.stringify(protocolCache));
       version += 1;
       writeSetting(CACHE_KEY, JSON.stringify(map));
       writeSetting(CACHE_AT_KEY, String(Date.now()));
@@ -218,6 +232,20 @@ async function ensureMap(): Promise<InfoMap> {
     }
   })();
   return inflight;
+}
+
+/**
+ * The protocol `model` must use at `baseUrl` when the endpoint dictates one
+ * (OpenCode answers any other with "Model does not support this protocol"), or
+ * null when it doesn't — or when models.dev couldn't be loaded, in which case
+ * the caller keeps its usual protocol choice.
+ */
+export async function endpointProtocolForModel(baseUrl: string, model: string): Promise<WireProtocol | null> {
+  // Only OpenCode dictates a protocol — don't fetch the catalog for anyone else
+  // (offline with no cache, that fetch would otherwise repeat on every chat).
+  if (!opencodeSlugForBaseUrl(baseUrl)) return null;
+  if (!protocolCache) await ensureMap();
+  return protocolForEndpointModel(protocolCache, baseUrl, model);
 }
 
 /**

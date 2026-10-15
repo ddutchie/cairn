@@ -23,6 +23,12 @@ describe("app-identity", () => {
     expect(isOpencodeEndpoint("https://opencode.ai/zen")).toBe(true);
     expect(isOpencodeEndpoint("https://OPENCODE.AI/v1")).toBe(true);
     expect(isOpencodeEndpoint("https://api.openai.com/v1")).toBe(false);
+    // Host boundary: subdomains count, lookalikes and paths don't.
+    expect(isOpencodeEndpoint("https://api.opencode.ai/v1")).toBe(true);
+    expect(isOpencodeEndpoint("opencode.ai/inference/go/v1")).toBe(true);
+    expect(isOpencodeEndpoint("https://opencode.ai.example.com/v1")).toBe(false);
+    expect(isOpencodeEndpoint("https://notopencode.ai/v1")).toBe(false);
+    expect(isOpencodeEndpoint("https://proxy.example.com/opencode.ai/v1")).toBe(false);
   });
 
   it("tracks the current session id", () => {

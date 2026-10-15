@@ -2,37 +2,41 @@
  * Expo config plugin: add the Private Cloud Compute entitlement so the app can
  * route Apple Foundation Models sessions through PCC (server model, iOS 27+).
  *
- * Adds entitlement: com.apple.developer.private-cloud-compute = true.
+ * Adds entitlement: com.apple.developer.private-cloud-compute = true, plus the
+ * CairnPrivateCloudCompute Info.plist marker the native module checks.
  *
- * GATED behind the EXPO_PUBLIC_PCC env flag (opt-in), because this is a MANAGED
- * entitlement: it must be granted for the App ID (applied for separately) and
- * present in the provisioning profile, or code-signing FAILS. Standard EAS /
- * shipped builds must NOT carry it until it's provisioned — otherwise every
- * build breaks. When the entitlement is granted and you build the iOS 27 SDK
- * variant locally (or on a future EAS image), set EXPO_PUBLIC_PCC=1 to inject it.
+ * ON by default: the managed entitlement is granted for com.gerardslee.cairn,
+ * so EAS's distribution profile carries it. Set EXPO_PUBLIC_PCC=0 to leave both
+ * out — for a fork or App ID without the grant, where requesting a managed
+ * entitlement fails code signing.
  *
- * The native code is already SDK-gated (CAIRN_PCC_SDK in AppleLlm.podspec) and
- * runtime-gated (#available(iOS 27) + availability check), so the app runs fine
- * without this entitlement — PCC just reports unavailable. This plugin only
- * flips on the capability once you're entitled.
+ * Why the marker: PCC reports `.available` even when the app lacks the
+ * entitlement, and a request from an unentitled build then traps inside
+ * FoundationModels' error mapping (the 0.1.10 TestFlight crash, built before
+ * this was on by default). The marker travels with the entitlement, so the
+ * native side only offers PCC when the entitlement is really there.
+ *
+ * The native code is also SDK-gated (CAIRN_PCC_SDK in AppleLlm.podspec) and
+ * runtime-gated (#available(iOS 27) + availability check).
  *
  * See: https://developer.apple.com/documentation/BundleResources/Entitlements/com.apple.developer.private-cloud-compute
  */
 
-const { withEntitlementsPlist } = require("@expo/config-plugins");
+const { withEntitlementsPlist, withInfoPlist } = require("@expo/config-plugins");
 
 const ENTITLEMENT = "com.apple.developer.private-cloud-compute";
+const INFO_KEY = "CairnPrivateCloudCompute";
 
 module.exports = (config) => {
-  const enabled = process.env.EXPO_PUBLIC_PCC === "1" || process.env.EXPO_PUBLIC_PCC === "true";
-  if (!enabled) {
-    // Opt-in only: without the flag, don't touch entitlements so unprovisioned
-    // builds (EAS, shipped) keep signing successfully.
-    return config;
-  }
+  const flag = process.env.EXPO_PUBLIC_PCC;
+  if (flag === "0" || flag === "false") return config;
 
-  return withEntitlementsPlist(config, (cfg) => {
+  config = withEntitlementsPlist(config, (cfg) => {
     cfg.modResults[ENTITLEMENT] = true;
+    return cfg;
+  });
+  return withInfoPlist(config, (cfg) => {
+    cfg.modResults[INFO_KEY] = true;
     return cfg;
   });
 };

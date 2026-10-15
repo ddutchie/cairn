@@ -12,6 +12,8 @@
 
 import * as Crypto from "expo-crypto";
 import { getMeta, setMeta } from "@/db";
+import { opencodeHeaders } from "@cairn/shared/agent/app-identity";
+import { CAIRN_USER_AGENT, isOpencodeEndpoint } from "./cairn-identity";
 
 const KEY = "opencode.sessionId";
 
@@ -55,4 +57,14 @@ export function clearOpencodeSessionId(): void {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Identity headers for every request to a configured provider: Cairn's own
+ * `User-Agent` everywhere, plus the stable `x-opencode-session` for OpenCode.
+ * OpenCode asks clients to identify themselves rather than send a generic
+ * HTTP-library agent, so every call — chat, model list, credits — uses this.
+ */
+export function providerHeaders(baseUrl: string): Record<string, string> {
+  return opencodeHeaders(CAIRN_USER_AGENT, baseUrl, isOpencodeEndpoint(baseUrl) ? getOpencodeSessionId() : null);
 }

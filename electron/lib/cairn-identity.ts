@@ -101,15 +101,17 @@ if (!(globalThis as unknown as { __cairnFetchPatched?: boolean }).__cairnFetchPa
         // deepseek-harness/... to our simple form. Don't touch fetches with
         // no User-Agent (e.g. asset downloads) — they either set their own
         // (Cairn-Client/1.0 for llama) or use the runtime default.
-        if (hasUA && currentUA !== CAIRN_USER_AGENT) {
+        if (isOpencode) {
+          // OpenCode asks every client to identify itself rather than send a
+          // library agent (pi-ai's Gemini client sends `pi (…)`), so its
+          // requests always carry Cairn's own, whatever the client set.
+          headers.set("User-Agent", CAIRN_USER_AGENT);
+        } else if (hasUA && currentUA !== CAIRN_USER_AGENT) {
           // Only normalize LLM-like UAs (cairn/ or deepseek-harness/) to avoid
           // clobbering unrelated fetches that set a custom UA.
           if (currentUA && (currentUA.startsWith("cairn/") || currentUA.startsWith("deepseek-harness/"))) {
             headers.set("User-Agent", CAIRN_USER_AGENT);
           }
-        } else if (!hasUA && isOpencode) {
-          // For opencode, always ensure a User-Agent even if none was set.
-          headers.set("User-Agent", CAIRN_USER_AGENT);
         }
         if (isOpencode) {
           const sess = getCurrentOpencodeSessionId();
@@ -125,10 +127,11 @@ if (!(globalThis as unknown as { __cairnFetchPatched?: boolean }).__cairnFetchPa
         const plain = (init?.headers ?? {}) as Record<string, string>;
         const lower = Object.fromEntries(Object.entries(plain).map(([k, v]) => [k.toLowerCase(), v]));
         let mutated = false;
-        if (lower["user-agent"] && (String(lower["user-agent"]).startsWith("cairn/") || String(lower["user-agent"]).startsWith("deepseek-harness/")) && lower["user-agent"] !== CAIRN_USER_AGENT.toLowerCase()) {
+        if (isOpencode && lower["user-agent"] !== CAIRN_USER_AGENT) {
+          for (const k of Object.keys(plain)) if (k.toLowerCase() === "user-agent") delete plain[k];
           (plain as Record<string, string>)["User-Agent"] = CAIRN_USER_AGENT;
           mutated = true;
-        } else if (!lower["user-agent"] && isOpencode) {
+        } else if (lower["user-agent"] && (String(lower["user-agent"]).startsWith("cairn/") || String(lower["user-agent"]).startsWith("deepseek-harness/")) && lower["user-agent"] !== CAIRN_USER_AGENT.toLowerCase()) {
           (plain as Record<string, string>)["User-Agent"] = CAIRN_USER_AGENT;
           mutated = true;
         }
