@@ -15,6 +15,7 @@ import {
   createHostStore,
   newId,
   TOOL_LABELS,
+  TOOL_SCHEMAS,
   aiWriteLock,
   toolResultError,
 } from "./host-store";
@@ -267,6 +268,16 @@ export async function executeTool(
       return { ok: true, questions: args.questions };
     }
     case "suggest_connections": {
+      // The renderer captures this call's args for the Apply cards regardless
+      // of validity — and models do omit the required `type` discriminator
+      // (observed: actions with only IDs/titles/reason, rendering blank cards).
+      // Fail loudly so the model retries with `type` set. The retry's
+      // tool/call event replaces the pending actions, so no duplicates appear.
+      const parsed = TOOL_SCHEMAS.suggest_connections.schema.safeParse(args);
+      if (!parsed.success) {
+        const bad = parsed.error.issues.map((i) => `${String(i.path.join("."))}: ${i.message}`);
+        return { error: `suggest_connections: invalid actions (${bad.join("; ")}). Every action needs a "type" field: "add_wikilink" (sourceNoteId + targetTitle), "link_note_note" (sourceNoteId + targetNoteId), "link_note_card" (noteId + cardId), or "add_tag" (nodeId + nodeType + tagName). Fix the actions and retry the call.` };
+      }
       return { ok: true, count: (args.actions as unknown[])?.length ?? 0 };
     }
     case "generate_prd": {
