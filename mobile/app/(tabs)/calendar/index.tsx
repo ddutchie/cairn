@@ -4,8 +4,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { listCardsWithDueDates, listUnscheduledCards, updateTask, type CalendarCard } from "@/db/queries";
 import { CalendarView, type CalendarLayout } from "@/components/CalendarView";
 import { TabScreen } from "@/components/TabScreen";
-import { ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
+import { ICON_TODAY, ICON_VIEW_MONTH, ICON_VIEW_WEEK } from "@/components/toolbar-icons";
 import { toolbarPress } from "@/haptics";
+import { useTheme } from "@/theme";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 
@@ -21,9 +22,12 @@ import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
  */
 export default function CalendarScreen() {
   const router = useRouter();
+  const t = useTheme();
   const insets = useSafeAreaInsets();
   // Wide windows open a picked task beside the calendar (shared with Chat/Graph).
-  const sp = useSidePreview({ title: "Calendar" });
+  // No title beside the grid when wide (like Chat) — the Today + span controls
+  // dock into the side rail instead.
+  const sp = useSidePreview({ title: "Calendar", titleWhenWide: false });
   const [cards, setCards] = useState<CalendarCard[]>([]);
   const [unscheduled, setUnscheduled] = useState<CalendarCard[]>([]);
   const [layout, setLayout] = useState<CalendarLayout>("month");
@@ -49,6 +53,9 @@ export default function CalendarScreen() {
       {sp.showToolbar ? (
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
+          // A symbol, so it docks into the Duo's side rail when wide (a
+          // text-only item would stay horizontal). Narrow keeps the text label.
+          icon={sp.wide ? ICON_TODAY : undefined}
           accessibilityLabel="Jump to today"
           onPress={toolbarPress(() => setTodayNonce((n) => n + 1))}
         >
@@ -76,7 +83,7 @@ export default function CalendarScreen() {
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       ) : null}
-      <SidePreviewLayout state={sp} onChanged={load}>
+      <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.surface }}>
       <CalendarView
         cards={cards}
         showProject

@@ -3,7 +3,7 @@
     "name": "Cairn",
     "slug": "cairn-mobile",
     "version": "0.1.11",
-    "orientation": "portrait",
+    "orientation": "default",
     "scheme": "cairn",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
