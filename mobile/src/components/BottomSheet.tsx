@@ -7,10 +7,14 @@ import {
   View,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
   type ViewStyle,
   type StyleProp,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, elevation, type as typeScale, type Theme } from "@/theme";
+import { foldHalves } from "@/lib/fold";
+import { useFold } from "@/lib/use-fold";
 import { haptics } from "@/haptics";
 
 /**
@@ -44,6 +48,21 @@ export function BottomSheet({
 }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
+
+  // Partially folded (iPhone Duo): a sheet must not rest on the crease, which the
+  // system's own sheets avoid by sliding aside. Book pose (vertical crease) → the
+  // card takes the far half; laptop pose (horizontal crease) → it stays in the flat
+  // bottom half.
+  const fold = useFold();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { right: safeRight } = useSafeAreaInsets();
+  const foldStyle = useMemo<ViewStyle | null>(() => {
+    if (!fold) return null;
+    const half = foldHalves(fold, fold.axis === "vertical" ? windowWidth : windowHeight).after;
+    return fold.axis === "vertical"
+      ? { width: Math.max(0, half - safeRight), alignSelf: "flex-end", marginRight: safeRight }
+      : { maxHeight: half };
+  }, [fold, windowWidth, windowHeight, safeRight]);
 
   // Keep the Modal mounted for the duration of the EXIT animation. When
   // `visible` is true we render immediately (no state write needed); this flag
@@ -100,6 +119,7 @@ export function BottomSheet({
         styles.sheet,
         elevation.xl,
         maxHeight != null && { maxHeight },
+        foldStyle,
         { transform: [{ translateY }] },
         contentStyle,
       ]}

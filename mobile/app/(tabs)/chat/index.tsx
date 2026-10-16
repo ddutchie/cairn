@@ -42,7 +42,7 @@ import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanim
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
-import { useTopHalf } from "@/lib/use-fold";
+import { useFold, useTopHalf } from "@/lib/use-fold";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -133,6 +133,11 @@ export default function ChatScreen() {
   // Laptop pose (portrait half-fold): the transcript and empty state stay in the
   // upright top half; the composer and tab pill sit on the flat bottom half.
   const topHalf = useTopHalf();
+  // Book pose (vertical crease): the composer's input and send button move wholly to
+  // the far half instead of straddling the fold. The transcript still scrolls full
+  // width. With a preview open the chat already sits left of the crease, so no shift.
+  const fold = useFold();
+  const composerLeftInset = fold?.axis === "vertical" && sp.preview == null ? fold.position + fold.gutter / 2 : 0;
   // With a preview stacked above the chat, the keyboard (the whole flat half)
   // belongs to whichever input is focused. Typing in the chat slides the preview
   // away (it stays mounted, drafts intact) so the conversation fills the top half
@@ -636,6 +641,7 @@ export default function ChatScreen() {
           }}
           onInputBlur={() => setInputFocused(false)}
           hidden={hideComposer}
+          leftInset={composerLeftInset}
           closedLift={closedLift}
           onLayoutHeight={(h) => {
             setComposerH(h);

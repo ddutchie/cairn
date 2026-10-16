@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { forwardRef, useEffect, useState } from "react";
+import { forwardRef, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from "react-native";
 import { Image } from "expo-image";
 import { Send, X, Plus } from "lucide-react-native";
@@ -44,6 +44,12 @@ export interface CairnMorphComposerProps {
    * up over it (laptop pose: a note being edited above the chat).
    */
   hidden?: boolean;
+  /**
+   * Left edge of the composer in its container. Set to the far side of a vertical
+   * crease (book pose) so the input and send button sit wholly on one half instead
+   * of straddling the fold; 0 (default) spans the full width.
+   */
+  leftInset?: number;
   closedLift: number;
   onLayoutHeight: (h: number) => void;
   allowImages?: boolean;
@@ -51,10 +57,15 @@ export interface CairnMorphComposerProps {
 }
 
 export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
-  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, onInputBlur, hidden = false, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
+  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
   ref,
 ) {
   const t = useTheme();
+  // Memoised so the style object stays stable across renders (see RestingStickyView below).
+  const overlayStyle = useMemo(() => {
+    const base = hidden ? styles.composerOverlayHidden : styles.composerOverlay;
+    return leftInset > 0 ? { ...StyleSheet.flatten(base), left: leftInset } : base;
+  }, [hidden, leftInset]);
   const hasAttachments = attachments.length > 0;
 
   const plusStyle = useAnimatedStyle(() => ({
@@ -84,7 +95,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
       offset={{ closed: -closedLift, opened: -KEYBOARD_OPEN_GAP }}
       // A stable StyleSheet object (never a fresh array), merged with the animated
       // transform.
-      style={hidden ? styles.composerOverlayHidden : styles.composerOverlay}
+      style={overlayStyle}
       accessibilityElementsHidden={hidden}
       importantForAccessibility={hidden ? "no-hide-descendants" : "auto"}
       pointerEvents={hidden ? "none" : "auto"}
