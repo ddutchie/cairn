@@ -4,6 +4,7 @@ import Constants from "expo-constants";
 import { BreakoutGame } from "@/components/BreakoutGame";
 import { StackerGame } from "@/components/StackerGame";
 import { haptics } from "@/haptics";
+import { useCreaseClearance } from "@/lib/use-fold";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 
 const APP_VERSION = Constants.expoConfig?.version ?? "";
@@ -14,6 +15,9 @@ const CAIRN_ICON = require("../../assets/splashIcon.png");
 // Easter egg: tap the Cairn icon this many times within the window to reveal the
 // hidden mini-games menu (Breakout / Cairn stacker).
 const EGG_TAPS = 5;
+
+/** The scaffold's own padding on every side (see `styles.root`). */
+const ROOT_PADDING = 32;
 const EGG_WINDOW_MS = 3000;
 
 /** Which hidden mini-game is currently open (null = none). */
@@ -71,6 +75,8 @@ export function EmptyState({
 }) {
   const t = useTheme();
   const styles = makeStyles(t);
+  // Book pose: centre within one side of the crease rather than across it.
+  const crease = useCreaseClearance();
   const iconSize = compact ? 56 : 76;
   // Pinned overlays are always top-biased (an absolute fill can't "centre" over
   // a keyboard sensibly); default the bias to 25% of the screen when unset.
@@ -124,8 +130,12 @@ export function EmptyState({
       // easter egg, and any action button like Chat's "Set up AI") stay tappable.
       // "none" would have killed those too, and did break the 5-tap egg.
       pointerEvents={pinned ? "box-none" : "auto"}
+      onLayout={crease.onLayout}
       style={[
         styles.root,
+        crease.shift.left || crease.shift.right
+          ? { paddingLeft: ROOT_PADDING + crease.shift.left, paddingRight: ROOT_PADDING + crease.shift.right }
+          : null,
         // As a screen-pinned overlay: absolutely fill the parent so the anchor is
         // the (stable) parent frame, not a keyboard-inset-shifted scroll box.
         pinned && styles.rootPinned,
@@ -164,7 +174,7 @@ export function EmptyState({
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    root: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+    root: { flex: 1, alignItems: "center", justifyContent: "center", padding: ROOT_PADDING },
     // Bias toward the top instead of centring, so the icon + text sit above
     // where a keyboard would cover. The actual offset is a spacer View (see
     // render) so px/% work identically and a % resolves against the parent frame.

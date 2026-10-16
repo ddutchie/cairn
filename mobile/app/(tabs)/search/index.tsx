@@ -16,6 +16,7 @@ import { ICON_INFO, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { isNativeSearchScopeAvailable, setNativeSearchScope, setNativeSearchScopeIndex, clearNativeSearchScope, subscribeNativeSearchScope } from "@modules/search-scope";
 import { stripMarkdown } from "@cairn/shared/notes/text";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 type TypeFilter = "all" | "notes" | "tasks";
@@ -44,9 +45,8 @@ export default function SearchScreen() {
   const { width } = useWindowDimensions();
   // Wide iOS windows drop the "Search" title (like Chat) and dock the header
   // items into the side rail via Stack.Toolbar. The native search field stays —
-  // only the title row collapses. 700 matches SIDE_PREVIEW_MIN_WIDTH (kept local
-  // so this tab doesn't import the whole SidePreview module graph).
-  const wideBar = Platform.OS === "ios" && width >= 700;
+  // only the title row collapses. Same threshold as every other wide layout.
+  const wideBar = Platform.OS === "ios" && width >= WIDE_MIN_WIDTH;
   const [query, setQuery] = useState("");
   // Semantic ranking on by default when available; the header ✨ toggles it.
   const [semanticMode, setSemanticMode] = useState(semanticAvailable);
@@ -492,13 +492,17 @@ export default function SearchScreen() {
             selected={semanticMode}
             tintColor={semanticMode ? t.accent : undefined}
             onPress={() => toolbarPress(toggleSemantic)()}
-          />
+          >
+            Semantic search
+          </Stack.Toolbar.Button>
           {semanticMode && stats && stats.indexed < stats.live ? (
             <Stack.Toolbar.Button
               icon={ICON_INFO}
               accessibilityLabel="Why aren't all items indexed?"
               onPress={() => toolbarPress(showIndexInfo)()}
-            />
+            >
+              Index status
+            </Stack.Toolbar.Button>
           ) : null}
         </Stack.Toolbar>
       ) : null}

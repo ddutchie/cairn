@@ -10,7 +10,7 @@ import {
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKeyboardState, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
-import { Settings2, Trash2 } from "lucide-react-native";
+import { Settings, Settings2, Trash2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
@@ -42,7 +42,7 @@ import { useSharedValue, withSpring, useDerivedValue } from "react-native-reanim
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COMPOSER, SPRING } from "@/components/chat/attachment-panel/constants";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
-import { useTopHalf } from "@/lib/use-fold";
+import { useFold, useTopHalf } from "@/lib/use-fold";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
@@ -133,6 +133,11 @@ export default function ChatScreen() {
   // Laptop pose (portrait half-fold): the transcript and empty state stay in the
   // upright top half; the composer and tab pill sit on the flat bottom half.
   const topHalf = useTopHalf();
+  // Book pose (vertical crease): the composer's input and send button move wholly to
+  // the far half instead of straddling the fold. The transcript still scrolls full
+  // width. With a preview open the chat already sits left of the crease, so no shift.
+  const fold = useFold();
+  const composerLeftInset = fold?.axis === "vertical" && sp.preview == null ? fold.position + fold.gutter / 2 : 0;
   // With a preview stacked above the chat, the keyboard (the whole flat half)
   // belongs to whichever input is focused. Typing in the chat slides the preview
   // away (it stays mounted, drafts intact) so the conversation fills the top half
@@ -448,19 +453,24 @@ export default function ChatScreen() {
   // While typing the preview is slid away, so the header is free again: the ring
   // and clear-chat return there as header items instead of sitting by the input.
   const typingCollapsed = sp.stacked && sp.preview != null && inputFocused;
-  const showHeaderTools = sp.showToolbar || typingCollapsed;
-  // Stacked under a preview (not typing), the header's buttons have stepped aside
-  // and the input bar is no place for them: a small glass capsule on the tab bar's
-  // row, in the room beside it, carries the context ring and clear-chat. The ring's
-  // popover opens upward from there.
+  // Laptop pose (horizontal crease): the header sits in the upright top half, so the
+  // chat's tools live in the bottom half instead (capsules either side of the tab
+  // bar) whether or not a preview is stacked above. They're out of reach only while
+  // the keyboard is up, and return when it goes.
+  const laptop = fold?.axis === "horizontal";
+  const showHeaderTools = !laptop && (sp.showToolbar || typingCollapsed);
+  const showToolsPills = laptop && !inputFocused && !keyboardVisible;
+  const bottomRing = showToolsPills ? renderContextRing("bottom") : null;
+  // Left of the tab bar: a small glass capsule carries the context ring and
+  // clear-chat (both need a conversation). The ring's popover opens upward from here.
   const toolsPill =
-    sp.stacked && sp.preview != null && !inputFocused && !keyboardVisible && messages.length > 0 ? (
+    showToolsPills && messages.length > 0 ? (
       <View pointerEvents="box-none" style={styles.toolsPillWrap}>
         <Glass radius={24} interactive={false} fallbackTint={withAlpha(t.surface2, 0.92)} style={styles.toolsPill}>
           <View style={styles.composerTools}>
             {/* The ring is a native matchContents host: a fixed-size host pins its
                 SwiftUI content top-left, so let the slot centre the measured one. */}
-            <View style={styles.composerToolSlot}>{renderContextRing("bottom")}</View>
+            {bottomRing ? <View style={styles.composerToolSlot}>{bottomRing}</View> : null}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Clear chat"
@@ -475,6 +485,26 @@ export default function ChatScreen() {
         </Glass>
       </View>
     ) : null;
+  // Right of the tab bar: AI settings, which the header would otherwise carry. Always
+  // present in laptop pose so it stays reachable with an empty chat or a preview open.
+  const settingsPill = showToolsPills ? (
+    <View pointerEvents="box-none" style={styles.settingsPillWrap}>
+      <Glass radius={24} interactive={false} fallbackTint={withAlpha(t.surface2, 0.92)} style={styles.toolsPill}>
+        <View style={styles.composerTools}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="AI settings"
+            hitSlop={8}
+            // Inline arrow (not a bare toolbarPress(...)) so the react-hooks ref lint stays quiet.
+            onPress={() => toolbarPress(() => router.push("/settings/ai"))()}
+            style={styles.composerToolBtn}
+          >
+            <Settings size={18} color={t.textSecondary} />
+          </Pressable>
+        </View>
+      </Glass>
+    </View>
+  ) : null;
 
   return (
     <TabScreen>
@@ -501,12 +531,16 @@ export default function ChatScreen() {
           // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
           // ref lint doesn't flag onClear's transitive ref access during render.
           onPress={() => toolbarPress(onClear)()}
-        />
+        >
+          Clear chat
+        </Stack.Toolbar.Button>
         <Stack.Toolbar.Button
           icon={ICON_AI}
           accessibilityLabel="AI settings"
           onPress={toolbarPress(() => router.push("/settings/ai"))}
-        />
+        >
+          AI settings
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills
@@ -636,6 +670,7 @@ export default function ChatScreen() {
           }}
           onInputBlur={() => setInputFocused(false)}
           hidden={hideComposer}
+          leftInset={composerLeftInset}
           closedLift={closedLift}
           onLayoutHeight={(h) => {
             setComposerH(h);
@@ -649,10 +684,12 @@ export default function ChatScreen() {
           strip={strip}
           plusOut={plusOut}
           composerBottom={composerBottom}
+          leftInset={composerLeftInset}
           existingCount={attachments.length}
           onAddAttachments={onAddAttachments}
         />
         {toolsPill}
+        {settingsPill}
       </View>
       </SidePreviewLayout>
     </TabScreen>
@@ -683,6 +720,7 @@ function makeStyles(t: Theme) {
     // On the tab pill's row, left of it: raised to the pill's vertical centre (the
     // container's bottom edge sits below it) and inset from the display's corner.
     toolsPillWrap: { position: "absolute", left: 16, bottom: 26 },
+    settingsPillWrap: { position: "absolute", right: 16, bottom: 26 },
     toolsPill: { height: 48, paddingHorizontal: 10, justifyContent: "center", overflow: "hidden" },
     composerTools: { flexDirection: "row", alignItems: "center", gap: 4, height: 32 },
     composerToolSlot: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },

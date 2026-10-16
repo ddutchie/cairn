@@ -5,8 +5,8 @@ import { useRouter } from "expo-router";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
-import { useHingeStatus } from "@/lib/hinge";
-import { FOLD_GUTTER } from "@/lib/fold";
+import { FOLD_GUTTER, sidePaneWidth } from "@/lib/fold";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 // useHeaderHeight is re-exported from the public expo-router/react-navigation
 // subpath (see the package exports map) — no deep import into build internals.
@@ -51,7 +51,7 @@ export function useOpenInPreview() {
 }
 
 /** Below this width the screen stays single-column (previews fill the window when open). */
-export const SIDE_PREVIEW_MIN_WIDTH = 700;
+export const SIDE_PREVIEW_MIN_WIDTH = WIDE_MIN_WIDTH;
 
 export interface SidePreviewState {
   preview: PreviewRef | null;
@@ -245,13 +245,15 @@ export function SidePreviewPane({
 }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const hinge = useHingeStatus();
+  const fold = useFold();
   // Same split as the Notes split view: half open on a Duo, the pane starts
-  // exactly on the fold (each half its own page); fully open (flat), and on
-  // iPad, the open item gets the larger share, as SwiftUI's detail column
-  // does. The pane runs to the window edge (the chat screen drops its rail
+  // exactly on the fold (each half its own page); fully open (flat), on iPad, and
+  // in a Split View window that doesn't span the crease, the open item gets the
+  // larger share, as SwiftUI's detail column does. Sized from the crease geometry,
+  // not the hinge status, so it stays right when the window isn't the whole
+  // display. The pane runs to the window edge (the chat screen drops its rail
   // padding while it's open).
-  const paneWidth = hinge === "partiallyOpen" ? width / 2 : Math.round(width * 0.6);
+  const paneWidth = sidePaneWidth(width, fold);
   // Hinge / size changes resize the open pane smoothly instead of jumping.
   const paneW = useSharedValue(paneWidth);
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { foldGeometry, foldFromRegion, foldHalves, resolveFold, FOLD_GUTTER } from "./fold";
+import { foldGeometry, foldFromRegion, foldHalves, resolveFold, sidePaneWidth, FOLD_GUTTER } from "./fold";
 
 describe("foldGeometry", () => {
   it("laptop pose (portrait inner, half-open) → horizontal crease at mid-height", () => {
@@ -88,5 +88,30 @@ describe("resolveFold", () => {
   it("trusts the native answer over the hinge status", () => {
     expect(resolveFold(win, "fullyOpen", { x: 0, y: 455, width: 669, height: 40 })?.axis).toBe("horizontal");
     expect(resolveFold(win, "partiallyOpen", null)).toBeNull();
+  });
+});
+
+describe("sidePaneWidth", () => {
+  it("book pose: the pane starts on the crease", () => {
+    expect(sidePaneWidth(951, { axis: "vertical", position: 475.5, gutter: FOLD_GUTTER })).toBe(476);
+  });
+
+  it("follows a crease that is not at mid-width", () => {
+    expect(sidePaneWidth(1000, { axis: "vertical", position: 400, gutter: FOLD_GUTTER })).toBe(600);
+  });
+
+  it("flat or closed: the open item takes the larger share", () => {
+    expect(sidePaneWidth(951, null)).toBe(571);
+  });
+
+  it("horizontal crease (laptop): width is unaffected", () => {
+    expect(sidePaneWidth(669, { axis: "horizontal", position: 475.5, gutter: FOLD_GUTTER })).toBe(401);
+  });
+
+  it("Split View beside the crease: a sliver at the window edge is ignored", () => {
+    // 475pt-wide window abutting the crease sees a ~9pt band at its right edge.
+    expect(sidePaneWidth(475, { axis: "vertical", position: 470.5, gutter: 9 })).toBe(285);
+    // ...and one at the left edge.
+    expect(sidePaneWidth(475, { axis: "vertical", position: 4.5, gutter: 9 })).toBe(285);
   });
 });

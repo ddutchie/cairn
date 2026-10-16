@@ -16,6 +16,7 @@ export interface PanelDrivers {
 
 export function AttachmentPanel({
   screenHeight,
+  menuTopMax,
   gridWidth,
   gridHeight,
   interactive,
@@ -31,6 +32,8 @@ export function AttachmentPanel({
   composerBottom,
 }: PanelDrivers & {
   screenHeight: number;
+  /** Lowest the menu's top may sit, so a composer low on the screen (keyboard down) doesn't push the menu off it. */
+  menuTopMax: number;
   gridWidth: number;
   gridHeight: number;
   interactive: "menu" | "grid" | "none";
@@ -42,7 +45,7 @@ export function AttachmentPanel({
   const rect = useDerivedValue(() => {
     const bottom = composerBottom.get();
     const plusCenter = bottom - COMPOSER.rowHeight / 2;
-    const top = plusCenter + MENU.centerOffset - MENU_HEIGHT / 2;
+    const top = Math.min(plusCenter + MENU.centerOffset - MENU_HEIGHT / 2, menuTopMax);
     const m = morph.get();
     let x = GUTTER;
     let y = top;

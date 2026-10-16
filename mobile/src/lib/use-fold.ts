@@ -60,3 +60,45 @@ export function useTopHalf() {
   const gap = before != null && fold ? windowHeight - (fold.position - fold.gutter / 2) : 0;
   return { onLayout, before, gap };
 }
+
+/**
+ * Book pose (vertical crease): extra side padding that keeps a container's centred
+ * content on one side of the crease instead of straddling it. When the crease runs
+ * through the container, content centres within the wider side (`shift` is how much
+ * to add to that container's own left/right padding; `split` is the usable width either
+ * side of the crease, for layouts that use both halves); otherwise both are 0 / null. Attach
+ * `onLayout` to the container. Padding, not margin, so the measured frame doesn't
+ * move when the shift is applied.
+ */
+export function useCreaseClearance() {
+  const fold = useFold();
+  const [node, setNode] = useState<HostInstance | null>(null);
+  const [box, setBox] = useState<{ x: number; width: number } | null>(null);
+  const measure = useCallback((n: HostInstance) => {
+    n.measureInWindow((x, _y, width) => setBox((prev) => (prev && prev.x === x && prev.width === width ? prev : { x, width })));
+  }, []);
+  const onLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const n = e.currentTarget as HostInstance | null;
+      if (!n?.measureInWindow) return;
+      setNode(n);
+      measure(n);
+    },
+    [measure],
+  );
+  useEffect(() => {
+    if (node) measure(node);
+  }, [node, measure, fold?.position, fold?.axis]);
+  let shift = { left: 0, right: 0 };
+  let split: { before: number; after: number; gutter: number } | null = null;
+  if (fold?.axis === "vertical" && box) {
+    const half = fold.gutter / 2;
+    const left = fold.position - half - box.x;
+    const right = box.x + box.width - (fold.position + half);
+    if (left > 0 && right > 0) {
+      shift = right >= left ? { left: box.width - right, right: 0 } : { left: 0, right: box.width - left };
+      split = { before: left, after: right, gutter: fold.gutter };
+    }
+  }
+  return { onLayout, shift, split };
+}

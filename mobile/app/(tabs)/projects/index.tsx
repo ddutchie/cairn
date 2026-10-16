@@ -16,9 +16,8 @@ import { ICON_SETTINGS } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { useTheme, elevation, type as typeScale } from "@/theme";
-
-const SPLIT_MIN_WIDTH = 700;
 
 /** Project summaries for the active workspace, or null if the DB isn't ready. */
 function readProjects(): ProjectSummary[] | null {
@@ -34,7 +33,7 @@ export default function ProjectsScreen() {
   const t = useTheme();
   const { width } = useWindowDimensions();
   const contentStyle = useTabContentStyle();
-  const split = width >= SPLIT_MIN_WIDTH;
+  const split = width >= WIDE_MIN_WIDTH;
   const syncBadge = useSyncBadge();
   // The read is synchronous SQLite, so do it in the initializer: a first frame
   // without data would paint the loading header before the sidebar replaces it.
@@ -79,12 +78,14 @@ export default function ProjectsScreen() {
       <Stack.Screen options={{ title: workspaceName ?? "Projects", headerShown: true, contentStyle }} />
       <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button {...syncBadge} />
+        <Stack.Toolbar.Button {...syncBadge}>Sync status</Stack.Toolbar.Button>
         <Stack.Toolbar.Button
           icon={ICON_SETTINGS}
           accessibilityLabel="Appearance settings"
           onPress={toolbarPress(() => router.push("/settings/appearance"))}
-        />
+        >
+          Appearance
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
     </>
   );
