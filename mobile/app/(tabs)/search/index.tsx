@@ -464,13 +464,13 @@ export default function SearchScreen() {
             accessibilityLabel="Semantic search"
             selected={semanticMode}
             tintColor={semanticMode ? t.accent : undefined}
-            onPress={toolbarPress(() => toggleSemantic())}
+            onPress={() => toolbarPress(toggleSemantic)()}
           />
           {semanticMode && stats && stats.indexed < stats.live ? (
             <Stack.Toolbar.Button
               icon={ICON_INFO}
               accessibilityLabel="Why aren't all items indexed?"
-              onPress={toolbarPress(() => showIndexInfo())}
+              onPress={() => toolbarPress(showIndexInfo)()}
             />
           ) : null}
         </Stack.Toolbar>
