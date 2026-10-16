@@ -68,6 +68,14 @@ export default function SearchScreen() {
   // is irrelevant.
   const typeFilterRef = useRef(typeFilter);
   useEffect(() => { typeFilterRef.current = typeFilter; }, [typeFilter]);
+  // Latest query + mode for the deferred semantic toggle (it fires 350 ms
+  // after the tap — reads at fire time so mid-beat edits aren't lost).
+  const queryRef = useRef(query);
+  useEffect(() => { queryRef.current = query; }, [query]);
+  const semanticModeRef = useRef(semanticMode);
+  useEffect(() => { semanticModeRef.current = semanticMode; }, [semanticMode]);
+  // Pending wide-rail toggle flip (cleared when superseded by a newer tap).
+  const toggleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
@@ -136,27 +144,46 @@ export default function SearchScreen() {
   const toggleSemantic = () => {
     if (!semanticAvailable) return;
     haptics.selection();
-    const next = !semanticMode;
-    const q = query;
-    const tf = typeFilter;
-    // Exit search FIRST via the native cancel — not a keyboard resign (blur
-    // leaves the controller active when text is present, and the rail button
-    // can't repaint while it's active). Stand it down, then flip the mode, so
-    // the toolbar update lands on an inactive controller and paints. The query
-    // is restored in case cancel clears the field.
-    searchRef.current?.cancelSearch();
-    setTimeout(() => {
-      searchRef.current?.setText(q);
+    // Commit the flip synchronously so a second rapid tap derives from the
+    // latest mode instead of the still-unapplied state.
+    const next = !semanticModeRef.current;
+    semanticModeRef.current = next;
+    // Supersede any pending flip — only the latest tap fires.
+    if (toggleTimer.current) clearTimeout(toggleTimer.current);
+    if (!wideBar) {
+      // Narrow: the header toggle is an RN view that repaints live, so stay
+      // in the active field and flip immediately (original behavior).
       setSemanticMode(next);
       if (next) {
         // Ensure the on-device index is built (downloads model assets on first use
         // + embeds not-yet-indexed items). IndexingBar shows progress; re-run when done.
         catchUpIndex()
-          .then(() => run(q, true, tf))
+          .then(() => run(query, true, typeFilter))
           .catch(() => {});
       }
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      run(q, next, tf);
+      run(query, next, typeFilter);
+      return;
+    }
+    // Wide rail: exit search FIRST via the native cancel — not a keyboard
+    // resign (blur leaves the controller active when text is present, and the
+    // rail button can't repaint while it's active). Stand it down, then flip,
+    // so the toolbar update lands on an inactive controller and paints. The
+    // query is restored in case cancel clears the field.
+    searchRef.current?.cancelSearch();
+    toggleTimer.current = setTimeout(() => {
+      toggleTimer.current = null;
+      searchRef.current?.setText(queryRef.current);
+      setSemanticMode(next);
+      if (next) {
+        // Ensure the on-device index is built (downloads model assets on first use
+        // + embeds not-yet-indexed items). IndexingBar shows progress; re-run when done.
+        catchUpIndex()
+          .then(() => run(queryRef.current, true, typeFilterRef.current))
+          .catch(() => {});
+      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      run(queryRef.current, next, typeFilterRef.current);
     }, 350);
   };
 
