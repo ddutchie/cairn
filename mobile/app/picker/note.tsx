@@ -6,6 +6,7 @@ import { listProjects, listFolders } from "@/db/queries";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
+import { ICON_CLOSE } from "@/components/toolbar-icons";
 
 /** One selectable option in the picker. */
 export interface PickerOption {
@@ -77,7 +78,7 @@ export default function NotePickerRoute() {
     <>
       <Stack.Screen options={{ title: params.title || "Choose" }} />
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+        <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={() => router.back()}>
           Cancel
         </Stack.Toolbar.Button>
       </Stack.Toolbar>

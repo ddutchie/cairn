@@ -427,7 +427,9 @@ export default function ToolsSettingsScreen() {
           icon={ICON_CHECK}
           accessibilityLabel="Done"
           onPress={() => toolbarPress(() => router.canGoBack() && router.back())()}
-        />
+        >
+          Done
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
 
       {loading ? (

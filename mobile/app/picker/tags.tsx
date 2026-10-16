@@ -5,6 +5,7 @@ import { Check } from "lucide-react-native";
 import { listAllTags, type TagRow } from "@/db/queries";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
+import { ICON_CLOSE, ICON_CHECK } from "@/components/toolbar-icons";
 
 /**
  * Native formSheet route for selecting a note/card's tags. Presents every
@@ -56,12 +57,12 @@ export default function TagPickerRoute() {
     <>
       <Stack.Screen options={{ title: "Tags" }} />
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+        <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={() => router.back()}>
           Cancel
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button accessibilityLabel="Done" onPress={done}>
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Done" onPress={done}>
           Done
         </Stack.Toolbar.Button>
       </Stack.Toolbar>

@@ -78,12 +78,14 @@ export default function ProjectsScreen() {
       <Stack.Screen options={{ title: workspaceName ?? "Projects", headerShown: true, contentStyle }} />
       <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button {...syncBadge} />
+        <Stack.Toolbar.Button {...syncBadge}>Sync status</Stack.Toolbar.Button>
         <Stack.Toolbar.Button
           icon={ICON_SETTINGS}
           accessibilityLabel="Appearance settings"
           onPress={toolbarPress(() => router.push("/settings/appearance"))}
-        />
+        >
+          Appearance
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
     </>
   );

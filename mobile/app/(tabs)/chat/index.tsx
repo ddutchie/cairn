@@ -530,12 +530,16 @@ export default function ChatScreen() {
           // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
           // ref lint doesn't flag onClear's transitive ref access during render.
           onPress={() => toolbarPress(onClear)()}
-        />
+        >
+          Clear chat
+        </Stack.Toolbar.Button>
         <Stack.Toolbar.Button
           icon={ICON_AI}
           accessibilityLabel="AI settings"
           onPress={toolbarPress(() => router.push("/settings/ai"))}
-        />
+        >
+          AI settings
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills

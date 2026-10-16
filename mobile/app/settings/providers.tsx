@@ -169,7 +169,9 @@ export default function ProvidersSettingsScreen() {
           icon={ICON_CHECK}
           accessibilityLabel="Done"
           onPress={() => router.canGoBack() && router.back()}
-        />
+        >
+          Done
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
 
       {loading ? (

@@ -507,14 +507,18 @@ export function ProjectsSplitView({
           icon="sidebar.left"
           accessibilityLabel={visibility === "all" ? "Hide sidebar" : "Show sidebar"}
           onPress={toggleTree}
-        />
+        >
+          {visibility === "all" ? "Hide sidebar" : "Show sidebar"}
+        </Stack.Toolbar.Button>
         {/* The focus toggle widens the open note to the whole window and back. */}
         {view !== "notes" || !sel.noteId ? null : (
           <Stack.Toolbar.Button
             icon={visibility === "detailOnly" ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"}
             accessibilityLabel={visibility === "detailOnly" ? "Show list" : "Focus"}
             onPress={toggleSidebar}
-          />
+          >
+            {visibility === "detailOnly" ? "Show list" : "Focus"}
+          </Stack.Toolbar.Button>
         )}
         {routeItems(bridgedItems(bridged.primary))}
       </Stack.Toolbar>

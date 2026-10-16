@@ -5,6 +5,7 @@ import { FileText, Search } from "lucide-react-native";
 import { listNotes, searchNotes, type NoteRow } from "@/db/queries";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
+import { ICON_CLOSE } from "@/components/toolbar-icons";
 
 /**
  * Native formSheet note picker for inserting a `[[Wikilink]]`. Searches note
@@ -39,7 +40,7 @@ export default function WikilinkPickerRoute() {
     <>
       <Stack.Screen options={{ title: "Link a note" }} />
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+        <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={() => router.back()}>
           Cancel
         </Stack.Toolbar.Button>
       </Stack.Toolbar>

@@ -7,6 +7,7 @@ import { useHeaderHeight } from "expo-router/react-navigation";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { resolveSheetResult, discardSheetResult } from "@/lib/sheet-result";
+import { ICON_CLOSE, ICON_CHECK } from "@/components/toolbar-icons";
 
 /**
  * Native formSheet route for picking a card's due date. Wraps the native
@@ -45,12 +46,12 @@ export default function DueDatePickerRoute() {
     <View style={[styles.container, { backgroundColor: t.background }]}>
       <Stack.Screen options={{ title: "Due date" }} />
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button accessibilityLabel="Cancel" onPress={() => router.back()}>
+        <Stack.Toolbar.Button icon={ICON_CLOSE} accessibilityLabel="Cancel" onPress={() => router.back()}>
           Cancel
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button accessibilityLabel="Done" onPress={() => done(value.toISOString())}>
+        <Stack.Toolbar.Button icon={ICON_CHECK} variant="done" accessibilityLabel="Done" onPress={() => done(value.toISOString())}>
           Done
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
