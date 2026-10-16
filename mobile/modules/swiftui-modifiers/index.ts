@@ -21,4 +21,4 @@ export const forceCompactWidth = (enabled = true) => createModifier("forceCompac
  * compact below `threshold` points, so a fold/unfold (or Split View resize) collapses and
  * expands in the same layout pass instead of waiting for the JS window width.
  */
-export const forceCompactBelow = (threshold = 700) => createModifier("forceCompactBelow", { threshold });
+export const forceCompactBelow = (threshold: number) => createModifier("forceCompactBelow", { threshold });

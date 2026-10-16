@@ -7,6 +7,7 @@ import { Host } from "@expo/ui";
 import { NavigationStack } from "@expo/ui/swift-ui";
 import { useHingeStatus } from "@/lib/hinge";
 import { FOLD_GUTTER } from "@/lib/fold";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 // useHeaderHeight is re-exported from the public expo-router/react-navigation
 // subpath (see the package exports map) — no deep import into build internals.
@@ -51,7 +52,7 @@ export function useOpenInPreview() {
 }
 
 /** Below this width the screen stays single-column (previews fill the window when open). */
-export const SIDE_PREVIEW_MIN_WIDTH = 700;
+export const SIDE_PREVIEW_MIN_WIDTH = WIDE_MIN_WIDTH;
 
 export interface SidePreviewState {
   preview: PreviewRef | null;

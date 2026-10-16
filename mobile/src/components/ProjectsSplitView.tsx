@@ -40,6 +40,7 @@ import {
 import { useTheme, type as typeScale } from "@/theme";
 import { PressableScale } from "@/components/PressableScale";
 import { useHingeStatus } from "@/lib/hinge";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { forceCompactBelow } from "@modules/swiftui-modifiers";
 
 /**
@@ -108,7 +109,6 @@ export function showProjectInSplitView(projectId: string, view: SplitViewKind = 
 // their buttons move into the native stack header, which shares the tab bar's
 // row. (The Duo's tab bar is a side rail, so its columns keep their own bars.)
 /** Windows narrower than this collapse to one column (SwiftUI decides natively). */
-const COMPACT_BELOW = 700;
 const BRIDGE_HEADER = Platform.OS === "ios" && Platform.isPad;
 
 // Feature flag: the projects tree in the iPad's system tab sidebar
@@ -155,7 +155,7 @@ export function ProjectsSplitView({
   // SwiftUI collapses the split view with the window, so keying on width alone left the
   // wide-layout columns (the status panel in the project column) showing on the outer
   // display for a moment before JS caught up. Width still gates unfolding.
-  const compact = width < COMPACT_BELOW || hingeClosed;
+  const compact = width < WIDE_MIN_WIDTH || hingeClosed;
   // Wide Overview: the blocks up to the health radar stay in this column; the recent
   // notes and activity move to the detail column (beside / instead of "Nothing open").
   const overviewSplit = !compact && view === "overview";
@@ -595,7 +595,7 @@ export function ProjectsSplitView({
           // the project view behind the sidebar button. Forcing compact width makes
           // the split view collapse like the folded Duo — tree → view → item
           // drill-down — through the real size-class path.
-          modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(COMPACT_BELOW)]}
+          modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(WIDE_MIN_WIDTH)]}
         >
           <NavigationSplitView.Sidebar>
             <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} />

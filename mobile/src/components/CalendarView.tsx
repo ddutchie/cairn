@@ -5,7 +5,7 @@
    worklets / useAnimatedStyle — never during JS render. The plain fields
    (ctrl.dragging, ctrl.scrollLocked, ctrl.setContainer) are safe to read here. */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, ScrollView, Pressable, useWindowDimensions } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react-native";
 import { useDragController, DragOverlay } from "@/dnd";
 import { tagsByRow, type CalendarCard } from "@/db/queries";
@@ -19,7 +19,10 @@ import { DraggableChip } from "./calendar/DraggableChip";
 import { DayCell } from "./calendar/DayCell";
 import { DayDetailRow } from "./calendar/DayDetailRow";
 import { UnscheduledTray } from "./calendar/UnscheduledTray";
-import { useFold, useTopHalf } from "@/lib/use-fold";
+import { useCreaseClearance, useFold, useTopHalf } from "@/lib/use-fold";
+
+/** Narrowest a calendar column may get before book pose falls back to the single stack. */
+const BOOK_MIN_COLUMN = 240;
 
 export type CalendarLayout = "month" | "week";
 
@@ -171,6 +174,15 @@ export function CalendarView({
   const fold = useFold();
   const topHalf = useTopHalf();
   const laptop = topHalf.before != null && fold?.axis === "horizontal";
+  // Book pose (vertical crease through this view): two columns, the month grid wholly
+  // before the crease and the day list + Unscheduled tray wholly after it, instead of
+  // cells and chips straddling the fold. Needs room for both; otherwise the normal stack.
+  const crease = useCreaseClearance();
+  const book = crease.split != null && crease.split.before >= BOOK_MIN_COLUMN && crease.split.after >= BOOK_MIN_COLUMN;
+  const onRootLayout = (e: LayoutChangeEvent) => {
+    topHalf.onLayout(e);
+    crease.onLayout(e);
+  };
   const bottomBandHeight = laptop
     ? Math.round(windowHeight - fold.position - fold.gutter / 2)
     : Math.round(Math.min(360, Math.max(200, windowHeight * 0.35)));
@@ -205,7 +217,9 @@ export function CalendarView({
       : `Week of ${buildWeekGrid(anchor, todayKey)[0].date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 
   return (
-    <View ref={ctrl.setContainer} style={styles.root} collapsable={false} onLayout={topHalf.onLayout}>
+    <View ref={ctrl.setContainer} style={[styles.root, book && { flexDirection: "row" }]} collapsable={false} onLayout={onRootLayout}>
+      {/* Grid column: the whole screen normally, the half before the crease in book pose. */}
+      <View style={book && crease.split ? { width: crease.split.before } : { flex: 1 }}>
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.navGroup}>
@@ -345,13 +359,22 @@ export function CalendarView({
         ))}
       </View>
 
+      </View>
+
       {/* Bottom band — a fixed-height, independently-scrolling area holding the
           selected-day list and the Unscheduled tray, with padding to clear the
           native tab bar. Scroll is locked while a chip is lifted so the drag
           gesture isn't stolen; the grid above stays fully visible so day drops
           need no auto-scroll (the tray is a single drop zone). */}
       {laptop && <View style={{ height: fold.gutter }} />}
-      <View style={[styles.bottomBand, { height: bottomBandHeight }]}>
+      <View
+        style={[
+          styles.bottomBand,
+          book && crease.split
+            ? { flex: 1, marginLeft: crease.split.gutter, borderTopWidth: 0, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: t.border }
+            : { height: bottomBandHeight },
+        ]}
+      >
         <ScrollView
           contentContainerStyle={{ paddingBottom: bottomInset + 16 }}
           showsVerticalScrollIndicator
