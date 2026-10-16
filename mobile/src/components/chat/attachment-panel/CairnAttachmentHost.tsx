@@ -80,7 +80,13 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   // The menu is centred on the `+`, which assumes the keyboard is up; with it down (or in a
   // short window) the composer is low on the screen, so keep the whole menu above the bottom edge.
   const menuTopMax = height - insets.bottom - MENU_HEIGHT - GUTTER;
-  const panelTop = Math.min(settledBottom - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2, menuTopMax);
+  // Top of the panel for a given composer bottom — shared with the flight start frames below so
+  // they begin exactly where the panel is drawn.
+  const panelTopFor = useCallback(
+    (composerBottomNow: number) => Math.min(composerBottomNow - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2, menuTopMax),
+    [menuTopMax],
+  );
+  const panelTop = panelTopFor(settledBottom);
   const gridWidth = width - GUTTER * 2;
   const gridHeight = height - panelTop - GUTTER;
 
@@ -216,7 +222,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
     if (!picked.length) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const bottom = composerBottom.get();
-    const gridTop = bottom - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2;
+    const gridTop = panelTopFor(bottom);
     const cellSize = gridWidth / GRID.columns - GRID.gap;
     const fallback = { x: GUTTER + (gridWidth - cellSize) / 2, y: gridTop + (gridHeight - cellSize) / 2, w: cellSize, h: cellSize };
     const base = existingCount;
@@ -226,7 +232,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
         return { photo, slot: base + index, from: cell ? { x: GUTTER + cell.x, y: gridTop + cell.y, w: cell.w, h: cell.h } : fallback };
       }),
     );
-  }, [photos, selected, composerBottom, gridWidth, gridHeight, existingCount, attachAndLeave]);
+  }, [photos, selected, composerBottom, gridWidth, gridHeight, existingCount, attachAndLeave, panelTopFor]);
 
   const capturePhoto = useCallback(async () => {
     if (capturing.current) return;
@@ -236,7 +242,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
       if (!uri) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const bottom = composerBottom.get();
-      const sheetTop = bottom - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2;
+      const sheetTop = panelTopFor(bottom);
       const flight: Flight = { photo: { id: uri }, slot: existingCount, from: { x: GUTTER, y: sheetTop, w: gridWidth, h: gridHeight }, fromRadius: GRID.panelRadius };
       setFlights([flight]);
       cameraUriToAttachment(uri)
@@ -246,7 +252,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
     } finally {
       capturing.current = false;
     }
-  }, [composerBottom, existingCount, gridHeight, gridWidth, onAddAttachments, startExit]);
+  }, [composerBottom, existingCount, gridHeight, gridWidth, onAddAttachments, panelTopFor, startExit]);
 
   const toggle = useCallback(() => {
     if (mode === "closed" && leadTimer.current === null) openMenu();

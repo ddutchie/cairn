@@ -495,7 +495,8 @@ export default function ChatScreen() {
             accessibilityRole="button"
             accessibilityLabel="AI settings"
             hitSlop={8}
-            onPress={() => router.push("/settings/ai")}
+            // Inline arrow (not a bare toolbarPress(...)) so the react-hooks ref lint stays quiet.
+            onPress={() => toolbarPress(() => router.push("/settings/ai"))()}
             style={styles.composerToolBtn}
           >
             <Settings size={18} color={t.textSecondary} />
