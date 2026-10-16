@@ -96,3 +96,18 @@ export function resolveFold(
   if (region === undefined) return foldGeometry(window, status);
   return region ? foldFromRegion(region, window) : null;
 }
+
+/** Share of the window the open item takes when no crease splits it. */
+export const SIDE_PANE_SHARE = 0.6;
+
+/**
+ * Width of the pane that opens beside a screen. With a vertical crease inside the
+ * window the pane starts on it, so the screen and the open item each get their own
+ * half. Otherwise (flat, closed, or a Split View window that only touches the crease
+ * at its edge, where "half the window" would miss it) the open item takes the larger
+ * share. Driven by the crease geometry, never by the hinge status alone.
+ */
+export function sidePaneWidth(windowWidth: number, fold: Fold | null): number {
+  const splits = fold != null && fold.axis === "vertical" && fold.position > windowWidth * 0.25 && fold.position < windowWidth * 0.75;
+  return Math.round(splits ? windowWidth - fold.position : windowWidth * SIDE_PANE_SHARE);
+}
