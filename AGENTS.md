@@ -33,6 +33,8 @@ npm run type-check:all  # type-check renderer + electron (always run after chang
 
 esbuild is stricter than tsc — backticks inside template literals must be unescaped at the template level. Use `import * as z from "zod"` (not `import { z }`) in all Electron files.
 
+**Pull requests:** GitHub's default template (`.github/PULL_REQUEST_TEMPLATE.md`) is the desktop one. For changes under `mobile/`, use `.github/PULL_REQUEST_TEMPLATE/mobile.md` instead — pass its contents with `gh pr create --body-file`, or open the PR with `?template=mobile.md`. GitHub cannot choose a template by changed path.
+
 **Never bump the project version.** The release scripts (`scripts/release.sh` for desktop, `scripts/releasemobile.sh` for mobile) bump the version and update the JSON automatically at release time — leave `package.json` / `mobile/app.json` untouched.
 
 ### Changelog rule (always keep the changelog ahead of the version)
