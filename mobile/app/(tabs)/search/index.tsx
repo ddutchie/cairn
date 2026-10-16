@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Platform, Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
@@ -11,7 +11,8 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { Sparkles, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
-import { haptics } from "@/haptics";
+import { haptics, toolbarPress } from "@/haptics";
+import { ICON_INFO, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { isNativeSearchScopeAvailable, setNativeSearchScope, setNativeSearchScopeIndex, clearNativeSearchScope, subscribeNativeSearchScope } from "@modules/search-scope";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -40,6 +41,12 @@ export default function SearchScreen() {
   const t = useTheme();
   const semanticAvailable = isAppleEmbeddingsSupported();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  // Wide iOS windows drop the "Search" title (like Chat) and dock the header
+  // items into the side rail via Stack.Toolbar. The native search field stays —
+  // only the title row collapses. 700 matches SIDE_PREVIEW_MIN_WIDTH (kept local
+  // so this tab doesn't import the whole SidePreview module graph).
+  const wideBar = Platform.OS === "ios" && width >= 700;
   const [query, setQuery] = useState("");
   // Semantic ranking on by default when available; the header ✨ toggles it.
   const [semanticMode, setSemanticMode] = useState(semanticAvailable);
@@ -61,6 +68,14 @@ export default function SearchScreen() {
   // is irrelevant.
   const typeFilterRef = useRef(typeFilter);
   useEffect(() => { typeFilterRef.current = typeFilter; }, [typeFilter]);
+  // Latest query + mode for the deferred semantic toggle (it fires 350 ms
+  // after the tap — reads at fire time so mid-beat edits aren't lost).
+  const queryRef = useRef(query);
+  useEffect(() => { queryRef.current = query; }, [query]);
+  const semanticModeRef = useRef(semanticMode);
+  useEffect(() => { semanticModeRef.current = semanticMode; }, [semanticMode]);
+  // Pending wide-rail toggle flip (cleared when superseded by a newer tap).
+  const toggleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
@@ -129,17 +144,47 @@ export default function SearchScreen() {
   const toggleSemantic = () => {
     if (!semanticAvailable) return;
     haptics.selection();
-    const next = !semanticMode;
-    setSemanticMode(next);
-    if (next) {
-      // Ensure the on-device index is built (downloads model assets on first use
-      // + embeds not-yet-indexed items). IndexingBar shows progress; re-run when done.
-      catchUpIndex()
-        .then(() => run(query, true, typeFilter))
-        .catch(() => {});
+    // Commit the flip synchronously so a second rapid tap derives from the
+    // latest mode instead of the still-unapplied state.
+    const next = !semanticModeRef.current;
+    semanticModeRef.current = next;
+    // Supersede any pending flip — only the latest tap fires.
+    if (toggleTimer.current) clearTimeout(toggleTimer.current);
+    if (!wideBar) {
+      // Narrow: the header toggle is an RN view that repaints live, so stay
+      // in the active field and flip immediately (original behavior).
+      setSemanticMode(next);
+      if (next) {
+        // Ensure the on-device index is built (downloads model assets on first use
+        // + embeds not-yet-indexed items). IndexingBar shows progress; re-run when done.
+        catchUpIndex()
+          .then(() => run(query, true, typeFilter))
+          .catch(() => {});
+      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      run(query, next, typeFilter);
+      return;
     }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    run(query, next, typeFilter);
+    // Wide rail: exit search FIRST via the native cancel — not a keyboard
+    // resign (blur leaves the controller active when text is present, and the
+    // rail button can't repaint while it's active). Stand it down, then flip,
+    // so the toolbar update lands on an inactive controller and paints. The
+    // query is restored in case cancel clears the field.
+    searchRef.current?.cancelSearch();
+    toggleTimer.current = setTimeout(() => {
+      toggleTimer.current = null;
+      searchRef.current?.setText(queryRef.current);
+      setSemanticMode(next);
+      if (next) {
+        // Ensure the on-device index is built (downloads model assets on first use
+        // + embeds not-yet-indexed items). IndexingBar shows progress; re-run when done.
+        catchUpIndex()
+          .then(() => run(queryRef.current, true, typeFilterRef.current))
+          .catch(() => {});
+      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      run(queryRef.current, next, typeFilterRef.current);
+    }, 350);
   };
 
   // Focus the native search bar (and raise the keyboard) every time the tab is
@@ -377,7 +422,7 @@ export default function SearchScreen() {
     <TabScreen>
       <Stack.Screen
         options={{
-          title: "Search",
+          title: wideBar ? "" : "Search",
           headerSearchBarOptions: {
             ref: searchRef,
             placeholder,
@@ -393,15 +438,27 @@ export default function SearchScreen() {
             placement: "stacked",
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
-          // Header trailing controls: an optional info button (shown when
-          // semantic mode is on and some items aren't indexed — always visible
+          // Header trailing controls (narrow / Android): an optional info button
+          // (shown when semantic mode is on and some items aren't indexed — always visible
           // here, unlike an empty-state child that can hide behind the list/tab
           // bar) plus the ✨ semantic ranking toggle. The toggle is hidden
           // entirely when the device can't do on-device embeddings. iOS 26+
-          // wraps each in its own glass toolbar button.
-          headerRight: semanticAvailable
+          // wraps each in its own glass toolbar button. On wide iOS these dock
+          // into the side rail instead (Stack.Toolbar below), so headerRight
+          // stays off there.
+          headerRight: semanticAvailable && !wideBar
             ? () => (
                 <View style={styles.headerRight}>
+                  <Pressable
+                    onPress={toggleSemantic}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Semantic search"
+                    accessibilityState={{ selected: semanticMode }}
+                    style={styles.semBtn}
+                  >
+                    <Sparkles size={18} color={semanticMode ? t.accent : t.textTertiary} />
+                  </Pressable>
                   {semanticMode && stats && stats.indexed < stats.live ? (
                     <Pressable
                       onPress={showIndexInfo}
@@ -413,21 +470,38 @@ export default function SearchScreen() {
                       <Info size={18} color={t.warning} />
                     </Pressable>
                   ) : null}
-                  <Pressable
-                    onPress={toggleSemantic}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel="Semantic search"
-                    accessibilityState={{ selected: semanticMode }}
-                    style={styles.semBtn}
-                  >
-                    <Sparkles size={18} color={semanticMode ? t.accent : t.textTertiary} />
-                  </Pressable>
                 </View>
               )
             : undefined,
         }}
       />
+
+      {/* Wide iOS: the header items dock into the side rail (the header pill
+          would sit top-right over the search field instead). Same actions as
+          headerRight above — info affordance + semantic toggle. Narrow/Android
+          keep the header versions. */}
+      {semanticAvailable && wideBar ? (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button
+            // Keyed by mode + selected state (see toggleSemantic: the mode
+            // flips after the search controller stands down, so this paints).
+            // `selected` maps to UIBarButtonItem.isSelected as a second signal.
+            key={semanticMode ? "semantic-on" : "semantic-off"}
+            icon={ICON_SEMANTIC}
+            accessibilityLabel="Semantic search"
+            selected={semanticMode}
+            tintColor={semanticMode ? t.accent : undefined}
+            onPress={() => toolbarPress(toggleSemantic)()}
+          />
+          {semanticMode && stats && stats.indexed < stats.live ? (
+            <Stack.Toolbar.Button
+              icon={ICON_INFO}
+              accessibilityLabel="Why aren't all items indexed?"
+              onPress={() => toolbarPress(showIndexInfo)()}
+            />
+          ) : null}
+        </Stack.Toolbar>
+      ) : null}
 
       {/* Type filter. With the native scope module this lives IN the search
           field itself (UISearchController scope bar — UIKit animates it with

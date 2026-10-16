@@ -107,3 +107,5 @@ scripts/runtime-baselines/
 
 # private planning notes (not published)
 /docs/private/
+/.agents/skills
+skills-lock.json

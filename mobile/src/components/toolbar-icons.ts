@@ -44,6 +44,7 @@ import TextFieldsXml from "@expo/material-symbols/text_fields.xml";
 import AutoAwesomeXml from "@expo/material-symbols/bolt.xml";
 import TextIncreaseXml from "@expo/material-symbols/text_increase.xml";
 import TextDecreaseXml from "@expo/material-symbols/text_decrease.xml";
+import InfoXml from "@expo/material-symbols/info.xml";
 /** An icon usable by both platforms via the toolbar `icon` prop. */
 export type ToolbarIcon = SFSymbol | ImageSourcePropType;
 
@@ -108,6 +109,8 @@ export const ICON_LABELS_SMART: ToolbarIcon = ios ? "sparkles" : AutoAwesomeXml;
 export const ICON_LABELS_ALL: ToolbarIcon = ios ? "textformat.size.larger" : TextIncreaseXml;
 /** Label density — Minimal (fewest labels). */
 export const ICON_LABELS_MINIMAL: ToolbarIcon = ios ? "textformat.size.smaller" : TextDecreaseXml;
+/** Info / about (semantic-index explainer). */
+export const ICON_INFO: ToolbarIcon = ios ? "info.circle" : InfoXml;
 /** Note / document (search scope). */
 export const ICON_NOTE: ToolbarIcon = ios ? "doc.text" : NoteXml;
 /** Task / checklist item (search scope). */
