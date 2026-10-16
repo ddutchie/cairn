@@ -683,6 +683,7 @@ export default function ChatScreen() {
           strip={strip}
           plusOut={plusOut}
           composerBottom={composerBottom}
+          leftInset={composerLeftInset}
           existingCount={attachments.length}
           onAddAttachments={onAddAttachments}
         />

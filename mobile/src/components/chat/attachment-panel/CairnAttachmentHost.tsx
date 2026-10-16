@@ -34,14 +34,22 @@ export interface CairnAttachmentHostProps {
   existingCount: number;
   onAddAttachments: (atts: Attachment[]) => void;
   onMenuAction?: (action: MenuAction) => void;
+  /** Left edge of the composer in book pose (see CairnMorphComposer); 0 spans the window. */
+  leftInset?: number;
 }
 
 export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAttachmentHostProps>(function CairnAttachmentHost(
-  { strip, plusOut, composerBottom, existingCount, onAddAttachments, onMenuAction },
+  { strip, plusOut, composerBottom, existingCount, onAddAttachments, onMenuAction, leftInset = 0 },
   ref,
 ) {
-  const { width, height } = useWindowDimensions();
+  const { width: windowWidth, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  // The panel lays out in a container starting at `leftInset` (the composer's own left edge
+  // in book pose), so it opens from the `+` and stays on one side of the crease; all its x
+  // geometry is relative to that origin.
+  // Stay inside the side rail too (Duo's bar column, either edge), as the composer does.
+  const left = Math.max(leftInset, insets.left);
+  const width = windowWidth - left - insets.right;
   const gridRef = useRef<PhotoGridHandle>(null);
   const cameraRef = useRef<CameraSheetHandle>(null);
   const leadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -69,7 +77,10 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
   useEffect(() => () => { if (leadTimer.current) clearTimeout(leadTimer.current); }, []);
 
   const settledBottom = height - Math.max(settledKeyboard, insets.bottom) - COMPOSER.keyboardGap;
-  const panelTop = settledBottom - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2;
+  // The menu is centred on the `+`, which assumes the keyboard is up; with it down (or in a
+  // short window) the composer is low on the screen, so keep the whole menu above the bottom edge.
+  const menuTopMax = height - insets.bottom - MENU_HEIGHT - GUTTER;
+  const panelTop = Math.min(settledBottom - COMPOSER.rowHeight / 2 + MENU.centerOffset - MENU_HEIGHT / 2, menuTopMax);
   const gridWidth = width - GUTTER * 2;
   const gridHeight = height - panelTop - GUTTER;
 
@@ -251,8 +262,10 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
     <OverKeyboardView visible>
       <View pointerEvents={isFlying ? "none" : "box-none"} style={StyleSheet.absoluteFill}>
         <Pressable accessibilityLabel="Close attachment menu" onPress={dismiss} style={StyleSheet.absoluteFill} />
+        <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { left }]}>
         <AttachmentPanel
           screenHeight={height}
+          menuTopMax={menuTopMax}
           gridWidth={gridWidth}
           gridHeight={gridHeight}
           interactive={isFlying ? "none" : mode === "menu" ? "menu" : "grid"}
@@ -288,6 +301,7 @@ export const CairnAttachmentHost = forwardRef<CairnAttachmentHostHandle, CairnAt
           <PhotoGridBar width={gridWidth} selected={selected} active={mode === "photos" && !isFlying} fade={gridOpacity} onBack={backToMenu} onConfirm={confirmSelection} />
         )}
         <AttachmentFlight flights={flights} screenWidth={width} attach={attach} strip={strip} composerBottom={composerBottom} />
+        </View>
       </View>
     </OverKeyboardView>
   );
