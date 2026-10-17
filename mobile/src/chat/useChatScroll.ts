@@ -41,6 +41,16 @@ export interface ChatScroll {
  * composition. Nothing here changes behaviour vs the previous inline logic; it
  * is a verbatim relocation.
  *
+ * TODO(simulator): blank-space footer, as in EvanBacon/chat-template's
+ * `Conversation`. Append a spacer under the last message sized
+ * `scrollViewHeight - messagesOnlyHeight - composerHeight - topPadding` so a just-sent
+ * message pins near the top and the reply streams into the empty space below
+ * (ChatGPT-style). Derive `messagesOnlyHeight` as `contentHeight - lastFooterHeight`
+ * (not from the raw content height) to avoid a footer <-> content-size feedback loop.
+ * Not done yet because it must be tuned on a device against KeyboardChatScrollView's
+ * own inset handling (`keyboardLiftBehavior="whenAtEnd"`, `extraContentPadding`) and the
+ * fold poses; drop it if it fights the keyboard lift or the follow-end logic above.
+ *
  * @param msgCount current number of messages (drives the follow-on-growth effect)
  */
 export function useChatScroll(msgCount: number): ChatScroll {
