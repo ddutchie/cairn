@@ -134,7 +134,6 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   // Streaming text lives in an external store, not React state: the live bubble
   // subscribes to it, so the owning panel doesn't re-render on every flush.
   const [streamStore] = useState(createLiveStreamStore);
-  const setStreamText = (content: string, thought: string) => streamStore.set(content, thought);
   const [toolCalls, setToolCalls] = useState<SessionConversationToolCall[]>([]);
   const [subagents, setSubagents] = useState<ChatSubagent[]>([]);
   const [questionsBySession, setQuestionsBySession] = useState<Record<string, SessionConversationQuestion[]>>({});
@@ -167,7 +166,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     if (id !== sessionIdRef.current) return;
     const t = transientsRef.current.get(transientKey(id));
     setIsLoading(t?.running ?? false);
-    setStreamText(t?.text ?? "", t?.thought ?? "");
+    streamStore.set(t?.text ?? "", t?.thought ?? "");
     setToolCalls(t ? [...t.tools] : []);
     setSubagents(t ? [...t.subagents] : []);
   };
@@ -177,7 +176,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     streamFrameRef.current = requestAnimationFrame(() => {
       streamFrameRef.current = 0;
       const t = transientsRef.current.get(transientKey(sessionIdRef.current));
-      setStreamText(t?.text ?? "", t?.thought ?? "");
+      streamStore.set(t?.text ?? "", t?.thought ?? "");
     });
   };
   const cancelStreamFlush = () => {
@@ -198,6 +197,9 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     // render), so syncing on it would setState → re-render → loop forever.
     cancelStreamFlush();
     syncSessionUI(sessionId);
+    // Deliberately keyed on sessionId only (see above): syncSessionUI closes over
+    // render-scoped state and would re-run this on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   const clearQuestionsFor = (id: string | null) => {
@@ -212,7 +214,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     transientsRef.current.set(key, newTransient());
     if (id === sessionIdRef.current) {
       cancelStreamFlush();
-      setIsLoading(false); setStreamText("", ""); setToolCalls([]); setSubagents([]);
+      setIsLoading(false); streamStore.set("", ""); setToolCalls([]); setSubagents([]);
     }
     // keep events for live stats fallback until next turn/start clears it —
     // note the fresh transient starts with empty events, matching the old
@@ -253,7 +255,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
           t.assistant = undefined; t.stats = undefined; t.events = []; t.running = true;
           if (isActive(key)) {
             setIsLoading(true);
-            setStreamText("", "");
+            streamStore.set("", "");
             setToolCalls([]); setSubagents([]);
           }
           adapterRef.current.onTurnStart?.();
@@ -306,7 +308,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
           foldsRef.current.delete(key);
           if (isActive(key)) {
             cancelStreamFlush();
-            setIsLoading(false); setStreamText("", ""); setToolCalls([]); setSubagents([]);
+            setIsLoading(false); streamStore.set("", ""); setToolCalls([]); setSubagents([]);
           }
         },
         onCommand: (phase, data) => {
