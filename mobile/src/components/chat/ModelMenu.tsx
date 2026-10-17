@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactElement } from "react";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -22,15 +22,21 @@ const MAX_MODELS = 40;
 /**
  * Header menu to switch the saved provider and its model without leaving the
  * chat (the model picker in the chat-template, here as a native Liquid Glass
- * `Stack.Toolbar.Menu`). Renders INSIDE a `<Stack.Toolbar>`; hidden unless the
- * OpenAI-compatible path is the one the chat actually uses (Rork / Apple On-
- * device have no user-selectable model list).
+ * `Stack.Toolbar.Menu`). Hidden unless the OpenAI-compatible path is the one
+ * the chat actually uses (Rork / Apple On-device have no user-selectable model
+ * list).
+ *
+ * This is a HOOK returning the `<Stack.Toolbar.Menu>` element (or null), not a
+ * component: `Stack.Toolbar` keeps only children that are literally
+ * Button/Menu/Spacer/View elements (`isChildOfType`), so a wrapper component
+ * placed inside it is silently dropped and the menu never renders. Render the
+ * returned element directly as a child of `<Stack.Toolbar>`.
  *
  * Writes through the same `ai-config` setters as the AI settings sheet, so the
  * two stay in sync; `onChanged` lets the screen re-derive model-dependent state
  * (image-attach gating, usage ring).
  */
-export function ModelMenu({ disabled, onChanged }: { disabled?: boolean; onChanged: () => void }) {
+export function useModelMenu({ disabled, onChanged }: { disabled?: boolean; onChanged: () => void }): ReactElement | null {
   const [providers, setProviders] = useState<SavedProvider[]>([]);
   const [active, setActive] = useState<SavedProvider | null>(null);
   const [models, setModels] = useState<string[]>([]);

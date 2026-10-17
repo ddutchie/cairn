@@ -33,7 +33,7 @@ import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, nextMessageId, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
-import { ModelMenu } from "@/components/chat/ModelMenu";
+import { useModelMenu } from "@/components/chat/ModelMenu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
@@ -215,6 +215,7 @@ export default function ChatScreen() {
     refreshConfigured();
     setOpenAiModelActive(getOpenAIModel());
   }, [refreshConfigured]);
+  const modelMenu = useModelMenu({ disabled: busy, onChanged: onModelChanged });
   // Re-renders on catalog arrival/refresh; the version feeds the memo so
   // gating recomputes when a model's capabilities finally resolve.
   const catalogVersion = useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
@@ -553,7 +554,7 @@ export default function ChatScreen() {
         >
           Clear chat
         </Stack.Toolbar.Button>
-        <ModelMenu disabled={busy} onChanged={onModelChanged} />
+        {modelMenu}
         <Stack.Toolbar.Button
           icon={ICON_AI}
           accessibilityLabel="AI settings"
