@@ -51,6 +51,11 @@ export interface ConversationMessage {
   contextRefs?: LinkedContextReference[];
   extraContent?: ReactNode;
   isStreaming?: boolean;
+  /**
+   * The in-flight turn's text lives here instead of `content`/`reasoning`, so the
+   * bubble subscribes to it and its parents don't re-render per streamed frame.
+   */
+  liveStream?: import("./live-stream-store").LiveStreamStore;
   /** Per-turn throughput/latency stats shown under a settled assistant bubble. */
   stats?: import("@/types").MessageStats;
   createdAt: string;

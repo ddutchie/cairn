@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { useCairnStore } from "@/store";
 import { useChatStream } from "@/hooks/useChatStream";
+import { useLiveStream } from "@/lib/conversation/live-stream-store";
 import { effectiveTemperatureForModel } from "@/lib/models-dev";
 import { MarkdownContent } from "@/components/conversation/MarkdownContent";
 import { QuestionForm } from "@/components/conversation/QuestionForm";
@@ -34,9 +35,11 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
   const threadId = `prd-${projectId}`;
 
   const {
-    isLoading, toolCalls, streamingContent,
+    isLoading, toolCalls, streamStore,
     pendingQuestions, sendStream, stopStream,
   } = useChatStream(threadId);
+  // The modal renders the stream itself, so it (alone) subscribes per flush.
+  const { content: streamingContent } = useLiveStream(streamStore);
 
   const [input, setInput]     = useState("");
   const [messages, setMessages] = useState<Message[]>([]);

@@ -17,6 +17,10 @@ export interface ChatScroll {
   resumeKey: number;
   /** Whether the user is at/near the bottom of the transcript (mutable ref). */
   nearBottom: React.RefObject<boolean>;
+  /** Wire to the scroll view's `onEndVisible`: tracks `nearBottom` + `showScrollButton`. */
+  onEndVisible: (visible: boolean) => void;
+  /** True once the user has stayed scrolled away from the end (debounced). */
+  showScrollButton: boolean;
   /** Native keyboard-lift offset for KeyboardChatScrollView. */
   offset: number;
   /** Bottom padding the transcript keeps clear below the last message. */
@@ -65,6 +69,20 @@ export function useChatScroll(msgCount: number): ChatScroll {
   // content growth only when true, so expanding a past message's reasoning block
   // (or other layout changes while scrolled up) doesn't yank the view to the end.
   const nearBottom = useRef(true);
+
+  // State mirror of `nearBottom`, for the jump-to-latest button. The "away"
+  // flip is delayed so the momentary not-at-end while a streaming token grows
+  // the content (before the follow-scroll lands) never flashes the button.
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const awayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onEndVisible = useCallback((visible: boolean) => {
+    nearBottom.current = visible;
+    if (awayTimer.current) clearTimeout(awayTimer.current);
+    awayTimer.current = null;
+    if (visible) setShowScrollButton(false);
+    else awayTimer.current = setTimeout(() => setShowScrollButton(true), 250);
+  }, []);
+  useEffect(() => () => { if (awayTimer.current) clearTimeout(awayTimer.current); }, []);
 
   const scrollToEndSoon = useCallback((animated = false) => {
     scrollRef.current?.scrollToEnd({ animated });
@@ -125,6 +143,8 @@ export function useChatScroll(msgCount: number): ChatScroll {
     scrollRef,
     resumeKey,
     nearBottom,
+    onEndVisible,
+    showScrollButton: showScrollButton && msgCount > 0,
     offset: Math.max(closedLift - KEYBOARD_OPEN_GAP, 0),
     extraContentPadding,
     closedLift,

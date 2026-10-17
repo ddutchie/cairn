@@ -7,6 +7,7 @@ import { cairnRefFromMeta, createSessionEventFold, type FoldedToolCall, type Fol
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 import { foldSessionStats } from "../../shared/session-stats";
+import { createLiveStreamStore } from "@/lib/conversation/live-stream-store";
 
 export interface SessionConversationToolCall {
   tool: string;
@@ -130,8 +131,10 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const sessionIdRef = useRef(sessionId);
   const adapterRef = useRef(adapter);
   const [isLoading, setIsLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [streamingThought, setStreamingThought] = useState("");
+  // Streaming text lives in an external store, not React state: the live bubble
+  // subscribes to it, so the owning panel doesn't re-render on every flush.
+  const [streamStore] = useState(createLiveStreamStore);
+  const setStreamText = (content: string, thought: string) => streamStore.set(content, thought);
   const [toolCalls, setToolCalls] = useState<SessionConversationToolCall[]>([]);
   const [subagents, setSubagents] = useState<ChatSubagent[]>([]);
   const [questionsBySession, setQuestionsBySession] = useState<Record<string, SessionConversationQuestion[]>>({});
@@ -164,8 +167,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     if (id !== sessionIdRef.current) return;
     const t = transientsRef.current.get(transientKey(id));
     setIsLoading(t?.running ?? false);
-    setStreamingContent(t?.text ?? "");
-    setStreamingThought(t?.thought ?? "");
+    setStreamText(t?.text ?? "", t?.thought ?? "");
     setToolCalls(t ? [...t.tools] : []);
     setSubagents(t ? [...t.subagents] : []);
   };
@@ -175,8 +177,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     streamFrameRef.current = requestAnimationFrame(() => {
       streamFrameRef.current = 0;
       const t = transientsRef.current.get(transientKey(sessionIdRef.current));
-      setStreamingContent(t?.text ?? "");
-      setStreamingThought(t?.thought ?? "");
+      setStreamText(t?.text ?? "", t?.thought ?? "");
     });
   };
   const cancelStreamFlush = () => {
@@ -211,7 +212,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     transientsRef.current.set(key, newTransient());
     if (id === sessionIdRef.current) {
       cancelStreamFlush();
-      setIsLoading(false); setStreamingContent(""); setStreamingThought(""); setToolCalls([]); setSubagents([]);
+      setIsLoading(false); setStreamText("", ""); setToolCalls([]); setSubagents([]);
     }
     // keep events for live stats fallback until next turn/start clears it —
     // note the fresh transient starts with empty events, matching the old
@@ -252,7 +253,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
           t.assistant = undefined; t.stats = undefined; t.events = []; t.running = true;
           if (isActive(key)) {
             setIsLoading(true);
-            setStreamingContent(""); setStreamingThought("");
+            setStreamText("", "");
             setToolCalls([]); setSubagents([]);
           }
           adapterRef.current.onTurnStart?.();
@@ -305,7 +306,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
           foldsRef.current.delete(key);
           if (isActive(key)) {
             cancelStreamFlush();
-            setIsLoading(false); setStreamingContent(""); setStreamingThought(""); setToolCalls([]); setSubagents([]);
+            setIsLoading(false); setStreamText("", ""); setToolCalls([]); setSubagents([]);
           }
         },
         onCommand: (phase, data) => {
@@ -447,8 +448,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
 
   return {
     isLoading,
-    streamingContent,
-    streamingThought,
+    streamStore,
     toolCalls,
     subagents,
     pendingQuestions: sessionId ? questionsBySession[sessionId] ?? null : null,

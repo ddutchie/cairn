@@ -1,4 +1,5 @@
 import type { ConversationMessage, ConversationLiveToolCall } from "@/lib/conversation/message";
+import type { LiveStreamStore } from "@/lib/conversation/live-stream-store";
 
 /**
  * The in-flight turn, rendered as a normal message.
@@ -18,8 +19,8 @@ import type { ConversationMessage, ConversationLiveToolCall } from "@/lib/conver
 /** The subset of the `useSessionConversation` result this needs. */
 export interface LiveTurnState {
   isLoading: boolean;
-  streamingContent: string;
-  streamingThought: string;
+  /** Streaming text; the bubble subscribes to it, so this component doesn't re-render per flush. */
+  streamStore: LiveStreamStore;
   toolCalls: readonly ConversationLiveToolCall[];
   subagents: readonly unknown[];
 }
@@ -54,7 +55,8 @@ export function toLiveConversationMessage(
   state: LiveTurnState,
   createdAt: string,
 ): ConversationMessage | null {
-  const { isLoading, streamingContent, streamingThought, toolCalls, subagents } = state;
+  const { isLoading, streamStore, toolCalls, subagents } = state;
+  const { content: streamingContent, thought: streamingThought } = streamStore.get();
   const hasAnything = isLoading
     || streamingContent.length > 0
     || streamingThought.length > 0
@@ -65,8 +67,11 @@ export function toLiveConversationMessage(
   return {
     id: `stream-${sessionId}`,
     role: "assistant",
+    // Text is read live from the store by the bubble; this snapshot only seeds
+    // non-live consumers (copy/export of an in-flight message).
     content: streamingContent,
     reasoning: streamingThought || undefined,
+    liveStream: streamStore,
     toolCalls: toolCalls.map((tool) => ({
       callId: tool.callId,
       name: tool.tool,

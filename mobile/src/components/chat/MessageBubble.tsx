@@ -7,6 +7,7 @@ import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { ToolTrail } from "./ToolTrail";
 import type { UiMessage } from "@/chat/history";
+import { useStreamingHasText, useStreamingText } from "@/chat/streaming-store";
 
 /**
  * One chat message: avatar + column (tool trail, reasoning, bubble). Mirrors the
@@ -15,6 +16,34 @@ import type { UiMessage } from "@/chat/history";
  * one bubble, not every prior message (each would otherwise re-run its
  * MarkdownView parse per token).
  */
+/**
+ * Assistant body. While the reply streams, its text comes from the streaming
+ * store (not `m.content`), so token updates re-render only this subtree.
+ */
+function AssistantBody({ m }: { m: UiMessage }) {
+  const t = useTheme();
+  const live = useStreamingText(!!m.streaming);
+  const content = m.streaming ? live : m.content;
+  if (m.streaming && !content) return <ActivityIndicator color={t.textTertiary} size="small" />;
+  return (
+    <MarkdownView
+      content={content}
+      resolveLinks
+      useNoteFont={false}
+      fontFamilyOverride={t.chatFont}
+      fontWeightOverride={t.chatFontWeight}
+      trackingOverride={t.chatTracking}
+      lineHeightOverride={t.chatLineHeight}
+    />
+  );
+}
+
+/** Reasoning block that collapses once the streamed answer starts. */
+function AssistantReasoning({ m }: { m: UiMessage }) {
+  const liveHasText = useStreamingHasText(!!m.streaming);
+  return <ReasoningBlock text={m.reasoning ?? ""} summary={m.reasoningSummary} streaming={m.streaming} hasContent={m.streaming ? liveHasText : !!m.content} />;
+}
+
 export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -72,7 +101,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
       {/* Column: tool chips, bubble, timestamp */}
       <View style={[styles.col, isUser && styles.colUser]}>
         {!isUser && m.tools && m.tools.length > 0 && <ToolTrail tools={m.tools} />}
-        {!isUser && (m.reasoning || m.reasoningSummary) ? <ReasoningBlock text={m.reasoning ?? ""} summary={m.reasoningSummary} streaming={m.streaming} hasContent={!!m.content} /> : null}
+        {!isUser && (m.reasoning || m.reasoningSummary) ? <AssistantReasoning m={m} /> : null}
 
         <View
           style={[
@@ -89,9 +118,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
               ))}
             </View>
           )}
-          {m.role === "assistant" && m.streaming && !m.content ? (
-            <ActivityIndicator color={t.textTertiary} size="small" />
-          ) : isUser ? (
+          {isUser ? (
             m.content ? (
               <Text style={[styles.userText, {
                 fontFamily: t.chatFont,
@@ -103,15 +130,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
               </Text>
             ) : null
           ) : (
-            <MarkdownView
-              content={m.content}
-              resolveLinks
-              useNoteFont={false}
-              fontFamilyOverride={t.chatFont}
-              fontWeightOverride={t.chatFontWeight}
-              trackingOverride={t.chatTracking}
-              lineHeightOverride={t.chatLineHeight}
-            />
+            <AssistantBody m={m} />
           )}
         </View>
 

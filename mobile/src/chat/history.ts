@@ -16,6 +16,8 @@ import type { UIMessage } from "./providers/types";
 
 /** A UI chat bubble as the screen renders it (session-only fields added later). */
 export interface UiMessage {
+  /** Stable React key — survives clear/reload, unlike an array index. */
+  id: string;
   role: "user" | "assistant";
   content: string;
   images?: string[];
@@ -33,6 +35,13 @@ export interface InitialChat {
   conversation: UIMessage[];
 }
 
+let messageSeq = 0;
+/** Session-unique id for a UI bubble (never persisted; history re-ids on load). */
+export function nextMessageId(): string {
+  messageSeq += 1;
+  return `m${Date.now().toString(36)}-${messageSeq}`;
+}
+
 /**
  * Load persisted chat history once and shape it for both consumers. Restores
  * user image attachments into the agent conversation so multimodal context
@@ -41,6 +50,7 @@ export interface InitialChat {
 export function loadInitialChat(): InitialChat {
   const history = loadChatHistory();
   const uiMessages: UiMessage[] = history.map((h) => ({
+    id: nextMessageId(),
     role: h.role,
     content: h.content,
     images: h.images,

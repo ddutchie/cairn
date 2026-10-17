@@ -30,9 +30,12 @@ import { ContextRing } from "@/components/ContextRing";
 import { Glass } from "@/components/chat/attachment-panel/glass";
 import { toolRef } from "@cairn/shared/chat/tool-ref";
 import { extractExternalRef } from "@cairn/shared/chat/external-ref";
-import { loadInitialChat, type UiMessage } from "@/chat/history";
+import { loadInitialChat, nextMessageId, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
+import { ModelMenu } from "@/components/chat/ModelMenu";
+import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
+import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
 import { CairnAttachmentHost, type CairnAttachmentHostHandle } from "@/components/chat/attachment-panel/CairnAttachmentHost";
 import { ChatPatternOverlay } from "@/components/chat/ChatPatternOverlay";
@@ -83,6 +86,9 @@ export default function ChatScreen() {
   // share the same result.
   const [initial] = useState(() => loadInitialChat());
   const [messages, setMessages] = useState<UiMessage[]>(initial.uiMessages);
+  // Live text of the in-flight reply. Tokens go here (throttled) instead of
+  // through `setMessages`, so only the streaming bubble re-renders per flush.
+  const [streamStore] = useState(() => createStreamingStore());
   const conversation = useRef<UIMessage[]>(null as unknown as UIMessage[]);
   if (conversation.current === null) {
     conversation.current = initial.conversation;
@@ -116,6 +122,8 @@ export default function ChatScreen() {
     offset,
     extraContentPadding,
     closedLift,
+    onEndVisible,
+    showScrollButton,
     setComposerH,
     followEnd,
     scrollToEndSoon,
@@ -200,6 +208,12 @@ export default function ChatScreen() {
   // Apple / unknown models stay permissive. Re-resolved on focus (provider may
   // change in settings).
   const [openAiModelActive, setOpenAiModelActive] = useState<string | null>(null);
+  // The header model menu switched provider/model: re-derive what depends on it
+  // (image-attach gating) without waiting for the next focus.
+  const onModelChanged = useCallback(() => {
+    refreshConfigured();
+    setOpenAiModelActive(getOpenAIModel());
+  }, [refreshConfigured]);
   // Re-renders on catalog arrival/refresh; the version feeds the memo so
   // gating recomputes when a model's capabilities finally resolve.
   const catalogVersion = useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
@@ -263,10 +277,11 @@ export default function ChatScreen() {
     setBusy(true);
 
     // UI: add the user bubble + an empty streaming assistant bubble.
+    streamStore.reset();
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: text, images: atts.map((a) => a.url) },
-      { role: "assistant", content: "", tools: [], streaming: true },
+      { id: nextMessageId(), role: "user", content: text, images: atts.map((a) => a.url) },
+      { id: nextMessageId(), role: "assistant", content: "", tools: [], streaming: true },
     ]);
 
     conversation.current.push(userMessage(text, atts));
@@ -297,7 +312,7 @@ export default function ChatScreen() {
       const onEvent = (e: AgentEvent) => {
         if (e.type === "text-delta" && e.delta) {
           acc += e.delta;
-          patchAssistant({ content: acc });
+          streamStore.push(acc);
         } else if (e.type === "reasoning-delta" && e.delta) {
           reasoningAcc += e.delta;
           patchAssistant({ reasoning: reasoningAcc });
@@ -363,6 +378,7 @@ export default function ChatScreen() {
         setTimeout(() => scrollToEndSoon(true), 20);
       };
       const answer = await runAgent(conversation.current, onEvent);
+      streamStore.flush();
       const finalText = answer || acc;
       patchAssistant({ content: finalText, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
       saveChatMessage({ role: "assistant", content: finalText, tools: toolTrail.length ? toolTrail : undefined });
@@ -378,7 +394,7 @@ export default function ChatScreen() {
       setBusy(false);
       setTimeout(() => scrollToEndSoon(true), 50);
     }
-  }, [input, attachments, busy, followEnd, scrollToEndSoon]);
+  }, [input, attachments, busy, followEnd, scrollToEndSoon, streamStore]);
 
   // Drain the queue: when a turn finishes (busy went true → false), send the
   // next queued message. Keeps the queue on Stop and drains after errors too.
@@ -534,6 +550,7 @@ export default function ChatScreen() {
         >
           Clear chat
         </Stack.Toolbar.Button>
+        <ModelMenu disabled={busy} onChanged={onModelChanged} />
         <Stack.Toolbar.Button
           icon={ICON_AI}
           accessibilityLabel="AI settings"
@@ -582,7 +599,7 @@ export default function ChatScreen() {
             offset={confined ? topHalf.gap : offset}
             extraContentPadding={confined ? topHalfPadding : extraContentPadding}
             scrollEventThrottle={16}
-            onEndVisible={(visible) => { nearBottom.current = visible; }}
+            onEndVisible={onEndVisible}
             onContentSizeChange={() => {
               // Follow new content only when the user is already near the bottom
               // (e.g. streaming) — never when they've scrolled up to read/expand.
@@ -601,8 +618,9 @@ export default function ChatScreen() {
               // always re-fire for identical content), leaving the keyboard
               // engine unable to lift content above the keyboard until a cold
               // app relaunch forced a native re-layout.
+              <StreamingStoreContext.Provider value={streamStore}>
               <View key={resumeKey}>
-                {messages.map((m, i) => <MessageBubble key={i} m={m} />)}
+                {messages.map((m) => <MessageBubble key={m.id} m={m} />)}
                 {queued.map((q) => (
                   <View key={q.id} style={styles.queuedRow}>
                     <View style={styles.queuedBubble}>
@@ -620,6 +638,7 @@ export default function ChatScreen() {
                   </View>
                 ))}
               </View>
+              </StreamingStoreContext.Provider>
             )}
           </KeyboardChatScrollView>
         </KeyboardGestureArea>
@@ -678,6 +697,12 @@ export default function ChatScreen() {
           }}
           allowImages={allowImages}
           queuedCount={queued.length}
+        />
+        <ScrollToBottomButton
+          visible={showScrollButton && !hideComposer}
+          composerHeight={composerHeight}
+          closedLift={closedLift}
+          onPress={() => { followEnd(); scrollToEndSoon(true); }}
         />
         <CairnAttachmentHost
           ref={hostRef}

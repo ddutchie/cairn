@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConversationMessageBubble } from "./ConversationMessageBubble";
 import type { ConversationMessage } from "@/lib/conversation/message";
+import { createLiveStreamStore } from "@/lib/conversation/live-stream-store";
 
 const renderBubble = (message: ConversationMessage) =>
   render(<TooltipProvider><ConversationMessageBubble message={message} sessionId="s1" /></TooltipProvider>);
@@ -44,5 +45,18 @@ describe("ConversationMessageBubble actions row", () => {
     renderBubble({ ...base, role: "user" });
     expect(screen.queryByRole("button", { name: /report an issue/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Message speed & token stats" })).toBeNull();
+  });
+});
+
+describe("ConversationMessageBubble live turn", () => {
+  it("renders streamed text from the store without the parent re-rendering", () => {
+    const store = createLiveStreamStore();
+    const live: ConversationMessage = { id: "stream-s1", role: "assistant", content: "", isStreaming: true, liveStream: store, createdAt: base.createdAt };
+    renderBubble(live);
+    expect(screen.queryByText("Streaming reply")).toBeNull();
+    act(() => store.set("Streaming reply", ""));
+    expect(screen.getByText("Streaming reply")).toBeInTheDocument();
+    act(() => store.set("Streaming reply, more", "thinking"));
+    expect(screen.getByText("Streaming reply, more")).toBeInTheDocument();
   });
 });

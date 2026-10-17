@@ -12,6 +12,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { revealNote, revealCard } from "@/lib/events";
 import { isView } from "@/lib/views";
+import { splitMarkdownBlocks } from "@/lib/markdown/split-blocks";
 import { parseWikilinks } from "@/lib/wikilink-parser";
 import type { Note, TaskCard } from "@/types";
 
@@ -87,8 +88,18 @@ function preprocessMarkdown(
   return processed;
 }
 
-/** Markdown renderer for assistant chat messages */
+/**
+ * Markdown renderer for assistant chat messages. Long content is split at safe
+ * heading boundaries into memoized chunks, so while a reply streams only the
+ * trailing chunk re-parses per token (completed sections are skipped).
+ */
 export function MarkdownContent({ content, isUser }: { content: string; isUser?: boolean }) {
+  const chunks = useMemo(() => splitMarkdownBlocks(content), [content]);
+  if (chunks.length === 1) return <MarkdownChunk content={content} isUser={isUser} />;
+  return <>{chunks.map((chunk, i) => <MarkdownChunk key={i} content={chunk} isUser={isUser} />)}</>;
+}
+
+const MarkdownChunk = React.memo(function MarkdownChunk({ content, isUser }: { content: string; isUser?: boolean }) {
   const { notes, cards, projects, activeProjectId, setView, openEditorFile, activeView, setActivePreviewItem } = useCairnStore(useShallow((s) => ({
     notes: s.notes,
     cards: s.cards,
@@ -274,4 +285,4 @@ export function MarkdownContent({ content, isUser }: { content: string; isUser?:
       {preprocessed}
     </ReactMarkdown>
   );
-}
+});
