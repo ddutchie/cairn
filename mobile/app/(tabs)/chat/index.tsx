@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Alert,
   useWindowDimensions,
+  Platform,
 } from "react-native";
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKeyboardState, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
@@ -33,7 +34,7 @@ import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, nextMessageId, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
-import { useModelMenu } from "@/components/chat/ModelMenu";
+import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
@@ -215,7 +216,7 @@ export default function ChatScreen() {
     refreshConfigured();
     setOpenAiModelActive(getOpenAIModel());
   }, [refreshConfigured]);
-  const modelMenu = useModelMenu({ disabled: busy, onChanged: onModelChanged });
+  const modelMenu = useModelMenuState({ disabled: busy, onChanged: onModelChanged });
   // Re-renders on catalog arrival/refresh; the version feeds the memo so
   // gating recomputes when a model's capabilities finally resolve.
   const catalogVersion = useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
@@ -479,6 +480,7 @@ export default function ChatScreen() {
   // the keyboard is up, and return when it goes.
   const laptop = fold?.axis === "horizontal";
   const showHeaderTools = !laptop && (sp.showToolbar || typingCollapsed);
+  const modelInTitle = Platform.OS === "ios" && modelMenu != null && showHeaderTools && sp.screenOptions.title !== "";
   const showToolsPills = laptop && !inputFocused && !keyboardVisible;
   const bottomRing = showToolsPills ? renderContextRing("bottom") : null;
   // Left of the tab bar: a small glass capsule carries the context ring and
@@ -536,6 +538,10 @@ export default function ChatScreen() {
           // preview is open: its own bar owns the rail, and stacked above the chat
           // the pane's ✕ sits exactly where the ring would, which then swallows taps.
           headerLeft: contextRing && showHeaderTools ? () => contextRing : undefined,
+          // iOS: the model name is the header title, opening the model menu (as in
+          // the chat-template). Only while the title is shown at all — wide windows
+          // and open previews blank it, and the toolbar menu takes over there.
+          headerTitle: modelInTitle ? () => <ModelTitleMenu model={modelMenu} /> : undefined,
         }}
       />
       {/* While a preview is open its own bar is the rail's: the chat's items
@@ -554,7 +560,7 @@ export default function ChatScreen() {
         >
           Clear chat
         </Stack.Toolbar.Button>
-        {modelMenu}
+        {modelInTitle ? null : modelToolbarMenu(modelMenu)}
         <Stack.Toolbar.Button
           icon={ICON_AI}
           accessibilityLabel="AI settings"

@@ -15,28 +15,50 @@ import {
 import { listModels } from "@/chat/providers/openai";
 import { isRorkAvailable } from "@/chat/providers/rork";
 import { ICON_MODEL } from "@/components/toolbar-icons";
+import { useTheme } from "@/theme";
+import {
+  Button as SUIButton,
+  HStack,
+  Host,
+  Image as SUIImage,
+  Menu,
+  Section,
+  Text as SUIText,
+} from "@expo/ui/swift-ui";
+import { font, foregroundStyle, lineLimit } from "@expo/ui/swift-ui/modifiers";
 
 /** Menus get unwieldy past this; favorites + the current model are always kept. */
 const MAX_MODELS = 40;
 
 /**
- * Header menu to switch the saved provider and its model without leaving the
- * chat (the model picker in the chat-template, here as a native Liquid Glass
- * `Stack.Toolbar.Menu`). Hidden unless the OpenAI-compatible path is the one
- * the chat actually uses (Rork / Apple On-device have no user-selectable model
- * list).
+ * Model/provider switching for the Chat header, shared by two renderers:
+ *  - iOS header TITLE: the model name + chevron as a native menu (the
+ *    chat-template's picker) — `ModelTitleMenu`.
+ *  - `Stack.Toolbar.Menu` in the right toolbar — `modelToolbarMenu`, used on
+ *    Android and wherever the title is hidden (wide windows).
+ * Hidden unless the OpenAI-compatible path is the one the chat actually uses
+ * (Rork / Apple On-device have no user-selectable model list).
  *
- * This is a HOOK returning the `<Stack.Toolbar.Menu>` element (or null), not a
- * component: `Stack.Toolbar` keeps only children that are literally
- * Button/Menu/Spacer/View elements (`isChildOfType`), so a wrapper component
- * placed inside it is silently dropped and the menu never renders. Render the
- * returned element directly as a child of `<Stack.Toolbar>`.
+ * `Stack.Toolbar` keeps only children that are literally Button/Menu/Spacer/View
+ * elements (`isChildOfType`), so the toolbar variant is a function returning the
+ * real element — a wrapper component placed inside it is silently dropped.
  *
  * Writes through the same `ai-config` setters as the AI settings sheet, so the
  * two stay in sync; `onChanged` lets the screen re-derive model-dependent state
  * (image-attach gating, usage ring).
  */
-export function useModelMenu({ disabled, onChanged }: { disabled?: boolean; onChanged: () => void }): ReactElement | null {
+export interface ModelMenuState {
+  current: string;
+  providers: SavedProvider[];
+  activeId: string;
+  /** Current model first, then favorites, then the rest A–Z (capped). */
+  models: string[];
+  disabled: boolean;
+  pickModel: (model: string) => void;
+  pickProvider: (id: string) => void;
+}
+
+export function useModelMenuState({ disabled = false, onChanged }: { disabled?: boolean; onChanged: () => void }): ModelMenuState | null {
   const [providers, setProviders] = useState<SavedProvider[]>([]);
   const [active, setActive] = useState<SavedProvider | null>(null);
   const [models, setModels] = useState<string[]>([]);
@@ -100,30 +122,86 @@ export function useModelMenu({ disabled, onChanged }: { disabled?: boolean; onCh
     onChanged();
   };
 
+  return { current, providers, activeId: active.id, models: shown, disabled, pickModel, pickProvider };
+}
+
+/** Right-toolbar variant (Android, and iOS when the header title is hidden). */
+export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null {
+  if (!m) return null;
   return (
     <Stack.Toolbar.Menu
       icon={ICON_MODEL}
       iconRenderingMode="template"
-      title={current}
-      disabled={disabled}
-      accessibilityLabel={`Model: ${current}. Switch model`}
+      title={m.current}
+      disabled={m.disabled}
+      accessibilityLabel={`Model: ${m.current}. Switch model`}
     >
-      {providers.length > 1 ? (
+      {m.providers.length > 1 ? (
         <Stack.Toolbar.Menu inline title="Provider">
-          {providers.map((p) => (
-            <Stack.Toolbar.MenuAction key={p.id} isOn={p.id === active.id} onPress={() => pickProvider(p.id)}>
+          {m.providers.map((p) => (
+            <Stack.Toolbar.MenuAction key={p.id} isOn={p.id === m.activeId} onPress={() => m.pickProvider(p.id)}>
               {p.name}
             </Stack.Toolbar.MenuAction>
           ))}
         </Stack.Toolbar.Menu>
       ) : null}
       <Stack.Toolbar.Menu inline title="Model">
-        {shown.map((m) => (
-          <Stack.Toolbar.MenuAction key={m} isOn={m === current} onPress={() => pickModel(m)}>
-            {m}
+        {m.models.map((name) => (
+          <Stack.Toolbar.MenuAction key={name} isOn={name === m.current} onPress={() => m.pickModel(name)}>
+            {name}
           </Stack.Toolbar.MenuAction>
         ))}
       </Stack.Toolbar.Menu>
     </Stack.Toolbar.Menu>
+  );
+}
+
+/**
+ * iOS header title: the model name with a chevron, opening a native menu of
+ * providers and models (checkmark on the active ones) — the chat-template's
+ * `HeaderTitleMenu`. While a reply is running the label renders without the
+ * menu, so it can't be switched mid-turn.
+ */
+export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
+  const t = useTheme();
+  const label = (
+    <HStack spacing={4} alignment="center">
+      <SUIText modifiers={[font({ weight: "semibold", size: 17 }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
+        {m.current}
+      </SUIText>
+      <SUIImage systemName="chevron.down" size={10} color={t.textSecondary} />
+    </HStack>
+  );
+  return (
+    <Host matchContents style={{ minWidth: 80, maxWidth: 240, minHeight: 40 }}>
+      {m.disabled ? (
+        label
+      ) : (
+        <Menu label={label}>
+          {m.providers.length > 1 ? (
+            <Section title="Provider">
+              {m.providers.map((p) => (
+                <SUIButton
+                  key={p.id}
+                  label={p.name}
+                  systemImage={p.id === m.activeId ? "checkmark" : undefined}
+                  onPress={() => m.pickProvider(p.id)}
+                />
+              ))}
+            </Section>
+          ) : null}
+          <Section title="Model">
+            {m.models.map((name) => (
+              <SUIButton
+                key={name}
+                label={name}
+                systemImage={name === m.current ? "checkmark" : undefined}
+                onPress={() => m.pickModel(name)}
+              />
+            ))}
+          </Section>
+        </Menu>
+      )}
+    </Host>
   );
 }
