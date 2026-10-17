@@ -16,10 +16,13 @@ import * as Popover from "@radix-ui/react-popover";
 import { ChevronDown } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
+import type { ReasoningEffort } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ModelPicker } from "@/components/ui/model-picker";
+import { REASONING_OPTIONS } from "@/components/ui/reasoning-effort-picker";
+import { getModelInfo } from "@/lib/models-dev";
 import { useEndpointConfig, isLocalBaseUrl } from "@/components/settings/endpoint-components";
 
 export interface ProviderModelPickerProps {
@@ -79,6 +82,11 @@ export function ProviderModelPicker({
   const setModel = (model: string) => {
     if (target === "ai") setAIConfig({ model });
     else setAgentConfig({ model });
+  };
+  const reasoningCapable = getModelInfo(config.model)?.reasoning === true;
+  const setEffort = (reasoningEffort: ReasoningEffort) => {
+    if (target === "ai") setAIConfig({ reasoningEffort });
+    else setAgentConfig({ reasoningEffort });
   };
   const refreshModels = () => {
     if (activeProvider) fetchModels(activeProvider.baseUrl, activeProvider.apiKey);
@@ -178,6 +186,36 @@ export function ProviderModelPicker({
               />
             )}
           </div>
+
+          {/* Thinking — same control as the pill beside the picker, so model and
+              reasoning effort can be set in one place. Reasoning models only. */}
+          {reasoningCapable && (
+            <div className="space-y-1">
+              <span className="text-[0.714rem] text-[var(--text-secondary)]">Thinking</span>
+              <div role="group" aria-label="Reasoning effort" className="flex gap-0.5 rounded-md bg-[var(--surface-2)] p-0.5">
+                {REASONING_OPTIONS.map((o) => {
+                  const selected = o.value === (config.reasoningEffort ?? "auto");
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      aria-pressed={selected}
+                      title={o.hint}
+                      onClick={() => setEffort(o.value)}
+                      className={cn(
+                        "flex-1 rounded px-1.5 py-1 text-[0.643rem] transition-colors",
+                        selected
+                          ? "bg-[var(--surface)] text-[var(--accent)] shadow-sm"
+                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                      )}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

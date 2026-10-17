@@ -33,8 +33,8 @@ export interface ChatStreamRequest {
 export interface UseChatStreamResult {
   isLoading: boolean;
   toolCalls: ChatToolCall[];
-  streamingContent: string;
-  streamingThought: string;
+  /** Streaming text lives in a store; subscribe with `useLiveStream` (or render via the live bubble). */
+  streamStore: import("@/lib/conversation/live-stream-store").LiveStreamStore;
   subagents: import("@/types").ChatSubagent[];
   pendingQuestions: PendingQuestion[] | null;
   pendingQuestionCallId: string | undefined;

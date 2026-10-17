@@ -180,7 +180,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
   const allowPdf = supportsPdfInput(getModelInfo(aiConfig.model));
 
-  const { isLoading, toolCalls, streamingContent, streamingThought, subagents, pendingQuestions, sendStream, stopStream, clearQuestions, answerQuestions } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamStore, subagents, pendingQuestions, sendStream, stopStream, clearQuestions, answerQuestions } = useChatStream(threadId);
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -436,7 +436,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const liveCreatedAt = useMemo(() => new Date().toISOString(), [isLoading]);
   const liveMessage = toLiveConversationMessage(
     `chat-${threadId ?? ""}`,
-    { isLoading, streamingContent, streamingThought, toolCalls, subagents },
+    { isLoading, streamStore, toolCalls, subagents },
     liveCreatedAt,
   );
   // The timeline scrubber slices the SETTLED transcript only — the live turn is

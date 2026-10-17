@@ -71,6 +71,8 @@ export const ICON_SETTINGS: ToolbarIcon = ios ? "gearshape" : SettingsXml;
 /** AI / model settings. A settings cog — this opens the AI settings sheet, so
  *  a gear reads more clearly than the earlier ambiguous "brain" glyph. */
 export const ICON_AI: ToolbarIcon = ios ? "gearshape" : SettingsXml;
+/** Switch AI provider / model (chat header menu). */
+export const ICON_MODEL: ToolbarIcon = ios ? "sparkles" : NeurologyXml;
 /** Export / share (share sheet). */
 export const ICON_EXPORT: ToolbarIcon = ios ? "square.and.arrow.up" : ShareXml;
 /** Export as PDF. */

@@ -17,6 +17,10 @@ export interface ChatScroll {
   resumeKey: number;
   /** Whether the user is at/near the bottom of the transcript (mutable ref). */
   nearBottom: React.RefObject<boolean>;
+  /** Wire to the scroll view's `onEndVisible`: tracks `nearBottom` + `showScrollButton`. */
+  onEndVisible: (visible: boolean) => void;
+  /** True once the user has stayed scrolled away from the end (debounced). */
+  showScrollButton: boolean;
   /** Native keyboard-lift offset for KeyboardChatScrollView. */
   offset: number;
   /** Bottom padding the transcript keeps clear below the last message. */
@@ -25,6 +29,8 @@ export interface ChatScroll {
   closedLift: number;
   /** Report the measured composer height (onLayout). */
   setComposerH: (h: number) => void;
+  /** Like `scrollToEndSoon`, but a no-op once the user has scrolled away from the end. */
+  scrollToEndIfFollowing: (animated?: boolean) => void;
   /** Mark intent to follow the newest message (e.g. on send / input focus). */
   followEnd: () => void;
   /** Scroll to the end after paint (rAF + short fallback). */
@@ -36,6 +42,16 @@ export interface ChatScroll {
  * device-tuned part of the screen — so the screen component reads as pure
  * composition. Nothing here changes behaviour vs the previous inline logic; it
  * is a verbatim relocation.
+ *
+ * TODO(simulator): blank-space footer, as in EvanBacon/chat-template's
+ * `Conversation`. Append a spacer under the last message sized
+ * `scrollViewHeight - messagesOnlyHeight - composerHeight - topPadding` so a just-sent
+ * message pins near the top and the reply streams into the empty space below
+ * (ChatGPT-style). Derive `messagesOnlyHeight` as `contentHeight - lastFooterHeight`
+ * (not from the raw content height) to avoid a footer <-> content-size feedback loop.
+ * Not done yet because it must be tuned on a device against KeyboardChatScrollView's
+ * own inset handling (`keyboardLiftBehavior="whenAtEnd"`, `extraContentPadding`) and the
+ * fold poses; drop it if it fights the keyboard lift or the follow-end logic above.
  *
  * @param msgCount current number of messages (drives the follow-on-growth effect)
  */
@@ -66,8 +82,25 @@ export function useChatScroll(msgCount: number): ChatScroll {
   // (or other layout changes while scrolled up) doesn't yank the view to the end.
   const nearBottom = useRef(true);
 
+  // State mirror of `nearBottom`, for the jump-to-latest button. The "away"
+  // flip is delayed so the momentary not-at-end while a streaming token grows
+  // the content (before the follow-scroll lands) never flashes the button.
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const awayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onEndVisible = useCallback((visible: boolean) => {
+    nearBottom.current = visible;
+    if (awayTimer.current) clearTimeout(awayTimer.current);
+    awayTimer.current = null;
+    if (visible) setShowScrollButton(false);
+    else awayTimer.current = setTimeout(() => setShowScrollButton(true), 250);
+  }, []);
+  useEffect(() => () => { if (awayTimer.current) clearTimeout(awayTimer.current); }, []);
+
   const scrollToEndSoon = useCallback((animated = false) => {
     scrollRef.current?.scrollToEnd({ animated });
+  }, []);
+  const scrollToEndIfFollowing = useCallback((animated = false) => {
+    if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated });
   }, []);
   const followEnd = useCallback(() => {
     nearBottom.current = true;
@@ -125,11 +158,14 @@ export function useChatScroll(msgCount: number): ChatScroll {
     scrollRef,
     resumeKey,
     nearBottom,
+    onEndVisible,
+    showScrollButton: showScrollButton && msgCount > 0,
     offset: Math.max(closedLift - KEYBOARD_OPEN_GAP, 0),
     extraContentPadding,
     closedLift,
     setComposerH,
     followEnd,
     scrollToEndSoon,
+    scrollToEndIfFollowing,
   };
 }

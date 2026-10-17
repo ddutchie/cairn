@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toLiveConversationMessage, withLiveTurn, type LiveTurnState } from "./conversation-live";
 import type { ConversationMessage } from "@/lib/conversation/message";
+import { createLiveStreamStore } from "@/lib/conversation/live-stream-store";
 
 /**
  * The live-turn adapter is the single place every surface (chat, coding,
@@ -12,20 +13,30 @@ import type { ConversationMessage } from "@/lib/conversation/message";
  * would have).
  */
 
-function state(over: Partial<LiveTurnState> = {}): LiveTurnState {
+function state(over: Partial<LiveTurnState> & { streamingContent?: string; streamingThought?: string } = {}): LiveTurnState {
+  const { streamingContent = "", streamingThought = "", ...rest } = over;
+  const streamStore = createLiveStreamStore();
+  streamStore.set(streamingContent, streamingThought);
   return {
     isLoading: false,
-    streamingContent: "",
-    streamingThought: "",
+    streamStore,
     toolCalls: [],
     subagents: [],
-    ...over,
+    ...rest,
   };
 }
 
 const AT = "2026-01-01T00:00:00.000Z";
 
 describe("toLiveConversationMessage", () => {
+  it("carries the stream store so the bubble can subscribe to later text", () => {
+    const st = state({ isLoading: true });
+    const live = toLiveConversationMessage("s1", st, AT);
+    expect(live?.liveStream).toBe(st.streamStore);
+    st.streamStore.set("later", "");
+    expect(live?.liveStream?.get().content).toBe("later");
+  });
+
   it("returns null when the turn has nothing to show", () => {
     expect(toLiveConversationMessage("s1", state(), AT)).toBeNull();
   });

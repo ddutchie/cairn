@@ -12,6 +12,7 @@ import { MessageAvatar, StreamingCursor } from "@/components/conversation/messag
 import type { LinkedContextReference } from "@/types";
 import { toConversationSubagent } from "@/lib/conversation/message";
 import type { ConversationMessage } from "@/lib/conversation/message";
+import { useLiveStream } from "@/lib/conversation/live-stream-store";
 import { ConversationToolCall } from "./ConversationToolCall";
 import { ConversationSubagentBlock } from "./ConversationSubagentBlock";
 import { messageStatsSegments } from "../../../shared/chat/message-stats";
@@ -33,7 +34,7 @@ function ContextRefChip({ ref_ }: { ref_: LinkedContextReference }) {
   );
 }
 
-export const ConversationMessageBubble = React.memo(function ConversationMessageBubble({
+const ConversationMessageBubbleBody = React.memo(function ConversationMessageBubbleBody({
   message,
   sessionId: _sessionId,
   onRetry,
@@ -183,3 +184,21 @@ export const ConversationMessageBubble = React.memo(function ConversationMessage
     </div>
   );
 }, (previous, next) => previous.message === next.message && previous.sessionId === next.sessionId && previous.onRetry === next.onRetry);
+
+/** The in-flight turn: subscribes to the stream store so only this bubble re-renders per flush. */
+function LiveConversationMessageBubble(props: ConversationMessageBubbleProps) {
+  const store = props.message.liveStream!;
+  const { content, thought } = useLiveStream(store);
+  const { message } = props;
+  const live = React.useMemo(
+    () => ({ ...message, content, reasoning: thought || message.reasoning }),
+    [message, content, thought],
+  );
+  return <ConversationMessageBubbleBody {...props} message={live} />;
+}
+
+export const ConversationMessageBubble = React.memo(function ConversationMessageBubble(props: ConversationMessageBubbleProps) {
+  return props.message.liveStream
+    ? <LiveConversationMessageBubble {...props} />
+    : <ConversationMessageBubbleBody {...props} />;
+}, (previous, next) => previous.message === next.message && previous.sessionId === next.sessionId && previous.onRetry === next.onRetry && previous.connectors === next.connectors);

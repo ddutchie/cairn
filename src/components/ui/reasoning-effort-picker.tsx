@@ -34,7 +34,7 @@ export interface ReasoningEffortPickerProps {
 /** Ordered options. "auto" sends NO reasoning override (model/provider default);
  *  "off" explicitly disables thinking. low/medium/high are supported by every
  *  reasoning model. All are real strings so the choice round-trips through JSON. */
-const OPTIONS: Array<{ value: ReasoningEffort; label: string; hint: string }> = [
+export const REASONING_OPTIONS: Array<{ value: ReasoningEffort; label: string; hint: string }> = [
   { value: "auto", label: "Auto", hint: "Model default — no reasoning override sent" },
   { value: "off", label: "Off", hint: "No thinking — fastest, smallest replies" },
   { value: "low", label: "Low", hint: "Brief reasoning — good for everyday chat" },
@@ -69,7 +69,7 @@ export function ReasoningEffortPicker({
   if (getModelInfo(model)?.reasoning !== true) return null;
 
   // Legacy configs may hold undefined (pre-"auto"); treat that as Auto.
-  const active = OPTIONS.find((o) => o.value === (effort ?? "auto")) ?? OPTIONS[0];
+  const active = REASONING_OPTIONS.find((o) => o.value === (effort ?? "auto")) ?? REASONING_OPTIONS[0];
   const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-[0.643rem]" : "px-2 py-1 text-[0.714rem]";
 
   const select = (value: ReasoningEffort) => {
@@ -122,7 +122,7 @@ export function ReasoningEffortPicker({
           </div>
 
           <div className="flex flex-col gap-0.5">
-            {OPTIONS.map((o) => {
+            {REASONING_OPTIONS.map((o) => {
               const isActive = o.value === (effort ?? "auto");
               return (
                 <button
