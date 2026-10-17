@@ -192,15 +192,14 @@ export function ProviderModelPicker({
           {reasoningCapable && (
             <div className="space-y-1">
               <span className="text-[0.714rem] text-[var(--text-secondary)]">Thinking</span>
-              <div role="radiogroup" aria-label="Reasoning effort" className="flex gap-0.5 rounded-md bg-[var(--surface-2)] p-0.5">
+              <div role="group" aria-label="Reasoning effort" className="flex gap-0.5 rounded-md bg-[var(--surface-2)] p-0.5">
                 {REASONING_OPTIONS.map((o) => {
                   const selected = o.value === (config.reasoningEffort ?? "auto");
                   return (
                     <button
                       key={o.value}
                       type="button"
-                      role="radio"
-                      aria-checked={selected}
+                      aria-pressed={selected}
                       title={o.hint}
                       onClick={() => setEffort(o.value)}
                       className={cn(

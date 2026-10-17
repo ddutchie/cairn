@@ -7,14 +7,14 @@
  * heading outside a fenced code block. A heading at column 0 always terminates
  * lists, quotes and paragraphs, so rendering the chunks separately yields the
  * same output as rendering the whole. Anything whose meaning can cross such a
- * boundary (link reference definitions, footnotes, raw HTML blocks) disables
+ * boundary (link reference definitions, footnotes, HTML comments, raw HTML blocks) disables
  * splitting.
  */
 
 /** Below this size a single parse is cheap; don't bother splitting. */
 export const MIN_SPLIT_LENGTH = 1500;
 
-const CROSS_BOUNDARY = /^ {0,3}\[[^\]\n]+\]:\s|\[\^[^\]\n]+\]|<\/?(?:details|summary|div|table|pre|section|blockquote)\b/im;
+const CROSS_BOUNDARY = /^ {0,3}\[[^\]\n]+\]:\s*\S|\[\^[^\]\n]+\]|<!--|<\/?(?:details|summary|div|table|pre|section|blockquote)\b/im;
 const HEADING = /^ {0,3}#{1,6}(?:\s|$)/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 

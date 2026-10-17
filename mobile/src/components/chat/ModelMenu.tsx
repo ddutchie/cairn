@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -37,39 +37,40 @@ export function ModelMenu({ disabled, onChanged }: { disabled?: boolean; onChang
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [usable, setUsable] = useState(false);
 
-  const load = useCallback(async (): Promise<{ cancelled: () => void }> => {
-    let alive = true;
+  // Bumped by every load and on blur; a load only commits while it is still the
+  // latest, so a slow response for provider A can't land under provider B.
+  const loadGen = useRef(0);
+  const load = useCallback(async () => {
+    const gen = ++loadGen.current;
+    const current = () => gen === loadGen.current;
     const list = await listSavedProviders();
-    if (!alive) return { cancelled: () => {} };
+    if (!current()) return;
     const act = getActiveProvider();
     setUsable(getProviderPref(isRorkAvailable()) === "openai" && list.length > 0);
     setProviders(list);
     setActive(act);
     setFavorites(getFavoriteModels());
-    if (act) {
-      const cached = readModelsCache(act.baseUrl);
-      setModels(cached ?? []);
-      if (!cached) {
-        // First open for this endpoint: fetch once and cache (same cache the
-        // settings sheet reads), so the menu fills in without a trip there.
-        try {
-          const ids = await listModels(act.baseUrl, (await getProviderApiKey(act.id)) ?? "");
-          if (alive && ids.length > 0) {
-            writeModelsCache(act.baseUrl, ids);
-            setModels(ids);
-          }
-        } catch {
-          /* offline / keyless endpoint without /models — current model still shown */
-        }
+    if (!act) return;
+    const cached = readModelsCache(act.baseUrl);
+    setModels(cached ?? []);
+    if (cached) return;
+    // First open for this endpoint: fetch once and cache (same cache the
+    // settings sheet reads), so the menu fills in without a trip there.
+    try {
+      const ids = await listModels(act.baseUrl, (await getProviderApiKey(act.id)) ?? "");
+      if (current() && ids.length > 0) {
+        writeModelsCache(act.baseUrl, ids);
+        setModels(ids);
       }
+    } catch {
+      /* offline / keyless endpoint without /models — current model still shown */
     }
-    return { cancelled: () => { alive = false; } };
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      const pending = load();
-      return () => { void pending.then((p) => p.cancelled()); };
+      void load();
+      return () => { loadGen.current++; };
     }, [load]),
   );
 

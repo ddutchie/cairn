@@ -29,6 +29,8 @@ export interface ChatScroll {
   closedLift: number;
   /** Report the measured composer height (onLayout). */
   setComposerH: (h: number) => void;
+  /** Like `scrollToEndSoon`, but a no-op once the user has scrolled away from the end. */
+  scrollToEndIfFollowing: (animated?: boolean) => void;
   /** Mark intent to follow the newest message (e.g. on send / input focus). */
   followEnd: () => void;
   /** Scroll to the end after paint (rAF + short fallback). */
@@ -97,6 +99,9 @@ export function useChatScroll(msgCount: number): ChatScroll {
   const scrollToEndSoon = useCallback((animated = false) => {
     scrollRef.current?.scrollToEnd({ animated });
   }, []);
+  const scrollToEndIfFollowing = useCallback((animated = false) => {
+    if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated });
+  }, []);
   const followEnd = useCallback(() => {
     nearBottom.current = true;
   }, []);
@@ -161,5 +166,6 @@ export function useChatScroll(msgCount: number): ChatScroll {
     setComposerH,
     followEnd,
     scrollToEndSoon,
+    scrollToEndIfFollowing,
   };
 }

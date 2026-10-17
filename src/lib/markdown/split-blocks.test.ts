@@ -26,8 +26,8 @@ describe("splitMarkdownBlocks", () => {
     expect(splitMarkdownBlocks(md)).toHaveLength(1);
   });
 
-  it("disables splitting when a reference definition, footnote or raw HTML block exists", () => {
-    for (const extra of ["[x]: https://a.b", "note[^1]", "<details>\n</details>"]) {
+  it("disables splitting when a reference definition, footnote, HTML comment or raw HTML block exists", () => {
+    for (const extra of ["[x]: https://a.b", "[x]:https://a.b", "note[^1]", "<details>\n</details>", "<!--\n\n# hidden\n\n-->"]) {
       const md = `# A\n\n${pad}\n\n${extra}\n\n## B\n\ntext`;
       expect(splitMarkdownBlocks(md)).toHaveLength(1);
     }

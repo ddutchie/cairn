@@ -127,6 +127,7 @@ export default function ChatScreen() {
     setComposerH,
     followEnd,
     scrollToEndSoon,
+    scrollToEndIfFollowing,
   } = useChatScroll(messages.length);
 
   // Morph composer springs (strip + plusOut) + attachment host
@@ -375,7 +376,9 @@ export default function ChatScreen() {
             }
           }
         }
-        setTimeout(() => scrollToEndSoon(true), 20);
+        // Only while following: a user who scrolled up to read stays put (and the
+        // jump-to-latest button can appear mid-reply).
+        setTimeout(() => scrollToEndIfFollowing(true), 20);
       };
       const answer = await runAgent(conversation.current, onEvent);
       streamStore.flush();
@@ -392,9 +395,9 @@ export default function ChatScreen() {
       haptics.error(); // request failed
     } finally {
       setBusy(false);
-      setTimeout(() => scrollToEndSoon(true), 50);
+      setTimeout(() => scrollToEndIfFollowing(true), 50);
     }
-  }, [input, attachments, busy, followEnd, scrollToEndSoon, streamStore]);
+  }, [input, attachments, busy, followEnd, scrollToEndIfFollowing, streamStore]);
 
   // Drain the queue: when a turn finishes (busy went true → false), send the
   // next queued message. Keeps the queue on Stop and drains after errors too.
