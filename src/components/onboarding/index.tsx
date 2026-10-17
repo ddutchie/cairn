@@ -181,7 +181,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     setAIConfig({ aiEnabled, provider: "openai", baseUrl, apiKey, model });
     setAgentConfig({ baseUrl, apiKey, model });
     // File the connection as a saved provider so the picker shows it by name.
-    if (aiEnabled && baseUrl.trim()) {
+    // Skip when the user left the prefilled OpenAI default with no key — that would
+    // auto-add an OpenAI provider they never set up.
+    const untouchedDefault = !apiKey.trim() && baseUrl.trim().replace(/\/+$/, "") === "https://api.openai.com";
+    if (aiEnabled && baseUrl.trim() && !untouchedDefault) {
       ensureSavedProviderForConnection({ baseUrl, model, apiKey }, "ai");
     }
     // If the vault scan already created projects, show a summary of them instead
