@@ -121,7 +121,8 @@ function secureKeyFor(id: string): string {
 /**
  * One-time migration: fold the pre-existing flat OpenAI config (baseUrl/model/
  * contextLimit + the single secure-store API key) into the saved-providers list
- * as a default "OpenAI" provider, and mark it active. Idempotent, guarded by a
+ * as a default "OpenAI" provider, and mark it active. Only runs when a legacy
+ * config actually exists (never invents a provider). Idempotent, guarded by a
  * meta flag. Best-effort — the flat getters keep working regardless.
  *
  * Concurrent callers share one execution via `migrationInFlight` so a rapid
@@ -141,10 +142,15 @@ async function migrateToProvidersOnce(): Promise<void> {
         setSetting(PROVIDERS_MIGRATION_FLAG, "1");
         return;
       }
-      const baseUrl = getSetting(KEY_BASE_URL)?.trim() || DEFAULT_OPENAI_BASE_URL;
-      const model = getSetting(KEY_MODEL)?.trim() || DEFAULT_OPENAI_MODEL;
-      const contextLimit = getOpenAIContextLimit();
+      const storedBaseUrl = getSetting(KEY_BASE_URL)?.trim();
+      const storedModel = getSetting(KEY_MODEL)?.trim();
       const legacyKey = (await getLegacyApiKey()) ?? "";
+      // Nothing was ever configured: don't invent an "OpenAI" provider. Leave the
+      // migration unflagged so a later flat config is still folded in.
+      if (!storedBaseUrl && !storedModel && !legacyKey) return;
+      const baseUrl = storedBaseUrl || DEFAULT_OPENAI_BASE_URL;
+      const model = storedModel || DEFAULT_OPENAI_MODEL;
+      const contextLimit = getOpenAIContextLimit();
       const id = newProviderId();
       writeProviders([{ id, name: "OpenAI", baseUrl, model, contextLimit }]);
       setSetting(KEY_ACTIVE_PROVIDER, id);

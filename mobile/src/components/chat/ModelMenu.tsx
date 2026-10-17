@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type ReactElement } from "react";
+import { View } from "react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -25,7 +26,7 @@ import {
   Section,
   Text as SUIText,
 } from "@expo/ui/swift-ui";
-import { font, foregroundStyle, lineLimit } from "@expo/ui/swift-ui/modifiers";
+import { font, foregroundStyle, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
 
 /** Menus get unwieldy past this; favorites + the current model are always kept. */
 const MAX_MODELS = 40;
@@ -51,7 +52,9 @@ export interface ModelMenuState {
   current: string;
   providers: SavedProvider[];
   activeId: string;
-  /** Current model first, then favorites, then the rest A–Z (capped). */
+  /** Favorite models (A–Z), shown in their own section above `models`. */
+  favorites: string[];
+  /** Current model first (when not a favorite), then the rest A–Z (capped). */
   models: string[];
   disabled: boolean;
   pickModel: (model: string) => void;
@@ -105,9 +108,10 @@ export function useModelMenuState({ disabled = false, onChanged }: { disabled?: 
   if (!usable || !active) return null;
 
   const current = active.model;
+  const favs = [...favorites].filter((m) => m === current || models.includes(m)).sort((a, b) => a.localeCompare(b));
   const rest = models.filter((m) => m !== current && !favorites.has(m)).sort((a, b) => a.localeCompare(b));
-  const pinned = [current, ...[...favorites].filter((m) => m !== current && models.includes(m))];
-  const shown = [...pinned, ...rest].slice(0, Math.max(MAX_MODELS, pinned.length));
+  const lead = favorites.has(current) ? [] : [current];
+  const shown = [...lead, ...rest].slice(0, Math.max(MAX_MODELS - favs.length, lead.length));
 
   const pickModel = (model: string) => {
     if (model === current) return;
@@ -122,7 +126,7 @@ export function useModelMenuState({ disabled = false, onChanged }: { disabled?: 
     onChanged();
   };
 
-  return { current, providers, activeId: active.id, models: shown, disabled, pickModel, pickProvider };
+  return { current, providers, activeId: active.id, favorites: favs, models: shown, disabled, pickModel, pickProvider };
 }
 
 /** Right-toolbar variant (Android, and iOS when the header title is hidden). */
@@ -141,6 +145,15 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
           {m.providers.map((p) => (
             <Stack.Toolbar.MenuAction key={p.id} isOn={p.id === m.activeId} onPress={() => m.pickProvider(p.id)}>
               {p.name}
+            </Stack.Toolbar.MenuAction>
+          ))}
+        </Stack.Toolbar.Menu>
+      ) : null}
+      {m.favorites.length > 0 ? (
+        <Stack.Toolbar.Menu inline title="Favorites">
+          {m.favorites.map((name) => (
+            <Stack.Toolbar.MenuAction key={name} isOn={name === m.current} onPress={() => m.pickModel(name)}>
+              {name}
             </Stack.Toolbar.MenuAction>
           ))}
         </Stack.Toolbar.Menu>
@@ -165,7 +178,7 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
 export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
   const t = useTheme();
   const label = (
-    <HStack spacing={4} alignment="center">
+    <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 10 })]}>
       <SUIText modifiers={[font({ weight: "semibold", size: 17 }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
         {m.current}
       </SUIText>
@@ -173,7 +186,11 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
     </HStack>
   );
   return (
-    <Host matchContents style={{ minWidth: 80, maxWidth: 240, minHeight: 40 }}>
+    // Fixed-height wrapper centers the title in the header; the vertical padding
+    // on the label (not a Host minHeight, which top-aligns the content) keeps the
+    // tap target at ~40pt.
+    <View style={{ height: 44, justifyContent: "center", alignItems: "center" }}>
+    <Host matchContents style={{ minWidth: 80, maxWidth: 240 }}>
       {m.disabled ? (
         label
       ) : (
@@ -186,6 +203,18 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
                   label={p.name}
                   systemImage={p.id === m.activeId ? "checkmark" : undefined}
                   onPress={() => m.pickProvider(p.id)}
+                />
+              ))}
+            </Section>
+          ) : null}
+          {m.favorites.length > 0 ? (
+            <Section title="Favorites">
+              {m.favorites.map((name) => (
+                <SUIButton
+                  key={name}
+                  label={name}
+                  systemImage={name === m.current ? "checkmark" : "star.fill"}
+                  onPress={() => m.pickModel(name)}
                 />
               ))}
             </Section>
@@ -203,5 +232,6 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
         </Menu>
       )}
     </Host>
+    </View>
   );
 }
