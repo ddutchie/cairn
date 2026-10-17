@@ -13,10 +13,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, type SemanticHit } from "@/notes/embeddings";
 import { haptics, toolbarPress } from "@/haptics";
 import { ICON_INFO, ICON_SEMANTIC } from "@/components/toolbar-icons";
+import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { isNativeSearchScopeAvailable, setNativeSearchScope, setNativeSearchScopeIndex, clearNativeSearchScope, subscribeNativeSearchScope } from "@modules/search-scope";
 import { stripMarkdown } from "@cairn/shared/notes/text";
-import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
 type TypeFilter = "all" | "notes" | "tasks";
