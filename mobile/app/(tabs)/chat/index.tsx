@@ -547,6 +547,12 @@ export default function ChatScreen() {
     <TabScreen bannerTopInset={glassHeader ? headerHeight : 0}>
       <Stack.Screen
         options={{
+          // Options are merged into the screen's previous ones, not replaced, so a key a variant
+          // below no longer sets would keep its old value (rotating from portrait to landscape kept
+          // the portrait header's glass background). Reset them, then let the variant set its own.
+          headerBackground: undefined,
+          headerBlurEffect: undefined,
+          scrollEdgeEffects: undefined,
           ...sp.screenOptions,
           // Context-window usage ring in the header-left when the active provider
           // reports usage (Apple real, OpenAI real, Rork estimated). Not while a
@@ -588,7 +594,10 @@ export default function ChatScreen() {
                   headerBlurEffect: "systemChromeMaterial",
                   scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
                 }
-            : null),
+            : sp.screenOptions.headerStyle
+              ? null
+              : // Opaque header again (TabStack's colour); it was transparent in the glass layouts.
+                { headerStyle: { backgroundColor: sideRail ? t.background : t.surface } }),
         }}
       />
       {/* While a preview is open its own bar is the rail's: the chat's items
