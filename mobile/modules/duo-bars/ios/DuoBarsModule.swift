@@ -112,11 +112,10 @@ public class DuoBarsModule: Module {
 /// The folded-Duo rail is composed by the system across the tab bar
 /// controller: neither the SwiftUI vertical modifiers nor the per-screen
 /// `verticalBarCompressionBehavior` stamp govern it. This overrides
-/// `preferredVerticalBarBehavior` on the RNScreens tab screen class to
-/// return `.disabled` while vertically compact (the folded outer display /
-/// landscape phones — exactly when the rail appears), falling back to the
-/// system default otherwise. Trait-driven, so the system re-queries on
-/// fold/rotate; wide layouts keep the rail.
+/// `preferredVerticalBarBehavior` on the RNScreens tab screen class.
+/// SPIKE: unconditional `.disabled` — the first question is whether the
+/// system consults this at all. Gating (compact traits / window height)
+/// follows once confirmed.
 enum VerticalBarOptOut {
   static var hookedClass: String?
 
@@ -125,10 +124,7 @@ enum VerticalBarOptOut {
     for name in ["RNSTabsScreenViewController"] {
       guard let cls: AnyClass = NSClassFromString(name) else { continue }
       let sel = NSSelectorFromString("preferredVerticalBarBehavior")
-      let block: @convention(block) (AnyObject) -> UIVerticalBarBehavior = { obj in
-        guard let vc = obj as? UIViewController else { return .automatic }
-        return vc.traitCollection.verticalSizeClass == .compact ? .disabled : .automatic
-      }
+      let block: @convention(block) (AnyObject) -> UIVerticalBarBehavior = { _ in .disabled }
       // The RNScreens class doesn't implement the property itself — add (don't
       // replace) so only this subclass is affected.
       if class_addMethod(cls, sel, imp_implementationWithBlock(block as Any), "q@:") {
