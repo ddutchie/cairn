@@ -9,6 +9,7 @@ import {
   type NavigationSplitViewColumn,
   type NavigationSplitViewVisibility,
 } from "@expo/ui/swift-ui";
+import { Group } from "@expo/ui/swift-ui";
 import {
   navigationSplitViewStyle,
   tint,
@@ -42,6 +43,7 @@ import { PressableScale } from "@/components/PressableScale";
 import { useHingeStatus } from "@/lib/hinge";
 import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { forceCompactBelow } from "@modules/swiftui-modifiers";
+import { preferTabBarCompression, toolbarVerticalBehavior } from "@modules/duo-bars";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
@@ -161,6 +163,14 @@ export function ProjectsSplitView({
   // wide-layout columns (the status panel in the project column) showing on the outer
   // display for a moment before JS caught up. Width still gates unfolding.
   const compact = width < WIDE_MIN_WIDTH || hingeClosed;
+  // Duo rail: while compact the system rail merges the UIKit tab bar with the
+  // hosted SwiftUI column toolbars. Stamp the screens for tab-first
+  // compression (toolbar folds into ···, tabs preserved) — the SwiftUI-only
+  // modifiers can't govern that cross-framework mix.
+  useEffect(() => {
+    if (!compact) return;
+    void preferTabBarCompression().catch(() => {});
+  }, [compact]);
   // Wide Overview: the blocks up to the health radar stay in this column; the recent
   // notes and activity move to the detail column (beside / instead of "Nothing open").
   const overviewSplit = !compact && view === "overview";
@@ -570,6 +580,10 @@ export function ProjectsSplitView({
           a second time, ending up under the header. react-native-keyboard-controller
           owns the keyboard, as everywhere else in the app. */}
       <Host style={{ flex: 1 }} ignoreSafeArea="keyboard">
+        {/* DIAG: Duo opt-out ABOVE the split view — environment set on a
+            container governs that container; column/split-level was too low.
+            Group is layout-transparent. */}
+        <Group modifiers={compact ? [toolbarVerticalBehavior("disabled")] : []}>
         <NavigationSplitView
           // True echo (except the spurious first-layout detailOnly with
           // nothing open, which is swallowed): controlled visibility only
@@ -607,7 +621,7 @@ export function ProjectsSplitView({
           modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(WIDE_MIN_WIDTH)]}
         >
           <NavigationSplitView.Sidebar>
-            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} refreshKey={boardVersion} />
+            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} refreshKey={boardVersion} disableVerticalBar={compact} />
           </NavigationSplitView.Sidebar>
           <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
           {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for
@@ -615,6 +629,7 @@ export function ProjectsSplitView({
               a blank page. Period. */}
           <NavigationSplitView.Detail>{detailView ?? emptyDetail}</NavigationSplitView.Detail>
         </NavigationSplitView>
+        </Group>
       </Host>
     </>,
   );

@@ -1,0 +1,7 @@
+{
+  "name": "duo-bars",
+  "version": "0.1.0",
+  "description": "iPhone Duo vertical-bar modifiers for @expo/ui (toolbarVerticalBehavior opt-out + toolbarVerticalCompressionBehavior). Local Expo module (iOS only).",
+  "main": "index.ts",
+  "private": true
+}

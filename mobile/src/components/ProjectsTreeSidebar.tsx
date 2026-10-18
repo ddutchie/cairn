@@ -32,6 +32,7 @@ import {
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { CairnStack } from "@/components/CairnStack";
+import { toolbarVerticalBehavior, toolbarVerticalCompressionBehavior } from "@modules/duo-bars";
 import { WorkspaceProgressHeader } from "@/components/WorkspaceProgressHeader";
 import { getWorkspaceProgress, type WorkspaceProgress } from "@/db/queries";
 import type { ProjectsList } from "@/components/projects-tree";
@@ -67,6 +68,7 @@ export function ProjectsTreeSidebar({
   onWorkspaceSwitched,
   onOpenNote,
   refreshKey,
+  disableVerticalBar = false,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
@@ -81,6 +83,13 @@ export function ProjectsTreeSidebar({
    * on focus / sync.
    */
   refreshKey?: number;
+  /**
+   * Keep this column's bar horizontal (iPhone Duo `toolbarVerticalBehavior`
+   * `.disabled`). Only the detail column should dock into the side rail —
+   * when this column is the visible one (compact) its buttons would otherwise
+   * pile onto the tab rail with no shared compression.
+   */
+  disableVerticalBar?: boolean;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -162,6 +171,13 @@ export function ProjectsTreeSidebar({
       modifiers={[
         navigationTitle("Projects"),
         navigationBarTitleDisplayMode("inline"),
+        // Compact (folded Duo / narrow iPhone): this column is the screen, so
+        // its bar stays horizontal instead of docking into the tab rail.
+        // (SwiftUI-side opt-out; the rail itself is coordinated in UIKit —
+        // see DuoBars.preferTabBarCompression.)
+        ...(disableVerticalBar
+          ? [toolbarVerticalBehavior("disabled"), toolbarVerticalCompressionBehavior("prefersTabBar")]
+          : []),
         // Fill the column, safe areas included, with the page colour.
         background(t.background),
       ]}
