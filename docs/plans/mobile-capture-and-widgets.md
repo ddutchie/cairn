@@ -3,8 +3,8 @@
 **Status (2026-10-18):** Capture core + sheet are IMPLEMENTED on PR #241
 (`claude/mobile-capture`): JS-only, type-check, lint (zero warnings) and unit tests
 pass; CI green. The cairn stack is built but **DISABLED** (`SHOW_CAIRN_STACK = false`
-in `ProjectsTreeSidebar.tsx`) after a first look on device; see "Revisit: cairn stack". Dictation, the App Intent and
-widgets are DESIGNED here, not built. Their Swift can't be compiled in the cloud
+in `ProjectsTreeSidebar.tsx`) after a first look on device; see "Revisit: cairn stack". Dictation is BUILT on a stacked branch
+(`claude/mobile-dictation`); the App Intent and widgets are DESIGNED here, not built. Their Swift can't be compiled in the cloud
 sandbox, so each must be validated with an EAS `preview` build before TestFlight.
 
 ## Why
@@ -27,7 +27,9 @@ desktop. Three ideas, in priority order:
 | Decision | Choice | Reason |
 |---|---|---|
 | Entry points for v1 | In-app capture sheet + `cairn://capture` link now; App Intent next; widgets after a spike | No extension target, app group or App Intents exist today. Do the cheap, verifiable entry points first. |
-| Dictation | New Speech module (`SFSpeechRecognizer`, on-device where supported) | Chosen over keyboard-only dictation for hold-to-talk feel. Needs new Info.plist strings. |
+| Dictation | `expo-speech-recognition` (MIT, SDK-58-tagged `58.0.0`), not a hand-written Swift module | Wraps `SFSpeechRecognizer` (iOS) and Android's recognizer; gives interim results, continuous mode, on-device recognition, punctuation, volume events, `contextualStrings`, and a config plugin. Avoids writing Swift we can't compile in the cloud sandbox. Needs a native rebuild (new dependency). |
+| Mic gesture | One button: tap toggles, press-and-hold = talk while held, slide left = cancel | Chosen over hold-only (awkward for long dictation) and tap-only. |
+| After dictation | Text stays in the field, never auto-sent | Recognition makes mistakes; the user reviews first. |
 | Filing AI | The user's configured provider with ONE schema-constrained tool (`file_capture`), plus a deterministic fallback | Apple's on-device model is dev-only (too weak); never block capture on AI. |
 | Candidate retrieval | `semanticSearch` across workspaces (+ `finalizeRanking`); lexical title overlap when the index is empty | Index may be unbuilt or unsupported (iOS 17+, assets download). |
 | Inbox project | **None.** Fallback = best match, else last project filed into (`capture_last_project`, device-local meta), else first project | Mobile has no project-create query; inventing a project would need columns/workspace plumbing. Zero projects: the sheet says to create one first. |
@@ -54,16 +56,28 @@ desktop. Three ideas, in priority order:
 
 ## Still to do
 
-### A. Dictation (native, EAS build)
-- `mobile/modules/apple-speech/` in the existing local-module pattern
-  (`expo-module.config.json`, `index.ts`, podspec, `AppleSpeechModule.swift`,
-  `requireOptionalNativeModule`). Swift: `SFSpeechRecognizer` with
-  `requiresOnDeviceRecognition` when supported, `AVAudioEngine`; events
-  `partial` / `final` / `error`; API `isAvailable`, `requestPermission`, `start`, `stop`.
-- Config plugin `plugins/withSpeechPermissions.js`: `NSMicrophoneUsageDescription`,
-  `NSSpeechRecognitionUsageDescription`.
-- `useDictation` hook + hold-to-talk mic in `CaptureSheet`; partials stream into the
-  field; release runs "File it". Hidden when unavailable / Android.
+### A. Dictation (BUILT on `claude/mobile-dictation`, needs a native build; unverified on device)
+- Dependency `expo-speech-recognition@~58.0.0`; plugin entry in `app.json` with
+  `microphonePermission` / `speechRecognitionPermission`. `expo-image-picker` previously
+  had `microphonePermission: false`, which strips the iOS mic string and blocks
+  `RECORD_AUDIO` on Android, so it (and `expo-camera`) now carry the same real string.
+  Verified with `expo prebuild`: both Info.plist keys and `RECORD_AUDIO` are generated.
+- `src/dictation/`: `merge.ts` (pure: join spoken text onto typed text, fold interim/final
+  results, vocabulary list, level normalising), `gesture.ts` (pure: tap/hold/slide rules),
+  `vocabulary.ts` (project + recent note titles as `contextualStrings`), `useDictation.ts`
+  (loads the native module with `requireOptionalNativeModule`, so an old binary or Expo Go
+  reports dictation unavailable instead of crashing; on-device when supported; 2 min safety
+  stop; stops on background; denied → toast with a Settings action).
+- `components/DictationMic.tsx` (PanResponder; stop square + voice-level ring) used in
+  `CairnMorphComposer` (takes the send button's slot while the field is empty or dictating)
+  and in `CaptureSheet`.
+- Not done / ideas: dictate while text already exists (mic only shows on an empty field,
+  like WhatsApp); a hands-free "lock" slide-up; auto-send as an option; iOS 26
+  `SpeechAnalyzer` for better long-form (the library uses `SFSpeechRecognizer`).
+- **Device checks:** first-use permission flow; hold, tap and slide-to-cancel feel;
+  iOS continuous-mode results (are transcripts cumulative, and does a pause finalise a
+  phrase?); Android continuous support; waveform responsiveness; on-device availability
+  per language; background and interruption behaviour.
 
 ### B. App Intent (native, EAS build, SPIKE FIRST)
 - `mobile/modules/capture-intents/`: `CaptureToCairnIntent(text: String)` with

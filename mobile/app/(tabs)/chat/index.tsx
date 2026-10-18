@@ -34,6 +34,8 @@ import { extractExternalRef } from "@cairn/shared/chat/external-ref";
 import { loadInitialChat, nextMessageId, type UiMessage } from "@/chat/history";
 import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
+import { DictationMic } from "@/components/DictationMic";
+import { useDictation } from "@/dictation/useDictation";
 import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
@@ -96,6 +98,7 @@ export default function ChatScreen() {
   }
 
   const [input, setInput] = useState("");
+  const dictation = useDictation({ text: input, setText: setInput });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   // Messages the user queued while a turn was running — sent (FIFO) when the
@@ -684,6 +687,8 @@ export default function ChatScreen() {
           ref={composerInputRef}
           input={input}
           onChangeInput={setInput}
+          mic={dictation.available ? <DictationMic dictation={dictation} /> : undefined}
+          micActive={dictation.listening}
           attachments={attachments}
           pendingIds={[]}
           strip={strip}

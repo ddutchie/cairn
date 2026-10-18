@@ -8,6 +8,8 @@ import { commitProposal, undoCommit } from "@/capture/commit";
 import { fallbackProposal } from "@/capture/proposal";
 import type { CaptureProposal } from "@/capture/types";
 import { listProjects } from "@/db/queries";
+import { DictationMic } from "@/components/DictationMic";
+import { useDictation } from "@/dictation/useDictation";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { ICON_CLOSE } from "@/components/toolbar-icons";
 import { toast } from "@/components/Toast";
@@ -37,6 +39,7 @@ export function CaptureSheet({
 
   const [stage, setStage] = useState<Stage>("input");
   const [text, setText] = useState(initialText);
+  const dictation = useDictation({ text, setText });
   const [proposal, setProposal] = useState<CaptureProposal | null>(null);
   const [skipped, setSkipped] = useState<ReadonlySet<number>>(new Set());
   const [pickingProject, setPickingProject] = useState(false);
@@ -145,7 +148,8 @@ export function CaptureSheet({
             style={styles.input}
             value={text}
             onChangeText={setText}
-            placeholder="Drop a thought, a to-do, a link…"
+            placeholder={dictation.listening ? "Listening… slide left to cancel" : "Drop a thought, a to-do, a link…"}
+            editable={!dictation.listening}
             placeholderTextColor={t.textTertiary}
             multiline
             autoFocus
@@ -153,6 +157,7 @@ export function CaptureSheet({
             accessibilityLabel="Capture text"
           />
           <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+            {dictation.available && <DictationMic dictation={dictation} size={36} />}
             <Pressable
               style={styles.ghostBtn}
               onPress={async () => {
