@@ -64,7 +64,15 @@ public class DuoBarsModule: Module {
         for screen in screens {
           screen.navigationItem.verticalBarCompressionBehavior = .prefersTabBar
         }
-        promise.resolve(["ok": true, "controller": "\(type(of: tbc))", "screens": screens.count, "hooked": VerticalBarOptOut.hookedClass as Any] as [String: Any])
+        var chain: [String] = ["\(type(of: tbc))"]
+        var current = tbc.selectedViewController
+        var depth = 0
+        while let vc = current, depth < 6 {
+          depth += 1
+          chain.append("\(type(of: vc))")
+          current = vc.children.first ?? vc.presentedViewController
+        }
+        promise.resolve(["ok": true, "controller": "\(type(of: tbc))", "screens": screens.count, "hooked": VerticalBarOptOut.hooked, "chain": chain] as [String: Any])
       }
     }
   }
@@ -112,27 +120,30 @@ public class DuoBarsModule: Module {
 /// The folded-Duo rail is composed by the system across the tab bar
 /// controller: neither the SwiftUI vertical modifiers nor the per-screen
 /// `verticalBarCompressionBehavior` stamp govern it. This overrides
-/// `preferredVerticalBarBehavior` on the RNScreens tab screen class.
-/// SPIKE: unconditional `.disabled` — the first question is whether the
-/// system consults this at all. Gating (compact traits / window height)
-/// follows once confirmed.
+/// `preferredVerticalBarBehavior` to `.disabled` — first on the tab bar
+/// controller itself (in case the system queries the container rather than
+/// forwarding to the selected tab), then on the tab screen class.
+/// SPIKE: unconditional `.disabled`; gating follows once ownership is proven.
+/// `chain` reports the selected-tab VC chain so the next hook (if any) can be
+/// precise instead of speculative.
 enum VerticalBarOptOut {
-  static var hookedClass: String?
+  static var hooked: [String] = []
+  static var hookedClass: String? { hooked.first }
 
   static func install() {
-    guard #available(iOS 27.1, *), hookedClass == nil else { return }
-    for name in ["RNSTabsScreenViewController"] {
+    guard #available(iOS 27.1, *) else { return }
+    for name in ["RNSTabBarController", "RNSTabsScreenViewController"] {
       guard let cls: AnyClass = NSClassFromString(name) else { continue }
       let sel = NSSelectorFromString("preferredVerticalBarBehavior")
       let block: @convention(block) (AnyObject) -> UIVerticalBarBehavior = { _ in .disabled }
-      // The RNScreens class doesn't implement the property itself — add (don't
-      // replace) so only this subclass is affected.
+      // These classes don't implement the property themselves — add (don't
+      // replace) so only the subclass is affected.
       if class_addMethod(cls, sel, imp_implementationWithBlock(block as Any), "q@:") {
-        hookedClass = name
-        return
+        hooked.append(name)
       }
     }
   }
+
 }
 
 /// `.toolbarVerticalBehavior(.automatic | .disabled)` — scoped to the view the
