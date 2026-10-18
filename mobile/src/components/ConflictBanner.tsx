@@ -9,15 +9,17 @@ import { useSyncStatus } from "@/sync/useSyncStatus";
  * Global banner surfaced whenever unresolved sync conflicts exist. Tapping it
  * opens the conflict-resolution screen. Driven by the auto-sync controller so
  * it appears automatically after a background sync creates conflict copies.
+ *
+ * `topInset` clears a transparent header the screen runs under (the banner would sit behind it).
  */
-export function ConflictBanner() {
+export function ConflictBanner({ topInset = 0 }: { topInset?: number } = {}) {
   const t = useTheme();
   const router = useRouter();
   const { conflicts } = useSyncStatus();
   const styles = useMemo(() => makeStyles(t), [t]);
   if (conflicts <= 0) return null;
   return (
-    <Pressable style={styles.banner} onPress={() => router.push("/conflicts")}>
+    <Pressable style={[styles.banner, topInset > 0 && { marginTop: topInset }]} onPress={() => router.push("/conflicts")}>
       <AlertTriangle size={16} color={t.warning} />
       <Text style={styles.text}>
         {conflicts} sync conflict{conflicts === 1 ? "" : "s"} to review
