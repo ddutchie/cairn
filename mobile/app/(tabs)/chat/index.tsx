@@ -488,13 +488,12 @@ export default function ChatScreen() {
   const laptop = fold?.axis === "horizontal";
   const showHeaderTools = !laptop && (sp.showToolbar || typingCollapsed);
   // iOS: the header is transparent glass and the transcript (with its chat theme) runs behind it,
-  // like the composer below — including the laptop pose, where the header caps the upright top half.
-  // Only the layouts that give the top half to a stacked preview, and the preview-filled window, keep
-  // the opaque header. Where a side rail is present the system blur would
+  // like the composer below. Fold layouts that reserve the top half for a stacked preview and the
+  // preview-filled window keep the opaque header. Where a side rail is present the system blur would
   // span the full window width into the rail, so the header paints its own background inset by the
   // rail instead.
   const sideRail = insets.left > 0 || insets.right > 0;
-  const glassHeader = Platform.OS === "ios" && !sp.fills && !sp.stacked;
+  const glassHeader = Platform.OS === "ios" && !laptop && !sp.fills && !sp.stacked;
   // Landscape: keep the floating title and toolbar but drop the blur entirely so the
   // transcript uses the full height; the Liquid Glass buttons stand on their own.
   const headerBlur = glassHeader && width <= height;
