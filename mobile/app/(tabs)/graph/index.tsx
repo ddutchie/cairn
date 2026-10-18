@@ -2,7 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { getKnowledgeGraph, listWorkspaceIds, type KnowledgeGraph, type GraphEdge } from "@/db/queries";
-import type { GraphMode } from "@/components/KnowledgeGraphWebView";
+import type { GraphMode } from "@/graph/useGraphControls";
+import { GRAPH_RENDERER } from "@/graph/renderer";
 import type { LabelMode } from "@cairn/shared/ui/graph";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
@@ -14,17 +15,19 @@ import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useTheme } from "@/theme";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 
-// The graph WebView inlines the full D3 bundle (~274 KB) as a string. Load it
-// lazily so opening the app / other tabs never evaluates that module — only the
-// Graph tab, on first view, pays the cost.
-const KnowledgeGraphWebView = lazy(() =>
-  import("@/components/KnowledgeGraphWebView").then((m) => ({ default: m.KnowledgeGraphWebView })),
+// Skia is the default renderer. The legacy D3 WebView inlines the full D3
+// bundle (~274 KB) as a string, so both are loaded lazily: opening the app or
+// other tabs never evaluates either module, only the Graph tab on first view.
+const KnowledgeGraphView = lazy(() =>
+  GRAPH_RENDERER === "webview"
+    ? import("@/components/KnowledgeGraphWebView").then((m) => ({ default: m.KnowledgeGraphWebView }))
+    : import("@/components/KnowledgeGraphSkia").then((m) => ({ default: m.KnowledgeGraphSkia })),
 );
 
 /**
  * Workspace-wide Knowledge Graph — every project, note, card and tag wired by
- * their explicit links, rendered as a D3 force-directed graph (or a radial
- * hierarchy tree) in an offline WebView. Tapping a node opens the corresponding
+ * their explicit links, rendered natively with Skia as a force-directed graph
+ * (or a radial hierarchy tree). Tapping a node opens the corresponding
  * note/card/project screen.
  *
  * The Force/Radial layout switch lives in the native Stack.Toolbar (right) so
@@ -181,7 +184,7 @@ export default function GraphScreen() {
         />
       ) : graph ? (
         <Suspense fallback={<View style={styles.empty}><ActivityIndicator color={t.textTertiary} /></View>}>
-          <KnowledgeGraphWebView
+          <KnowledgeGraphView
             graph={mergedGraph ?? graph}
             mode={mode}
             onModeChange={setMode}
