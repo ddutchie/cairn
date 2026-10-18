@@ -607,7 +607,7 @@ export function ProjectsSplitView({
           modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(WIDE_MIN_WIDTH)]}
         >
           <NavigationSplitView.Sidebar>
-            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} />
+            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} refreshKey={boardVersion} />
           </NavigationSplitView.Sidebar>
           <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
           {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for

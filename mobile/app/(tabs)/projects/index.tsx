@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Platform, View, Text, FlatList, StyleSheet, RefreshControl, useWindowDimensions } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { listProjectSummaries, type ProjectSummary } from "@/db/queries";
+import { listProjectSummaries, getWorkspaceProgress, type ProjectSummary, type WorkspaceProgress } from "@/db/queries";
 import { getActiveSourceName } from "@/db";
 import { PressableScale } from "@/components/PressableScale";
 import { TabScreen } from "@/components/TabScreen";
@@ -9,6 +9,7 @@ import { useTabContentStyle } from "@/components/TabStack";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { WorkspaceProgressCard } from "@/components/overview/WorkspaceProgressCard";
 import { ProjectsSplitView, resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
@@ -39,6 +40,15 @@ export default function ProjectsScreen() {
   // without data would paint the loading header before the sidebar replaces it.
   const [initial] = useState(readProjects);
   const [projects, setProjects] = useState<ProjectSummary[]>(() => initial ?? []);
+  // Workspace-wide progress for the header card. Same synchronous-SQL
+  // reasoning as the project list: read once up front, reload with it.
+  const [progress, setProgress] = useState<WorkspaceProgress | null>(() => {
+    try {
+      return getWorkspaceProgress();
+    } catch {
+      return null;
+    }
+  });
   // The active workspace name doubles as the header title; it changes when the
   // user switches workspace from the header-left menu, so track it in state and
   // refresh it on focus / data change alongside the project list.
@@ -49,6 +59,11 @@ export default function ProjectsScreen() {
 
   const load = useCallback(() => {
     setProjects(listProjectSummaries());
+    try {
+      setProgress(getWorkspaceProgress());
+    } catch {
+      setProgress(null);
+    }
     setWorkspaceName(getActiveSourceName());
     setLoaded(true);
   }, []);
@@ -139,6 +154,13 @@ export default function ProjectsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.textTertiary} />}
         contentContainerStyle={styles.list}
         contentInsetAdjustmentBehavior="automatic"
+        ListHeaderComponent={
+          progress && (progress.totalCards > 0 || progress.totalNotes > 0) ? (
+            <View style={{ marginBottom: 8 }}>
+              <WorkspaceProgressCard progress={progress} />
+            </View>
+          ) : undefined
+        }
         renderItem={({ item }) => (
           <PressableScale
             style={[styles.row, { backgroundColor: t.surface, borderColor: t.border }, elevation.sm]}
