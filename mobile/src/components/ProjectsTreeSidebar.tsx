@@ -43,6 +43,13 @@ import { useSyncStatus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
 
 /**
+ * The cairn stack at the top of the sidebar is built but switched off: on device it
+ * read as a pile of grey pills rather than stones. Flip this on once the stones are
+ * redesigned (see docs/plans/mobile-capture-and-widgets.md, "Revisit: cairn stack").
+ */
+const SHOW_CAIRN_STACK = false;
+
+/**
  * The projects list as a real split-view sidebar column — the same model as
  * the project and item columns, so fold/unfold never unmounts the navigation
  * hierarchy. Flat: it only chooses the project (a project's views are the
@@ -77,7 +84,7 @@ export function ProjectsTreeSidebar({
       void refresh();
     }, [refresh]),
   );
-  const { inputs: stones, newestId } = useRecentStones();
+  const { inputs: stones, newestId } = useRecentStones(SHOW_CAIRN_STACK);
   const syncOffline = syncState === "offline";
   const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
 
@@ -121,7 +128,7 @@ export function ProjectsTreeSidebar({
       ]}
     >
       <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background)]}>
-        {stones.length > 0 && (
+        {SHOW_CAIRN_STACK && stones.length > 0 && (
           <Section modifiers={[listRowSeparator("hidden")]}>
             <HStack modifiers={[frame({ maxWidth: Infinity, alignment: "center" }), padding({ vertical: 4 })]}>
               <RNHostView matchContents>

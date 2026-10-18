@@ -1,8 +1,9 @@
 # Plan: Mobile capture that files itself, "your cairn grows", and widgets
 
-**Status (2026-10-18):** Capture core + sheet and the cairn stack are IMPLEMENTED
-on PR #241 (`claude/mobile-capture`): JS-only, type-check, lint (zero warnings) and
-unit tests pass; CI green; **not yet run on a device**. Dictation, the App Intent and
+**Status (2026-10-18):** Capture core + sheet are IMPLEMENTED on PR #241
+(`claude/mobile-capture`): JS-only, type-check, lint (zero warnings) and unit tests
+pass; CI green. The cairn stack is built but **DISABLED** (`SHOW_CAIRN_STACK = false`
+in `ProjectsTreeSidebar.tsx`) after a first look on device; see "Revisit: cairn stack". Dictation, the App Intent and
 widgets are DESIGNED here, not built. Their Swift can't be compiled in the cloud
 sandbox, so each must be validated with an EAS `preview` build before TestFlight.
 
@@ -33,7 +34,8 @@ desktop. Three ideas, in priority order:
 | Commit semantics | Always new rows through the query layer; undo = soft-delete (`softDeleteNote`, `deleteCard`) | Sync capture triggers stage plain writes; never edit existing note bodies (conflict copies exist for `notes.content`). |
 | No-board-columns project | Tasks become a `- [ ]` checklist in the note | Don't drop the user's tasks. |
 | Stack data | Deterministic from note ids (FNV-1a), newest 9 notes, content length → width | Same pile every launch; changes only when a note is added. No stored counter. |
-| Stack placement | Top of the iOS projects sidebar (`ProjectsTreeSidebar`) via `RNHostView` | On iOS the Projects tab always renders the SwiftUI `ProjectsSplitView`; the narrow `FlatList` header is Android-only. |
+| Stack (shipped state) | Built, switched off behind `SHOW_CAIRN_STACK` | First on-device look: did not look good. Code kept (layout, tests, Skia component) for a redesign. |
+| Stack placement (when on) | Top of the iOS projects sidebar (`ProjectsTreeSidebar`) via `RNHostView` | On iOS the Projects tab always renders the SwiftUI `ProjectsSplitView`; the narrow `FlatList` header is Android-only. |
 
 ## Built (PR #241)
 
@@ -100,6 +102,21 @@ Architecture:
   approve the extra bundle id / provisioning in EAS credentials.
 - Spike scope: extension + app group + snapshot pipeline + a static Capture widget and
   one progress-ring widget. Expand only after a preview build proves the pipeline.
+
+### Revisit: cairn stack
+First on-device look (iPhone Duo closed-pose, light theme): the stack read as a tall
+pile of near-identical grey pills in a big white card, not stones. Ideas for the redo:
+- **Shape:** irregular pebble/stone paths (varied corner radii, slightly asymmetric)
+  instead of uniform rounded rectangles; very small rotation only.
+- **Colour:** real per-stone variation (warm greys/sand with an accent-tinted few)
+  instead of one grey plus a faint accent wash; keep the newest stone in the accent.
+- **Scale:** fewer stones (5–6), smaller footprint; consider a compact header glyph
+  or a lock-screen/widget presentation rather than a 220pt-wide card in the sidebar.
+- **Depth:** a soft contact shadow under each stone so the pile has weight.
+- **Context:** judge it on dark theme and the narrow phone column too; it was only
+  seen on the Duo's closed outer display.
+To turn it back on: set `SHOW_CAIRN_STACK = true` and re-add the changelog entry
+("Your cairn grows" under 0.1.13 Added).
 
 ### D. Stretch: resurfacing
 Daily "stone to revisit": a note related to current work via `relatedNotes` /
