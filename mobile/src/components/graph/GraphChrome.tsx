@@ -106,6 +106,11 @@ export function GraphChrome({
 }: GraphChromeProps) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  // Bottom clearance: the inset already reserves the native tab bar's area where
+  // there is one; with the tabs in a side rail (Duo) there is no bottom bar, so
+  // only half the inset is needed — otherwise the row floats too high.
+  const sideRail = insets.left > 0 || insets.right > 0;
+  const bottomLift = sideRail ? insets.bottom * 0.5 : insets.bottom;
   const styles = useMemo(() => makeStyles(t, floating), [t, floating]);
   const [labelOpen, setLabelOpen] = useState(false);
   const [labelAnchorX, setLabelAnchorX] = useState(116);
@@ -304,9 +309,10 @@ export function GraphChrome({
 
         {/* Legend + zoom-to-fit — bottom row. Keys are left-aligned, the fit
             button is right-aligned in the same row. Offset by the safe-area
-            inset so it clears the home indicator / tab bar. Force only. */}
+            inset so it clears the home indicator / tab bar (half the inset
+            with a side rail: no bottom bar there). Force only. */}
         {mode === "force" ? (
-          <View style={[styles.bottomRow, { bottom: 16 + insets.bottom }]} pointerEvents="box-none">
+          <View style={[styles.bottomRow, { bottom: 16 + bottomLift }]} pointerEvents="box-none">
             {surface(
               { radius: 14, style: styles.legend },
               ALL_NODE_TYPES.filter((type) => activeTypes.has(type)).map((type) => (

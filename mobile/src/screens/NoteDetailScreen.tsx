@@ -73,6 +73,9 @@ export function NoteDetailScreen({
   // TAB_BAR_BASE doc), so we no longer add it separately; the +40 is scroll
   // slack so the last line isn't flush against the bar / home indicator.
   const viewBottomPad = 40 + insets.bottom;
+  // Side rail (Duo) means no bottom tab bar: floating controls only need half
+  // the bottom inset, otherwise they hover too high (same as the chat composer).
+  const railLift = insets.left > 0 || insets.right > 0 ? insets.bottom * 0.5 : insets.bottom;
   const [note, setNote] = useState(() => (id ? getNote(id) : null));
 
   const [editing, setEditing] = useState(false);
@@ -303,11 +306,12 @@ export function NoteDetailScreen({
           tab bar's area (the bar extends into the home-indicator inset), so we
           add only a small fixed gap — NOT TAB_BAR_BASE, which would double-count
           in the nested (tab-bar-visible) flow and float the button too high.
+          With a side rail there is no bottom bar, so railLift halves the inset.
           In a split-view column / preview pane the SwiftUI host already keeps
           its content clear of the bottom edge, so the inset would apply twice. */}
       {!editing && headings.length >= 2 ? (
         <View
-          style={[styles.tocFab, { bottom: 12 + (inColumn ? 0 : insets.bottom) }]}
+          style={[styles.tocFab, { bottom: 12 + (inColumn ? 0 : railLift) }]}
           pointerEvents="box-none"
         >
           <PressableScale onPress={() => setTocOpen(true)} haptic={false} accessibilityLabel="Table of contents">
