@@ -2,7 +2,7 @@
   "expo": {
     "name": "Cairn",
     "slug": "cairn-mobile",
-    "version": "0.1.12",
+    "version": "0.1.13",
     "orientation": "default",
     "scheme": "cairn",
     "userInterfaceStyle": "automatic",
