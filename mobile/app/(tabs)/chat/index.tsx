@@ -139,7 +139,7 @@ export default function ChatScreen() {
   const strip = useSharedValue(0);
   const plusOut = useSharedValue(0);
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   // Wide windows open touched notes/tasks in a column beside the chat (folding a
   // Duo with a preview open keeps it: the pane fills the window, its ✕ returns
   // to the conversation). Shared with Graph/Calendar — see SidePreview.
@@ -492,6 +492,9 @@ export default function ChatScreen() {
   // rail instead.
   const sideRail = insets.left > 0 || insets.right > 0;
   const glassHeader = Platform.OS === "ios" && !laptop && !sp.fills && !sp.stacked;
+  // Landscape: keep the floating title and toolbar but drop the blur entirely so the
+  // transcript uses the full height; the Liquid Glass buttons stand on their own.
+  const headerBlur = glassHeader && width <= height;
   const modelInTitle = Platform.OS === "ios" && modelMenu != null && showHeaderTools && sp.screenOptions.title !== "";
   const showToolsPills = laptop && !inputFocused && !keyboardVisible;
   const bottomRing = showToolsPills ? renderContextRing("bottom") : null;
@@ -555,7 +558,14 @@ export default function ChatScreen() {
           // and open previews blank it, and the toolbar menu takes over there.
           headerTitle: modelInTitle ? () => <ModelTitleMenu model={modelMenu} /> : undefined,
           ...(glassHeader
-            ? sideRail
+            ? !headerBlur
+              ? {
+                  // Landscape: fully transparent floating header — title and toolbar only.
+                  headerTransparent: true,
+                  headerStyle: { backgroundColor: "transparent" },
+                  scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
+                }
+              : sideRail
               ? {
                   headerTransparent: true,
                   headerStyle: { backgroundColor: "transparent" },
@@ -639,7 +649,7 @@ export default function ChatScreen() {
           <KeyboardChatScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={glassHeader ? [styles.list, { paddingTop: 14 + headerHeight }] : styles.list}
+            contentContainerStyle={headerBlur ? [styles.list, { paddingTop: 14 + headerHeight }] : styles.list}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             // Laptop pose: the keyboard is exactly the flat half below the crease.
@@ -706,7 +716,7 @@ export default function ChatScreen() {
             through the blank areas to the composer / scroll view beneath, while
             the Cairn icon and "Set up AI" button stay tappable. */}
         {messages.length === 0 ? (
-          <View style={[transcriptArea, glassHeader && { paddingTop: headerHeight }]} pointerEvents="box-none">
+          <View style={[transcriptArea, headerBlur && { paddingTop: headerHeight }]} pointerEvents="box-none">
             <EmptyState
               title="Ask Cairn"
               subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."
