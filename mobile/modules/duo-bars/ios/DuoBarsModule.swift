@@ -129,10 +129,12 @@ public class DuoBarsModule: Module {
 /// The folded-Duo rail is composed by the system across the tab bar
 /// controller: neither the SwiftUI vertical modifiers nor the per-screen
 /// `verticalBarCompressionBehavior` stamp govern it. This overrides
-/// `preferredVerticalBarBehavior` to `.disabled` — first on the tab bar
-/// controller itself (in case the system queries the container rather than
-/// forwarding to the selected tab), then on the tab screen class.
-/// SPIKE: unconditional `.disabled`; gating follows once ownership is proven.
+/// `preferredVerticalBarBehavior` to `.disabled` on the tab bar controller
+/// itself (in case the system queries the container rather than forwarding to
+/// the selected tab). Per-screen controllers are intentionally left alone so
+/// each tab keeps its own compression behavior on folded-landscape rails.
+/// SPIKE: unconditional `.disabled` on the container; gating follows once
+/// ownership is proven.
 /// `chain` reports the selected-tab VC chain so the next hook (if any) can be
 /// precise instead of speculative.
 enum VerticalBarOptOut {
@@ -141,7 +143,7 @@ enum VerticalBarOptOut {
 
   static func install() {
     guard #available(iOS 27.1, *) else { return }
-    for name in ["RNSTabBarController", "RNSTabsScreenViewController"] {
+    for name in ["RNSTabBarController"] {
       guard let cls: AnyClass = NSClassFromString(name) else { continue }
       let sel = NSSelectorFromString("preferredVerticalBarBehavior")
       let block: @convention(block) (AnyObject) -> UIVerticalBarBehavior = { _ in .disabled }

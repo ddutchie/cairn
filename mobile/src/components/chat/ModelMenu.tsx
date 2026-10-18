@@ -183,8 +183,8 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
   // (~110pt flank). A long model id ("muse-spark-1.3-contributor") at the old
   // fixed 240pt cap overflowed that slot and painted over the ring, looking
   // off-centre. Cap the title to what fits centered and let the label
-  // truncate (tail) inside it.
-  const maxW = Math.min(240, Math.max(140, width - 220));
+  // truncate (tail) inside it. Floor matches the Host minWidth below.
+  const maxW = Math.min(240, Math.max(80, width - 220));
   const label = (
     // frame(maxWidth) truncates the SwiftUI text at the cap even if the
     // RN-side maxWidth only clamps measurement and the native view paints

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
-import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import { KeyboardAwareScrollView, useReanimatedKeyboardAnimation, useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 import { Calendar, Check, ClipboardPaste, FolderOpen, Link2, Square, Tag } from "lucide-react-native";
@@ -53,10 +53,16 @@ export function CaptureSheet({
   // small gap above the keyboard while open (flush felt glued on) — same
   // animated pattern as NoteEditorToolbar.
   const { progress } = useReanimatedKeyboardAnimation();
+  const keyboardHeight = useKeyboardState((st) => st.height) ?? 0;
   const closedPad = Math.max(insets.bottom, 12);
   const footerPad = useAnimatedStyle(() => ({
     paddingBottom: interpolate(progress.value, [0, 1], [closedPad, 8]),
   }));
+  // The sticky footers translate above the keyboard but the content area does
+  // not shrink (plain modal host), so long text / proposal items would hide
+  // behind them. Reserve the keyboard height under the content: the input gets
+  // bottom padding, the proposal scrolls keyboard-aware with the same reserve.
+  const contentPadBottom = Math.max(0, keyboardHeight) + 96;
 
   const projects = useMemo(() => listProjects(), []);
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "Project";
@@ -177,7 +183,7 @@ export function CaptureSheet({
       {stage === "input" && (
         <View style={styles.flex}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { paddingBottom: contentPadBottom }]}
             value={text}
             onChangeText={setText}
             placeholder={dictation.listening ? "Listening… slide left to cancel" : "Drop a thought, a to-do, a link…"}
@@ -233,7 +239,11 @@ export function CaptureSheet({
 
       {stage === "proposal" && proposal && (
         <View style={styles.flex}>
-          <ScrollView contentContainerStyle={styles.proposalBody} keyboardShouldPersistTaps="handled">
+          <KeyboardAwareScrollView
+            contentContainerStyle={[styles.proposalBody, { paddingBottom: contentPadBottom }]}
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={96}
+          >
             <Pressable style={styles.chipRow} onPress={() => setPickingProject((v) => !v)} accessibilityRole="button">
               <FolderOpen size={16} color={t.accent} />
               <Text style={styles.projectName}>{projectName(proposal.projectId)}</Text>
@@ -317,7 +327,7 @@ export function CaptureSheet({
                 )}
               </View>
             )}
-          </ScrollView>
+          </KeyboardAwareScrollView>
           <RestingStickyView offset={{ closed: 0, opened: 0 }}>
           <Animated.View style={[styles.footer, footerPad]}>
             <Pressable style={styles.ghostBtn} onPress={() => setStage("input")} accessibilityRole="button">

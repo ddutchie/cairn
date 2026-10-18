@@ -86,6 +86,14 @@ export function ProjectsTreeSidebar({
   const t = useTheme();
   const router = useRouter();
   const hideTrailingActions = useTightSideRail();
+  // Tight rail: trailing buttons collapse into the system "..." overflow menu
+  // (secondaryAction) — one pill above the 5-tab rail. Roomy layouts keep them
+  // inline with their overflow priorities. Placement is the only thing that
+  // differs, so each button is written once below.
+  const trailingItem = (priority: "high" | "low") =>
+    hideTrailingActions
+      ? ({ placement: "secondaryAction" } as const)
+      : ({ placement: "topBarTrailing", visibilityPriority: priority } as const);
   const { state: syncState, pending: syncPending } = useSyncStatus();
   const { sources, refresh } = useSyncSources({ mergeActive: true });
   // Discover workspaces whenever the sidebar shows: sync never scans for new
@@ -220,80 +228,41 @@ export function ProjectsTreeSidebar({
         {/* Duo tight rail (folded landscape): all three actions fold into the
             system "..." overflow menu (secondaryAction) so the rail gets a
             single "..." button above the 5-tab pill. Roomy layouts (portrait,
-            unfolded, regular iPhones) keep all three buttons inline. */}
-        {hideTrailingActions ? (
-          <ToolbarItem placement="secondaryAction">
-            <Button
-              label="Capture"
-              systemImage="tray.and.arrow.down"
-              onPress={() => {
-                haptics.selection();
-                router.push("/capture");
-              }}
-            />
-          </ToolbarItem>
-        ) : (
-          <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
-            <Button
-              label="Capture"
-              systemImage="tray.and.arrow.down"
-              onPress={() => {
-                haptics.selection();
-                router.push("/capture");
-              }}
-            />
-          </ToolbarItem>
-        )}
+            unfolded, regular iPhones) keep all three buttons inline. Only the
+            placement differs — each button is written once. */}
+        <ToolbarItem {...trailingItem("high")}>
+          <Button
+            label="Capture"
+            systemImage="tray.and.arrow.down"
+            onPress={() => {
+              haptics.selection();
+              router.push("/capture");
+            }}
+          />
+        </ToolbarItem>
         {/* Status stays visible longest (Apple: badges/status); Appearance
             is rare, so it is the first to fold into the overflow menu. */}
-        {hideTrailingActions ? (
-          <ToolbarItem placement="secondaryAction">
-            <Button
-              label="Sync status"
-              systemImage="arrow.triangle.2.circlepath"
-              modifiers={[tint(syncTint)]}
-              onPress={() => {
-                haptics.selection();
-                router.push("/sync");
-              }}
-            />
-          </ToolbarItem>
-        ) : (
-          <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
-            <Button
-              label="Sync status"
-              systemImage="arrow.triangle.2.circlepath"
-              modifiers={[tint(syncTint)]}
-              onPress={() => {
-                haptics.selection();
-                router.push("/sync");
-              }}
-            />
-          </ToolbarItem>
-        )}
-        {hideTrailingActions ? (
-          <ToolbarItem placement="secondaryAction">
-            <Button
-              label="Appearance settings"
-              systemImage="gear"
-              onPress={() => {
-                haptics.selection();
-                router.push("/settings/appearance");
-              }}
-            />
-          </ToolbarItem>
-        ) : (
-          <ToolbarItem placement="topBarTrailing" visibilityPriority="low">
-            <Button
-              label="Appearance settings"
-              systemImage="gear"
-              onPress={() => {
-                haptics.selection();
-                router.push("/settings/appearance");
-              }}
-            />
-          </ToolbarItem>
-        )}
+        <ToolbarItem {...trailingItem("high")}>
+          <Button
+            label="Sync status"
+            systemImage="arrow.triangle.2.circlepath"
+            modifiers={[tint(syncTint)]}
+            onPress={() => {
+              haptics.selection();
+              router.push("/sync");
+            }}
+          />
+        </ToolbarItem>
+        <ToolbarItem {...trailingItem("low")}>
+          <Button
+            label="Appearance settings"
+            systemImage="gear"
+            onPress={() => {
+              haptics.selection();
+              router.push("/settings/appearance");
+            }}
+          />
+        </ToolbarItem>
       </Toolbar.Content>
     </Toolbar>
   );

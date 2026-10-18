@@ -504,9 +504,11 @@ export function ChromeColumn({
         ))}
         {bridged || collapseToOverflow ? null : (shown?.left ?? []).map((i) => columnItem("left", i))}
         {/* Trailing items render right to left, so reverse to keep the
-            route order reading left to right. */}
-        {bridged ? null : [...(shown?.right ?? [])].reverse().map((i) => columnItem("right", i))}
-        {[...extra].reverse().map((i) => extraItem(i))}
+            route order reading left to right — except when collapsed: the
+            system overflow menu lists secondaryAction items in declaration
+            order (like railToolbar), so reversing would flip the menu. */}
+        {bridged ? null : (collapseToOverflow ? [...(shown?.right ?? [])] : [...(shown?.right ?? [])].reverse()).map((i) => columnItem("right", i))}
+        {(collapseToOverflow ? [...extra] : [...extra].reverse()).map((i) => extraItem(i))}
         {bridged || !collapseToOverflow ? null : (shown?.left ?? []).map((i) => columnItem("left", i))}
         {bridged || !collapseToOverflow ? null : leading.map((b) => (
           <ToolbarItem key={b.key} placement="secondaryAction">
