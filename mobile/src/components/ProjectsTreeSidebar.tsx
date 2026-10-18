@@ -146,6 +146,17 @@ export function ProjectsTreeSidebar({
             ))}
           </Menu>
         </ToolbarItem>
+        {/* Capture is the headline action, so it stays visible longest. */}
+        <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
+          <Button
+            label="Capture"
+            systemImage="tray.and.arrow.down"
+            onPress={() => {
+              haptics.selection();
+              router.push("/capture");
+            }}
+          />
+        </ToolbarItem>
         {/* Status stays visible longest (Apple: badges/status); Appearance
             is rare, so it is the first to fold into the overflow menu. */}
         <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
