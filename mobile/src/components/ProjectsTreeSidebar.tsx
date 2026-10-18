@@ -21,6 +21,7 @@ import {
   font,
   foregroundStyle,
   frame,
+  listRowSeparator,
   listStyle,
   navigationBarTitleDisplayMode,
   navigationTitle,
@@ -30,7 +31,9 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import { CairnStack } from "@/components/CairnStack";
 import type { ProjectsList } from "@/components/projects-tree";
+import { useRecentStones } from "@/gamification/useRecentStones";
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { getActiveSource } from "@/db";
 import { haptics } from "@/haptics";
@@ -53,12 +56,15 @@ export function ProjectsTreeSidebar({
   title,
   list,
   onWorkspaceSwitched,
+  onOpenNote,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
   list: ProjectsList;
   /** Called after the workspace switches so the owner reloads its data. */
   onWorkspaceSwitched: () => void;
+  /** Open a note in the split view (tapping a stone). Passed in, not imported: the split view imports this file. */
+  onOpenNote: (projectId: string, noteId: string) => void;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -71,6 +77,7 @@ export function ProjectsTreeSidebar({
       void refresh();
     }, [refresh]),
   );
+  const { inputs: stones, newestId } = useRecentStones();
   const syncOffline = syncState === "offline";
   const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
 
@@ -114,6 +121,19 @@ export function ProjectsTreeSidebar({
       ]}
     >
       <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background)]}>
+        {stones.length > 0 && (
+          <Section modifiers={[listRowSeparator("hidden")]}>
+            <HStack modifiers={[frame({ maxWidth: Infinity, alignment: "center" }), padding({ vertical: 4 })]}>
+              <RNHostView matchContents>
+                <CairnStack
+                  inputs={stones}
+                  newestId={newestId}
+                  onOpen={({ projectId, id }) => onOpenNote(projectId, id)}
+                />
+              </RNHostView>
+            </HStack>
+          </Section>
+        )}
         <Section>{list.nodes.map(row)}</Section>
       </List>
       <Toolbar.Content>
