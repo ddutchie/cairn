@@ -439,6 +439,21 @@ function buildTermClause(query: string, columns: string[]): { sql: string; param
   return { sql: `AND (${groups.join(" AND ")})`, params };
 }
 
+/**
+ * The most recently created live notes across all projects, newest first —
+ * what the home "cairn" stack is built from. Content length (not content) is
+ * selected so the stack never loads note bodies.
+ */
+export function listRecentNotes(limit: number): { id: string; projectId: string; title: string; size: number; createdAt: string }[] {
+  return getDb().getAllSync(
+    `SELECT id, project_id AS projectId, title, LENGTH(content) AS size, created_at AS createdAt
+     FROM notes
+     WHERE ${LIVE} AND type = 'note' AND ${NOT_CONFLICT}
+     ORDER BY created_at DESC LIMIT ?`,
+    limit,
+  );
+}
+
 export function searchNotes(query: string): NoteRow[] {
   const match = ftsMatchQuery(query);
   if (!match) return [];

@@ -21,6 +21,7 @@ import {
   font,
   foregroundStyle,
   frame,
+  listRowSeparator,
   listStyle,
   navigationBarTitleDisplayMode,
   navigationTitle,
@@ -30,7 +31,9 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import { CairnStack } from "@/components/CairnStack";
 import type { ProjectsList } from "@/components/projects-tree";
+import { useRecentStones } from "@/gamification/useRecentStones";
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { getActiveSource } from "@/db";
 import { haptics } from "@/haptics";
@@ -38,6 +41,13 @@ import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
+
+/**
+ * The cairn stack at the top of the sidebar is built but switched off: on device it
+ * read as a pile of grey pills rather than stones. Flip this on once the stones are
+ * redesigned (see docs/plans/mobile-capture-and-widgets.md, "Revisit: cairn stack").
+ */
+const SHOW_CAIRN_STACK = false;
 
 /**
  * The projects list as a real split-view sidebar column — the same model as
@@ -53,12 +63,15 @@ export function ProjectsTreeSidebar({
   title,
   list,
   onWorkspaceSwitched,
+  onOpenNote,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
   list: ProjectsList;
   /** Called after the workspace switches so the owner reloads its data. */
   onWorkspaceSwitched: () => void;
+  /** Open a note in the split view (tapping a stone). Passed in, not imported: the split view imports this file. */
+  onOpenNote: (projectId: string, noteId: string) => void;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -71,6 +84,7 @@ export function ProjectsTreeSidebar({
       void refresh();
     }, [refresh]),
   );
+  const { inputs: stones, newestId } = useRecentStones(SHOW_CAIRN_STACK);
   const syncOffline = syncState === "offline";
   const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
 
@@ -114,6 +128,19 @@ export function ProjectsTreeSidebar({
       ]}
     >
       <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background)]}>
+        {SHOW_CAIRN_STACK && stones.length > 0 && (
+          <Section modifiers={[listRowSeparator("hidden")]}>
+            <HStack modifiers={[frame({ maxWidth: Infinity, alignment: "center" }), padding({ vertical: 4 })]}>
+              <RNHostView matchContents>
+                <CairnStack
+                  inputs={stones}
+                  newestId={newestId}
+                  onOpen={({ projectId, id }) => onOpenNote(projectId, id)}
+                />
+              </RNHostView>
+            </HStack>
+          </Section>
+        )}
         <Section>{list.nodes.map(row)}</Section>
       </List>
       <Toolbar.Content>
@@ -145,6 +172,17 @@ export function ProjectsTreeSidebar({
               />
             ))}
           </Menu>
+        </ToolbarItem>
+        {/* Capture is the headline action, so it stays visible longest. */}
+        <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
+          <Button
+            label="Capture"
+            systemImage="tray.and.arrow.down"
+            onPress={() => {
+              haptics.selection();
+              router.push("/capture");
+            }}
+          />
         </ToolbarItem>
         {/* Status stays visible longest (Apple: badges/status); Appearance
             is rare, so it is the first to fold into the overflow menu. */}

@@ -99,6 +99,11 @@ export function showProjectInSplitView(projectId: string, view: SplitViewKind = 
   setSelection({ projectId, view, noteId: null, cardId: null, composing: false });
 }
 
+/** Open a note in the split view's notes section (used by the cairn stack's stones). */
+export function showNoteInSplitView(projectId: string, noteId: string) {
+  setSelection({ projectId, view: "notes", noteId, cardId: null, composing: false });
+}
+
 // SPIKE (2026-10-11, continuity): one adaptive container for the whole Projects
 // hierarchy — a single NavigationSplitView always mounted, collapsing to one
 // column when compact via preferredCompactColumn. No width-switched subtrees,
@@ -602,7 +607,7 @@ export function ProjectsSplitView({
           modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(WIDE_MIN_WIDTH)]}
         >
           <NavigationSplitView.Sidebar>
-            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} />
+            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} />
           </NavigationSplitView.Sidebar>
           <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
           {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for
