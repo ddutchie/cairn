@@ -88,9 +88,13 @@ export function CaptureSheet({
     setStage("input");
   };
 
+  // Set once a write succeeds: the modal stays interactive while it animates closed.
+  const committed = useRef(false);
   const finish = (p: CaptureProposal) => {
+    if (committed.current) return;
     try {
       const result = commitProposal(p);
+      committed.current = true;
       haptics.success();
       const parts = [result.noteId ? "1 note" : null, result.taskIds.length > 0 ? `${result.taskIds.length} task${result.taskIds.length === 1 ? "" : "s"}` : null].filter(Boolean);
       toast.success(`Filed to ${result.projectName}`, {
@@ -120,7 +124,7 @@ export function CaptureSheet({
 
   const [saving, setSaving] = useState(false);
   const saveAsNote = async () => {
-    if (!canFile || saving) return;
+    if (!canFile || saving || committed.current) return;
     setSaving(true);
     try {
       const p = fallbackProposal(text, await buildCaptureContext(text.trim()));

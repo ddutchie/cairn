@@ -119,5 +119,7 @@ export async function captureExtract(text: string, outerSignal?: AbortSignal): P
   } finally {
     clearTimeout(timer);
     outerSignal?.removeEventListener("abort", onOuterAbort);
+    // Stop the stream if the provider keeps going after the tool call; no-op once finished.
+    controller.abort();
   }
 }
