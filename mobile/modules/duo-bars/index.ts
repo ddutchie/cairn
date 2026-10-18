@@ -3,11 +3,16 @@ import { Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 
 interface DuoBarsNative {
-  preferTabBarCompression(): Promise<number | boolean>;
+  preferTabBarCompression(): Promise<Record<string, unknown> | number | boolean>;
 }
 
 const native =
   Platform.OS === "ios" ? requireOptionalNativeModule<DuoBarsNative>("DuoBars") : null;
+
+/** Whether the DuoBars native module is linked into this build. */
+export function duoBarsAvailable(): boolean {
+  return native != null;
+}
 
 /**
  * Asks the system rail to preserve the tab bar and collapse toolbar items
@@ -15,14 +20,14 @@ const native =
  * rail merges the UIKit tab bar with SwiftUI column toolbars hosted inside
  * it — a mix the SwiftUI-only view modifiers can't govern — so this stamps
  * the owning view controllers' `navigationItem.verticalBarCompressionBehavior`
- * instead. Resolves the stamped screen count, false where unavailable.
+ * instead. Resolves the native diagnostic dict (TEMP-DIAG shape).
  * No-op off iOS / below 27.1.
  */
-export async function preferTabBarCompression(): Promise<number | false> {
+export async function preferTabBarCompression(): Promise<Record<string, unknown> | false> {
   if (!native) return false;
   try {
     const result = await native.preferTabBarCompression();
-    return typeof result === "number" ? result : false;
+    return result != null && typeof result === "object" ? (result as Record<string, unknown>) : false;
   } catch {
     return false;
   }

@@ -37,23 +37,32 @@ public class DuoBarsModule: Module {
     /// modifiers above don't govern. Setting the screens'
     /// `navigationItem.verticalBarCompressionBehavior = .prefersTabBar`
     /// (Apple's default: toolbar collapses into ··· first, tabs preserved)
-    /// targets the container that owns the rail. Resolves the number of
-    /// screens stamped, false where unavailable.
+    /// targets the container that owns the rail.
+    /// Resolves a diagnostic dict: { ok, reason?, controller?, screens? } —
+    /// TEMP-DIAG shape, narrowed once the rail responds.
     AsyncFunction("preferTabBarCompression") { (promise: Promise) in
       DispatchQueue.main.async {
-        guard #available(iOS 27.1, *) else { promise.resolve(false); return }
-        guard let tbc = Self.findTabBarController(), let vcs = tbc.viewControllers else {
-          promise.resolve(false)
-          return
+        guard #available(iOS 27.1, *) else { promise.resolve(["ok": false, "reason": "old-ios"] as [String: Any]); return }
+        guard let tbc = Self.findTabBarController() else { promise.resolve(["ok": false, "reason": "no-tbc"] as [String: Any]); return }
+        var screens: [UIViewController] = []
+        if let vcs = tbc.viewControllers {
+          screens += vcs.flatMap(Self.allScreens)
         }
-        var count = 0
-        for vc in vcs {
-          for screen in Self.allScreens(vc) {
-            screen.navigationItem.verticalBarCompressionBehavior = .prefersTabBar
-            count += 1
+        if #available(iOS 18.0, *) {
+          for tab in tbc.tabs {
+            if let vc = tab.viewController, !screens.contains(where: { $0 === vc }) {
+              screens += Self.allScreens(vc)
+            }
           }
         }
-        promise.resolve(count)
+        if screens.isEmpty {
+          promise.resolve(["ok": false, "reason": "no-screens", "controller": "\(type(of: tbc))"] as [String: Any])
+          return
+        }
+        for screen in screens {
+          screen.navigationItem.verticalBarCompressionBehavior = .prefersTabBar
+        }
+        promise.resolve(["ok": true, "controller": "\(type(of: tbc))", "screens": screens.count] as [String: Any])
       }
     }
   }

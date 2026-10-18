@@ -29,6 +29,7 @@ import { dayKey } from "@/components/calendar/grid";
 import { OverviewPanel } from "@/components/overview/OverviewPanel";
 import { OVERVIEW_DETAIL, OVERVIEW_STATUS } from "@/components/overview/OverviewTab";
 import { ScreenChrome } from "@/components/screen-chrome";
+import { toast } from "@/components/Toast";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
   bridgedItems,
@@ -43,7 +44,7 @@ import { PressableScale } from "@/components/PressableScale";
 import { useHingeStatus } from "@/lib/hinge";
 import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { forceCompactBelow } from "@modules/swiftui-modifiers";
-import { preferTabBarCompression, toolbarVerticalBehavior } from "@modules/duo-bars";
+import { preferTabBarCompression, duoBarsAvailable, toolbarVerticalBehavior } from "@modules/duo-bars";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
@@ -167,9 +168,13 @@ export function ProjectsSplitView({
   // hosted SwiftUI column toolbars. Stamp the screens for tab-first
   // compression (toolbar folds into ···, tabs preserved) — the SwiftUI-only
   // modifiers can't govern that cross-framework mix.
+  // TEMP-DIAG: toast the stamp count to prove the module runs + finds screens.
   useEffect(() => {
     if (!compact) return;
-    void preferTabBarCompression().catch(() => {});
+    const avail = duoBarsAvailable();
+    void preferTabBarCompression()
+      .then((r) => toast.info(`Rail: module=${avail} ${r === false ? "false" : JSON.stringify(r)}`, { durationMs: 4000 }))
+      .catch(() => toast.info(`Rail: module=${avail} threw`, { durationMs: 3000 }));
   }, [compact]);
   // Wide Overview: the blocks up to the health radar stay in this column; the recent
   // notes and activity move to the detail column (beside / instead of "Nothing open").
