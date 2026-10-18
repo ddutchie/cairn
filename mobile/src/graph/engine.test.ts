@@ -142,13 +142,21 @@ describe("GraphEngine (force)", () => {
     engine.dispose();
   });
 
-  it("swapping only edges keeps node positions", () => {
-    const { engine } = make();
+  it("swapping only edges re-heats in place instead of rebuilding", () => {
+    const { engine, cams } = make();
     settle();
-    const before = vi.mocked(recordForceScene).mock.calls.at(-1)![0].nodes.map((x) => [x.x, x.y]);
+    const camsBefore = cams.length;
+    const callsBefore = vi.mocked(recordForceScene).mock.calls.length;
+    const nodesBefore = vi.mocked(recordForceScene).mock.calls.at(-1)![0].nodes;
     engine.setGraph({ nodes: data.nodes, edges: [...data.edges, { source: "a", target: "d", type: "semantic", weight: 0.8 }] });
-    const after = vi.mocked(recordForceScene).mock.calls.at(-1)![0].nodes.map((x) => [x.x, x.y]);
-    expect(after).toEqual(before);
+    settle(1);
+    expect(vi.mocked(recordForceScene).mock.calls.length).toBeGreaterThan(callsBefore);
+    const input = vi.mocked(recordForceScene).mock.calls.at(-1)![0];
+    // same simulation nodes (a rebuild creates new ones and refits the camera once settled)
+    expect(input.nodes).toBe(nodesBefore);
+    expect(input.links).toHaveLength(data.edges.length + 1);
+    settle();
+    expect(cams).toHaveLength(camsBefore);
     engine.dispose();
   });
 
@@ -200,6 +208,50 @@ describe("floating controls inset", () => {
     const r = (w.r0 + w.r1) / 2;
     engine.tap(input.cx + r * Math.sin(mid), input.cy - r * Math.cos(mid));
     expect(picked.at(-1)).toEqual({ id: "p1", type: "project" });
+    engine.dispose();
+  });
+});
+
+describe("setGraph with refreshed objects (same ids)", () => {
+  it("shows renamed nodes without re-scattering", () => {
+    const { engine } = make();
+    settle();
+    const before = vi.mocked(recordForceScene).mock.calls.at(-1)![0].nodes.map((x) => [x.x, x.y]);
+    const renamed = { nodes: data.nodes.map((x) => (x.id === "a" ? { ...x, title: "Renamed" } : { ...x })), edges: [...data.edges] };
+    engine.setGraph(renamed);
+    settle(1);
+    const input = vi.mocked(recordForceScene).mock.calls.at(-1)![0];
+    expect(input.nodes.find((x) => x.id === "a")!.node.title).toBe("Renamed");
+    input.nodes.forEach((x, i) => expect(Math.hypot(x.x - before[i][0], x.y - before[i][1])).toBeLessThan(5));
+    engine.dispose();
+  });
+
+  it("keeps the radial drill-in across a refresh", () => {
+    const { engine } = make("radial");
+    settle();
+    const first = vi.mocked(recordRadialScene).mock.calls.at(-1)![0];
+    const w = first.arcs.find((a) => a.node.data.id === "p1")!;
+    const mid = (w.x0 + w.x1) / 2;
+    const r = (w.r0 + w.r1) / 2;
+    engine.tap(200 + r * Math.sin(mid), 400 - r * Math.cos(mid));
+    settle();
+    expect(vi.mocked(recordRadialScene).mock.calls.at(-1)![0].focus.data.id).toBe("p1");
+    engine.setGraph({ nodes: data.nodes.map((x) => ({ ...x })), edges: [...data.edges] });
+    settle();
+    const after = vi.mocked(recordRadialScene).mock.calls.at(-1)![0];
+    expect(after.isRoot).toBe(false);
+    expect(after.focus.data.id).toBe("p1");
+    engine.dispose();
+  });
+
+  it("revive() restarts a disposed engine", () => {
+    const { engine } = make();
+    settle();
+    engine.dispose();
+    const n = vi.mocked(recordForceScene).mock.calls.length;
+    engine.revive();
+    settle();
+    expect(vi.mocked(recordForceScene).mock.calls.length).toBeGreaterThan(n);
     engine.dispose();
   });
 });

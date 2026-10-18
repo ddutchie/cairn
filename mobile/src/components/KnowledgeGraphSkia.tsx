@@ -91,7 +91,10 @@ export function KnowledgeGraphSkia({
     return () => sub.remove();
   }, []);
   useEffect(() => engine.setActive(focused && appActive), [engine, focused, appActive]);
-  useEffect(() => () => engine.dispose(), [engine]);
+  useEffect(() => {
+    engine.revive();
+    return () => engine.dispose();
+  }, [engine]);
 
   const gesture = useMemo(() => {
     const pan = Gesture.Pan()

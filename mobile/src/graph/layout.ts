@@ -71,6 +71,8 @@ export interface ForceLayout {
   /** Fix a node under the finger (world coords) and keep the sim warm. */
   pin(id: string, x: number, y: number): void;
   release(id: string): void;
+  /** Point each sim node at its refreshed GraphNode (same ids), so renames and project moves show. */
+  setNodeData(nodes: readonly GraphNode[]): void;
   /** Re-seed the link force (e.g. semantic edges toggled) and nudge the sim. */
   setEdges(edges: GraphEdge[]): void;
   stop(): void;
@@ -160,6 +162,12 @@ export function createForceLayout(
       if (!n) return;
       n.fx = null;
       n.fy = null;
+    },
+    setNodeData(next) {
+      for (const g of next) {
+        const sn = byId.get(g.id);
+        if (sn) sn.node = g;
+      }
     },
     setEdges(edges) {
       links = toLinks(edges);

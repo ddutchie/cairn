@@ -53,6 +53,13 @@ describe("filterGraph", () => {
     expect(f.nodes.map((x) => x.id).sort()).toEqual(["b1", "p2"]);
     expect(f.edges).toEqual([e("p2", "b1")]);
   });
+  it("tag-name search works with the tag chip off", () => {
+    const f = filterGraph(graph, new Set<GraphNodeType>(["project", "note", "card"]), "fruit");
+    const ids = f.nodes.map((x) => x.id);
+    expect(ids).toContain("a1");
+    expect(ids).toContain("b1");
+    expect(ids).not.toContain("t1");
+  });
   it("search matches by tag name", () => {
     const f = filterGraph(graph, all, "FRUIT");
     const ids = f.nodes.map((x) => x.id);

@@ -12,6 +12,7 @@ import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKey
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
+import { useSyncStatus } from "@/sync/useSyncStatus";
 import { Settings, Settings2, Trash2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
@@ -145,6 +146,7 @@ export default function ChatScreen() {
   // to the conversation). Shared with Graph/Calendar — see SidePreview.
   const sp = useSidePreview({ title: "Chat", titleWhenWide: false });
   const headerHeight = useHeaderHeight();
+  const { conflicts } = useSyncStatus();
   // Laptop pose (portrait half-fold): the transcript and empty state stay in the
   // upright top half; the composer and tab pill sit on the flat bottom half.
   const topHalf = useTopHalf();
@@ -495,6 +497,9 @@ export default function ChatScreen() {
   // Landscape: keep the floating title and toolbar but drop the blur entirely so the
   // transcript uses the full height; the Liquid Glass buttons stand on their own.
   const headerBlur = glassHeader && width <= height;
+  // While the conflict banner shows, TabScreen pushes the whole body below the header (the banner
+  // takes the header-height margin), so the transcript must not add that inset a second time.
+  const headerInset = headerBlur && conflicts === 0 ? headerHeight : 0;
   const modelInTitle = Platform.OS === "ios" && modelMenu != null && showHeaderTools && sp.screenOptions.title !== "";
   const showToolsPills = laptop && !inputFocused && !keyboardVisible;
   const bottomRing = showToolsPills ? renderContextRing("bottom") : null;
@@ -658,7 +663,7 @@ export default function ChatScreen() {
           <KeyboardChatScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={headerBlur ? [styles.list, { paddingTop: 14 + headerHeight }] : styles.list}
+            contentContainerStyle={headerBlur ? [styles.list, { paddingTop: 14 + headerInset }] : styles.list}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             // Laptop pose: the keyboard is exactly the flat half below the crease.
@@ -725,7 +730,7 @@ export default function ChatScreen() {
             through the blank areas to the composer / scroll view beneath, while
             the Cairn icon and "Set up AI" button stay tappable. */}
         {messages.length === 0 ? (
-          <View style={[transcriptArea, headerBlur && { paddingTop: headerHeight }]} pointerEvents="box-none">
+          <View style={[transcriptArea, headerInset > 0 && { paddingTop: headerInset }]} pointerEvents="box-none">
             <EmptyState
               title="Ask Cairn"
               subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."

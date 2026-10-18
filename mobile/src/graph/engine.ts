@@ -159,7 +159,17 @@ export class GraphEngine {
     const sameNodes =
       prev.nodes.length === g.nodes.length && prev.nodes.every((n, i) => n.id === g.nodes[i].id);
     if (this.opts.mode === "force" && this.layout && sameNodes) {
+      // The screen hands over fresh objects on every focus: take their data (titles, projects).
+      this.layout.setNodeData(g.nodes);
       this.layout.setEdges(g.edges as GraphEdge[]);
+      this.invalidate();
+    } else if (this.opts.mode === "radial" && this.root && sameNodes) {
+      // Keep the drill-in a refresh would otherwise reset to the workspace.
+      const focusId = this.focus?.data.id;
+      this.root = buildRadialTree(buildHierarchy({ nodes: g.nodes }));
+      this.focus = (focusId ? this.root.descendants().find((d) => d.data.id === focusId) : undefined) ?? this.root;
+      this.radialAnim = null;
+      this.resetRadialGeometry();
       this.invalidate();
     } else {
       this.rebuild();
@@ -177,6 +187,12 @@ export class GraphEngine {
     this.active = active;
     if (active) this.invalidate();
     else this.stopLoop();
+  }
+
+  /** Undo dispose(): React re-runs effects (Fast Refresh, StrictMode) against the same engine. */
+  revive() {
+    this.disposed = false;
+    this.invalidate();
   }
 
   dispose() {

@@ -18,7 +18,8 @@ export function filterGraph(graph: GraphData, activeTypes: ReadonlySet<GraphNode
   const q = search.trim().toLowerCase();
   if (q) {
     const tagName = new Map<string, string>();
-    for (const n of nodes) if (n.type === "tag") tagName.set(n.id, n.title.toLowerCase());
+    // From the unfiltered graph: tag-name search must still work with the tag chip turned off.
+    for (const n of graph.nodes) if (n.type === "tag") tagName.set(n.id, n.title.toLowerCase());
     const nodeTags = new Map<string, string[]>();
     for (const e of graph.edges) {
       if (e.type !== "tag-member") continue;
