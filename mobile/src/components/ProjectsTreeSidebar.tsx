@@ -38,6 +38,7 @@ import type { ProjectsList } from "@/components/projects-tree";
 import { useRecentStones } from "@/gamification/useRecentStones";
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { getActiveSource } from "@/db";
+import { useTightSideRail } from "@/lib/layout";
 import { useRefreshOnFocus, useSyncStatus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { switchSource } from "@/sync/controller";
@@ -84,6 +85,15 @@ export function ProjectsTreeSidebar({
 }) {
   const t = useTheme();
   const router = useRouter();
+  const hideTrailingActions = useTightSideRail();
+  // Tight rail: trailing buttons collapse into the system "..." overflow menu
+  // (secondaryAction) — one pill above the 5-tab rail. Roomy layouts keep them
+  // inline with their overflow priorities. Placement is the only thing that
+  // differs, so each button is written once below.
+  const trailingItem = (priority: "high" | "low") =>
+    hideTrailingActions
+      ? ({ placement: "secondaryAction" } as const)
+      : ({ placement: "topBarTrailing", visibilityPriority: priority } as const);
   const { state: syncState, pending: syncPending } = useSyncStatus();
   const { sources, refresh } = useSyncSources({ mergeActive: true });
   // Discover workspaces whenever the sidebar shows: sync never scans for new
@@ -215,8 +225,12 @@ export function ProjectsTreeSidebar({
             ))}
           </Menu>
         </ToolbarItem>
-        {/* Capture is the headline action, so it stays visible longest. */}
-        <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
+        {/* Duo tight rail (folded landscape): all three actions fold into the
+            system "..." overflow menu (secondaryAction) so the rail gets a
+            single "..." button above the 5-tab pill. Roomy layouts (portrait,
+            unfolded, regular iPhones) keep all three buttons inline. Only the
+            placement differs — each button is written once. */}
+        <ToolbarItem {...trailingItem("high")}>
           <Button
             label="Capture"
             systemImage="tray.and.arrow.down"
@@ -228,7 +242,7 @@ export function ProjectsTreeSidebar({
         </ToolbarItem>
         {/* Status stays visible longest (Apple: badges/status); Appearance
             is rare, so it is the first to fold into the overflow menu. */}
-        <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
+        <ToolbarItem {...trailingItem("high")}>
           <Button
             label="Sync status"
             systemImage="arrow.triangle.2.circlepath"
@@ -239,7 +253,7 @@ export function ProjectsTreeSidebar({
             }}
           />
         </ToolbarItem>
-        <ToolbarItem placement="topBarTrailing" visibilityPriority="low">
+        <ToolbarItem {...trailingItem("low")}>
           <Button
             label="Appearance settings"
             systemImage="gear"

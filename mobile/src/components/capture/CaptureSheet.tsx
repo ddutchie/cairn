@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
+import { KeyboardAwareScrollView, useReanimatedKeyboardAnimation, useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 import { Calendar, Check, ClipboardPaste, FolderOpen, Link2, Square, Tag } from "lucide-react-native";
@@ -11,6 +13,7 @@ import { listProjects } from "@/db/queries";
 import { DictationMic } from "@/components/DictationMic";
 import { useDictation } from "@/dictation/useDictation";
 import { ScreenChrome } from "@/components/screen-chrome";
+import { RestingStickyView } from "@/components/chat/RestingStickyView";
 import { ICON_CLOSE } from "@/components/toolbar-icons";
 import { toast } from "@/components/Toast";
 import { haptics, toolbarPress } from "@/haptics";
@@ -45,6 +48,21 @@ export function CaptureSheet({
   const [pickingProject, setPickingProject] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const autostarted = useRef(false);
+
+  // Footer clearance: home-indicator inset while the keyboard is closed, a
+  // small gap above the keyboard while open (flush felt glued on) — same
+  // animated pattern as NoteEditorToolbar.
+  const { progress } = useReanimatedKeyboardAnimation();
+  const keyboardHeight = useKeyboardState((st) => st.height) ?? 0;
+  const closedPad = Math.max(insets.bottom, 12);
+  const footerPad = useAnimatedStyle(() => ({
+    paddingBottom: interpolate(progress.value, [0, 1], [closedPad, 8]),
+  }));
+  // The sticky footers translate above the keyboard but the content area does
+  // not shrink (plain modal host), so long text / proposal items would hide
+  // behind them. Reserve the keyboard height under the content: the input gets
+  // bottom padding, the proposal scrolls keyboard-aware with the same reserve.
+  const contentPadBottom = Math.max(0, keyboardHeight) + 96;
 
   const projects = useMemo(() => listProjects(), []);
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "Project";
@@ -165,7 +183,7 @@ export function CaptureSheet({
       {stage === "input" && (
         <View style={styles.flex}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { paddingBottom: contentPadBottom }]}
             value={text}
             onChangeText={setText}
             placeholder={dictation.listening ? "Listening… slide left to cancel" : "Drop a thought, a to-do, a link…"}
@@ -176,7 +194,11 @@ export function CaptureSheet({
             textAlignVertical="top"
             accessibilityLabel="Capture text"
           />
-          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          {/* Sticky: the footer rides above the keyboard (plain modal host
+              doesn't resize for it), so File it + the mic stay reachable
+              while typing. See RestingStickyView / NoteEditorBody. */}
+          <RestingStickyView offset={{ closed: 0, opened: 0 }}>
+          <Animated.View style={[styles.footer, footerPad]}>
             {dictation.available && <DictationMic dictation={dictation} size={36} />}
             <Pressable
               style={[styles.ghostBtn, dictation.listening && styles.disabled]}
@@ -199,7 +221,8 @@ export function CaptureSheet({
             <Pressable style={[styles.primaryBtn, !canFile && styles.primaryDisabled]} onPress={file} disabled={!canFile} accessibilityRole="button">
               <Text style={styles.primaryText}>File it</Text>
             </Pressable>
-          </View>
+          </Animated.View>
+          </RestingStickyView>
         </View>
       )}
 
@@ -216,7 +239,11 @@ export function CaptureSheet({
 
       {stage === "proposal" && proposal && (
         <View style={styles.flex}>
-          <ScrollView contentContainerStyle={styles.proposalBody} keyboardShouldPersistTaps="handled">
+          <KeyboardAwareScrollView
+            contentContainerStyle={[styles.proposalBody, { paddingBottom: contentPadBottom }]}
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={96}
+          >
             <Pressable style={styles.chipRow} onPress={() => setPickingProject((v) => !v)} accessibilityRole="button">
               <FolderOpen size={16} color={t.accent} />
               <Text style={styles.projectName}>{projectName(proposal.projectId)}</Text>
@@ -300,8 +327,9 @@ export function CaptureSheet({
                 )}
               </View>
             )}
-          </ScrollView>
-          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          </KeyboardAwareScrollView>
+          <RestingStickyView offset={{ closed: 0, opened: 0 }}>
+          <Animated.View style={[styles.footer, footerPad]}>
             <Pressable style={styles.ghostBtn} onPress={() => setStage("input")} accessibilityRole="button">
               <Text style={styles.ghostText}>Back</Text>
             </Pressable>
@@ -309,7 +337,8 @@ export function CaptureSheet({
             <Pressable style={styles.primaryBtn} onPress={confirm} accessibilityRole="button">
               <Text style={styles.primaryText}>Confirm</Text>
             </Pressable>
-          </View>
+          </Animated.View>
+          </RestingStickyView>
         </View>
       )}
     </View>

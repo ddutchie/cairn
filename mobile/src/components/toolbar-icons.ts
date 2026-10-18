@@ -59,7 +59,7 @@ export const ICON_CLOSE: ToolbarIcon = ios ? "xmark" : CloseXml;
 /** Edit (pencil). */
 export const ICON_EDIT: ToolbarIcon = ios ? "pencil" : EditXml;
 /** Overflow / more actions (ellipsis). */
-export const ICON_MORE: ToolbarIcon = ios ? "ellipsis.circle" : MoreVertXml;
+export const ICON_MORE: ToolbarIcon = ios ? "ellipsis" : MoreVertXml;
 /** Delete / clear (trash). */
 export const ICON_DELETE: ToolbarIcon = ios ? "trash" : DeleteXml;
 /** Archive. */

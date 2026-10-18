@@ -17,6 +17,7 @@ import { Settings, Settings2, Trash2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { ICON_DELETE, ICON_AI } from "@/components/toolbar-icons";
+import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { useTheme, withAlpha, type as typeScale, type Theme, KEYBOARD_OPEN_GAP } from "@/theme";
 import { runAgent, userMessage, type AgentEvent, type Attachment } from "@/chat/agent";
 import { haptics, toolbarPress } from "@/haptics";
@@ -82,6 +83,7 @@ export default function ChatScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
+  const tightRail = useTightSideRail();
 
   // Restore local (on-device) chat history once, synchronously, when the screen
   // first mounts — seeding both the UI bubbles (messages) and the persistent
@@ -612,25 +614,30 @@ export default function ChatScreen() {
           the chat's header up over a chat that isn't showing). */}
       {showHeaderTools ? (
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button
-          icon={ICON_DELETE}
-          hidden={messages.length === 0}
-          disabled={busy}
-          accessibilityLabel="Clear chat"
-          // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
-          // ref lint doesn't flag onClear's transitive ref access during render.
-          onPress={() => toolbarPress(onClear)()}
-        >
-          Clear chat
-        </Stack.Toolbar.Button>
-        {modelInTitle ? null : modelToolbarMenu(modelMenu)}
-        <Stack.Toolbar.Button
-          icon={ICON_AI}
-          accessibilityLabel="AI settings"
-          onPress={toolbarPress(() => router.push("/settings/ai"))}
-        >
-          AI settings
-        </Stack.Toolbar.Button>
+        {railToolbar(
+          tightRail,
+          <Stack.Toolbar.Button
+            key="clear"
+            icon={ICON_DELETE}
+            hidden={messages.length === 0}
+            disabled={busy}
+            accessibilityLabel="Clear chat"
+            // Inline arrow (not a bare toolbarPress(onClear)) so the react-hooks
+            // ref lint doesn't flag onClear's transitive ref access during render.
+            onPress={() => toolbarPress(onClear)()}
+          >
+            Clear chat
+          </Stack.Toolbar.Button>,
+          modelInTitle ? null : modelToolbarMenu(modelMenu),
+          <Stack.Toolbar.Button
+            key="ai-settings"
+            icon={ICON_AI}
+            accessibilityLabel="AI settings"
+            onPress={toolbarPress(() => router.push("/settings/ai"))}
+          >
+            AI settings
+          </Stack.Toolbar.Button>,
+        )}
       </Stack.Toolbar>
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills

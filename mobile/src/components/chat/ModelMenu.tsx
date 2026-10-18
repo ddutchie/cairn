@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactElement } from "react";
-import { View } from "react-native";
+import { View, useWindowDimensions } from "react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -26,7 +26,7 @@ import {
   Section,
   Text as SUIText,
 } from "@expo/ui/swift-ui";
-import { font, foregroundStyle, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
+import { font, foregroundStyle, frame, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
 
 /** Menus get unwieldy past this; favorites + the current model are always kept. */
 const MAX_MODELS = 40;
@@ -177,8 +177,19 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
  */
 export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
   const t = useTheme();
+  const { width } = useWindowDimensions();
+  // The native header centers the title in the slot left between the header
+  // items: the context ring on the left, Clear + AI settings on the right
+  // (~110pt flank). A long model id ("muse-spark-1.3-contributor") at the old
+  // fixed 240pt cap overflowed that slot and painted over the ring, looking
+  // off-centre. Cap the title to what fits centered and let the label
+  // truncate (tail) inside it. Floor matches the Host minWidth below.
+  const maxW = Math.min(240, Math.max(80, width - 220));
   const label = (
-    <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 10 })]}>
+    // frame(maxWidth) truncates the SwiftUI text at the cap even if the
+    // RN-side maxWidth only clamps measurement and the native view paints
+    // wider (the overlay seen on device).
+    <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 10 }), frame({ maxWidth: maxW })]}>
       <SUIText modifiers={[font({ weight: "semibold", size: 17 }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
         {m.current}
       </SUIText>
@@ -192,7 +203,7 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
     // Centered in the header's title slot (the slot width varies with the
     // left/right items, so the box centers itself and its content).
     <View style={{ height: 44, alignSelf: "center", flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
-    <Host matchContents style={{ minWidth: 80, maxWidth: 240 }}>
+    <Host matchContents style={{ minWidth: 80, maxWidth: maxW }}>
       {m.disabled ? (
         label
       ) : (

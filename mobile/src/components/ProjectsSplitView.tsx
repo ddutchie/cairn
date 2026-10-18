@@ -536,9 +536,9 @@ export function ProjectsSplitView({
     <>
       {header}
       {/* Duo: the notes list is bridged into the note column's bar only while
-          both are on screen (unfolded, a note open). Folded, or with nothing
-          open, the list keeps its own + — otherwise New note vanishes with
-          the column it was moved to. */}
+           both are on screen (unfolded, a note open). Folded, or with nothing
+           open, the list keeps its own + — otherwise New note vanishes with
+           the column it was moved to. */}
       <ChromeBridgeProvider
         value={bridge}
         keepBars={!BRIDGE_HEADER}
