@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Linking } from "react-native";
+import { AppState, Linking, Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo";
 import { useSharedValue, type SharedValue } from "react-native-reanimated";
 import type { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
@@ -32,6 +32,25 @@ function deviceLocale(): string {
     return Intl.DateTimeFormat().resolvedOptions().locale || "en-US";
   } catch {
     return "en-US";
+  }
+}
+
+/**
+ * Whether to ask for on-device recognition. iOS reports this per device; on Android
+ * `supportsOnDeviceRecognition()` only says the service can, not that the model for this
+ * language is installed (a missing one fails with `language-not-supported`), so check the
+ * installed locales and otherwise use the system service.
+ */
+async function wantOnDevice(lang: string): Promise<boolean> {
+  if (!native) return false;
+  try {
+    if (!native.supportsOnDeviceRecognition()) return false;
+    if (Platform.OS !== "android") return true;
+    const { installedLocales } = await native.getSupportedLocales({});
+    const want = lang.replace("_", "-").toLowerCase();
+    return installedLocales.some((l) => l.replace("_", "-").toLowerCase() === want);
+  } catch {
+    return false;
   }
 }
 
@@ -163,6 +182,8 @@ export function useDictation({ text, setText }: { text: string; setText: (t: str
         notifyDenied();
         return false;
       }
+      const lang = deviceLocale();
+      const onDevice = await wantOnDevice(lang);
       // Released (or cancelled) while the permission prompt was up: don't start late.
       if (abortStart.current) {
         active.current = false;
@@ -173,11 +194,11 @@ export function useDictation({ text, setText }: { text: string; setText: (t: str
       ignoreResults.current = false;
       level.set(0);
       native.start({
-        lang: deviceLocale(),
+        lang,
         interimResults: true,
         continuous: true,
         addsPunctuation: true,
-        requiresOnDeviceRecognition: native.supportsOnDeviceRecognition(),
+        requiresOnDeviceRecognition: onDevice,
         contextualStrings: dictationVocabulary(),
         iosTaskHint: "dictation",
         volumeChangeEventOptions: { enabled: true, intervalMillis: 80 },
