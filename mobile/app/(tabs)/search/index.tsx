@@ -14,6 +14,7 @@ import { semanticSearch, semanticSearchTasks, catchUpIndex, finalizeRanking, typ
 import { haptics, toolbarPress } from "@/haptics";
 import { ICON_INFO, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { WIDE_MIN_WIDTH } from "@/lib/layout";
+import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
 import { isNativeSearchScopeAvailable, setNativeSearchScope, setNativeSearchScopeIndex, clearNativeSearchScope, subscribeNativeSearchScope } from "@modules/search-scope";
 import { stripMarkdown } from "@cairn/shared/notes/text";
@@ -43,6 +44,7 @@ export default function SearchScreen() {
   const semanticAvailable = isAppleEmbeddingsSupported();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const tightRail = useTightSideRail();
   // Wide iOS windows drop the "Search" title (like Chat) and dock the header
   // items into the side rail via Stack.Toolbar. The native search field stays —
   // only the title row collapses. Same threshold as every other wide layout.
@@ -482,28 +484,32 @@ export default function SearchScreen() {
           keep the header versions. */}
       {semanticAvailable && wideBar ? (
         <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Button
-            // Keyed by mode + selected state (see toggleSemantic: the mode
-            // flips after the search controller stands down, so this paints).
-            // `selected` maps to UIBarButtonItem.isSelected as a second signal.
-            key={semanticMode ? "semantic-on" : "semantic-off"}
-            icon={ICON_SEMANTIC}
-            accessibilityLabel="Semantic search"
-            selected={semanticMode}
-            tintColor={semanticMode ? t.accent : undefined}
-            onPress={() => toolbarPress(toggleSemantic)()}
-          >
-            Semantic search
-          </Stack.Toolbar.Button>
-          {semanticMode && stats && stats.indexed < stats.live ? (
+          {railToolbar(
+            tightRail,
             <Stack.Toolbar.Button
-              icon={ICON_INFO}
-              accessibilityLabel="Why aren't all items indexed?"
-              onPress={() => toolbarPress(showIndexInfo)()}
+              // Keyed by mode + selected state (see toggleSemantic: the mode
+              // flips after the search controller stands down, so this paints).
+              // `selected` maps to UIBarButtonItem.isSelected as a second signal.
+              key={semanticMode ? "semantic-on" : "semantic-off"}
+              icon={ICON_SEMANTIC}
+              accessibilityLabel="Semantic search"
+              selected={semanticMode}
+              tintColor={semanticMode ? t.accent : undefined}
+              onPress={() => toolbarPress(toggleSemantic)()}
             >
-              Index status
-            </Stack.Toolbar.Button>
-          ) : null}
+              Semantic search
+            </Stack.Toolbar.Button>,
+            semanticMode && stats && stats.indexed < stats.live ? (
+              <Stack.Toolbar.Button
+                key="index-status"
+                icon={ICON_INFO}
+                accessibilityLabel="Why aren't all items indexed?"
+                onPress={() => toolbarPress(showIndexInfo)()}
+              >
+                Index status
+              </Stack.Toolbar.Button>
+            ) : null,
+          )}
         </Stack.Toolbar>
       ) : null}
 

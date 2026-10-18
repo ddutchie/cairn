@@ -14,6 +14,7 @@ import { semanticEdges } from "@/notes/embeddings";
 import { isAppleEmbeddingsSupported } from "@modules/apple-embeddings";
 import { useTheme } from "@/theme";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
+import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 
 // Skia is the default renderer. The legacy D3 WebView inlines the full D3
 // bundle (~274 KB) as a string, so both are loaded lazily: opening the app or
@@ -37,6 +38,7 @@ const KnowledgeGraphView = lazy(() =>
 export default function GraphScreen() {
   const router = useRouter();
   const t = useTheme();
+  const tightRail = useTightSideRail();
   // Wide windows open a picked note/task beside the graph (shared with Chat/Calendar).
   // No title beside the canvas when wide (like Chat) — the layout + label
   // controls dock into the side rail instead.
@@ -138,42 +140,46 @@ export default function GraphScreen() {
       <Stack.Screen options={sp.screenOptions} />
       {!isEmpty && sp.showToolbar ? (
         <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Menu
-            icon={mode === "force" ? ICON_GRAPH_FORCE : ICON_GRAPH_RADIAL}
-            accessibilityLabel="Graph layout"
-          >
-            <Stack.Toolbar.Label>{mode === "force" ? "Force" : "Radial"}</Stack.Toolbar.Label>
-            <Stack.Toolbar.MenuAction
-              icon={ICON_GRAPH_FORCE}
-              isOn={mode === "force"}
-              onPress={toolbarPress(() => setMode("force"))}
+          {railToolbar(
+            tightRail,
+            <Stack.Toolbar.Menu
+              key="layout"
+              icon={mode === "force" ? ICON_GRAPH_FORCE : ICON_GRAPH_RADIAL}
+              accessibilityLabel="Graph layout"
             >
-              Force
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction
-              icon={ICON_GRAPH_RADIAL}
-              isOn={mode === "radial"}
-              onPress={toolbarPress(() => setMode("radial"))}
-            >
-              Radial
-            </Stack.Toolbar.MenuAction>
-          </Stack.Toolbar.Menu>
-          {/* Label-density menu (force only — radial drills in, no label modes).
-              Same rail as the layout menu: nothing docks left on Duo. */}
-          {mode === "force" ? (
-            <Stack.Toolbar.Menu icon={ICON_LABELS} accessibilityLabel="Label density">
-              <Stack.Toolbar.Label>{`${labelMode} labels`}</Stack.Toolbar.Label>
-              <Stack.Toolbar.MenuAction icon={ICON_LABELS_SMART} isOn={labelMode === "smart"} onPress={toolbarPress(() => setLabelMode("smart"))}>
-                Smart
+              <Stack.Toolbar.Label>{mode === "force" ? "Force" : "Radial"}</Stack.Toolbar.Label>
+              <Stack.Toolbar.MenuAction
+                icon={ICON_GRAPH_FORCE}
+                isOn={mode === "force"}
+                onPress={toolbarPress(() => setMode("force"))}
+              >
+                Force
               </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon={ICON_LABELS_ALL} isOn={labelMode === "all"} onPress={toolbarPress(() => setLabelMode("all"))}>
-                All
+              <Stack.Toolbar.MenuAction
+                icon={ICON_GRAPH_RADIAL}
+                isOn={mode === "radial"}
+                onPress={toolbarPress(() => setMode("radial"))}
+              >
+                Radial
               </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon={ICON_LABELS_MINIMAL} isOn={labelMode === "minimal"} onPress={toolbarPress(() => setLabelMode("minimal"))}>
-                Minimal
-              </Stack.Toolbar.MenuAction>
-            </Stack.Toolbar.Menu>
-          ) : null}
+            </Stack.Toolbar.Menu>,
+            /* Label-density menu (force only — radial drills in, no label modes).
+               Same rail as the layout menu: nothing docks left on Duo. */
+            mode === "force" ? (
+              <Stack.Toolbar.Menu key="labels" icon={ICON_LABELS} accessibilityLabel="Label density">
+                <Stack.Toolbar.Label>{`${labelMode} labels`}</Stack.Toolbar.Label>
+                <Stack.Toolbar.MenuAction icon={ICON_LABELS_SMART} isOn={labelMode === "smart"} onPress={toolbarPress(() => setLabelMode("smart"))}>
+                  Smart
+                </Stack.Toolbar.MenuAction>
+                <Stack.Toolbar.MenuAction icon={ICON_LABELS_ALL} isOn={labelMode === "all"} onPress={toolbarPress(() => setLabelMode("all"))}>
+                  All
+                </Stack.Toolbar.MenuAction>
+                <Stack.Toolbar.MenuAction icon={ICON_LABELS_MINIMAL} isOn={labelMode === "minimal"} onPress={toolbarPress(() => setLabelMode("minimal"))}>
+                  Minimal
+                </Stack.Toolbar.MenuAction>
+              </Stack.Toolbar.Menu>
+            ) : null,
+          )}
         </Stack.Toolbar>
       ) : null}
       <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.background }}>

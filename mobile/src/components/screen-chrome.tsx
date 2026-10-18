@@ -1,5 +1,7 @@
 import {
+  Children,
   createContext,
+  isValidElement,
   useCallback,
   useContext,
   useEffect,
@@ -13,9 +15,13 @@ import { Stack } from "expo-router";
 import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { Button, Menu, RNHostView, Toolbar, ToolbarItem, type ToolbarItemPlacement } from "@expo/ui/swift-ui";
 import { background, navigationBarTitleDisplayMode, navigationTitle, type ViewModifier } from "@expo/ui/swift-ui/modifiers";
+import { ICON_MORE } from "@/components/toolbar-icons";
+import { useTightSideRail } from "@/lib/layout";
 import { useTheme } from "@/theme";
 import type { SFSymbol } from "sf-symbols-typescript";
 import type { ImageSourcePropType } from "react-native";
+
+export { useTightSideRail };
 
 /**
  * Screen chrome — a screen's title and toolbar, described once as data and
@@ -97,12 +103,75 @@ export function ScreenChrome(spec: ChromeSpec) {
 }
 
 function RouteChrome({ title, back, left, right }: ChromeSpec) {
+  const tightRail = useTightSideRail();
   return (
     <>
       <Stack.Screen options={{ title, ...(back ? { headerBackTitle: back } : {}) }} />
       {left?.length ? <Stack.Toolbar placement="left">{left.map(routeItem)}</Stack.Toolbar> : null}
-      {right?.length ? <Stack.Toolbar placement="right">{right.map(routeItem)}</Stack.Toolbar> : null}
+      {right?.length ? <Stack.Toolbar placement="right">{railToolbar(tightRail, ...right.map(routeItem))}</Stack.Toolbar> : null}
     </>
+  );
+}
+
+/**
+ * Shared helper for `<Stack.Toolbar placement="right">`: when the Duo side rail
+ * is in its height-constrained folded-landscape posture (`tightRail`) and more
+ * than one visible item would otherwise dock into the rail, collapses them into
+ * a single `•••` `Stack.Toolbar.Menu`. Portrait, wide layouts, and single-item
+ * bars render the items directly.
+ *
+ * Returns literal `Stack.Toolbar.Button` / `Stack.Toolbar.Menu` elements so
+ * `Stack.Toolbar`'s `isChildOfType` check accepts the result as-is.
+ */
+export function railToolbar(tightRail: boolean, ...children: ReactNode[]): ReactNode {
+  const elements = Children.toArray(children).filter(isValidElement);
+  const visible = elements.filter((el) => !(el.props as { hidden?: boolean }).hidden);
+  if (!tightRail || visible.length <= 1) return elements;
+  return (
+    <Stack.Toolbar.Menu key="rail-overflow" icon={ICON_MORE} accessibilityLabel="More actions">
+      {visible.map((el) => {
+        if (el.type === Stack.Toolbar.Menu) {
+          const p = el.props as {
+            title?: string;
+            accessibilityLabel?: string;
+            icon?: Icon;
+            inline?: boolean;
+            destructive?: boolean;
+            children?: ReactNode;
+          };
+          return (
+            <Stack.Toolbar.Menu
+              key={el.key ?? p.title ?? p.accessibilityLabel}
+              {...p}
+              title={p.title || p.accessibilityLabel}
+            >
+              {p.children}
+            </Stack.Toolbar.Menu>
+          );
+        }
+        const p = el.props as {
+          icon?: Icon;
+          disabled?: boolean;
+          destructive?: boolean;
+          selected?: boolean;
+          accessibilityLabel?: string;
+          onPress?: () => void;
+          children?: ReactNode;
+        };
+        return (
+          <Stack.Toolbar.MenuAction
+            key={el.key ?? p.accessibilityLabel ?? String(p.children)}
+            icon={p.icon}
+            disabled={p.disabled}
+            destructive={p.destructive}
+            isOn={p.selected}
+            onPress={p.onPress}
+          >
+            {typeof p.children === "string" ? p.children : (p.accessibilityLabel ?? "")}
+          </Stack.Toolbar.MenuAction>
+        );
+      })}
+    </Stack.Toolbar.Menu>
   );
 }
 
@@ -291,6 +360,7 @@ export function ChromeColumn({
   extra?: ChromeItem[];
 }) {
   const t = useTheme();
+  const tightRail = useTightSideRail();
   const [spec, setSpec] = useState<ChromeSpec | null>(null);
   const latest = useRef<ChromeSpec | null>(null);
   const bridge = useContext(ChromeBridgeContext);
@@ -334,6 +404,12 @@ export function ChromeColumn({
     else if (action != null) item.actions[action]?.onPress();
   };
 
+  const visibleLeft = (shown?.left ?? []).filter((i) => !(i.kind === "button" && i.hidden));
+  const visibleRight = (shown?.right ?? []).filter((i) => !(i.kind === "button" && i.hidden));
+  const visibleExtra = extra.filter((i) => !(i.kind === "button" && i.hidden));
+  const railSlots = (bridged ? 0 : leading.length + visibleLeft.length + visibleRight.length) + visibleExtra.length;
+  const collapseToOverflow = tightRail && railSlots > 1;
+
   function columnItem(side: "left" | "right", item: ChromeItem) {
     if (item.kind === "button" && item.hidden) return null;
     if (item.kind === "menu" && item.overflow) {
@@ -348,8 +424,11 @@ export function ChromeColumn({
         </ToolbarItem>
       ));
     }
+    const placementProps = collapseToOverflow
+      ? ({ placement: "secondaryAction" as ToolbarItemPlacement } as const)
+      : itemPlacement(side, item);
     return (
-      <ToolbarItem key={item.key} {...itemPlacement(side, item)}>
+      <ToolbarItem key={item.key} {...placementProps}>
         {item.kind === "button" ? (
           <Button label={item.label} systemImage={symbol(item.icon)} onPress={press(side, item.key)} />
         ) : (
@@ -372,8 +451,11 @@ export function ChromeColumn({
   // Another column's item: its handlers already look themselves up at press time.
   function extraItem(item: ChromeItem) {
     if (item.kind === "button" && item.hidden) return null;
+    const placementProps = collapseToOverflow
+      ? ({ placement: "secondaryAction" as ToolbarItemPlacement } as const)
+      : itemPlacement("right", item);
     return (
-      <ToolbarItem key={`extra:${item.key}`} {...itemPlacement("right", item)}>
+      <ToolbarItem key={`extra:${item.key}`} {...placementProps}>
         {item.kind === "button" ? (
           <Button label={item.label} systemImage={symbol(item.icon)} onPress={item.onPress} />
         ) : (
@@ -415,16 +497,22 @@ export function ChromeColumn({
         {titleMenu ? <ToolbarItem placement="principal">{titleMenu}</ToolbarItem> : null}
         {/* Bridged with its bar kept: the title stays, the buttons went elsewhere. */}
         {/* Column-owned dismiss: cancellationAction, so the side rail puts it on top. */}
-        {bridged ? null : leading.map((b) => (
+        {bridged || collapseToOverflow ? null : leading.map((b) => (
           <ToolbarItem key={b.key} placement={b.key === "close" ? "cancellationAction" : "topBarLeading"}>
             <Button label={b.label} systemImage={b.icon} onPress={b.onPress} />
           </ToolbarItem>
         ))}
-        {bridged ? null : (shown?.left ?? []).map((i) => columnItem("left", i))}
+        {bridged || collapseToOverflow ? null : (shown?.left ?? []).map((i) => columnItem("left", i))}
         {/* Trailing items render right to left, so reverse to keep the
             route order reading left to right. */}
         {bridged ? null : [...(shown?.right ?? [])].reverse().map((i) => columnItem("right", i))}
         {[...extra].reverse().map((i) => extraItem(i))}
+        {bridged || !collapseToOverflow ? null : (shown?.left ?? []).map((i) => columnItem("left", i))}
+        {bridged || !collapseToOverflow ? null : leading.map((b) => (
+          <ToolbarItem key={b.key} placement="secondaryAction">
+            <Button label={b.label} systemImage={b.icon} onPress={b.onPress} />
+          </ToolbarItem>
+        ))}
       </Toolbar.Content>}
     </Toolbar>
   );

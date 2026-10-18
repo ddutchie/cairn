@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import { Platform, useWindowDimensions, View, Text } from "react-native";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Stack } from "expo-router";
 import { FileText, FolderOpen } from "lucide-react-native";
 import { Host } from "@expo/ui";
 import {
@@ -10,7 +9,6 @@ import {
   type NavigationSplitViewColumn,
   type NavigationSplitViewVisibility,
 } from "@expo/ui/swift-ui";
-import { Group } from "@expo/ui/swift-ui";
 import {
   navigationSplitViewStyle,
   tint,
@@ -30,14 +28,6 @@ import { dayKey } from "@/components/calendar/grid";
 import { OverviewPanel } from "@/components/overview/OverviewPanel";
 import { OVERVIEW_DETAIL, OVERVIEW_STATUS } from "@/components/overview/OverviewTab";
 import { ScreenChrome } from "@/components/screen-chrome";
-import { toast } from "@/components/Toast";
-import { WorkspaceMenuItems } from "@/components/WorkspaceHeaderMenu";
-import { useSyncBadge } from "@/components/SyncStatusBadge";
-import { ICON_CAPTURE, ICON_SETTINGS } from "@/components/toolbar-icons";
-import { haptics, toolbarPress } from "@/haptics";
-import { getActiveSource } from "@/db";
-import { switchSource } from "@/sync/controller";
-import { useSyncSources } from "@/sync/useSyncSources";
 import { ProjectCalendarScreen } from "@/screens/ProjectCalendarScreen";
 import {
   bridgedItems,
@@ -52,7 +42,6 @@ import { PressableScale } from "@/components/PressableScale";
 import { useHingeStatus } from "@/lib/hinge";
 import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { forceCompactBelow } from "@modules/swiftui-modifiers";
-import { preferTabBarCompression, duoBarsAvailable, toolbarVerticalBehavior } from "@modules/duo-bars";
 
 /**
  * Projects on wide windows (unfolded iPhone Duo, iPad): tree | view | item.
@@ -172,18 +161,6 @@ export function ProjectsSplitView({
   // wide-layout columns (the status panel in the project column) showing on the outer
   // display for a moment before JS caught up. Width still gates unfolding.
   const compact = width < WIDE_MIN_WIDTH || hingeClosed;
-  // Duo rail: while compact the system rail merges the UIKit tab bar with the
-  // hosted SwiftUI column toolbars. Stamp the screens for tab-first
-  // compression (toolbar folds into ···, tabs preserved) — the SwiftUI-only
-  // modifiers can't govern that cross-framework mix.
-  // TEMP-DIAG: toast the stamp count to prove the module runs + finds screens.
-  useEffect(() => {
-    if (!compact) return;
-    const avail = duoBarsAvailable();
-    void preferTabBarCompression()
-      .then((r) => toast.info(`Rail: module=${avail} ${r === false ? "false" : JSON.stringify(r)}`, { durationMs: 4000 }))
-      .catch(() => toast.info(`Rail: module=${avail} threw`, { durationMs: 3000 }));
-  }, [compact]);
   // Wide Overview: the blocks up to the health radar stay in this column; the recent
   // notes and activity move to the detail column (beside / instead of "Nothing open").
   const overviewSplit = !compact && view === "overview";
@@ -228,60 +205,6 @@ export function ProjectsSplitView({
   const bridge = useCallback((slot: ChromeSlot, chrome: BridgedChrome | null) => {
     setBridged((prev) => (prev[slot] === chrome ? prev : { ...prev, [slot]: chrome }));
   }, []);
-
-  // ── Duo side rail → native header takeover ─────────────────────────────
-  // Folded Duo (compact + a side safe-area inset): the system merges the tab
-  // rail with hosted SwiftUI column toolbars and no API coordinates the mix,
-  // so the columns surrender their buttons to ONE native header (title +
-  // actions, like a plain iPhone screen) instead of piling into the rail.
-  // Regular iPhones (no side inset) and wide layouts keep their column bars.
-  const router = useRouter();
-  const { left: safeLeft, right: safeRight } = useSafeAreaInsets();
-  const duoRail = !BRIDGE_HEADER && compact && (safeLeft > 0 || safeRight > 0);
-  const bridgeHeader = BRIDGE_HEADER || duoRail;
-  const syncBadge = useSyncBadge();
-  const [wsActive, setWsActive] = useState<string | null>(() => {
-    try {
-      return getActiveSource();
-    } catch {
-      return null;
-    }
-  });
-  const { sources: wsSources, refresh: refreshWs } = useSyncSources({ mergeActive: true });
-  useFocusEffect(
-    useCallback(() => {
-      try {
-        setWsActive(getActiveSource());
-      } catch {}
-      void refreshWs();
-    }, [refreshWs]),
-  );
-  const onWsSwitch = useCallback(
-    (ws: string) => {
-      if (ws === wsActive) return;
-      switchSource(ws);
-      setWsActive(ws);
-      onWorkspaceSwitched();
-    },
-    [wsActive, onWorkspaceSwitched],
-  );
-  // Native replacement for the hidden SwiftUI Back: pop note/task → project
-  // → sidebar, mirroring onCompactColumn. (Focus mode first leaves focus.)
-  const goBack = useCallback(() => {
-    if (visibility === "detailOnly") {
-      setVisibility(LEAVE_FOCUS);
-      return;
-    }
-    if (sel.noteId || sel.cardId || sel.composing) setSelection({ noteId: null, cardId: null, composing: false });
-    else if (sel.projectId) setSelection({ projectId: null, noteId: null, cardId: null });
-  }, [visibility, sel.noteId, sel.cardId, sel.composing, sel.projectId]);
-  const sidebarVisible = compactColumn === "sidebar";
-  const duoTitle =
-    !duoRail || sidebarVisible
-      ? workspaceName
-      : compactColumn === "content"
-        ? (bridged.primary?.spec?.title ?? "")
-        : (bridged.secondary?.spec?.title ?? "");
 
   // The sidebar is a flat list of projects: choosing one keeps the current view
   // (Overview / Notes / Board / Calendar) and closes any open item; the views
@@ -374,18 +297,15 @@ export function ProjectsSplitView({
   // Where buttons go:
   //   iPad — the stack header: the list's / board's items left of the tab bar,
   //          the open item's or view's own items right of it.
-  //   Duo rail (folded) — likewise the native header: the columns keep just
-  //          their titles, every button moves up top.
-  //   Duo (room) — the bar that docks into the side rail: every view's own column,
+  //   Duo  — the bar that docks into the side rail: every view's own column,
   //          and on Notes the note column, which also carries the list's
   //          items (the list keeps just its title).
-  const slot = (s: ChromeSlot) => (bridgeHeader ? s : undefined);
+  const slot = (s: ChromeSlot) => (BRIDGE_HEADER ? s : undefined);
   // Duo: the open note's bar also carries the list's items — while a note is
   // open, drop the list's own + (a full bar already). With no note open the +
   // stays (it's the only creation entry point there). iPad keeps it always:
-  // its header shares the tab bar's row, so there's room. Bridged headers
-  // (iPad, Duo rail) take the items themselves, so no column extras.
-  const listItems = bridgeHeader
+  // its header shares the tab bar's row, so there's room.
+  const listItems = BRIDGE_HEADER
     ? []
     : bridgedItems(bridged.primary).filter((i) => sel.noteId == null || i.key !== "add");
 
@@ -575,33 +495,6 @@ export function ProjectsSplitView({
   // iPad: an untitled header in the tab bar's row carries every button — the
   // focus toggle and the list's items, then (right of the tab bar) the open
   // item's.
-  // Duo rail (folded): like iPad, one native header carries every button —
-  // Back + the visible column's title and actions — while the columns keep
-  // just their titles. The sidebar's own buttons live here too.
-  // NOTE: Stack.Toolbar keeps only children that are literally
-  // Button/Menu elements — a <WorkspaceMenuItems/> component wrapper would be
-  // silently dropped, so the menu is built by direct function call below.
-  const sidebarActions = [
-    <Stack.Toolbar.Button
-      key="appearance"
-      icon={ICON_SETTINGS}
-      accessibilityLabel="Appearance settings"
-      onPress={toolbarPress(() => router.push("/settings/appearance"))}
-    >
-      Appearance
-    </Stack.Toolbar.Button>,
-    <Stack.Toolbar.Button
-      key="capture"
-      icon={ICON_CAPTURE}
-      accessibilityLabel="Quick capture"
-      onPress={toolbarPress(() => router.push("/capture"))}
-    >
-      Capture
-    </Stack.Toolbar.Button>,
-    <Stack.Toolbar.Button key="sync" {...syncBadge}>
-      Sync status
-    </Stack.Toolbar.Button>,
-  ];
   const header = BRIDGE_HEADER ? (
     <>
       <Stack.Screen
@@ -636,32 +529,6 @@ export function ProjectsSplitView({
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">{routeItems(bridgedItems(bridged.secondary))}</Stack.Toolbar>
     </>
-  ) : duoRail ? (
-    <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          title: duoTitle,
-          headerLargeTitle: false,
-          headerStyle: { backgroundColor: t.background },
-          contentStyle: { backgroundColor: t.background },
-        }}
-      />
-      <Stack.Toolbar placement="left">
-        {sidebarVisible ? null : (
-          <Stack.Toolbar.Button icon="chevron.left" accessibilityLabel="Back" onPress={goBack}>
-            Back
-          </Stack.Toolbar.Button>
-        )}
-        {sidebarVisible ? (
-          WorkspaceMenuItems({ active: wsActive, sources: wsSources, onSwitch: onWsSwitch })
-        ) : null}
-        {sidebarVisible ? null : routeItems(bridgedItems(bridged.primary))}
-      </Stack.Toolbar>
-      <Stack.Toolbar placement="right">
-        {sidebarVisible ? sidebarActions : routeItems(bridgedItems(bridged.secondary))}
-      </Stack.Toolbar>
-    </>
   ) : (
     <Stack.Screen options={{ headerShown: false, contentStyle: { backgroundColor: t.background } }} />
   );
@@ -669,14 +536,13 @@ export function ProjectsSplitView({
     <>
       {header}
       {/* Duo: the notes list is bridged into the note column's bar only while
-          both are on screen (unfolded, a note open). Folded, or with nothing
-          open, the list keeps its own + — otherwise New note vanishes with
-          the column it was moved to. The Duo-rail native header bridges both
-          slots instead (columns keep titles only, like iPad). */}
+           both are on screen (unfolded, a note open). Folded, or with nothing
+           open, the list keeps its own + — otherwise New note vanishes with
+           the column it was moved to. */}
       <ChromeBridgeProvider
         value={bridge}
-        keepBars={!bridgeHeader}
-        slots={bridgeHeader ? BOTH_SLOTS : !compact && sel.noteId ? LIST_SLOT : NO_SLOTS}
+        keepBars={!BRIDGE_HEADER}
+        slots={BRIDGE_HEADER ? BOTH_SLOTS : !compact && sel.noteId ? LIST_SLOT : NO_SLOTS}
       >
         {body}
       </ChromeBridgeProvider>
@@ -704,10 +570,6 @@ export function ProjectsSplitView({
           a second time, ending up under the header. react-native-keyboard-controller
           owns the keyboard, as everywhere else in the app. */}
       <Host style={{ flex: 1 }} ignoreSafeArea="keyboard">
-        {/* DIAG: Duo opt-out ABOVE the split view — environment set on a
-            container governs that container; column/split-level was too low.
-            Group is layout-transparent. */}
-        <Group modifiers={compact ? [toolbarVerticalBehavior("disabled")] : []}>
         <NavigationSplitView
           // True echo (except the spurious first-layout detailOnly with
           // nothing open, which is swallowed): controlled visibility only
@@ -745,7 +607,7 @@ export function ProjectsSplitView({
           modifiers={[tint(t.accent), navigationSplitViewStyle("automatic"), forceCompactBelow(WIDE_MIN_WIDTH)]}
         >
           <NavigationSplitView.Sidebar>
-            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} refreshKey={boardVersion} disableVerticalBar={compact} hideBar={duoRail} />
+            <ProjectsTreeSidebar title={workspaceName} list={projectsList} onWorkspaceSwitched={onWorkspaceSwitched} onOpenNote={showNoteInSplitView} refreshKey={boardVersion} />
           </NavigationSplitView.Sidebar>
           <NavigationSplitView.Content>{contentView}</NavigationSplitView.Content>
           {/* Detail stays mounted ALWAYS — SwiftUI reserves the slot even for
@@ -753,7 +615,6 @@ export function ProjectsSplitView({
               a blank page. Period. */}
           <NavigationSplitView.Detail>{detailView ?? emptyDetail}</NavigationSplitView.Detail>
         </NavigationSplitView>
-        </Group>
       </Host>
     </>,
   );

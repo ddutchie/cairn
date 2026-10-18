@@ -18,6 +18,7 @@ import { haptics, toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
 import { WIDE_MIN_WIDTH } from "@/lib/layout";
+import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { useTheme, elevation, type as typeScale } from "@/theme";
 
 /** Project summaries for the active workspace, or null if the DB isn't ready. */
@@ -34,6 +35,7 @@ export default function ProjectsScreen() {
   const t = useTheme();
   const { width } = useWindowDimensions();
   const contentStyle = useTabContentStyle();
+  const tightRail = useTightSideRail();
   const split = width >= WIDE_MIN_WIDTH;
   const syncBadge = useSyncBadge();
   // The read is synchronous SQLite, so do it in the initializer: a first frame
@@ -93,21 +95,26 @@ export default function ProjectsScreen() {
       <Stack.Screen options={{ title: workspaceName ?? "Projects", headerShown: true, contentStyle }} />
       <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button
-          icon={ICON_CAPTURE}
-          accessibilityLabel="Quick capture"
-          onPress={toolbarPress(() => router.push("/capture"))}
-        >
-          Capture
-        </Stack.Toolbar.Button>
-        <Stack.Toolbar.Button {...syncBadge}>Sync status</Stack.Toolbar.Button>
-        <Stack.Toolbar.Button
-          icon={ICON_SETTINGS}
-          accessibilityLabel="Appearance settings"
-          onPress={toolbarPress(() => router.push("/settings/appearance"))}
-        >
-          Appearance
-        </Stack.Toolbar.Button>
+        {railToolbar(
+          tightRail,
+          <Stack.Toolbar.Button
+            key="capture"
+            icon={ICON_CAPTURE}
+            accessibilityLabel="Quick capture"
+            onPress={toolbarPress(() => router.push("/capture"))}
+          >
+            Capture
+          </Stack.Toolbar.Button>,
+          <Stack.Toolbar.Button key="sync" {...syncBadge}>Sync status</Stack.Toolbar.Button>,
+          <Stack.Toolbar.Button
+            key="appearance"
+            icon={ICON_SETTINGS}
+            accessibilityLabel="Appearance settings"
+            onPress={toolbarPress(() => router.push("/settings/appearance"))}
+          >
+            Appearance
+          </Stack.Toolbar.Button>,
+        )}
       </Stack.Toolbar>
     </>
   );

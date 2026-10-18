@@ -32,14 +32,13 @@ import {
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { CairnStack } from "@/components/CairnStack";
-import { toolbarVerticalBehavior, toolbarVerticalCompressionBehavior } from "@modules/duo-bars";
-import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { WorkspaceProgressHeader } from "@/components/WorkspaceProgressHeader";
 import { getWorkspaceProgress, type WorkspaceProgress } from "@/db/queries";
 import type { ProjectsList } from "@/components/projects-tree";
 import { useRecentStones } from "@/gamification/useRecentStones";
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { getActiveSource } from "@/db";
+import { useTightSideRail } from "@/lib/layout";
 import { useRefreshOnFocus, useSyncStatus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { switchSource } from "@/sync/controller";
@@ -69,8 +68,6 @@ export function ProjectsTreeSidebar({
   onWorkspaceSwitched,
   onOpenNote,
   refreshKey,
-  disableVerticalBar = false,
-  hideBar = false,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
@@ -85,21 +82,10 @@ export function ProjectsTreeSidebar({
    * on focus / sync.
    */
   refreshKey?: number;
-  /**
-   * Keep this column's bar horizontal (iPhone Duo `toolbarVerticalBehavior`
-   * `.disabled`). Only the detail column should dock into the side rail —
-   * when this column is the visible one (compact) its buttons would otherwise
-   * pile onto the tab rail with no shared compression.
-   */
-  disableVerticalBar?: boolean;
-  /**
-   * Hide this column's whole bar (the Duo-rail native header carries the
-   * title and buttons instead, like the iPad bridge).
-   */
-  hideBar?: boolean;
 }) {
   const t = useTheme();
   const router = useRouter();
+  const hideTrailingActions = useTightSideRail();
   const { state: syncState, pending: syncPending } = useSyncStatus();
   const { sources, refresh } = useSyncSources({ mergeActive: true });
   // Discover workspaces whenever the sidebar shows: sync never scans for new
@@ -178,15 +164,6 @@ export function ProjectsTreeSidebar({
       modifiers={[
         navigationTitle("Projects"),
         navigationBarTitleDisplayMode("inline"),
-        // Compact (folded Duo / narrow iPhone): this column is the screen, so
-        // its bar stays horizontal instead of docking into the tab rail.
-        // (SwiftUI-side opt-out; the rail itself is coordinated in UIKit —
-        // see DuoBars.preferTabBarCompression.)
-        ...(disableVerticalBar
-          ? [toolbarVerticalBehavior("disabled"), toolbarVerticalCompressionBehavior("prefersTabBar")]
-          : []),
-        // Duo rail: the native header carries title + buttons; hide this bar.
-        ...(hideBar ? [navigationBarHidden()] : []),
         // Fill the column, safe areas included, with the page colour.
         background(t.background),
       ]}
@@ -240,40 +217,83 @@ export function ProjectsTreeSidebar({
             ))}
           </Menu>
         </ToolbarItem>
-        {/* Capture is the headline action, so it stays visible longest. */}
-        <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
-          <Button
-            label="Capture"
-            systemImage="tray.and.arrow.down"
-            onPress={() => {
-              haptics.selection();
-              router.push("/capture");
-            }}
-          />
-        </ToolbarItem>
+        {/* Duo tight rail (folded landscape): all three actions fold into the
+            system "..." overflow menu (secondaryAction) so the rail gets a
+            single "..." button above the 5-tab pill. Roomy layouts (portrait,
+            unfolded, regular iPhones) keep all three buttons inline. */}
+        {hideTrailingActions ? (
+          <ToolbarItem placement="secondaryAction">
+            <Button
+              label="Capture"
+              systemImage="tray.and.arrow.down"
+              onPress={() => {
+                haptics.selection();
+                router.push("/capture");
+              }}
+            />
+          </ToolbarItem>
+        ) : (
+          <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
+            <Button
+              label="Capture"
+              systemImage="tray.and.arrow.down"
+              onPress={() => {
+                haptics.selection();
+                router.push("/capture");
+              }}
+            />
+          </ToolbarItem>
+        )}
         {/* Status stays visible longest (Apple: badges/status); Appearance
             is rare, so it is the first to fold into the overflow menu. */}
-        <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
-          <Button
-            label="Sync status"
-            systemImage="arrow.triangle.2.circlepath"
-            modifiers={[tint(syncTint)]}
-            onPress={() => {
-              haptics.selection();
-              router.push("/sync");
-            }}
-          />
-        </ToolbarItem>
-        <ToolbarItem placement="topBarTrailing" visibilityPriority="low">
-          <Button
-            label="Appearance settings"
-            systemImage="gear"
-            onPress={() => {
-              haptics.selection();
-              router.push("/settings/appearance");
-            }}
-          />
-        </ToolbarItem>
+        {hideTrailingActions ? (
+          <ToolbarItem placement="secondaryAction">
+            <Button
+              label="Sync status"
+              systemImage="arrow.triangle.2.circlepath"
+              modifiers={[tint(syncTint)]}
+              onPress={() => {
+                haptics.selection();
+                router.push("/sync");
+              }}
+            />
+          </ToolbarItem>
+        ) : (
+          <ToolbarItem placement="topBarTrailing" visibilityPriority="high">
+            <Button
+              label="Sync status"
+              systemImage="arrow.triangle.2.circlepath"
+              modifiers={[tint(syncTint)]}
+              onPress={() => {
+                haptics.selection();
+                router.push("/sync");
+              }}
+            />
+          </ToolbarItem>
+        )}
+        {hideTrailingActions ? (
+          <ToolbarItem placement="secondaryAction">
+            <Button
+              label="Appearance settings"
+              systemImage="gear"
+              onPress={() => {
+                haptics.selection();
+                router.push("/settings/appearance");
+              }}
+            />
+          </ToolbarItem>
+        ) : (
+          <ToolbarItem placement="topBarTrailing" visibilityPriority="low">
+            <Button
+              label="Appearance settings"
+              systemImage="gear"
+              onPress={() => {
+                haptics.selection();
+                router.push("/settings/appearance");
+              }}
+            />
+          </ToolbarItem>
+        )}
       </Toolbar.Content>
     </Toolbar>
   );

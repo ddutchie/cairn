@@ -9,6 +9,7 @@ import { toolbarPress } from "@/haptics";
 import { useTheme } from "@/theme";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
+import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 
 /**
  * Workspace-wide Calendar: every live task with a due date across all projects,
@@ -24,6 +25,7 @@ export default function CalendarScreen() {
   const router = useRouter();
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const tightRail = useTightSideRail();
   // Wide windows open a picked task beside the calendar (shared with Chat/Graph).
   // No title beside the grid when wide (like Chat) — the Today + span controls
   // dock into the side rail instead.
@@ -52,35 +54,40 @@ export default function CalendarScreen() {
       <Stack.Screen options={sp.screenOptions} />
       {sp.showToolbar ? (
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button
-          // A symbol, so it docks into the Duo's side rail when wide (a
-          // text-only item would stay horizontal). Narrow keeps the text label.
-          icon={sp.wide ? ICON_TODAY : undefined}
-          accessibilityLabel="Jump to today"
-          onPress={toolbarPress(() => setTodayNonce((n) => n + 1))}
-        >
-          Today
-        </Stack.Toolbar.Button>
-        <Stack.Toolbar.Menu
-          icon={layout === "month" ? ICON_VIEW_MONTH : ICON_VIEW_WEEK}
-          accessibilityLabel="Calendar span"
-        >
-          <Stack.Toolbar.Label>{layout === "month" ? "Month" : "Week"}</Stack.Toolbar.Label>
-          <Stack.Toolbar.MenuAction
-            icon={ICON_VIEW_MONTH}
-            isOn={layout === "month"}
-            onPress={toolbarPress(() => setLayout("month"))}
+        {railToolbar(
+          tightRail,
+          <Stack.Toolbar.Button
+            key="today"
+            // A symbol whenever a side rail is present or wide (a text-only
+            // item would stay horizontal). Narrow without a rail keeps the text label.
+            icon={sp.wide || insets.left > 0 || insets.right > 0 ? ICON_TODAY : undefined}
+            accessibilityLabel="Jump to today"
+            onPress={toolbarPress(() => setTodayNonce((n) => n + 1))}
           >
-            Month
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction
-            icon={ICON_VIEW_WEEK}
-            isOn={layout === "week"}
-            onPress={toolbarPress(() => setLayout("week"))}
+            Today
+          </Stack.Toolbar.Button>,
+          <Stack.Toolbar.Menu
+            key="span"
+            icon={layout === "month" ? ICON_VIEW_MONTH : ICON_VIEW_WEEK}
+            accessibilityLabel="Calendar span"
           >
-            Week
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
+            <Stack.Toolbar.Label>{layout === "month" ? "Month" : "Week"}</Stack.Toolbar.Label>
+            <Stack.Toolbar.MenuAction
+              icon={ICON_VIEW_MONTH}
+              isOn={layout === "month"}
+              onPress={toolbarPress(() => setLayout("month"))}
+            >
+              Month
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction
+              icon={ICON_VIEW_WEEK}
+              isOn={layout === "week"}
+              onPress={toolbarPress(() => setLayout("week"))}
+            >
+              Week
+            </Stack.Toolbar.MenuAction>
+          </Stack.Toolbar.Menu>,
+        )}
       </Stack.Toolbar>
       ) : null}
       <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.surface }}>
