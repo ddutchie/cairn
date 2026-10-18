@@ -67,6 +67,9 @@ function FloatSurface({
         !glassActive && { backgroundColor: withAlpha(t.surface, 0.94) },
       ]}
     >
+      {/* Glass over a light canvas can all but vanish; a faint wash inside it keeps controls
+          legible without putting a background on the glass view itself. */}
+      {glassActive ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(t.surface, 0.45) }]} /> : null}
       {tint ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} /> : null}
       {children}
     </GlassBar>

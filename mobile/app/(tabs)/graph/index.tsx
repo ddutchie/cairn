@@ -176,7 +176,7 @@ export default function GraphScreen() {
           ) : null}
         </Stack.Toolbar>
       ) : null}
-      <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.surface }}>
+      <SidePreviewLayout state={sp} onChanged={load} bodyStyle={{ backgroundColor: t.background }}>
       {isEmpty ? (
         <EmptyState
           title="Nothing to graph yet"
