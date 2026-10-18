@@ -33,6 +33,15 @@ export const haptics = {
   rigid: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid)),
   /** Soft impact — cushioned, gentle. */
   soft: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft)),
+  /**
+   * A stone settling: a firm drop, a crisp knock as it lands, a soft rest. The
+   * whole gesture is ~200ms so it reads as one object coming to a stop.
+   */
+  settle: () => {
+    fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
+    setTimeout(() => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid)), 110);
+    setTimeout(() => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft)), 200);
+  },
   /** Selection tick — for moving through discrete options (pickers, segments). */
   selection: () => fire(() => Haptics.selectionAsync()),
   /** Success notification — an operation completed. */

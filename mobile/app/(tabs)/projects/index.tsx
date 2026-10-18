@@ -12,7 +12,7 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { ProjectsSplitView, resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
-import { ICON_SETTINGS } from "@/components/toolbar-icons";
+import { ICON_CAPTURE, ICON_SETTINGS } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
@@ -78,6 +78,13 @@ export default function ProjectsScreen() {
       <Stack.Screen options={{ title: workspaceName ?? "Projects", headerShown: true, contentStyle }} />
       <WorkspaceHeaderMenu />
       <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon={ICON_CAPTURE}
+          accessibilityLabel="Quick capture"
+          onPress={toolbarPress(() => router.push("/capture"))}
+        >
+          Capture
+        </Stack.Toolbar.Button>
         <Stack.Toolbar.Button {...syncBadge}>Sync status</Stack.Toolbar.Button>
         <Stack.Toolbar.Button
           icon={ICON_SETTINGS}
