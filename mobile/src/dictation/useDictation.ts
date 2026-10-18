@@ -209,6 +209,8 @@ export function useDictation({ text, setText }: { text: string; setText: (t: str
     () => () => {
       clearTimers();
       if (!native || !active.current) return;
+      // A start still awaiting the permission prompt must not begin capturing after unmount.
+      abortStart.current = true;
       ignoreResults.current = true;
       try {
         native.abort();

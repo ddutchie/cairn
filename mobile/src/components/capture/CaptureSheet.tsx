@@ -179,7 +179,9 @@ export function CaptureSheet({
           <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
             {dictation.available && <DictationMic dictation={dictation} size={36} />}
             <Pressable
-              style={styles.ghostBtn}
+              style={[styles.ghostBtn, dictation.listening && styles.disabled]}
+              // Dictation rewrites the field from the text it started with, so pasted text would be lost.
+              disabled={dictation.listening}
               onPress={async () => {
                 const pasted = await Clipboard.getStringAsync();
                 if (pasted) setText((prev) => (prev ? `${prev}\n${pasted}` : pasted));
