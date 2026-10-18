@@ -129,6 +129,12 @@ pile of near-identical grey pills in a big white card, not stones. Ideas for the
 - **Depth:** a soft contact shadow under each stone so the pile has weight.
 - **Context:** judge it on dark theme and the narrow phone column too; it was only
   seen on the Duo's closed outer display.
+- **Fix before enabling (CodeRabbit finding):** `CairnStack` animates when `newestId`
+  changes, so switching workspace, or deleting/archiving the top note, would wrongly play
+  the drop and haptic. Pass the active workspace identity and reset the arrival baseline
+  when it changes; within a workspace ignore older top-note replacements, using an
+  explicit add/sync event or a deterministic order key (equal `createdAt` values are
+  possible and `listRecentNotes` has no tie-breaker) to tell a real arrival apart.
 To turn it back on: set `SHOW_CAIRN_STACK = true` and re-add the changelog entry
 ("Your cairn grows" under 0.1.13 Added).
 
