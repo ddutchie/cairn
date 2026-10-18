@@ -106,17 +106,32 @@ export function CaptureSheet({
 
   const confirm = () => {
     if (!proposal) return;
-    finish({ ...proposal, tasks: proposal.tasks.filter((_, i) => !skipped.has(i)) });
-  };
-
-  const saveAsNote = async () => {
-    if (!canFile) return;
-    const p = fallbackProposal(text, await buildCaptureContext(text.trim()));
-    if (!p) {
-      Alert.alert("No project yet", "Create a project first, then capture into it.");
+    const tasks = proposal.tasks.filter((_, i) => !skipped.has(i));
+    // Only tasks were proposed and all were unticked: filing would write nothing and drop the text.
+    if (!proposal.note && tasks.length === 0) {
+      Alert.alert("Nothing to file", "Keep at least one task, or go back and save it as a note.");
       return;
     }
-    finish(p);
+    finish({ ...proposal, tasks });
+  };
+
+  const [saving, setSaving] = useState(false);
+  const saveAsNote = async () => {
+    if (!canFile || saving) return;
+    setSaving(true);
+    try {
+      const p = fallbackProposal(text, await buildCaptureContext(text.trim()));
+      if (!p) {
+        Alert.alert("No project yet", "Create a project first, then capture into it.");
+        return;
+      }
+      finish(p);
+    } catch (e) {
+      haptics.error();
+      Alert.alert("Couldn't save", e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleTask = (i: number) => {
@@ -166,8 +181,8 @@ export function CaptureSheet({
               <Text style={styles.ghostText}>Paste</Text>
             </Pressable>
             <View style={styles.flex} />
-            <Pressable style={styles.ghostBtn} onPress={saveAsNote} disabled={!canFile} accessibilityRole="button">
-              <Text style={[styles.ghostText, !canFile && styles.disabled]}>Save as note</Text>
+            <Pressable style={styles.ghostBtn} onPress={saveAsNote} disabled={!canFile || saving} accessibilityRole="button">
+              <Text style={[styles.ghostText, (!canFile || saving) && styles.disabled]}>Save as note</Text>
             </Pressable>
             <Pressable style={[styles.primaryBtn, !canFile && styles.primaryDisabled]} onPress={file} disabled={!canFile} accessibilityRole="button">
               <Text style={styles.primaryText}>File it</Text>
@@ -293,7 +308,7 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: t.background },
     flex: { flex: 1 },
-    input: { flex: 1, ...typeScale.body, fontSize: 18, lineHeight: 26, color: t.textPrimary, paddingHorizontal: 20, paddingTop: 12 },
+    input: { flex: 1, ...typeScale.body, color: t.textPrimary, paddingHorizontal: 20, paddingTop: 12 },
     footer: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
     ghostBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 10 },
     ghostText: { ...typeScale.control, color: t.textSecondary },

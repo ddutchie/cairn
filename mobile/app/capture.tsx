@@ -10,7 +10,11 @@ import { useModalOpenHaptic } from "@/haptics";
  */
 export default function Capture() {
   useModalOpenHaptic();
-  const { text, autostart } = useLocalSearchParams<{ text?: string; autostart?: string }>();
+  // A repeated key (cairn://capture?text=a&text=b) arrives as an array at runtime.
+  const params = useLocalSearchParams<{ text?: string | string[]; autostart?: string | string[] }>();
+  const first = (v?: string | string[]) => (Array.isArray(v) ? v[0] : v);
+  const text = first(params.text);
+  const autostart = first(params.autostart);
   const router = useRouter();
   return <CaptureSheet initialText={text ?? ""} autostart={autostart === "1"} onClose={() => router.back()} />;
 }

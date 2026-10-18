@@ -104,6 +104,8 @@ export async function captureExtract(text: string, outerSignal?: AbortSignal): P
   const clean = text.trim();
   const ctx = await buildCaptureContext(clean);
   if (ctx.projects.length === 0) return null;
+  // Cancelled while the context was being built: don't spend a provider call on it.
+  if (outerSignal?.aborted) return fallbackProposal(clean, ctx);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CAPTURE_AI_TIMEOUT_MS);
