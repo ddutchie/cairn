@@ -26,6 +26,10 @@
     "@shopify/flash-list": "2.3.2",
     "@shopify/react-native-skia": "2.14.0",
     "ai": "^7.0.62",
+    "d3-force": "^3.0.0",
+    "d3-hierarchy": "^3.1.2",
+    "d3-polygon": "^3.0.1",
+    "d3-shape": "^3.2.0",
     "expo": "~58.0.11",
     "expo-auth-session": "~58.0.12",
     "expo-blur": "~58.0.3",
@@ -80,6 +84,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "@types/d3-hierarchy": "^3.1.7",
+    "@types/d3-polygon": "^3.0.2",
+    "@types/d3-shape": "^3.1.8",
     "@types/react": "~19.3.0",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript/native": "npm:typescript@^7.0.2",
