@@ -120,7 +120,10 @@ export function useDictation({ text, setText }: { text: string; setText: (t: str
   const stop = useCallback(() => {
     if (!native) return;
     if (!active.current) return;
-    abortStart.current = true; // harmless once running; cancels a start still awaiting permission
+    abortStart.current = true; // cancels a start still awaiting permission
+    // Nothing native to stop yet: start() sees the flag and bails. Arming the grace timer here
+    // would let it end a *later* session in the UI while the microphone stays open.
+    if (!started.current) return;
     haptics.selection();
     try {
       native.stop();
@@ -149,6 +152,7 @@ export function useDictation({ text, setText }: { text: string; setText: (t: str
 
   const start = useCallback(async (): Promise<boolean> => {
     if (!native || active.current) return false;
+    clearTimers();
     active.current = true;
     abortStart.current = false;
     try {
@@ -193,7 +197,9 @@ export function useDictation({ text, setText }: { text: string; setText: (t: str
   // Leaving the app while listening: stop and keep the text, like putting the phone down.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
-      if (next !== "active") stop();
+      // Not "inactive": system permission alerts and Control Center also report it, and
+      // stopping then would abort the first dictation while it awaits the prompt.
+      if (next === "background") stop();
     });
     return () => sub.remove();
   }, [stop]);

@@ -48,7 +48,8 @@ export function CaptureSheet({
 
   const projects = useMemo(() => listProjects(), []);
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "Project";
-  const canFile = text.trim().length > 0;
+  // Not while listening: words still being recognised would be missing from what gets filed.
+  const canFile = text.trim().length > 0 && !dictation.listening;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 

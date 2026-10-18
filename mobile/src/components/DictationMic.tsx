@@ -2,7 +2,7 @@
    handlers read these refs only when a touch arrives, never during render; the compiler
    rule can't see that through the closure. */
 import { useEffect, useRef, useState } from "react";
-import { PanResponder, Pressable, StyleSheet, View } from "react-native";
+import { PanResponder, StyleSheet, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Mic, Square } from "lucide-react-native";
 import { onPressIn, onPressOut, type MicMode } from "@/dictation/gesture";
@@ -76,9 +76,10 @@ export function DictationMic({ dictation, size = 32 }: { dictation: Dictation; s
         style={[styles.ring, { width: size, height: size, borderRadius: size * 0.4, backgroundColor: t.accent }, ringStyle]}
       />
       <Animated.View style={slideStyle} {...responder.panHandlers}>
-        <Pressable
-          // Touches are handled by the PanResponder; Pressable gives screen readers a button
-          // and a way to act without the gesture (double-tap toggles).
+        <View
+          // Touches are handled by the parent PanResponder (a Pressable here would claim the
+          // responder first). This View gives screen readers a button and an activate action.
+          accessible
           accessibilityRole="button"
           accessibilityLabel={dictation.listening ? "Stop dictation" : "Dictate"}
           accessibilityHint="Press and hold to talk, or tap to start and stop. Slide left to cancel."
@@ -94,7 +95,7 @@ export function DictationMic({ dictation, size = 32 }: { dictation: Dictation; s
           ) : (
             <Mic size={size * 0.46} color={t.accentFg} />
           )}
-        </Pressable>
+        </View>
       </Animated.View>
     </View>
   );
