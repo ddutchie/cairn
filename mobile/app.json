@@ -35,13 +35,21 @@
         {
           "photosPermission": "Cairn uses your photos to add images to notes and chat messages.",
           "cameraPermission": "Cairn uses the camera to add photos to notes and chat messages.",
-          "microphonePermission": false
+          "microphonePermission": "Cairn uses the microphone to dictate messages and notes."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Cairn uses the camera to add photos to notes and chat messages."
+          "cameraPermission": "Cairn uses the camera to add photos to notes and chat messages.",
+          "microphonePermission": "Cairn uses the microphone to dictate messages and notes."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Cairn uses the microphone to dictate messages and notes.",
+          "speechRecognitionPermission": "Cairn uses speech recognition to turn your voice into text for messages and notes."
         }
       ],
       [

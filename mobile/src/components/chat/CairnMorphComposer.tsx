@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { forwardRef, useEffect, useMemo, useState } from "react";
+import { forwardRef, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from "react-native";
 import { Image } from "expo-image";
 import { Send, X, Plus } from "lucide-react-native";
@@ -54,10 +54,17 @@ export interface CairnMorphComposerProps {
   onLayoutHeight: (h: number) => void;
   allowImages?: boolean;
   queuedCount?: number;
+  /**
+   * Dictation button. It takes the send button's place while the field is empty (like
+   * WhatsApp's mic) and while a dictation is running; once there is text, send returns.
+   */
+  mic?: ReactNode;
+  /** True while dictating: the placeholder says so and the field is read-only. */
+  micActive?: boolean;
 }
 
 export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
-  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0 },
+  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0, mic, micActive = false },
   ref,
 ) {
   const t = useTheme();
@@ -67,6 +74,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
     return leftInset > 0 ? { ...StyleSheet.flatten(base), left: leftInset } : base;
   }, [hidden, leftInset]);
   const hasAttachments = attachments.length > 0;
+  const showMic = !!mic && (micActive || (!canSend && !busy));
 
   const plusStyle = useAnimatedStyle(() => ({
     opacity: interpolate(plusOut.get(), [0, 0.75], [1, 0], Extrapolation.CLAMP),
@@ -122,24 +130,29 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 onChangeText={onChangeInput}
                 onFocus={onInputFocus}
                 onBlur={onInputBlur}
-                placeholder="Message Cairn…"
+                placeholder={micActive ? "Listening… slide left to cancel" : "Message Cairn…"}
+                editable={!micActive}
                 placeholderTextColor={isLight ? t.textSecondary : t.textTertiary}
                 multiline
                 textAlignVertical="center"
                 style={[styles.field, { color: t.textPrimary }]}
               />
-              <Pressable
-                style={[styles.sendBtn, { backgroundColor: t.accent }, !canSend && styles.sendBtnDisabled]}
-                onPress={onSend}
-                disabled={!canSend}
-                accessibilityRole="button"
-                accessibilityLabel={busy ? "Queue message" : "Send message"}
-              >
-                <View>
-                  <Send size={14} color={t.accentFg} />
-                  {busy && queuedCount > 0 ? <Animated.Text style={styles.sendBadge}>{String(queuedCount)}</Animated.Text> : null}
-                </View>
-              </Pressable>
+              {showMic ? (
+                mic
+              ) : (
+                <Pressable
+                  style={[styles.sendBtn, { backgroundColor: t.accent }, !canSend && styles.sendBtnDisabled]}
+                  onPress={onSend}
+                  disabled={!canSend}
+                  accessibilityRole="button"
+                  accessibilityLabel={busy ? "Queue message" : "Send message"}
+                >
+                  <View>
+                    <Send size={14} color={t.accentFg} />
+                    {busy && queuedCount > 0 ? <Animated.Text style={styles.sendBadge}>{String(queuedCount)}</Animated.Text> : null}
+                  </View>
+                </Pressable>
+              )}
             </View>
           </Glass>
         </View>
