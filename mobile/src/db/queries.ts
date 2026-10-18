@@ -305,6 +305,61 @@ export function listProjectSummaries(): ProjectSummary[] {
   }));
 }
 
+/**
+ * Workspace-wide task progress — the "overall progress" header above the
+ * projects list. Same done-definition as computeProjectMetrics (a card is done
+ * when its column's type is `done`), aggregated across every project in the
+ * active source DB. Due dates of open cards are returned raw so the view can
+ * derive overdue/today with getDueDateStatus (one source of truth with Overview).
+ */
+export interface WorkspaceProgress {
+  projectCount: number;
+  totalNotes: number;
+  totalCards: number;
+  doneCards: number;
+  openCards: number;
+  /** doneCards / totalCards as a 0–100 integer (0 when there are no cards). */
+  completionRate: number;
+  /** due_date values of open cards (nulls excluded) for overdue/today counts. */
+  openDueDates: string[];
+}
+
+export function getWorkspaceProgress(): WorkspaceProgress {
+  const db = getDb();
+  const projectCount = listProjects().length;
+
+  const notesRow = db.getFirstSync<{ c: number }>(
+    `SELECT COUNT(*) c FROM notes WHERE ${LIVE} AND type='note' AND ${NOT_CONFLICT}`,
+  );
+  const totalRow = db.getFirstSync<{ c: number }>(
+    `SELECT COUNT(*) c FROM task_cards c WHERE c.deleted_at IS NULL AND c.archived_at IS NULL`,
+  );
+  const doneRow = db.getFirstSync<{ c: number }>(
+    `SELECT COUNT(*) c FROM task_cards c
+     JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND col.type = 'done' AND col.deleted_at IS NULL`,
+  );
+  const dueRows = db.getAllSync<{ due_date: string | null }>(
+    `SELECT c.due_date AS due_date FROM task_cards c
+     LEFT JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND c.due_date IS NOT NULL
+       AND (col.id IS NULL OR col.type != 'done' OR col.deleted_at IS NOT NULL)`,
+  );
+
+  const totalCards = totalRow?.c ?? 0;
+  const doneCards = doneRow?.c ?? 0;
+  const openCards = Math.max(0, totalCards - doneCards);
+  return {
+    projectCount,
+    totalNotes: notesRow?.c ?? 0,
+    totalCards,
+    doneCards,
+    openCards,
+    completionRate: totalCards > 0 ? Math.round((doneCards / totalCards) * 100) : 0,
+    openDueDates: dueRows.map((r) => r.due_date).filter((d): d is string => d != null),
+  };
+}
+
 /** Distinct folders within a project. Case-insensitively de-duplicated
  *  (first-seen casing wins) so "Mobile" and "mobile" list as one — mirrors the
  *  notes-tree grouping. Root (empty folder) is excluded. */

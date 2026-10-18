@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Image as RNImage, type ImageSourcePropType } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
@@ -32,14 +32,16 @@ import {
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { CairnStack } from "@/components/CairnStack";
+import { WorkspaceProgressHeader } from "@/components/WorkspaceProgressHeader";
+import { getWorkspaceProgress, type WorkspaceProgress } from "@/db/queries";
 import type { ProjectsList } from "@/components/projects-tree";
 import { useRecentStones } from "@/gamification/useRecentStones";
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { getActiveSource } from "@/db";
+import { useRefreshOnFocus, useSyncStatus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
-import { useSyncStatus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
 
 /**
@@ -64,6 +66,7 @@ export function ProjectsTreeSidebar({
   list,
   onWorkspaceSwitched,
   onOpenNote,
+  refreshKey,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
@@ -72,6 +75,12 @@ export function ProjectsTreeSidebar({
   onWorkspaceSwitched: () => void;
   /** Open a note in the split view (tapping a stone). Passed in, not imported: the split view imports this file. */
   onOpenNote: (projectId: string, noteId: string) => void;
+  /**
+   * Bumped when tasks change elsewhere (e.g. the detail column saves a card)
+   * so the workspace progress re-reads — the project list itself only refreshes
+   * on focus / sync.
+   */
+  refreshKey?: number;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -87,6 +96,36 @@ export function ProjectsTreeSidebar({
   const { inputs: stones, newestId } = useRecentStones(SHOW_CAIRN_STACK);
   const syncOffline = syncState === "offline";
   const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
+
+  // Workspace-wide progress for the header card above the project list. Read
+  // here (not passed in) so focus / sync / task-save refreshes stay local to
+  // the sidebar; null when the DB isn't ready yet.
+  const [progress, setProgress] = useState<WorkspaceProgress | null>(() => {
+    try {
+      return getWorkspaceProgress();
+    } catch {
+      return null;
+    }
+  });
+  const loadProgress = useCallback(() => {
+    try {
+      setProgress(getWorkspaceProgress());
+    } catch {
+      setProgress(null);
+    }
+  }, []);
+  useRefreshOnFocus(loadProgress);
+  // Task saves in the detail column bump refreshKey (the list itself only
+  // refreshes on focus / sync); a workspace switch changes the title/rows.
+  // Deps intentionally include refreshKey/title/row-count: re-running the focus
+  // effect on those changes is what refreshes the header while already focused.
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useFocusEffect(
+    useCallback(() => {
+      loadProgress();
+    }, [loadProgress, refreshKey, title, list.nodes.length]),
+  );
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const selectedRow = /^#[0-9a-f]{6}$/i.test(t.accent) ? `${t.accent}33` : t.accent;
   const row = (p: ProjectsList["nodes"][number]) => {
@@ -140,6 +179,9 @@ export function ProjectsTreeSidebar({
               </RNHostView>
             </HStack>
           </Section>
+        )}
+        {progress && (progress.totalCards > 0 || progress.totalNotes > 0) && (
+          <WorkspaceProgressHeader progress={progress} />
         )}
         <Section>{list.nodes.map(row)}</Section>
       </List>

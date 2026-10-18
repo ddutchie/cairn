@@ -11,6 +11,8 @@ import {
 import { KeyboardController, KeyboardChatScrollView, KeyboardGestureArea, useKeyboardState, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { useHeaderHeight } from "expo-router/react-navigation";
+import { useSyncStatus } from "@/sync/useSyncStatus";
 import { Settings, Settings2, Trash2 } from "lucide-react-native";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
@@ -138,11 +140,13 @@ export default function ChatScreen() {
   const strip = useSharedValue(0);
   const plusOut = useSharedValue(0);
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   // Wide windows open touched notes/tasks in a column beside the chat (folding a
   // Duo with a preview open keeps it: the pane fills the window, its ✕ returns
   // to the conversation). Shared with Graph/Calendar — see SidePreview.
   const sp = useSidePreview({ title: "Chat", titleWhenWide: false });
+  const headerHeight = useHeaderHeight();
+  const { conflicts } = useSyncStatus();
   // Laptop pose (portrait half-fold): the transcript and empty state stay in the
   // upright top half; the composer and tab pill sit on the flat bottom half.
   const topHalf = useTopHalf();
@@ -483,6 +487,21 @@ export default function ChatScreen() {
   // the keyboard is up, and return when it goes.
   const laptop = fold?.axis === "horizontal";
   const showHeaderTools = !laptop && (sp.showToolbar || typingCollapsed);
+  // iOS: the header is transparent glass and the transcript (with its chat theme) runs behind it,
+  // like the composer below. Fold layouts that reserve the top half for a stacked preview and the
+  // preview-filled window keep the opaque header. Where a side rail is present the system blur would
+  // span the full window width into the rail, so the header paints its own background inset by the
+  // rail instead.
+  const sideRail = insets.left > 0 || insets.right > 0;
+  const glassHeader = Platform.OS === "ios" && !laptop && !sp.fills && !sp.stacked;
+  // Landscape: keep the floating title and toolbar but drop the blur entirely so the
+  // transcript uses the full height; the Liquid Glass buttons stand on their own.
+  const headerBlur = glassHeader && width <= height;
+  // The transcript runs behind the header in every glass layout (blurred or not), so its content
+  // starts below it; the scroll viewport itself stays full-height. While the conflict banner shows,
+  // TabScreen pushes the whole body below the header (the banner takes the header-height margin),
+  // so the content must not add that inset a second time.
+  const headerInset = glassHeader && conflicts === 0 ? headerHeight : 0;
   const modelInTitle = Platform.OS === "ios" && modelMenu != null && showHeaderTools && sp.screenOptions.title !== "";
   const showToolsPills = laptop && !inputFocused && !keyboardVisible;
   const bottomRing = showToolsPills ? renderContextRing("bottom") : null;
@@ -532,9 +551,15 @@ export default function ChatScreen() {
   ) : null;
 
   return (
-    <TabScreen>
+    <TabScreen bannerTopInset={glassHeader ? headerHeight : 0}>
       <Stack.Screen
         options={{
+          // Options are merged into the screen's previous ones, not replaced, so a key a variant
+          // below no longer sets would keep its old value (rotating from portrait to landscape kept
+          // the portrait header's glass background). Reset them, then let the variant set its own.
+          headerBackground: undefined,
+          headerBlurEffect: undefined,
+          scrollEdgeEffects: undefined,
           ...sp.screenOptions,
           // Context-window usage ring in the header-left when the active provider
           // reports usage (Apple real, OpenAI real, Rork estimated). Not while a
@@ -545,6 +570,41 @@ export default function ChatScreen() {
           // the chat-template). Only while the title is shown at all — wide windows
           // and open previews blank it, and the toolbar menu takes over there.
           headerTitle: modelInTitle ? () => <ModelTitleMenu model={modelMenu} /> : undefined,
+          ...(glassHeader
+            ? !headerBlur
+              ? {
+                  // Landscape: fully transparent floating header — title and toolbar only.
+                  headerTransparent: true,
+                  headerStyle: { backgroundColor: "transparent" },
+                  scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
+                }
+              : sideRail
+              ? {
+                  headerTransparent: true,
+                  headerStyle: { backgroundColor: "transparent" },
+                  // The system blur spans the full window width, rail included — so no
+                  // headerBlurEffect here. The background paints its own glass (same treatment
+                  // as the composer); the system lays it out inside the safe area, so no manual
+                  // margins — those inset it a second time and leave a gap.
+                  headerBlurEffect: undefined,
+                  headerBackground: () => (
+                    <Glass radius={0} interactive={false} fallbackTint={withAlpha(t.chatBg, 0.6)} style={{ flex: 1 }} />
+                  ),
+                  scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
+                }
+              : {
+                  headerTransparent: true,
+                  headerStyle: { backgroundColor: "transparent" },
+                  // Full-width frosted bar so messages stay legible behind it. systemChromeMaterial
+                  // adapts light/dark automatically; the top scroll-edge is hidden to avoid
+                  // double-blur with headerBlurEffect (Expo docs warn they overlap).
+                  headerBlurEffect: "systemChromeMaterial",
+                  scrollEdgeEffects: { top: "hidden", bottom: "automatic", left: "automatic", right: "automatic" },
+                }
+            : sp.screenOptions.headerStyle
+              ? null
+              : // Opaque header again (TabStack's colour); it was transparent in the glass layouts.
+                { headerStyle: { backgroundColor: sideRail ? t.background : t.surface } }),
         }}
       />
       {/* While a preview is open its own bar is the rail's: the chat's items
@@ -575,7 +635,12 @@ export default function ChatScreen() {
       ) : null}
       {/* Every width previews in the pane (not a pushed route): folded it fills
           the window, unfolded it sits beside the chat. Android keeps the route path. */}
-      <SidePreviewLayout state={sp} bodyStyle={{ backgroundColor: t.chatBg }} collapsePane={inputFocused}>
+      <SidePreviewLayout
+        state={sp}
+        // paddingTop 0: the chat theme runs under the glass header (the list pads itself below it).
+        bodyStyle={glassHeader ? { backgroundColor: t.chatBg, paddingTop: 0 } : { backgroundColor: t.chatBg }}
+        collapsePane={inputFocused}
+      >
       <View style={{ flex: 1 }} onLayout={topHalf.onLayout}>
         {t.chatBgType === "gradient" && t.chatStops.length >= 2 ? (
           <LinearGradient
@@ -600,7 +665,7 @@ export default function ChatScreen() {
           <KeyboardChatScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={styles.list}
+            contentContainerStyle={glassHeader ? [styles.list, { paddingTop: 14 + headerInset }] : styles.list}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             // Laptop pose: the keyboard is exactly the flat half below the crease.
@@ -667,7 +732,7 @@ export default function ChatScreen() {
             through the blank areas to the composer / scroll view beneath, while
             the Cairn icon and "Set up AI" button stay tappable. */}
         {messages.length === 0 ? (
-          <View style={transcriptArea} pointerEvents="box-none">
+          <View style={[transcriptArea, headerInset > 0 && { paddingTop: headerInset }]} pointerEvents="box-none">
             <EmptyState
               title="Ask Cairn"
               subtitle="Ask about your notes, or tell the assistant to create or edit them. Changes sync to your desktop."

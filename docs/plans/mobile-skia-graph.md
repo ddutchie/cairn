@@ -1,7 +1,30 @@
 # Plan: Replace the mobile Knowledge Graph WebView with a Skia renderer
 
-**Status (2026-10-18):** PLANNED, not started. Nothing here is built. Written so the
-decision and the approach are not lost; revisit after the capture/dictation work lands.
+**Status (2026-10-18):** BUILT in one PR (#243), **not yet verified on a device**. Phase 0's
+go/no-go spike was folded into the build: the Skia renderer is the default, and the WebView
+stays behind `EXPO_PUBLIC_GRAPH_RENDERER=webview` for one release. Delete the WebView path once
+the device checks below pass and a release has shipped cleanly.
+
+### What was built (vs. the phases)
+
+- **Phase 1, layout engine:** `mobile/src/graph/layout.ts` (d3-force with the shared strengths,
+  seeded positions, pin/release, `setEdges`). Kept in `mobile/` rather than extracted to
+  `shared/`; desktop's worker wrapper is untouched. Extracting a shared core is still open.
+- **Phase 2, force parity:** hulls (`hulls.ts`), batched edges, node drag, pinch/pan, labels with
+  the shared LOD rules, auto-fit once visually settled, search/filters/semantic edges via the
+  shared `GraphChrome` + `useGraphControls` + `filterGraph`.
+- **Phase 3, radial parity:** `radial.ts` (d3-hierarchy partition, arc paths, hit-testing,
+  interpolation) with the eased drill-in/out and hub-to-go-up.
+- **Architecture as built:** `GraphEngine` (`engine.ts`) owns layout, camera and one rAF loop
+  that records one `SkPicture` per frame (`scene.ts`); `KnowledgeGraphSkia.tsx` mounts the
+  canvas, keeps the camera transform in shared values and forwards gestures.
+- **Decisions made while building:** threading = JS-thread ticks (2/frame, 24 warm-up ticks);
+  gestures use the legacy `Gesture.*` API with `runOnJS` (node drag mutates the sim); reduce
+  motion settles synchronously; pause on blur/background; fonts = system Helvetica/sans-serif
+  via `matchFont`; deps added: `d3-force`, `d3-hierarchy`, `d3-polygon`, `d3-shape` (JS only).
+- **Not done:** phase 4 cleanup (delete WebView + d3 asset generation), phase 5 extras,
+  VoiceOver list fallback, viewport label culling, UI-thread pan/pinch, a node-count cap.
+
 
 ## Why
 

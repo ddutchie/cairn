@@ -11,15 +11,18 @@ import { ConflictBanner } from "./ConflictBanner";
  * options), so this only provides the themed background and keeps the global
  * ConflictBanner visible on every tab.
  *
+ * `bannerTopInset` is the header height for screens that run under a transparent header, so the
+ * conflict banner is not hidden behind it.
+ *
  * Set `scrollUnderLargeTitle` when the screen's own scroll view uses
  * `contentInsetAdjustmentBehavior="automatic"` — the banner then sits above the
  * scroll area rather than inside it.
  */
-export function TabScreen({ children }: { children: ReactNode }) {
+export function TabScreen({ children, bannerTopInset = 0 }: { children: ReactNode; bannerTopInset?: number }) {
   const t = useTheme();
   return (
     <View style={[styles.root, { backgroundColor: t.background }]}>
-      <ConflictBanner />
+      <ConflictBanner topInset={bannerTopInset} />
       <View style={styles.body}>{children}</View>
     </View>
   );

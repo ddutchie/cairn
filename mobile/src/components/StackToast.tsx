@@ -170,7 +170,10 @@ export function StackToast({
 
   const color = variantColor(t, toast.variant);
   const Icon = VARIANT_ICON[toast.variant];
-  const bottom = 16 + insets.bottom * 0.5 + 49 * 0.5; // above tab bar
+  // Above the tab bar where there is one; with a side rail (Duo) there is no
+  // bottom bar, so the hardcoded half-bar would float the toast too high.
+  const sideRail = insets.left > 0 || insets.right > 0;
+  const bottom = sideRail ? 16 + insets.bottom * 0.5 : 16 + insets.bottom * 0.5 + 49 * 0.5; // above tab bar
   // Side safe zones: on the iPhone Duo / iPad the tab bar is a side rail, which iOS
   // reports as a left/right inset — keep the toast clear of it instead of covering it.
   const sideInset = { left: 16 + insets.left, right: 16 + insets.right };

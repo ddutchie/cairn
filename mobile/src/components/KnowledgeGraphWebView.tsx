@@ -1,23 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, ActivityIndicator, StyleSheet, AppState } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppState } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
-import {
-  Circle,
-  GitBranch,
-  Hexagon,
-  Type,
-  ChevronDown,
-  Network,
-  Maximize2,
-} from "lucide-react-native";
-import { useTheme, useIsDark, withAlpha, type as typeScale, iconSize, type Theme } from "@/theme";
+import { useTheme, useIsDark } from "@/theme";
 import { haptics } from "@/haptics";
-import { SearchField } from "@/components/SearchField";
 import { buildGraphHtml } from "@/components/graph/graph-webview-html";
-import type { KnowledgeGraph, GraphNodeType } from "@/db/queries";
+import { GraphChrome } from "@/components/graph/GraphChrome";
+import { useGraphControls, type GraphMode } from "@/graph/useGraphControls";
+import { tokenColor, nodeTypeColor } from "@/graph/colors";
+import type { KnowledgeGraph } from "@/db/queries";
 import {
-  nodeTypeToken,
   nodeRadius,
   edgeStyle,
   chargeStrength,
@@ -33,35 +24,11 @@ import {
   labelMaxLen,
   buildHierarchy,
   sunburstTypeToken,
-  type ThemeToken,
   type LabelMode,
   type HierarchyNode,
 } from "@cairn/shared/ui/graph";
 
-const ALL_NODE_TYPES: GraphNodeType[] = ["project", "note", "card", "tag"];
-const LABEL_MODES: LabelMode[] = ["smart", "all", "minimal"];
-export type GraphMode = "force" | "radial";
-
-/** Resolve a shared graph theme token to a concrete colour on this platform. */
-function tokenColor(token: ThemeToken, t: Theme): string {
-  switch (token) {
-    case "accent": return t.accent;
-    case "info": return t.info;
-    case "success": return t.success;
-    case "warning": return t.warning;
-    case "border": return t.border;
-    case "background": return t.background;
-    case "textPrimary": return t.textPrimary;
-    case "textSecondary": return t.textSecondary;
-    case "textTertiary": return t.textTertiary;
-    case "nodeProject": return t.nodeProject;
-  }
-}
-
-/** Node type → colour, via the shared token map (tags = warning, NOT tag colour). */
-function nodeTypeColor(type: GraphNodeType, t: Theme): string {
-  return tokenColor(nodeTypeToken(type), t);
-}
+export type { GraphMode };
 
 /**
  * Full-screen interactive Knowledge Graph rendered with D3 inside an offline
@@ -108,8 +75,6 @@ export function KnowledgeGraphWebView({
 }) {
   const t = useTheme();
   const isDark = useIsDark();
-  const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(t), [t]);
   const ref = useRef<WebView>(null);
 
   // iOS reclaims a backgrounded WKWebView's content process under memory
@@ -140,56 +105,12 @@ export function KnowledgeGraphWebView({
     return () => sub.remove();
   }, [remount]);
 
-  const [modeInternal, setModeInternal] = useState<GraphMode>("force");
-  const mode = modeProp ?? modeInternal;
-  const setMode = (m: GraphMode) => {
-    if (onModeChange) onModeChange(m);
-    else setModeInternal(m);
-  };
-  const [activeTypes, setActiveTypes] = useState<Set<GraphNodeType>>(
-    () => new Set(ALL_NODE_TYPES),
-  );
-  const [showHulls, setShowHulls] = useState(true);
-  const [labelModeInternal, setLabelModeInternal] = useState<LabelMode>("smart");
-  const labelMode = labelModeProp ?? labelModeInternal;
-  const setLabelMode = (m: LabelMode) => {
-    if (onLabelModeChange) onLabelModeChange(m);
-    else setLabelModeInternal(m);
-  };
-  const [labelOpen, setLabelOpen] = useState(false);
-  const [labelAnchorX, setLabelAnchorX] = useState(116);
-  const [search, setSearch] = useState("");
-
-  // Node-type filter, then a search filter (title / tag name), then drop edges
-  // whose endpoints were removed. Search keeps parent projects of matches so the
-  // radial hierarchy still has a bucket for them (mirrors desktop searchedGraph).
-  const filtered = useMemo(() => {
-    let nodes = graph.nodes.filter((n) => activeTypes.has(n.type));
-    const q = search.trim().toLowerCase();
-    if (q) {
-      const tagName = new Map<string, string>();
-      for (const n of nodes) if (n.type === "tag") tagName.set(n.id, n.title.toLowerCase());
-      const nodeTags = new Map<string, string[]>();
-      for (const e of graph.edges) {
-        if (e.type !== "tag-member") continue;
-        (nodeTags.get(e.source) ?? nodeTags.set(e.source, []).get(e.source)!).push(e.target);
-      }
-      const match = new Set(
-        nodes
-          .filter((n) => {
-            if (n.title.toLowerCase().includes(q)) return true;
-            return (nodeTags.get(n.id) ?? []).some((tid) => tagName.get(tid)?.includes(q));
-          })
-          .map((n) => n.id),
-      );
-      const keepProjects = new Set<string>();
-      for (const n of nodes) if (match.has(n.id) && n.projectId) keepProjects.add(n.projectId);
-      nodes = nodes.filter((n) => match.has(n.id) || (n.type === "project" && keepProjects.has(n.id)));
-    }
-    const ids = new Set(nodes.map((n) => n.id));
-    const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
-    return { nodes, edges };
-  }, [graph, activeTypes, search]);
+  const {
+    mode, setMode, labelMode, setLabelMode, activeTypes, toggleType,
+    showHulls, toggleHulls, search, setSearch, filtered, showModeToggle, showLabelPill,
+  } = useGraphControls(graph, {
+    mode: modeProp, onModeChange, labelMode: labelModeProp, onLabelModeChange,
+  });
 
   // Link visual payload — derived from the current edges. Extracted so both the
   // initial HTML and the in-place window.__update() injection shape links
@@ -349,178 +270,34 @@ export function KnowledgeGraphWebView({
     if (mode === "force") pushUpdate({ links: linksPayload });
   }, [linksPayload, mode, pushUpdate]);
 
-  const toggleType = (type: GraphNodeType) => {
-    setActiveTypes((cur) => {
-      const next = new Set(cur);
-      if (next.has(type)) {
-        if (next.size === 1) return cur; // keep at least one active
-        next.delete(type);
-      } else {
-        next.add(type);
-      }
-      return next;
-    });
-  };
-
   return (
-    <View style={[styles.root, { backgroundColor: t.background }]}>
-      {/* ── Header line 1: layout toggle · label dropdown · hulls ── */}
-      <View style={styles.toolbarRow}>
-        {/* Layout mode segmented toggle (Force / Radial). Hidden when the parent
-            (native header toolbar) drives the mode. */}
-        {!onModeChange ? (
-          <View style={styles.segment}>
-            {([
-              { key: "force" as const, Icon: Circle, label: "Force" },
-              { key: "radial" as const, Icon: GitBranch, label: "Radial" },
-            ]).map(({ key, Icon, label }, idx) => {
-              const active = mode === key;
-              return (
-                <View key={key} style={styles.segmentPart}>
-                  {idx > 0 ? <View style={styles.segmentDivider} /> : null}
-                  <Pressable
-                    onPress={() => setMode(key)}
-                    style={[styles.segmentBtn, active && { backgroundColor: t.accentDim }]}
-                  >
-                    <Icon size={iconSize.control} color={active ? t.accent : t.textTertiary} />
-                    {active ? (
-                      <Text style={[styles.segmentLabel, { color: t.accent }]}>{label}</Text>
-                    ) : null}
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-        ) : null}
-
-        {/* Label mode dropdown — force only (radial drills in, no label modes).
-            Hidden when the parent (native left toolbar menu) drives labelMode. */}
-        {mode === "force" && !onLabelModeChange ? (
-          <Pressable
-            onLayout={(e) => setLabelAnchorX(e.nativeEvent.layout.x)}
-            onPress={() => setLabelOpen((v) => !v)}
-            style={[styles.pillBtn, { borderColor: t.border }]}
-          >
-            <Type size={iconSize.control} color={t.textSecondary} />
-            <Text style={styles.pillLabel}>{labelMode} labels</Text>
-            <ChevronDown size={iconSize.hint} color={t.textSecondary} />
-          </Pressable>
-        ) : null}
-
-        {/* Semantic-links toggle — force only, left of Hulls, when available.
-            Shows a spinner while the on-device semantic pass is computing. */}
-        {mode === "force" && semanticAvailable && onToggleSemantic ? (
-          <Pressable
-            onPress={onToggleSemantic}
-            disabled={semanticLoading}
-            style={[
-              styles.pillBtn,
-              showSemantic
-                ? { borderColor: "transparent", backgroundColor: t.accentDim }
-                : { borderColor: t.border },
-            ]}
-          >
-            {semanticLoading ? (
-              <ActivityIndicator size="small" color={showSemantic ? t.accent : t.textTertiary} style={styles.pillSpinner} />
-            ) : (
-              <Network size={iconSize.control} color={showSemantic ? t.accent : t.textTertiary} />
-            )}
-            <Text style={[styles.pillLabel, { color: showSemantic ? t.accent : t.textTertiary }]}>
-              Semantic
-            </Text>
-          </Pressable>
-        ) : null}
-
-        {/* Cluster hulls toggle — force only */}
-        {mode === "force" ? (
-          <Pressable
-            onPress={() => setShowHulls((v) => !v)}
-            style={[
-              styles.pillBtn,
-              showHulls
-                ? { borderColor: "transparent", backgroundColor: t.accentDim }
-                : { borderColor: t.border },
-            ]}
-          >
-            <Hexagon size={iconSize.control} color={showHulls ? t.accent : t.textTertiary} />
-            <Text style={[styles.pillLabel, { color: showHulls ? t.accent : t.textTertiary }]}>
-              Hulls
-            </Text>
-          </Pressable>
-        ) : null}
-
-        <View style={{ flex: 1 }} />
-        <Text style={styles.stats}>
-          {filtered.nodes.length} · {filtered.edges.length}
-        </Text>
-      </View>
-
-      {/* ── Header line 2: search · node-type toggles ── */}
-      <View style={[styles.toolbarRow, styles.toolbarRow2]}>
-        <SearchField value={search} onChangeText={setSearch} containerStyle={{ flex: 1 }} />
-        <View style={styles.typeToggles}>
-          {ALL_NODE_TYPES.map((type) => {
-            const active = activeTypes.has(type);
-            const color = nodeTypeColor(type, t);
-            return (
-              <Pressable
-                key={type}
-                onPress={() => toggleType(type)}
-                style={[
-                  styles.typeChip,
-                  {
-                    backgroundColor: active ? withAlpha(color, 0.16) : "transparent",
-                    borderColor: active ? withAlpha(color, 0.4) : t.border,
-                  },
-                ]}
-              >
-                <View style={[styles.typeDot, { backgroundColor: active ? color : t.textTertiary }]} />
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Label-mode dropdown menu (overlay) — only when the in-body pill is
-          shown (i.e. the parent isn't driving labelMode via the native menu). */}
-      {labelOpen && mode === "force" && !onLabelModeChange ? (
-        <>
-          <Pressable style={styles.dropdownBackdrop} onPress={() => setLabelOpen(false)} />
-          <View style={[styles.dropdownMenu, { left: labelAnchorX }]}>
-            {LABEL_MODES.map((m) => {
-              const active = labelMode === m;
-              return (
-                <Pressable
-                  key={m}
-                  onPress={() => {
-                    setLabelMode(m);
-                    setLabelOpen(false);
-                  }}
-                  style={[styles.dropdownItem, active && { backgroundColor: t.accentDim }]}
-                >
-                  <Text
-                    style={[
-                      styles.dropdownItemText,
-                      { color: active ? t.accent : t.textSecondary, fontWeight: active ? "600" : "400" },
-                    ]}
-                  >
-                    {m}
-                  </Text>
-                  {active ? <View style={[styles.dropdownDot, { backgroundColor: t.accent }]} /> : null}
-                </Pressable>
-              );
-            })}
-          </View>
-        </>
-      ) : null}
-
-      <View style={styles.canvasWrap}>
+    <GraphChrome
+      mode={mode}
+      onModeChange={setMode}
+      showModeToggle={showModeToggle}
+      labelMode={labelMode}
+      onLabelModeChange={setLabelMode}
+      showLabelPill={showLabelPill}
+      showHulls={showHulls}
+      onToggleHulls={toggleHulls}
+      showSemantic={showSemantic}
+      onToggleSemantic={onToggleSemantic}
+      semanticAvailable={semanticAvailable}
+      semanticLoading={semanticLoading}
+      search={search}
+      onSearchChange={setSearch}
+      activeTypes={activeTypes}
+      onToggleType={toggleType}
+      nodeCount={filtered.nodes.length}
+      edgeCount={filtered.edges.length}
+      onFit={fitToView}
+    >
         <WebView
           ref={ref}
           key={webKey}
           originWhitelist={["*"]}
           source={{ html }}
-          style={styles.web}
+          style={{ flex: 1, backgroundColor: "transparent" }}
           onMessage={onMessage}
           onLoadEnd={() => {
             // After any (re)load — including a post-termination remount — the
@@ -544,161 +321,6 @@ export function KnowledgeGraphWebView({
           onContentProcessDidTerminate={handleTerminate}
           onRenderProcessGone={handleTerminate}
         />
-
-        {/* Legend + zoom-to-fit — bottom row. Keys are left-aligned, the fit
-            button is right-aligned in the same row. Offset by the safe-area
-            inset so it clears the home indicator / tab bar. Force only. */}
-        {mode === "force" ? (
-          <View style={[styles.bottomRow, { bottom: 16 + insets.bottom }]} pointerEvents="box-none">
-            <View style={styles.legend}>
-              {ALL_NODE_TYPES.filter((type) => activeTypes.has(type)).map((type) => (
-                <View key={type} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: nodeTypeColor(type, t) }]} />
-                  <Text style={styles.legendLabel} numberOfLines={1}>{type}</Text>
-                </View>
-              ))}
-            </View>
-            <Pressable
-              onPress={fitToView}
-              style={styles.fitBtn}
-              accessibilityLabel="Zoom to fit"
-              hitSlop={8}
-            >
-              <Maximize2 size={iconSize.control} color={t.textSecondary} />
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
-    </View>
+    </GraphChrome>
   );
-}
-
-function makeStyles(t: Theme) {
-  return StyleSheet.create({
-    root: { flex: 1 },
-    toolbarRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-      backgroundColor: t.surface,
-    },
-    toolbarRow2: {
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: t.border,
-      paddingTop: 0,
-    },
-    // Layout segmented toggle
-    segment: {
-      flexDirection: "row",
-      alignItems: "center",
-      borderWidth: 1,
-      borderColor: t.border,
-      borderRadius: 8,
-      overflow: "hidden",
-    },
-    segmentPart: { flexDirection: "row", alignItems: "center" },
-    segmentDivider: { width: StyleSheet.hairlineWidth, height: 20, backgroundColor: t.border },
-    segmentBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 7,
-    },
-    segmentLabel: { ...typeScale.control },
-    // Pill buttons (label dropdown, hulls)
-    pillBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 7,
-      borderRadius: 8,
-      borderWidth: 1,
-    },
-    pillLabel: { ...typeScale.control, fontWeight: "500", color: t.textSecondary, textTransform: "capitalize" },
-    // Constrain the spinner to the icon footprint so the pill doesn't resize
-    // when it swaps between the Network icon and the ActivityIndicator.
-    pillSpinner: { width: iconSize.control, height: iconSize.control },
-    stats: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
-    // Node-type toggles (line 2)
-    typeToggles: { flexDirection: "row", alignItems: "center", gap: 6 },
-    typeChip: {
-      width: 26,
-      height: 26,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 13,
-      borderWidth: 1,
-    },
-    typeDot: { width: 9, height: 9, borderRadius: 4.5 },
-    // Label-mode dropdown
-    dropdownBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 },
-    dropdownMenu: {
-      position: "absolute",
-      top: 44,
-      width: 150,
-      zIndex: 11,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-      backgroundColor: t.surface,
-      paddingVertical: 4,
-      shadowColor: "#000",
-      shadowOpacity: 0.2,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 6,
-    },
-    dropdownItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-    },
-    dropdownItemText: { ...typeScale.caption, fontWeight: "400", textTransform: "capitalize" },
-    dropdownDot: { width: 6, height: 6, borderRadius: 3 },
-    // Canvas + legend
-    canvasWrap: { flex: 1 },
-    web: { flex: 1, backgroundColor: "transparent" },
-    // Bottom overlay row: legend (left) + zoom-to-fit (right).
-    bottomRow: {
-      position: "absolute",
-      left: 16,
-      right: 16,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 12,
-    },
-    legend: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-      backgroundColor: withAlpha(t.surface, 0.9),
-      flexShrink: 1,
-    },
-    legendItem: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
-    legendDot: { width: 10, height: 10, borderRadius: 5 },
-    legendLabel: { fontSize: 11, color: t.textTertiary, textTransform: "capitalize" },
-    fitBtn: {
-      width: 40,
-      height: 40,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-      backgroundColor: withAlpha(t.surface, 0.9),
-      flexShrink: 0,
-    },
-  });
 }
