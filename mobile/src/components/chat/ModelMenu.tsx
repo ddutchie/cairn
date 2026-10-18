@@ -189,7 +189,9 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
     // Fixed-height wrapper centers the title in the header; the vertical padding
     // on the label (not a Host minHeight, which top-aligns the content) keeps the
     // tap target at ~40pt.
-    <View style={{ height: 44, justifyContent: "center", alignItems: "center" }}>
+    // Centered in the header's title slot (the slot width varies with the
+    // left/right items, so the box centers itself and its content).
+    <View style={{ height: 44, alignSelf: "center", flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
     <Host matchContents style={{ minWidth: 80, maxWidth: 240 }}>
       {m.disabled ? (
         label
