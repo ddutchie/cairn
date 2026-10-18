@@ -21,9 +21,12 @@ export function worldToScreen(c: Camera, x: number, y: number): { x: number; y: 
   return { x: x * c.k + c.tx, y: y * c.k + c.ty };
 }
 
-/** A camera that puts the world origin at the viewport centre. */
-export function centeredCamera(width: number, height: number, k = INITIAL_ZOOM): Camera {
-  return { k, tx: width / 2, ty: height / 2 };
+/**
+ * A camera that puts the world origin at the centre of the visible viewport.
+ * `top` is the height of controls floating over the canvas; the visible area starts below it.
+ */
+export function centeredCamera(width: number, height: number, k = INITIAL_ZOOM, top = 0): Camera {
+  return { k, tx: width / 2, ty: top + (height - top) / 2 };
 }
 
 /** Zoom to `k` keeping the world point under screen (sx, sy) fixed. */
@@ -57,14 +60,18 @@ export function boundsOf(nodes: readonly { x: number; y: number; r: number }[], 
   return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
 }
 
-/** Camera framing `b` inside the viewport with `margin` px to spare. */
-export function fitCamera(b: Bounds, width: number, height: number, margin = 40): Camera {
+/**
+ * Camera framing `b` inside the viewport with `margin` px to spare. `top` reserves space for
+ * controls floating over the canvas so nothing is framed underneath them.
+ */
+export function fitCamera(b: Bounds, width: number, height: number, margin = 40, top = 0): Camera {
   const bw = Math.max(1, b.maxX - b.minX);
   const bh = Math.max(1, b.maxY - b.minY);
-  const k = clampZoom(Math.min((width - margin) / bw, (height - margin) / bh));
+  const visibleH = Math.max(1, height - top);
+  const k = clampZoom(Math.min((width - margin) / bw, (visibleH - margin) / bh));
   const cx = (b.minX + b.maxX) / 2;
   const cy = (b.minY + b.maxY) / 2;
-  return { k, tx: width / 2 - cx * k, ty: height / 2 - cy * k };
+  return { k, tx: width / 2 - cx * k, ty: top + visibleH / 2 - cy * k };
 }
 
 export function lerpCamera(a: Camera, b: Camera, t: number): Camera {

@@ -143,6 +143,19 @@ describe("camera", () => {
     expect(br.y).toBeLessThanOrEqual(800);
     expect((tl.x + br.x) / 2).toBeCloseTo(200);
   });
+  it("fitCamera and centeredCamera keep content below floating controls", () => {
+    const b = boundsOf([{ x: -100, y: -50, r: 6 }, { x: 300, y: 150, r: 6 }])!;
+    const top = 120;
+    const cam = fitCamera(b, 400, 800, 40, top);
+    const tl = worldToScreen(cam, b.minX, b.minY);
+    const br = worldToScreen(cam, b.maxX, b.maxY);
+    expect(tl.y).toBeGreaterThanOrEqual(top);
+    expect(br.y).toBeLessThanOrEqual(800);
+    // centred in the visible area, not the whole canvas
+    expect((tl.y + br.y) / 2).toBeCloseTo(top + (800 - top) / 2);
+    expect(centeredCamera(400, 800, 1, top).ty).toBeCloseTo(top + (800 - top) / 2);
+    expect(centeredCamera(400, 800).ty).toBe(400);
+  });
   it("boundsOf ignores non-finite nodes and returns null when empty", () => {
     expect(boundsOf([])).toBeNull();
     expect(boundsOf([{ x: NaN, y: 0, r: 5 }])).toBeNull();

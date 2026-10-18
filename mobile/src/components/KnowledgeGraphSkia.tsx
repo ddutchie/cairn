@@ -137,6 +137,8 @@ export function KnowledgeGraphSkia({
       nodeCount={filtered.nodes.length}
       edgeCount={filtered.edges.length}
       onFit={() => engine.fitFromUser()}
+      floating
+      onTopInset={(h) => engine.setTopInset(h)}
     >
       <GestureDetector gesture={gesture}>
         <View

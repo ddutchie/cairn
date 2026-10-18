@@ -168,6 +168,42 @@ describe("GraphEngine (force)", () => {
   });
 });
 
+describe("floating controls inset", () => {
+  it("re-frames the force graph below the controls until the user moves it", () => {
+    const { engine, cams } = make();
+    settle();
+    const before = cams[cams.length - 1];
+    engine.setTopInset(150);
+    settle();
+    const after = cams[cams.length - 1];
+    expect(after.ty).toBeGreaterThan(before.ty); // pushed down into the visible area
+    engine.panBegin(5, 5);
+    engine.panStart();
+    engine.panMove(5, 5, 10, 10);
+    engine.panEnd();
+    const manual = cams[cams.length - 1];
+    engine.setTopInset(200);
+    settle();
+    expect(cams[cams.length - 1]).toEqual(manual); // user's camera is left alone
+    engine.dispose();
+  });
+
+  it("centres the sunburst in the area below the controls and hit-tests there", () => {
+    const { engine, picked } = make("radial");
+    engine.setTopInset(100);
+    settle();
+    const input = vi.mocked(recordRadialScene).mock.calls.at(-1)![0];
+    expect(input.cx).toBe(200);
+    expect(input.cy).toBe(100 + (800 - 100) / 2);
+    const w = input.arcs.find((a) => a.node.data.id === "p1")!;
+    const mid = (w.x0 + w.x1) / 2;
+    const r = (w.r0 + w.r1) / 2;
+    engine.tap(input.cx + r * Math.sin(mid), input.cy - r * Math.cos(mid));
+    expect(picked.at(-1)).toEqual({ id: "p1", type: "project" });
+    engine.dispose();
+  });
+});
+
 describe("GraphEngine (radial)", () => {
   it("renders the sunburst and drills into a project on tap, then back via the hub", () => {
     const { engine, picked } = make("radial");

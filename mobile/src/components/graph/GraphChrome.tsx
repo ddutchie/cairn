@@ -1,9 +1,10 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { View, Text, Pressable, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, Pressable, ActivityIndicator, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Circle, GitBranch, Hexagon, Type, ChevronDown, Network, Maximize2 } from "lucide-react-native";
 import { useTheme, withAlpha, type as typeScale, iconSize, type Theme } from "@/theme";
 import { SearchField } from "@/components/SearchField";
+import { GlassBar, glassActive } from "@/components/GlassBar";
 import { nodeTypeColor } from "@/graph/colors";
 import { ALL_NODE_TYPES } from "@/graph/filter";
 import type { GraphMode } from "@/graph/useGraphControls";
@@ -34,8 +35,42 @@ export interface GraphChromeProps {
   nodeCount: number;
   edgeCount: number;
   onFit: () => void;
+  /**
+   * Float the controls over the canvas (which then fills the whole area) instead of stacking them
+   * above it, so the graph is one surface. Reports the controls' height via `onTopInset` so the
+   * canvas can frame its content below them.
+   */
+  floating?: boolean;
+  onTopInset?: (height: number) => void;
   /** The graph canvas (WebView or Skia) — fills the area under the toolbar rows. */
   children: ReactNode;
+}
+
+/** Capsule of Liquid Glass (iOS 26) with a solid themed fallback; `tint` marks an active control. */
+function FloatSurface({
+  radius,
+  tint,
+  style,
+  children,
+}: {
+  radius: number;
+  tint?: string;
+  style: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const t = useTheme();
+  return (
+    <GlassBar
+      style={[
+        style,
+        { borderRadius: radius, borderWidth: glassActive ? 0 : 1, borderColor: t.border, overflow: "hidden", borderCurve: "continuous" },
+        !glassActive && { backgroundColor: withAlpha(t.surface, 0.94) },
+      ]}
+    >
+      {tint ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} /> : null}
+      {children}
+    </GlassBar>
+  );
 }
 
 /**
@@ -62,44 +97,64 @@ export function GraphChrome({
   nodeCount,
   edgeCount,
   onFit,
+  floating = false,
+  onTopInset,
   children,
 }: GraphChromeProps) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, floating), [t, floating]);
   const [labelOpen, setLabelOpen] = useState(false);
   const [labelAnchorX, setLabelAnchorX] = useState(116);
 
+  // One control surface: Liquid Glass (with a solid fallback) when the controls float over the
+  // canvas, the original flat bordered look when they sit in a bar.
+  const surface = (
+    o: { radius: number; style: StyleProp<ViewStyle>; tint?: string; flat?: StyleProp<ViewStyle> },
+    children: ReactNode,
+  ) =>
+    floating ? (
+      <FloatSurface radius={o.radius} tint={o.tint} style={o.style}>{children}</FloatSurface>
+    ) : (
+      <View style={[o.style, o.flat]}>{children}</View>
+    );
+
   return (
     <View style={[styles.root, { backgroundColor: t.background }]}>
-      {/* ── Header line 1: layout toggle · label dropdown · hulls ── */}
-      <View style={styles.toolbarRow}>
+      <View
+        style={floating ? styles.headerFloating : undefined}
+        pointerEvents={floating ? "box-none" : undefined}
+        onLayout={floating ? (e) => onTopInset?.(e.nativeEvent.layout.height) : undefined}
+      >
+      {/* ── Header line 1: layout toggle · label dropdown · semantic · hulls ── */}
+      <View style={styles.toolbarRow} pointerEvents={floating ? "box-none" : undefined}>
         {/* Layout mode segmented toggle (Force / Radial). Hidden when the parent
             (native header toolbar) drives the mode. */}
-        {showModeToggle ? (
-          <View style={styles.segment}>
-            {([
-              { key: "force" as const, Icon: Circle, label: "Force" },
-              { key: "radial" as const, Icon: GitBranch, label: "Radial" },
-            ]).map(({ key, Icon, label }, idx) => {
-              const active = mode === key;
-              return (
-                <View key={key} style={styles.segmentPart}>
-                  {idx > 0 ? <View style={styles.segmentDivider} /> : null}
-                  <Pressable
-                    onPress={() => setMode(key)}
-                    style={[styles.segmentBtn, active && { backgroundColor: t.accentDim }]}
-                  >
-                    <Icon size={iconSize.control} color={active ? t.accent : t.textTertiary} />
-                    {active ? (
-                      <Text style={[styles.segmentLabel, { color: t.accent }]}>{label}</Text>
-                    ) : null}
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-        ) : null}
+        {showModeToggle
+          ? surface(
+              { radius: 10, style: styles.segment },
+              ([
+                { key: "force" as const, Icon: Circle, label: "Force" },
+                { key: "radial" as const, Icon: GitBranch, label: "Radial" },
+              ]).map(({ key, Icon, label }, idx) => {
+                const active = mode === key;
+                return (
+                  <View key={key} style={styles.segmentPart}>
+                    {idx > 0 ? <View style={styles.segmentDivider} /> : null}
+                    <Pressable
+                      onPress={() => setMode(key)}
+                      style={[styles.segmentBtn, active && { backgroundColor: t.accentDim }]}
+                    >
+                      <Icon size={iconSize.control} color={active ? t.accent : t.textTertiary} />
+                      {active ? (
+                        <Text style={[styles.segmentLabel, { color: t.accent }]}>{label}</Text>
+                      ) : null}
+                    </Pressable>
+                  </View>
+                );
+              }),
+            )
+          : null}
 
         {/* Label mode dropdown — force only (radial drills in, no label modes).
             Hidden when the parent (native left toolbar menu) drives labelMode. */}
@@ -107,86 +162,104 @@ export function GraphChrome({
           <Pressable
             onLayout={(e) => setLabelAnchorX(e.nativeEvent.layout.x)}
             onPress={() => setLabelOpen((v) => !v)}
-            style={[styles.pillBtn, { borderColor: t.border }]}
           >
-            <Type size={iconSize.control} color={t.textSecondary} />
-            <Text style={styles.pillLabel}>{labelMode} labels</Text>
-            <ChevronDown size={iconSize.hint} color={t.textSecondary} />
+            {surface(
+              { radius: 16, style: styles.pillBtn, flat: { borderColor: t.border } },
+              <>
+                <Type size={iconSize.control} color={t.textSecondary} />
+                <Text style={styles.pillLabel}>{labelMode} labels</Text>
+                <ChevronDown size={iconSize.hint} color={t.textSecondary} />
+              </>,
+            )}
           </Pressable>
         ) : null}
 
         {/* Semantic-links toggle — force only, left of Hulls, when available.
             Shows a spinner while the on-device semantic pass is computing. */}
         {mode === "force" && semanticAvailable && onToggleSemantic ? (
-          <Pressable
-            onPress={onToggleSemantic}
-            disabled={semanticLoading}
-            style={[
-              styles.pillBtn,
-              showSemantic
-                ? { borderColor: "transparent", backgroundColor: t.accentDim }
-                : { borderColor: t.border },
-            ]}
-          >
-            {semanticLoading ? (
-              <ActivityIndicator size="small" color={showSemantic ? t.accent : t.textTertiary} style={styles.pillSpinner} />
-            ) : (
-              <Network size={iconSize.control} color={showSemantic ? t.accent : t.textTertiary} />
+          <Pressable onPress={onToggleSemantic} disabled={semanticLoading}>
+            {surface(
+              {
+                radius: 16,
+                style: styles.pillBtn,
+                tint: showSemantic ? withAlpha(t.accent, 0.2) : undefined,
+                flat: showSemantic ? { borderColor: "transparent", backgroundColor: t.accentDim } : { borderColor: t.border },
+              },
+              <>
+                {semanticLoading ? (
+                  <ActivityIndicator size="small" color={showSemantic ? t.accent : t.textTertiary} style={styles.pillSpinner} />
+                ) : (
+                  <Network size={iconSize.control} color={showSemantic ? t.accent : t.textTertiary} />
+                )}
+                <Text style={[styles.pillLabel, { color: showSemantic ? t.accent : t.textTertiary }]}>
+                  Semantic
+                </Text>
+              </>,
             )}
-            <Text style={[styles.pillLabel, { color: showSemantic ? t.accent : t.textTertiary }]}>
-              Semantic
-            </Text>
           </Pressable>
         ) : null}
 
         {/* Cluster hulls toggle — force only */}
         {mode === "force" ? (
-          <Pressable
-            onPress={onToggleHulls}
-            style={[
-              styles.pillBtn,
-              showHulls
-                ? { borderColor: "transparent", backgroundColor: t.accentDim }
-                : { borderColor: t.border },
-            ]}
-          >
-            <Hexagon size={iconSize.control} color={showHulls ? t.accent : t.textTertiary} />
-            <Text style={[styles.pillLabel, { color: showHulls ? t.accent : t.textTertiary }]}>
-              Hulls
-            </Text>
+          <Pressable onPress={onToggleHulls}>
+            {surface(
+              {
+                radius: 16,
+                style: styles.pillBtn,
+                tint: showHulls ? withAlpha(t.accent, 0.2) : undefined,
+                flat: showHulls ? { borderColor: "transparent", backgroundColor: t.accentDim } : { borderColor: t.border },
+              },
+              <>
+                <Hexagon size={iconSize.control} color={showHulls ? t.accent : t.textTertiary} />
+                <Text style={[styles.pillLabel, { color: showHulls ? t.accent : t.textTertiary }]}>
+                  Hulls
+                </Text>
+              </>,
+            )}
           </Pressable>
         ) : null}
 
         <View style={{ flex: 1 }} />
-        <Text style={styles.stats}>
-          {nodeCount} · {edgeCount}
-        </Text>
+        {floating
+          ? surface({ radius: 12, style: styles.statsPill }, <Text style={styles.stats}>{nodeCount} · {edgeCount}</Text>)
+          : <Text style={styles.stats}>{nodeCount} · {edgeCount}</Text>}
       </View>
 
       {/* ── Header line 2: search · node-type toggles ── */}
-      <View style={[styles.toolbarRow, styles.toolbarRow2]}>
-        <SearchField value={search} onChangeText={onSearchChange} containerStyle={{ flex: 1 }} />
+      <View style={[styles.toolbarRow, styles.toolbarRow2]} pointerEvents={floating ? "box-none" : undefined}>
+        {floating
+          ? surface(
+              { radius: 14, style: styles.searchGlass },
+              <SearchField
+                value={search}
+                onChangeText={onSearchChange}
+                containerStyle={{ flex: 1, backgroundColor: "transparent", borderWidth: 0 }}
+              />,
+            )
+          : <SearchField value={search} onChangeText={onSearchChange} containerStyle={{ flex: 1 }} />}
         <View style={styles.typeToggles}>
           {ALL_NODE_TYPES.map((type) => {
             const active = activeTypes.has(type);
             const color = nodeTypeColor(type, t);
             return (
-              <Pressable
-                key={type}
-                onPress={() => toggleType(type)}
-                style={[
-                  styles.typeChip,
+              <Pressable key={type} onPress={() => toggleType(type)} hitSlop={4}>
+                {surface(
                   {
-                    backgroundColor: active ? withAlpha(color, 0.16) : "transparent",
-                    borderColor: active ? withAlpha(color, 0.4) : t.border,
+                    radius: 13,
+                    style: styles.typeChip,
+                    tint: active ? withAlpha(color, 0.26) : undefined,
+                    flat: {
+                      backgroundColor: active ? withAlpha(color, 0.16) : "transparent",
+                      borderColor: active ? withAlpha(color, 0.4) : t.border,
+                    },
                   },
-                ]}
-              >
-                <View style={[styles.typeDot, { backgroundColor: active ? color : t.textTertiary }]} />
+                  <View style={[styles.typeDot, { backgroundColor: active ? color : t.textTertiary }]} />,
+                )}
               </Pressable>
             );
           })}
         </View>
+      </View>
       </View>
 
       {/* Label-mode dropdown menu (overlay) — only when the in-body pill is
@@ -231,21 +304,20 @@ export function GraphChrome({
             inset so it clears the home indicator / tab bar. Force only. */}
         {mode === "force" ? (
           <View style={[styles.bottomRow, { bottom: 16 + insets.bottom }]} pointerEvents="box-none">
-            <View style={styles.legend}>
-              {ALL_NODE_TYPES.filter((type) => activeTypes.has(type)).map((type) => (
+            {surface(
+              { radius: 14, style: styles.legend },
+              ALL_NODE_TYPES.filter((type) => activeTypes.has(type)).map((type) => (
                 <View key={type} style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: nodeTypeColor(type, t) }]} />
                   <Text style={styles.legendLabel} numberOfLines={1}>{type}</Text>
                 </View>
-              ))}
-            </View>
-            <Pressable
-              onPress={onFit}
-              style={styles.fitBtn}
-              accessibilityLabel="Zoom to fit"
-              hitSlop={8}
-            >
-              <Maximize2 size={iconSize.control} color={t.textSecondary} />
+              )),
+            )}
+            <Pressable onPress={onFit} accessibilityLabel="Zoom to fit" hitSlop={8}>
+              {surface(
+                { radius: 20, style: styles.fitBtn },
+                <Maximize2 size={iconSize.control} color={t.textSecondary} />,
+              )}
             </Pressable>
           </View>
         ) : null}
@@ -254,20 +326,24 @@ export function GraphChrome({
   );
 }
 
-function makeStyles(t: Theme) {
+function makeStyles(t: Theme, floating: boolean) {
+  // Floating controls get their surface (glass) from FloatSurface; flat ones carry it in the style.
+  const flatSurface = floating
+    ? null
+    : { borderWidth: 1, borderColor: t.border, backgroundColor: withAlpha(t.surface, 0.9) };
   return StyleSheet.create({
     root: { flex: 1 },
+    headerFloating: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 5 },
     toolbarRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
       paddingHorizontal: 12,
       paddingVertical: 7,
-      backgroundColor: t.surface,
+      ...(floating ? null : { backgroundColor: t.surface }),
     },
     toolbarRow2: {
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: t.border,
+      ...(floating ? null : { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border }),
       paddingTop: 0,
     },
     // Layout segmented toggle
@@ -303,6 +379,8 @@ function makeStyles(t: Theme) {
     // Constrain the spinner to the icon footprint so the pill doesn't resize
     // when it swaps between the Network icon and the ActivityIndicator.
     pillSpinner: { width: iconSize.control, height: iconSize.control },
+    statsPill: { paddingHorizontal: 10, paddingVertical: 4 },
+    searchGlass: { flex: 1 },
     stats: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
     // Node-type toggles (line 2)
     typeToggles: { flexDirection: "row", alignItems: "center", gap: 6 },
@@ -361,9 +439,7 @@ function makeStyles(t: Theme) {
       paddingVertical: 8,
       paddingHorizontal: 12,
       borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-      backgroundColor: withAlpha(t.surface, 0.9),
+      ...flatSurface,
       flexShrink: 1,
     },
     legendItem: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
@@ -375,9 +451,7 @@ function makeStyles(t: Theme) {
       alignItems: "center",
       justifyContent: "center",
       borderRadius: 10,
-      borderWidth: 1,
-      borderColor: t.border,
-      backgroundColor: withAlpha(t.surface, 0.9),
+      ...flatSurface,
       flexShrink: 0,
     },
   });

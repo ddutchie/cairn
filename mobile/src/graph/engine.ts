@@ -73,6 +73,8 @@ export class GraphEngine {
   private opts: EngineOptions;
   private w = 0;
   private h = 0;
+  /** Height of controls floating over the top of the canvas; content is framed below it. */
+  private top = 0;
   private cam: Camera = IDENTITY;
   private raf = 0;
   private dirty = true;
@@ -114,10 +116,26 @@ export class GraphEngine {
     this.w = w;
     this.h = h;
     if (this.opts.mode === "force") {
-      this.setCamera(first ? centeredCamera(w, h) : { ...this.cam, tx: this.cam.tx + dw / 2, ty: this.cam.ty + dh / 2 });
+      this.setCamera(first ? centeredCamera(w, h, undefined, this.top) : { ...this.cam, tx: this.cam.tx + dw / 2, ty: this.cam.ty + dh / 2 });
     }
     if (this.root && this.focus) this.resetRadialGeometry();
     if (first) this.rebuild();
+    this.invalidate();
+  }
+
+  /** Controls float over the canvas: frame and centre content in the area below them. */
+  setTopInset(top: number) {
+    if (Math.abs(top - this.top) < 0.5) return;
+    this.top = top;
+    if (this.w === 0) return;
+    if (this.opts.mode === "force") {
+      if (!this.userInteracted && this.layout) {
+        if (this.didAutoFit) this.fit(true);
+        else this.setCamera(centeredCamera(this.w, this.h, undefined, top));
+      }
+    } else if (this.root && this.focus) {
+      this.resetRadialGeometry();
+    }
     this.invalidate();
   }
 
@@ -181,7 +199,7 @@ export class GraphEngine {
       // A new node set refits once it looks settled (as the WebView did).
       this.didAutoFit = false;
       this.userInteracted = false;
-      if (fresh) this.setCamera(centeredCamera(this.w, this.h));
+      if (fresh) this.setCamera(centeredCamera(this.w, this.h, undefined, this.top));
       if (this.opts.reducedMotion) {
         this.layout.tick(300);
         this.didAutoFit = true;
@@ -207,7 +225,11 @@ export class GraphEngine {
   }
 
   private maxR() {
-    return Math.min(this.w, this.h) / 2 - 20;
+    return Math.min(this.w, this.h - this.top) / 2 - 20;
+  }
+
+  private centerY() {
+    return this.top + (this.h - this.top) / 2;
   }
 
   // ── camera ─────────────────────────────────────────────────────────────────
@@ -227,7 +249,7 @@ export class GraphEngine {
     if (!this.layout || this.w === 0) return;
     const b = boundsOf(this.layout.nodes);
     if (!b) return;
-    const to = fitCamera(b, this.w, this.h);
+    const to = fitCamera(b, this.w, this.h, undefined, this.top);
     if (animated && !this.opts.reducedMotion) {
       this.camAnim = { from: this.cam, to, start: performance.now() };
       this.schedule();
@@ -313,7 +335,7 @@ export class GraphEngine {
     }
     if (!this.root || !this.focus) return;
     const arcs = computeArcs(this.root, this.current, this.focus, this.geom, this.maxR());
-    const hit = hitRadial(arcs, this.geom.innerR - 3, x - this.w / 2, y - this.h / 2);
+    const hit = hitRadial(arcs, this.geom.innerR - 3, x - this.w / 2, y - this.centerY());
     if (!hit) return;
     if (hit.kind === "hub") {
       if (this.focus !== this.root) {
@@ -438,6 +460,8 @@ export class GraphEngine {
           t: this.theme,
           width: this.w,
           height: this.h,
+          cx: this.w / 2,
+          cy: this.centerY(),
           arcs,
           geom: this.geom,
           focus: this.focus,

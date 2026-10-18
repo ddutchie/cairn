@@ -134,6 +134,9 @@ export function recordForceScene(s: ForceSceneInput): SkPicture {
 export interface RadialSceneInput {
   t: Theme;
   width: number;
+  /** Centre of the circle, in canvas px (below any floating controls). */
+  cx: number;
+  cy: number;
   height: number;
   arcs: readonly DrawArc[];
   geom: RingGeom;
@@ -146,7 +149,7 @@ export function recordRadialScene(s: RadialSceneInput): SkPicture {
   const { t } = s;
   const rec = Skia.PictureRecorder();
   const c = rec.beginRecording(Skia.XYWHRect(0, 0, s.width, s.height));
-  c.translate(s.width / 2, s.height / 2);
+  c.translate(s.cx, s.cy);
 
   const edge = paint(t.background, PaintStyle.Stroke, 1);
   for (const a of s.arcs) {
