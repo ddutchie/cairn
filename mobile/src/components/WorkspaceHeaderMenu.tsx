@@ -48,21 +48,41 @@ export function WorkspaceHeaderMenu() {
 
   return (
     <Stack.Toolbar placement="left">
-      <Stack.Toolbar.Menu
-        icon={ICON_CAIRN}
-        iconRenderingMode="template"
-        accessibilityLabel="Switch workspace"
-      >
-        {sources.map((s) => (
-          <Stack.Toolbar.MenuAction
-            key={s.workspaceId}
-            isOn={s.workspaceId === active}
-            onPress={() => onSwitch(s.workspaceId)}
-          >
-            {s.name ?? "Workspace"}
-          </Stack.Toolbar.MenuAction>
-        ))}
-      </Stack.Toolbar.Menu>
+      <WorkspaceMenuItems active={active} sources={sources} onSwitch={onSwitch} />
     </Stack.Toolbar>
+  );
+}
+
+/**
+ * The workspace-switcher menu itself, without the Toolbar wrapper — for
+ * embedding inside another `Stack.Toolbar` (the Projects split view's native
+ * header carries it alongside bridged column items when the Duo side rail
+ * would otherwise swallow the sidebar's own buttons).
+ */
+export function WorkspaceMenuItems({
+  active,
+  sources,
+  onSwitch,
+}: {
+  active: string | null;
+  sources: { workspaceId: string; name?: string | null }[];
+  onSwitch: (ws: string) => void;
+}) {
+  return (
+    <Stack.Toolbar.Menu
+      icon={ICON_CAIRN}
+      iconRenderingMode="template"
+      accessibilityLabel="Switch workspace"
+    >
+      {sources.map((s) => (
+        <Stack.Toolbar.MenuAction
+          key={s.workspaceId}
+          isOn={s.workspaceId === active}
+          onPress={() => onSwitch(s.workspaceId)}
+        >
+          {s.name ?? "Workspace"}
+        </Stack.Toolbar.MenuAction>
+      ))}
+    </Stack.Toolbar.Menu>
   );
 }

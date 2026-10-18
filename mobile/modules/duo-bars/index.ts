@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 
 interface DuoBarsNative {
+  setVerticalBarCompression(mode: string): Promise<Record<string, unknown> | number | boolean>;
   preferTabBarCompression(): Promise<Record<string, unknown> | number | boolean>;
 }
 
@@ -15,22 +16,27 @@ export function duoBarsAvailable(): boolean {
 }
 
 /**
- * Asks the system rail to preserve the tab bar and collapse toolbar items
- * into ··· first (Apple's default compression) on the tab screens. The Duo
- * rail merges the UIKit tab bar with SwiftUI column toolbars hosted inside
- * it — a mix the SwiftUI-only view modifiers can't govern — so this stamps
- * the owning view controllers' `navigationItem.verticalBarCompressionBehavior`
- * instead. Resolves the native diagnostic dict (TEMP-DIAG shape).
- * No-op off iOS / below 27.1.
+ * Asks the system rail which bar survives when room runs out — "tabBar"
+ * (toolbar folds into ··· first, tabs preserved) or "barItems" (tab bar
+ * minimizes first, toolbar preserved) — by stamping the owning view
+ * controllers' `navigationItem.verticalBarCompressionBehavior`. Resolves the
+ * native diagnostic dict (TEMP-DIAG shape). No-op off iOS / below 27.1.
  */
-export async function preferTabBarCompression(): Promise<Record<string, unknown> | false> {
+export async function setVerticalBarCompression(
+  mode: "tabBar" | "barItems" | "automatic",
+): Promise<Record<string, unknown> | false> {
   if (!native) return false;
   try {
-    const result = await native.preferTabBarCompression();
+    const result = await native.setVerticalBarCompression(mode);
     return result != null && typeof result === "object" ? (result as Record<string, unknown>) : false;
   } catch {
     return false;
   }
+}
+
+/** Back-compat alias; prefer setVerticalBarCompression. */
+export async function preferTabBarCompression(): Promise<Record<string, unknown> | false> {
+  return setVerticalBarCompression("tabBar");
 }
 
 /**

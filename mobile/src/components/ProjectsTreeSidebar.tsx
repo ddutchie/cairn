@@ -33,6 +33,7 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { CairnStack } from "@/components/CairnStack";
 import { toolbarVerticalBehavior, toolbarVerticalCompressionBehavior } from "@modules/duo-bars";
+import { navigationBarHidden } from "@modules/swiftui-modifiers";
 import { WorkspaceProgressHeader } from "@/components/WorkspaceProgressHeader";
 import { getWorkspaceProgress, type WorkspaceProgress } from "@/db/queries";
 import type { ProjectsList } from "@/components/projects-tree";
@@ -69,6 +70,7 @@ export function ProjectsTreeSidebar({
   onOpenNote,
   refreshKey,
   disableVerticalBar = false,
+  hideBar = false,
 }: {
   /** Active workspace name (doubles as the switcher label). */
   title: string;
@@ -90,6 +92,11 @@ export function ProjectsTreeSidebar({
    * pile onto the tab rail with no shared compression.
    */
   disableVerticalBar?: boolean;
+  /**
+   * Hide this column's whole bar (the Duo-rail native header carries the
+   * title and buttons instead, like the iPad bridge).
+   */
+  hideBar?: boolean;
 }) {
   const t = useTheme();
   const router = useRouter();
@@ -178,6 +185,8 @@ export function ProjectsTreeSidebar({
         ...(disableVerticalBar
           ? [toolbarVerticalBehavior("disabled"), toolbarVerticalCompressionBehavior("prefersTabBar")]
           : []),
+        // Duo rail: the native header carries title + buttons; hide this bar.
+        ...(hideBar ? [navigationBarHidden()] : []),
         // Fill the column, safe areas included, with the page colour.
         background(t.background),
       ]}

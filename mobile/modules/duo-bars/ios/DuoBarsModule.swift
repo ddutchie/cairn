@@ -36,15 +36,17 @@ public class DuoBarsModule: Module {
     /// Spike: engage the SYSTEM rail coordination for the tab screens. The
     /// folded-Duo rail merges the UIKit tab bar with SwiftUI column toolbars
     /// hosted inside the tab — a cross-framework mix the SwiftUI-only
-    /// modifiers above don't govern. Setting the screens'
-    /// `navigationItem.verticalBarCompressionBehavior = .prefersTabBar`
-    /// (Apple's default: toolbar collapses into ··· first, tabs preserved)
-    /// targets the container that owns the rail.
-    /// Resolves a diagnostic dict: { ok, reason?, controller?, screens? } —
-    /// TEMP-DIAG shape, narrowed once the rail responds.
-    AsyncFunction("preferTabBarCompression") { (promise: Promise) in
+    /// modifiers above don't govern. Stamping the screens'
+    /// `navigationItem.verticalBarCompressionBehavior` targets the container
+    /// that owns the rail. `mode`: "tabBar" (toolbar folds into ··· first),
+    /// "barItems" (tab bar minimizes first), or "automatic".
+    /// Resolves a diagnostic dict — TEMP-DIAG shape, narrowed once the rail
+    /// responds.
+    AsyncFunction("setVerticalBarCompression") { (mode: String, promise: Promise) in
       DispatchQueue.main.async {
         guard #available(iOS 27.1, *) else { promise.resolve(["ok": false, "reason": "old-ios"] as [String: Any]); return }
+        let behavior: UIVerticalBarCompressionBehavior =
+          mode == "barItems" ? .prefersBarItems : mode == "tabBar" ? .prefersTabBar : .automatic
         guard let tbc = Self.findTabBarController() else { promise.resolve(["ok": false, "reason": "no-tbc"] as [String: Any]); return }
         var screens: [UIViewController] = []
         if let vcs = tbc.viewControllers {
@@ -62,7 +64,7 @@ public class DuoBarsModule: Module {
           return
         }
         for screen in screens {
-          screen.navigationItem.verticalBarCompressionBehavior = .prefersTabBar
+          screen.navigationItem.verticalBarCompressionBehavior = behavior
         }
         var chain: [String] = ["\(type(of: tbc))"]
         var current = tbc.selectedViewController
@@ -72,7 +74,14 @@ public class DuoBarsModule: Module {
           chain.append("\(type(of: vc))")
           current = vc.children.first ?? vc.presentedViewController
         }
-        promise.resolve(["ok": true, "controller": "\(type(of: tbc))", "screens": screens.count, "hooked": VerticalBarOptOut.hooked, "chain": chain] as [String: Any])
+        promise.resolve(["ok": true, "mode": mode, "controller": "\(type(of: tbc))", "screens": screens.count, "hooked": VerticalBarOptOut.hooked, "chain": chain] as [String: Any])
+      }
+    }
+
+    /// Back-compat alias; prefer setVerticalBarCompression.
+    AsyncFunction("preferTabBarCompression") { (promise: Promise) in
+      DispatchQueue.main.async {
+        promise.resolve(["ok": false, "reason": "use-setVerticalBarCompression"] as [String: Any])
       }
     }
   }
