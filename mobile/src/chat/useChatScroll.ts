@@ -132,8 +132,12 @@ export function useChatScroll(msgCount: number): ChatScroll {
   }, [msgCount, resumeKey]);
 
   // Lift the composer just above the tab bar when the keyboard is closed
-  // (shared with the search scope bar so both rest at the same height).
-  const closedLift = tabBarClosedLift(insets.bottom);
+  // (shared with the search scope bar so both rest at the same height). With
+  // the tabs in a side rail (Duo) there is no bottom tab bar to hug — the
+  // composer only clears the home indicator, otherwise TAB_BAR_BASE floats it
+  // ~49pt too high over empty space.
+  const sideRail = insets.left > 0 || insets.right > 0;
+  const closedLift = sideRail ? insets.bottom * 0.5 : tabBarClosedLift(insets.bottom);
 
   // Height the composer occupies, measured lazily (falls back before layout).
   const [composerH, setComposerH] = useState(COMPOSER_FALLBACK_H);
