@@ -95,6 +95,8 @@ const ROLE_MAP = {
   "@dagrejs/dagre":                ["Dagre",               "Graph auto-layout",           "Visualisation"],
   "d3":                            ["D3",                  "Analytics & graph visualisation","Visualisation"],
   "d3-hierarchy":                  ["d3-hierarchy",        "Radial tree layout",          "Visualisation"],
+  "3d-force-graph":                ["3d-force-graph",      "3D graph view",               "Visualisation"],
+  "three":                         ["three.js",            "3D graph rendering",          "Visualisation"],
   "d3-zoom":                       ["d3-zoom",             "SVG pan & zoom",              "Visualisation"],
   "d3-selection":                  ["d3-selection",        "SVG DOM helpers",             "Visualisation"],
   "d3-sankey":                     ["d3-sankey",           "Sankey pipeline diagram",     "Visualisation"],
