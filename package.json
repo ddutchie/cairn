@@ -162,6 +162,7 @@
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.10.2",
+    "3d-force-graph": "^1.80.1",
     "better-sqlite3": "^13.0.3",
     "d3": "^7.9.0",
     "d3-hierarchy": "^3.1.2",
@@ -183,6 +184,7 @@
     "rehype-katex": "^7.0.1",
     "remark-breaks": "^4.0.0",
     "remark-math": "^6.0.0",
+    "three": "^0.186.1",
     "umap-js": "^1.4.0"
   },
   "devDependencies": {
@@ -215,6 +217,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.186.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.5",

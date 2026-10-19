@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon, Focus, X,
+  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon, Focus, X, Box,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -14,6 +14,7 @@ import { GraphDetailPanel } from "./GraphDetailPanel";
 import { NodeTypeChip } from "./NodeTypeChip";
 import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
+import { Graph3DCanvas } from "./Graph3DCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { EmptyState as EmptyStateView } from "@/components/ui/empty-state";
@@ -30,6 +31,9 @@ const EDGE_LEGEND: Array<{ label: string; color: string; dash: boolean }> = [
   { label: "Semantic", color: "var(--text-tertiary)", dash: true },
   { label: "Co-mention", color: "var(--border)", dash: true },
 ];
+
+/** Layouts that render the node/edge graph (search, type toggles, legend apply). */
+const isNodeGraphLayout = (l: string) => l === "force" || l === "radial" || l === "3d";
 
 export function KnowledgeGraphView() {
   const {
@@ -126,7 +130,7 @@ export function KnowledgeGraphView() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
-        if (graphLayout !== "force" && graphLayout !== "radial") return;
+        if (!isNodeGraphLayout(graphLayout)) return;
         e.preventDefault();
         graphSearchRef.current?.focus();
         graphSearchRef.current?.select();
@@ -142,7 +146,7 @@ export function KnowledgeGraphView() {
   // Clear graph search when leaving force/radial
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (graphLayout !== "force" && graphLayout !== "radial") setGraphSearch("");
+    if (!isNodeGraphLayout(graphLayout)) setGraphSearch("");
   }, [graphLayout]);
 
   const selectedNode = selectedGraphNodeId
@@ -170,7 +174,7 @@ export function KnowledgeGraphView() {
   // For force/radial: further filter by search query
   const searchedGraph = useMemo(() => {
     const q = graphSearch.trim().toLowerCase();
-    if (!q || (graphLayout !== "force" && graphLayout !== "radial")) return baseGraph;
+    if (!q || (!isNodeGraphLayout(graphLayout))) return baseGraph;
 
     // Build a map of tag-member edges so we can find nodes by tag name
     const tagNameMap = new Map<string, string>();
@@ -279,7 +283,8 @@ export function KnowledgeGraphView() {
             [
               { key: "force"  as const, icon: <Circle size={12} />,    label: "Force",  tip: "Force-directed graph" },
               { key: "radial" as const, icon: <GitBranch size={12} />, label: "Radial", tip: "Radial hierarchy tree"  },
-            ] as { key: "force" | "radial"; icon: React.ReactNode; label: string; tip: string }[]
+              { key: "3d"     as const, icon: <Box size={12} />,       label: "3D",     tip: "Rotatable 3D graph" },
+            ] as { key: "force" | "radial" | "3d"; icon: React.ReactNode; label: string; tip: string }[]
           ).map(({ key, icon, label, tip }, idx) => {
             const isActive = graphLayout === key;
             return (
@@ -287,7 +292,7 @@ export function KnowledgeGraphView() {
                 {idx > 0 && <div className="w-px h-5 bg-[var(--border)]" />}
                 <Tooltip content={tip}>
                   <button
-                    onClick={() => setGraphLayout(key as "force" | "radial")}
+                    onClick={() => setGraphLayout(key)}
                   className={cn(
                     "flex items-center px-2.5 py-1.5 text-xs transition-colors",
                     isActive
@@ -391,7 +396,7 @@ export function KnowledgeGraphView() {
         )}
 
         {/* Spacing / Breathing room slider */}
-        {(graphLayout === "force" || graphLayout === "radial") && (
+        {isNodeGraphLayout(graphLayout) && (
           <div className="flex items-center gap-2 px-2.5 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)]">
             <Tooltip content="Adjust graph spacing / breathing room">
               <div className="flex items-center gap-1.5 text-[var(--text-secondary)] cursor-help">
@@ -462,7 +467,7 @@ export function KnowledgeGraphView() {
         )}
 
         {/* Search + type toggles — shown for force and radial */}
-        {(graphLayout === "force" || graphLayout === "radial") && (
+        {isNodeGraphLayout(graphLayout) && (
           <>
             {/* Search input */}
             <div className="relative flex items-center">
@@ -576,6 +581,17 @@ export function KnowledgeGraphView() {
             />
           )}
 
+          {!graphError && filteredNodes.length > 0 && graphLayout === "3d" && (
+            <Graph3DCanvas
+              graph={searchedGraph}
+              selectedNodeId={selectedGraphNodeId}
+              onNodeClick={handleNodeClick}
+              onBackgroundClick={handleBackgroundClick}
+              spacing={spacing}
+              semanticThreshold={semanticThreshold}
+            />
+          )}
+
           {!graphError && filteredNodes.length > 0 && graphLayout === "radial" && (
             <RadialTreeCanvas
               graph={searchedGraph}
@@ -590,7 +606,7 @@ export function KnowledgeGraphView() {
 
 
           {/* Node type legend — only shown in graph modes */}
-          {filteredNodes.length > 0 && (graphLayout === "force" || graphLayout === "radial") && (
+          {filteredNodes.length > 0 && isNodeGraphLayout(graphLayout) && (
             <div className="absolute bottom-4 left-4 flex flex-col gap-2">
               <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface)]/90 border border-[var(--border)] backdrop-blur-sm">
                 {ALL_NODE_TYPES.filter((t) => graphFilters.nodeTypes.includes(t)).map((t) => (
@@ -631,7 +647,7 @@ export function KnowledgeGraphView() {
           <GraphDetailPanel
             node={selectedNode}
             onClose={() => setSelectedGraphNode(null)}
-            onFocus={graphLayout === "force" || graphLayout === "radial" ? handleFocus : undefined}
+            onFocus={isNodeGraphLayout(graphLayout) ? handleFocus : undefined}
             focused={selectedNode.id === focusNode?.id}
           />
         )}
