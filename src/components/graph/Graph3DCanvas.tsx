@@ -255,7 +255,8 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onBackground
     let gizmoRaf = 0;
     void Promise.all([import("3d-force-graph"), import("three")]).then(([{ default: ForceGraph3D }, THREE]) => {
       if (cancelled || !containerRef.current) return;
-      const fg = (ForceGraph3D as unknown as () => (el: HTMLElement) => Instance)()(containerRef.current);
+      // Orbit controls (not the default trackball) — only they support autoRotate.
+      const fg = (ForceGraph3D as unknown as (o: { controlType: "orbit" }) => (el: HTMLElement) => Instance)({ controlType: "orbit" })(containerRef.current);
       fg.showNavInfo(false)
         .nodeOpacity(0.95)
         .nodeResolution(12)
