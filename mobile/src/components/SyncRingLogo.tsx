@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Animated, Easing, Image, View, type ImageSourcePropType } from "react-native";
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { useSyncStatus } from "@/sync/useSyncStatus";
@@ -20,7 +20,7 @@ export function SyncRingLogo() {
   const offline = state === "offline";
   const color = offline ? t.textTertiary : pending > 0 ? t.warning : t.success;
 
-  const spin = useRef(new Animated.Value(0)).current;
+  const [spin] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (!syncing) {
       spin.setValue(0);
