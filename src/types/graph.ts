@@ -6,7 +6,7 @@ import type { GraphNodeType, GraphEdgeType } from "../../shared/types/domain";
 // Node/edge payloads are shared with the main process (shared/types/graph.ts).
 export type { GraphNode, GraphEdge, KnowledgeGraph } from "../../shared/types/graph";
 
-export type GraphLayoutMode = "force" | "radial";
+export type GraphLayoutMode = "force" | "radial" | "3d";
 
 /** How the currently selected conversation is presented in the app shell. */
 export type SessionPresentation = "center" | "drawer" | "workbench";
