@@ -19,12 +19,14 @@ const message: ConversationMessage = {
       messages: [
         { version: "v0.9", createSurface: { surfaceId: "t", catalogId: CATALOG } },
         { version: "v0.9", updateComponents: { surfaceId: "t", components: [
-          { id: "root", component: "Column", children: ["name", "go"] },
+          { id: "root", component: "Column", children: ["name", "prio", "started", "go"] },
           { id: "name", component: "TextField", label: "Title", value: { path: "/title" } },
+          { id: "prio", component: "ChoicePicker", label: "Priority", options: [{ label: "Low", value: "low" }, { label: "Medium", value: "medium" }, { label: "High", value: "high" }], value: { path: "/prio" } },
+          { id: "started", component: "CheckBox", label: "Start in progress", value: { path: "/started" } },
           { id: "gl", component: "Text", text: "Create card" },
-          { id: "go", component: "Button", child: "gl", action: { event: { name: "create_card", context: { title: { path: "/title" } } } } },
+          { id: "go", component: "Button", child: "gl", action: { event: { name: "create_card", context: { title: { path: "/title" }, priority: { path: "/prio" }, started: { path: "/started" } } } } },
         ] } },
-        { version: "v0.9", updateDataModel: { surfaceId: "t", path: "/", value: { title: "" } } },
+        { version: "v0.9", updateDataModel: { surfaceId: "t", path: "/", value: { title: "", prio: ["medium"], started: false } } },
       ],
     },
   }],

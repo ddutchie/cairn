@@ -5,18 +5,32 @@ import { MessageProcessor } from "@a2ui/web_core/v0_9";
 import { basicCatalog } from "@a2ui/web_core/v0_9/basic_catalog";
 import { A2uiSurface } from "@a2ui/react/v0_9";
 import { formatA2uiAction, useA2uiActionSender } from "./a2ui-action-context";
+import "./a2ui-theme.css";
+
+// Remember a submitted surface across reloads (the transcript re-renders it from
+// the saved tool args, which carry no record of the user's action).
+const submittedKey = (callId: string) => `a2ui-submitted:${callId}`;
+function readSubmitted(callId?: string): string | null {
+  if (!callId) return null;
+  try { return localStorage.getItem(submittedKey(callId)); } catch { return null; }
+}
+function writeSubmitted(callId: string | undefined, text: string) {
+  if (!callId) return;
+  try { localStorage.setItem(submittedKey(callId), text); } catch { /* storage unavailable */ }
+}
 
 type SurfaceProp = React.ComponentProps<typeof A2uiSurface>["surface"];
 
 interface Props {
+  callId?: string;
   title?: string;
   messages: unknown[];
 }
 
 /** Renders the surfaces described by a `render_ui` tool call's messages. */
-export default function A2uiToolSurface({ title, messages }: Props) {
+export default function A2uiToolSurface({ callId, title, messages }: Props) {
   const send = useA2uiActionSender();
-  const [sent, setSent] = useState<string | null>(null);
+  const [sent, setSent] = useState<string | null>(() => readSubmitted(callId));
   const [error, setError] = useState<string | null>(null);
 
   // The handler reads `send` through a ref-like closure so a context change
@@ -31,6 +45,7 @@ export default function A2uiToolSurface({ title, messages }: Props) {
     const p = new MessageProcessor([basicCatalog], (action) => {
       const text = formatA2uiAction(action as { name?: string; context?: unknown });
       setSent(text);
+      writeSubmitted(callId, text);
       sendRef.current?.(text);
     });
     try {
@@ -40,7 +55,7 @@ export default function A2uiToolSurface({ title, messages }: Props) {
       queueMicrotask(() => setError(e instanceof Error ? e.message : String(e)));
     }
     return p;
-  }, [payloadKey]);
+  }, [payloadKey, callId]);
 
   const [surfaces, setSurfaces] = useState(() => Array.from(processor.model.surfacesMap.values()));
   useEffect(() => {
@@ -55,8 +70,10 @@ export default function A2uiToolSurface({ title, messages }: Props) {
     <div data-testid="a2ui-surface" className="w-full max-w-xl rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
       {title && <div className="mb-1.5 text-[0.786rem] font-medium text-[var(--text-primary)]">{title}</div>}
       {error && <div className="text-[0.714rem] text-[var(--danger)]">Couldn&apos;t render UI: {error}</div>}
-      {surfaces.map((s) => <A2uiSurface key={s.id} surface={s as unknown as SurfaceProp} />)}
-      {sent && <div className="mt-1.5 text-[0.643rem] text-[var(--text-tertiary)]">Sent: {sent}</div>}
+      <div className="cairn-a2ui" data-submitted={sent ? "true" : "false"} inert={sent ? true : undefined}>
+        {surfaces.map((s) => <A2uiSurface key={s.id} surface={s as unknown as SurfaceProp} />)}
+      </div>
+      {sent && <div className="mt-1.5 text-[0.643rem] text-[var(--text-tertiary)]">Submitted · {sent.replace(/^\[UI action\] /, "")}</div>}
     </div>
   );
 }

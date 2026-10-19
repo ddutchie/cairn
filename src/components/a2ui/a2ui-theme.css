@@ -1,0 +1,59 @@
+/*
+ * Maps the A2UI basic catalog's design variables onto Cairn's theme tokens.
+ *
+ * The catalog declares its defaults on :where(:root), and derived values
+ * (spacing steps, font sizes, primary-light/dark/hover) are substituted there
+ * — so overriding a base variable here is not enough; every derived variable
+ * is redeclared in this scope too.
+ */
+.cairn-a2ui {
+  color-scheme: inherit;
+
+  --a2ui-color-background: var(--surface);
+  --a2ui-color-on-background: var(--text-primary);
+  --a2ui-color-surface: var(--surface-2);
+  --a2ui-color-on-surface: var(--text-primary);
+
+  --a2ui-color-primary: var(--accent);
+  --a2ui-color-primary-light: color-mix(in srgb, var(--accent) 80%, white);
+  --a2ui-color-primary-dark: color-mix(in srgb, var(--accent) 80%, black);
+  --a2ui-color-primary-hover: var(--accent-hover);
+  --a2ui-color-on-primary: var(--accent-fg);
+
+  --a2ui-color-secondary: var(--surface-2);
+  --a2ui-color-secondary-light: color-mix(in srgb, var(--surface-2) 85%, white);
+  --a2ui-color-secondary-dark: color-mix(in srgb, var(--surface-2) 85%, black);
+  --a2ui-color-secondary-hover: color-mix(in srgb, var(--surface-2) 90%, var(--text-primary));
+  --a2ui-color-on-secondary: var(--text-primary);
+
+  --a2ui-color-input: var(--surface-2);
+  --a2ui-color-on-input: var(--text-primary);
+  --a2ui-color-border: var(--border);
+  --a2ui-border-radius: 0.375rem;
+  --a2ui-border-width: 1px;
+  --a2ui-border: 1px solid var(--border);
+
+  --a2ui-grid-base: 0.4rem;
+  --a2ui-spacing-m: var(--a2ui-grid-base);
+  --a2ui-spacing-s: calc(var(--a2ui-spacing-m) / 2);
+  --a2ui-spacing-xs: calc(var(--a2ui-spacing-s) / 2);
+  --a2ui-spacing-l: calc(var(--a2ui-spacing-m) * 2);
+  --a2ui-spacing-xl: calc(var(--a2ui-spacing-l) * 2);
+
+  --a2ui-font-size: 0.786rem;
+  --a2ui-font-scale: 1.15;
+  --a2ui-font-size-m: var(--a2ui-font-size);
+  --a2ui-font-size-s: calc(var(--a2ui-font-size-m) / var(--a2ui-font-scale));
+  --a2ui-font-size-xs: calc(var(--a2ui-font-size-s) / var(--a2ui-font-scale));
+  --a2ui-font-size-l: calc(var(--a2ui-font-size-m) * var(--a2ui-font-scale));
+  --a2ui-font-size-xl: calc(var(--a2ui-font-size-l) * var(--a2ui-font-scale));
+
+  accent-color: var(--accent);
+  color: var(--text-primary);
+  font-size: var(--a2ui-font-size);
+}
+
+/* After an action the surface is read-only. */
+.cairn-a2ui[data-submitted="true"] {
+  opacity: 0.6;
+}

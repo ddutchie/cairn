@@ -222,7 +222,7 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
   if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
   if (toolCall.name === "render_ui" && toolCall.ok) {
     const ui = parseRenderUi(toolCall);
-    if (ui) return <Suspense fallback={null}><A2uiToolSurface title={ui.title} messages={ui.messages} /></Suspense>;
+    if (ui) return <Suspense fallback={null}><A2uiToolSurface callId={toolCall.callId} title={ui.title} messages={ui.messages} /></Suspense>;
   }
   if (toolCall.name === "get_user_writing_style" && writingStyleNeedsSetup(toolCall.output)) return <WritingStylePromptChip output={toolCall.output} />;
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
