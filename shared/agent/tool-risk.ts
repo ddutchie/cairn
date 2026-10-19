@@ -34,7 +34,7 @@ export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
   "get_context", "get_item", "search_notes", "search_tasks",
   "get_user_writing_style", "get_idea_flow", "get_graph", "codebase_query",
-  "ask_questions", "skill",
+  "ask_questions", "render_ui", "skill",
   // Read-only continuable-child discovery (dsh-tool-subagent-control/list-agents).
   "list_agents",
   // Background-job reads (dsh-tool-jobs): listing and collecting a job's

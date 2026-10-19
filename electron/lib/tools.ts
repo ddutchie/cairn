@@ -44,6 +44,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   codebase_query:         (a) => `Codebase ${a.action ?? "query"}: "${a.query}"`,
   ask_questions:          (a) => `Asking ${(a.questions as unknown[])?.length ?? ""} question${(a.questions as unknown[])?.length !== 1 ? "s" : ""}`,
   suggest_connections:    (a) => `Suggesting ${(a.actions as unknown[])?.length ?? ""} connection${(a.actions as unknown[])?.length !== 1 ? "s" : ""}`,
+  render_ui:              (a) => a.title ? `Showing UI: ${a.title}` : "Showing interactive UI",
   spawn_tasks_from_note:  () => "Spawning tasks from note",
 };
 

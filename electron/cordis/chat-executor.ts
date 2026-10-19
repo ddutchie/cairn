@@ -267,6 +267,23 @@ export async function executeTool(
       }
       return { ok: true, questions: args.questions };
     }
+    case "render_ui": {
+      // The renderer draws the surface from this call's args. Validate the
+      // message envelope here so a malformed payload fails loudly and the model
+      // retries, instead of the user seeing an empty card.
+      const parsed = TOOL_SCHEMAS.render_ui.schema.safeParse(args);
+      if (!parsed.success) {
+        return { error: `render_ui: invalid arguments (${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}).` };
+      }
+      const KINDS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"];
+      const bad = parsed.data.messages
+        .map((m, i) => (m.version === "v0.9" && KINDS.some((k) => k in m) ? null : `messages.${i}`))
+        .filter((x): x is string => x !== null);
+      if (bad.length) {
+        return { error: `render_ui: ${bad.join(", ")} must each be {version:"v0.9"} plus one of ${KINDS.join(" / ")}. Fix and retry.` };
+      }
+      return { ok: true, note: "The UI is now shown to the user. Do not repeat its contents in prose; wait for their action." };
+    }
     case "suggest_connections": {
       // The renderer captures this call's args for the Apply cards regardless
       // of validity — and models do omit the required `type` discriminator

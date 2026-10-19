@@ -21,3 +21,10 @@ Uses `@a2ui/react@0.14.0` + `@a2ui/web_core@0.14.0`, protocol v0.9, `basicCatalo
 1. A Cordis tool (e.g. `render_ui`) whose argument is the A2UI message list; the chat timeline renders it in a surface under the tool result.
 2. Surface action → `processor` action handler → send a user message/tool result back to the same turn (or a Cairn IPC call for direct actions like "create card").
 3. Map `--a2ui-*` CSS variables onto Cairn's `--accent`, `--surface`, etc.
+
+## Prototype: `render_ui` chat tool (second commit)
+- `render_ui` in `TOOL_SCHEMAS` (chat-only, so not exposed over MCP), `args = { title?, messages[] }` of A2UI v0.9 messages; listed in `APPROVAL_SAFE_TOOLS`. The executor (`chat-executor.ts`) validates the message envelope and returns an error so the model retries on malformed input.
+- Renderer: `ConversationToolCall` draws a surface via lazy-loaded `A2uiToolSurface` (keeps the A2UI chunk out of the main bundle). Surfaces rebuild only when the payload content changes.
+- Actions: `ConversationPane` provides `A2uiActionProvider`; a button press sends `[UI action] <name> <context json>` as the next user message through the pane's normal `onPrompt` (works for chat and coding panes).
+- Verified: tests (`A2uiToolSurface.component.test.tsx`) and in the browser via the bubble on `/a2ui-spike` (form → button → user message with resolved context). NOT verified with a live model/Electron run, so prompt quality of the tool description is untested.
+- Open: after an action the form stays interactive (no "submitted" state); surface state is not restored on reload beyond re-rendering from the saved args (user input is lost); no per-surface update across turns (each call is a fresh surface); the tool description costs roughly 450 tokens per chat request.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { CheckCircle, ChevronDown, ChevronRight, Globe2, ShieldAlert, XCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { cn, prettifyToolLabel } from "@/lib/utils";
@@ -20,6 +20,15 @@ import type { ConversationToolCall } from "@/lib/conversation/message";
 import { useCairnStore } from "@/store";
 
 registerBuiltinToolViews();
+
+// The A2UI renderer (+ web_core) is loaded only when a render_ui call appears.
+const A2uiToolSurface = lazy(() => import("@/components/a2ui/A2uiToolSurface"));
+
+function parseRenderUi(toolCall: ConversationToolCall): { title?: string; messages: unknown[] } | null {
+  const messages = toolCall.args?.messages;
+  if (!Array.isArray(messages) || messages.length === 0) return null;
+  return { title: typeof toolCall.args?.title === "string" ? toolCall.args.title : undefined, messages };
+}
 
 const FILE_CONTEXT_TOOLS = new Set(["read", "grep", "find", "codebase_file_symbols", "codebase_reindex_file"]);
 const DIFF_CONTEXT_TOOLS = new Set(["edit", "write", "write_file"]);
@@ -211,6 +220,10 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
   // buttons rather than inherit the first card's "Allowed — running…" state.
   if (toolCall.confirmRequired) return <ApprovalCard key={toolCall.approvalNonce ?? "ask"} toolCall={toolCall} sessionId={sessionId} connectors={connectors} />;
   if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
+  if (toolCall.name === "render_ui" && toolCall.ok) {
+    const ui = parseRenderUi(toolCall);
+    if (ui) return <Suspense fallback={null}><A2uiToolSurface title={ui.title} messages={ui.messages} /></Suspense>;
+  }
   if (toolCall.name === "get_user_writing_style" && writingStyleNeedsSetup(toolCall.output)) return <WritingStylePromptChip output={toolCall.output} />;
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
   if (ref) return <CairnRefChip toolName={toolCall.name} cairnRef={ref} ok={toolCall.ok} />;

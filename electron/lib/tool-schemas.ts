@@ -301,6 +301,13 @@ export const TOOL_SCHEMAS = {
       })).describe("List of suggested connection actions, max 8"),
     }),
   },
+  render_ui: {
+    description: "Show an interactive UI (form, choices, buttons, small dashboard) inline in the chat using A2UI v0.9 messages. Use for structured input or confirmations that a plain reply handles poorly; keep it small. messages is an ordered list: first {version:\"v0.9\",createSurface:{surfaceId,catalogId:\"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json\"}}, then {version:\"v0.9\",updateComponents:{surfaceId,components:[{id,component,...props}]}} (flat list; one component has id \"root\"; containers reference children by id), then optional {version:\"v0.9\",updateDataModel:{surfaceId,path:\"/\",value:{...}}}. Basic components: Text{text,variant:h1-h5|caption|body}, Row/Column{children:[ids]}, Card{child}, Button{child,action:{event:{name,context:{k:{path:\"/x\"}}}}}, TextField{label,value:{path}}, CheckBox{label,value:{path}}, ChoicePicker{label,options:[{label,value}],value:{path}}, Slider, DateTimeInput, Divider, Image. Bind inputs to data-model paths with {path:\"/form/x\"}. When the user presses a Button, its event name and resolved context come back as the next user message.",
+    schema: z.object({
+      title:    sStrOpt.describe("Short heading shown above the surface"),
+      messages: z.array(z.record(z.string(), z.unknown())).describe("A2UI v0.9 messages, in order"),
+    }),
+  },
   spawn_tasks_from_note: {
     description: "Read a PRD/spec note and create task cards from it. Links tasks to the note.",
     schema: z.object({
@@ -325,7 +332,7 @@ export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
 ];
 
 // Chat-only tools (not exposed via MCP)
-export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections"];
+export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections", "render_ui"];
 
 export type ToolCategory = "read" | "write" | "delete";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import { ConversationComposer, type ConversationComposerProps } from "./ConversationComposer";
 import { ConversationEmptyState } from "./ConversationEmptyState";
 import { ConversationHeader } from "./ConversationHeader";
@@ -14,6 +14,7 @@ import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 import type { VirtuosoHandle } from "react-virtuoso";
 import type { ConversationUsage } from "./ConversationHeader";
 import { cn } from "@/lib/utils";
+import { A2uiActionProvider } from "@/components/a2ui/a2ui-action-context";
 
 export interface ConversationProjectionState {
   pendingQuestions?: PendingQuestion[] | null;
@@ -76,7 +77,10 @@ export function ConversationPane({
   const pendingQuestions = projection?.pendingQuestions ?? null;
   const submitQuestions = onAnswerQuestions ?? ((answers: string) => onPrompt(answers, []));
 
+  const sendA2uiAction = useCallback((text: string) => { void onPrompt(text, []); }, [onPrompt]);
+
   return (
+    <A2uiActionProvider value={sendA2uiAction}>
     <div className={cn("flex flex-1 min-h-0 flex-col overflow-hidden", className)} data-session-profile={profile}>
       <ConversationHeader title={title ?? profile} usage={usage} contextLimit={contextLimit ?? 128000} actions={actions} schedule={{ sessionId, pollKey: isLoading }} />
       <span aria-live="polite" aria-atomic="true" className="sr-only">{isLoading ? "Working" : ""}</span>
@@ -123,5 +127,6 @@ export function ConversationPane({
         placeholder={placeholder ?? `Ask the ${profile}…`}
       />
     </div>
+    </A2uiActionProvider>
   );
 }
