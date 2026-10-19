@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactElement } from "react";
-import { View, useWindowDimensions } from "react-native";
+import { PixelRatio, View, useWindowDimensions } from "react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -16,7 +16,7 @@ import {
 import { listModels } from "@/chat/providers/openai";
 import { isRorkAvailable } from "@/chat/providers/rork";
 import { ICON_MODEL } from "@/components/toolbar-icons";
-import { useTheme } from "@/theme";
+import { type as typeScale, useTheme } from "@/theme";
 import {
   Button as SUIButton,
   HStack,
@@ -181,6 +181,9 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
 export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
   const t = useTheme();
   const { width } = useWindowDimensions();
+  // SwiftUI font sizes are fixed points, so apply the OS text-size setting ourselves
+  // (RN text does this implicitly) to the theme type-scale tokens.
+  const fontScale = PixelRatio.getFontScale();
   // The native header centers the title on the screen only while it fits
   // symmetrically around the screen centre; wider than that it is pushed into
   // the slot left of the right-hand items and ends up flush-left. The Clear +
@@ -197,10 +200,10 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
     // wider (the overlay seen on device).
     <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 4 }), frame({ maxWidth: maxW })]}>
       <VStack spacing={0} alignment="center">
-        <SUIText modifiers={[font({ weight: "semibold", size: 16 }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
+        <SUIText modifiers={[font({ weight: "semibold", size: Math.round(typeScale.subtitle.fontSize * fontScale) }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
           {m.providerName}
         </SUIText>
-        <SUIText modifiers={[font({ size: 11 }), foregroundStyle(t.textSecondary), lineLimit(1)]}>
+        <SUIText modifiers={[font({ size: Math.round(typeScale.micro.fontSize * fontScale) }), foregroundStyle(t.textSecondary), lineLimit(1)]}>
           {m.current}
         </SUIText>
       </VStack>

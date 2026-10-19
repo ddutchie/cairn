@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Platform } from "react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import { getActiveSource } from "@/db";
 import { switchSource } from "@/sync/controller";
@@ -6,6 +7,7 @@ import { useSyncSources } from "@/sync/useSyncSources";
 import { Button, Host, Menu, RNHostView, Section } from "@expo/ui/swift-ui";
 import { SyncRingLogo } from "@/components/SyncRingLogo";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
+import { ICON_CAIRN } from "@/components/toolbar-icons";
 
 /**
  * Header-LEFT workspace switcher, rendered as a native `Stack.Toolbar.Menu`.
@@ -73,9 +75,37 @@ export function WorkspaceMenuItems({
   sources: { workspaceId: string; name?: string | null }[];
   onSwitch: (ws: string) => void;
   /** Sync state + opener, folded into this menu (replaces the separate sync button). */
-  sync?: Pick<ReturnType<typeof useSyncBadge>, "statusText" | "onPress">;
+  sync?: Pick<ReturnType<typeof useSyncBadge>, "icon" | "tintColor" | "statusText" | "attention" | "onPress">;
 }) {
-  // SwiftUI menu (not Stack.Toolbar.Menu) so the label can be the logo with the
+  // Android has no SwiftUI: use the cross-platform native toolbar menu (a static
+  // logo, tinted when sync needs attention).
+  if (Platform.OS !== "ios") {
+    return (
+      <Stack.Toolbar.Menu
+        icon={ICON_CAIRN}
+        iconRenderingMode="template"
+        tintColor={sync?.attention ? sync.tintColor : undefined}
+        accessibilityLabel={sync ? `Switch workspace. Sync: ${sync.statusText}` : "Switch workspace"}
+      >
+        <Stack.Toolbar.Menu inline title="Workspace">
+          {sources.map((s) => (
+            <Stack.Toolbar.MenuAction key={s.workspaceId} isOn={s.workspaceId === active} onPress={() => onSwitch(s.workspaceId)}>
+              {s.name ?? "Workspace"}
+            </Stack.Toolbar.MenuAction>
+          ))}
+        </Stack.Toolbar.Menu>
+        {sync ? (
+          <Stack.Toolbar.Menu inline title="Sync">
+            <Stack.Toolbar.MenuAction icon={sync.icon} onPress={sync.onPress}>
+              {`Sync · ${sync.statusText}`}
+            </Stack.Toolbar.MenuAction>
+          </Stack.Toolbar.Menu>
+        ) : null}
+      </Stack.Toolbar.Menu>
+    );
+  }
+
+  // iOS: a SwiftUI menu (not Stack.Toolbar.Menu) so the label can be the logo with the
   // sync ring drawn around it; the native toolbar menu only takes a static icon.
   return (
     <Stack.Toolbar.View>
