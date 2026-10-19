@@ -3,7 +3,9 @@ import { Stack, useFocusEffect } from "expo-router";
 import { getActiveSource } from "@/db";
 import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
-import { ICON_CAIRN } from "@/components/toolbar-icons";
+import { Button, Host, Menu, RNHostView, Section } from "@expo/ui/swift-ui";
+import { SyncRingLogo } from "@/components/SyncRingLogo";
+import { useSyncBadge } from "@/components/SyncStatusBadge";
 
 /**
  * Header-LEFT workspace switcher, rendered as a native `Stack.Toolbar.Menu`.
@@ -46,9 +48,11 @@ export function WorkspaceHeaderMenu() {
     setActive(ws);
   };
 
+  const sync = useSyncBadge();
+
   return (
     <Stack.Toolbar placement="left">
-      <WorkspaceMenuItems active={active} sources={sources} onSwitch={onSwitch} />
+      <WorkspaceMenuItems active={active} sources={sources} onSwitch={onSwitch} sync={sync} />
     </Stack.Toolbar>
   );
 }
@@ -63,26 +67,47 @@ export function WorkspaceMenuItems({
   active,
   sources,
   onSwitch,
+  sync,
 }: {
   active: string | null;
   sources: { workspaceId: string; name?: string | null }[];
   onSwitch: (ws: string) => void;
+  /** Sync state + opener, folded into this menu (replaces the separate sync button). */
+  sync?: Pick<ReturnType<typeof useSyncBadge>, "statusText" | "onPress">;
 }) {
+  // SwiftUI menu (not Stack.Toolbar.Menu) so the label can be the logo with the
+  // sync ring drawn around it; the native toolbar menu only takes a static icon.
   return (
-    <Stack.Toolbar.Menu
-      icon={ICON_CAIRN}
-      iconRenderingMode="template"
-      accessibilityLabel="Switch workspace"
-    >
-      {sources.map((s) => (
-        <Stack.Toolbar.MenuAction
-          key={s.workspaceId}
-          isOn={s.workspaceId === active}
-          onPress={() => onSwitch(s.workspaceId)}
+    <Stack.Toolbar.View>
+      <Host matchContents>
+        <Menu
+          label={
+            <RNHostView matchContents>
+              <SyncRingLogo />
+            </RNHostView>
+          }
         >
-          {s.name ?? "Workspace"}
-        </Stack.Toolbar.MenuAction>
-      ))}
-    </Stack.Toolbar.Menu>
+          <Section title="Workspace">
+            {sources.map((s) => (
+              <Button
+                key={s.workspaceId}
+                label={s.name ?? "Workspace"}
+                systemImage={s.workspaceId === active ? "checkmark" : undefined}
+                onPress={() => onSwitch(s.workspaceId)}
+              />
+            ))}
+          </Section>
+          {sync ? (
+            <Section title="Sync">
+              <Button
+                label={`Sync · ${sync.statusText}`}
+                systemImage="arrow.triangle.2.circlepath"
+                onPress={sync.onPress}
+              />
+            </Section>
+          ) : null}
+        </Menu>
+      </Host>
+    </Stack.Toolbar.View>
   );
 }

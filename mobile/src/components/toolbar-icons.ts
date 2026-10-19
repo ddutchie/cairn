@@ -71,8 +71,11 @@ export const ICON_SETTINGS: ToolbarIcon = ios ? "gearshape" : SettingsXml;
 /** AI / model settings. A settings cog — this opens the AI settings sheet, so
  *  a gear reads more clearly than the earlier ambiguous "brain" glyph. */
 export const ICON_AI: ToolbarIcon = ios ? "gearshape" : SettingsXml;
-/** Quick capture (drop something in; Cairn files it). */
-export const ICON_CAPTURE: ToolbarIcon = ios ? "tray.and.arrow.down" : AddXml;
+/** Appearance settings (theme, text size): a palette, not a gear, so it isn't read as general Settings. */
+export const ICON_APPEARANCE: ToolbarIcon = ios ? "paintpalette" : SettingsXml;
+/** Quick capture (drop something in; Cairn files it). A create glyph, not the
+ *  inbox tray, which read as "download". */
+export const ICON_CAPTURE: ToolbarIcon = ios ? "square.and.pencil" : AddXml;
 /** Switch AI provider / model (chat header menu). */
 export const ICON_MODEL: ToolbarIcon = ios ? "sparkles" : NeurologyXml;
 /** Export / share (share sheet). */
