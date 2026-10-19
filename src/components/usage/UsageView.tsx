@@ -111,7 +111,7 @@ function Segmented<T extends string | number>({ options, value, onChange }: {
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
+    <div className="flex items-center shrink-0 rounded-md border border-[var(--border)] overflow-hidden">
       {options.map((opt, idx) => (
         <React.Fragment key={String(opt.value)}>
           {idx > 0 && <div className="w-px h-5 bg-[var(--border)]" />}
@@ -134,9 +134,9 @@ function Segmented<T extends string | number>({ options, value, onChange }: {
 
 function StatCard({ label, value, valueClass, valueStyle, delta, deltaStyle }: { label: string; value: string; valueClass?: string; valueStyle?: React.CSSProperties; delta?: string; deltaStyle?: React.CSSProperties }) {
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 flex flex-col gap-0.5">
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
       <div className="text-[0.643rem] uppercase tracking-[0.07em] text-[var(--text-tertiary)]">{label}</div>
-      <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
+      <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight truncate ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
       {delta ? (
         <div className={cn("text-[0.643rem]", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta}</div>
       ) : (
@@ -307,12 +307,12 @@ export function UsageView() {
   }, [overview]);
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
+    <div className="@container flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
       {/* Toolbar — mirrors InsightsView / KnowledgeGraphView chrome */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
+      <div className="flex items-center gap-x-2 gap-y-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
         <div className="text-sm font-semibold text-[var(--text-primary)] mr-1">Usage</div>
-        <div className="text-[0.714rem] text-[var(--text-tertiary)] mr-2">AI spend across chat, agents &amp; automations</div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="hidden @lg:block text-[0.714rem] text-[var(--text-tertiary)] mr-2">AI spend across chat, agents &amp; automations</div>
+        <div className="ml-auto flex items-center justify-end gap-2 flex-wrap min-w-0">
           <Segmented<UsageMetric>
             options={[
               { value: "tokens", label: "Tokens" },
@@ -348,7 +348,7 @@ export function UsageView() {
                 : "Estimates hidden — estimated costs are shown as —; all calls and token stats stay visible"
             }
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors",
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs whitespace-nowrap shrink-0 transition-colors",
               includeEstimated
                 ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
                 : "border-[var(--border)] text-[var(--text-tertiary)]"
@@ -396,7 +396,7 @@ export function UsageView() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-4 flex flex-col gap-4">
           {/* Stat cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3">
             <StatCard label="Input tokens" value={totals ? fmtCompact(totals.promptTokens) : "—"} valueClass="text-[var(--accent)]" delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "promptTokens", rangeLabel) : undefined} />
             <StatCard label="Output tokens" value={totals ? fmtCompact(totals.completionTokens) : "—"} />
             <StatCard label="Cached input" value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueStyle={cacheColor ? { color: cacheColor } : undefined} delta={cacheColor ? `${Math.round(cachePct * 100)}% of input` : ""} deltaStyle={cacheColor ? { color: cacheColor } : undefined} />
@@ -404,10 +404,10 @@ export function UsageView() {
             <StatCard label="Requests" value={totals ? fmtFull(totals.requests) : "—"} />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)] gap-4">
+          <div className="grid grid-cols-1 @4xl:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)] gap-4">
             {/* Chart */}
             <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-              <div className="flex items-center justify-between px-4 pt-3 pb-1">
+              <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
                 <div className="text-xs font-semibold text-[var(--text-primary)]">
                   {metric === "tokens" ? "Token usage" : metric === "cost" ? "Cost" : "Requests"}
                 </div>
@@ -438,7 +438,7 @@ export function UsageView() {
 
             {/* By model */}
             <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-              <div className="flex items-center justify-between px-4 pt-3 pb-1">
+              <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
                 <div className="text-xs font-semibold text-[var(--text-primary)]">By model</div>
                 <div className="text-[0.643rem] text-[var(--text-tertiary)]">{rangeLabel}</div>
               </div>
@@ -481,7 +481,7 @@ export function UsageView() {
 
           {/* History table */}
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-            <div className="flex items-center justify-between px-4 pt-3 pb-1">
+            <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
               <div className="text-xs font-semibold text-[var(--text-primary)]">Usage history</div>
               <div className="text-[0.643rem] text-[var(--text-tertiary)]">{items.length === 0 ? "" : `latest ${items.length} threads & calls`}</div>
             </div>
