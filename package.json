@@ -52,6 +52,8 @@
     "koffi": "$koffi"
   },
   "dependencies": {
+    "@a2ui/react": "^0.14.0",
+    "@a2ui/web_core": "^0.14.0",
     "@codemirror/search": "^6.7.0",
     "@dagrejs/dagre": "^3.0.0",
     "@deepseek-ai/cordis": "4.0.4",
