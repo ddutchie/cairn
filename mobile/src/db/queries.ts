@@ -360,6 +360,26 @@ export function getWorkspaceProgress(): WorkspaceProgress {
   };
 }
 
+/**
+ * Open cards due on or before `onDate` (a local `YYYY-MM-DD`, default today),
+ * soonest first — feeds the home-screen widget. Passing a future date lets the
+ * widget pre-compute tomorrow's list for its day-boundary timeline entries.
+ */
+export function listDueTasks(limit = 8, onDate?: string): { id: string; title: string; due_date: string }[] {
+  const db = getDb();
+  const day = onDate ?? db.getFirstSync<{ d: string }>(`SELECT date('now', 'localtime') AS d`)?.d ?? "";
+  return db.getAllSync<{ id: string; title: string; due_date: string }>(
+    `SELECT c.id AS id, c.title AS title, c.due_date AS due_date FROM task_cards c
+     LEFT JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND c.due_date IS NOT NULL
+       AND (col.id IS NULL OR col.type != 'done' OR col.deleted_at IS NOT NULL)
+       AND date(c.due_date) <= date(?)
+     ORDER BY c.due_date ASC LIMIT ?`,
+    day,
+    limit,
+  );
+}
+
 /** Distinct folders within a project. Case-insensitively de-duplicated
  *  (first-seen casing wins) so "Mobile" and "mobile" list as one — mirrors the
  *  notes-tree grouping. Root (empty folder) is excluded. */

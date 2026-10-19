@@ -2,6 +2,7 @@ import { NativeTabs } from "expo-router/native-tabs";
 import { ThemeProvider, DarkTheme, DefaultTheme, usePathname } from "expo-router";
 import { useColorScheme } from "react-native";
 import { resetProjectsSelection } from "@/components/ProjectsSplitView";
+import { useAppQuickActions } from "@/quick-actions";
 import { useTheme } from "@/theme";
 
 /**
@@ -12,6 +13,7 @@ import { useTheme } from "@/theme";
 export default function TabsLayout() {
   const colorScheme = useColorScheme();
   const t = useTheme();
+  useAppQuickActions();
   // Re-tapping the Projects tab while it's already showing goes back to the
   // project list. The tab hosts a SwiftUI split view whose collapsed "stack" is
   // our own selection state, so the tab bar's built-in pop-to-root has nothing to

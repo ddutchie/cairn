@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 // effect import; must stay at the very top.
 import "@/chat/crypto-polyfill";
 import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
-import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from "react-native";
+import { View, Text, ActivityIndicator, StyleSheet, useColorScheme, AppState } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -13,6 +13,7 @@ import { initDatabase, getActiveSource } from "@/db";
 import { isDemoSource, seedChat } from "@/dev/demo-seed";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
+import { refreshWidgets } from "@/widgets";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { FoldDebugOverlay } from "@/components/FoldDebugOverlay";
 import { ToastProvider } from "@/components/Toast";
@@ -81,10 +82,18 @@ export default function RootLayout() {
     }, 1200);
     const unsub = onDataChanged(() => {
       catchUpIndex().catch((e) => console.warn("[embeddings] catch-up after sync failed:", e));
+      refreshWidgets();
+    });
+    // Home-screen widget: refresh at launch and whenever the app leaves the
+    // foreground (covers local edits, which don't fire onDataChanged).
+    refreshWidgets();
+    const appState = AppState.addEventListener("change", (s) => {
+      if (s !== "active") refreshWidgets();
     });
     return () => {
       clearTimeout(kickoff);
       unsub();
+      appState.remove();
     };
   }, [error, hasSource]);
 
