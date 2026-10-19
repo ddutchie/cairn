@@ -1,5 +1,4 @@
-import { HStack, Image, Spacer, Text, VStack, ZStack } from "@expo/ui/swift-ui";
-import { Circle } from "@expo/ui/swift-ui";
+import { Circle, HStack, Image, Spacer, Text, VStack, ZStack } from "@expo/ui/swift-ui";
 import { containerBackground, font, foregroundStyle, frame, opacity, widgetURL } from "@expo/ui/swift-ui/modifiers";
 import { createWidget, type WidgetEnvironment } from "expo-widgets";
 

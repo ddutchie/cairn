@@ -85,7 +85,9 @@ export function refreshWidgets(): void {
   if (Platform.OS !== "ios") return;
   try {
     // Imported lazily: expo-widgets has no native module in Expo Go / on Android.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { workspaceWidget, projectWidget } = require("./progress-widget") as typeof import("./progress-widget");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { captureWidget } = require("./capture-widget") as typeof import("./capture-widget");
     const cards: Record<string, WidgetCard> = { [WORKSPACE_KEY]: workspaceCard() };
     const projects = listProjects();
