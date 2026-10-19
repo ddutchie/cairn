@@ -93,7 +93,63 @@
       ],
       "expo-status-bar",
       "expo-web-browser",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-widgets",
+        {
+          "widgets": [
+            {
+              "name": "CairnWorkspace",
+              "displayName": "Workspace",
+              "description": "Workspace progress and what's due today.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge"
+                ]
+              }
+            },
+            {
+              "name": "CairnCapture",
+              "displayName": "Quick capture",
+              "description": "One tap to capture a thought, to-do or link.",
+              "ios": { "supportedFamilies": ["systemSmall", "systemMedium", "accessoryCircular"] }
+            },
+            {
+              "name": "CairnProject",
+              "displayName": "Project",
+              "description": "Progress for one project. Edit the widget to pick which.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge"
+                ],
+                "configuration": {
+                  "title": "Project",
+                  "description": "Choose a project to show.",
+                  "parameters": {
+                    "project": {
+                      "title": "Project",
+                      "type": "enum",
+                      "dynamic": true,
+                      "values": [
+                        {
+                          "name": "All projects",
+                          "value": "workspace"
+                        }
+                      ],
+                      "default": "workspace"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "expo-quick-actions"
     ],
     "experiments": {
       "typedRoutes": true

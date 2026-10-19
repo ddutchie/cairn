@@ -360,6 +360,19 @@ export function getWorkspaceProgress(): WorkspaceProgress {
   };
 }
 
+/** Open cards due today or overdue, soonest first — feeds the home-screen widget. */
+export function listDueTasks(limit = 8): { id: string; title: string; due_date: string }[] {
+  return getDb().getAllSync<{ id: string; title: string; due_date: string }>(
+    `SELECT c.id AS id, c.title AS title, c.due_date AS due_date FROM task_cards c
+     LEFT JOIN board_columns col ON col.id = c.column_id
+     WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND c.due_date IS NOT NULL
+       AND (col.id IS NULL OR col.type != 'done' OR col.deleted_at IS NOT NULL)
+       AND date(c.due_date) <= date('now', 'localtime')
+     ORDER BY c.due_date ASC LIMIT ?`,
+    limit,
+  );
+}
+
 /** Distinct folders within a project. Case-insensitively de-duplicated
  *  (first-seen casing wins) so "Mobile" and "mobile" list as one — mirrors the
  *  notes-tree grouping. Root (empty folder) is excluded. */
