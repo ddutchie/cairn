@@ -8,6 +8,8 @@ export interface CaptureColors {
 }
 
 export interface CaptureWidgetProps {
+  /** OS text-size multiplier (the widget runtime does not inherit Dynamic Type). */
+  fontScale: number;
   light: CaptureColors;
   dark: CaptureColors;
 }
@@ -20,6 +22,7 @@ export interface CaptureWidgetProps {
 function CaptureWidget(props: CaptureWidgetProps, env: WidgetEnvironment) {
   "widget";
   const c = env.colorScheme === "dark" ? props.dark : props.light;
+  const k = props.fontScale ?? 1;
   if (env.widgetFamily === "accessoryCircular") {
     return (
       <ZStack modifiers={[widgetURL("cairn://capture")]}>
@@ -36,10 +39,10 @@ function CaptureWidget(props: CaptureWidgetProps, env: WidgetEnvironment) {
   );
   const label = (
     <VStack alignment="leading" spacing={2}>
-      <Text modifiers={[font({ size: medium ? 20 : 17, weight: "bold", design: "rounded" }), foregroundStyle(c.accentFg)]}>
+      <Text modifiers={[font({ size: (medium ? 20 : 17) * k, weight: "bold", design: "rounded" }), foregroundStyle(c.accentFg)]}>
         Quick capture
       </Text>
-      <Text modifiers={[font({ size: 12 }), foregroundStyle(c.accentFg), opacity(0.75)]}>
+      <Text modifiers={[font({ size: 12 * k }), foregroundStyle(c.accentFg), opacity(0.75)]}>
         {medium ? "A thought, a to-do, a link…" : "Tap to jot it down"}
       </Text>
     </VStack>
@@ -64,6 +67,7 @@ function CaptureWidget(props: CaptureWidgetProps, env: WidgetEnvironment) {
 }
 
 export const captureWidget = createWidget<CaptureWidgetProps>("CairnCapture", CaptureWidget, {
+  fontScale: 1,
   light: { accent: "#5c7a3f", accentFg: "#ffffff" },
   dark: { accent: "#8faf6f", accentFg: "#10130d" },
 });
