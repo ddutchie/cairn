@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactElement } from "react";
-import { View, useWindowDimensions } from "react-native";
+import { PixelRatio, View, useWindowDimensions } from "react-native";
 import { Stack, useFocusEffect } from "expo-router";
 import {
   getActiveProvider,
@@ -16,7 +16,7 @@ import {
 import { listModels } from "@/chat/providers/openai";
 import { isRorkAvailable } from "@/chat/providers/rork";
 import { ICON_MODEL } from "@/components/toolbar-icons";
-import { useTheme } from "@/theme";
+import { type as typeScale, useTheme } from "@/theme";
 import {
   Button as SUIButton,
   HStack,
@@ -25,6 +25,7 @@ import {
   Menu,
   Section,
   Text as SUIText,
+  VStack,
 } from "@expo/ui/swift-ui";
 import { font, foregroundStyle, frame, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
 
@@ -50,6 +51,8 @@ const MAX_MODELS = 40;
  */
 export interface ModelMenuState {
   current: string;
+  /** Display name of the active provider (title line above the model id). */
+  providerName: string;
   providers: SavedProvider[];
   activeId: string;
   /** Favorite models (A–Z), shown in their own section above `models`. */
@@ -126,7 +129,7 @@ export function useModelMenuState({ disabled = false, onChanged }: { disabled?: 
     onChanged();
   };
 
-  return { current, providers, activeId: active.id, favorites: favs, models: shown, disabled, pickModel, pickProvider };
+  return { current, providerName: active.name, providers, activeId: active.id, favorites: favs, models: shown, disabled, pickModel, pickProvider };
 }
 
 /** Right-toolbar variant (Android, and iOS when the header title is hidden). */
@@ -178,21 +181,32 @@ export function modelToolbarMenu(m: ModelMenuState | null): ReactElement | null 
 export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
   const t = useTheme();
   const { width } = useWindowDimensions();
-  // The native header centers the title in the slot left between the header
-  // items: the context ring on the left, Clear + AI settings on the right
-  // (~110pt flank). A long model id ("muse-spark-1.3-contributor") at the old
-  // fixed 240pt cap overflowed that slot and painted over the ring, looking
-  // off-centre. Cap the title to what fits centered and let the label
-  // truncate (tail) inside it. Floor matches the Host minWidth below.
-  const maxW = Math.min(240, Math.max(80, width - 220));
+  // SwiftUI font sizes are fixed points, so apply the OS text-size setting ourselves
+  // (RN text does this implicitly) to the theme type-scale tokens.
+  const fontScale = PixelRatio.getFontScale();
+  // The native header centers the title on the screen only while it fits
+  // symmetrically around the screen centre; wider than that it is pushed into
+  // the slot left of the right-hand items and ends up flush-left. The Clear +
+  // AI settings pill is ~120pt wide plus its gap (measured on iPhone 17), so
+  // reserve ~140pt on BOTH sides (slack beyond the measured edge: a box right
+  // at the limit still went flush-left). A long model id
+  // ("muse-spark-1.3-contributor") then truncates (tail) inside a centred box
+  // instead of shifting left or painting over the context ring. Floor matches
+  // the Host minWidth below.
+  const maxW = Math.min(240, Math.max(80, width - 280));
   const label = (
     // frame(maxWidth) truncates the SwiftUI text at the cap even if the
     // RN-side maxWidth only clamps measurement and the native view paints
     // wider (the overlay seen on device).
-    <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 10 }), frame({ maxWidth: maxW })]}>
-      <SUIText modifiers={[font({ weight: "semibold", size: 17 }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
-        {m.current}
-      </SUIText>
+    <HStack spacing={4} alignment="center" modifiers={[padding({ vertical: 4 }), frame({ maxWidth: maxW })]}>
+      <VStack spacing={0} alignment="center">
+        <SUIText modifiers={[font({ weight: "semibold", size: Math.round(typeScale.subtitle.fontSize * fontScale) }), foregroundStyle(t.textPrimary), lineLimit(1)]}>
+          {m.providerName}
+        </SUIText>
+        <SUIText modifiers={[font({ size: Math.round(typeScale.micro.fontSize * fontScale) }), foregroundStyle(t.textSecondary), lineLimit(1)]}>
+          {m.current}
+        </SUIText>
+      </VStack>
       <SUIImage systemName="chevron.down" size={10} color={t.textSecondary} />
     </HStack>
   );
@@ -200,9 +214,11 @@ export function ModelTitleMenu({ model: m }: { model: ModelMenuState }) {
     // Fixed-height wrapper centers the title in the header; the vertical padding
     // on the label (not a Host minHeight, which top-aligns the content) keeps the
     // tap target at ~40pt.
-    // Centered in the header's title slot (the slot width varies with the
-    // left/right items, so the box centers itself and its content).
-    <View style={{ height: 44, alignSelf: "center", flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
+    // Explicit width (not content-sized): the header centers a title on screen only
+    // when its box fits symmetrically, and a content-sized box reports the label's
+    // natural width, so a long model id got pushed flush-left. The box is a fixed
+    // maxW wide and centers its content.
+    <View style={{ height: 44, width: maxW, alignSelf: "center", flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
     <Host matchContents style={{ minWidth: 80, maxWidth: maxW }}>
       {m.disabled ? (
         label

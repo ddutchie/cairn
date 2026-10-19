@@ -22,6 +22,10 @@ export function useSyncBadge(): {
   tintColor: string;
   accessibilityLabel: string;
   accessibilityHint: string;
+  /** Short human state for menu rows: Offline / Syncing… / N pending / Synced. */
+  statusText: string;
+  /** True when the state needs the user's eye (offline or unsynced changes). */
+  attention: boolean;
   onPress: () => void;
 } {
   const t = useTheme();
@@ -36,6 +40,8 @@ export function useSyncBadge(): {
     tintColor: offline ? t.textTertiary : pending > 0 ? t.warning : t.success,
     accessibilityLabel: "Sync status",
     accessibilityHint: "Opens sync details",
+    statusText: offline ? "Offline" : state === "syncing" ? "Syncing…" : pending > 0 ? `${pending} pending` : "Synced",
+    attention: offline || pending > 0,
     onPress: () => router.push("/sync"),
   };
 }

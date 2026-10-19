@@ -12,7 +12,6 @@ import {
 import {
   navigationSplitViewStyle,
   tint,
-  type ViewModifier,
 } from "@expo/ui/swift-ui/modifiers";
 import { type ProjectSummary } from "@/db/queries";
 import { ProjectScreen, type ProjectTab } from "@/screens/ProjectScreen";
@@ -125,6 +124,9 @@ const LEAVE_FOCUS: NavigationSplitViewVisibility = "doubleColumn";
 const BOTH_SLOTS: readonly ChromeSlot[] = ["primary", "secondary"];
 const LIST_SLOT: readonly ChromeSlot[] = ["primary"];
 const NO_SLOTS: readonly ChromeSlot[] = [];
+
+/** The project-view switcher's floating bar: 8 top + 36 control + 6 bottom = SEGMENT_BAR_H (50). */
+const SWITCHER_BAR = { position: "absolute", top: 0, left: 0, right: 0, zIndex: 1, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 } as const;
 
 export function ProjectsSplitView({
   projects,
@@ -268,23 +270,6 @@ export function ProjectsSplitView({
     );
   }
 
-  const listColumn = (extra: ViewModifier[], leading: Parameters<typeof ChromeColumn>[0]["leading"]) => (
-    <ChromeColumn key={`${projectId}:${view}:${boardVersion}`} modifiers={extra} leading={leading} slot="primary">
-      <ProjectScreen
-        nested
-        projectId={projectId}
-        view={view as ProjectTab}
-        switcher={switcher}
-        selectedId={sel.noteId}
-        onSelectView={selectView}
-        onOpenNote={openNote}
-        onOpenCard={openCard}
-        onComposeNote={openComposer}
-        onComposeTask={composeTask}
-      />
-    </ChromeColumn>
-  );
-
   // Column widths are SwiftUI's job (see the hinge note in the docs) — no pins here.
 
   // Closing the note also leaves focus mode, so the list is never left hidden
@@ -316,65 +301,85 @@ export function ProjectsSplitView({
   // SPIKE: the project view is always the Content column; the open note (or a
   // placeholder) is always the Detail column. Both stay mounted across
   // fold/unfold — only the split view's own collapse changes what is shown.
-  const contentView =
-      !hasSelection ? (
-        // Blank: the sidebar overlays this column while nothing is picked, so the message
-        // goes in the detail column (right), where it can be read.
-        <ChromeColumn key="no-project" slot={slot("primary")}>
-          <View style={{ flex: 1, backgroundColor: t.background }} />
-        </ChromeColumn>
-      ) : view === "board" ? (
-        // The board always has the whole project column; its overflow (status blocks, or
-        // an open task) is in the Detail column.
-        <ChromeColumn
-          key={`${projectId}:board`}
-          slot={slot("primary")}
-          hideItems={!BRIDGE_HEADER && !!sel.cardId}
-        >
-          <ProjectScreen
-            key={boardVersion}
-            nested
-            projectId={projectId}
-            view="board"
-            switcher={switcher}
-            selectedId={sel.cardId}
-            onSelectView={selectView}
-            onOpenNote={openNote}
-            onOpenCard={openCard}
-            onComposeTask={composeTask}
-          />
-        </ChromeColumn>
-      ) : view === "calendar" ? (
-        <ChromeColumn key={`${projectId}:calendar`} slot={slot("primary")}>
-          <ProjectCalendarScreen
-            nested
-            projectId={projectId}
-            switcher={switcher}
-            selectedKey={calSelected}
-            onSelectKey={setCalSelected}
-            externalDayList={!compact}
-            onChanged={() => setCalVersion((n) => n + 1)}
-            onOpenCard={openCard}
-          />
-        </ChromeColumn>
-      ) : view === "overview" ? (
-        <ChromeColumn key={`${projectId}:overview`} slot={slot("primary")}>
-          <ProjectScreen
-            nested
-            projectId={projectId}
-            view="overview"
-            switcher={switcher}
-            overviewShow={overviewSplit ? OVERVIEW_STATUS : undefined}
-            onSelectView={selectView}
-            onOpenNote={openNote}
-            onOpenCard={openCard}
-          />
-        </ChromeColumn>
-      ) : (
-        // No item open: Detail hosts the action panel below, so the list
-        // keeps its hinge pin unconditionally.
-        listColumn([], [])
-      );
+  // One persistent column for every project view, with the Overview | Notes | Board |
+  // Calendar switcher drawn once above the body. Only the body swaps on a view change,
+  // so the native segmented control is never torn down and recreated (it used to be
+  // drawn inside each view's own keyed column, so every switch remounted it and the
+  // control jumped). Bodies keep distinct keys so a view still starts fresh, and the
+  // Notes/Board bodies also remount on `boardVersion` like before.
+  const body =
+    view === "board" ? (
+      <ProjectScreen
+        key={`${projectId}:board:${boardVersion}`}
+        nested
+        projectId={projectId}
+        view="board"
+        hasSwitcher
+        selectedId={sel.cardId}
+        onSelectView={selectView}
+        onOpenNote={openNote}
+        onOpenCard={openCard}
+        onComposeTask={composeTask}
+      />
+    ) : view === "calendar" ? (
+      <ProjectCalendarScreen
+        key={`${projectId}:calendar`}
+        nested
+        projectId={projectId}
+        hasSwitcher
+        selectedKey={calSelected}
+        onSelectKey={setCalSelected}
+        externalDayList={!compact}
+        onChanged={() => setCalVersion((n) => n + 1)}
+        onOpenCard={openCard}
+      />
+    ) : view === "overview" ? (
+      <ProjectScreen
+        key={`${projectId}:overview`}
+        nested
+        projectId={projectId}
+        view="overview"
+        hasSwitcher
+        overviewShow={overviewSplit ? OVERVIEW_STATUS : undefined}
+        onSelectView={selectView}
+        onOpenNote={openNote}
+        onOpenCard={openCard}
+      />
+    ) : (
+      <ProjectScreen
+        key={`${projectId}:${view}:${boardVersion}`}
+        nested
+        projectId={projectId}
+        view={view as ProjectTab}
+        hasSwitcher
+        selectedId={sel.noteId}
+        onSelectView={selectView}
+        onOpenNote={openNote}
+        onOpenCard={openCard}
+        onComposeNote={openComposer}
+        onComposeTask={composeTask}
+      />
+    );
+  const contentView = !hasSelection ? (
+    // Blank: the sidebar overlays this column while nothing is picked, so the message
+    // goes in the detail column (right), where it can be read.
+    <ChromeColumn key="no-project" slot={slot("primary")}>
+      <View style={{ flex: 1, backgroundColor: t.background }} />
+    </ChromeColumn>
+  ) : (
+    <ChromeColumn
+      key="project-content"
+      slot={slot("primary")}
+      // The board hands its overflow to the Detail column once a task is open.
+      hideItems={view === "board" && !BRIDGE_HEADER && !!sel.cardId}
+    >
+      <View style={{ flex: 1 }}>
+        {body}
+        {/* Floating bar over the body (content scrolls beneath it, like the search scope bar). */}
+        <View style={SWITCHER_BAR}>{switcher}</View>
+      </View>
+    </ChromeColumn>
+  );
 
   // Closing the card also leaves focus mode, so the list is never left hidden
   // behind an empty detail.

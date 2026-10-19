@@ -11,9 +11,8 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { WorkspaceProgressCard } from "@/components/overview/WorkspaceProgressCard";
 import { ProjectsSplitView, resetProjectsSelection } from "@/components/ProjectsSplitView";
-import { useSyncBadge } from "@/components/SyncStatusBadge";
 import { WorkspaceHeaderMenu } from "@/components/WorkspaceHeaderMenu";
-import { ICON_CAPTURE, ICON_SETTINGS } from "@/components/toolbar-icons";
+import { ICON_APPEARANCE, ICON_CAPTURE } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { requestSync } from "@/sync/controller";
@@ -37,7 +36,6 @@ export default function ProjectsScreen() {
   const contentStyle = useTabContentStyle();
   const tightRail = useTightSideRail();
   const split = width >= WIDE_MIN_WIDTH;
-  const syncBadge = useSyncBadge();
   // The read is synchronous SQLite, so do it in the initializer: a first frame
   // without data would paint the loading header before the sidebar replaces it.
   const [initial] = useState(readProjects);
@@ -105,10 +103,9 @@ export default function ProjectsScreen() {
           >
             Capture
           </Stack.Toolbar.Button>,
-          <Stack.Toolbar.Button key="sync" {...syncBadge}>Sync status</Stack.Toolbar.Button>,
           <Stack.Toolbar.Button
             key="appearance"
-            icon={ICON_SETTINGS}
+            icon={ICON_APPEARANCE}
             accessibilityLabel="Appearance settings"
             onPress={toolbarPress(() => router.push("/settings/appearance"))}
           >

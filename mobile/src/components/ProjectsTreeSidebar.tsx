@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import { Image as RNImage, type ImageSourcePropType } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   Button,
@@ -27,6 +26,7 @@ import {
   navigationTitle,
   onTapGesture,
   padding,
+  refreshable,
   scrollContentBackground,
   shapes,
   tint,
@@ -36,12 +36,12 @@ import { WorkspaceProgressHeader } from "@/components/WorkspaceProgressHeader";
 import { getWorkspaceProgress, type WorkspaceProgress } from "@/db/queries";
 import type { ProjectsList } from "@/components/projects-tree";
 import { useRecentStones } from "@/gamification/useRecentStones";
-import { ICON_CAIRN } from "@/components/toolbar-icons";
+import { SyncRingLogo } from "@/components/SyncRingLogo";
 import { getActiveSource } from "@/db";
 import { useTightSideRail } from "@/lib/layout";
 import { useRefreshOnFocus, useSyncStatus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
-import { switchSource } from "@/sync/controller";
+import { requestSync, switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { useTheme } from "@/theme";
 
@@ -105,7 +105,7 @@ export function ProjectsTreeSidebar({
   );
   const { inputs: stones, newestId } = useRecentStones(SHOW_CAIRN_STACK);
   const syncOffline = syncState === "offline";
-  const syncTint = syncOffline ? t.textTertiary : syncPending > 0 ? t.warning : t.success;
+  const syncStatusText = syncOffline ? "Offline" : syncState === "syncing" ? "Syncing…" : syncPending > 0 ? `${syncPending} pending` : "Synced";
 
   // Workspace-wide progress for the header card above the project list. Read
   // here (not passed in) so focus / sync / task-save refreshes stay local to
@@ -125,6 +125,19 @@ export function ProjectsTreeSidebar({
     }
   }, []);
   useRefreshOnFocus(loadProgress);
+  // Pull-to-refresh forces an oplog sync, like the Overview/Project panels. The
+  // list rows reload through the sync's data-changed event; progress and the
+  // workspace list are refreshed here so the spinner settles on fresh data.
+  const onRefresh = useCallback(async () => {
+    haptics.selection();
+    try {
+      await requestSync("pull-to-refresh");
+    } catch {
+      /* offline — still reload local state */
+    }
+    loadProgress();
+    void refresh();
+  }, [loadProgress, refresh]);
   // Task saves in the detail column bump refreshKey (the list itself only
   // refreshes on focus / sync); a workspace switch changes the title/rows.
   // Deps intentionally include refreshKey/title/row-count: re-running the focus
@@ -176,7 +189,7 @@ export function ProjectsTreeSidebar({
         background(t.background),
       ]}
     >
-      <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background)]}>
+      <List modifiers={[listStyle("sidebar"), tint(t.accent), scrollContentBackground("hidden"), background(t.background), refreshable(onRefresh)]}>
         {SHOW_CAIRN_STACK && stones.length > 0 && (
           <Section modifiers={[listRowSeparator("hidden")]}>
             <HStack modifiers={[frame({ maxWidth: Infinity, alignment: "center" }), padding({ vertical: 4 })]}>
@@ -202,27 +215,35 @@ export function ProjectsTreeSidebar({
           <Menu
             label={
               <RNHostView matchContents>
-                <RNImage
-                  source={ICON_CAIRN as ImageSourcePropType}
-                  tintColor={t.accent}
-                  style={{ width: 22, height: 22 }}
-                  accessibilityLabel={`Switch workspace, ${title}`}
-                />
+                <SyncRingLogo />
               </RNHostView>
             }
           >
-            {sources.map((s) => (
+            <Section title="Workspace">
+              {sources.map((s) => (
+                <Button
+                  key={s.workspaceId}
+                  label={s.workspaceId === getActiveSource() ? `✓ ${s.name ?? "Workspace"}` : (s.name ?? "Workspace")}
+                  onPress={() => {
+                    if (s.workspaceId === getActiveSource()) return;
+                    switchSource(s.workspaceId);
+                    void refresh();
+                    onWorkspaceSwitched();
+                  }}
+                />
+              ))}
+            </Section>
+            {/* Sync lives here now (it used to be its own toolbar button). */}
+            <Section title="Sync">
               <Button
-                key={s.workspaceId}
-                label={s.workspaceId === getActiveSource() ? `✓ ${s.name ?? "Workspace"}` : (s.name ?? "Workspace")}
+                label={`Sync · ${syncStatusText}`}
+                systemImage="arrow.triangle.2.circlepath"
                 onPress={() => {
-                  if (s.workspaceId === getActiveSource()) return;
-                  switchSource(s.workspaceId);
-                  void refresh();
-                  onWorkspaceSwitched();
+                  haptics.selection();
+                  router.push("/sync");
                 }}
               />
-            ))}
+            </Section>
           </Menu>
         </ToolbarItem>
         {/* Duo tight rail (folded landscape): all three actions fold into the
@@ -233,30 +254,17 @@ export function ProjectsTreeSidebar({
         <ToolbarItem {...trailingItem("high")}>
           <Button
             label="Capture"
-            systemImage="tray.and.arrow.down"
+            systemImage="square.and.pencil"
             onPress={() => {
               haptics.selection();
               router.push("/capture");
             }}
           />
         </ToolbarItem>
-        {/* Status stays visible longest (Apple: badges/status); Appearance
-            is rare, so it is the first to fold into the overflow menu. */}
-        <ToolbarItem {...trailingItem("high")}>
-          <Button
-            label="Sync status"
-            systemImage="arrow.triangle.2.circlepath"
-            modifiers={[tint(syncTint)]}
-            onPress={() => {
-              haptics.selection();
-              router.push("/sync");
-            }}
-          />
-        </ToolbarItem>
         <ToolbarItem {...trailingItem("low")}>
           <Button
             label="Appearance settings"
-            systemImage="gear"
+            systemImage="paintpalette"
             onPress={() => {
               haptics.selection();
               router.push("/settings/appearance");
