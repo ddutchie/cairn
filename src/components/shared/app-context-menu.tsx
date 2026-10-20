@@ -137,7 +137,9 @@ export function AppContextMenu() {
       const href = link?.href ?? null;
       if (!host && !selectedText && !href) return;
 
-      e.preventDefault();
+      // Deliberately NOT preventDefault: Chromium only forwards the misspelling
+      // to Electron's `context-menu` event if the page leaves the event alone,
+      // and Electron shows no native menu of its own.
       lastOpenAt.current = Date.now();
       const recent = lastSpell.current && Date.now() - lastSpell.current.at < 500 ? lastSpell.current.info : null;
       setSpell(host && !readOnly ? recent : null);
