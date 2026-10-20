@@ -354,7 +354,12 @@ export function DockSidebar() {
                   <Copy size={13} /> Copy name
                 </ContextMenuItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem onSelect={() => archiveProject(project.id)}>
+                <ContextMenuItem onSelect={() => {
+                  archiveProject(project.id);
+                  // An archived project must not stay active: fall back to another live one.
+                  const next = projects.find((p) => p.id !== project.id && !p.archivedAt);
+                  setActiveProject(next?.id ?? null);
+                }}>
                   <Archive size={13} /> Archive project
                 </ContextMenuItem>
               </ContextMenuContent>

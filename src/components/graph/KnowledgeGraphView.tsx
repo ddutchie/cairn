@@ -265,7 +265,6 @@ export function KnowledgeGraphView() {
     if (node.type === "note") revealNote(setView, node.id);
     else if (node.type === "card") revealCard(setView, node.id);
     else if (node.type === "project") setView("overview");
-    else setView("notes");
   }, [setActiveProject, setView]);
 
   async function handleRecompute() {
@@ -672,9 +671,11 @@ export function KnowledgeGraphView() {
             <ContextMenuItem onSelect={() => setSelectedGraphNode(menuNode.id)}>
               <Info size={13} /> Show details
             </ContextMenuItem>
-            <ContextMenuItem onSelect={() => openGraphNode(menuNode)}>
-              <ExternalLink size={13} /> Open {menuNode.type}
-            </ContextMenuItem>
+            {menuNode.type !== "tag" && (
+              <ContextMenuItem onSelect={() => openGraphNode(menuNode)}>
+                <ExternalLink size={13} /> Open {menuNode.type}
+              </ContextMenuItem>
+            )}
             {isNodeGraphLayout(graphLayout) && (
               <ContextMenuItem onSelect={() => handleFocus(menuNode)}>
                 <Focus size={13} /> Focus neighbourhood

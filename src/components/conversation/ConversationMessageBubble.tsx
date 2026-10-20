@@ -3,7 +3,7 @@
 import React from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ReportIssueControl } from "@/components/conversation/ReportIssueControl";
-import { Check, Copy, FileCode, FileText, FolderOpen, Info, Kanban, RotateCcw, Search } from "lucide-react";
+import { Check, Copy, FileCode, FileText, Link2, FolderOpen, Info, Kanban, RotateCcw, Search } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
@@ -50,6 +50,7 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
   const [statsOpen, setStatsOpen] = React.useState(false);
   // Radix menu replaces the app-wide one here, so capture any text selection to offer "Copy selection".
   const [selectedText, setSelectedText] = React.useState("");
+  const [linkHref, setLinkHref] = React.useState<string | null>(null);
   // Whitespace-only content still renders as a blank bubble, so treat it as
   // empty. Defensive `?? ""`: persisted transcripts predate the required type.
   const hasContent = (message.content ?? "").trim().length > 0;
@@ -125,7 +126,10 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div
-                onContextMenu={() => setSelectedText(window.getSelection()?.toString() ?? "")}
+                onContextMenu={(e) => {
+                  setSelectedText(window.getSelection()?.toString() ?? "");
+                  setLinkHref((e.target as Element).closest<HTMLAnchorElement>("a[href]")?.href ?? null);
+                }}
                 className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full", isUser ? "chat-bubble-user rounded-tr-sm" : "chat-bubble-ai rounded-tl-sm")}
               >
                 {hasContent && <MarkdownContent content={message.content} isUser={isUser} />}
@@ -134,6 +138,11 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
             </ContextMenuTrigger>
             {hasContent && (
               <ContextMenuContent>
+                {linkHref && (
+                  <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(linkHref)}>
+                    <Link2 size={13} /> Copy link address
+                  </ContextMenuItem>
+                )}
                 {selectedText && (
                   <>
                     <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(selectedText)}>

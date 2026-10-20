@@ -40,7 +40,6 @@ export function CardContextMenu({ card, onOpen, children }: CardContextMenuProps
   const deleteCard = useCairnStore((s) => s.deleteCard);
   const duplicateCard = useCairnStore((s) => s.duplicateCard);
   const moveCardToProject = useCairnStore((s) => s.moveCardToProject);
-  const cards = useCairnStore((s) => s.cards);
 
   const projectColumns = useMemo(
     () => columns.filter((c) => c.projectId === card.projectId).sort((a, b) => a.order - b.order),
@@ -56,7 +55,8 @@ export function CardContextMenu({ card, onOpen, children }: CardContextMenuProps
   );
 
   const moveTo = (columnId: string) => {
-    const count = cards.filter((c) => c.columnId === columnId && !c.archivedAt).length;
+    // Read lazily: subscribing would re-render every card's menu on any card change.
+    const count = useCairnStore.getState().cards.filter((c) => c.columnId === columnId && !c.archivedAt).length;
     moveCard(card.id, columnId, count);
   };
   const setDue = (date: Date | null) =>

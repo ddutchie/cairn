@@ -1,20 +1,23 @@
 /**
- * Maps a terminal's host element to its xterm instance so the app-wide context
- * menu can offer Copy / Paste / Clear. xterm paints to canvas, so the DOM
- * selection the generic menu reads is always empty — the terminal itself owns
- * the selection.
+ * Maps a terminal's `.xterm` element to its xterm instance so the app-wide
+ * context menu can offer Copy / Paste / Clear. xterm paints to canvas, so the
+ * DOM selection the generic menu reads is always empty — the terminal itself
+ * owns the selection. Keyed by `terminal.element` (not the host container)
+ * because that element is what moves when a terminal is re-attached to a new
+ * container.
  */
 
 import type { Terminal } from "@xterm/xterm";
 
 const registry = new WeakMap<HTMLElement, Terminal>();
 
-export function registerTerminalElement(host: HTMLElement, terminal: Terminal): void {
-  registry.set(host, terminal);
+/** Call after `terminal.open()` so `terminal.element` exists. */
+export function registerTerminal(terminal: Terminal): void {
+  if (terminal.element) registry.set(terminal.element, terminal);
 }
 
-/** Terminal whose host element contains `target`, if any. */
+/** Terminal whose `.xterm` element contains `target`, if any. */
 export function findTerminalFor(target: Element): Terminal | null {
-  const host = target.closest(".xterm")?.parentElement;
-  return (host && registry.get(host)) || null;
+  const el = target.closest<HTMLElement>(".xterm");
+  return (el && registry.get(el)) || null;
 }

@@ -32,7 +32,10 @@ const actions = {
 let state: Record<string, unknown>;
 
 vi.mock("@/store", () => ({
-  useCairnStore: (selector: (s: Record<string, unknown>) => unknown) => selector(state),
+  useCairnStore: Object.assign(
+    (selector: (s: Record<string, unknown>) => unknown) => selector(state),
+    { getState: () => state },
+  ),
 }));
 
 import { CardContextMenu } from "./card-context-menu";

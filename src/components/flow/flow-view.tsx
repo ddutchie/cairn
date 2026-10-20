@@ -515,9 +515,15 @@ function IdeaFlowCanvas() {
   async function duplicateNode(source: Node) {
     if (!activeProjectId || source.type === "group") return;
     const type = source.type as IdeaNodeType;
-    const data = { ...(source.data as Record<string, unknown>) } as ReturnType<typeof defaultData>;
-    const x = source.position.x + 32;
-    const y = source.position.y + 32;
+    // Drop callbacks injected by nodesWithCallbacks (e.g. onPromote): functions can't cross IPC.
+    const data = Object.fromEntries(
+      Object.entries(source.data as Record<string, unknown>).filter(([, v]) => typeof v !== "function"),
+    ) as ReturnType<typeof defaultData>;
+    // Grouped nodes store a position relative to their group; the copy is created
+    // ungrouped, so it needs the absolute position.
+    const origin = getInternalNode(source.id)?.internals.positionAbsolute ?? source.position;
+    const x = origin.x + 32;
+    const y = origin.y + 32;
     suppressReload();
     let created: { id: string };
     try {
@@ -728,6 +734,7 @@ function IdeaFlowCanvas() {
   // ── Render ────────────────────────────────────────────────────
 
   return (
+    <>
     <ContextMenu>
     <ContextMenuTrigger asChild>
     <div
@@ -850,15 +857,6 @@ function IdeaFlowCanvas() {
         </Panel>
       </ReactFlow>
 
-      {editTarget && (
-        <NodeEditModal
-          nodeId={editTarget.nodeId}
-          type={editTarget.type}
-          data={editTarget.data}
-          onSave={handleEditSave}
-          onClose={() => setEditTarget(null)}
-        />
-      )}
 
     </div>
     </ContextMenuTrigger>
@@ -939,5 +937,17 @@ function IdeaFlowCanvas() {
       )}
     </ContextMenuContent>
     </ContextMenu>
+    {/* Outside the trigger: React bubbles portal events to React parents, which would send
+        right-clicks in the modal's fields to the canvas menu instead of the text-field menu. */}
+      {editTarget && (
+        <NodeEditModal
+          nodeId={editTarget.nodeId}
+          type={editTarget.type}
+          data={editTarget.data}
+          onSave={handleEditSave}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+    </>
   );
 }

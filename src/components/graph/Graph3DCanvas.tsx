@@ -200,9 +200,10 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
   const [ready, setReady] = React.useState(false);
 
   // Latest props for the long-lived instance callbacks.
-  const propsRef = useRef({ selectedNodeId, onNodeClick, onBackgroundClick, spacing, graph });
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const propsRef = useRef({ selectedNodeId, onNodeClick, onNodeContextMenu, onBackgroundClick, spacing, graph });
   // eslint-disable-next-line react-hooks/refs -- keep latest value for callbacks owned by the WebGL instance
-  propsRef.current = { selectedNodeId, onNodeClick, onBackgroundClick, spacing, graph };
+  propsRef.current = { selectedNodeId, onNodeClick, onNodeContextMenu, onBackgroundClick, spacing, graph };
   const hoveredRef = useRef<string | null>(null);
 
   const edges = useMemo(
@@ -341,6 +342,29 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
     fg.d3ReheatSimulation();
   }, [spacing, edges, ready]);
 
+  // The 3D engine preventDefault()s contextmenu on its canvas, and Radix ignores events that
+  // are already default-prevented — so the ancestor Radix trigger would never open. Intercept
+  // in capture phase and re-dispatch a fresh, un-prevented event from the wrapper; the node
+  // under the cursor (tracked by the engine's raycaster hover) is reported once Radix has run.
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const onContextMenu = (e: MouseEvent) => {
+      if (!e.isTrusted) return; // our own re-dispatched event
+      e.stopPropagation();
+      e.preventDefault();
+      el.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true, cancelable: true, button: 2,
+        clientX: e.clientX, clientY: e.clientY,
+      }));
+      const { graph: g, onNodeContextMenu: report } = propsRef.current;
+      const id = hoveredRef.current;
+      report?.(id ? g.nodes.find((n) => n.id === id) ?? null : null);
+    };
+    el.addEventListener("contextmenu", onContextMenu, true);
+    return () => el.removeEventListener("contextmenu", onContextMenu, true);
+  }, []);
+
   useEffect(() => { fgRef.current?.width(dims.width).height(dims.height); }, [dims.width, dims.height, ready]);
   useEffect(() => { applyStyle(); }, [related, ready, applyStyle]);
 
@@ -371,14 +395,7 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
     "px-2 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
 
   return (
-    <div
-      className="relative w-full h-full"
-      onContextMenu={() => {
-        // Hover is tracked by the engine's raycaster, so it already knows what is under the cursor.
-        const id = hoveredRef.current;
-        onNodeContextMenu?.(id ? graph.nodes.find((g) => g.id === id) ?? null : null);
-      }}
-    >
+    <div ref={wrapperRef} className="relative w-full h-full">
       <div ref={containerRef} className="absolute inset-0 overflow-hidden" style={{ cursor: "grab" }} />
       <canvas
         ref={gizmoCanvasRef}

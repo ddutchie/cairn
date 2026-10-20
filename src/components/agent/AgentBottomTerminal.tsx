@@ -11,7 +11,7 @@
  * - Height is controlled by the parent via a draggable divider in AgentView.
  */
 
-import { registerTerminalElement } from "@/lib/terminal-registry";
+import { registerTerminal } from "@/lib/terminal-registry";
 import { useEffect, useRef, useState } from "react";
 import { Terminal as TerminalIcon, X, Plus, Bot } from "lucide-react";
 import { useCairnStore } from "@/store";
@@ -227,7 +227,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
 
     container.innerHTML = "";
     terminal.open(container);
-    registerTerminalElement(container, terminal);
+    registerTerminal(terminal);
     termRefs.current.set(sessionId, { terminal, fitAddon });
 
     if (observed) {

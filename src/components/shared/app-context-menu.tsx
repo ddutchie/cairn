@@ -58,7 +58,10 @@ function restoreSelection(state: MenuState) {
   if (!host) return;
   host.focus({ preventScroll: true });
   if (isTextControl(host) && state.inputRange) {
-    host.setSelectionRange(state.inputRange.start, state.inputRange.end);
+    // email / number inputs have no selection API and throw InvalidStateError.
+    try {
+      host.setSelectionRange(state.inputRange.start, state.inputRange.end);
+    } catch { /* focus alone is enough for these types */ }
   } else if (state.domRange) {
     const sel = window.getSelection();
     sel?.removeAllRanges();

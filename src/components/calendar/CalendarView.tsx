@@ -78,7 +78,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [detailCardId, setDetailCardId] = useState<string | null>(null);
   const [draggingCard, setDraggingCard] = useState<TaskCard | null>(null);
-  const [dayDetail, setDayDetail] = useState<{ cell: CalendarCell; cards: TaskCard[] } | null>(null);
+  const [dayDetail, setDayDetail] = useState<{ cell: CalendarCell } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -177,7 +177,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
       cards={byDate.get(cell.key) ?? []}
       maxVisible={layout === "month" ? 3 : 8}
       onOpenCard={setDetailCardId}
-      onShowMore={(c, cards) => setDayDetail({ cell: c, cards })}
+      onShowMore={(c) => setDayDetail({ cell: c })}
     />
   );
 
@@ -283,7 +283,8 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
       )}
 
       <DayDetailModal
-        day={dayDetail}
+        // Derived each render so cards edited / archived / deleted from the menu update live.
+        day={dayDetail ? { cell: dayDetail.cell, cards: byDate.get(dayDetail.cell.key) ?? [] } : null}
         onClose={() => setDayDetail(null)}
         onOpenCard={setDetailCardId}
       />
