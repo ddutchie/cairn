@@ -223,6 +223,20 @@ const FEATURES = [
       "Self-Healing Automations: Retries with backoff, auto-pause after repeated failures, and a daily spend budget.",
     ],
   },
+  {
+    id: "v3.1.6-note-search",
+    version: "v3.1.6",
+    title: "Search That Finds the Line",
+    category: "Notes",
+    description:
+      "Search now shows where it matched, and every note has its own find bar, so a specific phrase inside a note is one keystroke away.",
+    highlights: [
+      "Find in Note: ⌘F opens a find bar in the open note, in Edit and Read mode, with match count and next/previous.",
+      "Match Excerpts: Search results show the matching text with your terms highlighted, best matches first.",
+      "Jump to the Match: Opening a result lands in the note with the find bar already on it.",
+      "Phrases and Exclusions: Use \"exact phrase\" and -word to narrow results.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

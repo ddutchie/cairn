@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Search, SearchX, FileText, Kanban, X, ArrowRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
+import { requestNoteFind } from "@/lib/note-find";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore, type SearchResult } from "@/store";
@@ -14,6 +15,7 @@ import {
   resolveFocusedResult,
   clampFocus,
   mergeSemanticResults,
+  applyNoteHits,
   type SearchFilterType,
 } from "./search-utils";
 
@@ -24,6 +26,23 @@ interface ResultRowProps {
   globalIndex: number;
   focusedIndex: number;
   semanticScore?: number;
+}
+
+function HighlightedSnippet({ text, ranges }: { text: string; ranges?: Array<[number, number]> }) {
+  if (!ranges?.length) return <>{text}</>;
+  const parts: React.ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([a, b], i) => {
+    if (a > at) parts.push(text.slice(at, a));
+    parts.push(
+      <mark key={i} className="rounded-sm bg-[color-mix(in_srgb,var(--accent)_28%,transparent)] px-0.5 text-[var(--text-primary)]">
+        {text.slice(a, b)}
+      </mark>,
+    );
+    at = b;
+  });
+  if (at < text.length) parts.push(text.slice(at));
+  return <>{parts}</>;
 }
 
 function ResultRow({ result, focused, onSelect, semanticScore }: ResultRowProps) {
@@ -60,7 +79,11 @@ function ResultRow({ result, focused, onSelect, semanticScore }: ResultRowProps)
         </span>
         <span className="flex items-center gap-1.5 mt-0.5 min-w-0">
           <span className="text-[0.714rem] px-1.5 py-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] truncate max-w-[14ch]">{result.projectName}</span>
-          {result.snippet && <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1 min-w-0">{result.snippet}</span>}
+          {result.snippet && (
+            <span className={cn("text-[0.714rem] text-[var(--text-tertiary)] flex-1 min-w-0", result.ranges?.length ? "line-clamp-2" : "truncate")}>
+              <HighlightedSnippet text={result.snippet} ranges={result.ranges} />
+            </span>
+          )}
         </span>
       </span>
       <ArrowRight
@@ -114,6 +137,8 @@ export function SearchPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef(notes);
   const projectsRef = useRef(projects);
+  const filterProjectRef = useRef<string | null>(null);
+  useEffect(() => { filterProjectRef.current = filterProject; }, [filterProject]);
   useEffect(() => { notesRef.current = notes; }, [notes]);
   useEffect(() => { projectsRef.current = projects; }, [projects]);
 
@@ -186,12 +211,12 @@ export function SearchPanel() {
       setFocused(0);
       // Note bodies aren't all in the renderer (loaded lazily): the main
       // process matches bodies; merge those in when they arrive.
-      const searchNotes = window.electron?.note?.search;
-      if (!searchNotes) return;
+      const searchSnippets = window.electron?.note?.searchSnippets;
+      if (!searchSnippets) return;
       try {
-        const bodyMatches = new Set(await searchNotes(trimmed));
+        const hits = await searchSnippets(trimmed, filterProjectRef.current ?? undefined);
         if (cancelled) return;
-        keyword = searchAll(trimmed, bodyMatches);
+        keyword = applyNoteHits(searchAll(trimmed, new Set(hits.map((h) => h.id))), hits);
         publish();
       } catch { /* title-only note matches stay on screen */ }
     }, 150);
@@ -234,12 +259,14 @@ export function SearchPanel() {
       if (searchTimer.current) clearTimeout(searchTimer.current);
       if (semanticTimer.current) clearTimeout(semanticTimer.current);
     };
-  }, [query, searchAll, semanticMode, embeddingsReady, activeWorkspaceId]);
+  }, [query, searchAll, semanticMode, embeddingsReady, activeWorkspaceId, filterProject]);
 
   function handleSelect(result: SearchResult) {
     setActiveProject(result.projectId);
     if (result.type === "note") {
       revealNote(setView, result.id);
+      // Land on the match: open the note with the find bar prefilled.
+      if (result.findTerm) requestNoteFind(result.id, result.findTerm);
     } else {
       revealCard(setView, result.id);
     }

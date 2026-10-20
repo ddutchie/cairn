@@ -17,6 +17,10 @@ export interface SearchResult {
   snippet: string;
   projectId: string;
   projectName: string;
+  /** [start, end) ranges inside `snippet` to highlight (body matches). */
+  ranges?: Array<[number, number]>;
+  /** Query term of the first body match — prefills the in-note find bar on open. */
+  findTerm?: string;
 }
 
 // ── Memo helper ───────────────────────────────────────────────────────────────

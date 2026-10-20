@@ -30,6 +30,8 @@ export function registerDbHandlers(ctx: DbContext): void {
     handle(() => q.getNoteBodies(ctx.db, Array.isArray(ids) ? ids : [])));
   registerContractHandle("db:note:search", (_e, { query, projectId }: { query: string; projectId?: string }) =>
     handle(() => q.searchNoteIds(ctx.db, String(query ?? ""), { projectId })));
+  registerContractHandle("db:note:searchSnippets", (_e, { query, projectId, limit }: { query: string; projectId?: string; limit?: number }) =>
+    handle(() => q.searchNoteSnippets(ctx.db, String(query ?? ""), { projectId, limit })));
   registerContractHandle("db:note:changeMark:clear", (_e, { id }: { id: string }) =>
     handle(() => q.clearNoteChangeBase(ctx.db, id)));
   registerContractHandle("db:note:backlinks:list", (_e, { noteId }: { noteId: string }) =>

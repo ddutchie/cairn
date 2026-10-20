@@ -11,6 +11,7 @@ import {
   getFullSnapshot,
   getNoteBodies,
   searchNoteIds,
+  searchNoteSnippets,
   wikilinkBacklinkIds,
   getChangesSince,
   changeFeedHead,
@@ -65,6 +66,24 @@ describe("lazy note bodies — main-process queries", () => {
     expect(searchNoteIds(db, "login auth")).toEqual(["n3", "n1"]);
     expect(searchNoteIds(db, "auth missing")).toEqual([]);
     expect(searchNoteIds(db, "  ")).toEqual([]);
+  });
+
+  it("snippet search ranks title hits first and excerpts the body match", () => {
+    mk(db, "body", "Meeting", "long preamble ".repeat(10) + "we discussed the roadmap today");
+    mk(db, "title", "Roadmap", "short");
+    const hits = searchNoteSnippets(db, "roadmap");
+    expect(hits.map((h) => h.id)).toEqual(["title", "body"]);
+    expect(hits[0].snippet).toBeNull();
+    const s = hits[1].snippet!;
+    expect(s.text).toContain("roadmap");
+    expect(s.text.slice(...s.ranges[0])).toBe("roadmap");
+  });
+
+  it("supports phrases and exclusions", () => {
+    mk(db, "a", "A", "the auth flow is fine");
+    mk(db, "b", "B", "flow for auth, draft");
+    expect(searchNoteIds(db, '"auth flow"')).toEqual(["a"]);
+    expect(searchNoteIds(db, "auth -draft")).toEqual(["a"]);
   });
 
   it("search scopes to a project", () => {

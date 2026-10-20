@@ -22,6 +22,8 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { makeLatexPlugins, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
+import { NoteFindBar } from "./NoteFindBar";
+import { NOTE_FIND_EVENT, consumeNoteFind } from "@/lib/note-find";
 import { countWords, toggleCheckboxInSource, diffChangedLines, extractStructuredBlockAtOffset, migrateEditorMode, initialLivePreviewOn } from "./note-editor-utils";
 import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { storage } from "@/lib/storage";
@@ -117,6 +119,17 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
     setLivePreviewOnState(next);
     storage.set(NOTE_LIVE_PREVIEW_KEY, next);
   }, []);
+  // In-note find bar (⌘F, or opened with a query from a global search result).
+  const [find, setFind] = useState<{ query: string; requestId: number } | null>(null);
+  useEffect(() => {
+    const open = () => {
+      const req = consumeNoteFind(note.id);
+      if (req) setFind((f) => ({ query: req.query, requestId: (f?.requestId ?? 0) + 1 }));
+    };
+    open(); // request parked before this editor mounted
+    window.addEventListener(NOTE_FIND_EVENT, open);
+    return () => window.removeEventListener(NOTE_FIND_EVENT, open);
+  }, [note.id]);
   const noteContent0 = note.content ?? "";
   const [wordCount, setWordCount] = useState(() => countWords(noteContent0));
   const [showSemanticPanel, setShowSemanticPanel] = useState(false);
@@ -851,6 +864,17 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
               ✕
             </button>
           </div>
+        )}
+        {find && (
+          <NoteFindBar
+            initialQuery={find.query}
+            requestId={find.requestId}
+            mode={mode === "read" ? "read" : "edit"}
+            content={note.content ?? ""}
+            getView={() => editorRef.current?.getView() ?? null}
+            getReadRoot={() => proseRef.current ?? previewScrollRef.current}
+            onClose={() => { setFind(null); if (mode !== "read") editorRef.current?.focus(); }}
+          />
         )}
         {/* CodeMirror — always mounted so state is preserved when toggling */}
         <div className={cn("absolute inset-0 overflow-auto", mode === "read" && "invisible pointer-events-none", (isAiWriting || changeCount > 0) && "pt-8")}>

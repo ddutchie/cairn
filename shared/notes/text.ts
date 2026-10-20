@@ -19,6 +19,8 @@ export function stripMarkdown(md: string): string {
     .trim();
 }
 
+import { matchesParsed, parseSearchQuery } from "./search";
+
 /**
  * Structural markdown → plain text, preserving line breaks: drops heading
  * markers, emphasis, code, link targets, list bullets and blockquote markers.
@@ -66,14 +68,12 @@ export function queryTerms(query: string): string[] {
  * flow" and "flow for auth". Callers pass the combined searchable text (e.g.
  * title + body) as the haystack so terms may be spread across fields.
  *
- * An empty query matches nothing (callers already guard on a blank query; this
+ * Supports "quoted phrases" and -exclusions (see ./search). An empty query
+ * matches nothing (callers already guard on a blank query; this
  * keeps the "empty search returns no rows" contract explicit).
  */
 export function matchesQuery(query: string, haystack: string): boolean {
-  const terms = queryTerms(query);
-  if (terms.length === 0) return false;
-  const hay = haystack.toLowerCase();
-  return terms.every((t) => hay.includes(t));
+  return matchesParsed(parseSearchQuery(query), haystack);
 }
 
 /**
