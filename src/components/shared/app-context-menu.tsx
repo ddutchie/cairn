@@ -80,7 +80,7 @@ export function AppContextMenu() {
   const lastOpenAt = useRef(0);
 
   useEffect(() => {
-    return window.electron?.onSpellcheckContext((e) => {
+    return window.electron?.onSpellcheckContext?.((e) => {
       const info = { word: e.word, suggestions: e.suggestions };
       lastSpell.current = { info, at: Date.now() };
       if (Date.now() - lastOpenAt.current < 500) setSpell(info);
@@ -186,7 +186,7 @@ export function AppContextMenu() {
 
   const replaceWord = useCallback((m: MenuState, word: string) => {
     m.host?.focus({ preventScroll: true });
-    void window.electron?.spellcheckReplace(word);
+    void window.electron?.spellcheckReplace?.(word);
   }, []);
 
   const pasteTerminal = useCallback(async (term: Terminal) => {
@@ -241,7 +241,7 @@ export function AppContextMenu() {
             ) : (
               <div className="px-3 py-1.5 text-xs text-[var(--text-tertiary)]">No suggestions</div>
             )}
-            <DropdownMenuItem onSelect={() => void window.electron?.spellcheckAddWord(spell.word)}>
+            <DropdownMenuItem onSelect={() => void window.electron?.spellcheckAddWord?.(spell.word)}>
               <BookPlus size={13} /> Add &ldquo;{spell.word}&rdquo; to dictionary
             </DropdownMenuItem>
             <DropdownMenuSeparator />

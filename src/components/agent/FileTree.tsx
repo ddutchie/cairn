@@ -57,7 +57,7 @@ function EntryContextMenu({ entry, onOpen, children }: { entry: DirEntry; onOpen
         <ContextMenuItem onSelect={onOpen}>
           <ExternalLink size={13} /> {entry.type === "dir" ? "Toggle folder" : "Open file"}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void window.electron?.agent.revealPath(entry.path)}>
+        <ContextMenuItem onSelect={() => void window.electron?.agent?.revealPath?.(entry.path)}>
           <FolderSearch size={13} /> Reveal in Finder
         </ContextMenuItem>
         <ContextMenuSeparator />
