@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, Activity, FileText, Kanban, Sparkles, Plug } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, Activity, FileText, Kanban, Sparkles, Plug, Eye, Power, Copy } from "lucide-react";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
+  ContextMenuTrigger, CONTEXT_MENU_DANGER,
+} from "@/components/ui/context-menu";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, id, formatRelative } from "@/lib/utils";
@@ -334,7 +338,9 @@ export function AutomationsView() {
           const currentTool = runScratchTool(lastRun);
           const artifacts = runScratchArtifacts(lastRun);
           return (
-            <div key={a.id} className={cn("rounded-lg border bg-[var(--surface)] p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
+            <ContextMenu key={a.id}>
+            <ContextMenuTrigger asChild>
+            <div className={cn("rounded-lg border bg-[var(--surface)] p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
               <div className="flex items-start justify-between gap-3">
                 <Tooltip content="View automation state">
                   <button
@@ -435,6 +441,29 @@ export function AutomationsView() {
                 </div>
               )}
             </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onSelect={() => openDetail(a)}>
+                <Eye size={13} /> View state
+              </ContextMenuItem>
+              <ContextMenuItem disabled={isRunning} onSelect={() => void runNow(a.id)}>
+                <Play size={13} /> Run now
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => openEdit(a)}>
+                <Pencil size={13} /> Edit
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => void updateAutomation(a.id, { enabled: !a.enabled })}>
+                <Power size={13} /> {a.enabled ? "Disable" : "Enable"}
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(a.name)}>
+                <Copy size={13} /> Copy name
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => void deleteAutomation(a.id)} className={CONTEXT_MENU_DANGER}>
+                <Trash2 size={13} /> Delete
+              </ContextMenuItem>
+            </ContextMenuContent>
+            </ContextMenu>
           );
         })}
       </div>

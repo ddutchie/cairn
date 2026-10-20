@@ -16,6 +16,8 @@ interface Props {
   graph: KnowledgeGraph;
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
+  /** Right-click: the node under the cursor, or null for empty canvas. */
+  onNodeContextMenu?: (node: GraphNode | null) => void;
   onBackgroundClick: () => void;
   // Kept for API compatibility with KnowledgeGraphView; the sunburst drills in
   // rather than showing every label / cross-edge, so labelMode and
@@ -39,7 +41,7 @@ const INNER_R_FOCUSED = 140;
 type Arc = { x0: number; x1: number; y0: number; y1: number };
 type PNode = d3.HierarchyRectangularNode<HNode>;
 
-function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onBackgroundClick, spacing }: Props) {
+function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContextMenu, onBackgroundClick, spacing }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fs = useFontScale();
@@ -481,6 +483,17 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onBackground
     if (n.children && n.children.length) zoomTo(n);
   }, [pick, zoomTo, root, graph.nodes, onNodeClick, onBackgroundClick]);
 
+  const handleContextMenu = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onNodeContextMenu) return;
+    const rect = canvas.getBoundingClientRect();
+    const n = pick(ev.clientX - rect.left, ev.clientY - rect.top);
+    const real = n !== null && n !== HUB && n.data.type !== "workspace" && n.data.type !== "branch"
+      ? graph.nodes.find((g) => g.id === n.data.id) ?? null
+      : null;
+    onNodeContextMenu(real);
+  }, [pick, graph.nodes, onNodeContextMenu]);
+
   return (
     <div
       ref={containerRef}
@@ -488,6 +501,7 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onBackground
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { hoveredRef.current = null; setTooltip(null); draw(); }}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       <canvas ref={canvasRef} className="block" />
 

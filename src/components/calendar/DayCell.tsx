@@ -8,6 +8,7 @@
 
 import { cn } from "@/lib/utils";
 import { TaskChip } from "./TaskChip";
+import { CardContextMenu } from "@/components/kanban/card-context-menu";
 import type { CalendarCell } from "./calendar-utils";
 import type { TaskCard } from "@/types";
 import type { ReactNode } from "react";
@@ -69,7 +70,11 @@ export function DayCell({
       </div>
       <div className="flex flex-col gap-0.5 overflow-y-auto min-h-0">
         {visible.map((card) =>
-          renderChip ? renderChip(card) : <TaskChip key={card.id} card={card} onOpen={onOpenCard} />,
+          renderChip ? renderChip(card) : (
+            <CardContextMenu key={card.id} card={card} onOpen={onOpenCard}>
+              <TaskChip card={card} onOpen={onOpenCard} />
+            </CardContextMenu>
+          ),
         )}
         {overflow > 0 && onShowMore && (
           <button

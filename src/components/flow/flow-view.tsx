@@ -22,7 +22,12 @@ import {
   Panel,
 } from "@xyflow/react";
 
-import { Plus, LayoutDashboard, Lightbulb } from "lucide-react";
+import { Plus, LayoutDashboard, Lightbulb, Pencil, Copy, Trash2, ExternalLink, Maximize, Unlink } from "lucide-react";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel,
+  ContextMenuSeparator, ContextMenuTrigger, CONTEXT_MENU_DANGER,
+} from "@/components/ui/context-menu";
+import { revealNote, revealCard } from "@/lib/events";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
@@ -66,6 +71,11 @@ export function IdeaFlowView() {
   );
 }
 
+type FlowMenuTarget =
+  | { kind: "pane" }
+  | { kind: "node"; node: Node }
+  | { kind: "edge"; edge: Edge };
+
 function IdeaFlowCanvas() {
   const { activeProjectId, columns, activeWorkspaceId, aiConfig } = useCairnStore(useShallow((s) => ({
     activeProjectId:   s.activeProjectId,
@@ -75,7 +85,7 @@ function IdeaFlowCanvas() {
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
   const addNodeMenu = ADD_NODE_MENU.filter((n) => n.type !== "ai_summary" || aiEnabled);
-  const { fitView, screenToFlowPosition, getInternalNode } = useReactFlow();
+  const { fitView, screenToFlowPosition, getInternalNode, deleteElements } = useReactFlow();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -85,13 +95,12 @@ function IdeaFlowCanvas() {
 
   // Detect touch device for mobile-specific interactions
   const isTouchDevice = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+  const setView = useCairnStore((s) => s.setView);
 
-  // Long-press state for mobile add-node and edit-node
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressCancelledRef = useRef(false);
-
-  // Context menu state — screen coords for positioning, flow coords for node placement
-  const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
+  // Context menu (Radix): what was right-clicked + where, in screen coords.
+  // Touch long-press is handled by Radix itself, so no manual timer.
+  const [menuTarget, setMenuTarget] = useState<FlowMenuTarget>({ kind: "pane" });
+  const menuPointRef = useRef({ x: 0, y: 0 });
 
   const [editTarget, setEditTarget] = useState<{
     nodeId: string; type: IdeaNodeType; data: Record<string, unknown>;
@@ -450,53 +459,23 @@ function IdeaFlowCanvas() {
     // Group nodes are not editable via modal
     if (node.type === "group") return;
     setEditTarget({ nodeId: node.id, type: node.type as IdeaNodeType, data: node.data as Record<string, unknown> });
-  }, []);
+  }, [setEditTarget]);
 
   // ── Context menu ──────────────────────────────────────────────
+  // Radix opens the menu from the wrapper's contextmenu event; these handlers
+  // (fired first by React Flow) only record which target the menu is for.
 
-  const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
-    e.preventDefault();
-    const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    setContextMenu({ screenX: e.clientX, screenY: e.clientY, flowX: flowPos.x, flowY: flowPos.y });
-  }, [screenToFlowPosition]);
-
-  // ── Long-press handlers (mobile) ──────────────────────────────
-
-  /** Pane long-press → show add-node context menu at touch position */
-  const onPaneTouchStart = useCallback((e: React.TouchEvent) => {
-    if (!isTouchDevice) return;
-    longPressCancelledRef.current = false;
-    const touch = e.touches[0];
-    const startX = touch.clientX;
-    const startY = touch.clientY;
-
-    longPressTimerRef.current = setTimeout(() => {
-      if (longPressCancelledRef.current) return;
-      const flowPos = screenToFlowPosition({ x: startX, y: startY });
-      setContextMenu({ screenX: startX, screenY: startY, flowX: flowPos.x, flowY: flowPos.y });
-    }, 350);
-  }, [isTouchDevice, screenToFlowPosition]);
-
-  const onPaneTouchEnd = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+  const onNodeContextMenu: NodeMouseHandler = useCallback((_e, node) => {
+    setMenuTarget({ kind: "node", node });
   }, []);
 
-  const onPaneTouchMove = useCallback(() => {
-    longPressCancelledRef.current = true;
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+  const onEdgeContextMenu = useCallback((_e: React.MouseEvent, edge: Edge) => {
+    setMenuTarget({ kind: "edge", edge });
   }, []);
 
-  // Clear long-press timer on unmount
-  useEffect(() => {
-    return () => {
-      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-    };
+  const rememberMenuPoint = useCallback((e: React.MouseEvent | React.PointerEvent) => {
+    menuPointRef.current = { x: e.clientX, y: e.clientY };
+    setMenuTarget({ kind: "pane" });
   }, []);
 
   // ── Add node ──────────────────────────────────────────────────
@@ -530,6 +509,25 @@ function IdeaFlowCanvas() {
       setEditTarget({ nodeId: created.id, type, data: data as Record<string, unknown> });
     }
     setShowAddMenu(false);
+    historyManager.push(makeAddNodeCmd(rfNode, activeProjectId));
+  }
+
+  async function duplicateNode(source: Node) {
+    if (!activeProjectId || source.type === "group") return;
+    const type = source.type as IdeaNodeType;
+    const data = { ...(source.data as Record<string, unknown>) } as ReturnType<typeof defaultData>;
+    const x = source.position.x + 32;
+    const y = source.position.y + 32;
+    suppressReload();
+    let created: { id: string };
+    try {
+      created = await flowClient.createNode({ projectId: activeProjectId, type, x, y, data });
+    } catch (err) {
+      reportIpcError(err, "Couldn't duplicate the node");
+      return;
+    }
+    const rfNode: Node = { id: created.id, type, position: { x, y }, data };
+    setNodes((ns) => [...ns, rfNode]);
     historyManager.push(makeAddNodeCmd(rfNode, activeProjectId));
   }
 
@@ -730,10 +728,14 @@ function IdeaFlowCanvas() {
   // ── Render ────────────────────────────────────────────────────
 
   return (
+    <ContextMenu>
+    <ContextMenuTrigger asChild>
     <div
       data-tutorial="flow-canvas"
       className="flex flex-1 min-h-0"
       style={{ background: "var(--background)" }}
+      onPointerDownCapture={rememberMenuPoint}
+      onContextMenuCapture={rememberMenuPoint}
       onDoubleClick={(e) => {
         // Desktop: double-click on the pane to add an idea node
         if ((e.target as HTMLElement).classList.contains("react-flow__pane")) {
@@ -741,9 +743,6 @@ function IdeaFlowCanvas() {
           addNode("idea", flowPos.x, flowPos.y);
         }
       }}
-      onTouchStart={onPaneTouchStart}
-      onTouchEnd={onPaneTouchEnd}
-      onTouchMove={onPaneTouchMove}
     >
       <ReactFlow
         nodes={nodesWithCallbacks}
@@ -764,8 +763,9 @@ function IdeaFlowCanvas() {
           if (node.type === "group") return;
           setEditTarget({ nodeId: node.id, type: node.type as IdeaNodeType, data: node.data as Record<string, unknown> });
         } : undefined}
-        onPaneClick={() => { setShowAddMenu(false); setContextMenu(null); }}
-        onPaneContextMenu={onPaneContextMenu}
+        onPaneClick={() => setShowAddMenu(false)}
+        onNodeContextMenu={onNodeContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
 
         connectionLineType={ConnectionLineType.Bezier}
         connectionLineStyle={CONNECTION_LINE_STYLE}
@@ -860,31 +860,84 @@ function IdeaFlowCanvas() {
         />
       )}
 
-      {contextMenu && (
-        <div
-          style={{ position: "fixed", top: contextMenu.screenY, left: contextMenu.screenX, zIndex: 50 }}
-          onMouseLeave={() => setContextMenu(null)}
-        >
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl py-1 min-w-[160px]">
-            <p className="px-3 pt-1 pb-1.5 text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
-              Add node
-            </p>
-            {addNodeMenu.map(({ type, label, icon: Icon }) => (
-              <button
-                key={type}
-                onClick={() => {
-                  addNode(type, contextMenu.flowX, contextMenu.flowY);
-                  setContextMenu(null);
-                }}
-                className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Icon size={12} className="text-[var(--text-tertiary)]" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent className="min-w-[180px]">
+      {menuTarget.kind === "pane" && (
+        <>
+          <ContextMenuLabel>Add node</ContextMenuLabel>
+          {addNodeMenu.map(({ type, label, icon: Icon }) => (
+            <ContextMenuItem
+              key={type}
+              onSelect={() => {
+                const pos = screenToFlowPosition(menuPointRef.current);
+                void addNode(type, pos.x, pos.y);
+              }}
+            >
+              <Icon size={13} /> {label}
+            </ContextMenuItem>
+          ))}
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => fitView({ duration: 250 })}>
+            <Maximize size={13} /> Fit view
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void handleAutoLayout()}>
+            <LayoutDashboard size={13} /> Auto-arrange
+          </ContextMenuItem>
+        </>
+      )}
+      {menuTarget.kind === "node" && (() => {
+        const node = menuTarget.node;
+        const data = node.data as Record<string, unknown>;
+        const isGroup = node.type === "group";
+        return (
+          <>
+            {!isGroup && (
+              <ContextMenuItem
+                onSelect={() => setEditTarget({ nodeId: node.id, type: node.type as IdeaNodeType, data })}
+              >
+                <Pencil size={13} /> Edit
+              </ContextMenuItem>
+            )}
+            {node.type === "note_ref" && typeof data.noteId === "string" && (
+              <ContextMenuItem onSelect={() => revealNote(setView, data.noteId as string)}>
+                <ExternalLink size={13} /> Open note
+              </ContextMenuItem>
+            )}
+            {node.type === "task_ref" && typeof data.cardId === "string" && (
+              <ContextMenuItem onSelect={() => revealCard(setView, data.cardId as string)}>
+                <ExternalLink size={13} /> Open card
+              </ContextMenuItem>
+            )}
+            {node.type === "url" && typeof data.url === "string" && data.url && (
+              <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(data.url as string)}>
+                <Copy size={13} /> Copy URL
+              </ContextMenuItem>
+            )}
+            {!isGroup && (
+              <ContextMenuItem onSelect={() => void duplicateNode(node)}>
+                <Copy size={13} /> Duplicate
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onSelect={() => void deleteElements({ nodes: [{ id: node.id }] })}
+              className={CONTEXT_MENU_DANGER}
+            >
+              <Trash2 size={13} /> {isGroup ? "Delete group" : "Delete node"}
+            </ContextMenuItem>
+          </>
+        );
+      })()}
+      {menuTarget.kind === "edge" && (
+        <ContextMenuItem
+          onSelect={() => void deleteElements({ edges: [{ id: menuTarget.edge.id }] })}
+          className={CONTEXT_MENU_DANGER}
+        >
+          <Unlink size={13} /> Delete connection
+        </ContextMenuItem>
+      )}
+    </ContextMenuContent>
+    </ContextMenu>
   );
 }

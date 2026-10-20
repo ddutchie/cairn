@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useMemo, useState, useCallback } from "react";
-import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Bell, Activity, ChevronLeft, ChevronDown, ChevronRight, Check } from "lucide-react";
+import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Bell, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive } from "lucide-react";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus } from "@/lib/utils";
@@ -36,6 +39,7 @@ export function DockSidebar() {
     projects: allProjects,
     setActiveProject,
     setView,
+    archiveProject,
     toggleSearch,
     toggleChat,
     cards,
@@ -62,6 +66,7 @@ export function DockSidebar() {
       projects: s.projects,
       setActiveProject: s.setActiveProject,
       setView: s.setView,
+      archiveProject: s.archiveProject,
       toggleSearch: s.toggleSearch,
       toggleChat: s.toggleChat,
       cards: s.cards,
@@ -283,6 +288,8 @@ export function DockSidebar() {
               );
             }
             return (
+              <ContextMenu>
+              <ContextMenuTrigger asChild>
               <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-sm">
                 <div className="flex items-center gap-2">
                   <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)] shrink-0" />
@@ -338,6 +345,20 @@ export function DockSidebar() {
                   );
                 })()}
               </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onSelect={() => setView("overview")}>
+                  <Hash size={13} /> Open overview
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(project.name)}>
+                  <Copy size={13} /> Copy name
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onSelect={() => archiveProject(project.id)}>
+                  <Archive size={13} /> Archive project
+                </ContextMenuItem>
+              </ContextMenuContent>
+              </ContextMenu>
             );
           })()}
 

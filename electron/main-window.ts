@@ -3,6 +3,7 @@
 import { BrowserWindow, shell } from "electron";
 import path from "path";
 import { readThemeSurface } from "./lib/theme-surface";
+import { attachSpellcheck } from "./spellcheck";
 
 /** Windows built by createWindow — the only ones the tray and Quick Capture may target. */
 const mainWindows = new WeakSet<BrowserWindow>();
@@ -49,6 +50,7 @@ export function createWindow(isDev: boolean): BrowserWindow {
     },
   });
   mainWindows.add(win);
+  attachSpellcheck(win.webContents);
 
   if (isDev) {
     win.loadURL("http://localhost:3000");

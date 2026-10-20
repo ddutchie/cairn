@@ -19,7 +19,7 @@
  *   - cwd is validated as an accessible directory before spawn.
  */
 
-import { dialog, BrowserWindow } from "electron";
+import { dialog, BrowserWindow, shell } from "electron";
 import { registerContractHandle, sendIpcEvent } from "./registry";
 
 import fs from "fs";
@@ -98,6 +98,13 @@ export function registerAgentHandlers(ctx: DbContext): void {
   // update IPC), which keeps it consistent with all other project field writes.
 
   // ── File system ──────────────────────────────────────────────────────────
+
+  registerContractHandle("agent:revealPath", (_e, { targetPath }) =>
+    handle(async () => {
+      const realPath = await assertWithinCodeDirectory(ctx.db, targetPath);
+      shell.showItemInFolder(realPath);
+    }),
+  );
 
   registerContractHandle("agent:readDir", (_e, { dirPath }) =>
     handle(async () => {

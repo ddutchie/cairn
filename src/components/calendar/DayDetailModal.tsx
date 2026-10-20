@@ -9,6 +9,7 @@
 import { format } from "date-fns";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { TaskChip } from "./TaskChip";
+import { CardContextMenu } from "@/components/kanban/card-context-menu";
 import type { CalendarCell } from "./calendar-utils";
 import type { TaskCard } from "@/types";
 
@@ -26,14 +27,22 @@ export function DayDetailModal({ day, onClose, onOpenCard }: DayDetailModalProps
       {day && (
         <div className="p-3 max-h-[60vh] overflow-y-auto flex flex-col gap-1">
           {day.cards.map((card) => (
-            <TaskChip
+            <CardContextMenu
               key={card.id}
               card={card}
               onOpen={(id) => {
                 onClose();
                 onOpenCard?.(id);
               }}
-            />
+            >
+              <TaskChip
+                card={card}
+                onOpen={(id) => {
+                  onClose();
+                  onOpenCard?.(id);
+                }}
+              />
+            </CardContextMenu>
           ))}
         </div>
       )}

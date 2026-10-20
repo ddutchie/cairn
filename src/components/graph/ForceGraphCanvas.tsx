@@ -28,6 +28,8 @@ interface Props {
   graph: KnowledgeGraph;
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
+  /** Right-click: the node under the cursor, or null for empty canvas. */
+  onNodeContextMenu?: (node: GraphNode | null) => void;
   onBackgroundClick: () => void;
   labelMode: "smart" | "all" | "minimal";
   spacing: number;
@@ -118,6 +120,7 @@ function ForceGraphCanvasImpl({
   graph,
   selectedNodeId,
   onNodeClick,
+  onNodeContextMenu,
   onBackgroundClick,
   labelMode,
   spacing,
@@ -687,6 +690,14 @@ function ForceGraphCanvasImpl({
     }
   }, [pick, graph.nodes, onNodeClick, onBackgroundClick]);
 
+  const handleContextMenu = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onNodeContextMenu) return;
+    const rect = canvas.getBoundingClientRect();
+    const node = pick(ev.clientX - rect.left, ev.clientY - rect.top);
+    onNodeContextMenu(node ? graph.nodes.find((n) => n.id === node.id) ?? null : null);
+  }, [pick, graph.nodes, onNodeContextMenu]);
+
   // ── zoom controls ──
   const zoomBy = useCallback((factor: number) => {
     const canvas = canvasRef.current, zoom = zoomRef.current;
@@ -705,6 +716,7 @@ function ForceGraphCanvasImpl({
       onMouseMove={handleMouseMove}
       onMouseLeave={() => { hoveredNodeRef.current = null; setHoveredEdgeText(null); scheduleDraw(); }}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       <canvas ref={canvasRef} className="block" />
 

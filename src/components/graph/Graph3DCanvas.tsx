@@ -18,6 +18,8 @@ interface Props {
   graph: KnowledgeGraph;
   selectedNodeId: string | null;
   onNodeClick: (node: GraphNode) => void;
+  /** Right-click: the hovered node, or null for empty space. */
+  onNodeContextMenu?: (node: GraphNode | null) => void;
   onBackgroundClick: () => void;
   spacing: number;
   semanticThreshold?: number;
@@ -188,7 +190,7 @@ function createGizmo(THREE: typeof import("three"), canvas: HTMLCanvasElement, s
 
 const GIZMO_PX = 88;
 
-export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onBackgroundClick, spacing, semanticThreshold = 1 }: Props) {
+export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContextMenu, onBackgroundClick, spacing, semanticThreshold = 1 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<Instance | null>(null);
   const backdropRef = useRef<Backdrop | null>(null);
@@ -369,7 +371,14 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onBackground
     "px-2 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
 
   return (
-    <div className="relative w-full h-full">
+    <div
+      className="relative w-full h-full"
+      onContextMenu={() => {
+        // Hover is tracked by the engine's raycaster, so it already knows what is under the cursor.
+        const id = hoveredRef.current;
+        onNodeContextMenu?.(id ? graph.nodes.find((g) => g.id === id) ?? null : null);
+      }}
+    >
       <div ref={containerRef} className="absolute inset-0 overflow-hidden" style={{ cursor: "grab" }} />
       <canvas
         ref={gizmoCanvasRef}

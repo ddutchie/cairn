@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { PRIORITY_CSS_COLORS } from "@/lib/constants";
 import type { TaskCard } from "@/types";
 
-interface TaskChipProps {
+interface TaskChipProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onClick" | "className"> {
   card: TaskCard;
   /** Render with overdue (danger) emphasis. */
   overdue?: boolean;
@@ -24,7 +24,7 @@ interface TaskChipProps {
 }
 
 export const TaskChip = forwardRef<HTMLButtonElement, TaskChipProps>(function TaskChip(
-  { card, overdue, onOpen, dragging, dragProps },
+  { card, overdue, onOpen, dragging, dragProps, ...rest },
   ref,
 ) {
   const isBlocked = (card.blockedByIds ?? []).length > 0;
@@ -35,6 +35,7 @@ export const TaskChip = forwardRef<HTMLButtonElement, TaskChipProps>(function Ta
       type="button"
       onClick={() => !dragging && onOpen?.(card.id)}
       title={card.title}
+      {...rest}
       {...dragProps}
       className={cn(
         "group w-full flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-[0.643rem] leading-tight transition-colors",
