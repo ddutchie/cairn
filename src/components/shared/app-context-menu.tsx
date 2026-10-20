@@ -84,6 +84,23 @@ export function AppContextMenu() {
     });
   }, []);
 
+  /**
+   * Open one tick late. Chromium computes the right-clicked element (editable?
+   * misspelled word?) *after* our handler returns; if the menu is already
+   * rendered it can sit under the cursor and be hit-tested instead of the field,
+   * which hides the spelling suggestions.
+   */
+  const openMenu = useCallback((state: Omit<MenuState, "id">) => {
+    lastOpenAt.current = Date.now();
+    window.setTimeout(() => {
+      const recent = lastSpell.current && Date.now() - lastSpell.current.at < 500 ? lastSpell.current.info : null;
+      setSpell(state.host && !state.readOnly ? recent : null);
+      counter.current += 1;
+      setMenu({ ...state, id: counter.current });
+      setOpen(true);
+    }, 0);
+  }, []);
+
   useEffect(() => {
     const onContextMenu = (e: MouseEvent) => {
       if (e.defaultPrevented) return;
@@ -94,14 +111,10 @@ export function AppContextMenu() {
         const term = findTerminalFor(target);
         if (!term) return;
         e.preventDefault();
-        lastOpenAt.current = Date.now();
-        setSpell(null);
-        counter.current += 1;
-        setMenu({
-          id: counter.current, x: e.clientX, y: e.clientY, host: null, readOnly: true,
+        openMenu({
+          x: e.clientX, y: e.clientY, host: null, readOnly: true,
           selectedText: term.getSelection(), href: null, inputRange: null, domRange: null, term,
         });
-        setOpen(true);
         return;
       }
 
@@ -140,16 +153,11 @@ export function AppContextMenu() {
       // Deliberately NOT preventDefault: Chromium only forwards the misspelling
       // to Electron's `context-menu` event if the page leaves the event alone,
       // and Electron shows no native menu of its own.
-      lastOpenAt.current = Date.now();
-      const recent = lastSpell.current && Date.now() - lastSpell.current.at < 500 ? lastSpell.current.info : null;
-      setSpell(host && !readOnly ? recent : null);
-      counter.current += 1;
-      setMenu({ id: counter.current, x: e.clientX, y: e.clientY, host, readOnly, selectedText, href, inputRange, domRange, term: null });
-      setOpen(true);
+      openMenu({ x: e.clientX, y: e.clientY, host, readOnly, selectedText, href, inputRange, domRange, term: null });
     };
     document.addEventListener("contextmenu", onContextMenu);
     return () => document.removeEventListener("contextmenu", onContextMenu);
-  }, []);
+  }, [openMenu]);
 
   const copy = useCallback(async (m: MenuState) => {
     if (m.selectedText) await navigator.clipboard.writeText(m.selectedText);
