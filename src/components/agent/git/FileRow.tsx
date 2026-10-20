@@ -1,6 +1,10 @@
 "use client";
 
-import { File, RotateCcw } from "lucide-react";
+import { Copy, Diff, File, Minus, Plus, RotateCcw } from "lucide-react";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
+  ContextMenuTrigger, CONTEXT_MENU_DANGER,
+} from "@/components/ui/context-menu";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { statusLabel, statusColor } from "./git-helpers";
@@ -28,6 +32,8 @@ export function FileRow({
   const hasDiffStats = stat && (stat.added > 0 || stat.deleted > 0);
   return (
     <>
+      <ContextMenu>
+      <ContextMenuTrigger asChild>
       <div
         role="button"
         tabIndex={0}
@@ -77,6 +83,24 @@ export function FileRow({
           {statusLabel(status)}
         </span>
       </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onToggle}>
+          <Diff size={13} /> {expanded ? "Hide diff" : "Show diff"}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={onAction}>
+          {actionLabel === "+" ? <Plus size={13} /> : <Minus size={13} />}
+          {actionLabel === "+" ? "Stage file" : "Unstage file"}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(path)}>
+          <Copy size={13} /> Copy path
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={onDiscard} className={CONTEXT_MENU_DANGER}>
+          <RotateCcw size={13} /> {discardArmed ? "Click again to confirm discard" : "Discard changes"}
+        </ContextMenuItem>
+      </ContextMenuContent>
+      </ContextMenu>
       {expanded && (
         <InlineDiff rawDiff={rawDiff} loading={loading} />
       )}

@@ -11,7 +11,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ChevronRight, ChevronDown, FolderOpen, Folder,
   FileText, FileCode, FileJson, Settings, AlertCircle, Search, X,
+  Copy, ExternalLink, FolderSearch,
 } from "lucide-react";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,6 +46,30 @@ function FileIcon({ name, size = 12 }: { name: string; size?: number }) {
   if (["yml", "yaml", "toml", "env", "ini", "cfg"].includes(ext))
     return <Settings size={size} />;
   return <FileText size={size} />;
+}
+
+/** Right-click menu shared by file and directory rows. */
+function EntryContextMenu({ entry, onOpen, children }: { entry: DirEntry; onOpen: () => void; children: React.ReactElement }) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onOpen}>
+          <ExternalLink size={13} /> {entry.type === "dir" ? "Toggle folder" : "Open file"}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void window.electron?.agent?.revealPath?.(entry.path)}>
+          <FolderSearch size={13} /> Reveal in Finder
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(entry.path)}>
+          <Copy size={13} /> Copy path
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(entry.name)}>
+          <Copy size={13} /> Copy name
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 }
 
 // ── Single tree node ──────────────────────────────────────────────────────────
@@ -77,6 +105,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
   if (entry.type === "dir") {
     return (
       <div>
+        <EntryContextMenu entry={entry} onOpen={toggle}>
         <button
           onClick={toggle}
           className={cn(
@@ -92,6 +121,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
           <span className="truncate font-medium">{entry.name}</span>
           {loading && <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">…</span>}
         </button>
+        </EntryContextMenu>
         {expanded && loadError && (
           <p className="px-3 py-1 text-[0.714rem] text-[var(--danger)]" style={{ paddingLeft: `${indent + 20}px` }}>
             {loadError}
@@ -115,6 +145,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
   }
 
   return (
+    <EntryContextMenu entry={entry} onOpen={() => onFileClick(entry.path)}>
     <button
       onClick={() => onFileClick(entry.path)}
       className={cn(
@@ -128,6 +159,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
       <FileIcon name={entry.name} />
       <span className="truncate">{entry.name}</span>
     </button>
+    </EntryContextMenu>
   );
 }
 

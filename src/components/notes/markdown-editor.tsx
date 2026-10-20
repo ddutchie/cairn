@@ -367,6 +367,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
           updateListener,
           pasteHandler,
           EditorView.lineWrapping,
+          // CodeMirror turns spellcheck off by default; notes are prose.
+          EditorView.contentAttributes.of({ spellcheck: "true" }),
           changedLineField,
           // Live Preview marker-hiding — compartment-controlled so it can be
           // toggled without recreating editor state.

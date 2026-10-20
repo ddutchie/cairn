@@ -12,6 +12,7 @@ export const agentApi = {
     setDefaultAgent: (id: string) => invokeContract("agent:setDefaultAgent", { id }),
 
     readDir: (dirPath: string) => invokeContract("agent:readDir", { dirPath }),
+    revealPath: (targetPath: string) => invokeContract("agent:revealPath", { targetPath }),
     searchFiles: (dirPath: string, query: string) => invokeContract("agent:searchFiles", { dirPath, query }),
     readFile: (filePath: string) => invokeContract("agent:readFile", { filePath }),
     readFileBase64: (filePath: string) => invokeContract("agent:readFileBase64", { filePath }),

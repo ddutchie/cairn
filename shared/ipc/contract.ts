@@ -518,6 +518,12 @@ export interface IpcContract {
 
   // ── Agent file browser (paths must sit inside a project's code directory) ─
   "agent:readDir": { args: [req: { dirPath: string }]; result: DirEntry[] };
+  /** Reveal a path (inside the project code directory) in Finder / Explorer. */
+  /** Replace the misspelled word under the last right-click in the sender window. */
+  "spellcheck:replace": { args: [req: { word: string }]; result: void };
+  /** Add a word to the user's spellcheck dictionary. */
+  "spellcheck:addWord": { args: [req: { word: string }]; result: void };
+  "agent:revealPath": { args: [req: { targetPath: string }]; result: void };
   /** Filename substring match, at most 50 results. */
   "agent:searchFiles": { args: [req: { dirPath: string; query: string }]; result: FileSearchResult[] };
   "agent:readFile": { args: [req: { filePath: string }]; result: string };
@@ -706,6 +712,15 @@ export interface IpcContract {
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
+/** Misspelled word under a right-click, with the OS spellchecker's suggestions. */
+export interface SpellcheckContext {
+  word: string;
+  suggestions: string[];
+  /** Click position in the window's client coordinates. */
+  x: number;
+  y: number;
+}
+
 export interface IpcEvents {
   "automation:run": AutomationRunEvent;
   /** Unread notification count changed (bell + badge). */
@@ -716,6 +731,8 @@ export interface IpcEvents {
   "tools:authRequired": McpAuthRequiredEvent;
   /** Global quick-capture shortcut / tray item fired. */
   "app:quick-capture": undefined;
+  /** Right-click landed on a misspelled word (OS spellchecker result). */
+  "spellcheck:context": SpellcheckContext;
   "app:migrationProgress": MigrationProgress;
   "updater:update-available": UpdateAvailableInfo;
   "updater:update-downloaded": undefined;
@@ -1026,6 +1043,9 @@ const CHANNELS: ChannelRecord = {
   "agent:deleteCodingAgent": "read",
   "agent:setDefaultAgent": "read",
   "agent:readDir": "read",
+  "agent:revealPath": "read",
+  "spellcheck:replace": "read",
+  "spellcheck:addWord": "read",
   "agent:searchFiles": "read",
   "agent:readFile": "read",
   "agent:readFileBase64": "read",

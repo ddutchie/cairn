@@ -22,6 +22,7 @@ import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { broadcastEvent, sendIpcEvent, setWriteObserver } from "./ipc/registry";
 import { registerAgentHandlers } from "./ipc/agent";
+import { registerSpellcheckHandlers } from "./ipc/spellcheck";
 import { registerToolsHandlers } from "./ipc/tools";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
@@ -221,6 +222,7 @@ app.whenReady().then(async () => {
   // runAllPendingMigrations, etc. which need handler-level model resolution).
   registerIpcHandlers(ctx);
   registerAgentHandlers(ctx);
+  registerSpellcheckHandlers();
   registerToolsHandlers(ctx);
   registerToolBuilderHandlers(ctx);
   registerCommunityRegistryHandlers();

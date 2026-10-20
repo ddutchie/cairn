@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon, Focus, X, Box,
+  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon, Focus, X, Box, Copy, ExternalLink, Info, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -16,6 +16,10 @@ import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Graph3DCanvas } from "./Graph3DCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { revealNote, revealCard } from "@/lib/events";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { EmptyState as EmptyStateView } from "@/components/ui/empty-state";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
@@ -51,6 +55,8 @@ export function KnowledgeGraphView() {
     setGraphLayout,
     setGraphFilters,
     setSelectedGraphNode,
+    setView,
+    setActiveProject,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId:            s.activeWorkspaceId,
     // Another workspace's graph (mid-switch) is shown as empty → loading state.
@@ -67,6 +73,8 @@ export function KnowledgeGraphView() {
     setGraphLayout:               s.setGraphLayout,
     setGraphFilters:              s.setGraphFilters,
     setSelectedGraphNode:         s.setSelectedGraphNode,
+    setView:                      s.setView,
+    setActiveProject:             s.setActiveProject,
   })));
 
   const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
@@ -247,6 +255,17 @@ export function KnowledgeGraphView() {
     [setSelectedGraphNode]
   );
   const handleFocus = useCallback((node: GraphNode) => setFocusNodeId(node.id), []);
+
+  // Right-clicked node (null = empty canvas → no menu). Set by the canvas before
+  // Radix reads it, because the canvas's contextmenu handler runs first.
+  const [menuNode, setMenuNode] = useState<GraphNode | null>(null);
+  const openGraphNode = useCallback((node: GraphNode) => {
+    const targetProjectId = node.projectId ?? (node.type === "project" ? node.id : null);
+    if (targetProjectId) setActiveProject(targetProjectId);
+    if (node.type === "note") revealNote(setView, node.id);
+    else if (node.type === "card") revealCard(setView, node.id);
+    else if (node.type === "project") setView("overview");
+  }, [setActiveProject, setView]);
 
   async function handleRecompute() {
     if (!activeWorkspaceId) return;
@@ -540,7 +559,9 @@ export function KnowledgeGraphView() {
       {/* Canvas area + detail panel */}
       <div className="flex flex-1 min-h-0 overflow-hidden" onClick={() => { setLabelDropdownOpen(false); }}>
         {/* Main canvas */}
-        <div className="flex flex-1 min-w-0 overflow-hidden relative">
+        <ContextMenu>
+        <ContextMenuTrigger asChild>
+        <div className="flex flex-1 min-w-0 overflow-hidden relative" onContextMenuCapture={() => setMenuNode(null)}>
           {/* Blocking overlay only for the first load — reloads (filter changes,
               view re-mounts) keep the current graph on screen until the new
               data lands, so the canvas never flashes. */}
@@ -573,6 +594,7 @@ export function KnowledgeGraphView() {
               graph={searchedGraph}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
+              onNodeContextMenu={setMenuNode}
               onBackgroundClick={handleBackgroundClick}
               labelMode={labelMode}
               spacing={spacing}
@@ -586,6 +608,7 @@ export function KnowledgeGraphView() {
               graph={searchedGraph}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
+              onNodeContextMenu={setMenuNode}
               onBackgroundClick={handleBackgroundClick}
               spacing={spacing}
               semanticThreshold={semanticThreshold}
@@ -597,6 +620,7 @@ export function KnowledgeGraphView() {
               graph={searchedGraph}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}
+              onNodeContextMenu={setMenuNode}
               onBackgroundClick={handleBackgroundClick}
               labelMode={labelMode}
               spacing={spacing}
@@ -641,6 +665,34 @@ export function KnowledgeGraphView() {
             </div>
           )}
         </div>
+        </ContextMenuTrigger>
+        {menuNode && (
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={() => setSelectedGraphNode(menuNode.id)}>
+              <Info size={13} /> Show details
+            </ContextMenuItem>
+            {menuNode.type !== "tag" && (
+              <ContextMenuItem onSelect={() => openGraphNode(menuNode)}>
+                <ExternalLink size={13} /> Open {menuNode.type}
+              </ContextMenuItem>
+            )}
+            {isNodeGraphLayout(graphLayout) && (
+              <ContextMenuItem onSelect={() => handleFocus(menuNode)}>
+                <Focus size={13} /> Focus neighbourhood
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(menuNode.title)}>
+              <Copy size={13} /> Copy title
+            </ContextMenuItem>
+            {menuNode.type === "note" && (
+              <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(`[[${menuNode.title}]]`)}>
+                <Link2 size={13} /> Copy wikilink
+              </ContextMenuItem>
+            )}
+          </ContextMenuContent>
+        )}
+        </ContextMenu>
 
         {/* Detail panel */}
         {selectedNode && (

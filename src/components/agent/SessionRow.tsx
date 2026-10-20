@@ -1,7 +1,11 @@
 "use client";
 
-import type { KeyboardEvent as ReactKeyboardEvent, SyntheticEvent } from "react";
-import { Code2, MessageSquare, Terminal, Trash2 } from "lucide-react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactElement, SyntheticEvent } from "react";
+import { Code2, Copy, ExternalLink, Hash, MessageSquare, Terminal, Trash2 } from "lucide-react";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
+  ContextMenuTrigger, CONTEXT_MENU_DANGER,
+} from "@/components/ui/context-menu";
 import { cn, formatDateCompact } from "@/lib/utils";
 import type { SessionKind } from "@/types";
 import type { SessionSummary } from "@/lib/session-registry";
@@ -52,8 +56,32 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
   }
   const optionTabIndex = tabIndex !== undefined ? tabIndex : (selected ? 0 : -1);
   const fullLabel = `${session.title} — ${kindLabel(session.kind)} · ${formatDateCompact(session.updatedAt)}${session.mode === "plan" ? " · plan" : ""}`;
+  const withMenu = (row: ReactElement) => (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onSelect}>
+          <ExternalLink size={13} /> Open session
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(session.title)}>
+          <Copy size={13} /> Copy title
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(session.id)}>
+          <Hash size={13} /> Copy session ID
+        </ContextMenuItem>
+        {onRemove && session.kind !== "terminal" && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => onRemove({ stopPropagation() {} } as unknown as SyntheticEvent)} className={CONTEXT_MENU_DANGER}>
+              <Trash2 size={13} /> Delete session
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
   if (compact) {
-    return (
+    return withMenu(
       <div role="presentation" className="group relative flex items-center gap-1">
         <div
           role="option"
@@ -106,7 +134,7 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
       </div>
     );
   }
-  return (
+  return withMenu(
     <div role="presentation" className="group relative flex items-center gap-1">
         <div
           role="option"

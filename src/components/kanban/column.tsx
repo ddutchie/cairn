@@ -13,6 +13,10 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
+  ContextMenuTrigger, CONTEXT_MENU_DANGER,
+} from "@/components/ui/context-menu";
+import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { ModalShell } from "@/components/ui/modal-shell";
@@ -211,6 +215,8 @@ function KanbanColumnImpl({
           </div>
       </ModalShell>
 
+      <ContextMenu>
+      <ContextMenuTrigger asChild>
       <div
         ref={setSortableRef}
         style={style}
@@ -360,8 +366,9 @@ function KanbanColumnImpl({
                 {showArchived && (
                   <div className="space-y-1.5 mt-1">
                     {archivedCards.map((card) => (
+                      <ContextMenu key={card.id}>
+                      <ContextMenuTrigger asChild>
                       <div
-                        key={card.id}
                         className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] opacity-60"
                       >
                         <span className="flex-1 text-[0.786rem] text-[var(--text-secondary)] truncate" title={card.title}>{card.title}</span>
@@ -374,6 +381,16 @@ function KanbanColumnImpl({
                           </button>
                         </Tooltip>
                       </div>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem onSelect={() => onRestoreCard(card.id)}>
+                          <ArchiveRestore size={13} /> Restore card
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => onCardClick(card.id)}>
+                          <Pencil size={13} /> Open card
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                      </ContextMenu>
                     ))}
                   </div>
                 )}
@@ -430,6 +447,33 @@ function KanbanColumnImpl({
           </div>
         )}
       </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem disabled={atLimit} onSelect={() => setIsAddingCard(true)}>
+          <Plus size={13} /> Add card
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => setRenaming(true)}>
+          <Pencil size={13} /> Rename column
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => { setLimitValue(String(column.cardLimit ?? "")); setLimitDialogOpen(true); }}>
+          <Gauge size={13} /> {column.cardLimit ? `WIP limit (${column.cardLimit})` : "Set WIP limit"}
+        </ContextMenuItem>
+        {column.cardLimit != null && (
+          <ContextMenuItem onSelect={() => onSetLimit(null)}>
+            <Gauge size={13} className="opacity-40" /> Clear WIP limit
+          </ContextMenuItem>
+        )}
+        {column.type === "done" && onArchiveAllDone && (
+          <ContextMenuItem onSelect={onArchiveAllDone}>
+            <Archive size={13} /> Archive all done
+          </ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => setDeleteDialogOpen(true)} className={CONTEXT_MENU_DANGER}>
+          <Trash2 size={13} /> Delete column
+        </ContextMenuItem>
+      </ContextMenuContent>
+      </ContextMenu>
     </>
   );
 }

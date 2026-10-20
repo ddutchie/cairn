@@ -9,6 +9,7 @@
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { DayCell } from "./DayCell";
 import { TaskChip } from "./TaskChip";
+import { CardContextMenu } from "@/components/kanban/card-context-menu";
 import { UNSCHEDULED_DROP_ID } from "./calendar-dnd";
 import { cn } from "@/lib/utils";
 import type { CalendarCell } from "./calendar-utils";
@@ -33,14 +34,16 @@ export function DraggableChip({
   // Spread the drag ref + listeners onto the chip's button itself so there's a
   // single focusable control per card (no extra wrapper tab stop).
   return (
-    <TaskChip
-      ref={setNodeRef}
-      card={card}
-      overdue={overdue}
-      onOpen={onOpen}
-      dragging={isDragging}
-      dragProps={{ ...attributes, ...listeners }}
-    />
+    <CardContextMenu card={card} onOpen={onOpen}>
+      <TaskChip
+        ref={setNodeRef}
+        card={card}
+        overdue={overdue}
+        onOpen={onOpen}
+        dragging={isDragging}
+        dragProps={{ ...attributes, ...listeners }}
+      />
+    </CardContextMenu>
   );
 }
 

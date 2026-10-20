@@ -19,6 +19,7 @@ import type { DbContext } from "./ipc/result-helpers";
 import { handle } from "./ipc/result-helpers";
 import { registerContractHandle, sendIpcEvent } from "./ipc/registry";
 import { getSessionProfile } from "./db/queries";
+import { attachSpellcheck } from "./spellcheck";
 
 const isDev = !app.isPackaged;
 
@@ -90,6 +91,8 @@ export function createChatPopoutWindow(): BrowserWindow {
       sandbox: false,
     },
   });
+
+  attachSpellcheck(win.webContents);
 
   // C2: deny new windows from pop-out and only allow safe external schemes.
   win.webContents.setWindowOpenHandler(({ url }) => {

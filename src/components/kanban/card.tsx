@@ -3,17 +3,11 @@
 import React, { useState, useMemo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Archive, Calendar, ChevronDown, ChevronUp, FileText, Lock, Pencil, Trash2, User } from "lucide-react";
+import { Calendar, ChevronDown, ChevronUp, FileText, Lock, User } from "lucide-react";
 import { cn, formatDate, getDueDateStatus, parseIsoLocal } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { CardContextMenu } from "./card-context-menu";
 import { useCairnStore } from "@/store";
 import type { TaskCard } from "@/types";
 import { PRIORITY_CSS_COLORS } from "@/lib/constants";
@@ -200,9 +194,6 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
 });
 
 export const KanbanCard = React.memo(function KanbanCard({ card, onOpenCard, isDragging = false }: KanbanCardProps) {
-  const archiveCard = useCairnStore((s) => s.archiveCard);
-  const deleteCard  = useCairnStore((s) => s.deleteCard);
-
   const [expanded, setExpanded] = useState(false);
   const descRef = React.useRef<HTMLDivElement>(null);
 
@@ -244,8 +235,7 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onOpenCard, isD
   // transformStr changes, rebuilds. This is the dominant per-frame cost the
   // profiler attributed to react-jsx-dev-runtime createTask.
   return useMemo(() => (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
+    <CardContextMenu card={card} onOpen={onOpenCard}>
         <div
           ref={setNodeRef}
           style={{ transform: transformStr, transition, touchAction: "none" }}
@@ -268,30 +258,9 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onOpenCard, isD
             onToggleExpand={toggleExpanded}
           />
         </div>
-      </ContextMenuTrigger>
-
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={handleOpen}>
-          <Pencil size={13} />
-          Open card
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => archiveCard(card.id)}>
-          <Archive size={13} />
-          Archive
-        </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => deleteCard(card.id)}
-          className="text-[var(--danger)] hover:text-[var(--danger)]"
-        >
-          <Trash2 size={13} />
-          Delete
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    </CardContextMenu>
   ), [
     card, expanded, canExpand, transformStr, transition, dimmed,
-    setNodeRef, attributes, listeners, handleOpen, toggleExpanded,
-    archiveCard, deleteCard,
+    setNodeRef, attributes, listeners, handleOpen, toggleExpanded, onOpenCard,
   ]);
 });

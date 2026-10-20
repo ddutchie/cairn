@@ -2,6 +2,7 @@
 
 import { invokeContract, onIpcEvent, sendContract } from "./ipc";
 import type { MigrationProgress, UpdateAvailableInfo } from "../../shared/types/app";
+import type { SpellcheckContext } from "../../shared/ipc/contract";
 
 export const appApi = {
   // ── App paths ─────────────────────────────────
@@ -42,6 +43,11 @@ export const appApi = {
 
   /** Global quick-capture shortcut / tray item fired — open the capture dialog. */
   onQuickCapture: (cb: () => void) => onIpcEvent("app:quick-capture", cb),
+
+  // ── Spellcheck (right-click suggestions) ──────
+  onSpellcheckContext: (cb: (e: SpellcheckContext) => void) => onIpcEvent("spellcheck:context", cb),
+  spellcheckReplace: (word: string) => invokeContract("spellcheck:replace", { word }),
+  spellcheckAddWord: (word: string) => invokeContract("spellcheck:addWord", { word }),
 
   // ── Migrations ────────────────────────────────
   checkMigrations: () => invokeContract("app:checkMigrations"),

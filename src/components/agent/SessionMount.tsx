@@ -1,5 +1,6 @@
 "use client";
 
+import { registerTerminal } from "@/lib/terminal-registry";
 import { useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { TerminalManager } from "./TerminalManager";
@@ -78,6 +79,7 @@ export function SessionMount({ session, isActive }: SessionMountProps) {
 
       containerRef.current.innerHTML = "";
       terminal.open(containerRef.current);
+      registerTerminal(terminal);
       // WCAG: allow Escape to escape the xterm keyboard trap (Tab is sent to PTY by default)
       terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
         if (event.key === "Escape") return false;
