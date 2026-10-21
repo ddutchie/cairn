@@ -327,8 +327,8 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
       // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF): when it
       // verifies, the named server is served by dsh-mcp-client and excluded
       // from the hand bridge below. Unset → empty mount + empty exclusion.
-      const { maybeMountDshMcpSpike } = await import("./mcp-dsh-bridge");
-      const spike = await maybeMountDshMcpSpike(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+      const { maybeMountDshMcpServers } = await import("./mcp-dsh-bridge");
+      const spike = await maybeMountDshMcpServers(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
       spike.disposers.forEach((dispose) => resources.add(dispose));
       externalDisposers = await registerExternalCairnTools(ctx, {
         db,

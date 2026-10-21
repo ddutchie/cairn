@@ -235,6 +235,27 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
     const existing = get().mcpServers.find((m) => m.communityId === entry.definition.name);
     const toolId = existing?.id ?? id();
 
+    if (entry.definition.transport === "stdio") {
+      const env = await resolveInstallHeaders("mcp", toolId, entry.definition.env, secrets);
+      await get().saveMcpServer({
+        id: toolId,
+        workspaceId,
+        name: entry.definition.name,
+        description: entry.definition.description,
+        transport: "stdio",
+        command: entry.definition.command ?? "",
+        args: entry.definition.args ?? [],
+        env,
+        cwd: entry.definition.cwd,
+        disabledTools: entry.definition.disabledTools,
+        // Install DISABLED so the user reviews before it goes live.
+        enabled: false,
+        source: "community",
+        communityId: entry.definition.name,
+        version: entry.version,
+      });
+      return toolId;
+    }
     const headers = await resolveInstallHeaders("mcp", toolId, entry.definition.headers, secrets);
     await get().saveMcpServer({
       id: toolId,
@@ -242,16 +263,18 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       name: entry.definition.name,
       description: entry.definition.description,
       transport: entry.definition.transport,
-      baseUrl: entry.definition.baseUrl,
+      baseUrl: entry.definition.baseUrl ?? "",
       headers,
       authMode: entry.definition.authMode ?? "none",
       oauthScope: entry.definition.oauthScope,
       // Reinstalling onto an existing row must not wipe OAuth fields the user
       // entered (client id / redirect URI) when the manifest omits them — prefer
       // a supplied manifest value, else keep the existing server's.
-      oauthClientId: entry.definition.oauthClientId ?? existing?.oauthClientId,
-      oauthRedirectUri: entry.definition.oauthRedirectUri ?? existing?.oauthRedirectUri,
-      oauthClientIdRequired: entry.definition.requiresClientId ?? existing?.oauthClientIdRequired,
+      oauthClientId: entry.definition.oauthClientId ?? (existing?.transport !== "stdio" ? existing?.oauthClientId : undefined),
+      oauthRedirectUri:
+        entry.definition.oauthRedirectUri ?? (existing?.transport !== "stdio" ? existing?.oauthRedirectUri : undefined),
+      oauthClientIdRequired:
+        entry.definition.requiresClientId ?? (existing?.transport !== "stdio" ? existing?.oauthClientIdRequired : undefined),
       disabledTools: entry.definition.disabledTools,
       // Install DISABLED so the user reviews (and, for OAuth, connects) before it goes live.
       enabled: false,

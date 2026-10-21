@@ -50,11 +50,12 @@ const IDLE_TIMEOUT_MS = 5 * 60_000;
 
 // ── Server config (subset of McpServerConfig from src/types) ─────────────────
 
-export interface McpServerRuntimeConfig {
-  id: string;
-  baseUrl: string;
-  /** "http" = streamable-HTTP, "sse" = legacy SSE. */
-  transport: "http" | "sse";
+export type McpServerRuntimeConfig =
+  | {
+      id: string;
+      baseUrl: string;
+      /** "http" = streamable-HTTP, "sse" = legacy SSE. */
+      transport: "http" | "sse";
   headers?: Record<string, string>;
   /** "oauth" routes the connection through the SDK OAuth provider. */
   authMode?: "none" | "oauth";
@@ -66,7 +67,17 @@ export interface McpServerRuntimeConfig {
   oauthRedirectUri?: string;
   /** Display name, used to label the OAuth client registration. */
   name?: string;
-}
+    }
+  | {
+      id: string;
+      /** Local stdio server — served exclusively by dsh-mcp-client, never here. */
+      transport: "stdio";
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      cwd?: string;
+      name?: string;
+    };
 
 // ── Connection manager ───────────────────────────────────────────────────────
 
@@ -87,6 +98,15 @@ const conns = new Map<string, Conn>();
  * be torn down and rebuilt rather than silently reused.
  */
 function configSignature(cfg: McpServerRuntimeConfig): string {
+  if (cfg.transport === "stdio") {
+    return JSON.stringify({
+      transport: "stdio",
+      command: cfg.command,
+      args: cfg.args ?? [],
+      env: cfg.env ?? {},
+      cwd: cfg.cwd ?? "",
+    });
+  }
   return JSON.stringify({
     baseUrl: cfg.baseUrl,
     transport: cfg.transport,
@@ -98,7 +118,7 @@ function configSignature(cfg: McpServerRuntimeConfig): string {
   });
 }
 
-function makeTransport(cfg: McpServerRuntimeConfig) {
+function makeTransport(cfg: Extract<McpServerRuntimeConfig, { transport: "http" | "sse" }>) {
   const url = new URL(cfg.baseUrl);
   // OAuth servers connect via the SDK provider, which injects (and refreshes)
   // the bearer token from the keychain. Static headers are not used here.
@@ -186,6 +206,7 @@ function reportIfAuthError(cfg: McpServerRuntimeConfig, e: unknown): boolean {
 
 /** Connect (or reuse a cached connection) to a server. Throws on failure. */
 async function connect(cfg: McpServerRuntimeConfig): Promise<Conn> {
+  if (cfg.transport === "stdio") throw new Error(`MCP server ${cfg.id} is stdio (dsh path) — hand bridge is remote-only`);
   const signature = configSignature(cfg);
   const existing = conns.get(cfg.id);
   if (existing && existing.signature === signature) {
@@ -230,6 +251,7 @@ export async function disposeAll(): Promise<void> {
  * connection/list failure (logged) so a flaky server can't break the loop.
  */
 export async function listTools(cfg: McpServerRuntimeConfig): Promise<OpenAIToolDef[]> {
+  if (cfg.transport === "stdio") return [];
   try {
     const conn = await connect(cfg);
     const res = await withTimeout(conn.client.listTools(), CALL_TIMEOUT_MS, `MCP listTools ${cfg.id}`);
@@ -253,6 +275,9 @@ export type { McpToolInfo, ListMcpToolsResult };
  * and surfaces descriptions. Never throws.
  */
 export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<ListMcpToolsResult> {
+  if (cfg.transport === "stdio") {
+    return { ok: false, tools: [], error: "Stdio servers list tools through the dsh path (turn-scoped mount), not the hand bridge." };
+  }
   try {
     const conn = await connect(cfg);
     const res = await withTimeout(conn.client.listTools(), CALL_TIMEOUT_MS, `MCP listToolsDetailed ${cfg.id}`);
@@ -288,6 +313,9 @@ export async function callTool(
   if (!parsed || parsed.serverId !== cfg.id) {
     return `Error: "${namespaced}" is not a tool of MCP server ${cfg.id}`;
   }
+  if (cfg.transport === "stdio") {
+    return `Error: "${namespaced}" is a stdio tool and must run through the dsh path, not the hand bridge.`;
+  }
   try {
     const conn = await connect(cfg);
     const res = await withTimeout(
@@ -314,6 +342,9 @@ export async function callTool(
 export async function testConnection(
   cfg: McpServerRuntimeConfig
 ): Promise<McpTestResult> {
+  if (cfg.transport === "stdio") {
+    return { ok: false, error: "Stdio test runs through the dsh path — save and check the turn log for mount errors." };
+  }
   try {
     const conn = await connect(cfg);
     const res = await withTimeout(conn.client.listTools(), CONNECT_TIMEOUT_MS, `MCP test ${cfg.id}`);
@@ -339,6 +370,7 @@ export interface McpServerMeta {
  * second connect timeout. Returns null when there is no live connection.
  */
 export function getServerMeta(cfg: McpServerRuntimeConfig): McpServerMeta | null {
+  if (cfg.transport === "stdio") return null;
   const conn = conns.get(cfg.id);
   if (!conn || conn.signature !== configSignature(cfg)) return null;
   try {
@@ -368,6 +400,7 @@ export async function requestResource(
   request: McpResourceRequest,
   signal?: AbortSignal,
 ): Promise<unknown> {
+  if (cfg.transport === "stdio") throw new Error(`MCP server ${cfg.id} is stdio (dsh path) — hand-bridge resources are remote-only`);
   const conn = await connect(cfg);
   const options = { signal, timeout: CALL_TIMEOUT_MS };
   const label = `MCP ${request.method} ${cfg.id}`;

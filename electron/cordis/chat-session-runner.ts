@@ -368,8 +368,8 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       try {
         // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF) — see
         // run-cordis-coding.ts. Unset → empty mount + empty exclusion.
-        const { maybeMountDshMcpSpike } = await import("./mcp-dsh-bridge");
-        const spike = await maybeMountDshMcpSpike(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+        const { maybeMountDshMcpServers } = await import("./mcp-dsh-bridge");
+        const spike = await maybeMountDshMcpServers(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
         spike.disposers.forEach((d) => resources.add(d));
         const extDisposers = await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" }, { excludeServerIds: spike.excludedServerIds });
         extDisposers.forEach((d) => resources.add(d));

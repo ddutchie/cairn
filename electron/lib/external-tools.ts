@@ -60,18 +60,33 @@ function requirementMatches(
 /** Map a stored MCP server config to the runtime config the client needs. */
 function toRuntimeConfig(s: {
   id: string;
-  baseUrl: string;
-  transport: "sse" | "http";
+  baseUrl?: string;
+  transport: "sse" | "http" | "stdio";
   headers?: Record<string, string>;
   authMode?: "none" | "oauth";
   oauthScope?: string;
   oauthClientId?: string;
   oauthRedirectUri?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
   name?: string;
 }): mcpClient.McpServerRuntimeConfig {
+  if (s.transport === "stdio") {
+    return {
+      id: s.id,
+      transport: "stdio",
+      command: s.command ?? "",
+      args: s.args,
+      env: s.env,
+      cwd: s.cwd,
+      name: s.name,
+    };
+  }
   return {
     id: s.id,
-    baseUrl: s.baseUrl,
+    baseUrl: s.baseUrl ?? "",
     transport: s.transport,
     headers: s.headers,
     authMode: s.authMode,
@@ -226,19 +241,22 @@ export async function getExternalToolDefs(
     ? filterRequiredConfigs(scoped, requires)
     : scoped;
 
-  // Query each in-scope server independently so one unreachable / failing server
-  // can't hide the tools of the healthy servers (or the custom services below).
-  // mcpClient.listTools already degrades to [] internally, but allSettled also
-  // guards toRuntimeConfig / filterDisabledMcpDefs against an unexpected throw.
+  // Query each in-scope REMOTE server independently so one unreachable /
+  // failing server can't hide the tools of the healthy servers (or the custom
+  // services below). Stdio servers are served exclusively by the dsh path
+  // (mcp-dsh-bridge) and never appear in hand-bridge defs. mcpClient.listTools
+  // already degrades to [] internally, but allSettled also guards
+  // toRuntimeConfig / filterDisabledMcpDefs against an unexpected throw.
+  const remoteServers = mcpServers.filter((s) => s.transport !== "stdio");
   const mcpResults = await Promise.allSettled(
-    mcpServers.map(async (s) => {
+    remoteServers.map(async (s) => {
       const defs = await mcpClient.listTools(toRuntimeConfig(s));
       return filterDisabledMcpDefs(defs, s.disabledTools ?? []);
     })
   );
   const mcpDefs = mcpResults.flatMap((r, i) => {
     if (r.status === "fulfilled") return r.value;
-    console.error(`[external-tools] skipping MCP server ${mcpServers[i]?.id}:`, r.reason);
+    console.error(`[external-tools] skipping MCP server ${remoteServers[i]?.id}:`, r.reason);
     return [];
   });
 

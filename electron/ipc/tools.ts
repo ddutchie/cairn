@@ -68,7 +68,7 @@ function looksLikeBareCredential(name: string, value: string): boolean {
  */
 function oauthConfigChanged(
   prev: {
-    baseUrl: string;
+    baseUrl?: string;
     transport: string;
     authMode?: string;
     oauthScope?: string;
@@ -135,6 +135,14 @@ export function registerToolsHandlers(ctx: DbContext): void {
   registerContractHandle("tools:saveMcpServer", (_e, server) =>
     handle(() => {
       const id = server.id ?? newId();
+      if (server.transport === "stdio") {
+        const env = sanitizeHeaders((server as { env?: Record<string, string> }).env);
+        return q.saveMcpServer(ctx.db, {
+          ...(server as Record<string, unknown>),
+          id,
+          env,
+        } as Parameters<typeof q.saveMcpServer>[1]);
+      }
       // On edit, if any connection/auth-relevant field changed, the stored OAuth
       // artefacts (tokens + client registration) no longer apply — they were
       // issued for the old authorization server / config. Clear them so the id
@@ -148,7 +156,12 @@ export function registerToolsHandlers(ctx: DbContext): void {
         }
       }
       // SQLite NOT NULL constraints reject a row missing its required fields.
-      return q.saveMcpServer(ctx.db, { ...(server as SaveMcpArgs), id, headers: sanitizeHeaders(server.headers) });
+      // Stdio was returned above, so this is a remote partial.
+      return q.saveMcpServer(ctx.db, {
+        ...(server as SaveMcpArgs),
+        id,
+        headers: sanitizeHeaders(server.headers),
+      } as Parameters<typeof q.saveMcpServer>[1]);
     })
   );
 
@@ -166,6 +179,17 @@ export function registerToolsHandlers(ctx: DbContext): void {
     handle(() => {
       const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
+      if (server.transport === "stdio") {
+        return mcpClient.testConnection({
+          id: server.id,
+          transport: "stdio",
+          command: server.command,
+          args: server.args,
+          env: server.env,
+          cwd: server.cwd,
+          name: server.name,
+        });
+      }
       return mcpClient.testConnection({
         id: server.id,
         baseUrl: server.baseUrl,
@@ -186,6 +210,17 @@ export function registerToolsHandlers(ctx: DbContext): void {
     handle(() => {
       const server = q.getMcpServerById(ctx.db, id);
       if (!server) throw new Error("MCP server not found");
+      if (server.transport === "stdio") {
+        return mcpClient.listToolsDetailed({
+          id: server.id,
+          transport: "stdio",
+          command: server.command,
+          args: server.args,
+          env: server.env,
+          cwd: server.cwd,
+          name: server.name,
+        });
+      }
       return mcpClient.listToolsDetailed({
         id: server.id,
         baseUrl: server.baseUrl,

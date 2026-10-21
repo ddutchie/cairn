@@ -90,13 +90,17 @@ const TOOL_CALL_TIMEOUT_MS = 60_000;
 
 export interface SpikeMcpServerRow {
   id: string;
-  baseUrl: string;
+  baseUrl?: string;
   transport: string;
   headers?: Record<string, string> | null;
   authMode?: string | null;
   enabled?: boolean;
   /** Dev-only per-server opt-in (ToolsSettings toggle) — same effect as the env var. */
   dshPath?: boolean;
+  command?: string | null;
+  args?: string[] | null;
+  env?: Record<string, string> | null;
+  cwd?: string | null;
 }
 
 export type DshMcpEligibility =
@@ -136,6 +140,7 @@ export function toDshMcpConfig(server: SpikeMcpServerRow): DshMcpEligibility {
       reason: `server-name: id ${JSON.stringify(server.id)} is outside dsh's [A-Za-z0-9_-]{1,32} namespace (renaming would break tool-name parity)`,
     };
   }
+  if (!server.baseUrl) return { eligible: false, reason: "base-url: missing" };
   let url: URL;
   try {
     url = new URL(server.baseUrl);
@@ -146,6 +151,57 @@ export function toDshMcpConfig(server: SpikeMcpServerRow): DshMcpEligibility {
     return { eligible: false, reason: `base-url: protocol ${JSON.stringify(url.protocol)} is not http(s)` };
   }
   return { eligible: true, serverName: server.id, url: server.baseUrl, headers: { ...headers } };
+}
+
+export type DshStdioEligibility =
+  | { eligible: true; serverName: string; command: string; args: string[]; env: Record<string, string>; cwd: string }
+  | { eligible: false; reason: string };
+
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const COMMAND_TOKEN_RE = /^[A-Za-z0-9_@.+-]+$/;
+
+/**
+ * Validate a stdio row for dsh mounting. Pure — no secret resolution here;
+ * callers resolve `secret://` env refs via HostStore BEFORE building the
+ * dsh config (main process only). A raw `secret://` value is ineligible
+ * rather than leaked.
+ */
+export function toDshStdioEligibility(
+  server: SpikeMcpServerRow,
+  opts: { workspacePath?: string; cwd?: string } = {},
+): DshStdioEligibility {
+  if (server.transport !== "stdio") {
+    return { eligible: false, reason: `transport-${server.transport}: not stdio` };
+  }
+  const command = (server.command ?? "").trim();
+  if (!command) return { eligible: false, reason: "invalid-stdio: command is required" };
+  if (command.includes(" ") || /[;&|<>$`'"\\]/.test(command)) {
+    return { eligible: false, reason: "invalid-stdio: command must be a bare executable or absolute path (no shell)" };
+  }
+  if (command.startsWith("/") ? command.includes("..") : !COMMAND_TOKEN_RE.test(command)) {
+    return { eligible: false, reason: "invalid-stdio: command must be a bare executable name or absolute path" };
+  }
+  const args = server.args ?? [];
+  if (!Array.isArray(args) || !args.every((a) => typeof a === "string")) {
+    return { eligible: false, reason: "invalid-stdio: args must be an array of strings" };
+  }
+  const env = server.env ?? {};
+  if (typeof env !== "object" || env === null || Array.isArray(env)) {
+    return { eligible: false, reason: "invalid-stdio: env must be an object" };
+  }
+  for (const [k, v] of Object.entries(env)) {
+    if (!ENV_NAME_RE.test(k)) return { eligible: false, reason: `invalid-stdio: env var ${JSON.stringify(k)} is invalid` };
+    if (typeof v !== "string") return { eligible: false, reason: `invalid-stdio: env var ${k} must be a string` };
+    if (v.includes("secret://")) {
+      return { eligible: false, reason: `env-secret:${k}: resolve secret:// refs via HostStore before mounting` };
+    }
+  }
+  const cwd = ((server.cwd ?? "").trim() || opts.cwd?.trim() || opts.workspacePath?.trim() || process.cwd()).trim();
+  if (!cwd.startsWith("/")) return { eligible: false, reason: "invalid-stdio: cwd must be an absolute path" };
+  if (!DSH_SERVER_NAME_RE.test(server.id)) {
+    return { eligible: false, reason: `server-name: id ${JSON.stringify(server.id)} is outside dsh's [A-Za-z0-9_-]{1,32} namespace` };
+  }
+  return { eligible: true, serverName: server.id, command, args: [...args], env: { ...env }, cwd };
 }
 
 /** Set-difference of two tool-name lists (order-insensitive, duplicates collapsed). */
@@ -228,6 +284,109 @@ export async function maybeMountDshMcpSpike(
     one.excludedServerIds.forEach((id) => excludedServerIds.add(id));
   }
   return { disposers, excludedServerIds };
+}
+
+/**
+ * Long-term mount: every in-scope stdio server via dsh-mcp-client, plus the
+ * opt-in HTTP spike. Stdio has no hand-bridge equivalent, so there is no
+ * parity gate — validation + serverName grammar + a non-empty mount are the
+ * bar. Secret env refs resolve via HostStore (main process, keychain) before
+ * the child spawns; unresolved/raw secret:// values never reach the child.
+ * Never throws into the turn.
+ */
+export async function maybeMountDshMcpServers(
+  ctx: Context,
+  host: HostStore,
+  workspaceId: string,
+  projectId: string,
+  opts: { serverId?: string; workspacePath?: string; cwd?: string; log?: (msg: string) => void } = {},
+): Promise<DshSpikeMount> {
+  const log = opts.log ?? ((msg: string) => console.warn(`[mcp-dsh] ${msg}`));
+  // HTTP spike first (exclusions flow to the hand bridge below).
+  const spike = await maybeMountDshMcpSpike(ctx, host, workspaceId, projectId, { serverId: opts.serverId, log });
+  const disposers: Array<() => unknown> = [...spike.disposers];
+  const excludedServerIds = new Set<string>(spike.excludedServerIds);
+  try {
+    const scoped = (typeof host.getScopedMcpServers === "function"
+      ? host.getScopedMcpServers(workspaceId, projectId)
+      : host.getMcpServers?.(workspaceId) ?? []) as SpikeMcpServerRow[];
+    const stdioRows = scoped.filter((r) => r?.transport === "stdio" && r?.enabled !== false);
+    for (const row of stdioRows) {
+      if (excludedServerIds.has(row.id)) continue;
+      const one = await mountOneStdioServer(ctx, host, row, { workspacePath: opts.workspacePath, cwd: opts.cwd, log });
+      one.disposers.forEach((d) => disposers.push(d));
+      // Stdio never appears in hand-bridge defs, so no exclusion is needed —
+      // but track it so callers can distinguish "served by dsh".
+      one.excludedServerIds.forEach((id) => excludedServerIds.add(id));
+    }
+  } catch (err) {
+    log(`stdio listing failed (${(err as Error)?.message ?? String(err)}) — http spike unchanged`);
+  }
+  return { disposers, excludedServerIds };
+}
+
+async function mountOneStdioServer(
+  ctx: Context,
+  host: HostStore,
+  row: SpikeMcpServerRow,
+  opts: { workspacePath?: string; cwd?: string; log: (msg: string) => void },
+): Promise<DshSpikeMount> {
+  const log = opts.log;
+  const serverId = row.id;
+  try {
+    // Resolve secret:// env refs in the main process before the child spawns.
+    let env: Record<string, string> = { ...(row.env ?? {}) };
+    try {
+      const resolve = (host as unknown as { resolveStdioEnv?: (e: Record<string, string>) => Record<string, string> }).resolveStdioEnv;
+      if (typeof resolve === "function") env = resolve.call(host, env);
+      else {
+        const generic = (host as unknown as { resolveSecrets?: (v: Record<string, string>) => Record<string, string> }).resolveSecrets;
+        if (typeof generic === "function") env = generic.call(host, env);
+      }
+    } catch (err) {
+      log(`server ${JSON.stringify(serverId)} secret resolution failed (${(err as Error)?.message ?? String(err)}) — skipping`);
+      return EMPTY_MOUNT;
+    }
+    const elig = toDshStdioEligibility({ ...row, env }, { workspacePath: opts.workspacePath, cwd: opts.cwd });
+    if (!elig.eligible) {
+      log(`server ${JSON.stringify(serverId)} ineligible for dsh stdio (${elig.reason}) — skipping`);
+      return EMPTY_MOUNT;
+    }
+    const config: DshMcpConfig = {
+      transport: "stdio",
+      serverName: elig.serverName,
+      command: elig.command,
+      args: elig.args,
+      env: elig.env,
+      cwd: elig.cwd,
+      toolCallTimeoutMs: TOOL_CALL_TIMEOUT_MS,
+      failOnStartupError: false,
+    };
+    const plug = ctx.plugin as unknown as (
+      p: { apply: typeof mcpClientApply; inject: typeof mcpClientInject; name: typeof mcpClientName },
+      c: DshMcpConfig,
+    ) => Promise<{ dispose: () => void }>;
+    const fiber = await plug(
+      { apply: mcpClientApply, inject: mcpClientInject, name: mcpClientName },
+      config,
+    );
+    const disposeFiber = (): unknown => {
+      try {
+        const r = (fiber as unknown as { dispose: () => unknown }).dispose();
+        if (r && typeof (r as Promise<unknown>).then === "function") {
+          return (r as Promise<unknown>).catch((e) => log(`dispose failed: ${(e as Error)?.message ?? String(e)}`));
+        }
+        return r;
+      } catch (e) {
+        log(`dispose failed: ${(e as Error)?.message ?? String(e)}`);
+      }
+    };
+    log(`server ${JSON.stringify(serverId)} on dsh stdio path (cmd ${elig.command})`);
+    return { disposers: [disposeFiber], excludedServerIds: new Set([serverId]) };
+  } catch (e) {
+    log(`stdio mount failed for ${JSON.stringify(serverId)} (${(e as Error)?.message ?? String(e)}) — skipping`);
+    return EMPTY_MOUNT;
+  }
 }
 
 async function mountOneServer(

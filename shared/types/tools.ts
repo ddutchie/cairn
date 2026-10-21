@@ -16,24 +16,51 @@ import type { ID } from "./domain";
 /** Where a tool definition came from. */
 export type ToolSource = "manual" | "community" | "ai-builder";
 
-/** Remote MCP server the AI chat/agent can connect to as a client. */
-export interface McpServerConfig {
+/** MCP transport. `http` = streamable-HTTP, `sse` = legacy SSE, `stdio` = local child process. */
+export type McpTransport = "sse" | "http" | "stdio";
+
+/** Fields every MCP server carries regardless of transport. */
+interface McpServerBase {
   id: ID;
   workspaceId: ID;
   name: string;
   description?: string;
-  /** Transport — derived from baseUrl when not explicit. */
-  transport: "sse" | "http";
-  baseUrl: string;
-  /** Header values may be literal or a "secret://" ref. */
-  headers?: Record<string, string>;
+  transport: McpTransport;
   /**
    * Authentication mode. "none" = static headers only (default). "oauth" =
    * SDK-driven OAuth 2.1 flow; client registration + tokens live in the OS
-   * keychain, never in SQLite.
+   * keychain, never in SQLite. Remote only — stdio servers run locally.
    */
   authMode?: "none" | "oauth";
-  /** Optional requested OAuth scope string (space-delimited). */
+  /**
+   * Dev-only: route this server through dsh-mcp-client (parity spike) instead
+   * of the hand bridge. Toggled from ToolsSettings on dev builds; the turn
+   * bootstrap verifies parity per turn and falls back on mismatch.
+   * Stdio servers always route via dsh and ignore this flag.
+   */
+  dshPath?: boolean;
+  enabled: boolean;
+  source: ToolSource;
+  /** Set when installed from the community registry. */
+  communityId?: string;
+  version?: string;
+  /**
+   * Raw (un-namespaced) tool names the user has disabled for this server,
+   * applied workspace-wide. Absent / empty = all tools enabled.
+   */
+  disabledTools?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Remote MCP server the AI chat/agent can connect to as a client. */
+export interface McpRemoteServerConfig extends McpServerBase {
+  transport: "sse" | "http";
+  /** Transport — derived from baseUrl when not explicit. */
+  baseUrl: string;
+  /** Header values may be literal or a "secret://" ref. */
+  headers?: Record<string, string>;
+  /** Optional requested OAuth scope string (space-delimited). Remote only. */
   oauthScope?: string;
   /**
    * Optional pre-registered OAuth client id. When set, Cairn SKIPS dynamic
@@ -57,25 +84,45 @@ export interface McpServerConfig {
    * fields and routes "Sign in" to them instead of failing on DCR.
    */
   oauthClientIdRequired?: boolean;
-  /**
-   * Dev-only: route this server through dsh-mcp-client (parity spike) instead
-   * of the hand bridge. Toggled from ToolsSettings on dev builds; the turn
-   * bootstrap verifies parity per turn and falls back on mismatch.
-   */
-  dshPath?: boolean;
-  enabled: boolean;
-  source: ToolSource;
-  /** Set when installed from the community registry. */
-  communityId?: string;
-  version?: string;
-  /**
-   * Raw (un-namespaced) tool names the user has disabled for this server,
-   * applied workspace-wide. Absent / empty = all tools enabled.
-   */
-  disabledTools?: string[];
-  createdAt: string;
-  updatedAt: string;
+  command?: undefined;
+  args?: undefined;
+  env?: undefined;
+  cwd?: undefined;
 }
+
+/** Local MCP server spawned as a child process over stdio (desktop only). */
+export interface McpStdioServerConfig extends McpServerBase {
+  transport: "stdio";
+  /** Executable used to start the server (absolute path or PATH name, no shell). */
+  command: string;
+  /** Arguments passed directly, without shell interpolation. */
+  args?: string[];
+  /** Extra env vars (values may be literal or a "secret://" ref). */
+  env?: Record<string, string>;
+  /** Working directory for the child process (absolute; defaults to workspace). */
+  cwd?: string;
+  baseUrl?: undefined;
+  headers?: undefined;
+  authMode?: undefined;
+  oauthScope?: undefined;
+  oauthClientId?: undefined;
+  oauthRedirectUri?: undefined;
+  oauthClientIdRequired?: undefined;
+}
+
+/** Workspace MCP server: remote (http/sse) or local (stdio). */
+export type McpServerConfig = McpRemoteServerConfig | McpStdioServerConfig;
+
+/** True when the server is a local stdio server. */
+export function isStdioMcpServer(s: Pick<McpServerConfig, "transport">): s is McpStdioServerConfig {
+  return s.transport === "stdio";
+}
+
+/** True when the server is a remote HTTP/SSE server. */
+export function isRemoteMcpServer(s: Pick<McpServerConfig, "transport">): s is McpRemoteServerConfig {
+  return s.transport === "http" || s.transport === "sse";
+}
+
 
 /** Custom HTTP API exposed to the AI as a single function-calling tool. */
 /** One operation of a multi-operation HTTP service (mirrors the registry shape). */

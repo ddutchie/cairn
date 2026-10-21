@@ -118,8 +118,14 @@ export function ToolsSettings() {
       const toolId = s.id ?? id();
       setSaveError(null);
       try {
-        const headers = await resolveHeaders("mcp", toolId, rows);
-        await saveMcpServer({ ...s, id: toolId, workspaceId: activeWorkspaceId ?? undefined, headers });
+        const isStdioSave = s.transport === "stdio";
+        if (isStdioSave) {
+          const env = await resolveHeaders("mcp", toolId, rows);
+          await saveMcpServer({ ...s, id: toolId, workspaceId: activeWorkspaceId ?? undefined, env } as Partial<McpServerConfig>);
+        } else {
+          const headers = await resolveHeaders("mcp", toolId, rows);
+          await saveMcpServer({ ...s, id: toolId, workspaceId: activeWorkspaceId ?? undefined, headers } as Partial<McpServerConfig>);
+        }
         setAddingMcp(false);
         setEditingMcp(null);
       } catch (err) {
@@ -218,7 +224,7 @@ export function ToolsSettings() {
                   : <Server size={15} />
               }
               name={server.name}
-              subtitle={server.baseUrl}
+              subtitle={server.transport === "stdio" ? `stdio: ${server.command ?? ""}` : server.baseUrl}
               enabled={server.enabled}
               onToggle={(v) => { void saveMcpServer({ ...server, enabled: v }).catch((e) => setSaveError(e instanceof Error ? e.message : "Failed to update server.")); }}
               onEdit={() => setEditingMcp(server.id)}
@@ -236,7 +242,7 @@ export function ToolsSettings() {
                     Route via dsh <span className="text-[var(--text-tertiary)]">(dev)</span>
                   </label>
                 )}
-                {server.authMode === "oauth" ? (
+                {server.transport !== "stdio" && server.authMode === "oauth" ? (
                   <McpAuthButton
                     serverId={server.id}
                     requiresClientId={!!server.oauthClientIdRequired && !server.oauthClientId}

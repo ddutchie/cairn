@@ -9,18 +9,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createToolsSlice } from "./tools";
 import type { McpServerConfig } from "@/types";
 
-const server = (id: string, extra: Partial<McpServerConfig> = {}): McpServerConfig => ({
-  id,
-  workspaceId: "ws-1",
-  name: id,
-  transport: "http",
-  baseUrl: "https://example.test/mcp",
-  enabled: true,
-  source: "manual",
-  createdAt: "",
-  updatedAt: "",
-  ...extra,
-});
+const server = (id: string, extra: Partial<McpServerConfig> = {}): McpServerConfig =>
+  ({
+    id,
+    workspaceId: "ws-1",
+    name: id,
+    transport: "http",
+    baseUrl: "https://example.test/mcp",
+    enabled: true,
+    source: "manual",
+    createdAt: "",
+    updatedAt: "",
+    ...extra,
+  }) as McpServerConfig;
 
 function setup(tools?: Record<string, any>) {
   const win = new EventTarget() as any;

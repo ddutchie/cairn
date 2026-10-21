@@ -54,6 +54,7 @@ import {
   diffToolNameSets,
   maybeMountDshMcpSpike,
   toDshMcpConfig,
+  toDshStdioEligibility,
 } from "./mcp-dsh-bridge";
 
 // ── Fixture MCP server ────────────────────────────────────────────────────────
@@ -373,6 +374,22 @@ describe("toDshMcpConfig eligibility", () => {
   it("declines invalid base URLs", () => {
     const r = toDshMcpConfig({ id: "spikeU", baseUrl: "not-a-url", transport: "http" });
     expect(r.eligible).toBe(false);
+  });
+});
+
+describe("toDshStdioEligibility", () => {
+  it("accepts a plain stdio server", () => {
+    const r = toDshStdioEligibility({ id: "local", transport: "stdio", command: "npx", args: ["-y"], env: {} });
+    expect(r.eligible).toBe(true);
+  });
+  it("rejects shell metacharacters and secret:// env", () => {
+    expect(toDshStdioEligibility({ id: "a", transport: "stdio", command: "npx -y" }).eligible).toBe(false);
+    const r = toDshStdioEligibility({ id: "a", transport: "stdio", command: "npx", env: { K: "secret://x" } });
+    expect(r.eligible).toBe(false);
+  });
+  it("rejects non-stdio transports and bad ids", () => {
+    expect(toDshStdioEligibility({ id: "a", transport: "http", baseUrl: "https://x" }).eligible).toBe(false);
+    expect(toDshStdioEligibility({ id: "bad name!", transport: "stdio", command: "npx" }).eligible).toBe(false);
   });
 });
 

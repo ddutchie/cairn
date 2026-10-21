@@ -44,8 +44,12 @@ export interface RegistryMcpEntry extends RegistryEntryMeta {
   definition: {
     name: string;
     description?: string;
-    transport: "sse" | "http";
-    baseUrl: string;
+    transport: "sse" | "http" | "stdio";
+    baseUrl?: string;
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    cwd?: string;
     headers?: Record<string, string>;
     authMode?: "none" | "oauth";
     oauthScope?: string;
@@ -327,11 +331,11 @@ export interface ChatThemesManifest {
 
 const headers = z.record(z.string(), z.string()).optional();
 
-const mcpDefinition = z.object({
+const mcpRemoteDefinition = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   transport: z.enum(["sse", "http"]),
-  baseUrl: z.string().url().startsWith("https://"),
+  baseUrl: z.string().url(),
   headers,
   authMode: z.enum(["none", "oauth"]).optional(),
   oauthScope: z.string().optional(),
@@ -341,6 +345,20 @@ const mcpDefinition = z.object({
   disabledTools: z.array(z.string()).optional(),
   enabled: z.boolean(),
 });
+
+const mcpStdioDefinition = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  transport: z.literal("stdio"),
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  cwd: z.string().optional(),
+  disabledTools: z.array(z.string()).optional(),
+  enabled: z.boolean(),
+});
+
+const mcpDefinition = z.union([mcpRemoteDefinition, mcpStdioDefinition]);
 
 const oauthConfig = z
   .object({

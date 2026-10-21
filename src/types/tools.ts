@@ -18,8 +18,12 @@ export * from "../../shared/types/tools";
 export interface RegistryMcpDefinition {
   name: string;
   description?: string;
-  transport: "sse" | "http";
-  baseUrl: string;
+  transport: "sse" | "http" | "stdio";
+  baseUrl?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
   headers?: Record<string, string>;
   authMode?: "none" | "oauth";
   oauthScope?: string;

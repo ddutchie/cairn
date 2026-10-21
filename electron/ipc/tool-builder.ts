@@ -249,6 +249,22 @@ function saveServiceDraft(session: BuilderSession, db: Database, def: builder.Se
 
 function saveMcpDraft(session: BuilderSession, db: Database, def: builder.McpDraft) {
   const id = newId();
+  if (def.transport === "stdio") {
+    const env = persistSecretHeaders(session, "mcp", id, def.env ?? {});
+    return q.saveMcpServer(db, {
+      id,
+      workspaceId: session.workspaceId,
+      name: def.name,
+      description: def.description,
+      transport: "stdio",
+      command: def.command,
+      args: def.args ?? [],
+      env,
+      cwd: def.cwd,
+      enabled: false,
+      source: "ai-builder",
+    });
+  }
   const headers = persistSecretHeaders(session, "mcp", id, def.headers ?? {});
   return q.saveMcpServer(db, {
     id,

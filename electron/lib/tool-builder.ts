@@ -402,13 +402,23 @@ export interface ServiceDraft {
   apiKeyUrl?: string;
 }
 
-export interface McpDraft {
-  name: string;
-  description?: string;
-  baseUrl: string;
-  transport?: "sse" | "http";
-  headers?: Record<string, string>;
-}
+export type McpDraft =
+  | {
+      name: string;
+      description?: string;
+      baseUrl: string;
+      transport?: "sse" | "http";
+      headers?: Record<string, string>;
+    }
+  | {
+      name: string;
+      description?: string;
+      transport: "stdio";
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      cwd?: string;
+    };
 
 export interface ValidationResult<T> {
   ok: boolean;
@@ -435,12 +445,19 @@ export function validateServiceDraft(draft: ServiceDraft): ValidationResult<Serv
   return errors.length === 0 ? { ok: true, value: draft, errors: [] } : { ok: false, errors };
 }
 
-/** Validate an assembled MCP server config. */
+/** Validate an assembled MCP server config (remote http/sse or local stdio). */
 export function validateMcpDraft(draft: McpDraft): ValidationResult<McpDraft> {
   const errors: string[] = [];
   if (!draft.name?.trim()) errors.push("name is required");
-  if (!isHttpUrl(draft.baseUrl)) errors.push("baseUrl must be a valid http(s) URL");
-  if (draft.transport && !["sse", "http"].includes(draft.transport)) errors.push("transport is invalid");
+  if (draft.transport === "stdio") {
+    if (!draft.command?.trim()) errors.push("command is required for stdio servers");
+    else if (/[\s;&|<>$`'"\\]/.test(draft.command.split("/").pop() ?? draft.command)) errors.push("command must be a bare executable name or absolute path (no shell metacharacters)");
+    if (draft.args && !draft.args.every((a) => typeof a === "string")) errors.push("args must be strings");
+    if (draft.cwd && !draft.cwd.startsWith("/")) errors.push("cwd must be an absolute path");
+  } else {
+    if (!isHttpUrl(draft.baseUrl)) errors.push("baseUrl must be a valid http(s) URL");
+    if (draft.transport && !["sse", "http"].includes(draft.transport)) errors.push("transport is invalid");
+  }
   return errors.length === 0 ? { ok: true, value: draft, errors: [] } : { ok: false, errors };
 }
 
