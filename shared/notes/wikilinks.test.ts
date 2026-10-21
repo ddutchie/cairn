@@ -20,3 +20,15 @@ describe("linksToTitle", () => {
     expect(linksToTitle("see [[other]]", "My Note")).toBe(false);
   });
 });
+
+describe("parseWikilinks bracket handling", () => {
+  it("keeps a single trailing ] in the title", () => {
+    expect(parseWikilinks("see [[Project [WIP]]]").map((l) => l.title)).toEqual(["Project [WIP]"]);
+  });
+  it("rejects four or more closing brackets", () => {
+    expect(parseWikilinks("[[note]]]]")).toEqual([]);
+  });
+  it("still parses ordinary links", () => {
+    expect(parseWikilinks("[[a]] and [[b]]").map((l) => l.title)).toEqual(["a", "b"]);
+  });
+});

@@ -68,7 +68,7 @@ export const remarkCallout: RemarkPlugin<[], MdastRoot> = () => (tree) => {
 // Converts ![[filename.ext]] and ![[filename.ext|width]] into standard markdown
 // image nodes. Supports common image extensions. Must run BEFORE remarkWikilinks
 // so the `!` prefix embeds are consumed first. Same bracket rules as WIKILINK_RE.
-const EMBED_RE = /!\[\[((?:(?!\[\[)[^\n])+?)\]\](?!\])/g;
+const EMBED_RE = /!\[\[((?:(?!\[\[)(?!\]\])[^\n])+?\]?)\]\](?!\])/g;
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"]);
 
 export const remarkObsidianEmbeds: RemarkPlugin<[], MdastRoot> = () => (tree) => {
