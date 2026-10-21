@@ -94,6 +94,7 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "db:note:moveToProject": true,
   "db:note:bodies:get": true,
   "db:note:search": true,
+  "db:note:searchSnippets": true,
   "db:note:backlinks:list": true,
   "db:note:changeMark:clear": true,
   "db:flow:get": true,

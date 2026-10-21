@@ -6,6 +6,7 @@ import {
   FolderPlus, LayoutTemplate,
   ChevronDown, ChevronRight, Trash2, X,
 } from "lucide-react";
+import { requestNoteFind } from "@/lib/note-find";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -127,18 +128,21 @@ export function NotesView() {
     return out;
   }, [notesCollapsedFolders, activeProjectId]);
 
-  // ⌘F / Ctrl+F — focus the filter input, but only when the CM6 editor
-  // is NOT focused (CM6's own searchKeymap handles it when the editor is active).
+  // ⌘F / Ctrl+F — find inside the open note (edit + read mode); with no note
+  // open it focuses the sidebar filter. ⌥⌘F / Ctrl+Alt+F always focuses the filter.
   // ⌘. / Ctrl+. — toggle distraction-free mode (works from anywhere in the view).
   const filterInputRef = useRef<HTMLInputElement>(null);
+  const hasActiveNoteRef = useRef(false);
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "f") {
-        const inEditor = document.activeElement?.closest(".cm-editor") !== null;
-        if (inEditor) return; // let CM6 searchKeymap handle it
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyF") {
         e.preventDefault();
-        filterInputRef.current?.focus();
-        filterInputRef.current?.select();
+        if (hasActiveNoteRef.current && !e.altKey) {
+          requestNoteFind(null);
+        } else {
+          filterInputRef.current?.focus();
+          filterInputRef.current?.select();
+        }
       } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ".") {
         e.preventDefault();
         toggleNotesFullscreen();
@@ -287,6 +291,8 @@ export function NotesView() {
     ?? templates.find((n) => n.id === activeNoteId)
     ?? notes[0]
     ?? null;
+  // Only an editor-backed note can consume a find request (⌘F handler above).
+  useEffect(() => { hasActiveNoteRef.current = activeNote !== null; }, [activeNote]);
 
   // Folder tree — only built when not filtering
   const isFiltering = !!(filter || activeTagId);

@@ -67,3 +67,26 @@ export function mergeSemanticResults(
   }
   return merged;
 }
+
+export interface NoteSnippetHit {
+  id: string;
+  score: number;
+  snippet: { text: string; ranges: Array<[number, number]>; term: string } | null;
+}
+
+/**
+ * Overlay main-process note hits on the local keyword results: matched notes get
+ * their excerpt + highlight ranges and are ranked by score (best first); notes
+ * only the local matcher found keep their order after them. Cards are untouched.
+ */
+export function applyNoteHits(results: SearchResult[], hits: NoteSnippetHit[]): SearchResult[] {
+  const byId = new Map(hits.map((h, rank) => [h.id, { h, rank }]));
+  const notes = results.filter((r) => r.type === "note").map((r) => {
+    const hit = byId.get(r.id);
+    const snip = hit?.h.snippet;
+    const merged = snip ? { ...r, snippet: snip.text, ranges: snip.ranges, findTerm: snip.term } : r;
+    return { r: merged, rank: hit ? hit.rank : Number.MAX_SAFE_INTEGER };
+  });
+  notes.sort((a, b) => a.rank - b.rank);
+  return [...notes.map((n) => n.r), ...results.filter((r) => r.type !== "note")];
+}

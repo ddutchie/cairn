@@ -20,8 +20,8 @@ import { languages } from "@codemirror/language-data";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
-import { search, searchKeymap } from "@codemirror/search";
-import { buildSearchTheme } from "@/lib/editor-theme";
+import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search";
+import { noteFindExtension } from "./note-find-extension";
 import { livePreview } from "@/lib/livePreview";
 
 // ── Public handle so parent can read selection for AI toolbar ──────────────
@@ -353,16 +353,17 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
             ...defaultKeymap,
             ...historyKeymap,
             indentWithTab,
-            ...searchKeymap,
+            // Kept from the old searchKeymap: multi-cursor select-next / select-all-matches.
+            { key: "Mod-d", run: selectNextOccurrence, preventDefault: true },
+            { key: "Mod-Shift-l", run: selectSelectionMatches },
           ]),
           markdown({
             base: markdownLanguage,
             codeLanguages: languages,
           }),
           syntaxHighlighting(markdownHighlightStyle),
-          search({ top: false }),
+          noteFindExtension,
           buildTheme(),
-          buildSearchTheme(),
           cmPlaceholder(placeholder),
           updateListener,
           pasteHandler,

@@ -114,3 +114,24 @@ describe("mergeSemanticResults", () => {
     expect(merged.map((x) => x.id)).toEqual(["a", "c", "d"]);
   });
 });
+
+describe("applyNoteHits", () => {
+  const note = (id: string) => ({ type: "note" as const, id, title: id, snippet: "start of note", projectId: "p", projectName: "P" });
+  const card = { type: "card" as const, id: "c1", title: "c1", snippet: "", projectId: "p", projectName: "P" };
+
+  it("ranks hits by backend order, swaps in the excerpt, keeps cards last", async () => {
+    const { applyNoteHits } = await import("./search-utils");
+    const out = applyNoteHits(
+      [note("a"), card, note("b"), note("local-only")],
+      [
+        { id: "b", score: 20, snippet: { text: "…the roadmap…", ranges: [[5, 12]], term: "roadmap" } },
+        { id: "a", score: 5, snippet: null },
+      ],
+    );
+    expect(out.map((r) => r.id)).toEqual(["b", "a", "local-only", "c1"]);
+    expect(out[0]).toMatchObject({ snippet: "…the roadmap…", ranges: [[5, 12]], findTerm: "roadmap" });
+    // Title-only hit keeps its original snippet and has nothing to find in the body.
+    expect(out[1].findTerm).toBeUndefined();
+    expect(out[1].snippet).toBe("start of note");
+  });
+});

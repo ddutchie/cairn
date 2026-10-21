@@ -15,6 +15,7 @@
  * `bindChatPopoutSession` for chat:popOut) — the contract is not a guard.
  */
 
+import type { NoteSnippet } from "../notes/search";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type { WireProtocol } from "../models/model-catalog";
 import type { ProbeProtocol, ProtocolAvailability } from "../chat/protocol-probe";
@@ -261,6 +262,8 @@ export interface IpcContract {
   "db:note:bodies:get": { args: [req: { ids: string[] }]; result: NoteBody[] };
   /** Full-text search; returns matching note ids. */
   "db:note:search": { args: [req: { query: string; projectId?: string }]; result: string[] };
+  /** Ranked search with a highlighted excerpt around the first body match. */
+  "db:note:searchSnippets": { args: [req: { query: string; projectId?: string; limit?: number }]; result: Array<{ id: string; title: string; score: number; snippet: NoteSnippet | null }> };
   /** Ids of notes whose [[wikilinks]] point at this note. */
   "db:note:backlinks:list": { args: [req: { noteId: string }]; result: string[] };
   /** The user has seen this note's "what's new" changes. */
@@ -919,6 +922,7 @@ const CHANNELS: ChannelRecord = {
   "db:note:moveToProject": "write",
   "db:note:bodies:get": "read",
   "db:note:search": "read",
+  "db:note:searchSnippets": "read",
   "db:note:backlinks:list": "read",
   "db:note:changeMark:clear": "write",
   "db:flow:get": "read",

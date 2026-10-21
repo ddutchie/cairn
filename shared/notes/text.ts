@@ -19,6 +19,8 @@ export function stripMarkdown(md: string): string {
     .trim();
 }
 
+import { matchesParsed, parseSearchQuery } from "./search";
+
 /**
  * Structural markdown → plain text, preserving line breaks: drops heading
  * markers, emphasis, code, link targets, list bullets and blockquote markers.
@@ -47,14 +49,16 @@ export function markdownToText(md: string, opts: { rulesAndTables?: boolean } = 
 }
 
 /**
- * Split a search query into lowercased terms (whitespace-separated).
+ * Split a search query into the lowercased terms/phrases a record must contain
+ * (whitespace-separated; "quoted phrases" stay whole; -excluded words are
+ * dropped — `matchesQuery` enforces those).
  *
  * Used by keyword search so a multi-word query matches records that contain
  * every term SOMEWHERE — not only records containing the exact contiguous
  * phrase. Empty/whitespace query → no terms.
  */
 export function queryTerms(query: string): string[] {
-  return query.toLowerCase().split(/\s+/).filter(Boolean);
+  return parseSearchQuery(query).include;
 }
 
 /**
@@ -66,14 +70,12 @@ export function queryTerms(query: string): string[] {
  * flow" and "flow for auth". Callers pass the combined searchable text (e.g.
  * title + body) as the haystack so terms may be spread across fields.
  *
- * An empty query matches nothing (callers already guard on a blank query; this
+ * Supports "quoted phrases" and -exclusions (see ./search). An empty query
+ * matches nothing (callers already guard on a blank query; this
  * keeps the "empty search returns no rows" contract explicit).
  */
 export function matchesQuery(query: string, haystack: string): boolean {
-  const terms = queryTerms(query);
-  if (terms.length === 0) return false;
-  const hay = haystack.toLowerCase();
-  return terms.every((t) => hay.includes(t));
+  return matchesParsed(parseSearchQuery(query), haystack);
 }
 
 /**

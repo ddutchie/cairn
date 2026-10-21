@@ -18,6 +18,7 @@ export const notesApi = {
     // Lazy bodies: the renderer store holds note metadata only (Electron).
     bodies: (ids: string[]) => invokeContract("db:note:bodies:get", { ids }),
     search: (query: string, projectId?: string) => invokeContract("db:note:search", { query, projectId }),
+    searchSnippets: (query: string, projectId?: string, limit?: number) => invokeContract("db:note:searchSnippets", { query, projectId, limit }),
     backlinks: (noteId: string) => invokeContract("db:note:backlinks:list", { noteId }),
     /** The user has seen this note's "what's new" changes. */
     clearChangeMark: (id: string) => invokeContract("db:note:changeMark:clear", { id }),

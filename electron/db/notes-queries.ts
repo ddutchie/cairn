@@ -14,7 +14,8 @@ import { ts } from "./utils";
 import { toNote, j, type DbRow } from "../host-shared/db-mappers";
 import { normalizeNoteTitle, stripMarkdown } from "../host-shared/text-utils";
 import { EXCERPT_SOURCE_CHARS } from "../../shared/notes/excerpt";
-import { matchesQuery, queryTerms } from "../../shared/notes/text";
+import { matchesQuery, markdownToText } from "../../shared/notes/text";
+import { buildSnippet, parseSearchQuery, type NoteSnippet } from "../../shared/notes/search";
 import { linksToTitle } from "../../shared/notes/wikilinks";
 
 // ── Notes ─────────────────────────────────────
@@ -410,7 +411,34 @@ export function getNoteBodies(db: Database.Database, ids: string[]): NoteBody[] 
  * candidate is verified with the exact JS matcher.
  */
 export function searchNoteIds(db: Database.Database, query: string, opts: { projectId?: string } = {}): string[] {
-  const terms = queryTerms(query);
+  return searchNoteHits(db, query, opts).map((h) => h.id);
+}
+
+export interface NoteSearchHit {
+  id: string;
+  title: string;
+  /** Excerpt around the first body match; null when only the title matched. */
+  snippet: NoteSnippet | null;
+  /** Higher = better. Title hits outweigh body hits. */
+  score: number;
+}
+
+/**
+ * Ranked note search with match excerpts. Same matching semantics as
+ * `searchNoteIds` (AND-of-terms substring, "phrases", -exclusions); ordered by
+ * score (title match, exact title, body occurrences) then recency.
+ */
+export function searchNoteSnippets(
+  db: Database.Database,
+  query: string,
+  opts: { projectId?: string; limit?: number } = {},
+): NoteSearchHit[] {
+  return searchNoteHits(db, query, opts, true).slice(0, opts.limit ?? 50);
+}
+
+function searchNoteHits(db: Database.Database, query: string, opts: { projectId?: string } = {}, rank = false): NoteSearchHit[] {
+  const parsed = parseSearchQuery(query);
+  const terms = parsed.include;
   if (terms.length === 0) return [];
   const where: string[] = ["deleted_at IS NULL"];
   const args: unknown[] = [];
@@ -425,7 +453,19 @@ export function searchNoteIds(db: Database.Database, query: string, opts: { proj
     .all(...args) as Array<{ id: string; title: string; content: string | null; type: string | null }>;
   return rows
     .filter((r) => matchesQuery(query, `${r.title}\n${stripMarkdown(r.content ?? "")}`))
-    .map((r) => r.id);
+    .map((r, order) => {
+      const title = r.title.toLowerCase();
+      const snippet = buildSnippet(markdownToText(r.content ?? ""), terms);
+      let score = 0;
+      for (const t of terms) if (title.includes(t)) score += 10;
+      if (terms.length === 1 && title === terms[0]) score += 20;
+      if (title.startsWith(terms[0])) score += 5;
+      score += Math.min(snippet?.count ?? 0, 10);
+      return { hit: { id: r.id, title: r.title, snippet, score }, order };
+    })
+    // Rows arrive newest-first; `order` keeps that as the tiebreak.
+    .sort((a, b) => (rank ? b.hit.score - a.hit.score : 0) || a.order - b.order)
+    .map((x) => x.hit);
 }
 
 /** Ids of live notes containing a `[[<title of noteId>]]` wikilink (case-insensitive, trimmed). */

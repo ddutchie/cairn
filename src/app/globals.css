@@ -809,3 +809,7 @@ input[type="url"] {
 :root {
   --chat-panel-eff: var(--chat-panel-width, 320px);
 }
+
+/* In-note find (read mode): CSS Custom Highlight API ranges set by NoteFindBar */
+::highlight(cairn-find) { background-color: color-mix(in srgb, var(--accent) 24%, transparent); color: inherit; }
+::highlight(cairn-find-current) { background-color: color-mix(in srgb, var(--accent) 60%, transparent); color: inherit; }
