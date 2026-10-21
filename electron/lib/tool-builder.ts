@@ -14,6 +14,7 @@
 
 import { encode } from "gpt-tokenizer";
 import { isPlaceholder } from "./secure-store";
+import { validateStdioServer } from "../../shared/mcp/stdio-validation";
 import { errMsg } from "../host-shared/errors";
 
 // ── Constants (ported from optimize_service.js) ──────────────────────────────
@@ -450,10 +451,8 @@ export function validateMcpDraft(draft: McpDraft): ValidationResult<McpDraft> {
   const errors: string[] = [];
   if (!draft.name?.trim()) errors.push("name is required");
   if (draft.transport === "stdio") {
-    if (!draft.command?.trim()) errors.push("command is required for stdio servers");
-    else if (/[\s;&|<>$`'"\\]/.test(draft.command.split("/").pop() ?? draft.command)) errors.push("command must be a bare executable name or absolute path (no shell metacharacters)");
-    if (draft.args && !draft.args.every((a) => typeof a === "string")) errors.push("args must be strings");
-    if (draft.cwd && !draft.cwd.startsWith("/")) errors.push("cwd must be an absolute path");
+    const v = validateStdioServer({ command: draft.command, args: draft.args, env: draft.env, cwd: draft.cwd });
+    if (!v.ok) errors.push(...v.errors);
   } else {
     if (!isHttpUrl(draft.baseUrl)) errors.push("baseUrl must be a valid http(s) URL");
     if (draft.transport && !["sse", "http"].includes(draft.transport)) errors.push("transport is invalid");

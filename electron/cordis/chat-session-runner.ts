@@ -366,10 +366,10 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       // the approval seam. Gated, so an unknown connector can't mutate
       // externally without confirmation.
       try {
-        // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF) — see
-        // run-cordis-coding.ts. Unset → empty mount + empty exclusion.
+        // External MCP: in-scope stdio servers always mount via dsh-mcp-client;
+        // the opt-in HTTP spike mounts verified servers (see run-cordis-coding.ts).
         const { maybeMountDshMcpServers } = await import("./mcp-dsh-bridge");
-        const spike = await maybeMountDshMcpServers(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+        const spike = await maybeMountDshMcpServers(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "", { workspacePath });
         spike.disposers.forEach((d) => resources.add(d));
         const extDisposers = await registerExternalCairnTools(ctx, { db, workspaceId: req.workspaceId ?? "", projectId: req.projectId ?? "" }, { excludeServerIds: spike.excludedServerIds });
         extDisposers.forEach((d) => resources.add(d));

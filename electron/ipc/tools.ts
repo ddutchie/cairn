@@ -53,6 +53,25 @@ function sanitizeHeaders(headers?: Record<string, string>): Record<string, strin
  * Heuristic: an Authorization/api-key header whose value is a non-empty literal
  * (not a ref, not a placeholder) is almost certainly a real credential.
  */
+/**
+ * Env sanitizer for stdio servers: only `secret://` refs and placeholders get
+ * special handling. Unlike headers, an env value like MAX_TOKENS=4096 is a
+ * legitimate literal — the bare-credential heuristic must NOT apply here.
+ */
+function sanitizeStdioEnv(env?: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env ?? {})) {
+    if (secrets.isSecretRef(value)) {
+      out[name] = value;
+    } else if (secrets.isPlaceholder(value) || secrets.containsPlaceholder(value)) {
+      // Unfilled placeholder — drop it.
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}
+
 function looksLikeBareCredential(name: string, value: string): boolean {
   if (!value.trim()) return false;
   const n = name.toLowerCase();
@@ -133,20 +152,14 @@ export function registerToolsHandlers(ctx: DbContext): void {
   );
 
   registerContractHandle("tools:saveMcpServer", (_e, server) =>
-    handle(() => {
+    handle(async () => {
       const id = server.id ?? newId();
-      if (server.transport === "stdio") {
-        const env = sanitizeHeaders((server as { env?: Record<string, string> }).env);
-        return q.saveMcpServer(ctx.db, {
-          ...(server as Record<string, unknown>),
-          id,
-          env,
-        } as Parameters<typeof q.saveMcpServer>[1]);
-      }
       // On edit, if any connection/auth-relevant field changed, the stored OAuth
       // artefacts (tokens + client registration) no longer apply — they were
       // issued for the old authorization server / config. Clear them so the id
-      // only preserves OAuth state when the auth config is unchanged.
+      // only preserves OAuth state when the auth config is unchanged. Runs
+      // BEFORE the stdio early return so a remote→stdio transport change also
+      // clears stale OAuth state (oauthConfigChanged compares transport).
       if (server.id) {
         const prev = q.getMcpServerById(ctx.db, server.id);
         if (prev && oauthConfigChanged(prev, server)) {
@@ -154,6 +167,22 @@ export function registerToolsHandlers(ctx: DbContext): void {
           mcpOauth.cancelServerAuth(id); // tear down loopback listener + deep-link attempt
           void mcpClient.dispose(id);
         }
+      }
+      if (server.transport === "stdio") {
+        const { validateStdioServer } = await import("../../shared/mcp/stdio-validation");
+        const v = validateStdioServer({
+          command: (server as { command?: string }).command,
+          args: (server as { args?: unknown }).args,
+          env: (server as { env?: unknown }).env,
+          cwd: (server as { cwd?: string }).cwd,
+        });
+        if (!v.ok) throw new Error(`Invalid stdio server: ${v.errors.join("; ")}`);
+        const env = sanitizeStdioEnv((server as { env?: Record<string, string> }).env);
+        return q.saveMcpServer(ctx.db, {
+          ...(server as Record<string, unknown>),
+          id,
+          env,
+        } as Parameters<typeof q.saveMcpServer>[1]);
       }
       // SQLite NOT NULL constraints reject a row missing its required fields.
       // Stdio was returned above, so this is a remote partial.

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { McpServerConfig } from "@/types";
 import { type HeaderRow, headersToRows, inputCls, labelCls } from "./helpers";
+import { isAbsolutePath } from "../../../../shared/mcp/stdio-validation";
 import { HeaderEditor } from "./HeaderEditor";
 
 /** Add/edit form for an MCP server (remote http/sse or local stdio). */
@@ -46,7 +47,7 @@ export function McpForm({
     initial?.transport === "stdio" ? (initial.command ?? "") : "",
   );
   const [argsText, setArgsText] = useState(
-    initial?.transport === "stdio" ? (initial.args ?? []).join(" ") : "",
+    initial?.transport === "stdio" ? (initial.args ?? []).join("\n") : "",
   );
   const [cwd, setCwd] = useState(initial?.transport === "stdio" ? (initial.cwd ?? "") : "");
   const [claudeJson, setClaudeJson] = useState("");
@@ -54,7 +55,7 @@ export function McpForm({
   const [dshPath, setDshPath] = useState(initial?.dshPath ?? false);
 
   const valid = isStdio
-    ? name.trim().length > 0 && command.trim().length > 0 && (cwd.trim() === "" || cwd.trim().startsWith("/"))
+    ? name.trim().length > 0 && command.trim().length > 0 && (cwd.trim() === "" || isAbsolutePath(cwd.trim()))
     : name.trim().length > 0 && /^https?:\/\//.test(baseUrl.trim());
 
   function applyClaudeImport() {
@@ -63,24 +64,29 @@ export function McpForm({
       const parsed = JSON.parse(claudeJson) as { command?: unknown; args?: unknown; env?: unknown };
       if (!parsed || typeof parsed !== "object") throw new Error("must be an object with a command");
       if (typeof parsed.command !== "string" || !parsed.command.trim()) throw new Error("needs a command string");
-      setCommand(parsed.command.trim());
+      const nextCommand = parsed.command.trim();
+      let nextArgs = argsText;
       if (parsed.args !== undefined) {
         if (!Array.isArray(parsed.args) || !parsed.args.every((a) => typeof a === "string")) {
           throw new Error("args must be an array of strings");
         }
-        setArgsText((parsed.args as string[]).join(" "));
+        nextArgs = (parsed.args as string[]).join("\n");
       }
+      let nextRows = rows;
       if (parsed.env !== undefined) {
         if (typeof parsed.env !== "object" || parsed.env === null || Array.isArray(parsed.env)) {
           throw new Error("env must be an object");
         }
-        const next: HeaderRow[] = [];
+        const built: HeaderRow[] = [];
         for (const [k, v] of Object.entries(parsed.env as Record<string, unknown>)) {
           if (typeof v !== "string") throw new Error(`env.${k} must be a string`);
-          next.push({ name: k, value: v, isSecret: true });
+          built.push({ name: k, value: v, isSecret: true });
         }
-        setRows(next);
+        nextRows = built;
       }
+      setCommand(nextCommand);
+      setArgsText(nextArgs);
+      setRows(nextRows);
     } catch (err) {
       setClaudeError(err instanceof Error ? err.message : "Invalid JSON");
     }
@@ -88,7 +94,7 @@ export function McpForm({
 
   function handleSave() {
     if (isStdio) {
-      const args = argsText.split(/\s+/).map((a) => a.trim()).filter(Boolean);
+      const args = argsText.split(/\r?\n/).map((a) => a.trim()).filter((a) => a.length > 0);
       onSave(
         {
           id: initial?.id,
@@ -172,8 +178,8 @@ export function McpForm({
             <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="e.g. npx or /usr/local/bin/my-mcp" className={cn(inputCls, "font-mono")} />
           </div>
           <div>
-            <label className={labelCls}>Args (space-separated)</label>
-            <input value={argsText} onChange={(e) => setArgsText(e.target.value)} placeholder="e.g. -y @modelcontextprotocol/server-filesystem /tmp" className={cn(inputCls, "font-mono")} />
+            <label className={labelCls}>Args (one per line)</label>
+            <textarea value={argsText} onChange={(e) => setArgsText(e.target.value)} rows={3} placeholder={"-y\n@modelcontextprotocol/server-filesystem\n/tmp"} className={cn(inputCls, "font-mono")} />
           </div>
           <div>
             <label className={labelCls}>Working directory (optional, absolute)</label>

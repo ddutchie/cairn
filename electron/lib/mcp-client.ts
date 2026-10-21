@@ -23,7 +23,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { resolveSecrets } from "./secure-store";
+import { resolveStdioEnv } from "./mcp-stdio";
 import { isOAuthServer, makeProvider } from "./mcp-oauth";
 // Pure namespacing + shape conversion now live in shared so desktop + mobile
 // namespace/convert/stringify identically. Re-exported below for existing
@@ -274,9 +276,48 @@ export type { McpToolInfo, ListMcpToolsResult };
  * the (cached) connection alive — the user is actively configuring the server —
  * and surfaces descriptions. Never throws.
  */
+/**
+ * One-shot stdio list (Settings/test only — never the turn path): spawn,
+ * listTools, close. The turn path serves stdio exclusively via dsh-mcp-client.
+ */
+async function listStdioToolsOnce(cfg: Extract<McpServerRuntimeConfig, { transport: "stdio" }>): Promise<McpToolDef[]> {
+  const client = new Client({ name: "cairn", version: "1.0.0" }, { capabilities: {} });
+  const transport = new StdioClientTransport({
+    command: cfg.command,
+    args: cfg.args ?? [],
+    env: resolveStdioEnv(cfg.env),
+    cwd: cfg.cwd?.trim() || undefined,
+    stderr: "ignore",
+  });
+  await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP stdio connect ${cfg.id}`);
+  try {
+    const res = await withTimeout(client.listTools(), CALL_TIMEOUT_MS, `MCP stdio listTools ${cfg.id}`);
+    return (res.tools ?? []) as McpToolDef[];
+  } finally {
+    try {
+      await client.close();
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
 export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<ListMcpToolsResult> {
   if (cfg.transport === "stdio") {
-    return { ok: false, tools: [], error: "Stdio servers list tools through the dsh path (turn-scoped mount), not the hand bridge." };
+    try {
+      const tools = await listStdioToolsOnce(cfg);
+      const defs = mcpToolsToOpenAI(cfg.id, tools);
+      return {
+        ok: true,
+        tools: tools.map((tool, i) => ({
+          name: tool.name,
+          description: tool.description,
+          tokens: encode(JSON.stringify(defs[i])).length,
+        })),
+      };
+    } catch (e) {
+      return { ok: false, tools: [], error: errMsg(e) };
+    }
   }
   try {
     const conn = await connect(cfg);
@@ -343,7 +384,12 @@ export async function testConnection(
   cfg: McpServerRuntimeConfig
 ): Promise<McpTestResult> {
   if (cfg.transport === "stdio") {
-    return { ok: false, error: "Stdio test runs through the dsh path — save and check the turn log for mount errors." };
+    try {
+      const tools = await listStdioToolsOnce(cfg);
+      return { ok: true, toolCount: tools.length, toolNames: tools.map((tool) => tool.name) };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
   }
   try {
     const conn = await connect(cfg);

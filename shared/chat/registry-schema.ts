@@ -335,7 +335,7 @@ const mcpRemoteDefinition = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   transport: z.enum(["sse", "http"]),
-  baseUrl: z.string().url(),
+  baseUrl: z.string().url().startsWith("https://"),
   headers,
   authMode: z.enum(["none", "oauth"]).optional(),
   oauthScope: z.string().optional(),

@@ -67,13 +67,16 @@ export function getInstalledMcpServer(id: string): InstalledMcpServer | undefine
 /** Install (or overwrite) a registry MCP entry. Does NOT connect or authorize. */
 export function installMcpServer(entry: RegistryMcpEntry): void {
   const d = entry.definition;
+  if (d.transport !== "http" && d.transport !== "sse") {
+    throw new Error("Only streamable-HTTP/SSE MCP servers work on mobile right now.");
+  }
   const record: InstalledMcpServer = {
     id: entry.id,
     name: d.name || entry.id,
     blurb: entry.blurb,
     iconSvg: entry.iconSvg,
     brandColor: entry.brandColor,
-    baseUrl: d.baseUrl,
+    baseUrl: d.baseUrl ?? "",
     transport: d.transport,
     authMode: d.authMode ?? "none",
     oauthScope: d.oauthScope,

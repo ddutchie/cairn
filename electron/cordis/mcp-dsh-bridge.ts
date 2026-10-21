@@ -78,6 +78,10 @@ import {
   type Config as DshMcpConfig,
 } from "@deepseek-ai/dsh-mcp-client";
 import type { HostStore } from "./host-store";
+import {
+  validateStdioServer as validateStdio,
+  isAbsolutePath as isAbsPath,
+} from "../../shared/mcp/stdio-validation";
 
 /** Env var naming the single MCP server id to route via dsh (unset = spike off). */
 export const DSH_MCP_SPIKE_ENV = "CAIRN_DSH_MCP_SPIKE";
@@ -101,6 +105,7 @@ export interface SpikeMcpServerRow {
   args?: string[] | null;
   env?: Record<string, string> | null;
   cwd?: string | null;
+  disabledTools?: string[] | null;
 }
 
 export type DshMcpEligibility =
@@ -157,14 +162,12 @@ export type DshStdioEligibility =
   | { eligible: true; serverName: string; command: string; args: string[]; env: Record<string, string>; cwd: string }
   | { eligible: false; reason: string };
 
-const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const COMMAND_TOKEN_RE = /^[A-Za-z0-9_@.+-]+$/;
-
 /**
  * Validate a stdio row for dsh mounting. Pure — no secret resolution here;
  * callers resolve `secret://` env refs via HostStore BEFORE building the
  * dsh config (main process only). A raw `secret://` value is ineligible
- * rather than leaked.
+ * rather than leaked. Rules live in `shared/mcp/stdio-validation.ts` so the
+ * form, the builder, and the mount agree.
  */
 export function toDshStdioEligibility(
   server: SpikeMcpServerRow,
@@ -173,35 +176,22 @@ export function toDshStdioEligibility(
   if (server.transport !== "stdio") {
     return { eligible: false, reason: `transport-${server.transport}: not stdio` };
   }
-  const command = (server.command ?? "").trim();
-  if (!command) return { eligible: false, reason: "invalid-stdio: command is required" };
-  if (command.includes(" ") || /[;&|<>$`'"\\]/.test(command)) {
-    return { eligible: false, reason: "invalid-stdio: command must be a bare executable or absolute path (no shell)" };
-  }
-  if (command.startsWith("/") ? command.includes("..") : !COMMAND_TOKEN_RE.test(command)) {
-    return { eligible: false, reason: "invalid-stdio: command must be a bare executable name or absolute path" };
-  }
-  const args = server.args ?? [];
-  if (!Array.isArray(args) || !args.every((a) => typeof a === "string")) {
-    return { eligible: false, reason: "invalid-stdio: args must be an array of strings" };
-  }
   const env = server.env ?? {};
-  if (typeof env !== "object" || env === null || Array.isArray(env)) {
-    return { eligible: false, reason: "invalid-stdio: env must be an object" };
-  }
   for (const [k, v] of Object.entries(env)) {
-    if (!ENV_NAME_RE.test(k)) return { eligible: false, reason: `invalid-stdio: env var ${JSON.stringify(k)} is invalid` };
-    if (typeof v !== "string") return { eligible: false, reason: `invalid-stdio: env var ${k} must be a string` };
-    if (v.includes("secret://")) {
+    if (typeof v === "string" && v.includes("secret://")) {
       return { eligible: false, reason: `env-secret:${k}: resolve secret:// refs via HostStore before mounting` };
     }
   }
+  const v = validateStdio({ command: server.command ?? undefined, args: server.args ?? undefined, env, cwd: server.cwd ?? undefined });
+  if (!v.ok) return { eligible: false, reason: `invalid-stdio: ${v.errors.join("; ")}` };
   const cwd = ((server.cwd ?? "").trim() || opts.cwd?.trim() || opts.workspacePath?.trim() || process.cwd()).trim();
-  if (!cwd.startsWith("/")) return { eligible: false, reason: "invalid-stdio: cwd must be an absolute path" };
+  if (!isAbsPath(cwd)) return { eligible: false, reason: "invalid-stdio: cwd must be an absolute path" };
   if (!DSH_SERVER_NAME_RE.test(server.id)) {
     return { eligible: false, reason: `server-name: id ${JSON.stringify(server.id)} is outside dsh's [A-Za-z0-9_-]{1,32} namespace` };
   }
-  return { eligible: true, serverName: server.id, command, args: [...args], env: { ...env }, cwd };
+  const command = (server.command ?? "").trim();
+  const args = server.args ?? [];
+  return { eligible: true, serverName: server.id, command, args: [...args], env: { ...(env as Record<string, string>) }, cwd };
 }
 
 /** Set-difference of two tool-name lists (order-insensitive, duplicates collapsed). */
@@ -381,8 +371,30 @@ async function mountOneStdioServer(
         log(`dispose failed: ${(e as Error)?.message ?? String(e)}`);
       }
     };
+    const disposers: Array<() => unknown> = [disposeFiber];
+    // Honor the workspace per-tool toggle list: dsh-mcp-client has no native
+    // disabled list, so deny them at the tool registry (same EXTERNAL names
+    // the hand bridge filters via filterDisabledMcpDefs).
+    const disabled = ((row as { disabledTools?: unknown }).disabledTools as unknown) ?? [];
+    if (Array.isArray(disabled) && disabled.length > 0) {
+      const deny = (disabled as unknown[])
+        .filter((n): n is string => typeof n === "string" && n.length > 0)
+        .map((n) => `mcp__${serverId}__${n}`);
+      if (deny.length > 0) {
+        try {
+          const tools = ctx.tools as unknown as { restrict?: (f: { deny: string[] }) => () => void };
+          if (typeof tools.restrict === "function") {
+            disposers.push(tools.restrict({ deny }));
+          } else {
+            log(`server ${JSON.stringify(serverId)} has disabled tools but ctx.tools.restrict is unavailable — exposing all tools`);
+          }
+        } catch (e) {
+          log(`disabled-tools restrict failed for ${JSON.stringify(serverId)} (${(e as Error)?.message ?? String(e)}) — exposing all tools`);
+        }
+      }
+    }
     log(`server ${JSON.stringify(serverId)} on dsh stdio path (cmd ${elig.command})`);
-    return { disposers: [disposeFiber], excludedServerIds: new Set([serverId]) };
+    return { disposers, excludedServerIds: new Set([serverId]) };
   } catch (e) {
     log(`stdio mount failed for ${JSON.stringify(serverId)} (${(e as Error)?.message ?? String(e)}) — skipping`);
     return EMPTY_MOUNT;
