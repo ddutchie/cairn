@@ -77,7 +77,7 @@ export function extractEmbedNames(content: string | null | undefined): string[] 
     if (slash >= 0) target = target.slice(slash + 1);
     if (target && isSyncableAttachmentName(target)) out.add(target);
   };
-  const embed = /!\[\[([^\][\n]+?)\]\]/g;
+  const embed = /!\[\[((?:(?!\[\[)[^\n])+?)\]\](?!\])/g;
   let m: RegExpExecArray | null;
   while ((m = embed.exec(content)) !== null) add(m[1]);
   const legacy = /asset:\/\/([^\s)"'<>]+)/g;

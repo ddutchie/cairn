@@ -22,8 +22,9 @@
 import { WIKILINK_RE } from "./wikilinks";
 export { WIKILINK_RE };
 
-/** Matches an Obsidian embed `![[target]]` — group 1 is the target. */
-export const EMBED_RE = /!\[\[([^\][\n]+?)\]\]/g;
+/** Matches an Obsidian embed `![[target]]` — group 1 is the target. Same
+ * bracket rules as {@link WIKILINK_RE} so `![[img [v2].png]]` resolves. */
+export const EMBED_RE = /!\[\[((?:(?!\[\[)[^\n])+?)\]\](?!\])/g;
 
 /** Scheme used for internal note navigation (intercepted by onLinkPress). */
 export const CAIRN_NOTE_SCHEME = "cairn://note/";

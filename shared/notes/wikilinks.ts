@@ -8,8 +8,12 @@
  * `lastIndex`, since the exported object's state is shared module-wide.
  */
 
-/** Matches `[[Title]]` — capture group 1 is the (untrimmed) title. */
-export const WIKILINK_RE = /\[\[([^\][\n]+?)\]\]/g;
+/** Matches `[[Title]]` — capture group 1 is the (untrimmed) title.
+ * Titles may contain single `[`/`]` (e.g. `[[Project [WIP]]]`) but not
+ * `[[`, newlines, and the closing `]]` must not be followed by another `]`
+ * (so a title ending in `]` + its `]]` close — three `]` in a row — resolves
+ * to the full title rather than truncating the final `]`). */
+export const WIKILINK_RE = /\[\[((?:(?!\[\[)[^\n])+?)\]\](?!\])/g;
 
 export interface WikilinkMatch {
   /** Full raw match including brackets, e.g. `[[My Note]]` */
