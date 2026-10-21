@@ -20,6 +20,7 @@ import { languages } from "@codemirror/language-data";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
+import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search";
 import { noteFindExtension } from "./note-find-extension";
 import { livePreview } from "@/lib/livePreview";
 
@@ -352,6 +353,9 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
             ...defaultKeymap,
             ...historyKeymap,
             indentWithTab,
+            // Kept from the old searchKeymap: multi-cursor select-next / select-all-matches.
+            { key: "Mod-d", run: selectNextOccurrence, preventDefault: true },
+            { key: "Mod-Shift-l", run: selectSelectionMatches },
           ]),
           markdown({
             base: markdownLanguage,

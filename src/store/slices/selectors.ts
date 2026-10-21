@@ -74,7 +74,7 @@ export interface SelectorsSlice {
    * process (`window.electron.note.search`); titles and loaded bodies are
    * matched here.
    */
-  searchAll: (query: string, noteBodyMatches?: ReadonlySet<string>) => SearchResult[];
+  searchAll: (query: string, noteBodyMatches?: ReadonlySet<string>, limit?: number) => SearchResult[];
 }
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ export const createSelectorsSlice: StateCreator<
     );
   },
 
-  searchAll(query, noteBodyMatches) {
+  searchAll(query, noteBodyMatches, limit = 50) {
     if (!query.trim()) return [];
     const q = query;
     const s = get();
@@ -234,6 +234,6 @@ export const createSelectorsSlice: StateCreator<
       }
     });
 
-    return results.slice(0, 50);
+    return results.slice(0, limit);
   },
 });

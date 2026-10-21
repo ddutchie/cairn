@@ -133,7 +133,6 @@ export function NotesView() {
   // ⌘. / Ctrl+. — toggle distraction-free mode (works from anywhere in the view).
   const filterInputRef = useRef<HTMLInputElement>(null);
   const hasActiveNoteRef = useRef(false);
-  useEffect(() => { hasActiveNoteRef.current = activeNoteId !== null; }, [activeNoteId]);
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyF") {
@@ -292,6 +291,8 @@ export function NotesView() {
     ?? templates.find((n) => n.id === activeNoteId)
     ?? notes[0]
     ?? null;
+  // Only an editor-backed note can consume a find request (⌘F handler above).
+  useEffect(() => { hasActiveNoteRef.current = activeNote !== null; }, [activeNote]);
 
   // Folder tree — only built when not filtering
   const isFiltering = !!(filter || activeTagId);

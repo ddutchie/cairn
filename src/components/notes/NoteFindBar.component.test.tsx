@@ -51,3 +51,16 @@ describe("NoteFindBar (edit mode)", () => {
     expect(screen.getByText("1/1")).toBeTruthy();
   });
 });
+
+describe("NoteFindBar (read mode)", () => {
+  it("matches across inline elements", () => {
+    Element.prototype.scrollIntoView = vi.fn(); // not implemented in jsdom
+    const root = document.createElement("div");
+    root.innerHTML = "<p>say hello <strong>world</strong> now</p>";
+    document.body.appendChild(root);
+    render(<TooltipProvider><NoteFindBar initialQuery="hello world" requestId={1} mode="read" content="x"
+      getView={() => null} getReadRoot={() => root} onClose={() => {}} /></TooltipProvider>);
+    expect(screen.getByText("1/1")).toBeTruthy();
+    root.remove();
+  });
+});

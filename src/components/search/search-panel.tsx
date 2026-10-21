@@ -99,6 +99,7 @@ function ResultRow({ result, focused, onSelect, semanticScore }: ResultRowProps)
 
 type FilterType = SearchFilterType;
 
+const SEARCH_RESULT_CAP = 50;
 const SEMANTIC_KEY = "search.semanticMode";
 
 function loadSemanticPref(): boolean {
@@ -216,7 +217,8 @@ export function SearchPanel() {
       try {
         const hits = await searchSnippets(trimmed, filterProjectRef.current ?? undefined);
         if (cancelled) return;
-        keyword = applyNoteHits(searchAll(trimmed, new Set(hits.map((h) => h.id))), hits);
+        // Rank before capping, or best-ranked hits late in store order get cut.
+        keyword = applyNoteHits(searchAll(trimmed, new Set(hits.map((h) => h.id)), Infinity), hits).slice(0, SEARCH_RESULT_CAP);
         publish();
       } catch { /* title-only note matches stay on screen */ }
     }, 150);

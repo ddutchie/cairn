@@ -22,17 +22,50 @@ function clearReadHighlights() {
   reg?.delete(HL_CURRENT);
 }
 
-/** DOM ranges for every match inside `root`'s text nodes (matches never span elements). */
+const READ_BLOCK_TAGS = new Set([
+  "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DIV", "DL", "FIELDSET", "FIGURE", "FOOTER", "FORM",
+  "H1", "H2", "H3", "H4", "H5", "H6", "HEADER", "HR", "LI", "MAIN", "NAV", "OL", "P", "PRE",
+  "SECTION", "TABLE", "TD", "TH", "TR", "UL",
+]);
+
+function readBlock(node: Text, root: HTMLElement): Element {
+  let el = node.parentElement;
+  while (el && el !== root) {
+    if (READ_BLOCK_TAGS.has(el.tagName)) return el;
+    el = el.parentElement;
+  }
+  return root;
+}
+
+/**
+ * DOM ranges for every match inside `root`. Text is searched per rendered block
+ * so a match can span inline elements (`hello **world**` finds "hello world").
+ */
 function collectReadRanges(root: HTMLElement, query: string, caseSensitive: boolean, wholeWord: boolean): Range[] {
   const ranges: Range[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const text = n.nodeValue ?? "";
-    if (!text.trim()) continue;
+  const nodes: Text[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
+
+  for (let i = 0; i < nodes.length;) {
+    const block = readBlock(nodes[i], root);
+    const group: Text[] = [];
+    while (i < nodes.length && readBlock(nodes[i], root) === block) group.push(nodes[i++]);
+    const text = group.map((n) => n.nodeValue ?? "").join("");
     for (const m of findMatches(text, query, { caseSensitive, wholeWord })) {
+      let offset = 0;
+      let start: { node: Text; at: number } | null = null;
+      let end: { node: Text; at: number } | null = null;
+      for (const node of group) {
+        const next = offset + (node.nodeValue ?? "").length;
+        if (!start && m.from < next) start = { node, at: m.from - offset };
+        if (m.to <= next) { end = { node, at: m.to - offset }; break; }
+        offset = next;
+      }
+      if (!start || !end) continue;
       const r = document.createRange();
-      r.setStart(n, m.from);
-      r.setEnd(n, m.to);
+      r.setStart(start.node, start.at);
+      r.setEnd(end.node, end.at);
       ranges.push(r);
     }
   }

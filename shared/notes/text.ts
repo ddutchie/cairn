@@ -49,14 +49,16 @@ export function markdownToText(md: string, opts: { rulesAndTables?: boolean } = 
 }
 
 /**
- * Split a search query into lowercased terms (whitespace-separated).
+ * Split a search query into the lowercased terms/phrases a record must contain
+ * (whitespace-separated; "quoted phrases" stay whole; -excluded words are
+ * dropped — `matchesQuery` enforces those).
  *
  * Used by keyword search so a multi-word query matches records that contain
  * every term SOMEWHERE — not only records containing the exact contiguous
  * phrase. Empty/whitespace query → no terms.
  */
 export function queryTerms(query: string): string[] {
-  return query.toLowerCase().split(/\s+/).filter(Boolean);
+  return parseSearchQuery(query).include;
 }
 
 /**

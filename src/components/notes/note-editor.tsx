@@ -122,6 +122,10 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
   // In-note find bar (⌘F, or opened with a query from a global search result).
   const [find, setFind] = useState<{ query: string; requestId: number } | null>(null);
   useEffect(() => {
+    // New note → drop the previous note's find session (its bar would mount
+    // before this note's editor view exists), then honour a request aimed at us.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFind(null);
     const open = () => {
       const req = consumeNoteFind(note.id);
       if (req) setFind((f) => ({ query: req.query, requestId: (f?.requestId ?? 0) + 1 }));

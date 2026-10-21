@@ -62,3 +62,11 @@ describe("findMatches", () => {
     expect(findMatches("Cat cat concat", "cat", { wholeWord: true })).toHaveLength(2);
   });
 });
+
+describe("queryTerms honours the shared syntax (MCP prefilters)", () => {
+  it("returns phrases whole and drops exclusions", async () => {
+    const { queryTerms, ftsMatchQuery } = await import("./text");
+    expect(queryTerms('auth -draft "login flow"')).toEqual(["auth", "login flow"]);
+    expect(ftsMatchQuery('auth -draft')).toBe('"auth"*');
+  });
+});
