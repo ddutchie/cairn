@@ -78,6 +78,10 @@ import {
   type Config as DshMcpConfig,
 } from "@deepseek-ai/dsh-mcp-client";
 import type { HostStore } from "./host-store";
+import {
+  validateStdioServer as validateStdio,
+  isAbsolutePath as isAbsPath,
+} from "../../shared/mcp/stdio-validation";
 
 /** Env var naming the single MCP server id to route via dsh (unset = spike off). */
 export const DSH_MCP_SPIKE_ENV = "CAIRN_DSH_MCP_SPIKE";
@@ -90,13 +94,18 @@ const TOOL_CALL_TIMEOUT_MS = 60_000;
 
 export interface SpikeMcpServerRow {
   id: string;
-  baseUrl: string;
+  baseUrl?: string;
   transport: string;
   headers?: Record<string, string> | null;
   authMode?: string | null;
   enabled?: boolean;
   /** Dev-only per-server opt-in (ToolsSettings toggle) — same effect as the env var. */
   dshPath?: boolean;
+  command?: string | null;
+  args?: string[] | null;
+  env?: Record<string, string> | null;
+  cwd?: string | null;
+  disabledTools?: string[] | null;
 }
 
 export type DshMcpEligibility =
@@ -136,6 +145,7 @@ export function toDshMcpConfig(server: SpikeMcpServerRow): DshMcpEligibility {
       reason: `server-name: id ${JSON.stringify(server.id)} is outside dsh's [A-Za-z0-9_-]{1,32} namespace (renaming would break tool-name parity)`,
     };
   }
+  if (!server.baseUrl) return { eligible: false, reason: "base-url: missing" };
   let url: URL;
   try {
     url = new URL(server.baseUrl);
@@ -146,6 +156,42 @@ export function toDshMcpConfig(server: SpikeMcpServerRow): DshMcpEligibility {
     return { eligible: false, reason: `base-url: protocol ${JSON.stringify(url.protocol)} is not http(s)` };
   }
   return { eligible: true, serverName: server.id, url: server.baseUrl, headers: { ...headers } };
+}
+
+export type DshStdioEligibility =
+  | { eligible: true; serverName: string; command: string; args: string[]; env: Record<string, string>; cwd: string }
+  | { eligible: false; reason: string };
+
+/**
+ * Validate a stdio row for dsh mounting. Pure — no secret resolution here;
+ * callers resolve `secret://` env refs via HostStore BEFORE building the
+ * dsh config (main process only). A raw `secret://` value is ineligible
+ * rather than leaked. Rules live in `shared/mcp/stdio-validation.ts` so the
+ * form, the builder, and the mount agree.
+ */
+export function toDshStdioEligibility(
+  server: SpikeMcpServerRow,
+  opts: { workspacePath?: string; cwd?: string } = {},
+): DshStdioEligibility {
+  if (server.transport !== "stdio") {
+    return { eligible: false, reason: `transport-${server.transport}: not stdio` };
+  }
+  const env = server.env ?? {};
+  for (const [k, v] of Object.entries(env)) {
+    if (typeof v === "string" && v.includes("secret://")) {
+      return { eligible: false, reason: `env-secret:${k}: resolve secret:// refs via HostStore before mounting` };
+    }
+  }
+  const v = validateStdio({ command: server.command ?? undefined, args: server.args ?? undefined, env, cwd: server.cwd ?? undefined });
+  if (!v.ok) return { eligible: false, reason: `invalid-stdio: ${v.errors.join("; ")}` };
+  const cwd = ((server.cwd ?? "").trim() || opts.cwd?.trim() || opts.workspacePath?.trim() || process.cwd()).trim();
+  if (!isAbsPath(cwd)) return { eligible: false, reason: "invalid-stdio: cwd must be an absolute path" };
+  if (!DSH_SERVER_NAME_RE.test(server.id)) {
+    return { eligible: false, reason: `server-name: id ${JSON.stringify(server.id)} is outside dsh's [A-Za-z0-9_-]{1,32} namespace` };
+  }
+  const command = (server.command ?? "").trim();
+  const args = server.args ?? [];
+  return { eligible: true, serverName: server.id, command, args: [...args], env: { ...(env as Record<string, string>) }, cwd };
 }
 
 /** Set-difference of two tool-name lists (order-insensitive, duplicates collapsed). */
@@ -228,6 +274,131 @@ export async function maybeMountDshMcpSpike(
     one.excludedServerIds.forEach((id) => excludedServerIds.add(id));
   }
   return { disposers, excludedServerIds };
+}
+
+/**
+ * Long-term mount: every in-scope stdio server via dsh-mcp-client, plus the
+ * opt-in HTTP spike. Stdio has no hand-bridge equivalent, so there is no
+ * parity gate — validation + serverName grammar + a non-empty mount are the
+ * bar. Secret env refs resolve via HostStore (main process, keychain) before
+ * the child spawns; unresolved/raw secret:// values never reach the child.
+ * Never throws into the turn.
+ */
+export async function maybeMountDshMcpServers(
+  ctx: Context,
+  host: HostStore,
+  workspaceId: string,
+  projectId: string,
+  opts: { serverId?: string; workspacePath?: string; cwd?: string; log?: (msg: string) => void } = {},
+): Promise<DshSpikeMount> {
+  const log = opts.log ?? ((msg: string) => console.warn(`[mcp-dsh] ${msg}`));
+  // HTTP spike first (exclusions flow to the hand bridge below).
+  const spike = await maybeMountDshMcpSpike(ctx, host, workspaceId, projectId, { serverId: opts.serverId, log });
+  const disposers: Array<() => unknown> = [...spike.disposers];
+  const excludedServerIds = new Set<string>(spike.excludedServerIds);
+  try {
+    const scoped = (typeof host.getScopedMcpServers === "function"
+      ? host.getScopedMcpServers(workspaceId, projectId)
+      : host.getMcpServers?.(workspaceId) ?? []) as SpikeMcpServerRow[];
+    const stdioRows = scoped.filter((r) => r?.transport === "stdio" && r?.enabled !== false);
+    for (const row of stdioRows) {
+      if (excludedServerIds.has(row.id)) continue;
+      const one = await mountOneStdioServer(ctx, host, row, { workspacePath: opts.workspacePath, cwd: opts.cwd, log });
+      one.disposers.forEach((d) => disposers.push(d));
+      // Stdio never appears in hand-bridge defs, so no exclusion is needed —
+      // but track it so callers can distinguish "served by dsh".
+      one.excludedServerIds.forEach((id) => excludedServerIds.add(id));
+    }
+  } catch (err) {
+    log(`stdio listing failed (${(err as Error)?.message ?? String(err)}) — http spike unchanged`);
+  }
+  return { disposers, excludedServerIds };
+}
+
+async function mountOneStdioServer(
+  ctx: Context,
+  host: HostStore,
+  row: SpikeMcpServerRow,
+  opts: { workspacePath?: string; cwd?: string; log: (msg: string) => void },
+): Promise<DshSpikeMount> {
+  const log = opts.log;
+  const serverId = row.id;
+  try {
+    // Resolve secret:// env refs in the main process before the child spawns.
+    let env: Record<string, string> = { ...(row.env ?? {}) };
+    try {
+      const resolve = (host as unknown as { resolveStdioEnv?: (e: Record<string, string>) => Record<string, string> }).resolveStdioEnv;
+      if (typeof resolve === "function") env = resolve.call(host, env);
+      else {
+        const generic = (host as unknown as { resolveSecrets?: (v: Record<string, string>) => Record<string, string> }).resolveSecrets;
+        if (typeof generic === "function") env = generic.call(host, env);
+      }
+    } catch (err) {
+      log(`server ${JSON.stringify(serverId)} secret resolution failed (${(err as Error)?.message ?? String(err)}) — skipping`);
+      return EMPTY_MOUNT;
+    }
+    const elig = toDshStdioEligibility({ ...row, env }, { workspacePath: opts.workspacePath, cwd: opts.cwd });
+    if (!elig.eligible) {
+      log(`server ${JSON.stringify(serverId)} ineligible for dsh stdio (${elig.reason}) — skipping`);
+      return EMPTY_MOUNT;
+    }
+    const config: DshMcpConfig = {
+      transport: "stdio",
+      serverName: elig.serverName,
+      command: elig.command,
+      args: elig.args,
+      env: elig.env,
+      cwd: elig.cwd,
+      toolCallTimeoutMs: TOOL_CALL_TIMEOUT_MS,
+      failOnStartupError: false,
+    };
+    const plug = ctx.plugin as unknown as (
+      p: { apply: typeof mcpClientApply; inject: typeof mcpClientInject; name: typeof mcpClientName },
+      c: DshMcpConfig,
+    ) => Promise<{ dispose: () => void }>;
+    const fiber = await plug(
+      { apply: mcpClientApply, inject: mcpClientInject, name: mcpClientName },
+      config,
+    );
+    const disposeFiber = (): unknown => {
+      try {
+        const r = (fiber as unknown as { dispose: () => unknown }).dispose();
+        if (r && typeof (r as Promise<unknown>).then === "function") {
+          return (r as Promise<unknown>).catch((e) => log(`dispose failed: ${(e as Error)?.message ?? String(e)}`));
+        }
+        return r;
+      } catch (e) {
+        log(`dispose failed: ${(e as Error)?.message ?? String(e)}`);
+      }
+    };
+    const disposers: Array<() => unknown> = [disposeFiber];
+    // Honor the workspace per-tool toggle list: dsh-mcp-client has no native
+    // disabled list, so deny them at the tool registry (same EXTERNAL names
+    // the hand bridge filters via filterDisabledMcpDefs).
+    const disabled = ((row as { disabledTools?: unknown }).disabledTools as unknown) ?? [];
+    if (Array.isArray(disabled) && disabled.length > 0) {
+      const deny = (disabled as unknown[])
+        .filter((n): n is string => typeof n === "string" && n.length > 0)
+        .map((n) => `mcp__${serverId}__${n}`);
+      if (deny.length > 0) {
+        try {
+          const tools = ctx.tools as unknown as { restrict?: (f: { deny: string[] }) => () => void };
+          if (typeof tools.restrict === "function") {
+            disposers.push(tools.restrict({ deny }));
+          } else {
+            log(`server ${JSON.stringify(serverId)} has disabled tools but ctx.tools.restrict is unavailable — exposing all tools`);
+          }
+        } catch (e) {
+          log(`disabled-tools restrict failed for ${JSON.stringify(serverId)} (${(e as Error)?.message ?? String(e)}) — exposing all tools`);
+        }
+      }
+    }
+    log(`server ${JSON.stringify(serverId)} on dsh stdio path (cmd ${elig.command})`);
+    return { disposers, excludedServerIds: new Set([serverId]) };
+  } catch (e) {
+    log(`stdio mount failed for ${JSON.stringify(serverId)} (${(e as Error)?.message ?? String(e)}) — skipping`);
+    return EMPTY_MOUNT;
+  }
 }
 
 async function mountOneServer(

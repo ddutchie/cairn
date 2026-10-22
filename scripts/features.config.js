@@ -224,6 +224,20 @@ const FEATURES = [
     ],
   },
   {
+    id: "v3.1.6-local-mcp",
+    version: "v3.1.6",
+    title: "Local MCP Servers",
+    category: "Tools",
+    description:
+      "Connect stdio-based MCP servers running on your machine, alongside the existing remote HTTP and SSE connectors.",
+    highlights: [
+      "Command Connectors: Add a local server by command, args, env, and working directory.",
+      "Claude Import: Paste a Claude Desktop mcpServers entry to fill the form.",
+      "Same Gating: Project scope, per-tool toggles, and approval prompts work like remote servers.",
+      "Keychain Secrets: Env values that look like credentials stay in the OS keychain.",
+    ],
+  },
+  {
     id: "v3.1.6-note-search",
     version: "v3.1.6",
     title: "Search That Finds the Line",

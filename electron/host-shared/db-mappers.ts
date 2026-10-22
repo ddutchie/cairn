@@ -127,19 +127,12 @@ function parseOAuthConfig(v: unknown):
 }
 
 export function toMcpServer(row: DbRow): McpServerConfig {
-  return {
+  const transport = (row.transport ?? "http") as "sse" | "http" | "stdio";
+  const base = {
     id: row.id as string,
     workspaceId: row.workspace_id as string,
     name: row.name as string,
     description: (row.description ?? undefined) as string | undefined,
-    transport: (row.transport ?? "http") as "sse" | "http",
-    baseUrl: row.base_url as string,
-    headers: pObj(row.headers),
-    authMode: (row.auth_mode ?? "none") as "none" | "oauth",
-    oauthScope: (row.oauth_scope ?? undefined) as string | undefined,
-    oauthClientId: (row.oauth_client_id ?? undefined) as string | undefined,
-    oauthRedirectUri: (row.oauth_redirect_uri ?? undefined) as string | undefined,
-    oauthClientIdRequired: row.oauth_client_id_required === 1,
     /** Dev-only: route this server through dsh-mcp-client (parity spike). */
     dshPath: row.dsh_path === 1,
     enabled: row.enabled === 1,
@@ -149,6 +142,27 @@ export function toMcpServer(row: DbRow): McpServerConfig {
     disabledTools: j2(row.disabled_tools),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+  };
+  if (transport === "stdio") {
+    return {
+      ...base,
+      transport: "stdio",
+      command: (row.command ?? "") as string,
+      args: j2(row.args),
+      env: pObj(row.env),
+      cwd: (row.cwd ?? undefined) as string | undefined,
+    };
+  }
+  return {
+    ...base,
+    transport,
+    baseUrl: (row.base_url ?? "") as string,
+    headers: pObj(row.headers),
+    authMode: (row.auth_mode ?? "none") as "none" | "oauth",
+    oauthScope: (row.oauth_scope ?? undefined) as string | undefined,
+    oauthClientId: (row.oauth_client_id ?? undefined) as string | undefined,
+    oauthRedirectUri: (row.oauth_redirect_uri ?? undefined) as string | undefined,
+    oauthClientIdRequired: row.oauth_client_id_required === 1,
   };
 }
 

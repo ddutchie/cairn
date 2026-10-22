@@ -324,11 +324,11 @@ export async function runCordisCodingLoop(opts: RunCordisCodingOptions): Promise
     } catch { /* streaming is decoration — never break the turn */ }
     let externalDisposers: Array<() => void> = [];
     try {
-      // MCP parity spike (opt-in via CAIRN_DSH_MCP_SPIKE, default OFF): when it
-      // verifies, the named server is served by dsh-mcp-client and excluded
-      // from the hand bridge below. Unset → empty mount + empty exclusion.
-      const { maybeMountDshMcpSpike } = await import("./mcp-dsh-bridge");
-      const spike = await maybeMountDshMcpSpike(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "");
+      // External MCP: in-scope stdio servers always mount via dsh-mcp-client;
+      // the opt-in HTTP spike (CAIRN_DSH_MCP_SPIKE / dshPath) mounts verified
+      // servers and excludes them from the hand bridge below.
+      const { maybeMountDshMcpServers } = await import("./mcp-dsh-bridge");
+      const spike = await maybeMountDshMcpServers(ctx, createHostStore(db), req.workspaceId ?? "", req.projectId ?? "", { workspacePath, cwd });
       spike.disposers.forEach((dispose) => resources.add(dispose));
       externalDisposers = await registerExternalCairnTools(ctx, {
         db,

@@ -63,17 +63,28 @@ export function setProjectCodeDirectory(db: Database.Database, projectId: string
 
 // ── External Tools: MCP servers ───────────────────────────────────────────────
 
-interface McpServerInput {
+interface McpServerBaseInput {
   id: string; workspaceId: string; name: string; description?: string;
-  transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
-  authMode?: "none" | "oauth"; oauthScope?: string;
-  oauthClientId?: string; oauthRedirectUri?: string; oauthClientIdRequired?: boolean;
+  transport: "sse" | "http" | "stdio";
   enabled: boolean; source: string; communityId?: string; version?: string;
   /** Raw (un-namespaced) tool names disabled for this server, workspace-wide. */
   disabledTools?: string[];
   /** Dev-only: route this server through dsh-mcp-client (parity spike). */
   dshPath?: boolean;
 }
+
+export interface McpRemoteServerInput extends McpServerBaseInput {
+  transport: "sse" | "http"; baseUrl: string; headers?: Record<string, string>;
+  authMode?: "none" | "oauth"; oauthScope?: string;
+  oauthClientId?: string; oauthRedirectUri?: string; oauthClientIdRequired?: boolean;
+}
+
+export interface McpStdioServerInput extends McpServerBaseInput {
+  transport: "stdio"; command: string; args?: string[];
+  env?: Record<string, string>; cwd?: string;
+}
+
+type McpServerInput = McpRemoteServerInput | McpStdioServerInput;
 
 export function getMcpServers(db: Database.Database, workspaceId: string) {
   return (db.prepare("SELECT * FROM mcp_servers WHERE workspace_id = ? ORDER BY created_at").all(workspaceId) as unknown[])
@@ -87,9 +98,12 @@ export function getMcpServerById(db: Database.Database, id: string) {
 
 export function saveMcpServer(db: Database.Database, s: McpServerInput) {
   const now = ts();
+  const isStdio = s.transport === "stdio";
+  const remote = isStdio ? null : (s as McpRemoteServerInput);
+  const stdio = isStdio ? (s as McpStdioServerInput) : null;
   db.prepare(`
-    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, oauth_client_id, oauth_redirect_uri, oauth_client_id_required, enabled, source, community_id, version, disabled_tools, dsh_path, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, oauth_client_id, oauth_redirect_uri, oauth_client_id_required, command, args, env, cwd, enabled, source, community_id, version, disabled_tools, dsh_path, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name        = excluded.name,
       description = excluded.description,
@@ -101,6 +115,10 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
       oauth_client_id        = excluded.oauth_client_id,
       oauth_redirect_uri     = excluded.oauth_redirect_uri,
       oauth_client_id_required = excluded.oauth_client_id_required,
+      command     = excluded.command,
+      args        = excluded.args,
+      env         = excluded.env,
+      cwd         = excluded.cwd,
       enabled     = excluded.enabled,
       source      = excluded.source,
       community_id= excluded.community_id,
@@ -109,9 +127,11 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
       dsh_path    = excluded.dsh_path,
       updated_at  = excluded.updated_at
   `).run(
-    s.id, s.workspaceId, s.name, s.description ?? null, s.transport, s.baseUrl,
-    j(s.headers ?? {}), s.authMode ?? "none", s.oauthScope ?? null,
-    s.oauthClientId ?? null, s.oauthRedirectUri ?? null, s.oauthClientIdRequired ? 1 : 0,
+    s.id, s.workspaceId, s.name, s.description ?? null, s.transport,
+    remote?.baseUrl ?? "",
+    j(remote?.headers ?? {}), remote?.authMode ?? "none", remote?.oauthScope ?? null,
+    remote?.oauthClientId ?? null, remote?.oauthRedirectUri ?? null, remote?.oauthClientIdRequired ? 1 : 0,
+    stdio?.command ?? null, j(stdio?.args ?? []), j(stdio?.env ?? {}), stdio?.cwd ?? null,
     s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
     j(s.disabledTools ?? []), s.dshPath ? 1 : 0, now, now,
   );

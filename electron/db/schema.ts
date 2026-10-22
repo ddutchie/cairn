@@ -1701,6 +1701,26 @@ const MIGRATIONS: Migration[] = [
     `);
     db.prepare("INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild')").run();
   },
+
+  // v64: local stdio MCP servers. Adds command/args/env/cwd to mcp_servers;
+  // base_url stays NOT NULL (stdio rows store ''). Existing remote rows keep
+  // working unchanged. ensureColumns() below repeats the guards for DBs whose
+  // user_version already advanced past this index.
+  (db) => {
+    const cols = db.prepare("PRAGMA table_info(mcp_servers)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "command")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN command TEXT");
+    }
+    if (!cols.some((c) => c.name === "args")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN args TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (!cols.some((c) => c.name === "env")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN env TEXT NOT NULL DEFAULT '{}'");
+    }
+    if (!cols.some((c) => c.name === "cwd")) {
+      db.exec("ALTER TABLE mcp_servers ADD COLUMN cwd TEXT");
+    }
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1758,6 +1778,10 @@ function ensureColumns(db: Database.Database): void {
   ensure("mcp_servers", "oauth_client_id", "oauth_client_id TEXT");
   ensure("mcp_servers", "oauth_redirect_uri", "oauth_redirect_uri TEXT");
   ensure("mcp_servers", "oauth_client_id_required", "oauth_client_id_required INTEGER NOT NULL DEFAULT 0");
+  ensure("mcp_servers", "command", "command TEXT");
+  ensure("mcp_servers", "args", "args TEXT NOT NULL DEFAULT '[]'");
+  ensure("mcp_servers", "env", "env TEXT NOT NULL DEFAULT '{}'");
+  ensure("mcp_servers", "cwd", "cwd TEXT");
   // v38 llm_usage — cost_estimated added after the initial table shipped in an
   // interim build; existing dev DBs get the column here, fresh ones from v38.
   ensure("llm_usage", "cost_estimated", "cost_estimated INTEGER NOT NULL DEFAULT 0");

@@ -71,12 +71,15 @@ import {
   getUserStyle as getUserStyleImpl,
   appendUserStyleObservation as appendUserStyleObservationImpl,
   getMcpServers as getMcpServersImpl,
+  getToolAttachments as getToolAttachmentsImpl,
 } from "../db/queries";
 import {
   isWorkspaceGranted as isWorkspaceGrantedImpl,
   addWorkspaceApprovalGrant as addWorkspaceApprovalGrantImpl,
 } from "../db/approval-grant-queries";
 import { recordLlmUsage as recordLlmUsageImpl, type RecordUsageArgs } from "../lib/usage-recorder";
+import { resolveSecrets as resolveSecretsImpl } from "../lib/secure-store";
+import { resolveStdioEnv as resolveStdioEnvImpl, validateStdioServer as validateStdioServerImpl } from "../lib/mcp-stdio";
 import { migrateLegacyVizDir, ensureGitExcluded, pruneChatArtifacts } from "../lib/artifact-hygiene";
 import { getCachedConfig as getCachedConfigImpl } from "../lib/config-cache";
 import { generatePrd as generatePrdImpl, type GeneratePrdArgs } from "../lib/prd";
@@ -232,6 +235,14 @@ export interface HostStore {
   // MCP connector rows (workspace-scoped; powers the dsh-mcp-client parity spike).
   getMcpServer(workspaceId: string, serverId: string): ReturnType<typeof getMcpServersImpl>[number] | undefined;
   getMcpServers(workspaceId: string): ReturnType<typeof getMcpServersImpl>;
+  // MCP rows in scope for a project: enabled AND attached (global or project).
+  // Used by the dsh stdio mount so local servers respect the same scoping as remote.
+  getScopedMcpServers(workspaceId: string, projectId: string): ReturnType<typeof getMcpServersImpl>;
+  // Secret resolution (main process only): literal passthrough, secret:// via keychain.
+  resolveSecrets(values: Record<string, string>): Record<string, string>;
+  // Stdio helpers (pure validation + keychain-backed env resolution).
+  validateStdioServer(input: { command?: string; args?: unknown; env?: unknown; cwd?: string | null }): { ok: boolean; errors: string[] };
+  resolveStdioEnv(env: Record<string, string> | undefined): Record<string, string>;
   // User-level hook config discovery (db-free; see resolveHooksConfig above).
   resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string };
   // Session-log ZIP export sink (see ./session-export.ts): resolves the
@@ -395,6 +406,41 @@ export function createHostStore(db: Database.Database): HostStore {
 
     getMcpServers(workspaceId: string): ReturnType<typeof getMcpServersImpl> {
       return getMcpServersImpl(db, workspaceId);
+    },
+
+    getScopedMcpServers(workspaceId: string, projectId: string): ReturnType<typeof getMcpServersImpl> {
+      const GLOBAL = "__global__";
+      const rows = [
+        ...getToolAttachmentsImpl(db, GLOBAL),
+        ...(projectId ? getToolAttachmentsImpl(db, projectId) : []),
+      ] as Array<{ projectId: string; toolType: string; toolId: string; enabled: boolean }>;
+      const attached = new Set<string>();
+      const disabled = new Set<string>();
+      for (const r of rows) {
+        const key = `${r.toolType}:${r.toolId}`;
+        if (!r.enabled) {
+          disabled.add(key);
+          continue;
+        }
+        if (r.toolType === "mcp") attached.add(r.toolId);
+      }
+      for (const key of disabled) {
+        const [type, id] = key.split(":");
+        if (type === "mcp") attached.delete(id);
+      }
+      return getMcpServersImpl(db, workspaceId).filter((s) => s.enabled && attached.has(s.id));
+    },
+
+    resolveSecrets(values: Record<string, string>): Record<string, string> {
+      return resolveSecretsImpl(values);
+    },
+
+    validateStdioServer(input: { command?: string; args?: unknown; env?: unknown; cwd?: string | null }): { ok: boolean; errors: string[] } {
+      return validateStdioServerImpl(input);
+    },
+
+    resolveStdioEnv(env: Record<string, string> | undefined): Record<string, string> {
+      return resolveStdioEnvImpl(env);
     },
 
     resolveHooksConfig(homeDir?: string): { claudeCode?: string; codex?: string } {
