@@ -34,8 +34,16 @@ export function TestButton({ onTest }: { onTest: () => Promise<TestState> }) {
         </span>
       )}
       {state.status === "error" && (
-        <span className="flex items-center gap-1 text-[0.714rem] text-[var(--danger)] truncate max-w-[16rem]" title={state.detail}>
-          <XCircle size={12} /> {state.detail ?? "Failed"}
+        <span
+          className={
+            state.detail?.includes("\n")
+              // Multi-line errors (e.g. an MCP server's stderr) must stay readable.
+              ? "flex items-start gap-1 text-[0.714rem] text-[var(--danger)] whitespace-pre-wrap break-words max-w-[28rem] max-h-32 overflow-auto"
+              : "flex items-center gap-1 text-[0.714rem] text-[var(--danger)] truncate max-w-[16rem]"
+          }
+          title={state.detail}
+        >
+          <XCircle size={12} className="shrink-0" /> {state.detail ?? "Failed"}
         </span>
       )}
     </div>
