@@ -320,16 +320,25 @@ jobs:
         with:
           name: web-build
 
-      - name: Build & publish (Windows)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build (Windows)
         run: |
           npm run smoke-test
           node -e "const fs = require('fs'); ['darwin', 'linux'].forEach(p => fs.rmSync('node_modules/onnxruntime-node/bin/napi-v6/' + p, { recursive: true, force: true }))"
           node -e "const fs = require('fs'); ['darwin-arm64', 'darwin-x64'].forEach(p => fs.rmSync('node_modules/node-pty/prebuilds/' + p, { recursive: true, force: true }))"
           node scripts/build-mcp-binary.js --win
           npm run smoke-test:mcp
-          npx electron-builder --win --publish onTagOrDraft
+          npx electron-builder --win --publish never
+
+      - name: Upload Windows assets
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: win-assets
+          path: |
+            dist-app/*.exe
+            dist-app/*.blockmap
+            dist-app/latest.yml
+          if-no-files-found: error
+          retention-days: 1
 
   # ── Linux ─────────────────────────────────────────────────────────────────
   build-linux:
@@ -409,9 +418,7 @@ jobs:
         with:
           name: web-build
 
-      - name: Build & publish (Linux)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build (Linux)
         run: |
           npm run smoke-test
           node -e "const fs = require('fs'); ['win32', 'darwin'].forEach(p => fs.rmSync('node_modules/onnxruntime-node/bin/napi-v6/' + p, { recursive: true, force: true }))"
@@ -419,7 +426,18 @@ jobs:
           node scripts/build-mcp-binary.js --linux
           chmod +x dist-mcp/cairn-mcp-linux-x64 dist-mcp/cairn-mcp-linux-arm64
           npm run smoke-test:mcp
-          npx electron-builder --linux --publish onTagOrDraft
+          npx electron-builder --linux --publish never
+
+      - name: Upload Linux assets
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: linux-assets
+          path: |
+            dist-app/*.AppImage
+            dist-app/*.blockmap
+            dist-app/latest-linux*.yml
+          if-no-files-found: error
+          retention-days: 1
 
   # ── Publish the release ───────────────────────────────────────────────────
   # Runs only if all platform builds succeeded (default `needs`
@@ -442,9 +460,23 @@ jobs:
           pattern: mac-assets-*
           path: mac-assets
 
-      # Merge the per-arch update manifests and upload the mac assets (the mac
-      # jobs build with --publish never so neither overwrites the other's yml).
-      - name: Upload macOS assets
+      - name: Download Windows assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: win-assets
+          path: win-assets
+
+      - name: Download Linux assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: linux-assets
+          path: linux-assets
+
+      # Merge the per-arch mac update manifests, then upload every platform's
+      # assets to the single draft created by `prepare-release`. All build jobs
+      # use --publish never: letting electron-builder publish itself could
+      # create a second release for the tag when it missed the draft (v3.1.6).
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -455,7 +487,8 @@ jobs:
           # One file at a time with retries: `gh release upload` pushes several
           # large files in parallel and a draft-release upload occasionally 404s
           # (seen on v3.0.20). --clobber makes a retry/re-run idempotent.
-          for f in mac-assets/*/*.dmg mac-assets/*/*.zip mac-assets/*/*.blockmap mac-assets/latest-mac.yml; do
+          for f in mac-assets/*/*.dmg mac-assets/*/*.zip mac-assets/*/*.blockmap mac-assets/latest-mac.yml \
+                   win-assets/* linux-assets/*; do
             ok=""
             for attempt in 1 2 3 4; do
               if gh release upload "$TAG" "$f" --clobber; then ok=1; break; fi
