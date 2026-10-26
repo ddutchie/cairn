@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import { ChevronDown, ChevronRight, Folder, FolderInput, FolderOpen, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Note } from "@/types";
@@ -13,6 +13,8 @@ export interface FolderTreeNodeProps {
   activeNoteId: string | null;
   collapsed: Record<string, boolean>;
   depth?: number;
+  /** Ids of notes with unseen external changes — drives the change dots. */
+  changedNoteIds?: ReadonlySet<string>;
   onToggle: (path: string) => void;
   onNoteClick: (id: string) => void;
   onNotePin: (note: Note) => void;
@@ -35,7 +37,7 @@ export interface FolderTreeNodeProps {
 }
 
 export const FolderTreeNode = memo(function FolderTreeNode({
-  node, activeNoteId, collapsed, depth = 0,
+  node, activeNoteId, collapsed, depth = 0, changedNoteIds,
   onToggle, onNoteClick, onNotePin, onNoteDelete,
   onNoteArchive, onNoteMove, onNoteMoveToFolder, onNoteReveal, onCreateInFolder, onMoveFolderToProject,
   dropTarget, onNoteDragStart, onNoteDragEnd,
@@ -47,6 +49,18 @@ export const FolderTreeNode = memo(function FolderTreeNode({
   const isCollapsed = collapsed[node.path.toLowerCase()];
   const indent = depth * 10;
   const isDragOver = dropTarget === node.path;
+  // Count of unseen external changes in this subtree (notes + nested folders).
+  // Shown as a dot on the folder row so changes inside a collapsed folder stay visible.
+  const descendantChangedCount = useMemo(() => {
+    if (!changedNoteIds || changedNoteIds.size === 0) return 0;
+    let count = 0;
+    const walk = (n: FolderNode) => {
+      for (const note of n.notes) if (changedNoteIds.has(note.id)) count++;
+      for (const child of n.children) walk(child);
+    };
+    walk(node);
+    return count;
+  }, [node, changedNoteIds]);
 
   return (
     <div>
@@ -75,6 +89,12 @@ export const FolderTreeNode = memo(function FolderTreeNode({
         <Tooltip content={node.name}>
           <span className="text-[0.786rem] font-medium text-[var(--text-secondary)] flex-1 truncate">{node.name}</span>
         </Tooltip>
+        {descendantChangedCount > 0 && (
+          <span
+            title={`${descendantChangedCount === 1 ? "1 note changed" : `${descendantChangedCount} notes changed`} since you last viewed`}
+            className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0"
+          />
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); onMoveFolderToProject(node.path); }}
           className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
@@ -101,6 +121,7 @@ export const FolderTreeNode = memo(function FolderTreeNode({
               activeNoteId={activeNoteId}
               collapsed={collapsed}
               depth={depth + 1}
+              changedNoteIds={changedNoteIds}
               onToggle={onToggle}
               onNoteClick={onNoteClick}
               onNotePin={onNotePin}
@@ -126,6 +147,7 @@ export const FolderTreeNode = memo(function FolderTreeNode({
               key={note.id}
               note={note}
               isActive={note.id === activeNoteId}
+              hasChanges={changedNoteIds?.has(note.id) ?? false}
               indent={indent + 16}
               onClick={() => onNoteClick(note.id)}
               onPin={() => onNotePin(note)}

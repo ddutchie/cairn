@@ -22,6 +22,8 @@ import {
 
 export interface NoteListItemProps {
   note: Note; isActive: boolean; indent?: number;
+  /** True when the note changed externally since it was last viewed. */
+  hasChanges?: boolean;
   onClick: () => void; onPin: () => void; onDelete: () => void;
   onArchive: () => void; onMove: () => void; onMoveToFolder: () => void; onReveal: () => void;
   onDragStart?: (noteId: string) => void;
@@ -37,7 +39,7 @@ function revealLabel(): string {
       : "Finder";
 }
 
-export const NoteListItem = memo(function NoteListItem({ note, isActive, indent = 0, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
+export const NoteListItem = memo(function NoteListItem({ note, isActive, indent = 0, hasChanges = false, onClick, onPin, onDelete, onArchive, onMove, onMoveToFolder, onReveal, onDragStart, onDragEnd }: NoteListItemProps) {
   const getTagById = useCairnStore((s) => s.getTagById);
   const allTags = note.tagIds.map((id) => getTagById(id)).filter(Boolean);
   const tags = allTags.slice(0, 3);
@@ -57,6 +59,7 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
       >
         <div className="flex items-center gap-1.5">
           {note.isPinned && <Pin size={9} className="text-[var(--accent)] flex-shrink-0" />}
+          {hasChanges && <span title="Changed since you last viewed this note" className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />}
           <Tooltip content={note.title}>
             <span className={cn("text-xs font-medium truncate flex-1", isActive ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]")}>
               {note.title}
