@@ -97,6 +97,74 @@ function computeHulls(nodes: SimNode[]): [number, number][][] {
   return out;
 }
 
+/** Retained world-space geometry for edges and plain nodes (see draw). */
+type SceneCache = {
+  version: number;
+  nodes: SimNode[];
+  sel: string | null;
+  connected: Set<string> | null;
+  themeSig: string;
+  edges: { stroke: string; width: number; dash: boolean; path: Path2D }[];
+  fills: { fill: string; path: Path2D }[];
+};
+
+function buildScene(
+  nodes: SimNode[],
+  links: SimLink[],
+  sel: string | null,
+  connected: Set<string> | null,
+  read: VarReader,
+  alpha: (color: string, opacity: number) => string,
+  typeColor: (type: GraphNode["type"]) => string,
+  meta: { version: number; themeSig: string },
+): SceneCache {
+  // One path per distinct stroke style.
+  const edgeBatches = new Map<string, { stroke: string; width: number; dash: boolean; path: Path2D }>();
+  for (const l of links) {
+    const s = l.source as SimNode, tg = l.target as SimNode;
+    if (s.x == null || s.y == null || tg.x == null || tg.y == null) continue;
+    const st = sharedEdgeStyle(l.edgeType);
+    let op = st.opacity;
+    let w = l.edgeType === "wikilink" ? 1.6 : 1;
+    if (l.edgeType === "semantic" && l.weight < 1) w = 0.5 + l.weight;
+    if (sel) {
+      const on = connected && connected.has(s.id) && connected.has(tg.id);
+      op = on ? Math.max(op, 0.9) : op * 0.1;
+      if (on) w *= 1.4;
+    }
+    const stroke = alpha(tokenColor(read, st.token), op);
+    const key = `${stroke}|${w}|${st.dash ? 1 : 0}`;
+    let b = edgeBatches.get(key);
+    if (!b) edgeBatches.set(key, (b = { stroke, width: w, dash: st.dash, path: new Path2D() }));
+    b.path.moveTo(s.x, s.y);
+    b.path.lineTo(tg.x, tg.y);
+  }
+
+  // Plain circles batched by fill; the selected node is drawn separately
+  // (with its glow), the hovered one is simply redrawn on top.
+  const fillBatches = new Map<string, Path2D>();
+  for (const n of nodes) {
+    if (n.x == null || n.y == null || n.id === sel) continue;
+    const dim = !!sel && connected != null && !connected.has(n.id);
+    const fill = alpha(typeColor(n.nodeType), dim ? 0.22 : 0.92);
+    let p = fillBatches.get(fill);
+    if (!p) fillBatches.set(fill, (p = new Path2D()));
+    const r = radiusOf(n);
+    p.moveTo(n.x + r, n.y);
+    p.arc(n.x, n.y, r, 0, 2 * Math.PI);
+  }
+
+  return {
+    version: meta.version,
+    nodes,
+    sel,
+    connected,
+    themeSig: meta.themeSig,
+    edges: [...edgeBatches.values()],
+    fills: [...fillBatches].map(([fill, path]) => ({ fill, path })),
+  };
+}
+
 /** Current positions by node id (nodes the layout hasn't placed yet are skipped). */
 function positionsOf(nodes: SimNode[]): Map<string, { x: number; y: number }> {
   const out = new Map<string, { x: number; y: number }>();
@@ -161,6 +229,8 @@ function ForceGraphCanvasImpl({
   // separately from positions (see draw) so a settling graph doesn't pay a
   // polygonHull per project per 60fps tick.
   const hullTimeRef = useRef(0);
+  // Retained edge/node geometry, rebuilt only when positions / selection / theme change.
+  const sceneCacheRef = useRef<SceneCache | null>(null);
   // Last wall-clock auto-fit during settle — zoomFit every tick doubles the
   // per-frame work (transform + extra scheduled draw), so it's throttled.
   const lastFitRef = useRef(0);
@@ -435,69 +505,52 @@ function ForceGraphCanvasImpl({
       }
     }
 
-    // ── edges — batched into one path per distinct stroke style ──
-    type EdgeBatch = { stroke: string; width: number; dash: boolean; coords: number[] };
-    const batches = new Map<string, EdgeBatch>();
-    for (const l of links) {
-      const s = l.source as SimNode, tg = l.target as SimNode;
-      if (s.x == null || s.y == null || tg.x == null || tg.y == null) continue;
-      // Cull segments whose bounding box misses the viewport entirely.
-      if ((s.x < vx0 && tg.x < vx0) || (s.x > vx1 && tg.x > vx1) ||
-          (s.y < vy0 && tg.y < vy0) || (s.y > vy1 && tg.y > vy1)) continue;
-      const st = sharedEdgeStyle(l.edgeType);
-      let op = st.opacity;
-      let w = l.edgeType === "wikilink" ? 1.6 : 1;
-      if (l.edgeType === "semantic" && l.weight < 1) w = 0.5 + l.weight;
-      if (sel) {
-        const on = connected && connected.has(s.id) && connected.has(tg.id);
-        op = on ? Math.max(op, 0.9) : op * 0.1;
-        if (on) w *= 1.4;
-      }
-      const stroke = alpha(tokenColor(read, st.token), op);
-      const key = `${stroke}|${w}|${st.dash ? 1 : 0}`;
-      let b = batches.get(key);
-      if (!b) batches.set(key, (b = { stroke, width: w, dash: st.dash, coords: [] }));
-      b.coords.push(s.x, s.y, tg.x, tg.y);
+    // ── edges + plain nodes — world-space Path2D batches, cached ──
+    // Building these is O(edges + nodes) of JS (style lookup, string keys, path
+    // commands). With positions at rest (pan / zoom / hover repaints) nothing in
+    // them changes, so they're rebuilt only when positions, selection, topology
+    // or theme do; a repaint then just replays the retained paths (the way the
+    // 3D view keeps its geometry on the GPU) and the rasteriser culls
+    // off-screen segments itself.
+    const themeSig = `${bg}|${accent}|${read("--text-secondary")}`;
+    let scene = sceneCacheRef.current;
+    if (
+      !scene ||
+      scene.version !== posVersionRef.current ||
+      scene.nodes !== nodes ||
+      scene.sel !== sel ||
+      scene.connected !== connected ||
+      scene.themeSig !== themeSig
+    ) {
+      scene = buildScene(nodes, links, sel, connected, read, alpha, typeColor, {
+        version: posVersionRef.current,
+        themeSig,
+      });
+      sceneCacheRef.current = scene;
     }
+
     const dashPattern = [3 / t.k, 3 / t.k];
-    for (const b of batches.values()) {
-      ctx.beginPath();
-      const c = b.coords;
-      for (let i = 0; i < c.length; i += 4) {
-        ctx.moveTo(c[i], c[i + 1]);
-        ctx.lineTo(c[i + 2], c[i + 3]);
-      }
+    for (const b of scene.edges) {
       ctx.strokeStyle = b.stroke;
       ctx.lineWidth = b.width / t.k;
       ctx.setLineDash(b.dash ? dashPattern : []);
-      ctx.stroke();
+      ctx.stroke(b.path);
     }
     ctx.setLineDash([]);
+    for (const f of scene.fills) {
+      ctx.fillStyle = f.fill;
+      ctx.fill(f.path);
+    }
 
-    // ── nodes — plain circles batched by fill; highlighted ones drawn after ──
-    const fills = new Map<string, SimNode[]>();
+    // Labels need a per-frame visibility pass (they depend on zoom), so only
+    // nodes near the viewport are collected. The selected / hovered nodes are
+    // drawn on top with their glow.
     const highlighted: SimNode[] = [];
     const labelCandidates: SimNode[] = [];
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
       if (inLabelView(n.x, n.y)) labelCandidates.push(n);
-      if (!inView(n.x, n.y)) continue;
-      if (n.id === sel || n.id === hovered) { highlighted.push(n); continue; }
-      const dim = !!sel && connected != null && !connected.has(n.id);
-      const fill = alpha(typeColor(n.nodeType), dim ? 0.22 : 0.92);
-      let arr = fills.get(fill);
-      if (!arr) fills.set(fill, (arr = []));
-      arr.push(n);
-    }
-    for (const [fill, arr] of fills) {
-      ctx.beginPath();
-      for (const n of arr) {
-        const r = radiusOf(n);
-        ctx.moveTo(n.x! + r, n.y!);
-        ctx.arc(n.x!, n.y!, r, 0, 2 * Math.PI);
-      }
-      ctx.fillStyle = fill;
-      ctx.fill();
+      if ((n.id === sel || n.id === hovered) && inView(n.x, n.y)) highlighted.push(n);
     }
     for (const n of highlighted) {
       const r = radiusOf(n);

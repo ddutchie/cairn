@@ -15,6 +15,7 @@ import { applySchema } from "./schema";
 import {
   createWorkspace,
   createProject,
+  getProjects,
   createNote,
   updateNote,
   deleteNote,
@@ -476,6 +477,23 @@ describe("createProject", () => {
 
     expect(project.status).toBe("active");
     expect(project.priority).toBe("medium");
+  });
+});
+
+describe("getProjects", () => {
+  it("skips sync tombstones (deleted_at set), including blank-named stubs", () => {
+    const db = makeDb();
+    seedWorkspace(db);
+    createProject(db, { id: "live", workspaceId: "ws1", name: "Live" });
+    createProject(db, { id: "gone", workspaceId: "ws1", name: "Gone" });
+    db.prepare("UPDATE projects SET deleted_at = ? WHERE id = 'gone'").run("2026-07-13T19:42:47.427Z");
+    // Sync writes tombstone stubs without a parent workspace (FKs are off while it applies).
+    db.pragma("foreign_keys = OFF");
+    db.prepare("INSERT INTO projects (id, workspace_id, name, created_at, updated_at, deleted_at) VALUES ('stub', '', '', '', '', ?)").run("2026-07-13T19:42:47.427Z");
+    db.pragma("foreign_keys = ON");
+
+    expect(getProjects(db).map((p) => p.id)).toEqual(["live"]);
+    expect(getProjects(db, "ws1").map((p) => p.id)).toEqual(["live"]);
   });
 });
 

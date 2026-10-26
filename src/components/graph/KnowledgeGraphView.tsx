@@ -466,8 +466,8 @@ export function KnowledgeGraphView() {
           </div>
         )}
 
-        {/* Cluster hulls toggle — force mode only */}
-        {graphLayout === "force" && (
+        {/* Cluster hulls toggle — force and 3D modes */}
+        {(graphLayout === "force" || graphLayout === "3d") && (
           <Tooltip content="Outline each project's cluster with a hull">
             <button
               onClick={() => setShowHulls((v) => !v)}
@@ -612,6 +612,7 @@ export function KnowledgeGraphView() {
               onBackgroundClick={handleBackgroundClick}
               spacing={spacing}
               semanticThreshold={semanticThreshold}
+              showHulls={showHulls}
             />
           )}
 

@@ -84,8 +84,8 @@ export function updateWorkspace(db: Database.Database, id: string, patch: { name
 
 export function getProjects(db: Database.Database, workspaceId?: string) {
   const rows = workspaceId
-    ? db.prepare("SELECT * FROM projects WHERE workspace_id = ? ORDER BY created_at").all(workspaceId)
-    : db.prepare("SELECT * FROM projects ORDER BY created_at").all();
+    ? db.prepare("SELECT * FROM projects WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY created_at").all(workspaceId)
+    : db.prepare("SELECT * FROM projects WHERE deleted_at IS NULL ORDER BY created_at").all();
   return rows.map((row) => toProject(row as DbRow));
 }
 
