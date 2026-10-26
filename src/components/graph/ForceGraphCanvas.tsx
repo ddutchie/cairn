@@ -157,6 +157,13 @@ function ForceGraphCanvasImpl({
   // while the layout is at rest (pan/zoom/hover repaints).
   const posVersionRef = useRef(0);
   const hullCacheRef = useRef<HullCache | null>(null);
+  // Last wall-clock time the hulls were recomputed — hulls are throttled
+  // separately from positions (see draw) so a settling graph doesn't pay a
+  // polygonHull per project per 60fps tick.
+  const hullTimeRef = useRef(0);
+  // Last wall-clock auto-fit during settle — zoomFit every tick doubles the
+  // per-frame work (transform + extra scheduled draw), so it's throttled.
+  const lastFitRef = useRef(0);
 
   // Coalesce repaint requests (sim ticks, zoom events, hover) into ≤1 paint per
   // animation frame — d3's zoom and timer can each fire several times a frame.
@@ -264,9 +271,15 @@ function ForceGraphCanvasImpl({
           nodes[i].y = positions[i * 2 + 1];
         }
         // Until the user takes control (or the first animated fit completes),
-        // keep the whole graph framed instantly each frame so it never sits
-        // stranded in a corner while positions are still settling.
-        if (!userInteractedRef.current && !didInitialFitRef.current) zoomFit(false);
+        // keep the whole graph framed — throttled (not every tick: each
+        // zoomFit triggers its own scheduled draw, doubling per-frame work).
+        if (!userInteractedRef.current && !didInitialFitRef.current) {
+          const now = performance.now();
+          if (now - lastFitRef.current > 200) {
+            lastFitRef.current = now;
+            zoomFit(false);
+          }
+        }
         posVersionRef.current++;
         scheduleDraw();
       },
@@ -350,14 +363,16 @@ function ForceGraphCanvasImpl({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const t = transformRef.current;
-    const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
     const connected = connectedRef.current;
     const hovered = hoveredNodeRef.current;
     const nodes = nodesRef.current;
     const links = linksRef.current;
     const { width, height } = dimsRef.current;
+    // Large graphs shade at reduced DPR (matches the sizing effect) — roughly
+    // a quarter of the pixels per frame for imperceptible softness.
+    const dpr = Math.min(nodes.length > 400 ? 1.25 : 2, window.devicePixelRatio || 1);
+    const t = transformRef.current;
+    const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
 
     // One style read per frame (see createCssVarReader), memoised alpha strings.
     const read = createCssVarReader();
@@ -393,10 +408,18 @@ function ForceGraphCanvasImpl({
     const inLabelView = (x: number, y: number) =>
       x >= vx0 - labelHalfW && x <= vx1 + labelHalfW && y >= vy0 - labelH && y <= vy1;
 
-    // ── cluster hulls (recomputed only when positions changed) ──
+    // ── cluster hulls (recomputed at most ~5x/s while settling — a polygonHull
+    // per project per 60fps tick dominated settle-time frames; a ≤200ms stale
+    // hull during motion is imperceptible) ──
     if (hulls) {
       let cache = hullCacheRef.current;
-      if (!cache || cache.version !== posVersionRef.current || cache.nodes !== nodes) {
+      if (!cache || cache.nodes !== nodes) {
+        // Topology change (or first paint): recompute immediately.
+        hullTimeRef.current = performance.now();
+        cache = { version: posVersionRef.current, nodes, hulls: computeHulls(nodes) };
+        hullCacheRef.current = cache;
+      } else if (cache.version !== posVersionRef.current && performance.now() - hullTimeRef.current > 200) {
+        hullTimeRef.current = performance.now();
         cache = { version: posVersionRef.current, nodes, hulls: computeHulls(nodes) };
         hullCacheRef.current = cache;
       }
@@ -498,12 +521,12 @@ function ForceGraphCanvasImpl({
     }
 
     // ── labels (on top of every node so they're never covered) ──
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = 4 / t.k;
-    ctx.strokeStyle = bg;
-    let lastFont = "";
+    // Two passes: collect first, then paint. When many labels are visible the
+    // text halo (strokeText) costs more than the fill — skipping it past a
+    // cutoff roughly halves label time where the halo is visual noise anyway.
+    // Highlighted labels (selected/hovered) always keep their halo.
+    type LabelDraw = { x: number; y: number; font: string; text: string; fill: string; halo: boolean };
+    const toDraw: LabelDraw[] = [];
     for (const n of labelCandidates) {
       const isSel = n.id === sel;
       const isHov = n.id === hovered;
@@ -523,14 +546,25 @@ function ForceGraphCanvasImpl({
       const maxLen = labelMaxLen(n.nodeType, isHighlight);
       const text = n.title.length > maxLen ? n.title.slice(0, maxLen - 1) + "…" : n.title;
       const font = `${(isProject || isHighlight) ? "600 " : ""}${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-      if (font !== lastFont) { ctx.font = font; lastFont = font; }
-      ctx.strokeText(text, n.x!, n.y! + r + 4 / t.k);
-      ctx.fillStyle = isHighlight && !isProject
+      const fill = isHighlight && !isProject
         ? accent
         : dim
           ? alpha(read("--text-tertiary"), 0.5)
           : read(isProject ? "--text-primary" : "--text-secondary");
-      ctx.fillText(text, n.x!, n.y! + r + 4 / t.k);
+      toDraw.push({ x: n.x!, y: n.y! + r + 4 / t.k, font, text, fill, halo: isHighlight });
+    }
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 4 / t.k;
+    ctx.strokeStyle = bg;
+    const skipHalo = toDraw.length > 80;
+    let lastFont = "";
+    for (const l of toDraw) {
+      if (l.font !== lastFont) { ctx.font = l.font; lastFont = l.font; }
+      if (!skipHalo || l.halo) ctx.strokeText(l.text, l.x, l.y);
+      ctx.fillStyle = l.fill;
+      ctx.fillText(l.text, l.x, l.y);
     }
 
     ctx.restore();
@@ -541,10 +575,12 @@ function ForceGraphCanvasImpl({
   // ── canvas sizing (DPR-aware) ──
   // Only touches the backing store when the size actually changes: assigning
   // canvas.width/height clears and reallocates it, which reads as a flash.
+  // Large graphs use a reduced DPR cap (matches the draw routine) — roughly
+  // a quarter of the pixels to shade per frame for imperceptible softness.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(nodesRef.current.length > 400 ? 1.25 : 2, window.devicePixelRatio || 1);
     const w = Math.round(dims.width * dpr), h = Math.round(dims.height * dpr);
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
@@ -622,6 +658,19 @@ function ForceGraphCanvasImpl({
     return best;
   }, []);
 
+  // Lookup from node-pair to the source edge (for section titles in the edge
+  // tooltip). Memoised so hover doesn't pay an O(edges) scan per mousemove.
+  const edgeMetaByPair = useMemo(() => {
+    const m = new Map<string, (typeof graph.edges)[number]>();
+    for (const e of graph.edges) {
+      if (e.type !== "semantic") continue;
+      m.set(`${e.source}›${e.target}`, e);
+      m.set(`${e.target}›${e.source}`, e);
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on edges identity; graph wrapper is stable via useMemo upstream
+  }, [graph.edges]);
+
   // pick the nearest semantic edge for tooltip
   const pickEdge = useCallback((mx: number, my: number): SimLink | null => {
     const t = transformRef.current;
@@ -659,22 +708,22 @@ function ForceGraphCanvasImpl({
       const edge = pickEdge(mx, my);
       if (edge) {
         const s = edge.source as SimNode, tg = edge.target as SimNode;
-        const orig = graph.edges.find((e) =>
-          (e.source === s.id && e.target === tg.id) || (e.source === tg.id && e.target === s.id),
-        );
+        const orig = edgeMetaByPair.get(`${s.id}›${tg.id}`);
         const left = orig?.sourceSectionTitle ? `${s.title} › ${orig.sourceSectionTitle}` : s.title;
         const right = orig?.targetSectionTitle ? `${tg.title} › ${orig.targetSectionTitle}` : tg.title;
         setHoveredEdgeText(`${left} ↔ ${right} · ${((edge.weight ?? 1) * 100).toFixed(0)}%`);
         setTooltipPos({ x: mx + 12, y: my + 12 });
-      } else if (hoveredEdgeText) {
+      } else {
+        // Unconditional clear: React bails out when the value is unchanged,
+        // and this drops the hoveredEdgeText dep that recreated this callback.
         setHoveredEdgeText(null);
       }
-    } else if (hoveredEdgeText) {
+    } else {
       setHoveredEdgeText(null);
     }
 
     if (prevHover !== hoveredNodeRef.current) scheduleDraw();
-  }, [pick, pickEdge, graph.edges, hoveredEdgeText, scheduleDraw]);
+  }, [pick, pickEdge, edgeMetaByPair, scheduleDraw]);
 
   const handleClick = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current;
