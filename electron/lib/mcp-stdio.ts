@@ -6,6 +6,7 @@
  */
 
 import { resolveSecrets } from "./secure-store";
+import { stdioPath } from "./stdio-path";
 import {
   validateStdioServer,
   parseClaudeStdioEntry,
@@ -22,8 +23,13 @@ export const DSH_SERVER_NAME_RE = /^[A-Za-z0-9_-]{1,32}$/;
  * Pure literal values pass through untouched. Never called in the renderer.
  */
 export function resolveStdioEnv(env: Record<string, string> | undefined): Record<string, string> {
-  if (!env) return {};
-  return resolveSecrets(env);
+  const resolved = env ? resolveSecrets(env) : {};
+  // A user-supplied PATH wins; otherwise extend the (often minimal) GUI-launch
+  // PATH so `node`/`npx` shims from version managers resolve in packaged builds.
+  if (!Object.keys(resolved).some((k) => k.toLowerCase() === "path")) {
+    resolved[process.platform === "win32" ? "Path" : "PATH"] = stdioPath();
+  }
+  return resolved;
 }
 
 export function toDshStdioConfig(server: {
