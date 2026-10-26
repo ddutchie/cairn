@@ -26,8 +26,14 @@ export function resolveStdioEnv(env: Record<string, string> | undefined): Record
   const resolved = env ? resolveSecrets(env) : {};
   // A user-supplied PATH wins; otherwise extend the (often minimal) GUI-launch
   // PATH so `node`/`npx` shims from version managers resolve in packaged builds.
-  if (!Object.keys(resolved).some((k) => k.toLowerCase() === "path")) {
-    resolved[process.platform === "win32" ? "Path" : "PATH"] = stdioPath();
+  // On Windows the key is canonicalized to PATH so the child never sees two
+  // PATH-ish entries (`Path` + `PATH`) that would resolve unpredictably.
+  const pathKey = Object.keys(resolved).find((k) => k.toLowerCase() === "path");
+  if (process.platform === "win32" && pathKey && pathKey !== "PATH") {
+    resolved.PATH = resolved[pathKey];
+    delete resolved[pathKey];
+  } else if (!pathKey) {
+    resolved.PATH = stdioPath();
   }
   return resolved;
 }

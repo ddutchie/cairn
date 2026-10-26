@@ -312,11 +312,23 @@ const STDERR_TAIL_BYTES = 2000;
 
 /** Collect the last {@link STDERR_TAIL_BYTES} of a child's stderr; the returned getter is safe to call any time. */
 export function captureStderrTail(stream: { on(event: "data", cb: (chunk: Buffer | string) => void): unknown } | null | undefined): () => string {
-  let buf = "";
+  // Accumulate raw bytes and decode once in the getter: a multi-byte UTF-8
+  // character split across two chunks would otherwise decode as U+FFFD.
+  let chunks: Buffer[] = [];
+  let len = 0;
   stream?.on("data", (chunk: Buffer | string) => {
-    buf = (buf + chunk.toString()).slice(-STDERR_TAIL_BYTES);
+    const b = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    chunks.push(b);
+    len += b.length;
+    while (chunks.length > 1 && len - chunks[0].length >= STDERR_TAIL_BYTES) {
+      len -= chunks.shift()!.length;
+    }
+    if (len > STDERR_TAIL_BYTES) {
+      chunks = [chunks[chunks.length - 1].subarray(-STDERR_TAIL_BYTES)];
+      len = chunks[0].length;
+    }
   });
-  return () => buf.trim();
+  return () => Buffer.concat(chunks).slice(-STDERR_TAIL_BYTES).toString("utf8").trim();
 }
 
 /** `e` with the child's stderr tail appended to its message (when there is any). */

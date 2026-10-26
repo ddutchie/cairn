@@ -14,6 +14,7 @@ import {
   isMcpToolName,
   mcpToolsToOpenAI,
   testConnection,
+  captureStderrTail,
   withStderr,
 } from "./mcp-client";
 
@@ -112,5 +113,24 @@ describe("withStderr", () => {
     const e = withStderr(new Error("boom"), "line1\nline2");
     expect(e.message).toBe("boom\n--- server stderr ---\nline1\nline2");
     expect(withStderr(new Error("x"), "").message).toBe("x");
+  });
+});
+
+describe("captureStderrTail", () => {
+  function feed(chunks: Array<Buffer | string>): string {
+    let cb: ((chunk: Buffer | string) => void) | null = null;
+    const tail = captureStderrTail({ on: (_e: "data", fn: (c: Buffer | string) => void) => { cb = fn; } });
+    for (const c of chunks) cb!(c);
+    return tail();
+  }
+
+  it("keeps multi-byte UTF-8 split across chunks intact", () => {
+    // "é" is 2 bytes in UTF-8; split it across two chunks.
+    const bytes = Buffer.from("caf\u00e9", "utf8");
+    expect(feed([bytes.subarray(0, 3), bytes.subarray(3)])).toBe("caf\u00e9");
+  });
+
+  it("keeps only the tail and trims", () => {
+    expect(feed(["  abcdef  "])).toBe("abcdef");
   });
 });
