@@ -101,6 +101,18 @@ exports.default = async function afterPack(context) {
     }
   }
 
+  // 2b. onnxruntime-node: keep only this platform/arch's binding. The linux-x64
+  //     package also bundles NVIDIA GPU execution providers (CUDA ~350 MB,
+  //     TensorRT); embeddings run with executionProviders: ["cpu"], so they
+  //     are dead weight that doubled the Linux AppImage size.
+  const onnxBin = path.join("node_modules", "onnxruntime-node", "bin", "napi-v6", platform);
+  rm(path.join(onnxBin, other));
+  if (platform === "linux") {
+    for (const lib of ["libonnxruntime_providers_cuda.so", "libonnxruntime_providers_tensorrt.so", "libonnxruntime_providers_shared.so"]) {
+      rm(path.join(onnxBin, target, lib));
+    }
+  }
+
   // 3. node-pty per-arch prebuilds (e.g. darwin-arm64 / darwin-x64).
   rm(path.join("node_modules", "node-pty", "prebuilds", `${platform}-${other}`));
 
