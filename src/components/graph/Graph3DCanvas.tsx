@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useMemo } from "react";
-import type { Scene, Points, Camera } from "three";
+import type { Scene, Points, Camera, Group, MeshBasicMaterial, LineBasicMaterial } from "three";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { createCssVarReader, withAlpha, tokenToCssVar } from "@/lib/viz/color";
 import { useContainerDims } from "@/lib/viz/hooks";
@@ -23,12 +23,15 @@ interface Props {
   onBackgroundClick: () => void;
   spacing: number;
   semanticThreshold?: number;
+  /** Translucent convex hull around each project's cluster. */
+  showHulls?: boolean;
 }
 
 type Node3D = {
   id: string;
   title: string;
   nodeType: GraphNodeType;
+  projectId?: string;
   x?: number;
   y?: number;
   z?: number;
@@ -54,11 +57,13 @@ interface Instance {
   onNodeClick(fn: (n: Node3D) => void): Instance;
   onBackgroundClick(fn: () => void): Instance;
   onNodeHover(fn: (n: Node3D | null) => void): Instance;
+  onEngineTick(fn: () => void): Instance;
+  onEngineStop(fn: () => void): Instance;
   d3Force(name: string): { strength?: (f: (n: Node3D) => number) => unknown; distance?: (f: (l: Link3D) => number) => unknown } | undefined;
   d3ReheatSimulation(): Instance;
   cameraPosition(pos: { x?: number; y?: number; z?: number }, lookAt?: { x: number; y: number; z: number }, ms?: number): Instance;
   zoomToFit(ms?: number, padding?: number): Instance;
-  controls(): { autoRotate: boolean; autoRotateSpeed: number };
+  controls(): { autoRotate: boolean; autoRotateSpeed: number; domElement?: HTMLElement | null };
   pauseAnimation(): Instance;
   resumeAnimation(): Instance;
   scene(): Scene;
@@ -188,14 +193,101 @@ function createGizmo(THREE: typeof import("three"), canvas: HTMLCanvasElement, s
   };
 }
 
+/** Convex hulls around each project's cluster, rebuilt from live node positions. */
+interface Hulls {
+  group: Group;
+  fillMat: MeshBasicMaterial;
+  lineMat: LineBasicMaterial;
+  /** Rebuild every hull from the nodes' current positions. */
+  update(nodes: Iterable<Node3D>): void;
+  setColor(color: string): void;
+  dispose(): void;
+}
+
+/** Outward padding (world units) so a hull clears its nodes' spheres. */
+const HULL_PAD = 12;
+const HULL_OFFSETS: ReadonlyArray<readonly [number, number, number]> = [
+  [HULL_PAD, 0, 0], [-HULL_PAD, 0, 0], [0, HULL_PAD, 0], [0, -HULL_PAD, 0], [0, 0, HULL_PAD], [0, 0, -HULL_PAD],
+];
+
+async function createHulls(THREE: typeof import("three"), scene: Scene): Promise<Hulls> {
+  const { ConvexGeometry } = await import("three/examples/jsm/geometries/ConvexGeometry.js");
+  const group = new THREE.Group();
+  const fillMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false });
+  const lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.3, depthWrite: false });
+  scene.add(group);
+
+  const clear = () => {
+    for (const child of [...group.children]) {
+      group.remove(child);
+      (child as import("three").Mesh).geometry?.dispose();
+    }
+  };
+
+  return {
+    group,
+    fillMat,
+    lineMat,
+    update(nodes) {
+      clear();
+      const byProject = new Map<string, Node3D[]>();
+      const projects = new Set<string>();
+      for (const n of nodes) {
+        if (n.x == null || n.y == null || n.z == null) continue;
+        const key = n.nodeType === "project" ? n.id : n.projectId;
+        if (!key) continue;
+        if (n.nodeType === "project") projects.add(n.id);
+        let arr = byProject.get(key);
+        if (!arr) byProject.set(key, (arr = []));
+        arr.push(n);
+      }
+      for (const [pid, members] of byProject) {
+        if (!projects.has(pid) || members.length < 3) continue;
+        const pts: import("three").Vector3[] = [];
+        for (const n of members) {
+          for (const [dx, dy, dz] of HULL_OFFSETS) pts.push(new THREE.Vector3(n.x! + dx, n.y! + dy, n.z! + dz));
+        }
+        let geo: import("three").BufferGeometry;
+        try {
+          geo = new ConvexGeometry(pts);
+        } catch {
+          continue; // degenerate (collinear / coplanar) — skip this cluster
+        }
+        if (!geo.getAttribute("position")?.count) { geo.dispose(); continue; }
+        const mesh = new THREE.Mesh(geo, fillMat);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), lineMat);
+        // Decorative only — never intercept the engine's node/link picking.
+        mesh.raycast = () => {};
+        edges.raycast = () => {};
+        mesh.renderOrder = -1;
+        group.add(mesh, edges);
+      }
+    },
+    setColor(color) {
+      fillMat.color.set(color);
+      lineMat.color.set(color);
+    },
+    dispose() {
+      clear();
+      scene.remove(group);
+      fillMat.dispose();
+      lineMat.dispose();
+    },
+  };
+}
+
 const GIZMO_PX = 88;
 
-export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContextMenu, onBackgroundClick, spacing, semanticThreshold = 1 }: Props) {
+export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContextMenu, onBackgroundClick, spacing, semanticThreshold = 1, showHulls = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<Instance | null>(null);
   const backdropRef = useRef<Backdrop | null>(null);
   const gizmoRef = useRef<Gizmo | null>(null);
   const gizmoCanvasRef = useRef<HTMLCanvasElement>(null);
+  const hullsRef = useRef<Hulls | null>(null);
+  const showHullsRef = useRef(showHulls);
+  // eslint-disable-next-line react-hooks/refs -- read by the engine-tick callback
+  showHullsRef.current = showHulls;
   const dims = useContainerDims(containerRef);
   const [ready, setReady] = React.useState(false);
 
@@ -235,6 +327,7 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
     if (bd) {
       (bd.stars.material as import("three").PointsMaterial).color.set(color("textTertiary"));
     }
+    hullsRef.current?.setColor(color("accent"));
     gizmoRef.current?.setColors(color("nodeProject"), color("success"), color("info"), color("textPrimary"));
     fg.backgroundColor(color("background"))
       .nodeColor((n) => {
@@ -256,6 +349,7 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
     if (!el) return;
     let cancelled = false;
     let gizmoRaf = 0;
+    let removePointerGuard = () => {};
     void Promise.all([import("3d-force-graph"), import("three")]).then(([{ default: ForceGraph3D }, THREE]) => {
       if (cancelled || !containerRef.current) return;
       // Orbit controls (not the default trackball) — only they support autoRotate.
@@ -277,9 +371,44 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
           if (containerRef.current) containerRef.current.style.cursor = n ? "pointer" : "grab";
         });
       fgRef.current = fg;
+      // 3d-force-graph ends a node drag by dispatching a synthetic `pointerup` to
+      // OrbitControls. If the drag ended via pointercancel, OrbitControls can still
+      // list that pointer without a stored position and its pointer-up handler
+      // throws "Cannot read properties of undefined (reading 'x')". Drop just that
+      // event (and the stale pointer) before OrbitControls sees it.
+      const orbit = fg.controls() as unknown as { _pointers?: number[]; _pointerPositions?: Record<number, unknown> };
+      const guardPointerUp = (e: Event) => {
+        if (e.isTrusted) return;
+        const ids = orbit._pointers;
+        if (ids && ids.length === 1 && !orbit._pointerPositions?.[ids[0]]) {
+          ids.length = 0;
+          e.stopImmediatePropagation();
+        }
+      };
+      document.addEventListener("pointerup", guardPointerUp, true);
+      removePointerGuard = () => document.removeEventListener("pointerup", guardPointerUp, true);
       const backdrop = createBackdrop(THREE, fg.scene());
       backdropRef.current = backdrop;
       if (gizmoCanvasRef.current) gizmoRef.current = createGizmo(THREE, gizmoCanvasRef.current, GIZMO_PX);
+      // Hulls follow the layout: rebuilt at most ~5x/s while it moves (a convex
+      // hull per project per tick is wasted work), and once more when it stops.
+      let lastHull = 0;
+      const refreshHulls = (force: boolean) => {
+        const h = hullsRef.current;
+        if (!h || !showHullsRef.current) return;
+        const now = performance.now();
+        if (!force && now - lastHull < 200) return;
+        lastHull = now;
+        h.update(nodeCache.current.values());
+      };
+      fg.onEngineTick(() => refreshHulls(false)).onEngineStop(() => refreshHulls(true));
+      void createHulls(THREE, fg.scene()).then((h) => {
+        if (cancelled) { h.dispose(); return; }
+        hullsRef.current = h;
+        h.group.visible = showHullsRef.current;
+        applyStyle();
+        refreshHulls(true);
+      });
       const tick = () => {
         const cam = fg.camera();
         backdrop.stars.position.copy(cam.position);
@@ -294,10 +423,13 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
     return () => {
       cancelled = true;
       cancelAnimationFrame(gizmoRaf);
+      removePointerGuard();
       gizmoRef.current?.dispose();
       gizmoRef.current = null;
       backdropRef.current?.dispose();
       backdropRef.current = null;
+      hullsRef.current?.dispose();
+      hullsRef.current = null;
       fgRef.current?._destructor();
       fgRef.current = null;
       setReady(false);
@@ -313,8 +445,8 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
     const cache = nodeCache.current;
     const nodes: Node3D[] = graph.nodes.map((g) => {
       const prev = cache.get(g.id);
-      if (prev) { prev.title = g.title; prev.nodeType = g.type; return prev; }
-      const n: Node3D = { id: g.id, title: g.title, nodeType: g.type };
+      if (prev) { prev.title = g.title; prev.nodeType = g.type; prev.projectId = g.projectId; return prev; }
+      const n: Node3D = { id: g.id, title: g.title, nodeType: g.type, projectId: g.projectId };
       cache.set(g.id, n);
       return n;
     });
@@ -364,6 +496,14 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
     el.addEventListener("contextmenu", onContextMenu, true);
     return () => el.removeEventListener("contextmenu", onContextMenu, true);
   }, []);
+
+  // Toggle visibility; rebuild on show so hulls match where the nodes are now.
+  useEffect(() => {
+    const h = hullsRef.current;
+    if (!h) return;
+    h.group.visible = showHulls;
+    if (showHulls) h.update(nodeCache.current.values());
+  }, [showHulls, graph.nodes, ready]);
 
   useEffect(() => { fgRef.current?.width(dims.width).height(dims.height); }, [dims.width, dims.height, ready]);
   useEffect(() => { applyStyle(); }, [related, ready, applyStyle]);

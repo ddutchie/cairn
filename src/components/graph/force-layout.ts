@@ -66,6 +66,11 @@ type SimLink = d3.SimulationLinkDatum<SimNode> & { edgeType: string };
 const KEEP_RATIO = 0.9;
 /** Frame budget (ms) for ticks between two position posts. */
 const FRAME_MS = 16;
+/** Large graphs settle at ~30fps instead of ~60fps: halves the main-thread
+ *  copy + full redraw per second during the slowest window (the settle),
+ *  where consecutive 60fps frames are visually indistinguishable. */
+const LARGE_GRAPH_NODES = 500;
+const LARGE_FRAME_MS = 32;
 const TICK_BUDGET_MS = 8;
 /** Upper bound on ticks per post, so small graphs still visibly settle. */
 const MAX_TICKS_PER_FRAME = 3;
@@ -144,6 +149,7 @@ export function runForceLayout(
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+  const frameMs = nodes.length > LARGE_GRAPH_NODES ? LARGE_FRAME_MS : FRAME_MS;
   const step = () => {
     timer = null;
     if (stopped) return;
@@ -155,7 +161,7 @@ export function runForceLayout(
     } while (ticks < MAX_TICKS_PER_FRAME && sim.alpha() >= sim.alphaMin() && Date.now() - start < TICK_BUDGET_MS);
     emit();
     if (sim.alpha() < sim.alphaMin()) { onEnd(); return; }
-    timer = setTimeout(step, Math.max(0, FRAME_MS - (Date.now() - start)));
+    timer = setTimeout(step, Math.max(0, frameMs - (Date.now() - start)));
   };
   // First frame goes out immediately so the canvas has positions to draw.
   step();
