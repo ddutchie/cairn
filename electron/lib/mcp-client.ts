@@ -287,12 +287,18 @@ async function listStdioToolsOnce(cfg: Extract<McpServerRuntimeConfig, { transpo
     args: cfg.args ?? [],
     env: resolveStdioEnv(cfg.env),
     cwd: cfg.cwd?.trim() || undefined,
-    stderr: "ignore",
+    stderr: "pipe",
   });
-  await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP stdio connect ${cfg.id}`);
+  // Keep the tail of the child's stderr: when it dies at startup the SDK only
+  // reports "Connection closed", and stderr is the one place the real cause
+  // (auth failure, missing runtime, bad flag) shows up.
+  const stderrTail = captureStderrTail(transport.stderr);
   try {
+    await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP stdio connect ${cfg.id}`);
     const res = await withTimeout(client.listTools(), CALL_TIMEOUT_MS, `MCP stdio listTools ${cfg.id}`);
     return (res.tools ?? []) as McpToolDef[];
+  } catch (e) {
+    throw withStderr(e, stderrTail());
   } finally {
     try {
       await client.close();
@@ -300,6 +306,37 @@ async function listStdioToolsOnce(cfg: Extract<McpServerRuntimeConfig, { transpo
       /* already gone */
     }
   }
+}
+
+const STDERR_TAIL_BYTES = 2000;
+
+/** Collect the last {@link STDERR_TAIL_BYTES} of a child's stderr; the returned getter is safe to call any time. */
+export function captureStderrTail(stream: { on(event: "data", cb: (chunk: Buffer | string) => void): unknown } | null | undefined): () => string {
+  // Accumulate raw bytes and decode once in the getter: a multi-byte UTF-8
+  // character split across two chunks would otherwise decode as U+FFFD.
+  let chunks: Buffer[] = [];
+  let len = 0;
+  stream?.on("data", (chunk: Buffer | string) => {
+    const b = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    chunks.push(b);
+    len += b.length;
+    while (chunks.length > 1 && len - chunks[0].length >= STDERR_TAIL_BYTES) {
+      len -= chunks.shift()!.length;
+    }
+    if (len > STDERR_TAIL_BYTES) {
+      chunks = [chunks[chunks.length - 1].subarray(-STDERR_TAIL_BYTES)];
+      len = chunks[0].length;
+    }
+  });
+  return () => Buffer.concat(chunks).slice(-STDERR_TAIL_BYTES).toString("utf8").trim();
+}
+
+/** `e` with the child's stderr tail appended to its message (when there is any). */
+export function withStderr(e: unknown, stderr: string): Error {
+  const err = e instanceof Error ? e : new Error(String(e));
+  if (!stderr) return err;
+  const wrapped = new Error(`${err.message}\n--- server stderr ---\n${stderr}`);
+  return wrapped;
 }
 
 export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<ListMcpToolsResult> {

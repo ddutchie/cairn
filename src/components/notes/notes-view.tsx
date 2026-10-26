@@ -58,6 +58,7 @@ export function NotesView() {
     notesFullscreen,
     toggleNotesFullscreen,
     loadNoteBody,
+    noteChangeMarks,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:         s.activeProjectId,
     activeWorkspaceId:       s.activeWorkspaceId,
@@ -86,6 +87,7 @@ export function NotesView() {
     setNotesFolderCollapsed: s.setNotesFolderCollapsed,
     notesFullscreen:         s.notesFullscreen,
     toggleNotesFullscreen:   s.toggleNotesFullscreen,
+    noteChangeMarks:         s.noteChangeMarks,
   })));
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
@@ -293,6 +295,13 @@ export function NotesView() {
     ?? null;
   // Only an editor-backed note can consume a find request (⌘F handler above).
   useEffect(() => { hasActiveNoteRef.current = activeNote !== null; }, [activeNote]);
+
+  // Ids of notes with unseen external changes ("What's new" marks). Memoized
+  // as a Set so memoized row components keep referential stability.
+  const changedNoteIds = useMemo(
+    () => new Set(Object.keys(noteChangeMarks)),
+    [noteChangeMarks],
+  );
 
   // Folder tree — only built when not filtering
   const isFiltering = !!(filter || activeTagId);
@@ -637,6 +646,7 @@ export function NotesView() {
                   key={note.id}
                   note={note}
                   isActive={note.id === activeNote?.id}
+                  hasChanges={changedNoteIds.has(note.id)}
                   onClick={() => handleNoteClick(note.id)}
                   onPin={() => handleNotePin(note)}
                   onDelete={() => handleNoteDelete(note)}
@@ -659,6 +669,7 @@ export function NotesView() {
                   node={node}
                   activeNoteId={activeNote?.id ?? null}
                   collapsed={collapsedFolders}
+                  changedNoteIds={changedNoteIds}
                   onToggle={toggleFolder}
                    onNoteClick={handleNoteClick}
                   onNotePin={handleNotePin}
@@ -685,6 +696,7 @@ export function NotesView() {
                   key={note.id}
                   note={note}
                   isActive={note.id === activeNote?.id}
+                  hasChanges={changedNoteIds.has(note.id)}
                   onClick={() => handleNoteClick(note.id)}
                   onPin={() => handleNotePin(note)}
                   onDelete={() => handleNoteDelete(note)}

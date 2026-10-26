@@ -13,6 +13,9 @@ import {
   parseToolName,
   isMcpToolName,
   mcpToolsToOpenAI,
+  testConnection,
+  captureStderrTail,
+  withStderr,
 } from "./mcp-client";
 
 describe("mcp-client name namespacing", () => {
@@ -74,5 +77,60 @@ describe("mcp-client def conversion", () => {
     const defs = mcpToolsToOpenAI("srv1", [{ name: "ping" }]);
     expect(defs[0].function.description).toBe("");
     expect(defs[0].function.parameters).toEqual({ type: "object", properties: {} });
+  });
+});
+
+describe("mcp-client stdio test connection", () => {
+  it("surfaces the child's stderr when it exits before the handshake", async () => {
+    const r = await testConnection({
+      id: "dies",
+      name: "dies",
+      transport: "stdio",
+      command: process.execPath,
+      args: ["-e", "console.error('Consent Failed: WAM Error'); process.exit(1)"],
+    } as Parameters<typeof testConnection>[0]);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("Connection closed");
+    expect(r.error).toContain("server stderr");
+    expect(r.error).toContain("Consent Failed: WAM Error");
+  });
+
+  it("keeps the plain error when stderr is empty", async () => {
+    const r = await testConnection({
+      id: "silent",
+      name: "silent",
+      transport: "stdio",
+      command: process.execPath,
+      args: ["-e", "process.exit(1)"],
+    } as Parameters<typeof testConnection>[0]);
+    expect(r.ok).toBe(false);
+    expect(r.error).not.toContain("server stderr");
+  });
+});
+
+describe("withStderr", () => {
+  it("appends the tail to the message", () => {
+    const e = withStderr(new Error("boom"), "line1\nline2");
+    expect(e.message).toBe("boom\n--- server stderr ---\nline1\nline2");
+    expect(withStderr(new Error("x"), "").message).toBe("x");
+  });
+});
+
+describe("captureStderrTail", () => {
+  function feed(chunks: Array<Buffer | string>): string {
+    let cb: ((chunk: Buffer | string) => void) | null = null;
+    const tail = captureStderrTail({ on: (_e: "data", fn: (c: Buffer | string) => void) => { cb = fn; } });
+    for (const c of chunks) cb!(c);
+    return tail();
+  }
+
+  it("keeps multi-byte UTF-8 split across chunks intact", () => {
+    // "é" is 2 bytes in UTF-8; split it across two chunks.
+    const bytes = Buffer.from("caf\u00e9", "utf8");
+    expect(feed([bytes.subarray(0, 3), bytes.subarray(3)])).toBe("caf\u00e9");
+  });
+
+  it("keeps only the tail and trims", () => {
+    expect(feed(["  abcdef  "])).toBe("abcdef");
   });
 });
