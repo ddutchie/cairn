@@ -181,6 +181,15 @@ const LABEL_MAX_SCREEN_W = Math.max(...NODE_TYPES.map((t) => labelMaxLen(t, true
 /** Largest hit radius any node can have (biggest node radius + 6px slop). */
 const PICK_REACH = Math.max(nodeRadius("project"), nodeRadius("note"), nodeRadius("card"), nodeRadius("tag")) + 6;
 
+/** Node count above which the canvas shades at reduced DPR (see draw). */
+const LARGE_DPR_NODES = 400;
+/** Reduced DPR cap for large graphs — roughly a quarter of the pixels per
+ *  frame for imperceptible softness. Single place the cap is defined; both
+ *  the draw routine and the sizing effect derive from it. */
+function dprFor(nodeCount: number): number {
+  return Math.min(nodeCount > LARGE_DPR_NODES ? 1.25 : 2, window.devicePixelRatio || 1);
+}
+
 const ZOOM_BTN_CLASS =
   "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
 
@@ -438,11 +447,21 @@ function ForceGraphCanvasImpl({
     const nodes = nodesRef.current;
     const links = linksRef.current;
     const { width, height } = dimsRef.current;
-    // Large graphs shade at reduced DPR (matches the sizing effect) — roughly
-    // a quarter of the pixels per frame for imperceptible softness.
-    const dpr = Math.min(nodes.length > 400 ? 1.25 : 2, window.devicePixelRatio || 1);
+    const dpr = dprFor(nodes.length);
     const t = transformRef.current;
     const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
+
+    // Keep the backing store on the same DPR the draw uses: the node count can
+    // cross the large-graph threshold (search, filter, project toggle) without
+    // `dims` changing, which used to leave the canvas scaled/cropped and broke
+    // hit testing until the next resize.
+    const bw = Math.round(width * dpr), bh = Math.round(height * dpr);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+    }
 
     // One style read per frame (see createCssVarReader), memoised alpha strings.
     const read = createCssVarReader();
@@ -628,19 +647,9 @@ function ForceGraphCanvasImpl({
   // ── canvas sizing (DPR-aware) ──
   // Only touches the backing store when the size actually changes: assigning
   // canvas.width/height clears and reallocates it, which reads as a flash.
-  // Large graphs use a reduced DPR cap (matches the draw routine) — roughly
-  // a quarter of the pixels to shade per frame for imperceptible softness.
+  // The DPR itself is owned by the draw routine (node count can cross the
+  // large-graph threshold without a resize); this just repaints on resize.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = Math.min(nodesRef.current.length > 400 ? 1.25 : 2, window.devicePixelRatio || 1);
-    const w = Math.round(dims.width * dpr), h = Math.round(dims.height * dpr);
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-      canvas.style.width = dims.width + "px";
-      canvas.style.height = dims.height + "px";
-    }
     drawRef.current();
   }, [dims]);
 
