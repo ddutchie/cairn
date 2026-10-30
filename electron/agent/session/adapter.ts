@@ -21,13 +21,35 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
   const args = new Map<string, Record<string, unknown>>();
   const ev = (type: string, data: unknown): RendererEvent => ({ type, seq: ++seq, time: now(), data });
 
+  // Per-turn throughput from the live stream: TTFT of the turn's first stream, decode time from each
+  // stream's first token to its message, and provider-reported output tokens summed over streams.
+  let streamStart: number | null = null;
+  let firstToken: number | null = null;
+  let ttftMs: number | undefined;
+  let decodeMs = 0;
+  let outputTokens = 0;
+  let sampled = false;
+  const resetStats = () => { streamStart = null; firstToken = null; ttftMs = undefined; decodeMs = 0; outputTokens = 0; sampled = false; };
+  const delta = () => {
+    if (firstToken !== null) return;
+    firstToken = now();
+    if (ttftMs === undefined && streamStart !== null) ttftMs = Math.max(0, firstToken - streamStart);
+  };
+  const statsChunk = (): RendererEvent | undefined => {
+    const stats: { ttftMs?: number; tokensPerSecond?: number; outputTokens?: number } = {};
+    if (ttftMs !== undefined) stats.ttftMs = ttftMs;
+    if (sampled && decodeMs > 0) stats.tokensPerSecond = outputTokens / (decodeMs / 1000);
+    if (outputTokens > 0) stats.outputTokens = outputTokens;
+    return Object.keys(stats).length ? ev("assistant/chunk", { chunk: { type: "stats", stats } }) : undefined;
+  };
+
   return (event: AgentEvent): Adapted => {
     const events: RendererEvent[] = [];
     const projections: SessionProjection[] = [];
     switch (event.type) {
-      case "turn/start": events.push(ev("turn/start", {})); break;
-      case "assistant/delta": events.push(ev("assistant/chunk", { chunk: { type: "text-delta", text: event.text } })); break;
-      case "assistant/thinking": events.push(ev("assistant/chunk", { chunk: { type: "reasoning-delta", text: event.text } })); break;
+      case "turn/start": resetStats(); streamStart = now(); events.push(ev("turn/start", {})); break;
+      case "assistant/delta": delta(); events.push(ev("assistant/chunk", { chunk: { type: "text-delta", text: event.text } })); break;
+      case "assistant/thinking": delta(); events.push(ev("assistant/chunk", { chunk: { type: "reasoning-delta", text: event.text } })); break;
       case "assistant/message": {
         const { message } = event;
         const content = message.content.flatMap((p) =>
@@ -35,6 +57,11 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
           : p.type === "thinking" ? [{ type: "reasoning", text: p.thinking }]
           : []);
         const u = message.usage;
+        if (u && u.output > 0) {
+          outputTokens += u.output;
+          if (firstToken !== null) { decodeMs += Math.max(0, now() - firstToken); sampled = true; }
+        }
+        firstToken = null;
         events.push(ev("assistant/message", {
           message: { role: "assistant", content },
           // The fold expects engine's disjoint input (uncached only); pi-ai's `input` is that too.
@@ -47,6 +74,7 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
         events.push(ev("tool/call", { callId: event.callId, name: event.name, args: event.args, meta: { risk: event.risk } }));
         break;
       case "tool/result": {
+        streamStart = now(); // the next model request starts once the tools are back
         const cairnRef = event.isError ? undefined : extractCairnRef(event.name, event.text);
         events.push(ev("tool/result", {
           callId: event.callId, name: event.name, args: args.get(event.callId),
@@ -80,7 +108,12 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
       case "error":
         projections.push(makeSessionProjection(sessionId, "error", { message: event.message }));
         break;
-      case "turn/end": events.push(ev("turn/end", { reason: { kind: event.reason } })); break;
+      case "turn/end": {
+        const st = statsChunk();
+        if (st) events.push(st);
+        events.push(ev("turn/end", { reason: { kind: event.reason } }));
+        break;
+      }
       // Recorded in the log; the UI learns of them via approval/permissions projections.
       case "approval/decided":
         // Clears the card on every transport, whoever (or whatever) decided.
