@@ -16,3 +16,12 @@ describe("turn stats", () => {
     expect((end[0].data as { chunk: { stats: unknown } }).chunk.stats).toEqual({ ttftMs: 500, tokensPerSecond: 50, outputTokens: 100 });
   });
 });
+
+describe("note writes", () => {
+  it("projects fresh note content after ensure_note / edit_note", () => {
+    const adapt = createAdapter("s", () => 1, (id) => (id === "n1" ? "# plan" : undefined));
+    const out = adapt({ type: "tool/result", callId: "c", name: "edit_note", text: JSON.stringify({ id: "n1" }), isError: false } as unknown as AgentEvent);
+    expect(out.projections.map((p) => [p.kind, (p.data as { content: string }).content])).toEqual([["note-updated", "# plan"]]);
+    expect(adapt({ type: "tool/result", callId: "d", name: "edit_note", text: JSON.stringify({ id: "zz" }), isError: false } as unknown as AgentEvent).projections).toEqual([]);
+  });
+});

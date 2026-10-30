@@ -48,6 +48,8 @@ export interface HostDeps {
   askTtlMs?: number;
   /** Runs before a session is first opened in memory (e.g. import a retired log). */
   beforeOpen?: (id: string) => Promise<void>;
+  /** Reads a note's current content, so note writes can refresh a live plan view. */
+  readNote?: (noteId: string) => string | undefined;
   /** Called for each `approval/asked`, e.g. to raise a desktop notification. */
   onAsk?: (ask: AskSpec) => void;
   /** Each settled assistant message (e.g. to record token usage). */
@@ -142,7 +144,7 @@ export class AgentHost {
           doomAcked: new Set(),
           reviewerState: createReviewerState(),
           writer,
-          adapt: (log?.header.parentId ?? parent) ? createTraceAdapter(log?.header.parentId ?? parent!, id) : createAdapter(id),
+          adapt: (log?.header.parentId ?? parent) ? createTraceAdapter(log?.header.parentId ?? parent!, id) : createAdapter(id, Date.now, this.deps.readNote),
           parent: log?.header.parentId ?? parent,
           records: [...records],
           running: false,

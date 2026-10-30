@@ -163,6 +163,7 @@ export function getEngineHost(ctx: DbContext): AgentHost {
   host ??= new AgentHost({
     root: hostRoot(),
     beforeOpen: adoptLegacySession,
+    readNote: (noteId) => createHostStore(ctx.db).readNoteContent(noteId),
     send: (channel, payload) => {
       const sid = "sessionId" in payload ? String(payload.sessionId) : "";
       const tap = sessionTaps.get(sid);

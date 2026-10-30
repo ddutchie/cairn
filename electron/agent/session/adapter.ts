@@ -16,7 +16,7 @@ export interface Adapted {
   projections: SessionProjection[];
 }
 
-export function createAdapter(sessionId: string, now: () => number = Date.now) {
+export function createAdapter(sessionId: string, now: () => number = Date.now, readNote?: (noteId: string) => string | undefined) {
   let seq = 0;
   const args = new Map<string, Record<string, unknown>>();
   const ev = (type: string, data: unknown): RendererEvent => ({ type, seq: ++seq, time: now(), data });
@@ -81,6 +81,14 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
           ...(event.isError ? { error: event.text, ok: false } : { output: event.text, ok: true }),
           ...(cairnRef ? { meta: { cairnRef } } : {}),
         }));
+        // After a note write, push fresh content so a plan's task list updates live.
+        if (readNote && !event.isError && (event.name === "ensure_note" || event.name === "edit_note")) {
+          try {
+            const id = (JSON.parse(event.text) as { id?: unknown }).id;
+            const content = typeof id === "string" ? readNote(id) : undefined;
+            if (typeof id === "string" && content !== undefined) projections.push(makeSessionProjection(sessionId, "note-updated", { noteId: id, content }));
+          } catch { /* non-JSON output */ }
+        }
         args.delete(event.callId);
         break;
       }
