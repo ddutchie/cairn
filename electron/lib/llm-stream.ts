@@ -1,7 +1,7 @@
 /**
  * Cairn — Shared OpenAI-compatible LLM streaming layer.
  *
- * Consumed by the Cordis runners' chat-completions transport and by `callLLM`:
+ * Consumed by the engine runners' chat-completions transport and by `callLLM`:
  *
  *   - `consumeAssistantStream`   — SSE parse → { content, reasoning, tool calls,
  *     finish_reason, reasoning field }. Records WHICH reasoning field the

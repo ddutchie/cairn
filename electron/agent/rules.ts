@@ -15,6 +15,8 @@ export interface RiskInfo {
   paths?: string[];
   /** Network host, for web/external tools. */
   host?: string;
+  /** The call leaves the OS sandbox; always asks the human, never grantable. */
+  escalation?: boolean;
 }
 
 export type RuleEffect = "allow" | "ask" | "deny";
@@ -176,6 +178,7 @@ export type GrantKind = "tool" | "command";
 /** Grants the UI may offer for a call. EXEC grants are exact-command only. */
 export function offeredGrants(risk: RiskInfo): GrantKind[] {
   if (risk.class === "READ") return [];
+  if (risk.escalation) return [];
   if (risk.class === "EXEC") return risk.command && canonicalCommand(risk.command) ? ["command"] : [];
   return ["tool"];
 }

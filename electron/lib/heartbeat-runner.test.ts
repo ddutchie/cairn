@@ -87,8 +87,8 @@ function makeRoot(): string {
   return root;
 }
 
-// ── Named runCordisLoop options accessors ───────────────────────────────────
-// The runner calls runCordisLoop with an options object; these accessors name
+// ── Named runEngineLoop options accessors ───────────────────────────────────
+// The runner calls runEngineLoop with an options object; these accessors name
 // the fields so tests don't scatter magic keys (they read the LAST call).
 interface LoopOpts {
   send?: (channel: string, payload: Record<string, unknown>) => void;
@@ -120,11 +120,11 @@ afterEach(() => {
   vi.clearAllMocks();
   for (const root of tempRoots.splice(0)) {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* already gone */ }
-    // Also clean the dsh session that was nested under .cairn-sessions/<encoded-cwd>/
+    // Also clean the engine session that was nested under .cairn-sessions/<encoded-cwd>/
     // (the fallback sessionRoot used before main.ts sets the real <userData>/sessions).
     try {
       const _encoded = root.replace(/[^a-zA-Z0-9._-]/g, (c) => `-${c.charCodeAt(0).toString(16)}-`).replace(/^-/, "--").replace(/-$/, "--") || "_";
-      // The actual dsh encoding is more complex, so brute-force: delete any
+      // The actual engine encoding is more complex, so brute-force: delete any
       // .cairn-sessions dir that contains this root's encoded form as a substring,
       // plus the common case of cleaning the whole .cairn-sessions after the suite.
       const cairnSessions = path.join(process.cwd(), ".cairn-sessions");
@@ -242,8 +242,8 @@ describe("runAutomation folder plumbing", () => {
     expect(fs.existsSync(expectedDir)).toBe(true);
 
     // The run folder + scripts/ + out/ are materialized. (run_script /
-    // write_run_file / deliver_file bridging onto runCordisLoop is a Phase 2
-    // follow-up — the Cordis loop doesn't expose them as separate handlers yet.)
+    // write_run_file / deliver_file bridging onto runEngineLoop is a Phase 2
+    // follow-up — the engine loop doesn't expose them as separate handlers yet.)
     const autoDir = automationFolderDir(root, automation.id, "P");
     expect(fs.existsSync(path.join(autoDir, "scripts"))).toBe(true);
     expect(fs.existsSync(path.join(autoDir, "out"))).toBe(true);
@@ -304,7 +304,7 @@ describe("runAutomation folder plumbing", () => {
     // Manifest created (once).
     expect(fs.existsSync(path.join(autoDir, "manifest.json"))).toBe(true);
     // The .env non-secret is present on disk (run_script env injection is a
-    // Phase 2 follow-up on the Cordis path).
+    // Phase 2 follow-up on the engine path).
     expect(envFile).toContain('MY_TOKEN="abc"');
   });
 

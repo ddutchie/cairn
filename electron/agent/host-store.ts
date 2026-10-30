@@ -1,11 +1,11 @@
 /**
- * host-store — the SINGLE adapter between the agent engine (and the legacy `electron/cordis/`) and app I/O.
+ * host-store — the SINGLE adapter between the agent engine (and the legacy `electron/agent/`) and app I/O.
  *
- * Boundary rule: no file in `electron/cordis/` may import from `../db/*`,
+ * Boundary rule: no file in `electron/agent/` may import from `../db/*`,
  * `../lib/*`, or `node:child_process` — EXCEPT this file (and its tests).
  * Type-only imports (`import type …`) are exempt: they are erased at compile
  * time and cannot smuggle runtime behaviour across the boundary. Everything
- * else the Cordis runtime needs from the host goes through this module:
+ * else the engine runtime needs from the host goes through this module:
  *
  *   - `HostStore` — narrow, named operations bound to the existing `db`
  *     handle (workspace meta, note content, git branch, hygiene, usage,
@@ -27,7 +27,7 @@
  *
  * Principled notes (deliberately left as-is):
  *   - Type-only `from "../db/…"` / `from "../lib/…"` imports remain across
- *     `electron/cordis/` (LLMConfig, ChatRequest, UsageSource, …). They are
+ *     `electron/agent/` (LLMConfig, ChatRequest, UsageSource, …). They are
  *     covered by the task's type-only exemption; the verification grep below
  *     still lists them — filter with `grep -v "import type" | grep -v "{ type"`.
  *   - `../notes-files` (writeNoteFile) and `../mcp/tools` (executeMcpTool)
@@ -41,12 +41,12 @@
  *     such seam method exists; skill discovery/loading are pure fs reads
  *     re-exported below, injectable via `createCairnSkillProvider(deps)`.
  *   - `chat-executor.ts` is the app's tool-execution layer colocated in
- *     `cordis/`; its `q.*` calls are now `host.*` calls bound to the same
+ *     `engine/`; its `q.*` calls are now `host.*` calls bound to the same
  *     `db` it already received — same queries, no signature changes.
  *
  * Verification (value imports only; must print nothing):
  *   grep -rn 'from "\.\./db/\|from "\.\./lib/\|node:child_process\|require("\.\./db' \
- *     electron/cordis/ --include="*.ts" | grep -v test | grep -v "host-store.ts" \
+ *     electron/agent/ --include="*.ts" | grep -v test | grep -v "host-store.ts" \
  *     | grep -v "import type" | grep -v "{ type"
  */
 
@@ -110,7 +110,7 @@ export type { SkillMeta, SkillContent } from "../lib/skills";
 export { getCachedConfig } from "../lib/config-cache";
 export { estimateCostUsd } from "../lib/model-pricing";
 // Shared node-pty session table (`electron/lib/pty-sessions.ts`, lazy native
-// load — safe to import from unit tests). The dsh terminal backend
+// load — safe to import from unit tests). The engine terminal backend
 // (`./terminal-backend.ts`) reaches the manager ONLY through these
 // re-exports, never via `../lib/*` directly.
 export {
@@ -148,7 +148,16 @@ export function runWorkspaceHygiene(workspacePath: string): void {
   pruneChatArtifacts(workspacePath, "viz");
 }
 
-/** Whether the opt-in dsh schedule overlay is enabled (persisted agent setting). */
+/** Shell sandbox mode (persisted agent setting; on unless explicitly turned off). */
+export function getSandboxMode(): "workspace-write" | "off" {
+  try {
+    return getCachedConfigImpl().agentConfig?.sandbox === "off" ? "off" : "workspace-write";
+  } catch {
+    return "workspace-write";
+  }
+}
+
+/** Whether the opt-in engine schedule overlay is enabled (persisted agent setting). */
 export function isScheduleEnabled(): boolean {
   try {
     return getCachedConfigImpl().agentConfig?.scheduleEnabled === true;
@@ -158,8 +167,8 @@ export function isScheduleEnabled(): boolean {
 }
 
 /**
- * Resolved user-level hook config files for the dsh hook bridges
- * (see `electron/cordis/hooks-bridge.ts` for the full config-surface contract).
+ * Resolved user-level hook config files for the engine hook bridges
+ * (see `electron/agent/hooks-bridge.ts` for the full config-surface contract).
  * Returns the absolute path per dialect ONLY when the file exists — absent
  * files mean that dialect stays unmounted (hooks are opt-in, disabled by
  * default). `homeDir` is injectable so unit tests never touch the real home.
@@ -186,7 +195,7 @@ export function recordUsage(entry: RecordUsageArgs): void {
  * Root directory for session-log ZIP exports (see `./session-export.ts`).
  * Production persists under userData next to the spill store; vitest uses a
  * per-process tmp dir (parallel workers must not contend on one shared dir —
- * same rationale as the `:memory:` session-query index in cordis-context).
+ * same rationale as the `:memory:` session-query index in engine-context).
  */
 export function sessionExportRoot(): string {
   if (process.env.VITEST) return path.join(os.tmpdir(), `cairn-session-exports-${process.pid}`);
@@ -224,11 +233,11 @@ export interface HostStore {
   // Workspace-persistent approval grants.
   isWorkspaceGranted(workspaceId: string, tool: string, target?: string | null): boolean;
   addWorkspaceApprovalGrant(workspaceId: string, tool: string, target?: string | null): ApprovalGrant | null;
-  // MCP connector rows (workspace-scoped; powers the dsh-mcp-client parity spike).
+  // MCP connector rows (workspace-scoped; powers the engine-mcp-client parity spike).
   getMcpServer(workspaceId: string, serverId: string): ReturnType<typeof getMcpServersImpl>[number] | undefined;
   getMcpServers(workspaceId: string): ReturnType<typeof getMcpServersImpl>;
   // MCP rows in scope for a project: enabled AND attached (global or project).
-  // Used by the dsh stdio mount so local servers respect the same scoping as remote.
+  // Used by the engine stdio mount so local servers respect the same scoping as remote.
   getScopedMcpServers(workspaceId: string, projectId: string): ReturnType<typeof getMcpServersImpl>;
   // Secret resolution (main process only): literal passthrough, secret:// via keychain.
   resolveSecrets(values: Record<string, string>): Record<string, string>;

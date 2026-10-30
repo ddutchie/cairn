@@ -181,7 +181,7 @@ export function registerSessionRuntimeHandlers(
   }));
 
   // ── session:job-kill ─────────────────────────────────────────────────────
-  // Renderer-driven Kill for a dsh background job (jobs dock). Same
+  // Renderer-driven Kill for a engine background job (jobs dock). Same
   // {ok:false, code} envelope as subagent:* (owner-unavailable when the owner
   // turn ended, not-owner on a cross-session stop, registry passthrough
   // otherwise). The requesting session id is mandatory — the bridge only
@@ -378,7 +378,7 @@ export function registerSessionRuntimeHandlers(
     // Plan carried into execute-mode's system prompt: prefer the plan text
     // captured when the model called `exit_plan_mode`
     // (session_row.plan_content), fall back to the legacy PRD-note lookup
-    // for sessions that predate the dsh flow or that used ensure_note only.
+    // for sessions that predate the engine flow or that used ensure_note only.
     const planContent = sessionRow?.planContent?.trim()
       ? sessionRow.planContent
       : planNoteId
@@ -615,7 +615,7 @@ export function registerSessionRuntimeHandlers(
         broadcastEvent("session:mode-change", { sessionId, mode });
         broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode }));
       } catch (e) {
-        // Do not update or broadcast a requested mode when dsh rejected it.
+        // Do not update or broadcast a requested mode when engine rejected it.
         // The durable session log remains authoritative and the UI can retry.
         const msg = errMsg(e);
         if (msg.includes("while it is live") || msg.includes("already-running")) {
@@ -654,7 +654,7 @@ export function registerSessionRuntimeHandlers(
   // ── session:respond-questions ─────────────────────────────────────────────
   // Answers to a blocked ask_questions call. The formatted answer text is fed
   // back to the model as the tool result so it reasons over the answers in the
-  // same turn. Cordis keys by requestId (which the renderer echoes as callId).
+  // same turn. engine keys by requestId (which the renderer echoes as callId).
   registerIpcOn("session:respond-questions", (_event, { sessionId, callId, answers, nonce }: { sessionId: string; callId: string; answers: string; nonce?: string }) => {
     try {
       assertSafeId(sessionId, "sessionId");

@@ -530,7 +530,7 @@ export interface OutputBudgetPressure {
  * Non-null when the reserved output takes more than a quarter of the context
  * window, so compaction fires early and often (the system prompt and tool
  * definitions share the same message budget). Mirrors the engine's budget math
- * in `electron/cordis/compaction-budget.ts`.
+ * in `electron/agent/compaction-budget.ts`.
  */
 export function outputBudgetPressure(contextWindow: number, outputTokens: number): OutputBudgetPressure | null {
   if (!(contextWindow > 0) || !(outputTokens > 0)) return null;

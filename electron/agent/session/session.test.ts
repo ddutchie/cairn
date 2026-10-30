@@ -73,7 +73,7 @@ describe("session log", () => {
 });
 
 describe("adapter", () => {
-  it("emits dsh-shaped events the renderer fold understands", async () => {
+  it("emits engine-shaped events the renderer fold understands", async () => {
     const { createSessionEventFold } = await import("../../../shared/agent/session-event-fold");
     const out: string[] = [];
     const fold = createSessionEventFold({

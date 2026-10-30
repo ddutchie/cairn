@@ -67,7 +67,7 @@ export function opencodeHeaders(baseUrl: string, sessionId?: string | null): Rec
   return sharedOpencodeHeaders(CAIRN_USER_AGENT, baseUrl, sessionId);
 }
 
-// Install a global fetch wrapper once so the DSH pi-ai path (which builds
+// Install a global fetch wrapper once so the engine pi-ai path (which builds
 // headers via `requestHeaders(profile.headers)` + `attributionHeaders()` and
 // then calls `fetch`) also carries `x-opencode-session` + `User-Agent` for
 // opencode endpoints without threading sessionId through pi-ai's static
@@ -89,7 +89,7 @@ if (!(globalThis as unknown as { __cairnFetchPatched?: boolean }).__cairnFetchPa
       const isOpencode = typeof url === "string" && isOpencodeEndpoint(url);
       // Always normalize User-Agent to cairn/<version> for any fetch that
       // already carries a User-Agent (i.e. LLM provider calls). This
-      // overwrites the DSH default `cairn/<version> (+url)` to the simpler
+      // overwrites the engine default `cairn/<version> (+url)` to the simpler
       // `cairn/<version>` the user requested, and also covers direct
       // callers that may have been built before this wrapper.
       const Hdr = (globalThis as unknown as { Headers?: new (init?: unknown) => { has: (k: string) => boolean; get: (k: string) => string | null; set: (k: string, v: string) => void } }).Headers;

@@ -75,9 +75,9 @@ export interface LinkedContextReference {
 export interface ChatToolCallRecord {
   tool: string;
   label: string;
-  /** Tool-authored title from dsh `presentCall` (main-attached on tool/call); renderer prefers it. */
+  /** Tool-authored title from engine `presentCall` (main-attached on tool/call); renderer prefers it. */
   viewTitle?: string;
-  /** Tool-authored result view from dsh `presentResult` (main-attached on tool/result). */
+  /** Tool-authored result view from engine `presentResult` (main-attached on tool/result). */
   resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   cairnRef?: { type: "note" | "task"; id: ID; title: string };
   /**
@@ -100,7 +100,7 @@ export interface ChatToolCallRecord {
   /**
    * Presentation metadata recomputed from the registered tool definition's
    * output.presentationMeta(args, value) (NOT persisted in the session log —
-   * dsh recomputes it at render time like its web shell). Rich toolviews keyed
+   * engine recomputes it at render time like its web shell). Rich toolviews keyed
    * to this tool read it off the block; absent → generic text rendering.
    */
   meta?: Record<string, unknown>;

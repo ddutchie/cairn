@@ -295,7 +295,7 @@ export async function getExternalMcpServerMeta(
 /**
  * Run one resource operation on an in-scope MCP server. Re-validates scope
  * like {@link executeExternalTool}, but throws instead of returning an error
- * string (the dsh resource tools report thrown errors to the model).
+ * string (the engine resource tools report thrown errors to the model).
  */
 export async function requestExternalMcpResource(
   db: Database.Database,

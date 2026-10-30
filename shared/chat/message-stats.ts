@@ -1,6 +1,6 @@
 /**
  * Shared formatters for per-message and per-session throughput/latency stats
- * (ported alongside the DSH session-stats projection). Kept pure + tiny so both
+ * (ported alongside the engine session-stats projection). Kept pure + tiny so both
  * the chat and coding renderers, and the composer stats line, format identically.
  */
 

@@ -226,8 +226,8 @@ export default function Home() {
             const history = useCairnStore.getState().codingSessionHistory;
             if (history.length > 0) {
               const latest = history[0];
-              // Load messages for the latest session — session-as-truth (dsh JSONL),
-              // SQLite fallback for pre-dsh sessions. Mirrors the chat load path.
+              // Load messages for the latest session — session-as-truth (engine JSONL),
+              // SQLite fallback for pre-engine sessions. Mirrors the chat load path.
               // db:session:messages returns { messages, usage?, contextRing?, todos? }.
               type SessionRow = {
                 id: string; role: "user" | "assistant" | "error"; content: string;

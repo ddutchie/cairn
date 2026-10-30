@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { importDshLog, importDshSession, importDshTree, readDshLogFile } from "./dsh-import";
+import { importLegacyLog, importLegacySession, importLegacyTree, readLegacyLogFile } from "./legacy-import";
 import { historyFromRecords, foldState } from "./history";
 import { readSession } from "./log";
 
@@ -33,10 +33,10 @@ const v4 = jsonl(
   { type: "turn/end", seq: 5, time: 5, data: { reason: { kind: "aborted" } } },
 );
 
-describe("importDshLog", () => {
+describe("importLegacyLog", () => {
   it("maps a v0 log: user text only, thinking signature, usage, wrapped tool result", () => {
-    const out = importDshLog(v0)!;
-    expect(out.header).toMatchObject({ id: "s0", cwd: "/w", title: "Greeting", origin: "dsh-import" });
+    const out = importLegacyLog(v0)!;
+    expect(out.header).toMatchObject({ id: "s0", cwd: "/w", title: "Greeting", origin: "legacy-import" });
     const msgs = historyFromRecords(out.records);
     expect(msgs.map((m) => m.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
     const a = msgs[1] as { content: unknown[]; usage: { input: number }; stopReason: string };
@@ -48,45 +48,45 @@ describe("importDshLog", () => {
   });
 
   it("maps a v4 log: role-tool results, errors and abort", () => {
-    const out = importDshLog(v4)!;
+    const out = importLegacyLog(v4)!;
     const msgs = historyFromRecords(out.records);
     expect(msgs.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ text: "bad" }] });
     expect(foldState(out.records).lastEnd).toBe("aborted");
   });
 
   it("rejects non-session input and tolerates garbage lines", () => {
-    expect(importDshLog("{\"type\":\"turn/start\"}")).toBeUndefined();
-    expect(importDshLog(`${v4}\nnot json`)!.report.skipped).toBe(1);
+    expect(importLegacyLog("{\"type\":\"turn/start\"}")).toBeUndefined();
+    expect(importLegacyLog(`${v4}\nnot json`)!.report.skipped).toBe(1);
   });
 });
 
-describe("importDshTree", () => {
+describe("importLegacyTree", () => {
   it("imports zstd logs idempotently and never touches the source", async () => {
     const src = await mkdtemp(path.join(os.tmpdir(), "dsh-src-"));
     const dst = await mkdtemp(path.join(os.tmpdir(), "dsh-dst-"));
     await mkdir(path.join(src, "proj", "abc"), { recursive: true });
     await writeFile(path.join(src, "proj", "abc", "session.jsonl.zstd"), zstdCompressSync(Buffer.from(v0)));
     await writeFile(path.join(src, "proj", "abc", "session.lock"), "x");
-    const first = await importDshTree(src, dst);
+    const first = await importLegacyTree(src, dst);
     expect(first.imported).toEqual(["abc"]);
     expect((await readSession(dst, "abc"))?.header.title).toBe("Greeting");
-    const second = await importDshTree(src, dst);
+    const second = await importLegacyTree(src, dst);
     expect(second).toMatchObject({ imported: [], existing: ["abc"] });
     expect(await readdir(path.join(src, "proj", "abc"))).toHaveLength(2);
   });
 });
 
-describe("importDshSession", () => {
+describe("importLegacySession", () => {
   it("imports one session by id from any project folder, once", async () => {
     const src = await mkdtemp(path.join(os.tmpdir(), "dsh-one-src-"));
     const dst = await mkdtemp(path.join(os.tmpdir(), "dsh-one-dst-"));
     await mkdir(path.join(src, "projA", "other"), { recursive: true });
     await mkdir(path.join(src, "projB", "wanted"), { recursive: true });
     await writeFile(path.join(src, "projB", "wanted", "session.v4.jsonl.zstd"), zstdCompressSync(Buffer.from(v4)));
-    expect(await importDshSession(src, dst, "missing")).toBe(false);
-    expect(await importDshSession(src, dst, "wanted")).toBe(true);
+    expect(await importLegacySession(src, dst, "missing")).toBe(false);
+    expect(await importLegacySession(src, dst, "wanted")).toBe(true);
     expect((await readSession(dst, "wanted"))?.header.id).toBe("wanted");
-    expect(await importDshSession(src, dst, "wanted")).toBe(false);
+    expect(await importLegacySession(src, dst, "wanted")).toBe(false);
   });
 });
 
@@ -103,7 +103,7 @@ describe.skipIf(!REAL || !REAL.split(path.delimiter).some((r) => existsSync(r)))
           const dir = path.join(root, proj, id);
           const name = ["session.v4.jsonl.zstd", "session.jsonl.zstd"].find((n) => existsSync(path.join(dir, n)));
           if (!name) continue;
-          const text = await readDshLogFile(path.join(dir, name));
+          const text = await readLegacyLogFile(path.join(dir, name));
           const events = text.trim().split("\n").map((l) => JSON.parse(l)).filter((e) => typeof e.seq === "number" && e.surfaceOp === "append" && (e.type === "user/message" || e.type === "assistant/message"));
           type D = { role: string; source?: { kind?: string }; content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: string; toolCallId?: string; content?: Array<{ text?: string }> }> };
           const flat = (events.map((e) => deriveEventMessage(e)).filter(Boolean) as unknown as D[]).flatMap((m): string[] => {
@@ -111,7 +111,7 @@ describe.skipIf(!REAL || !REAL.split(path.delimiter).some((r) => existsSync(r)))
             if (m.role === "assistant") return [`A:${m.content.filter((c) => c.type === "text").map((c) => c.text).join("")}|${m.content.filter((c) => c.type === "tool-call").map((c) => `${c.id}:${c.name}`).join(",")}`];
             return [];
           });
-          const imported = importDshLog(text)!;
+          const imported = importLegacyLog(text)!;
           const mine = historyFromRecords(imported.records).flatMap((m): string[] => {
             if (m.role === "user") return [`U:${m.content}`];
             if (m.role === "assistant") return [`A:${m.content.filter((c) => c.type === "text").map((c) => (c as { text: string }).text).join("")}|${m.content.filter((c) => c.type === "toolCall").map((c) => `${(c as { id: string }).id}:${(c as { name: string }).name}`).join(",")}`];

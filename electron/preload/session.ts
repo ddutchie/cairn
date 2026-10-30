@@ -10,7 +10,7 @@ export const sessionApi = {
   session: {
     /** Send a prompt to an existing or new session. Fire-and-forget. */
     prompt: (req: unknown) => sendContract("session:prompt", req),
-    /** Canonical raw DSH session/event stream shared by Chat and Coding. */
+    /** Canonical raw engine session/event stream shared by Chat and Coding. */
     onEvent: (cb: (e: SessionEventEnvelope) => void) => onIpcEvent("session:event", cb),
     /** Reasoning-provenance snapshot for the agent panel's Context Ring badge */
     contextRing: (sessionId: string) => invokeContract("session:context-ring", { sessionId }),
@@ -35,8 +35,8 @@ export const sessionApi = {
     /**
      * Fired when the agent produces a plan for user review. Two shapes carry
      * this today:
-     *   - dsh-plan-mode's `exit_plan_mode` tool call (planContent is set,
-     *     noteId is undefined) — the plan is in the tool call args and dsh's
+     *   - engine-plan-mode's `exit_plan_mode` tool call (planContent is set,
+     *     noteId is undefined) — the plan is in the tool call args and engine's
      *     userQuestions.ask surfaces the review card;
      *   - the legacy PRD-note flow (noteId is set, planContent is undefined)
      *     where the agent calls `ensure_note` while in plan mode.
@@ -54,7 +54,7 @@ export const sessionApi = {
     createSession:  (input: CodingSessionCreateInput) => invokeContract("db:session:create", input),
     /** Delete a coding session and all its messages from SQLite */
     deleteSession:  (id: string) => invokeContract("db:session:delete", { id }),
-    /** Fetch session transcript from the dsh JSONL log (session-as-truth), SQLite fallback */
+    /** Fetch session transcript from the engine JSONL log (session-as-truth), SQLite fallback */
     getSessionMessages: (sessionId: string) => invokeContract("db:session:messages", { sessionId }),
     /** Fetch the persisted todo list for a session */
     getTodos:       (sessionId: string) => invokeContract("db:session:todos", { sessionId }),
@@ -73,7 +73,7 @@ export const sessionApi = {
     interruptSubagent: (parentSessionId: string, childId: string) => invokeContract("subagent:interrupt", { parentSessionId, childId }),
     /** Deliver a human message to a continuable child (needs the live parent agent; parent-unavailable otherwise) */
     messageSubagent: (parentSessionId: string, childId: string, text: string) => invokeContract("subagent:message", { parentSessionId, childId, text }),
-    /** Kill a dsh background job (jobs dock; owner-unavailable when the owner turn ended) */
+    /** Kill a engine background job (jobs dock; owner-unavailable when the owner turn ended) */
     killJob: (jobId: string, sessionId: string) => invokeContract("session:job-kill", { jobId, sessionId }),
     /** Current same-session goal snapshot (null when no goal); live changes arrive via onProjection kind:"goal" */
     goal: (sessionId: string) => invokeContract("session:goal", { sessionId }),

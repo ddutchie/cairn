@@ -10,7 +10,7 @@ export interface Attachment { kind?: "image" | "pdf"; dataUrl: string; name?: st
 export const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGES_PER_MESSAGE = 20;
-/** Images ride inline in the session log, so the per-message total is kept well under dsh's old 200 MiB. */
+/** Images ride inline in the session log, so the per-message total is kept well under engine's old 200 MiB. */
 export const MAX_MESSAGE_IMAGE_BYTES = 48 * 1024 * 1024;
 
 function parseDataUrl(url: string): { mediaType: string; base64: string; bytes: number } | undefined {

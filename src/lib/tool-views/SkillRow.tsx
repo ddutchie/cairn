@@ -1,14 +1,14 @@
 /**
- * §11 spike — vendored dsh `skill` toolview (SkillRow), rendering inside Cairn.
+ * §11 spike — vendored engine `skill` toolview (SkillRow), rendering inside Cairn.
  *
- * A faithful port of scratch/dsh-repo/packages/client/ui-skill/src/client/SkillRow.tsx:
+ * A faithful port of scratch/engine-repo/packages/client/ui-skill/src/client/SkillRow.tsx:
  * a replay-stable accent row derived ONLY from the logged tool call/result slice
- * (our ToolCallBlock) — no session store, no RPC, no dsh shell. The ONLY changes
+ * (our ToolCallBlock) — no session store, no RPC, no engine shell. The ONLY changes
  * vs upstream: (1) local primitive stand-ins (primitives.tsx), (2) plain
  * className strings against the scoped stylesheet (tool-views.css) instead of a
- * CSS module, (3) an inlined `t()` (we don't wire dsh's locale seat for a spike).
+ * CSS module, (3) an inlined `t()` (we don't wire engine's locale seat for a spike).
  *
- * This is the artifact that proves a dsh plugin's UI renders in Cairn's own
+ * This is the artifact that proves a engine plugin's UI renders in Cairn's own
  * transcript when handed a Cairn-built ToolCallViewProps.
  */
 import React, { useState, type KeyboardEvent, type ReactNode } from "react";

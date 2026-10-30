@@ -1,4 +1,4 @@
-/** The transport envelope for an unmodified DSH session/event notification. */
+/** The transport envelope for an unmodified engine session/event notification. */
 export interface SessionEventEnvelope {
   sessionId: string;
   /** Structural on purpose: preload and renderer must not depend on Electron types. */

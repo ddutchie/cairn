@@ -33,7 +33,7 @@ export function AIChatTab({ isActive, onActivate }: AIChatTabProps) {
     clearAllThreads: (s as unknown as { clearAllThreads?: (ws: string, proj?: string) => Promise<void> }).clearAllThreads,
   })));
 
-  // Live title projection: dsh's session/title fold broadcasts on session:projection
+  // Live title projection: engine's session/title fold broadcasts on session:projection
   // kind:'title' (chat-* only). Keep the store's projectedTitles map warm so the
   // dropdown shows the LLM auto-title immediately without a reload.
   useEffect(() => {

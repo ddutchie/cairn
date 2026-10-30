@@ -32,7 +32,7 @@ function sanitizeName(raw: string): string {
     .replace(/[^a-z0-9-]/g, "");
 }
 
-/** Runtime (executable) commands from the dsh command registry — /plan,
+/** Runtime (executable) commands from the engine command registry — /plan,
  *  /compact, and anything a plugin registers. Executed on the session's agent
  *  and logged as command/run+done in the session log. */
 function RuntimeCommandsGroup() {

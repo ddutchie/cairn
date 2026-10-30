@@ -84,7 +84,7 @@ export function isReservedCommandName(name: string): boolean {
 }
 
 /**
- * Merge built-in commands for a pane with dsh registry commands (executable —
+ * Merge built-in commands for a pane with engine registry commands (executable —
  * /plan, /compact, plugin commands) and the workspace's custom/community
  * commands (prompt inserters), filtered by scope. Precedence: custom >
  * registry > built-in, so users can still override inserted text; registry

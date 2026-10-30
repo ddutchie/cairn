@@ -1,17 +1,17 @@
 /**
- * §11 toolview micro-host — the dsh ToolCallViewProps contract, vendored.
+ * §11 toolview micro-host — the engine ToolCallViewProps contract, vendored.
  *
- * This is the DATA CONTRACT a dsh `tool.call.toolview` React component receives
- * (from scratch/dsh-repo/packages/client/ui-tool/src/client/contract/slots.ts:29
+ * This is the DATA CONTRACT a engine `tool.call.toolview` React component receives
+ * (from scratch/engine-repo/packages/client/ui-tool/src/client/contract/slots.ts:29
  * + runtime/src/client/sessions/conversation.ts:185/295). We reproduce ONLY the
  * shapes a pure, replay-stable toolview reads — no session store, no connection.
  *
- * The point of the spike: prove a real dsh toolview component renders inside
+ * The point of the spike: prove a real engine toolview component renders inside
  * Cairn's own transcript when handed a Cairn-built ToolCallViewProps — WITHOUT
- * adopting the dsh web shell (ui-layout/ui-conversation/connection).
+ * adopting the engine web shell (ui-layout/ui-conversation/connection).
  */
 
-/** dsh ContentBlock — only the text case matters for a pure toolview row. */
+/** engine ContentBlock — only the text case matters for a pure toolview row. */
 export type DshContentBlock =
   | { type: "text"; text: string }
   | { type: string; [k: string]: unknown };
@@ -28,7 +28,7 @@ export interface RunningToolCall {
   subCalls: readonly ToolCallBlock[];
 }
 
-/** Settled tool result (the `'kind' in block` branch dsh views test). */
+/** Settled tool result (the `'kind' in block` branch engine views test). */
 export interface ToolResultNode {
   kind: "tool-result";
   seq: number;
@@ -40,9 +40,9 @@ export interface ToolResultNode {
   isError: boolean;
   error?: { name: string; code: string };
   /**
-   * presentationMeta recomputed from the registered tool def (dsh does not
+   * presentationMeta recomputed from the registered tool def (engine does not
    * persist it; the host recomputes like its web shell). Rich toolviews keyed
-   * by this tool read it — e.g. dsh-visualize's card needs
+   * by this tool read it — e.g. engine-visualize's card needs
    * { kind:"visualize", fragment, title, mode, path }.
    */
   meta?: Record<string, unknown>;

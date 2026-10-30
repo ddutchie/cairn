@@ -71,7 +71,7 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   // tool it is tool-scoped. Not shown for READ (should never gate, but guard
   // anyway) and not for bare external failures that have no stable trust
   // target — those remain Allow once / Deny only.
-  // A sandbox escalation (dsh sandbox_permissions) widens what this one call
+  // A sandbox escalation (engine sandbox_permissions) widens what this one call
   // may touch; it is Allow once / Deny only and states the model's reason.
   const escalation = toolCall.approvalReason?.match(/^escalate sandbox to ([\w-]+): ([\s\S]*)$/);
   const showAlwaysAllow = risk !== "READ" && !escalation;
@@ -131,7 +131,7 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
   const setActiveContextPanel = useCairnStore((state) => state.setActiveContextPanel);
   const setSessionPresentation = useCairnStore((state) => state.setSessionPresentation);
   const rv = toolCall.resultView;
-  // Tool-authored title (dsh `presentCall`, e.g. bash's command or
+  // Tool-authored title (engine `presentCall`, e.g. bash's command or
   // "Read output from background job X") beats the hand-mapped humanizer;
   // tools without one (Cairn's own, old logs) fall back to humanizeTool.
   // A completed-call replacement title (`presentResult`) wins over both.
@@ -140,7 +140,7 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
     : toolCall.viewTitle
       ? { pre: toolCall.viewTitle }
       : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
-  // Tool-authored result body (dsh `presentResult`): terminal cards carry the
+  // Tool-authored result body (engine `presentResult`): terminal cards carry the
   // captured output + exit status, generic cards carry reformatted content
   // blocks. Anything else (or nothing) falls back to the raw output text.
   const resultBody = (() => {
@@ -188,7 +188,7 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
 
 /** Render a tool from its durable/live state, independent of session kind. */
 export function ConversationToolCall({ toolCall, sessionId, connectors }: ConversationToolCallProps) {
-  // Keyed by the per-ask nonce: dsh can ask twice for one callId (the tool
+  // Keyed by the per-ask nonce: engine can ask twice for one callId (the tool
   // gate, then a sandbox escalation), and the second ask must get fresh
   // buttons rather than inherit the first card's "Allowed — running…" state.
   if (toolCall.confirmRequired) return <ApprovalCard key={toolCall.approvalNonce ?? "ask"} toolCall={toolCall} sessionId={sessionId} connectors={connectors} />;

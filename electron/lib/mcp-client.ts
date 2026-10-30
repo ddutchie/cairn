@@ -479,7 +479,7 @@ export type McpResourceRequest =
 
 /**
  * Run one resource operation against a server. Unlike {@link callTool} this
- * throws: the dsh resource tools turn a thrown error into an `isError` result.
+ * throws: the engine resource tools turn a thrown error into an `isError` result.
  */
 export async function requestResource(
   cfg: McpServerRuntimeConfig,

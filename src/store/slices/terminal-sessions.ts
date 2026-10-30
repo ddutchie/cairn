@@ -130,7 +130,7 @@ export interface TerminalSessionsSlice {
   codingSessionHistory: CodingSessionSummary[];
   /** Per-session todo lists (todowrite tool) keyed by session id. */
   sessionTodos: Record<string, SessionTodo[]>;
-  /** Per-session background-job snapshots (dsh jobs bridge) keyed by session id. */
+  /** Per-session background-job snapshots (engine jobs bridge) keyed by session id. */
   sessionJobs: Record<string, JobSummary[]>;
   /** Set the persistent coding session (switches what the pinned tab shows) */
   setActiveCodingSession: (sessionId: string | null) => void;

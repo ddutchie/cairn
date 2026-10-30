@@ -2,7 +2,7 @@
  * Drop-in replacement for `@vscode/ripgrep` in the main bundle (esbuild alias
  * in scripts/compile-electron.js + scripts/build.js).
  *
- * dsh-tool-fs-search (glob/grep) spawns `(await import("@vscode/ripgrep")).rgPath`.
+ * engine-tool-fs-search (glob/grep) spawns `(await import("@vscode/ripgrep")).rgPath`.
  * Upstream resolves the per-platform `@vscode/ripgrep-<platform>-<arch>`
  * package relative to itself, which in the packaged app yields a path inside
  * app.asar. Electron's `spawn` is not asar-aware, so the binary is shipped

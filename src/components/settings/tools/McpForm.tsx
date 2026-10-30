@@ -18,7 +18,7 @@ export function McpForm({
   initial?: McpServerConfig;
   onSave: (s: Partial<McpServerConfig>, headerRows: HeaderRow[]) => void;
   onCancel: () => void;
-  /** Dev builds only: show the dsh-path spike toggle (remote only). */
+  /** Dev builds only: show the engine-path spike toggle (remote only). */
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");

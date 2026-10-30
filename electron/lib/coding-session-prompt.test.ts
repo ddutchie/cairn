@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildAgentSystemPrompt } from "./coding-session-prompt";
 
 describe("buildAgentSystemPrompt", () => {
-  it("keeps Cairn's base prompt stable across dsh plan-mode transitions", () => {
+  it("keeps Cairn's base prompt stable across engine plan-mode transitions", () => {
     const context = {
       projectName: "Cairn",
       cwd: "/tmp/cairn",

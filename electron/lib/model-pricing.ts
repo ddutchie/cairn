@@ -149,7 +149,7 @@ export function setEndpointProtocols(map: Record<string, WireProtocol> | null): 
 
 /** Protocols a caller may configure (the provider apiMode). */
 type ConfiguredApi = "openai-completions" | "openai-responses" | "anthropic-messages";
-/** Protocols the patched harness can mount (dsh-llm-pi-ai + Cairn's Gemini patch). */
+/** Protocols the patched harness can mount (engine-llm-pi-ai + Cairn's Gemini patch). */
 export type PiApi = ConfiguredApi | "google-generative-ai";
 
 /**
@@ -157,7 +157,7 @@ export type PiApi = ConfiguredApi | "google-generative-ai";
  * when it dictates one (OpenCode), else the provider's configured `api`.
  * Deterministic per model, so a resumed session replays under the same api.
  * Gemini-only models mount Google's generateContent API, which the harness
- * serves through patches/@deepseek-ai+dsh-llm-pi-ai.
+ * serves through patches/@deepseek-ai+engine-llm-pi-ai.
  */
 export function wireApiFor(baseUrl: string, model: string, api: ConfiguredApi): PiApi {
   const protocol = protocolForEndpointModel(endpointProtocols, baseUrl, model);

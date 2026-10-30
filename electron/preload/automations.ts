@@ -21,7 +21,7 @@ export const automationsApi = {
       set: (usd: number | null) => invokeContract("db:automation:budget:set", { usd }),
     },
     runningCount: () => invokeContract("db:automation:runningCount"),
-    /** Approve/deny a pending tool approval for a running automation (Cordis). */
+    /** Approve/deny a pending tool approval for a running automation (engine). */
     approve: (callId: string, approved: boolean, grant?: "session" | "always") =>
       invokeContract("automation:approve", { callId, approved, grant }),
     folder: (id: string) => invokeContract("db:automation:folder", { id }),

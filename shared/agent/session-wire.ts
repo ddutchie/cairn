@@ -1,12 +1,12 @@
 /**
- * Wire shapes of the agent session runtime (Cordis): replayed transcripts,
+ * Wire shapes of the agent session runtime (engine): replayed transcripts,
  * usage/stats, context ring, subagent catalog, goal, schedules,
  * permissions and pending asks. Plain data shared by the Electron main
  * process, the typed IPC contract (`shared/ipc/contract.ts`) and the renderer.
- * The modules that produce them (electron/cordis/*) re-export these names.
+ * The modules that produce them (electron/agent/*) re-export these names.
  */
 
-/** Phase of a session goal (mirrors `@deepseek-ai/dsh-goal`'s GoalPhase). */
+/** Phase of a session goal (mirrors `@deepseek-ai/engine-goal`'s GoalPhase). */
 export type GoalPhase = "active" | "paused" | "blocked" | "complete";
 
 /** Folded reasoning-provenance state ("whose thinking is in context"). */
@@ -101,7 +101,7 @@ export interface SessionStatsSnapshot {
   decodeTokens: number;
 }
 
-// ── from run-cordis-loop.ts ──────────────────────────────────────────
+// ── from run-engine-loop.ts ──────────────────────────────────────────
 
 export interface ContextRingResult {
   available: boolean;
@@ -128,7 +128,7 @@ export type SubagentChildMode = "one-shot" | "continuable";
 export type SubagentChildActivity = "running" | "inactive";
 
 /** Listing breadth for the human catalog. `children` = direct children only;
- *  `descendants` = the full session-backed subtree (dsh `listDescendants`). */
+ *  `descendants` = the full session-backed subtree (engine `listDescendants`). */
 export type SubagentScope = "children" | "descendants";
 
 export interface SubagentChildView {
@@ -180,8 +180,8 @@ export interface ReplayToolCall {
   ok?: boolean;
   error?: string;
   cairnRef?: { type: "note" | "task"; id: string; title: string };
-  /** presentationMeta persisted on the tool/result event (dsh writes it at
-   *  event.data.meta). Rich toolviews (dsh-visualize) render their card from
+  /** presentationMeta persisted on the tool/result event (engine writes it at
+   *  event.data.meta). Rich toolviews (engine-visualize) render their card from
    *  this; absent → generic text rendering. */
   meta?: Record<string, unknown>;
 }
@@ -288,7 +288,7 @@ export interface PendingAskMeta {
    * expected nonce is missing.
    */
   nonce?: string;
-  /** dsh's reason for a sandbox escalation ask; undefined for ordinary tool asks. */
+  /** engine's reason for a sandbox escalation ask; undefined for ordinary tool asks. */
   reason?: string;
   /** True for sandbox escalations — one-shot only, never mint a standing grant. */
   escalation?: boolean;
@@ -314,7 +314,7 @@ export interface CodingSessionRow {
   mode: "plan" | "execute";
   planNoteId: string | null;
   /**
-   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
+   * The last plan the agent committed via engine-plan-mode's `exit_plan_mode`
    * tool for this session. Cached so the execute-mode system prompt can
    * carry the approved plan forward without folding the entire session log.
    * NULL when the session never called exit_plan_mode.

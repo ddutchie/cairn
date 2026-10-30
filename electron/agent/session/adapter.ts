@@ -1,6 +1,6 @@
 /**
  * AgentEvent → the renderer's existing `session:event` / `session:projection`
- * contract. The renderer folds dsh-shaped events (shared/agent/session-event-fold.ts),
+ * contract. The renderer folds engine-shaped events (shared/agent/session-event-fold.ts),
  * so we emit that shape rather than changing the UI. Stateful only for the
  * per-session `seq` and the tool-call args needed to enrich results.
  */
@@ -37,7 +37,7 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
         const u = message.usage;
         events.push(ev("assistant/message", {
           message: { role: "assistant", content },
-          // The fold expects dsh's disjoint input (uncached only); pi-ai's `input` is that too.
+          // The fold expects engine's disjoint input (uncached only); pi-ai's `input` is that too.
           usage: u && { inputTokens: u.input, outputTokens: u.output, reasoningTokens: u.reasoning ?? 0, cacheReadTokens: u.cacheRead, cacheWriteTokens: u.cacheWrite, costUsd: u.cost?.total },
         }));
         break;

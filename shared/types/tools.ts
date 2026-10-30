@@ -35,7 +35,7 @@ interface McpServerBase {
   /**
    * of the hand bridge. Toggled from ToolsSettings on dev builds; the turn
    * bootstrap verifies parity per turn and falls back on mismatch.
-   * Stdio servers always route via dsh and ignore this flag.
+   * Stdio servers always route via engine and ignore this flag.
    */
   enabled: boolean;
   source: ToolSource;

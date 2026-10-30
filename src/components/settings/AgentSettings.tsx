@@ -290,7 +290,7 @@ export function AgentSettings() {
 
   // Connection fields (baseUrl/apiKey/model) are managed by the ProviderManager
   // switcher below; here we only need `model` (context lookup) + behavioural fields.
-  // No auto-approve toggle: coding sessions follow dsh — the per-session
+  // No auto-approve toggle: coding sessions follow engine — the per-session
   // permission preset (workspace-write / danger-full-access, picked in the
   // session header) is the guard, and only sandbox escalations ask.
   const { model: modelAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent } = agentConfig;
@@ -514,6 +514,20 @@ export function AgentSettings() {
             type="checkbox"
             checked={agentConfig.scheduleEnabled ?? false}
             onChange={(e) => updateAgent({ scheduleEnabled: e.target.checked })}
+            className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
+          />
+        </SettingsRow>
+
+        {/* Shell sandbox */}
+        <SettingsRow
+          label="Sandbox shell commands"
+          description="Confine the agent's shell commands to writing inside the working directory and temp folders (macOS seatbelt, Linux bubblewrap; not available on Windows). The agent can ask to run a command outside it; you are asked every time. Applies to new sessions."
+        >
+          <input
+            id="sandboxEnabled"
+            type="checkbox"
+            checked={(agentConfig.sandbox ?? "workspace-write") === "workspace-write"}
+            onChange={(e) => updateAgent({ sandbox: e.target.checked ? "workspace-write" : "off" })}
             className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
           />
         </SettingsRow>

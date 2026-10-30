@@ -4,7 +4,7 @@
  * AgentPermissionSelect — permission-preset switcher for coding sessions,
  * shown in the composer footer (the agent counterpart of ChatApprovalPicker).
  *
- * Data comes from the dsh permission-presets domain: an initial
+ * Data comes from the engine permission-presets domain: an initial
  * `session:permissions` snapshot on mount, then live `session:projection
  * kind:"permissions"` updates from permissions-bridge. Writes go through
  * `session:permissions:set`, which applies live when a turn has the presets

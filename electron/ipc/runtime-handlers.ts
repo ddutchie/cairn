@@ -41,13 +41,13 @@ function ensureProgressForwarder(getWin: () => BrowserWindow | null): void {
 
 export function registerRuntimeHandlers(ctx: DbContext): void {
   ensureProgressForwarder(ctx.getWin);
-  // ── Command execution (dsh commands runtime) ────────────────────────
+  // ── Command execution (engine commands runtime) ────────────────────────
   // List registry commands (name + description) so host UIs can render their
   // palettes from the same namespace plugins register into.
-  registerContractHandle("cordis:listCommands", () => handle(async () => ENGINE_COMMANDS.map((c) => ({ ...c }))));
+  registerContractHandle("commands:list", () => handle(async () => ENGINE_COMMANDS.map((c) => ({ ...c }))));
 
   // Generic executor for slash commands (/plan, /compact, /goal, …); returns {kind, text}.
-  registerContractHandle("cordis:executeCommand", (_e, req) => handle(async () => executeEngineCommand(ctx, req)));
+  registerContractHandle("commands:execute", (_e, req) => handle(async () => executeEngineCommand(ctx, req)));
 
   // ── Runtime health & lifecycle ─────────────────────────────
   registerContractHandle("runtime:status", () => handle(async () => {
@@ -63,10 +63,10 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   registerContractHandle("runtime:systemPrompt:preview", (_e, req) => handle(async () => previewEnginePrompt(ctx, req?.cwd ?? "")));
 
   // ── Coding-agent prompt preview ──────────────────────────────────────
-  // The coding loop's system prompt is NOT a dsh section — it is the plain
+  // The coding loop's system prompt is NOT a engine section — it is the plain
   // string built by buildAgentSystemPrompt (identity + Mandatory Cairn
   // workflow: board tracking, PRD checklists, session summaries). The 3.0
-  // Cordis cutover moved it out of the assembled dsh prompt, so the preview
+  // engine cutover moved it out of the assembled engine prompt, so the preview
   // above no longer shows it. Return it here so Settings can display it.
   registerContractHandle("runtime:codingPrompt:preview", (_e, req) => handle(async () => {
     try {

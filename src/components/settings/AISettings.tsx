@@ -146,7 +146,7 @@ function LocalServersCard() {
 }
 
 // ── Chat prompt + tools preview ─────────────────────────────────────────────
-// Chat system prompt (assembled dsh sections + skills) and the tools the chat
+// Chat system prompt (assembled engine sections + skills) and the tools the chat
 // surface exposes. Same card style as the Coding Agents and MCP tabs.
 
 function ChatPreviewSection() {

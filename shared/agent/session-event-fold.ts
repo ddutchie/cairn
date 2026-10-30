@@ -93,7 +93,7 @@ function usage(value: unknown): FoldedUsage | undefined {
   const u = record(value);
   if (!Object.keys(u).length) return undefined;
   return {
-    // dsh usage is disjoint (inputTokens = uncached only) — context size is
+    // engine usage is disjoint (inputTokens = uncached only) — context size is
     // input + cache read + cache write. See context-pressure.ts.
     promptTokens: contextPressureTokens(u),
     completionTokens: Number(u.outputTokens ?? u.completionTokens ?? 0),
@@ -116,7 +116,7 @@ function parseArgs(value: unknown): Record<string, unknown> | undefined {
   }
 }
 
-/** Fold canonical DSH parent events into the renderer's existing UI actions. */
+/** Fold canonical engine parent events into the renderer's existing UI actions. */
 export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
   let streamedText = false;
   let streamedReasoning = false;
@@ -200,7 +200,7 @@ export function createSessionEventFold(handlers: SessionEventFoldHandlers) {
     if (event.type === "tool/result") {
       const message = record(data.message);
       const source = record(message.source);
-      // Session format v4 (dsh 0.1.7): a first-class `role: "tool"` message whose
+      // Session format v4 (engine 0.1.7): a first-class `role: "tool"` message whose
       // `content` IS the output blocks, with `toolCallId`/`isError` on the message.
       // Formats <= v3 wrapped the output in a `{ content, isError }` block.
       const isV4 = message.role === "tool";

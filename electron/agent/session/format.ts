@@ -15,8 +15,8 @@ export interface SessionHeader {
   createdAt: number;
   parentId?: string;
   title?: string;
-  /** "native" for sessions written by this engine, "dsh-import" for converted ones. */
-  origin: "native" | "dsh-import";
+  /** "native" for sessions written by this engine, "legacy-import" for converted ones. */
+  origin: "native" | "legacy-import";
 }
 
 export interface SessionRecord {

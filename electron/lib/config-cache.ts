@@ -71,10 +71,12 @@ export interface CachedConfig {
     // The coding agent's active saved-provider id. The provider LIST itself is
     // shared and persisted under aiConfig.savedProviders (single source of truth).
     activeProviderId?: string;
-    // Opt-in dsh session reminders (schedule_create/list/delete tools). Read
-    // once at Cordis bootstrap to gate the schedule overlay mount; toggling
+    // Opt-in engine session reminders (schedule_create/list/delete tools). Read
+    // once at engine bootstrap to gate the schedule overlay mount; toggling
     // needs an app restart. Default OFF.
     scheduleEnabled?: boolean;
+    // OS sandbox for agent shell commands. Unset = "workspace-write".
+    sandbox?: "workspace-write" | "off";
   };
   embeddingsConfig?: CachedEmbeddingsConfig;
   theme?: string;
@@ -246,6 +248,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         mode: nextMode as import("../../shared/agent/approval-mode").Mode | undefined,
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.agentConfig?.activeProviderId,
         scheduleEnabled: typeof configRecord.scheduleEnabled === "boolean" ? configRecord.scheduleEnabled : current.agentConfig?.scheduleEnabled,
+        sandbox: configRecord.sandbox === "off" || configRecord.sandbox === "workspace-write" ? configRecord.sandbox : current.agentConfig?.sandbox,
       };
     } else if (type === "embeddings" && configRecord) {
       current.embeddingsConfig = {

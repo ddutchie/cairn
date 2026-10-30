@@ -1,10 +1,10 @@
 /**
  * Shared session-stats — token throughput & latency, folded from durable log.
- * Vendored from electron/cordis/session-stats.ts so both main (replay) and
+ * Vendored from electron/agent/session-stats.ts so both main (replay) and
  * renderer (live) share one implementation. Keep the two files in sync.
  *
  * Client-safe: inlined isTokenDelta (was `import { isTokenDelta } from
- * "@deepseek-ai/dsh-llm"` which pulls `node:module` and breaks Next.js
+ * "@deepseek-ai/engine-llm"` which pulls `node:module` and breaks Next.js
  * client chunking).
  */
 function isTokenDelta(chunk: unknown): boolean {

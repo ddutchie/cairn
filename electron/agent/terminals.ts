@@ -4,6 +4,7 @@
  * belongs to the session that opened it. Output is kept as plain text.
  */
 import type { Database } from "better-sqlite3";
+import { getSandboxMode } from "./host-store";
 import { getPtySession, killPtySession, onPtySessionData, onPtySessionExit, spawnShellPty } from "../lib/pty-sessions";
 
 const MAX_SCROLLBACK = 200_000;
@@ -23,7 +24,7 @@ export interface PtyAdapter {
 
 export function sharedPtyAdapter(db: Database): PtyAdapter {
   return {
-    spawn: async (cwd) => ({ sessionId: (await spawnShellPty(db, cwd, { kind: "model" })).sessionId }),
+    spawn: async (cwd) => ({ sessionId: (await spawnShellPty(db, cwd, { kind: "model", sandbox: { mode: getSandboxMode() } })).sessionId }),
     write: (id, data) => { getPtySession(id)?.pty.write(data); },
     signal: (id, sig) => { getPtySession(id)?.pty.kill(sig); },
     kill: (id) => killPtySession(id),

@@ -6,9 +6,9 @@ import { toToolCallViewProps } from "./adapter";
 import type { ChatToolCall } from "@/hooks/useChatStream";
 
 /**
- * §11 spike proof: a real dsh `tool.call.toolview` component (the vendored
+ * §11 spike proof: a real engine `tool.call.toolview` component (the vendored
  * SkillRow) renders inside Cairn from a Cairn-built ToolCallViewProps — WITHOUT
- * the dsh web shell. Deterministic (no live model): we hand it ChatToolCalls.
+ * the engine web shell. Deterministic (no live model): we hand it ChatToolCalls.
  */
 
 const skillDone = (output: string, ok = true): ChatToolCall => ({
@@ -31,9 +31,9 @@ describe("ToolView (§11 toolview micro-host)", () => {
     expect(hasToolView("get_active_context")).toBe(false);
   });
 
-  it("renders the dsh SkillRow for a settled skill call, scoped for theming", () => {
+  it("renders the engine SkillRow for a settled skill call, scoped for theming", () => {
     const { container } = render(<ToolView tc={skillDone("Reply with BANANA-PROTOCOL-7")} />);
-    // The dsh component rendered its accent row…
+    // The engine component rendered its accent row…
     expect(screen.getByText("Skill")).toBeTruthy();
     // …with the skill name from the call args…
     expect(screen.getByText("secret-greeter")).toBeTruthy();

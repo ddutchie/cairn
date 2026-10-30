@@ -121,7 +121,7 @@ export interface IpcContract {
 
   // ── Chat threads ─────────────────────────────────────────────────────────
   "db:chat:threads": { args: [req: { workspaceId: string }]; result: ChatThread[] };
-  /** Transcript from the thread's dsh session log; empty for a thread with no log yet. */
+  /** Transcript from the thread's engine session log; empty for a thread with no log yet. */
   "db:chat:sessionMessages": {
     args: [req: { threadId: string }];
     result: SessionLoadExtras & { messages: ChatMessage[]; title?: string | null };
@@ -161,7 +161,7 @@ export interface IpcContract {
   "db:session:create": { writes: true; args: [input: CodingSessionCreateInput]; result: CodingSessionRow };
   "db:session:delete": { writes: true; args: [req: { id: string }]; result: void };
   "db:session:todos": { args: [req: { sessionId: string }]; result: SessionTodo[] };
-  /** Transcript from the session's dsh log; rejects on corrupt/unsupported logs, empty when missing. */
+  /** Transcript from the session's engine log; rejects on corrupt/unsupported logs, empty when missing. */
   "db:session:messages": {
     args: [req: { sessionId: string }];
     result: SessionLoadExtras & { messages: AgentSessionMessage[] };
@@ -191,7 +191,7 @@ export interface IpcContract {
   "session:goal": { args: [req: { sessionId: string }]; result: ControlResult<GoalWire | null> };
   "session:schedule-list": { args: [req: { sessionId: string }]; result: ControlResult<ScheduleWire[]> };
   /** Registry commands (built-in + plugin) for the command palettes. */
-  "cordis:listCommands": { args: []; result: Array<{ name: string; description: string }> };
+  "commands:list": { args: []; result: Array<{ name: string; description: string }> };
 
   // ── Workspaces & projects ────────────────────────────────────────────────
   "db:workspace:list": { args: []; result: Workspace[] };
@@ -683,9 +683,9 @@ export interface IpcContract {
   "runtime:embeddings:setDefault": { args: [req: { modelId: string }]; result: { ok: true } };
 
   // ── Agent runtime introspection (Settings → AI) ──────────────────────────
-  /** Runs a dsh registry command (/plan, /compact, …) on the session's agent. */
-  "cordis:executeCommand": { args: [req: { sessionId: string; line: string }]; result: { kind?: string; text?: string } };
-  /** The assembled dsh system prompt; `error` is set (not thrown) when assembly fails. */
+  /** Runs a engine registry command (/plan, /compact, …) on the session's agent. */
+  "commands:execute": { args: [req: { sessionId: string; line: string }]; result: { kind?: string; text?: string } };
+  /** The assembled engine system prompt; `error` is set (not thrown) when assembly fails. */
   "runtime:systemPrompt:preview": { args: [req: { cwd?: string; projectName?: string }]; result: SystemPromptPreview };
   /** The coding agent's plain-string prompt; `error` is set (not thrown) on failure. */
   "runtime:codingPrompt:preview": {
@@ -753,7 +753,7 @@ export interface IpcEvents {
   /** The in-app AI started / finished writing a note (editor goes read-only meanwhile). */
   "note:aiWriteStarted": { noteId: string };
   "note:aiWriteEnded": { noteId: string };
-  /** Canonical raw DSH session/event stream shared by Chat and Coding. */
+  /** Canonical raw engine session/event stream shared by Chat and Coding. */
   "session:event": SessionEventEnvelope;
   "session:projection": SessionProjection;
   /** AI Tool Builder stream (`tool-builder:prompt`). */
@@ -872,7 +872,7 @@ const CHANNELS: ChannelRecord = {
   "session:job-kill": "read",
   "session:goal": "read",
   "session:schedule-list": "read",
-  "cordis:listCommands": "read",
+  "commands:list": "read",
   "db:workspace:list": "read",
   "db:workspace:create": "write",
   "db:workspace:update": "write",
@@ -1119,7 +1119,7 @@ const CHANNELS: ChannelRecord = {
   "runtime:embeddings:install": "read",
   "runtime:embeddings:remove": "read",
   "runtime:embeddings:setDefault": "read",
-  "cordis:executeCommand": "read",
+  "commands:execute": "read",
   "runtime:systemPrompt:preview": "read",
   "runtime:codingPrompt:preview": "read",
   "runtime:tools:inventory": "read",

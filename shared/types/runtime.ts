@@ -3,7 +3,7 @@
  * Mobile Access status, shared by main, the typed IPC contract and the renderer.
  */
 
-/** Result of running a dsh registry command (/plan, /compact, …). */
+/** Result of running a engine registry command (/plan, /compact, …). */
 export interface CommandExecutionResult {
   kind?: string;
   text?: string;
@@ -11,7 +11,7 @@ export interface CommandExecutionResult {
   mode?: "plan" | "execute";
 }
 
-/** The assembled dsh system prompt and its breakdown; `error` set when assembly failed. */
+/** The assembled engine system prompt and its breakdown; `error` set when assembly failed. */
 export interface SystemPromptPreview {
   text: string;
   sections: Array<{ name: string; order: number; text: string; index: number }>;

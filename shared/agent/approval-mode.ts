@@ -27,7 +27,7 @@ export function isMode(value: unknown): value is Mode {
  *  true  → "auto"        (everything auto-allowed except EXTERNAL)
  *  false → "interactive" (every mutating tool asks)
  *  undefined → "interactive" (conservative default — matches DEFAULT_AGENT_CONFIG.autoApprove=false)
- * Callers whose previous default was "auto when absent" (e.g. runCordisCodingLoop)
+ * Callers whose previous default was "auto when absent" (e.g. runEngineCodingLoop)
  * should pass their own default; the helper does not encode that policy.
  */
 export function modeFromAutoApprove(autoApprove?: boolean): Mode {

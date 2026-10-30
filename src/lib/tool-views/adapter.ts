@@ -1,15 +1,15 @@
 /**
- * Adapter: Cairn's ChatToolCall  →  dsh ToolCallViewProps.
+ * Adapter: Cairn's ChatToolCall  →  engine ToolCallViewProps.
  *
- * This is the seam that lets a dsh toolview render in Cairn's transcript. Cairn
+ * This is the seam that lets a engine toolview render in Cairn's transcript. Cairn
  * already tracks everything a pure toolview needs (tool name, raw args, output,
- * ok/error, running-vs-done) on ChatToolCall — we just reshape it into dsh's
+ * ok/error, running-vs-done) on ChatToolCall — we just reshape it into engine's
  * RunningToolCall (streaming) / ToolResultNode (settled) block union.
  */
 import type { ConversationLiveToolCall as ChatToolCall } from "@/lib/conversation/message";
 import type { ToolCallViewProps, ToolCallBlock, RunningToolCall, ToolResultNode } from "./contract";
 
-/** Build the dsh `block` union from a Cairn tool call. */
+/** Build the engine `block` union from a Cairn tool call. */
 export function toDshBlock(tc: ChatToolCall): ToolCallBlock {
   const callId = tc.callId ?? tc.tool;
   const argsRaw = tc.args ?? "";

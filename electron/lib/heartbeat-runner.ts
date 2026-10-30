@@ -5,7 +5,7 @@
  *
  * v1 design decisions (see plan note §7 "Persona design"):
  *   - The default persona is the KNOWLEDGE-WORK agent: it runs through the
- *     Cordis loop, whose `executeTool` surface is Cairn data tools only
+ *     engine loop, whose `executeTool` surface is Cairn data tools only
  *     (notes/tasks/tags/idea-flow/knowledge-graph) — no bash, no
  *     arbitrary file writes. This keeps a background run's blast radius bounded
  *     to Cairn entities, even when it auto-approves its own writes.
@@ -88,7 +88,7 @@ export interface AutomationRunContext {
   send?: (channel: string, payload: unknown) => void;
 }
 
-// ── HITL approval forwarding (Cordis) ───────────────────────────────────────
+// ── HITL approval forwarding (engine) ───────────────────────────────────────
 // The coding agent's approval seam blocks on resolve({approved}); for a headless
 // heartbeat we forward to the renderer via an automation:run approval event +
 // a new automation:approve IPC (resolves this map). Keyed by callId, but scoped
@@ -132,10 +132,10 @@ export function resolveAutomationApproval(callId: string, approved: boolean, gra
 
 /**
  * Decide whether a tool call is auto-allowed by the automation's approval
- * policy, or must be forwarded to the user for approval. The Cordis seam
+ * policy, or must be forwarded to the user for approval. The engine seam
  * resolves via resolve({approved}) — no DB approval inbox behind it (the
  * inbox and its makeApprovalGate/parkAndWait mechanics were retired with
- * the pre-Cordis loop).
+ * the legacy loop).
  *   - read tools + standing rules → allow
  *   - 'ask' mode → gate every write (forward)
  *   - 'auto' mode → only forward external MCP/service calls when connector-aware
@@ -217,7 +217,7 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
       await runAutomation(ctx, run, automation);
     } catch (err) {
       // runAutomation normally sets its own terminal status, but if it throws
-      // (e.g. a provider/network failure inside the Cordis loop) transition the run
+      // (e.g. a provider/network failure inside the engine loop) transition the run
       // out of running so it doesn't block later runs / report a phantom run,
       // persist a run-log.json, and emit `finished` so watchers close cleanly.
       failRun(ctx, run, errMsg(err));
@@ -390,7 +390,7 @@ export async function runAutomation(
   // getExternalToolDefs filters to enabled + project/global-attached connectors,
   // so a missing/attached-only requirement simply contributes no tools and the
   // agent works with what's actually in scope. External calls stay gated by
-  // the Cordis approval waterfall (shouldAutoAllowAutomationTool below +
+  // the engine approval waterfall (shouldAutoAllowAutomationTool below +
   // cairnApprovalPlugin) — never auto-approved side effects.
   // A connector-load failure is NOT degraded away: the recipe declared these
   // connectors as required, so a run that can't assemble their tools is failed
@@ -504,8 +504,8 @@ export async function runAutomation(
 
   emitRun("started", { recipe });
 
-  // ── Cordis engine (only path) — run a FULL coding agent in the run folder ──
-  // Heartbeat drives runCordisCodingLoop (the full agent: bash/write/edit/read/
+  // ── engine (only path) — run a FULL coding agent in the run folder ──
+  // Heartbeat drives runEngineCodingLoop (the full agent: bash/write/edit/read/
   // grep/todo + Cairn data tools + connector/MCP tools + skill) scoped to the
   // per-run folder, so an automation can actually make changes (write files,
   // run scripts, call connectors) — not just a data-only chat turn.
@@ -527,7 +527,7 @@ export async function runAutomation(
       emitRun("toolDone", { tool: result.name, ok: result.ok, output: result.output, error: result.error, callId: result.callId });
     },
     // Usage is recorded by cairnUsagePlugin (source "automation", passed via
-    // runCordisCodingLoop's usageSource). Recording it here as well double-counted
+    // runEngineCodingLoop's usageSource). Recording it here as well double-counted
     // every automation run in the Usage view.
   });
 

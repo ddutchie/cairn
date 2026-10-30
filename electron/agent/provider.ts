@@ -1,5 +1,5 @@
 /**
- * Model routes → pi-ai. Replaces the useful ~5% of @deepseek-ai/dsh-llm-pi-ai:
+ * Model routes → pi-ai. Replaces the useful ~5% of @deepseek-ai/engine-llm-pi-ai:
  * turn a Cairn route (endpoint + wire protocol + model facts) into a pi-ai
  * Model and a StreamFn, map reasoning efforts onto the model's level table, and
  * keep the quirks Cairn relied on:
@@ -12,7 +12,7 @@
  *  - `maxRetries: 0` toward pi-ai — the loop owns retry so it can report it
  *  - Gemini over a gateway speaks only generateContent ("google-generative-ai")
  *
- * Because sessions persist pi-ai's own AssistantMessage, none of dsh's replay
+ * Because sessions persist pi-ai's own AssistantMessage, none of engine's replay
  * translation (toPiReplayState / foreignAssistant) is needed.
  */
 import {

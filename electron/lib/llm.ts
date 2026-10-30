@@ -82,7 +82,7 @@ export interface LLMConfig {
   apiKey: string;
   contextWindow?: number;
   maxTokens?: number;
-  /** Reasoning effort for reasoning-capable models. Uses the pi-ai / dsh
+  /** Reasoning effort for reasoning-capable models. Uses the pi-ai / engine
    *  thinking vocabulary consumed by installModelSelection → resolveReasoningLevel
    *  ("off" omits reasoning; low/medium/high are universally supported). Absent =
    *  the model's own default. */
@@ -93,7 +93,7 @@ export interface LLMConfig {
    *  any explicit effort throw UNSUPPORTED_REASONING_EFFORT). */
   isReasoningModel?: boolean;
   /** Explicit wire protocol for this endpoint (Cairn never auto-probes for the
-   *  Cordis path). Maps to the pi-ai `api`: completions→openai-completions,
+   *  engine path). Maps to the pi-ai `api`: completions→openai-completions,
    *  responses→openai-responses, anthropic-messages→anthropic-messages. Absent =
    *  completions. */
   apiMode?: "responses" | "completions" | "anthropic-messages";

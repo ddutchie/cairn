@@ -95,7 +95,7 @@ export interface TurnOptions {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
-/** 5 retries, 500 ms doubling, capped at 10 s — what the dsh route used. */
+/** 5 retries, 500 ms doubling, capped at 10 s — what the engine route used. */
 const MAX_STOP_CONTINUATIONS = 3;
 
 export const DEFAULT_RETRY: RetryPolicy = { enabled: true, maxRetries: 5, baseDelayMs: 500, maxAgentDelayMs: 10_000 };

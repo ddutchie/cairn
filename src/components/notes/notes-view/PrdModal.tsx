@@ -131,7 +131,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
     }
   }, [isLoading]);
 
-  // Subscribe to the canonical DSH stream to capture assistant content into
+  // Subscribe to the canonical engine stream to capture assistant content into
   // local messages (useChatStream already persists to the thread store,
   // but we need it in our local messages array for display in this modal).
   useEffect(() => {

@@ -2,12 +2,12 @@
  * §11 toolview micro-host — public entry.
  *
  * `<ToolView tc={...} />` renders a Cairn ChatToolCall through a registered
- * dsh `tool.call.toolview` component (looked up by tool name), wrapped in the
+ * engine `tool.call.toolview` component (looked up by tool name), wrapped in the
  * `.tool-view-scope` div that provides the `--tv-*` theme shim. Returns null
- * when no dsh view is registered for the tool — the caller falls back to Cairn's
+ * when no engine view is registered for the tool — the caller falls back to Cairn's
  * own chip.
  *
- * `registerBuiltinToolViews()` plays the role of a dsh client plugin's browser
+ * `registerBuiltinToolViews()` plays the role of a engine client plugin's browser
  * half: it registers the vendored views. Later, third-party plugin `./client`
  * halves would call registerToolView(key, Component) the same way.
  */
@@ -20,7 +20,7 @@ import "./tool-views.css";
 
 let registered = false;
 
-/** Register the built-in (vendored) dsh toolviews into the self-contained §11
+/** Register the built-in (vendored) engine toolviews into the self-contained §11
  *  registry. The skill view is deliberately NOT put in the plugin-ui slot
  *  (tool.call.toolview): the transcript renders `skill` as Cairn's standard
  *  tool chip so every tool looks and expands the same. Idempotent. */

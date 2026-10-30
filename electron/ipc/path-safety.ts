@@ -9,7 +9,7 @@
  * This module centralises two guards used at every such site:
  *
  *   1. `assertSafeId(id)` — rejects anything but `[A-Za-z0-9._-]{1,128}`
- *      (matching how dsh + Cairn actually mint session ids and thread ids —
+ *      (matching how engine + Cairn actually mint session ids and thread ids —
  *      thr-<nanoid>, chat-<threadId>, pi-<nanoid>, subagent uuids). Runs at
  *      the IPC boundary before any path composition; a rejected id short-
  *      circuits the handler.
@@ -29,9 +29,9 @@ import path from "node:path";
 /**
  * Renderer-supplied ids must match this shape. Rejects `..`, `/`, `\`, `\x00`,
  * empty string, and anything longer than 128 chars. Covers every id shape
- * Cairn / dsh actually mint:
+ * Cairn / engine actually mint:
  *   - `thr-<nanoid>`         chat thread ids
- *   - `chat-<threadId>`      dsh stable session id for a chat thread
+ *   - `chat-<threadId>`      engine stable session id for a chat thread
  *   - `chat-<threadId>-<ts>-<rand>`  legacy per-turn session id
  *   - `pi-<nanoid>`          coding-agent session ids
  *   - `<uuid-with-dashes>`   subagent child session ids

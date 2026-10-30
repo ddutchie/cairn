@@ -27,7 +27,7 @@ interface ConversationHeaderProps {
   usage?: ConversationUsage;
   contextLimit: number;
   actions?: ReactNode;
-  /** Opt-in session-reminder pill (dsh schedule overlay). Self-hiding when off. */
+  /** Opt-in session-reminder pill (engine schedule overlay). Self-hiding when off. */
   schedule?: { sessionId: string; pollKey?: unknown };
 }
 

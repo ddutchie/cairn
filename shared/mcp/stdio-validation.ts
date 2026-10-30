@@ -1,6 +1,6 @@
 /**
  * Pure stdio validation for local MCP servers — no Node/Electron imports so
- * it can run in the main process, the Cordis runtime, and the renderer.
+ * it can run in the main process, the engine runtime, and the renderer.
  *
  * Security model (mirrored everywhere this is used):
  *  - No shell: the command + args spawn directly (no interpolation).

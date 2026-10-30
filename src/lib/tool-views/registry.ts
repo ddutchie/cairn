@@ -1,10 +1,10 @@
 /**
- * Micro slot-registry — the minimum of dsh's ui-slots needed to host keyed
+ * Micro slot-registry — the minimum of engine's ui-slots needed to host keyed
  * `tool.call.toolview` components in Cairn's own renderer.
  *
- * dsh's real SlotCore does declaration-merge, store seats, chain slots, epochs,
- * etc. (scratch/dsh-repo/packages/client/ui-slots) — none of which a keyed
- * toolview needs. A dsh client plugin's browser half calls
+ * engine's real SlotCore does declaration-merge, store seats, chain slots, epochs,
+ * etc. (scratch/engine-repo/packages/client/ui-slots) — none of which a keyed
+ * toolview needs. A engine client plugin's browser half calls
  * `ctx.slots.register({ name:'tool.call.toolview', key:'<tool>' }, Component)`;
  * here we expose the same register/lookup surface so a vendored (or, later, a
  * dynamically-loaded third-party) plugin registers a React view keyed by tool

@@ -96,7 +96,7 @@ export function SectionPreview({ name, text, index }: { name: string; text: stri
 }
 
 // ── Shared global sections (identical for chat + coding agent) ──────────────
-// These come from globally-mounted dsh plugins (tool:jobs, tool:web_fetch,
+// These come from globally-mounted engine plugins (tool:jobs, tool:web_fetch,
 // tool:goal, tool:delegate, …) plus Cairn's own cairn:system identity. Only
 // the cairn:system CONTENT differs per surface — everything else here is the
 // same assembly both turns send. Empty placeholders (deployment:persona,
@@ -135,7 +135,7 @@ export function SharedSectionsList({
         )}
       </div>
       <p className="text-[0.65rem] text-[var(--text-tertiary)]">
-        Global dsh assembly — identical for chat and coding agent turns. Only the identity section content differs per surface (shown below).
+        Global engine assembly — identical for chat and coding agent turns. Only the identity section content differs per surface (shown below).
       </p>
       {visible.map((s) => <SectionPreview key={`${s.index}-${s.name}`} name={s.name} text={s.text} index={s.index} />)}
       {hidden.length > 0 && (

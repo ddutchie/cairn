@@ -22,9 +22,9 @@ export interface ConversationToolCall {
   callId?: string;
   name: string;
   label: string;
-  /** Tool-authored title from dsh `presentCall`; ToolCallBody prefers it over humanized text. */
+  /** Tool-authored title from engine `presentCall`; ToolCallBody prefers it over humanized text. */
   viewTitle?: string;
-  /** Tool-authored result view from dsh `presentResult`; ToolCallBody renders terminal/generic cards. */
+  /** Tool-authored result view from engine `presentResult`; ToolCallBody renders terminal/generic cards. */
   resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   args?: Record<string, unknown>;
   running?: boolean;

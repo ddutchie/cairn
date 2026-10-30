@@ -122,7 +122,7 @@ function toolResult(data: Obj): { callId: string; text: string; isError: boolean
 }
 
 /** Parse the text of a decompressed dsh session log. Returns undefined if it is not one. */
-export function importDshLog(text: string): ImportedSession | undefined {
+export function importLegacyLog(text: string): ImportedSession | undefined {
   const lines = text.split("\n").filter((l) => l.trim());
   const report: ImportReport = { records: 0, turns: 0, imagesDropped: 0, compactions: 0, skipped: 0 };
   let head: Obj | undefined;
@@ -192,7 +192,7 @@ export function importDshLog(text: string): ImportedSession | undefined {
   return {
     header: {
       type: "session", version: SESSION_FORMAT, id: sessionId, cwd: str(head.cwd), createdAt: num(head.createdAt),
-      ...(parent ? { parentId: parent } : {}), ...(title ? { title } : {}), origin: "dsh-import",
+      ...(parent ? { parentId: parent } : {}), ...(title ? { title } : {}), origin: "legacy-import",
     },
     records,
     report,
@@ -201,7 +201,7 @@ export function importDshLog(text: string): ImportedSession | undefined {
 
 const LOG_NAMES = ["session.v4.jsonl.zstd", "session.jsonl.zstd", "session.v4.jsonl", "session.jsonl"];
 
-export async function readDshLogFile(file: string): Promise<string> {
+export async function readLegacyLogFile(file: string): Promise<string> {
   const raw = await readFile(file);
   return file.endsWith(".zstd") ? (await zstd(raw)).toString("utf8") : raw.toString("utf8");
 }
@@ -217,7 +217,7 @@ export interface ImportSummary {
  * Import every session under a dsh `sessions/<projectKey>/<id>/` tree. Idempotent: a session
  * whose destination log already exists is skipped, so a half-finished run can simply be rerun.
  */
-export async function importDshTree(dshRoot: string, cairnRoot: string): Promise<ImportSummary> {
+export async function importLegacyTree(dshRoot: string, cairnRoot: string): Promise<ImportSummary> {
   const summary: ImportSummary = { imported: [], existing: [], failed: [] };
   let projects: string[];
   try { projects = (await readdir(dshRoot, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return summary; }
@@ -230,7 +230,7 @@ export async function importDshTree(dshRoot: string, cairnRoot: string): Promise
         const name = LOG_NAMES.find((n) => names.has(n));
         if (!name) continue;
         if (await readSession(cairnRoot, id)) { summary.existing.push(id); continue; }
-        const parsed = importDshLog(await readDshLogFile(path.join(dir, name)));
+        const parsed = importLegacyLog(await readLegacyLogFile(path.join(dir, name)));
         if (!parsed) throw new Error("not a dsh session log");
         // The directory name is authoritative for the id the app already knows.
         parsed.header.id = id;
@@ -247,7 +247,7 @@ export async function importDshTree(dshRoot: string, cairnRoot: string): Promise
 
 
 /** Import one session by id from a dsh tree (any project folder). False when it is absent or already imported. */
-export async function importDshSession(dshRoot: string, cairnRoot: string, sessionId: string): Promise<boolean> {
+export async function importLegacySession(dshRoot: string, cairnRoot: string, sessionId: string): Promise<boolean> {
   if (await readSession(cairnRoot, sessionId)) return false;
   let projects: string[];
   try { projects = (await readdir(dshRoot, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return false; }
@@ -256,7 +256,7 @@ export async function importDshSession(dshRoot: string, cairnRoot: string, sessi
     const names = await readdir(dir).catch(() => undefined);
     const name = names && LOG_NAMES.find((n) => names.includes(n));
     if (!name) continue;
-    const parsed = importDshLog(await readDshLogFile(path.join(dir, name)));
+    const parsed = importLegacyLog(await readLegacyLogFile(path.join(dir, name)));
     if (!parsed) return false;
     parsed.header.id = sessionId;
     return writeImportedSession(cairnRoot, parsed.header, parsed.records);

@@ -1,4 +1,4 @@
-/** Neutral persisted identity for a resumable Cordis session. */
+/** Neutral persisted identity for a resumable engine session. */
 export type SessionProfileId = "chat" | "coding" | "automation-dev";
 
 export function isSessionProfileId(value: unknown): value is SessionProfileId {

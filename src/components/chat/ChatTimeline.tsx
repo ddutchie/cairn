@@ -3,7 +3,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
-// Minimal stub of dsh's TrajectoryTimeline — same interaction contract
+// Minimal stub of engine's TrajectoryTimeline — same interaction contract
 // (drag horizontal → onRangeChange, wheel → zoom, click span → onRecordSelect)
 // so ChatPanel and AgentChatPane can share it. Full deriveTrajectoryTimeline
 // (lane 0 Input / 1 Model / 2 Tools, ttft/decoding) can replace deriveSpans later.
@@ -84,7 +84,7 @@ export function ChatTimeline({ spans, range, onRangeChange, onSpanSelect, totalD
   }, [drag, rangeStart, rangeEnd, onRangeChange]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    // Wheel → zoom anchored at cursor, like dsh
+    // Wheel → zoom anchored at cursor, like engine
     const f = toFraction(e.clientX);
     const factor = Math.exp(e.deltaY * 0.0015);
     const w = (rangeEnd - rangeStart) * factor;
@@ -181,7 +181,7 @@ export function ChatTimeline({ spans, range, onRangeChange, onSpanSelect, totalD
 }
 
 // Helper to derive spans from chat messages / turns — replace with
-// deriveTrajectoryTimeline(turns, mode) when the full dsh projection is wired.
+// deriveTrajectoryTimeline(turns, mode) when the full engine projection is wired.
 export function deriveSpansFromMessages(
   messages: Array<{ role: string; toolCalls?: unknown[]; reasoning?: string }>,
   _opts?: { totalDurationMs?: number }

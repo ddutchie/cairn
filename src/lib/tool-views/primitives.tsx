@@ -1,9 +1,9 @@
 /**
  * §11 spike — minimal local stand-ins for the four
- * @deepseek-ai/dsh-client-ui-primitives exports the vendored SkillRow imports.
+ * @deepseek-ai/engine-client-ui-primitives exports the vendored SkillRow imports.
  *
  * WHY stand-ins instead of the real package: ui-primitives pulls a heavy stack
- * (shiki, katex, micromark) + peers cordis into the renderer — far too much for
+ * (shiki, katex, micromark) + peers engine into the renderer — far too much for
  * a spike whose point is proving the CONTRACT + THEME bridge, not markdown
  * rendering. These match the real component signatures (`{ size, className }`
  * for icons, `{ state, size, className }` for StateDot) so swapping in the real

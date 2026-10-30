@@ -1,21 +1,21 @@
 /**
- * turn-end-reason — one human description of a DSH `turn/end` reason.
+ * turn-end-reason — one human description of a engine `turn/end` reason.
  *
  * Shared by the main process (coding-loop result strings, debug log) and the
  * renderer (the error bubble in AgentChatPane) so a failure reads the same
  * everywhere.
  *
- * Motivation: dsh's `TurnEndReason` is a sum type where the `error` variant
+ * Motivation: engine's `TurnEndReason` is a sum type where the `error` variant
  * carries the only description of the failure in `reason.error` (an `LlmFailure`
  * of `{message, code}`). Cairn previously rendered nothing but `reason.kind`,
  * so every distinct failure — a bad plugin, an auth rejection, a rate limit —
  * surfaced as the identical, unactionable string
  * "Agent turn ended abnormally (error)".
  *
- * @see https://github.com/… dsh-session `TurnEndReasonMap`
+ * @see https://github.com/… engine-session `TurnEndReasonMap`
  */
 
-/** The structural subset of dsh's TurnEndReason that Cairn reads. */
+/** The structural subset of engine's TurnEndReason that Cairn reads. */
 export interface TurnEndReasonLike {
   kind?: string;
   /** Present on kind:"error" — the structured LlmFailure. */

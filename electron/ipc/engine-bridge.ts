@@ -1,6 +1,6 @@
 /**
  * Bridge between the session IPC handlers and the Cairn-owned agent engine
- * (electron/agent). Sessions the retired dsh harness wrote are imported on first touch.
+ * (electron/agent). Sessions the retired engine harness wrote are imported on first touch.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -25,9 +25,9 @@ import { JobRegistry } from "../agent/jobs";
 import { createHooks } from "../agent/hooks";
 import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
-import { importDshSession } from "../agent/session/dsh-import";
+import { importLegacySession } from "../agent/session/legacy-import";
 import { isLocalEndpoint } from "../lib/llm";
-import { isScheduleEnabled, recordUsage } from "../agent/host-store";
+import { getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
 import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared/agent/chat-approval";
@@ -254,16 +254,16 @@ export interface EnginePromptArgs {
   signal?: AbortSignal;
 }
 
-/** First native use of a session that only exists as a dsh log: bring its history over. */
+/** First native use of a session that only exists as a engine log: bring its history over. */
 async function adoptLegacySession(sessionId: string): Promise<void> {
   try {
-    await importDshSession(legacyRoot(), hostRoot(), sessionId);
+    await importLegacySession(legacyRoot(), hostRoot(), sessionId);
   } catch (err) {
     console.warn(`[agent] legacy import skipped for ${sessionId}:`, err instanceof Error ? err.message : err);
   }
 }
 
-/** Where the retired dsh harness kept its logs; read only to bring old history over. */
+/** Where the retired engine harness kept its logs; read only to bring old history over. */
 export function legacyRoot(): string {
   let base: string;
   try { base = electron.app.getPath("userData"); } catch { base = os.tmpdir(); }
@@ -432,7 +432,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       }),
     },
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
-    fs: { cwd: a.cwd, rgPath, observed, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
+    fs: { cwd: a.cwd, rgPath, observed, sandbox: { mode: getSandboxMode() }, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
     lsp: role === "automation-dev" ? undefined : { manager: getLsp(), cwd: a.cwd },
     terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },

@@ -34,7 +34,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     // fs.rmSync() below. Any legitimate `thr-<nanoid>` passes; `..`, `/`, `\`,
     // empty, over-length, control chars all fail here.
     assertSafeId(threadId, "threadId");
-    // Chat todo snapshots use the dsh session id, not the chat-thread id. Clear
+    // Chat todo snapshots use the engine session id, not the chat-thread id. Clear
     // both forms so a stale todo list cannot reappear when the thread resumes
     // after its transcript has been wiped.
     q.saveSessionTodos(ctx.db, `chat-${threadId}`, []);

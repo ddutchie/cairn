@@ -149,7 +149,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   // shown. Users can opt in per-session from Agent Settings.
   autoApprove:  false,
   mode: "interactive" as const,
-  // Opt-in dsh session reminders. Default OFF (own heartbeat untouched).
+  // Opt-in engine session reminders. Default OFF (own heartbeat untouched).
   scheduleEnabled: false,
 };
 

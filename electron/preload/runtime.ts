@@ -11,11 +11,11 @@ export const runtimeApi = {
   runtime: {
     status: () => invokeContract("runtime:status"),
     stop: () => invokeContract("runtime:stop"),
-    /** List dsh registry commands (name + description) — palette source. */
-    listCommands: () => invokeContract("cordis:listCommands"),
-    /** Execute a dsh registry command (/plan, /compact, …) on a session's agent. */
-    executeCommand: (req: { sessionId: string; line: string }) => invokeContract("cordis:executeCommand", req),
-    /** Assemble the real dsh system prompt (Cordis engine) + breakdown. */
+    /** List engine registry commands (name + description) — palette source. */
+    listCommands: () => invokeContract("commands:list"),
+    /** Execute a engine registry command (/plan, /compact, …) on a session's agent. */
+    executeCommand: (req: { sessionId: string; line: string }) => invokeContract("commands:execute", req),
+    /** Assemble the real engine system prompt (engine) + breakdown. */
     systemPromptPreview: (req: { cwd?: string; projectName?: string }) =>
       invokeContract("runtime:systemPrompt:preview", req),
     /** The coding agent's plain-string system prompt (board-tracking workflow). */
