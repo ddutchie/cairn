@@ -40,7 +40,7 @@ import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { isShellTool } from "../../shared/agent/tool-risk";
 import { runSession } from "./session-run";
-import { answerQuestion, cancelQuestions, compactEngineSession, engineEnabled, engineOwns, forgetEngineSession, getEngineHost, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
+import { answerQuestion, cancelQuestions, compactEngineSession, engineEnabled, engineOwns, forgetEngineSession, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -248,6 +248,12 @@ export function registerSessionRuntimeHandlers(
   // otherwise). The requesting session id is mandatory — the bridge only
   // stops jobs the caller's dock would show (unowned, or its own).
   registerContractHandle("session:job-kill", (_event, { jobId, sessionId }) => handle(async () => {
+    if (getJobRegistry().list(sessionId).some((j) => j.id === jobId)) {
+      return subagentResult(async () => {
+        if (!getJobRegistry().kill(jobId, sessionId)) throw Object.assign(new Error(`job ${jobId} is not running`), { code: "owner-unavailable" });
+        return { accepted: true };
+      });
+    }
     return subagentResult(() => Promise.resolve(getAgentHost().killJob(jobId, sessionId)));
   }));
 
@@ -257,6 +263,7 @@ export function registerSessionRuntimeHandlers(
   // Null goal = no current goal (pre-create / cleared) → chip hides. Same
   // {ok:true,value}|{ok:false,code,message} envelope as subagent:*.
   registerContractHandle("session:goal", (_event, { sessionId }) => handle(async () => {
+    if (await engineOwns(ctx, sessionId)) return subagentResult(() => readEngineGoal(ctx, sessionId));
     return subagentResult(() => getAgentHost().readGoalSnapshot(sessionId));
   }));
 
@@ -265,6 +272,7 @@ export function registerSessionRuntimeHandlers(
   // header mount + turn end — no standing subscription). Empty list = overlay
   // off or no reminders → pill hides. Same envelope as subagent:*.
   registerContractHandle("session:schedule-list", (_event, req) => handle(async () => {
+    if (await engineOwns(ctx, req.sessionId)) return subagentResult(() => listEngineSchedules(ctx, req.sessionId));
     return subagentResult(() => getAgentHost().listSchedules(req.sessionId));
   }));
 

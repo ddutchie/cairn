@@ -14,6 +14,30 @@ export type TurnEndReason = "stop" | "aborted" | "error" | "max-steps" | "overfl
 /** An image the user attached; `data` is base64. */
 export interface UserImage { mediaType: string; data: string; name?: string }
 
+export type GoalPhase = "active" | "paused" | "blocked" | "complete";
+
+/** A session's standing objective; the host keeps working on it until it is done or blocked. */
+export interface GoalState {
+  id: string;
+  revision: number;
+  objective: string;
+  phase: GoalPhase;
+  blockedReason?: string;
+  roundsStarted: number;
+  maxGoalRounds: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A reminder: when it falls due the session is prompted with `prompt`. */
+export interface ScheduleEntry {
+  id: string;
+  prompt: string;
+  /** ISO time the reminder falls due. */
+  at: string;
+  kind: "after" | "at";
+}
+
 export type AgentEvent =
   | { type: "turn/start"; sessionId: string; profile: string }
   | { type: "user/message"; content: string; images?: UserImage[] }
@@ -30,5 +54,7 @@ export type AgentEvent =
   | { type: "context/overflow" }
   | { type: "compaction"; summary: string; keepCount: number; tokensBefore: number; trigger: "threshold" | "overflow" | "manual" }
   | { type: "session/title"; title: string }
+  | { type: "goal/changed"; operation: "create" | "update" | "round" | "clear"; goal: GoalState | null }
+  | { type: "schedule/changed"; operation: "add" | "fire" | "cancel"; schedule: ScheduleEntry }
   | { type: "error"; message: string }
   | { type: "turn/end"; reason: TurnEndReason };

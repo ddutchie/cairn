@@ -5,6 +5,8 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { AgentHost, type HostDeps, type PromptRequest } from "./host";
 import { presetRules } from "./rules";
+import { goalTools } from "./tools/goal";
+import { scheduleTools } from "./tools/schedule";
 import { subagentTools } from "./tools/subagent";
 import { makeHarness, makeTools } from "./test-harness";
 
@@ -282,6 +284,73 @@ describe("AgentHost", () => {
       await t.host.prompt(t.req({ tools: t.parentTools }));
       await t.host.destroy("s1");
       expect(await readdir(t.root)).toEqual([]);
+    });
+  });
+
+  describe("goals and reminders", () => {
+    it("keeps prompting while the goal is active and stops when the model completes it", async () => {
+      const t = await setup();
+      const goalDeps = {
+        get: () => t.host.goal("s1"),
+        create: (o: string, n?: number) => t.host.createGoal("s1", o, n),
+        update: (p: { phase?: "complete" }) => t.host.updateGoal("s1", p),
+      };
+      const tools = [...makeTools(t.executed), ...goalTools(goalDeps)];
+      t.h.faux.setResponses([
+        toolUse(call("create_goal", { objective: "ship it" }, "c1")),
+        fauxAssistantMessage("started"),
+        fauxAssistantMessage("round one done"),
+        toolUse(call("update_goal", { phase: "complete" }, "c2")),
+        fauxAssistantMessage("finished"),
+      ]);
+      await t.host.prompt(t.req({ tools }));
+      expect(t.of("turn/start")).toHaveLength(3);
+      const goals = t.proj("goal").map((p) => p.payload.data);
+      expect(goals.map((g) => g.operation)).toEqual(["create", "round", "round", "update"]);
+      expect(goals.at(-1).goal).toMatchObject({ phase: "complete", roundsStarted: 2 });
+      expect(await t.host.readGoal("s1")).toMatchObject({ phase: "complete" });
+    });
+
+    it("stops after maxRounds even if the goal is still active", async () => {
+      const t = await setup();
+      const tools = [...makeTools(t.executed), ...goalTools({ get: () => t.host.goal("s1"), create: (o, n) => t.host.createGoal("s1", o, n), update: (p) => t.host.updateGoal("s1", p) })];
+      t.h.faux.setResponses([toolUse(call("create_goal", { objective: "x", maxRounds: 1 }, "c1")), fauxAssistantMessage("a"), fauxAssistantMessage("b")]);
+      await t.host.prompt(t.req({ tools }));
+      expect(t.of("turn/start")).toHaveLength(2);
+      expect(t.host.goal("s1")).toMatchObject({ phase: "active", roundsStarted: 1 });
+    });
+
+    it("fires a reminder as a new turn and survives a reopen", async () => {
+      const t = await setup();
+      const tools = [...makeTools(t.executed), ...scheduleTools({
+        list: () => t.host.schedules("s1"),
+        add: (p, at, k) => t.host.addSchedule("s1", p, at, k),
+        cancel: (id) => t.host.cancelSchedule("s1", id),
+      })];
+      t.h.faux.setResponses([toolUse(call("schedule_create", { prompt: "check the build", afterMinutes: 0 }, "c1")), fauxAssistantMessage("ok"), fauxAssistantMessage("build checked")]);
+      await t.host.prompt(t.req({ tools }));
+      await until(() => t.of("turn/start").length === 2);
+      await until(() => !t.host.isRunning("s1"));
+      expect(t.of("turn/start")).toHaveLength(2);
+      expect(await t.host.readSchedules("s1")).toEqual([]);
+
+      t.h.faux.setResponses([toolUse(call("schedule_create", { prompt: "later", afterMinutes: 60 }, "c2")), fauxAssistantMessage("ok")]);
+      await t.host.prompt(t.req({ tools }));
+      const [pending] = t.host.schedules("s1");
+      expect(pending.prompt).toBe("later");
+      t.host.release("s1");
+      expect((await t.host.readSchedules("s1")).map((e) => e.prompt)).toEqual(["later"]);
+      expect(await t.host.cancelSchedule("s1", pending.id)).toBe(false); // closed session: nothing armed to cancel
+    });
+
+    it("hands finished-job notices to the next turn", async () => {
+      const t = await setup();
+      t.h.faux.setResponses([fauxAssistantMessage("a"), fauxAssistantMessage("b")]);
+      await t.host.prompt(t.req());
+      t.host.notify("s1", "Background job job-1 completed.");
+      await t.host.prompt(t.req({ prompt: "next" }));
+      const records = (await t.host.loadMessages("s1")).messages.filter((m) => m.role === "user");
+      expect(records.at(-1)!.content).toContain("<notice>Background job job-1 completed.</notice>");
     });
   });
 });

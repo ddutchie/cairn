@@ -7,6 +7,9 @@ import type { AgentTool } from "../tools";
 import { bashTool, type BashDeps } from "./bash";
 import { cairnTools, type CairnToolDeps } from "./cairn";
 import { externalTools, type ExternalToolDeps } from "./external";
+import { goalTools, type GoalDeps } from "./goal";
+import { jobTools, type JobToolDeps } from "./jobs";
+import { scheduleTools, type ScheduleDeps } from "./schedule";
 import { fsTools, type FsDeps } from "./fs";
 import { planTools, type PlanDeps } from "./plan";
 import { subagentTools, type SubagentDeps } from "./subagent";
@@ -25,6 +28,10 @@ export interface ToolsetDeps {
   plan?: PlanDeps;
   /** Offered on coding and chat; children never get it. */
   subagents?: SubagentDeps;
+  /** Coding sessions: a standing goal, reminders and background jobs. */
+  goal?: GoalDeps;
+  schedule?: ScheduleDeps;
+  jobs?: JobToolDeps;
 }
 
 export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
@@ -36,6 +43,11 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
     if (d.surface === "coding") tools.push(bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
   }
   if (d.subagents && d.surface !== "automation-dev") tools.push(...subagentTools(d.subagents));
+  if (d.surface === "coding") {
+    if (d.goal) tools.push(...goalTools(d.goal));
+    if (d.schedule) tools.push(...scheduleTools(d.schedule));
+    if (d.jobs) tools.push(...jobTools(d.jobs));
+  }
   if (d.plan && d.surface === "coding") tools.push(...planTools(d.plan));
   const seen = new Set<string>();
   return tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
@@ -45,6 +57,9 @@ export * from "./bash";
 export * from "./cairn";
 export * from "./external";
 export * from "./fs";
+export * from "./goal";
+export * from "./jobs";
+export * from "./schedule";
 export * from "./plan";
 export * from "./subagent";
 export * from "./todo";

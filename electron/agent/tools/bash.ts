@@ -7,11 +7,14 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";
+import type { JobRegistry } from "../jobs";
 import { clampMiddle, fail, ok } from "./schema";
 
 export interface BashDeps {
   cwd: string;
   env?: NodeJS.ProcessEnv;
+  /** When set, `run_in_background` is offered and jobs are owned by `jobs.owner`. */
+  jobs?: { registry: JobRegistry; owner: string };
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -34,6 +37,7 @@ export function bashTool(deps: BashDeps): AgentTool {
       command: Type.String({ description: "The command to execute." }),
       description: Type.String({ description: "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI)." }),
       timeoutMs: Type.Optional(Type.Number({ description: `Timeout in milliseconds (default ${DEFAULT_TIMEOUT_MS}, max ${MAX_TIMEOUT_MS}). The command is killed on expiry.` })),
+      run_in_background: Type.Optional(Type.Boolean({ description: "Start the command as a background job and return its id immediately; check on it with job_output." })),
       workdir: Type.Optional(Type.String({ description: "Working directory; relative paths resolve against the session working directory." })),
     }),
     risk: (a) => ({ class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined }),
@@ -42,6 +46,10 @@ export function bashTool(deps: BashDeps): AgentTool {
       const cwd = a.workdir ? path.resolve(deps.cwd, a.workdir) : deps.cwd;
       const timeout = Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.floor(a.timeoutMs ?? DEFAULT_TIMEOUT_MS)));
       const { file, args } = shellFor(a.command);
+      if (a.run_in_background && deps.jobs) {
+        const job = deps.jobs.registry.start({ owner: deps.jobs.owner, label: a.description || a.command, file, args, cwd, env: deps.env });
+        return Promise.resolve(ok(`Started background job ${job.id}. Use job_output to read it and job_kill to stop it.`));
+      }
       return new Promise((resolve) => {
         let out = "";
         let timedOut = false;

@@ -2,7 +2,7 @@
 import type { Message, Usage } from "@earendil-works/pi-ai";
 import type { Rule } from "../rules";
 import type { AskSpec } from "../gate";
-import type { TurnEndReason } from "../events";
+import type { GoalState, ScheduleEntry, TurnEndReason } from "../events";
 import { buildContextView } from "../context";
 import type { SessionRecord } from "./format";
 
@@ -63,4 +63,22 @@ export function deriveTitle(records: readonly SessionRecord[], max = 60): string
     if (line) return line.length > max ? `${line.slice(0, max - 1)}…` : line;
   }
   return undefined;
+}
+
+/** The current goal: the last `goal/changed` wins, and a clear leaves none. */
+export function foldGoal(records: readonly SessionRecord[]): GoalState | null {
+  let goal: GoalState | null = null;
+  for (const { event } of records) if (event.type === "goal/changed") goal = event.goal;
+  return goal;
+}
+
+/** Reminders that were added and have neither fired nor been cancelled. */
+export function foldSchedules(records: readonly SessionRecord[]): ScheduleEntry[] {
+  const open = new Map<string, ScheduleEntry>();
+  for (const { event } of records) {
+    if (event.type !== "schedule/changed") continue;
+    if (event.operation === "add") open.set(event.schedule.id, event.schedule);
+    else open.delete(event.schedule.id);
+  }
+  return [...open.values()];
 }

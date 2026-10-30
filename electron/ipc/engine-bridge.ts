@@ -23,6 +23,7 @@ import type { Mode as EngineMode } from "../agent/policy";
 
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
 import { buildToolset } from "../agent/tools/index";
+import { JobRegistry } from "../agent/jobs";
 import { importDshSession } from "../agent/session/dsh-import";
 import { isLocalEndpoint } from "../lib/llm";
 import { getAgentHost } from "../cordis/agent-host";
@@ -136,6 +137,19 @@ const observedFiles = new Map<string, Set<string>>();
 interface PendingQuestion { nonce: string; resolve(answers: string): void; reject(err: Error): void }
 const pendingQuestions = new Map<string, PendingQuestion>();
 const qKey = (sessionId: string, callId: string) => `${sessionId}::${callId}`;
+
+let jobRegistry: JobRegistry | undefined;
+/** Background jobs for the whole process; changes reach the jobs dock, endings reach the model. */
+export function getJobRegistry(): JobRegistry {
+  jobRegistry ??= new JobRegistry({
+    changed: (owner) => broadcastEvent("session:projection", makeSessionProjection(owner, "jobs", { ownerSession: owner, jobs: jobRegistry!.list(owner) })),
+    settled: (job, tail) => {
+      if (!job.ownerSession) return;
+      host?.notify(job.ownerSession, `Background job ${job.id} (${job.label}) ${job.status}${job.detail ? `: ${job.detail}` : ""}.${tail ? ` Last output:\n${tail}` : ""}`);
+    },
+  });
+  return jobRegistry;
+}
 
 export function getEngineHost(ctx: DbContext): AgentHost {
   hostCtx = ctx;
@@ -292,7 +306,19 @@ function subagentDeps(ctx: DbContext): SubagentDeps {
 
 /** The subagent catalog for the header popover. Children only: delegation is one level deep. */
 /** Drop what a closed or cleared session left in memory. */
+/** Snapshots for the goal chip, the alarm pill and the jobs dock. */
+export async function readEngineGoal(ctx: DbContext, sessionId: string) {
+  const g = await getEngineHost(ctx).readGoal(sessionId);
+  return g ? { ...g, blockedReason: g.blockedReason ? { code: "blocked", message: g.blockedReason } : undefined } : null;
+}
+
+export async function listEngineSchedules(ctx: DbContext, sessionId: string) {
+  const now = Date.now();
+  return (await getEngineHost(ctx).readSchedules(sessionId)).map((s) => ({ id: s.id, prompt: s.prompt, scheduledAt: s.at, kind: s.kind, state: Date.parse(s.at) < now ? "overdue" as const : "scheduled" as const }));
+}
+
 export function forgetEngineSession(sessionId: string): void {
+  jobRegistry?.killAll(sessionId);
   for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
 }
 
@@ -355,7 +381,18 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       }),
     },
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
-    fs: { cwd: a.cwd, rgPath, observed },
+    fs: { cwd: a.cwd, rgPath, observed, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
+    jobs: { registry: getJobRegistry(), owner: a.sessionId },
+    goal: {
+      get: () => h.goal(a.sessionId),
+      create: (objective, maxRounds) => h.createGoal(a.sessionId, objective, maxRounds),
+      update: (patch) => h.updateGoal(a.sessionId, patch),
+    },
+    schedule: {
+      list: () => h.schedules(a.sessionId),
+      add: (prompt, at, kind) => h.addSchedule(a.sessionId, prompt, at, kind),
+      cancel: (id) => h.cancelSchedule(a.sessionId, id),
+    },
     onTodos: (todos) => broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "todos", { todos })),
     subagents: chat && !chat.req.useSubagents ? undefined : subagentDeps(a.ctx),
     plan: planning ? {

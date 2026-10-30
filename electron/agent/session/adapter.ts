@@ -89,7 +89,15 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
       case "session/title":
         projections.push(makeSessionProjection(sessionId, "title", { title: event.title }));
         break;
-      case "user/message": case "rule/added": break;
+      case "goal/changed": {
+        const g = event.goal;
+        projections.push(makeSessionProjection(sessionId, "goal", {
+          operation: event.operation,
+          goal: g ? { ...g, blockedReason: g.blockedReason ? { code: "blocked", message: g.blockedReason } : undefined } : null,
+        }));
+        break;
+      }
+      case "user/message": case "rule/added": case "schedule/changed": break;
     }
     return { events, projections };
   };

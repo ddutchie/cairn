@@ -12,7 +12,7 @@ import type { LoadSessionMessagesResult } from "../../shared/agent/session-wire"
 import { makeSessionProjection, type SessionProjection } from "../../shared/agent/session-projection";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import { buildContextView, renderTranscript, compactHistory, compactionThreshold, pruneImages, pruneToolResults } from "./context";
-import type { AgentEvent, UserImage } from "./events";
+import type { AgentEvent, GoalPhase, GoalState, ScheduleEntry, UserImage } from "./events";
 import { Gate, type AskSpec, type HumanDecision } from "./gate";
 import { runTurn, type Profile, type StreamFn } from "./loop";
 import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream } from "./provider";
@@ -21,7 +21,7 @@ import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./ru
 import type { AgentTool } from "./tools";
 import { createAdapter } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
-import { deriveTitle, foldState } from "./session/history";
+import { deriveTitle, foldGoal, foldSchedules, foldState } from "./session/history";
 import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
 import { replayFromRecords } from "./session/replay";
 import type { SessionRecord } from "./session/format";
@@ -77,6 +77,13 @@ export interface PromptOutcome {
   reason: string;
 }
 
+/** Continuation rounds a goal gets unless the model asks for another number. */
+const DEFAULT_GOAL_ROUNDS = 10;
+const GOAL_CONTINUE = (objective: string) =>
+  `Continue working toward the goal: ${objective}\nWhen it is met call update_goal with phase "complete"; if you cannot proceed call it with phase "blocked" and a blockedReason.`;
+/** How long a reminder waits when its session is mid-turn before trying again. */
+const REMINDER_RETRY_MS = 15_000;
+
 export interface ChildInfo { id: string; label: string; running: boolean }
 
 interface Session {
@@ -95,6 +102,11 @@ interface Session {
   workspaceGrantArmed?: boolean;
   /** Serializes turns of one session. */
   running: boolean;
+  /** The last request, so a reminder can prompt the session the same way. */
+  lastReq?: PromptRequest;
+  timers: Map<string, ReturnType<typeof setTimeout>>;
+  /** Things that happened while the model wasn't looking (finished jobs); shown at the next turn. */
+  notices: string[];
 }
 
 export class AgentHost {
@@ -130,8 +142,11 @@ export class AgentHost {
           records: [...records],
           running: false,
           workspaceGrantCalls: new Set(),
+          timers: new Map(),
+          notices: [],
         };
         this.sessions.set(id, session);
+        for (const entry of foldSchedules(records)) this.arm(session, entry);
         return session;
       })().finally(() => this.opening.delete(id));
       this.opening.set(id, pending);
@@ -150,6 +165,7 @@ export class AgentHost {
   /** Forget in-memory state and cancel anything pending; the log stays. */
   release(id: string): void {
     this.abort(id);
+    for (const t of this.sessions.get(id)?.timers.values() ?? []) clearTimeout(t);
     this.sessions.delete(id);
   }
 
@@ -182,6 +198,21 @@ export class AgentHost {
     const session = await this.open(req.sessionId, req.cwd, req.parentSession);
     if (session.running) throw new Error("Session is busy — already running.");
     session.running = true;
+    session.lastReq = req;
+    const notices = session.notices.splice(0);
+    let outcome = await this.runTurnOnce(session, notices.length ? { ...req, prompt: `${notices.map((n) => `<notice>${n}</notice>`).join("\n")}\n${req.prompt}` } : req);
+    // A standing goal keeps the session going until it is met, blocked or out of rounds.
+    while (!session.parent && outcome.reason === "stop" && !req.signal?.aborted) {
+      const goal = foldGoal(session.records);
+      if (!goal || goal.phase !== "active" || goal.roundsStarted >= goal.maxGoalRounds) break;
+      await this.record(session, { type: "goal/changed", operation: "round", goal: { ...goal, roundsStarted: goal.roundsStarted + 1, revision: goal.revision + 1, updatedAt: Date.now() } });
+      outcome = await this.runTurnOnce(session, { ...req, prompt: GOAL_CONTINUE(goal.objective) });
+    }
+    session.running = false;
+    return outcome;
+  }
+
+  private async runTurnOnce(session: Session, req: PromptRequest): Promise<PromptOutcome> {
     const controller = new AbortController();
     session.controller = controller;
     const outcome: PromptOutcome = { text: "", reason: "error" };
@@ -228,7 +259,6 @@ export class AgentHost {
       this.deps.send("session:projection", makeSessionProjection(req.sessionId, "error", { message: err instanceof Error ? err.message : String(err) }));
     } finally {
       req.signal?.removeEventListener("abort", link);
-      session.running = false;
       session.controller = undefined;
     }
     return outcome;
@@ -282,6 +312,102 @@ export class AgentHost {
       const title = deriveTitle(session.records);
       if (title) this.deps.send("session:projection", makeSessionProjection(session.id, "title", { title }));
     }
+  }
+
+  // ── goal, reminders, notices ──────────────────────────────────────────
+
+  goal(sessionId: string): GoalState | null {
+    const live = this.sessions.get(sessionId);
+    return live ? foldGoal(live.records) : null;
+  }
+
+  async readGoal(sessionId: string): Promise<GoalState | null> {
+    const live = this.sessions.get(sessionId);
+    if (live) return foldGoal(live.records);
+    return foldGoal((await readSession(this.deps.root, sessionId))?.records ?? []);
+  }
+
+  async createGoal(sessionId: string, objective: string, maxRounds?: number): Promise<GoalState> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error("Session is not open.");
+    const now = Date.now();
+    const goal: GoalState = {
+      id: `goal-${now.toString(36)}`, revision: 1, objective, phase: "active", roundsStarted: 0,
+      maxGoalRounds: Math.max(1, Math.floor(maxRounds ?? DEFAULT_GOAL_ROUNDS)), createdAt: now, updatedAt: now,
+    };
+    await this.record(session, { type: "goal/changed", operation: "create", goal });
+    return goal;
+  }
+
+  async updateGoal(sessionId: string, patch: { phase?: GoalPhase; blockedReason?: string }): Promise<GoalState | undefined> {
+    const session = this.sessions.get(sessionId);
+    const current = session && foldGoal(session.records);
+    if (!session || !current) return undefined;
+    const phase = patch.phase ?? current.phase;
+    const next: GoalState = {
+      ...current, phase, revision: current.revision + 1, updatedAt: Date.now(),
+      blockedReason: phase === "blocked" ? patch.blockedReason ?? current.blockedReason ?? "No reason given." : undefined,
+    };
+    await this.record(session, { type: "goal/changed", operation: "update", goal: next });
+    return next;
+  }
+
+  async clearGoal(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session && foldGoal(session.records)) await this.record(session, { type: "goal/changed", operation: "clear", goal: null });
+  }
+
+  async readSchedules(sessionId: string): Promise<ScheduleEntry[]> {
+    const live = this.sessions.get(sessionId);
+    return foldSchedules(live?.records ?? (await readSession(this.deps.root, sessionId))?.records ?? []);
+  }
+
+  schedules(sessionId: string): ScheduleEntry[] {
+    return foldSchedules(this.sessions.get(sessionId)?.records ?? []);
+  }
+
+  async addSchedule(sessionId: string, prompt: string, at: Date, kind: ScheduleEntry["kind"]): Promise<ScheduleEntry> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error("Session is not open.");
+    const entry: ScheduleEntry = { id: `rem-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, prompt, at: at.toISOString(), kind };
+    await this.record(session, { type: "schedule/changed", operation: "add", schedule: entry });
+    this.arm(session, entry);
+    return entry;
+  }
+
+  async cancelSchedule(sessionId: string, id: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId);
+    const entry = session && foldSchedules(session.records).find((e) => e.id === id);
+    if (!session || !entry) return false;
+    clearTimeout(session.timers.get(id));
+    session.timers.delete(id);
+    await this.record(session, { type: "schedule/changed", operation: "cancel", schedule: entry });
+    return true;
+  }
+
+  private arm(session: Session, entry: ScheduleEntry, delay = Math.max(0, Date.parse(entry.at) - Date.now())): void {
+    // setTimeout cannot reach past ~24 days; the 30-day cap is handled by re-arming.
+    const wait = Math.min(delay, 2_000_000_000);
+    const timer = setTimeout(() => void this.fire(session, entry, delay - wait), wait);
+    timer.unref?.();
+    session.timers.set(entry.id, timer);
+  }
+
+  private async fire(session: Session, entry: ScheduleEntry, remaining: number): Promise<void> {
+    session.timers.delete(entry.id);
+    if (!foldSchedules(session.records).some((e) => e.id === entry.id) || this.sessions.get(session.id) !== session) return;
+    if (remaining > 0) return this.arm(session, entry, remaining);
+    const req = session.lastReq;
+    // Without a request to copy (a session reopened after a restart) the reminder waits, shown as overdue.
+    if (!req) return;
+    if (session.running) return this.arm(session, entry, REMINDER_RETRY_MS);
+    await this.record(session, { type: "schedule/changed", operation: "fire", schedule: entry });
+    await this.prompt({ ...req, prompt: `Reminder: ${entry.prompt}`, signal: undefined }).catch(() => undefined);
+  }
+
+  /** Leave a note for the model; it is shown at the start of the session's next turn. */
+  notify(sessionId: string, text: string): void {
+    this.sessions.get(sessionId)?.notices.push(text);
   }
 
   /** The session's conversation as text, for a child that should see it. */
