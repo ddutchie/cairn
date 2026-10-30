@@ -70,11 +70,11 @@ export async function openSession(
   return { writer, existing };
 }
 
-/** Write a complete log in one atomic step (temp file + rename). Used by importers; refuses to overwrite. */
-export async function writeImportedSession(root: string, header: SessionHeader, records: readonly SessionRecord[]): Promise<boolean> {
+/** Write a complete log in one atomic step (temp file + rename). Used by importers; refuses to overwrite unless `replace`. */
+export async function writeImportedSession(root: string, header: SessionHeader, records: readonly SessionRecord[], replace = false): Promise<boolean> {
   const dir = sessionDir(root, header.id);
   const file = path.join(dir, SESSION_FILE);
-  if (await readSession(root, header.id)) return false;
+  if (!replace && await readSession(root, header.id)) return false;
   await mkdir(dir, { recursive: true });
   const tmp = `${file}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`;
   await writeFile(tmp, serializeLine(header) + records.map(serializeLine).join(""));

@@ -248,7 +248,10 @@ export async function importLegacyTree(dshRoot: string, cairnRoot: string): Prom
 
 /** Import one session by id from a dsh tree (any project folder). False when it is absent or already imported. */
 export async function importLegacySession(dshRoot: string, cairnRoot: string, sessionId: string): Promise<boolean> {
-  if (await readSession(cairnRoot, sessionId)) return false;
+  const existing = await readSession(cairnRoot, sessionId);
+  // An import that produced no records (an earlier build, or an interrupted run) is redone from the source log.
+  const empty = existing?.header.origin === "legacy-import" && existing.records.length === 0;
+  if (existing && !empty) return false;
   let projects: string[];
   try { projects = (await readdir(dshRoot, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return false; }
   for (const project of projects) {
@@ -259,7 +262,8 @@ export async function importLegacySession(dshRoot: string, cairnRoot: string, se
     const parsed = importLegacyLog(await readLegacyLogFile(path.join(dir, name)));
     if (!parsed) return false;
     parsed.header.id = sessionId;
-    return writeImportedSession(cairnRoot, parsed.header, parsed.records);
+    if (empty && parsed.records.length === 0) return false;
+    return writeImportedSession(cairnRoot, parsed.header, parsed.records, empty);
   }
   return false;
 }

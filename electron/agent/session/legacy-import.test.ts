@@ -5,7 +5,8 @@ import { zstdCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { importLegacyLog, importLegacySession, importLegacyTree } from "./legacy-import";
 import { historyFromRecords, foldState } from "./history";
-import { readSession } from "./log";
+import { readSession, writeImportedSession } from "./log";
+import { SESSION_FORMAT } from "./format";
 
 const jsonl = (...rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join("\n");
 const user = (seq: number, text: string, source: unknown = { kind: "user" }) => ({ type: "user/message", seq, time: seq, data: { content: [{ type: "text", text }], source } });
@@ -86,5 +87,16 @@ describe("importLegacySession", () => {
     expect(await importLegacySession(src, dst, "wanted")).toBe(true);
     expect((await readSession(dst, "wanted"))?.header.id).toBe("wanted");
     expect(await importLegacySession(src, dst, "wanted")).toBe(false);
+  });
+
+  it("redoes an earlier import that left only a header", async () => {
+    const src = await mkdtemp(path.join(os.tmpdir(), "dsh-redo-src-"));
+    const dst = await mkdtemp(path.join(os.tmpdir(), "dsh-redo-dst-"));
+    await mkdir(path.join(src, "p", "w"), { recursive: true });
+    await writeFile(path.join(src, "p", "w", "session.v4.jsonl.zstd"), zstdCompressSync(Buffer.from(v4)));
+    await writeImportedSession(dst, { type: "session", version: SESSION_FORMAT, id: "w", origin: "legacy-import" }, []);
+    expect(await importLegacySession(src, dst, "w")).toBe(true);
+    expect((await readSession(dst, "w"))?.records.length).toBeGreaterThan(0);
+    expect(await importLegacySession(src, dst, "w")).toBe(false);
   });
 });
