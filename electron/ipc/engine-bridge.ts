@@ -28,10 +28,12 @@ import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared
 import { addWorkspaceApprovalGrant, getWorkspaceApprovalGrants } from "../db/approval-grant-queries";
 import { getCachedConfig } from "../lib/config-cache";
 import { notifyAgentAttention } from "../lib/agent-attention";
-import { wireApiFor, wireBaseUrlFor } from "../lib/model-pricing";
+import { routeFromConfig } from "../agent/route";
 import type { AgentLLMConfig } from "../lib/session-runtime-types";
 import type { Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
+
+export { routeFromConfig };
 
 export function engineEnabled(): boolean {
   if (process.env.CAIRN_AGENT_ENGINE) return process.env.CAIRN_AGENT_ENGINE === "native";
@@ -69,20 +71,6 @@ export function chatSystemPrompt(req: ChatRequest, policy: ChatApprovalPolicy): 
 
 export const chatApprovalPolicyFor = (req: ChatRequest): ChatApprovalPolicy =>
   resolveChatApprovalPolicy(req.approvalPolicy ?? (getCachedConfig().aiConfig as { chatApprovalPolicy?: unknown } | undefined)?.chatApprovalPolicy);
-
-export function routeFromConfig(cfg: AgentLLMConfig): ModelRoute {
-  const configured = cfg.apiMode === "responses" ? "openai-responses" : cfg.apiMode === "anthropic-messages" ? "anthropic-messages" : "openai-completions";
-  const api = wireApiFor(cfg.baseUrl, cfg.model, configured);
-  return {
-    baseUrl: wireBaseUrlFor(cfg.baseUrl, api),
-    model: cfg.model,
-    apiKey: cfg.apiKey || undefined,
-    api,
-    contextWindow: cfg.contextWindow,
-    maxTokens: cfg.maxTokens || undefined,
-    reasoning: cfg.isReasoningModel === true || (!!cfg.reasoningEffort && cfg.reasoningEffort !== "off"),
-  };
-}
 
 function grantsToRules(sessionId: string, grants: Array<{ id: string; tool: string; target: string | null }>): Rule[] {
   return grants.map((g) => ({

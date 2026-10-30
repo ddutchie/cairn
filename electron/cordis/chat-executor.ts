@@ -299,7 +299,7 @@ export async function executeTool(
 
       let tasksRaw: string;
       try {
-        const { runOneShot } = await import("../cordis/one-shot");
+        const { runOneShot } = await import("../agent/one-shot");
         tasksRaw = await runOneShot({
           systemPrompt, userPrompt,
           config: llmConfig,

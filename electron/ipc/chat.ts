@@ -17,6 +17,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { getAgentHost } from "../cordis/agent-host";
+import { runOneShot } from "../agent/one-shot";
 
 export function resolveAIConfig(config?: {
   provider?: string;
@@ -112,7 +113,7 @@ export function registerChatHandler(_ctx: DbContext): void {
     }
     const dropped = turns.length - kept.length;
     const clipped = (dropped > 0 ? `[${dropped} earlier messages omitted]\n\n` : "") + kept.join("\n\n");
-    const summary = await getAgentHost().runOneShot({
+    const summary = await runOneShot({
       systemPrompt: "You summarise conversations for a project notebook. Write clear markdown: a short overview paragraph, then bullet points for decisions, findings and open questions. No preamble.",
       userPrompt: `Summarise this conversation:\n\n${clipped}`,
       config: { baseUrl, model, apiKey, provider: "openai", apiMode: req.config.apiMode },

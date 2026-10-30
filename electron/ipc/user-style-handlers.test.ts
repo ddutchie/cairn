@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { runOneShotMock } = vi.hoisted(() => ({ runOneShotMock: vi.fn() }));
-vi.mock("../cordis/one-shot", () => ({ runOneShot: runOneShotMock }));
+vi.mock("../agent/one-shot", () => ({ runOneShot: runOneShotMock }));
 
 import { isUsableGuide, countHeadings, buildUserStylePromptPair, generateUserStyleMarkdown } from "./user-style-handlers";
 import { buildUserStyleFullGuidePrompt, buildUserStyleOptimizePrompt } from "../lib/user-style-prompt";

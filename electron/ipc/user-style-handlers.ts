@@ -125,7 +125,7 @@ export async function generateUserStyleMarkdown(
   const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
 
   // One-shot via Cordis (single-turn, no tools) on the configured provider.
-  const { runOneShot } = await import("../cordis/one-shot");
+  const { runOneShot } = await import("../agent/one-shot");
   // A failed first attempt (e.g. a degenerate empty completion, which
   // runOneShot rejects as EMPTY_RESPONSE) gets the same single retry as an
   // unusable one; a second failure propagates.

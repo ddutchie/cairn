@@ -33,8 +33,7 @@ vi.mock("../lib/config-cache", () => ({
   cacheLlmConnection: vi.fn(),
 }));
 vi.mock("../lib/secure-store", () => ({ resolveLlmApiKey: (ref?: string) => ref ?? "" }));
-vi.mock("../cordis/one-shot", () => ({ runOneShot: runOneShotMock }));
-vi.mock("../cordis/agent-host", () => ({ getAgentHost: () => ({ runOneShot: runOneShotMock }) }));
+vi.mock("../agent/one-shot", () => ({ runOneShot: runOneShotMock }));
 vi.mock("../notes-files", () => ({ writeNoteFile: vi.fn() }));
 
 import { registerAiHandlers } from "./ai-handlers";

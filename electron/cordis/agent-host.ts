@@ -10,7 +10,6 @@ import {
 } from "./session-replay";
 import type { SessionStatsSnapshot } from "./session-stats";
 import { buildSystemPrompt, getCachedConfig } from "./host-store";
-import type { OneShotOptions } from "./one-shot";
 import type { ContextRingResult } from "./run-cordis-loop";
 import type { RunCordisCodingOptions, RunCordisCodingResult } from "./run-cordis-coding";
 import type { SubagentCatalogView, SubagentScope } from "./subagent-control";
@@ -132,7 +131,6 @@ export interface AgentHost {
   runAutomation(options: RunCordisCodingOptions): Promise<RunCordisCodingResult>;
   configureSessionRoot(root: string): void;
   getSessionRoot(): string;
-  runOneShot(options: OneShotOptions): Promise<string>;
   readPendingApprovalArgs(sessionId: string, callId: string): Record<string, unknown> | undefined;
   forgetPendingApprovalArgs(sessionId: string, callId: string): void;
   forgetSessionApprovalArgs(sessionId: string): void;
@@ -580,10 +578,6 @@ function createLocalAgentHost(): AgentHost {
     },
     getSessionRoot() {
       return getSessionRoot();
-    },
-    async runOneShot(options) {
-      const { runOneShotWithContext } = await import("./one-shot");
-      return runOneShotWithContext(await context(), options);
     },
     readPendingApprovalArgs(sessionId, callId) {
       return readPendingApprovalArgs(sessionId, callId);

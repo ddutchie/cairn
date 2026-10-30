@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => ({
   dispose: vi.fn(),
   deleteAgent: vi.fn(),
   getAgent: vi.fn(),
-  runOneShotWithContext: vi.fn(),
   readContextRingWithContext: vi.fn(),
   listSubagentChildrenWithContext: vi.fn(),
   interruptSubagentChildWithContext: vi.fn(),
@@ -59,7 +58,6 @@ vi.mock("./permissions-bridge", () => ({ readPermissionsSnapshot: mocks.readPerm
 vi.mock("./session-replay", () => ({ loadSessionMessages: mocks.loadSessionMessages }));
 vi.mock("./run-cordis-loop", () => ({ readContextRingWithContext: mocks.readContextRingWithContext }));
 vi.mock("./session-stats", () => ({ readSessionStatsSnapshot: mocks.readSessionStatsSnapshot }));
-vi.mock("./one-shot", () => ({ runOneShotWithContext: mocks.runOneShotWithContext }));
 vi.mock("./subagent-control", () => ({
   listSubagentChildrenWithContext: mocks.listSubagentChildrenWithContext,
   interruptSubagentChildWithContext: mocks.interruptSubagentChildWithContext,
@@ -284,16 +282,6 @@ describe("AgentHost", () => {
     expect(grants.tools).toEqual(new Set(["read_file"]));
     expect(mocks.clearSessionGrants).toHaveBeenCalledWith("session-1");
     expect(mocks.clearSecretGrants).toHaveBeenCalledWith("session-1");
-  });
-
-  it("runs one-shot AI with the host context", async () => {
-    const options = { systemPrompt: "system", userPrompt: "user", config: { baseUrl: "https://api.openai.com", model: "model-1", apiKey: "key-1" }, source: "test" };
-    mocks.runOneShotWithContext.mockResolvedValue("result");
-
-    await expect(getAgentHost().runOneShot(options)).resolves.toBe("result");
-
-    expect(mocks.runOneShotWithContext).toHaveBeenCalledWith(context, options);
-    expect(mocks.getContext).toHaveBeenCalledOnce();
   });
 
   it("configures the session root through the host", () => {
