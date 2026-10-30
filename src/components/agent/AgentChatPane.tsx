@@ -146,7 +146,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const sessionTodos = useCairnStore((s) => s.sessionTodos[session.sessionId]);
   const sessionJobs = useCairnStore((s) => s.sessionJobs[session.sessionId]);
   const customCommands = useCairnStore((s) => s.customCommands);
-  const registryCommands = useRegistryCommands();
+  const registryCommands = useRegistryCommands(session.cwd);
   const agentCommands = useMemo(
     () => getCommandsForScope("agent", customCommands, registryCommands),
     [customCommands, registryCommands]
@@ -485,6 +485,13 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       ? registryCommands.find((c) => c.name === commandName)
         ?? (commandName === "plan" ? { name: "plan", description: "Enter or leave plan mode" } : undefined)
       : undefined;
+    if (commandMatch && "skill" in commandMatch && commandMatch.skill) {
+      // A skill is a prompt, not a command: have the model load it (rest of the line is its task).
+      const task = trimmed.slice(1).trim().slice(commandName.length).trim();
+      setInput("");
+      void sendPromptRef.current(`Use the "${commandName}" skill${task ? `: ${task}` : "."}`);
+      return;
+    }
     if (commandMatch) {
       setInput("");
       const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();

@@ -6,6 +6,9 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 const userData = mkdtempSync(path.join(os.tmpdir(), "cmd-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData }, BrowserWindow: { getAllWindows: () => [] } }));
 
+const broadcast = vi.fn();
+vi.mock("./registry", async (orig) => ({ ...(await orig<typeof import("./registry")>()), broadcastEvent: (...a: unknown[]) => broadcast(...a) }));
+
 const mode = { current: "execute" };
 vi.mock("../db/sessions-queries", () => ({
   getCodingSessionById: () => ({ mode: mode.current, cwd: "/ws" }),
@@ -33,6 +36,13 @@ describe("engine commands", () => {
     expect(await run("/plan off")).toMatchObject({ kind: "success", mode: "execute" });
     expect(await run("/plan write a thing")).toMatchObject({ mode: "plan" });
     expect(await run("/plan", "chat-1")).toMatchObject({ kind: "error" });
+  });
+
+  it("emits timeline chips around a command and for plan toggles", async () => {
+    broadcast.mockClear();
+    await run("/plan");
+    const types = broadcast.mock.calls.filter((c) => c[0] === "session:event").map((c) => (c[1] as { event: { type: string } }).event.type);
+    expect(types).toEqual(["command/run", "plan/mode", "command/done"]);
   });
 
   it("manages the goal", async () => {

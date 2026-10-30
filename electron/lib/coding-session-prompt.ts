@@ -4,6 +4,8 @@
  * Context-aware: includes project name, cwd, active task title, and date.
  */
 
+import { loadProjectInstructions } from "./project-instructions";
+
 export interface AgentPromptContext {
   projectName: string;
   cwd: string;
@@ -21,7 +23,9 @@ export function buildAgentSystemPrompt(ctx: AgentPromptContext): string {
   if (ctx.role === "automation-dev") {
     return buildAutomationDevPrompt(ctx);
   }
-  return buildExecuteModePrompt(ctx);
+  const base = buildExecuteModePrompt(ctx);
+  const instructions = loadProjectInstructions(ctx.cwd);
+  return instructions ? `${base}\n\n## Project instructions (AGENTS.md / CLAUDE.md)\nThe project's own guidance; follow it unless the user says otherwise.\n\n${instructions}` : base;
 }
 
 /**

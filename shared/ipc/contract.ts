@@ -191,7 +191,7 @@ export interface IpcContract {
   "session:goal": { args: [req: { sessionId: string }]; result: ControlResult<GoalWire | null> };
   "session:schedule-list": { args: [req: { sessionId: string }]; result: ControlResult<ScheduleWire[]> };
   /** Registry commands (built-in + plugin) for the command palettes. */
-  "commands:list": { args: []; result: Array<{ name: string; description: string }> };
+  "commands:list": { args: [req: { cwd?: string }]; result: Array<{ name: string; description: string; skill?: boolean }> };
 
   // ── Workspaces & projects ────────────────────────────────────────────────
   "db:workspace:list": { args: []; result: Workspace[] };

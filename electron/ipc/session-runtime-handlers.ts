@@ -14,6 +14,7 @@ import { registerContractHandle, registerIpcOn, broadcastEvent } from "./registr
 import { handle } from "./result-helpers";
 import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/tools";
+import { emitSessionChip } from "./engine-commands";
 import { buildAgentSystemPrompt } from "../lib/coding-session-prompt";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
@@ -614,6 +615,7 @@ export function registerSessionRuntimeHandlers(
         q.updateCodingSession(ctx.db, sessionId, { mode, updatedAt: ts() });
         broadcastEvent("session:mode-change", { sessionId, mode });
         broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode }));
+        emitSessionChip(sessionId, "plan/mode", { active: mode === "plan" });
       } catch (e) {
         // Do not update or broadcast a requested mode when engine rejected it.
         // The durable session log remains authoritative and the UI can retry.

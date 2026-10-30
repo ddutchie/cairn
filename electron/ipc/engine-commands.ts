@@ -42,7 +42,21 @@ function exportsDir(): string {
   return path.join(process.env.CAIRN_USER_DATA_DIR || base, "session-exports");
 }
 
+/** Timeline chips: the renderer folds these like engine events, outside any turn. */
+export function emitSessionChip(sessionId: string, type: string, data: Record<string, unknown>): void {
+  broadcastEvent("session:event", { sessionId, event: { type, seq: -1, time: Date.now(), data } });
+}
+
 export async function executeEngineCommand(ctx: DbContext, req: { sessionId: string; line: string }): Promise<CommandExecutionResult> {
+  const name = req.line.trim().replace(/^\/\s*/, "").split(/\s+/)[0] ?? "";
+  const id = `cmd-${Date.now()}`;
+  emitSessionChip(req.sessionId, "command/run", { name, line: req.line, id });
+  const result = await runEngineCommand(ctx, req);
+  emitSessionChip(req.sessionId, "command/done", { name, id, kind: result.kind, text: result.text });
+  return result;
+}
+
+async function runEngineCommand(ctx: DbContext, req: { sessionId: string; line: string }): Promise<CommandExecutionResult> {
   const { sessionId } = req;
   const [head = "", ...rest] = req.line.trim().replace(/^\/\s*/, "").split(/\s+/);
   const arg = rest.join(" ").trim();
@@ -56,6 +70,7 @@ export async function executeEngineCommand(ctx: DbContext, req: { sessionId: str
       const mode = arg === "off" ? "execute" : arg === "" ? (current === "plan" ? "execute" : "plan") : "plan";
       try { updateCodingSession(ctx.db, sessionId, { mode, updatedAt: new Date().toISOString() }); } catch { /* the session may not be indexed yet */ }
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode }));
+      emitSessionChip(sessionId, "plan/mode", { active: mode === "plan" });
       return ok(mode === "plan" ? "Plan mode on." : "Plan mode off.", { mode });
     }
     case "compact": {

@@ -12,7 +12,7 @@ export const runtimeApi = {
     status: () => invokeContract("runtime:status"),
     stop: () => invokeContract("runtime:stop"),
     /** List engine registry commands (name + description) — palette source. */
-    listCommands: () => invokeContract("commands:list"),
+    listCommands: (req: { cwd?: string } = {}) => invokeContract("commands:list", req),
     /** Execute a engine registry command (/plan, /compact, …) on a session's agent. */
     executeCommand: (req: { sessionId: string; line: string }) => invokeContract("commands:execute", req),
     /** Assemble the real engine system prompt (engine) + breakdown. */

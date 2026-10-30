@@ -123,7 +123,7 @@ async function* streamAssistant(o: TurnOptions): AsyncGenerator<AgentEvent, Assi
       messages: o.transformContext ? o.transformContext(o.history) : o.history,
       tools: o.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
     };
-    const stream = o.streamFn(o.model, context, { ...o.streamOptions, signal: o.signal });
+    const stream = o.streamFn(o.model, context, { sessionId: o.sessionId, ...o.streamOptions, signal: o.signal });
     for await (const ev of stream) {
       if (ev.type === "text_delta") { emitted = true; yield { type: "assistant/delta", text: ev.delta }; }
       else if (ev.type === "thinking_delta") { emitted = true; yield { type: "assistant/thinking", text: ev.delta }; }
@@ -206,6 +206,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
 
   for (let step = 0; step < maxSteps; step++) {
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
+    for (const t of o.tools) if (!toolMap.has(t.name)) toolMap.set(t.name, t); // tool_search can add tools mid-turn
     const threshold = o.compaction?.threshold;
     if (threshold && lastContextTokens >= threshold) {
       if (yield* tryCompact("threshold")) lastContextTokens = 0;

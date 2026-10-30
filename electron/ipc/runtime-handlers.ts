@@ -44,7 +44,16 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // ── Command execution (engine commands runtime) ────────────────────────
   // List registry commands (name + description) so host UIs can render their
   // palettes from the same namespace plugins register into.
-  registerContractHandle("commands:list", () => handle(async () => ENGINE_COMMANDS.map((c) => ({ ...c }))));
+  registerContractHandle("commands:list", (_e, req) => handle(async () => {
+    const base: Array<{ name: string; description: string; skill?: boolean }> = ENGINE_COMMANDS.map((c) => ({ ...c }));
+    if (!req?.cwd) return base;
+    // Skills are user-invocable by name in coding sessions (`/<skill>`); engine commands win a name clash.
+    const { discoverSkills } = await import("../lib/skills");
+    const taken = new Set(base.map((c) => c.name));
+    let skills: ReturnType<typeof discoverSkills> = [];
+    try { skills = discoverSkills(req.cwd); } catch { /* unreadable skill dirs */ }
+    return [...base, ...skills.filter((s) => !s.disableUserInvocation && !taken.has(s.name)).map((s) => ({ name: s.name, description: s.description, skill: true }))];
+  }));
 
   // Generic executor for slash commands (/plan, /compact, /goal, …); returns {kind, text}.
   registerContractHandle("commands:execute", (_e, req) => handle(async () => executeEngineCommand(ctx, req)));
