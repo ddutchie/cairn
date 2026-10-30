@@ -51,7 +51,7 @@ function cleanStaleDemoTmp() {
       }
     }
   } catch {}
-  // Also clear any leftover session.jsonl.zstd in /tmp from cordis runs
+  // Also clear any leftover session.jsonl.zstd in /tmp from agent runs
   try { fs.rmSync("/tmp/session.jsonl", { force: true }); } catch {}
   try { fs.rmSync("/tmp/session.jsonl.zstd", { force: true }); } catch {}
 }
@@ -257,7 +257,7 @@ async function main() {
       { title: "Ship the shared-workspaces beta", col: "Todo", due: "2026-09-01", assignee: "Aria" },
       { title: "Write onboarding copy for new vaults", col: "Todo", due: "2026-08-25" },
       // In Progress — active this sprint
-      { title: "Port the coding agent onto the Cordis runtime", col: "In Progress", due: "2026-08-22", assignee: "Sam" },
+      { title: "Port the coding agent onto the new agent engine", col: "In Progress", due: "2026-08-22", assignee: "Sam" },
       { title: "Stream thinking blocks for the chat loop", col: "In Progress", due: "2026-08-21", assignee: "Sam" },
       { title: "Add cross-note AI summaries", col: "In Progress", due: "2026-08-28", assignee: "Aria" },
       // Review — waiting on validation
