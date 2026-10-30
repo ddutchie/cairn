@@ -4,6 +4,7 @@
  * so we emit that shape rather than changing the UI. Stateful only for the
  * per-session `seq` and the tool-call args needed to enrich results.
  */
+import { extractCairnRef } from "../../../shared/agent/cairn-ref";
 import type { AgentEvent } from "../events";
 import { makeSessionProjection, type SessionProjection } from "../../../shared/agent/session-projection";
 import type { SessionEventEnvelope } from "../../../shared/agent/session-event";
@@ -45,13 +46,16 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
         args.set(event.callId, event.args);
         events.push(ev("tool/call", { callId: event.callId, name: event.name, args: event.args, meta: { risk: event.risk } }));
         break;
-      case "tool/result":
+      case "tool/result": {
+        const cairnRef = event.isError ? undefined : extractCairnRef(event.name, event.text);
         events.push(ev("tool/result", {
           callId: event.callId, name: event.name, args: args.get(event.callId),
           ...(event.isError ? { error: event.text, ok: false } : { output: event.text, ok: true }),
+          ...(cairnRef ? { meta: { cairnRef } } : {}),
         }));
         args.delete(event.callId);
         break;
+      }
       case "approval/asked": {
         const a = event.ask;
         projections.push(makeSessionProjection(sessionId, "approval", {

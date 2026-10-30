@@ -97,6 +97,15 @@ describe("adapter", () => {
     expect(projections).toEqual([]);
   });
 
+  it("links a note or task result to the item it created", () => {
+    const adapt = createAdapter("s1");
+    const result = (name: string, text: string, isError = false) => adapt({ type: "tool/result", callId: "c", name, text, isError }).events[0].data as { meta?: { cairnRef?: unknown } };
+    expect(result("ensure_note", JSON.stringify({ id: "n1", title: "Auto note" })).meta?.cairnRef).toEqual({ type: "note", id: "n1", title: "Auto note" });
+    expect(result("create_task", JSON.stringify({ id: "t1", title: "Do it" })).meta?.cairnRef).toEqual({ type: "task", id: "t1", title: "Do it" });
+    expect(result("read", "plain text").meta).toBeUndefined();
+    expect(result("ensure_note", JSON.stringify({ id: "n1" }), true).meta).toBeUndefined();
+  });
+
   it("projects approvals with their nonce", () => {
     const adapt = createAdapter("s1");
     const { projections } = adapt({ type: "approval/asked", ask: { sessionId: "s1", callId: "c", nonce: "n1", tool: "bash", risk: "EXEC", title: "Run", preview: "ls", reason: "r", grants: [], expiresAt: 5 } });
