@@ -447,7 +447,15 @@ export class AgentHost {
     const live = this.sessions.get(sessionId);
     const log = live ? undefined : await readSession(this.deps.root, sessionId);
     const records = live?.records ?? log?.records ?? [];
-    return replayFromRecords(records, log?.header.title ?? deriveTitle(records), contextWindow);
+    const children: Array<{ id: string; records: readonly SessionRecord[] }> = [];
+    if (!live?.parent) {
+      for (const child of await this.listChildren(sessionId)) {
+        const childRecords = this.sessions.get(child.id)?.records ?? (await readSession(this.deps.root, child.id).catch(() => undefined))?.records;
+        if (childRecords) children.push({ id: child.id, records: childRecords });
+      }
+    }
+    children.sort((a, b) => (a.records[0]?.time ?? 0) - (b.records[0]?.time ?? 0));
+    return replayFromRecords(records, log?.header.title ?? deriveTitle(records), contextWindow, children);
   }
 
   async title(sessionId: string): Promise<string | null> {

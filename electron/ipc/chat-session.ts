@@ -39,8 +39,8 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
   registerContractHandle("db:chat:sessionMessages", (_e, { threadId }) => handle(async () => {
     if (!threadId) return { messages: [] as ChatMessage[] };
     if (await engineOwns(ctxDb, `chat-${threadId}`)) {
-      const { messages, usage, title } = await getEngineHost(ctxDb).loadMessages(`chat-${threadId}`);
-      return { messages: toChatMessages(threadId, messages), usage, title };
+      const { messages, usage, title, contextRing, todos } = await getEngineHost(ctxDb).loadMessages(`chat-${threadId}`);
+      return { messages: toChatMessages(threadId, messages), usage, title, contextRing, todos };
     }
     try {
       const stableId = String(SessionId(`chat-${threadId}`));

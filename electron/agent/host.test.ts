@@ -8,6 +8,7 @@ import { presetRules } from "./rules";
 import { goalTools } from "./tools/goal";
 import { scheduleTools } from "./tools/schedule";
 import { subagentTools } from "./tools/subagent";
+import { todoTool } from "./tools/todo";
 import { makeHarness, makeTools } from "./test-harness";
 
 const call = (name: string, args: Record<string, unknown>, id: string) => fauxToolCall(name, args as never, { id });
@@ -67,7 +68,7 @@ describe("AgentHost", () => {
     const t = await setup();
     t.h.faux.setResponses([toolUse(call("write_file", { path: "src/a.ts" }, "c1")), fauxAssistantMessage("done")]);
     const run = t.host.prompt(t.req());
-    await tick();
+    await until(() => t.host.pendingAsks("s1").length > 0);
     const ask = t.proj("approval").find((p) => p.payload.data.status === "required")!.payload.data;
     expect(t.host.pendingAsks("s1")).toHaveLength(1);
     expect(t.host.respondTool("s1", "c1", "wrong-nonce", { approved: true })).toBe(false);
@@ -83,7 +84,7 @@ describe("AgentHost", () => {
     const t = await setup();
     t.h.faux.setResponses([toolUse(call("write_file", { path: "src/a.ts" }, "c1")), fauxAssistantMessage("ok")]);
     const run = t.host.prompt(t.req());
-    await tick();
+    await until(() => t.host.pendingAsks("s1").length > 0);
     t.host.respondTool("s1", "c1", t.proj("approval")[0].payload.data.nonce, { approved: true, grant: "session" });
     await run;
 
@@ -351,6 +352,39 @@ describe("AgentHost", () => {
       await t.host.prompt(t.req({ prompt: "next" }));
       const records = (await t.host.loadMessages("s1")).messages.filter((m) => m.role === "user");
       expect(records.at(-1)!.content).toContain("<notice>Background job job-1 completed.</notice>");
+    });
+  });
+
+  describe("reads", () => {
+    it("replays subagent blocks on the dispatching message, with todos and the context ring", async () => {
+      const t = await setup();
+      const childTools = makeTools(t.executed);
+      const deps = {
+        run: async (parent: string, r: { childId?: string; prompt: string }) => {
+          const childId = `${parent}.sub-${Math.random().toString(16).slice(2, 8)}`;
+          return { childId, ...(await t.host.prompt(t.req({ sessionId: childId, parentSession: parent, prompt: r.prompt, tools: childTools }))) };
+        },
+        list: (parent: string) => t.host.listChildren(parent), interrupt: () => false, transcript: () => "",
+      };
+      const tools = [...makeTools(t.executed), ...subagentTools(deps), todoTool()];
+      t.h.faux.setResponses([
+        toolUse(call("todo_write", { todos: [{ content: "look", status: "in_progress" }] }, "c0"), call("subagent", { description: "first", prompt: "find alpha" }, "c1"), call("subagent", { description: "second", prompt: "find beta" }, "c2")),
+        fauxAssistantMessage("alpha is here"), fauxAssistantMessage("beta is there"),
+        fauxAssistantMessage("both found"),
+      ]);
+      await t.host.prompt(t.req({ tools }));
+      for (const reopened of [false, true]) {
+        if (reopened) t.host.release("s1");
+        const loaded = await t.host.loadMessages("s1");
+        const dispatcher = loaded.messages.find((m) => (m as unknown as { subagents?: unknown[] }).subagents?.length)!;
+        const subs = (dispatcher as unknown as { subagents: Array<{ instruction: string; result?: string }> }).subagents;
+        expect(subs.map((s) => s.instruction).sort()).toEqual(["find alpha", "find beta"]);
+        expect(dispatcher.toolCalls?.map((c) => c.tool)).toEqual(["todo_write"]);
+        expect(loaded.subagents).toHaveLength(2);
+        expect(loaded.todos).toEqual([{ id: "1", title: "look", status: "in_progress" }]);
+        expect(loaded.contextRing?.currentModel).toBeTruthy();
+        expect(Object.values(loaded.contextRing!.byModel)[0].turns).toBe(2);
+      }
     });
   });
 });

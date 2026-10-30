@@ -15,6 +15,14 @@ import { assertSafeId, resolveWithinRoot, isSafeId } from "./path-safety";
 import fs from "node:fs";
 import path from "node:path";
 import { getAgentHost } from "../cordis/agent-host";
+import { forgetEngineSession, getEngineHost } from "./engine-bridge";
+
+/** Drop a chat thread's engine log (and its subagents') along with the legacy one. */
+async function destroyEngineThread(ctx: DbContext, threadId: string): Promise<void> {
+  const sessionId = `chat-${threadId}`;
+  forgetEngineSession(sessionId);
+  await getEngineHost(ctx).destroy(sessionId).catch(() => undefined);
+}
 
 export function registerChatDbHandlers(ctx: DbContext): void {
   // Legacy SQLite transcript tables and pre-Cordis session indexes are reset by
@@ -39,6 +47,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     // after its transcript has been wiped.
     q.saveSessionTodos(ctx.db, `chat-${threadId}`, []);
     q.saveSessionTodos(ctx.db, threadId, []);
+    await destroyEngineThread(ctx, threadId);
     // Drop the cached live chat agent FIRST (see AgentHost.dropChatAgentForThread): the
     // module-global cache survives jsonl/ctx.agents wipes, and reusing a stale
     // agent both leaks pre-clear context into the next turn and writes to
@@ -129,7 +138,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     } catch { /* best-effort */ }
   }));
 
-  registerContractHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId }) => handle(() => {
+  registerContractHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId }) => handle(async () => {
     const threads = q.getChatThreads(ctx.db, workspaceId).filter((t) => !projectId || t.projectId === projectId);
     // Ids come from SQLite, but filter for path-safety anyway — a corrupt row
     // (e.g. from a compromised sync peer or a manual DB edit) must not turn
@@ -138,6 +147,7 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     if (ids.length === 0) return { deletedThreads: 0, deletedMessages: 0 };
     const placeholders = ids.map(() => "?").join(",");
     ctx.db.prepare(`DELETE FROM chat_threads WHERE id IN (${placeholders})`).run(...ids);
+    for (const id of ids) await destroyEngineThread(ctx, id);
     // Also clear Cordis sessions for all deleted threads (best-effort, same brute-force as single clear)
     try {
       const primaryRoot = getAgentHost().getSessionRoot();
@@ -178,5 +188,8 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     return { deletedThreads: ids.length, deletedMessages: 0 };
   }));
 
-  registerContractHandle("db:chat:deleteThread", (_e, { threadId }) => handle(() => q.deleteChatThread(ctx.db, threadId)));
+  registerContractHandle("db:chat:deleteThread", (_e, { threadId }) => handle(async () => {
+    q.deleteChatThread(ctx.db, threadId);
+    if (isSafeId(threadId)) await destroyEngineThread(ctx, threadId);
+  }));
 }

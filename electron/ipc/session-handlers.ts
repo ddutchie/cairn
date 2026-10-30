@@ -118,8 +118,8 @@ export function registerSessionHandlers(ctx: DbContext): void {
     if (!sessionId) return { messages: [] as AgentSessionMessage[] };
     // Sessions that live in the native engine replay from their own log.
     if (await engineOwns(ctx, sessionId)) {
-      const { messages, usage, title } = await getEngineHost(ctx).loadMessages(sessionId);
-      return { messages: toAgentMessages(messages), usage, title };
+      const { messages, usage, title, contextRing, todos } = await getEngineHost(ctx).loadMessages(sessionId);
+      return { messages: toAgentMessages(messages), usage, title, contextRing, todos };
     }
     try {
       const { messages, usage, contextRing, todos, stats } = await getAgentHost().loadSessionMessages(sessionId);

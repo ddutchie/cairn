@@ -221,7 +221,7 @@ Approach:
 - Exit: every coding `*.live.test.ts` passes on the new engine.
 
 ### Phase 5 — Remaining features (2 weeks)
-- [x] Subagents (nested turns, continuable, control/list). Child traces are not replayed in `loadMessages` yet.
+- [x] Subagents (nested turns, continuable, control/list).
 - [ ] Plan mode, todos, session title (first-prompt LLM), slash commands
       (`/compact`, `/goal`), skills (filesystem).
 - [ ] MCP client + resources on `@modelcontextprotocol/sdk`.
@@ -307,7 +307,6 @@ must have an engine replacement before `electron/cordis/` can go):
 | Tranche | Cordis surface | Call sites |
 |---|---|---|
 | Turn state + approvals | `isTurnRunning`, `abortTurn`, `getRunningTurnIds`, nonce mint/verify, pending-ask records, `grantSessionTool`/`grantSessionBash`, `readTrustedBashCommand` | `ipc/session-run.ts`, `ipc/session-runtime-handlers.ts`, `ipc/chat.ts` (all subsumed by `Gate` + `AgentHost`, so this is deletion once every path is on the engine) |
-| Reads | `loadSessionMessages`, `readSessionTitle`, `readContextRing`, session export/stats, `getSessionRoot` | `ipc/session-handlers.ts`, `ipc/chat-session.ts`, `ipc/usage-handlers.ts` |
 | Seam + packaging | `host-store.ts` (`recordUsage`, db services), `subprocess-runner.ts`, `dsh-context-ring`, `dsh-toolview` | move what survives under `electron/agent/`; `@vscode/ripgrep` becomes a direct dependency |
 
 **Deletion checklist (last):** flip the default to the engine and drop the

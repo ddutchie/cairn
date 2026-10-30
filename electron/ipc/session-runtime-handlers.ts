@@ -210,6 +210,10 @@ export function registerSessionRuntimeHandlers(
   // Reasoning-provenance snapshot ("whose thinking is in context") for the
   // agent panel's ring badge. Unavailable → renderer hides the pill.
   registerContractHandle("session:context-ring", (_event, { sessionId }) => handle(async () => {
+    if (await engineOwns(ctx, sessionId)) {
+      const ring = (await getEngineHost(ctx).loadMessages(sessionId)).contextRing;
+      return ring ? { available: true, ring } : { available: false };
+    }
     return getAgentHost().readContextRing(sessionId);
   }));
 
