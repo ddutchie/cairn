@@ -299,3 +299,39 @@ export function deleteTaskEmbeddingSections(db: Database.Database, cardId: strin
     db.prepare("DELETE FROM task_embeddings WHERE card_id = ?").run(cardId);
   }
 }
+
+// ── Session embeddings ────────────────────────
+// Semantic index of past chats / coding sessions (one row per exchange).
+
+export interface SessionChunkEmbedding {
+  sessionId: string;
+  chunkIdx: number;
+  vector: number[];
+}
+
+export function getSessionChunkHashes(db: Database.Database, sessionId: string, model: string): Map<number, string> {
+  const rows = db.prepare("SELECT chunk_idx, content_hash FROM session_embeddings WHERE session_id = ? AND model = ?").all(sessionId, model) as Array<{ chunk_idx: number; content_hash: string }>;
+  return new Map(rows.map((r) => [r.chunk_idx, r.content_hash]));
+}
+
+export function upsertSessionChunk(
+  db: Database.Database,
+  e: { sessionId: string; chunkIdx: number; workspaceId: string; model: string; contentHash: string; vector: number[] },
+): void {
+  db.prepare(`
+    INSERT INTO session_embeddings (session_id, chunk_idx, workspace_id, model, content_hash, vector, embedded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(session_id, chunk_idx) DO UPDATE SET
+      workspace_id = excluded.workspace_id, model = excluded.model,
+      content_hash = excluded.content_hash, vector = excluded.vector, embedded_at = excluded.embedded_at
+  `).run(e.sessionId, e.chunkIdx, e.workspaceId, e.model, e.contentHash, JSON.stringify(e.vector), ts());
+}
+
+export function getSessionEmbeddingsForWorkspace(db: Database.Database, workspaceId: string, model: string): SessionChunkEmbedding[] {
+  const rows = db.prepare("SELECT session_id, chunk_idx, vector FROM session_embeddings WHERE workspace_id = ? AND model = ?").all(workspaceId, model) as Array<{ session_id: string; chunk_idx: number; vector: string }>;
+  return rows.map((r) => ({ sessionId: r.session_id, chunkIdx: r.chunk_idx, vector: JSON.parse(r.vector) as number[] }));
+}
+
+export function deleteSessionEmbeddings(db: Database.Database, sessionId: string): void {
+  db.prepare("DELETE FROM session_embeddings WHERE session_id = ?").run(sessionId);
+}

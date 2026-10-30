@@ -15,6 +15,8 @@ export interface SessionToolDeps {
   currentSession: string;
   /** Sessions of this workspace; anything else stays invisible. */
   workspaceSessionIds: () => Set<string>;
+  /** Meaning-based lookup; null when embeddings are off or fail. Keyword search always works. */
+  semantic?: (query: string, limit: number) => Promise<{ hits: Array<{ sessionId: string; idx: number; score: number }>; remaining: number } | null>;
 }
 
 const MAX_SCANNED = 400;
@@ -51,7 +53,7 @@ export function sessionTools(deps: SessionToolDeps): AgentTool[] {
   return [
     defineTool({
       name: "search_sessions",
-      description: "Search your earlier chats and coding sessions in this workspace for a phrase (all words must appear). Returns matching sessions with the matching messages; read one in full with read_session. Use it to recall what was decided or done before.",
+      description: "Search your earlier chats and coding sessions in this workspace by meaning (when embeddings are on) and by words (all words must appear). Returns matching sessions with the matching messages; read one in full with read_session. Use it to recall what was decided or done before.",
       parameters: Type.Object({
         query: Type.String({ description: "Words to look for, e.g. \"export format decision\"." }),
         limit: Type.Optional(Type.Number({ description: "Maximum sessions to return (default 8)." })),
@@ -75,8 +77,22 @@ export function sessionTools(deps: SessionToolDeps): AgentTool[] {
         candidates.sort((x, y) => y.mtime - x.mtime);
         const limit = Math.min(20, Math.max(1, Math.floor(a.limit ?? 8)));
         const found: string[] = [];
+        const shown = new Set<string>();
+        // Meaning first: it finds the session even when the words differ.
+        const sem = deps.semantic && !a.sinceDays ? await deps.semantic(a.query, limit).catch(() => null) : null;
+        for (const h of sem?.hits ?? []) {
+          const log = await readSession(deps.root, h.sessionId).catch(() => undefined);
+          if (!log) continue;
+          const turns = turnsOf(log.records);
+          const at = turns.find((t) => t.index === h.idx);
+          const reply = turns.find((t) => t.index === h.idx + 1 && t.role === "assistant");
+          if (!at) continue;
+          shown.add(h.sessionId);
+          found.push([`${h.sessionId} — ${kindOf(h.sessionId)}, ${day(turns[turns.length - 1]?.time ?? log.header.createdAt)} — ${deriveTitle(log.records) ?? h.sessionId} (similarity ${h.score.toFixed(2)})`, `  #${at.index} ${at.role}: ${snippet(at.text, terms)}`, ...(reply ? [`  #${reply.index} assistant: ${snippet(reply.text, terms)}`] : [])].join("\n"));
+        }
         for (const { id, mtime } of candidates.slice(0, MAX_SCANNED)) {
           if (found.length >= limit) break;
+          if (shown.has(id)) continue;
           const log = await readSession(deps.root, id).catch(() => undefined);
           if (!log || log.header.parentId) continue; // subagent children are part of their parent's story
           const turns = turnsOf(log.records);
@@ -85,8 +101,9 @@ export function sessionTools(deps: SessionToolDeps): AgentTool[] {
           const title = deriveTitle(log.records) ?? id;
           found.push([`${id} — ${kindOf(id)}, ${day(mtime)} — ${title}`, ...hits.slice(0, 3).map((h) => `  #${h.index} ${h.role}: ${snippet(h.text, terms)}`), hits.length > 3 ? `  (+${hits.length - 3} more matching messages)` : ""].filter(Boolean).join("\n"));
         }
-        if (!found.length) return ok(`No earlier session in this workspace mentions all of: ${terms.join(", ")}.`);
-        return ok(`${found.length} session${found.length === 1 ? "" : "s"}, newest first:\n\n${found.join("\n\n")}\n\nRead one with read_session {id, from: <message #>}.`);
+        const note = sem?.remaining ? `\n\n(Meaning search is still indexing ${sem.remaining} older exchanges; ask again later for fuller results.)` : "";
+        if (!found.length) return ok(`No earlier session in this workspace matches: ${terms.join(" ")}.${note}`);
+        return ok(`${found.length} session${found.length === 1 ? "" : "s"}${sem ? " (best meaning matches first, then keyword matches)" : ", newest first"}:\n\n${found.join("\n\n")}\n\nRead one with read_session {id, from: <message #>}.${note}`);
       },
     }),
     defineTool({

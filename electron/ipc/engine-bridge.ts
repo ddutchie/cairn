@@ -29,6 +29,8 @@ import { importLegacySession } from "../agent/session/legacy-import";
 import { isLocalEndpoint } from "../lib/llm";
 import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
 import { listSessionIdsForWorkspace } from "../db/workspace-queries";
+import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../agent/session-search";
+import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
 import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared/agent/chat-approval";
@@ -404,6 +406,15 @@ export async function messageEngineSubagent(ctx: DbContext, parent: string, chil
   return { messageId: childId };
 }
 
+/** Where session vectors go; undefined when the user has not turned embeddings on. */
+async function sessionIndexDeps(db: DbContext["db"], workspaceId: string): Promise<SessionIndexDeps | undefined> {
+  const settings = getEmbeddingsSettingsCached();
+  if (!settings?.enabled) return undefined;
+  // Lazy: the embeddings client reads Electron's `app` paths at import time.
+  const model = settings.modelId || (await import("../embeddings/client")).getDefaultModelId();
+  return { db, root: hostRoot(), workspaceId, model, embed: runtimeEmbed };
+}
+
 export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   try {
     await runEnginePromptInner(a);
@@ -467,7 +478,17 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
     fs: { cwd: a.cwd, rgPath, observed, sandbox: () => ({ mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }), jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
-    sessions: role === "automation-dev" || !a.workspaceId ? undefined : { root: hostRoot(), currentSession: a.sessionId, workspaceSessionIds: () => new Set(listSessionIdsForWorkspace(a.ctx.db, a.workspaceId!)) },
+    sessions: role === "automation-dev" || !a.workspaceId ? undefined : {
+      root: hostRoot(), currentSession: a.sessionId,
+      workspaceSessionIds: () => new Set(listSessionIdsForWorkspace(a.ctx.db, a.workspaceId!)),
+      semantic: async (query, limit) => {
+        const idx = await sessionIndexDeps(a.ctx.db, a.workspaceId!);
+        if (!idx) return null;
+        const allowed = new Set(listSessionIdsForWorkspace(a.ctx.db, a.workspaceId!));
+        allowed.delete(a.sessionId);
+        return searchSessionsSemantic(idx, allowed, query, limit);
+      },
+    },
     lsp: role === "automation-dev" ? undefined : { manager: getLsp(), cwd: a.cwd },
     terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },
     goal: {
@@ -520,6 +541,9 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
       maxSteps: a.llmConfig.maxSteps,
     });
     broadcastEvent("db:changed", null);
+    // Keep the meaning index current for search_sessions; best effort and off the critical path.
+    const idx = a.workspaceId && !a.noHooks && role !== "automation-dev" ? await sessionIndexDeps(a.ctx.db, a.workspaceId) : undefined;
+    if (idx) void indexSessions(idx, [a.sessionId]).catch((err) => console.warn("[agent] session index skipped:", err instanceof Error ? err.message : err));
   } catch (err) {
     reportPromptError(a.sessionId, err);
   } finally {
