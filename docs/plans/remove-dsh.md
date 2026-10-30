@@ -307,7 +307,6 @@ must have an engine replacement before `electron/cordis/` can go):
 | Tranche | Cordis surface | Call sites |
 |---|---|---|
 | Turn state + approvals | `isTurnRunning`, `abortTurn`, `getRunningTurnIds`, nonce mint/verify, pending-ask records, `grantSessionTool`/`grantSessionBash`, `readTrustedBashCommand` | `ipc/session-run.ts`, `ipc/session-runtime-handlers.ts`, `ipc/chat.ts` (all subsumed by `Gate` + `AgentHost`, so this is deletion once every path is on the engine) |
-| Seam + packaging | `host-store.ts` (`recordUsage`, db services), `subprocess-runner.ts`, `dsh-context-ring`, `dsh-toolview` | move what survives under `electron/agent/`; `@vscode/ripgrep` becomes a direct dependency |
 
 **Deletion checklist (last):** flip the default to the engine and drop the
 `engine` toggle, delete `electron/cordis/`, remove the `@deepseek-ai/*` and

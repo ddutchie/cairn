@@ -14,7 +14,7 @@ import { registerContractHandle } from "./registry";
 import { isMobileCaller } from "./mobile-caller";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
-import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
+import type { ReplayMessage, ReplaySubagent } from "../../shared/agent/session-wire";
 import { getAgentHost } from "../cordis/agent-host";
 import { engineEnabled, engineOwns, getEngineHost, readEnginePermissions, setEnginePermission } from "./engine-bridge";
 import { getCachedConfig } from "../lib/config-cache";

@@ -8,7 +8,7 @@
  * rendering. These match the real component signatures (`{ size, className }`
  * for icons, `{ state, size, className }` for StateDot) so swapping in the real
  * package later is a drop-in. The visuals are Cairn's lucide icons + a themed
- * dot, styled through the same `--dsw-*` tokens.
+ * dot, styled through the same `--tv-*` tokens.
  */
 import React from "react";
 import { Sparkles, ChevronDown, Search } from "lucide-react";
@@ -30,10 +30,10 @@ export const IconInspectOutline12 = ({ size = 12, className }: IconProps) => (
 export type StateDotState = "done" | "warning" | "ongoing" | "error";
 
 const STATE_COLOR: Record<StateDotState, string> = {
-  done: "var(--dsw-alias-state-success-primary)",
-  warning: "var(--dsw-alias-state-warn-primary)",
-  ongoing: "var(--dsw-static-deepseek-450)",
-  error: "var(--dsw-alias-state-error-primary)",
+  done: "var(--tv-alias-state-success-primary)",
+  warning: "var(--tv-alias-state-warn-primary)",
+  ongoing: "var(--tv-static-deepseek-450)",
+  error: "var(--tv-alias-state-error-primary)",
 };
 
 export function StateDot({ state, size = 10, className }: { state: StateDotState; size?: number; className?: string }) {

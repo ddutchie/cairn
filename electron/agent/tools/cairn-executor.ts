@@ -7,10 +7,10 @@
 
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
-import { writeNoteFile } from "../notes-files";
-import type { CairnSnapshot } from "../lib/read-tools";
-import { type LLMConfig } from "../lib/llm";
-import type { ChatRequest, ToolArgs } from "../lib/tools";
+import { writeNoteFile } from "../../notes-files";
+import type { CairnSnapshot } from "../../lib/read-tools";
+import { type LLMConfig } from "../../lib/llm";
+import type { ChatRequest, ToolArgs } from "../../lib/tools";
 import {
   createHostStore,
   newId,
@@ -18,10 +18,10 @@ import {
   TOOL_SCHEMAS,
   aiWriteLock,
   toolResultError,
-} from "./host-store";
-import { executeHandler as executeMcpTool } from "../mcp/tools";
-import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "../mcp/tools/consolidated";
-import { lazy } from "../host-shared/lazy";
+} from "../host-store";
+import { executeHandler as executeMcpTool } from "../../mcp/tools";
+import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "../../mcp/tools/consolidated";
+import { lazy } from "../../host-shared/lazy";
 
 /**
  * Execute one chat tool. Consolidated (model-facing) tools are translated onto
@@ -299,7 +299,7 @@ export async function executeTool(
 
       let tasksRaw: string;
       try {
-        const { runOneShot } = await import("../agent/one-shot");
+        const { runOneShot } = await import("../one-shot");
         tasksRaw = await runOneShot({
           systemPrompt, userPrompt,
           config: llmConfig,

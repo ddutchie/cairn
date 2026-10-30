@@ -5,7 +5,7 @@
  * a replay-stable accent row derived ONLY from the logged tool call/result slice
  * (our ToolCallBlock) — no session store, no RPC, no dsh shell. The ONLY changes
  * vs upstream: (1) local primitive stand-ins (primitives.tsx), (2) plain
- * className strings against the scoped stylesheet (dsw-theme.css) instead of a
+ * className strings against the scoped stylesheet (tool-views.css) instead of a
  * CSS module, (3) an inlined `t()` (we don't wire dsh's locale seat for a spike).
  *
  * This is the artifact that proves a dsh plugin's UI renders in Cairn's own
@@ -86,13 +86,13 @@ function leadingFor(state: SkillRowState): ReactNode {
 }
 
 function disclosureLeading(state: SkillRowState, open: boolean, expandable: boolean): ReactNode {
-  if (open) return <IconChevronDownOutline14 className="dsh-skill-chevron" />;
+  if (open) return <IconChevronDownOutline14 className="skill-row-chevron" />;
   const icon = leadingFor(state);
   if (!expandable) return icon;
   return (
     <>
-      <span className="dsh-skill-iconIdle">{icon}</span>
-      <IconChevronDownOutline14 className="dsh-skill-chevron dsh-skill-chevronHover" />
+      <span className="skill-row-iconIdle">{icon}</span>
+      <IconChevronDownOutline14 className="skill-row-chevron skill-row-chevronHover" />
     </>
   );
 }
@@ -124,24 +124,24 @@ export function SkillRow({ block, inspect }: ToolCallViewProps) {
     : {};
   const leading = disclosureLeading(model.state, open, expandable);
   return (
-    <div className="dsh-skill-card" data-tool="skill" data-state={model.state}>
-      <div className="dsh-skill-row" data-expandable={expandable || undefined} {...disclosureProps}>
-        <span className="dsh-skill-leading">{leading}</span>
-        {status !== null ? <span className="dsh-skill-visuallyHidden">{status}</span> : null}
-        <span className="dsh-skill-title">Skill</span>
-        <span className="dsh-skill-separator" aria-hidden />
-        <span className={model.errorSummary === null ? "dsh-skill-summary" : "dsh-skill-summary dsh-skill-errorSummary"}>
+    <div className="skill-row-card" data-tool="skill" data-state={model.state}>
+      <div className="skill-row-row" data-expandable={expandable || undefined} {...disclosureProps}>
+        <span className="skill-row-leading">{leading}</span>
+        {status !== null ? <span className="skill-row-visuallyHidden">{status}</span> : null}
+        <span className="skill-row-title">Skill</span>
+        <span className="skill-row-separator" aria-hidden />
+        <span className={model.errorSummary === null ? "skill-row-summary" : "skill-row-summary skill-row-errorSummary"}>
           {summary}
         </span>
       </div>
       {open ? (
-        <div className="dsh-skill-bodyWrap">
-          <section className="dsh-skill-instructionsCard" aria-label={t("row.instructions")}>
-            <div className="dsh-skill-instructionsHeader">{t("row.instructions")}</div>
-            <pre className="dsh-skill-instructions" data-error={model.state === "error" || undefined}>{model.output}</pre>
+        <div className="skill-row-bodyWrap">
+          <section className="skill-row-instructionsCard" aria-label={t("row.instructions")}>
+            <div className="skill-row-instructionsHeader">{t("row.instructions")}</div>
+            <pre className="skill-row-instructions" data-error={model.state === "error" || undefined}>{model.output}</pre>
           </section>
           {inspect !== undefined ? (
-            <button type="button" className="dsh-skill-inspectButton" onClick={inspect}>
+            <button type="button" className="skill-row-inspectButton" onClick={inspect}>
               <IconInspectOutline12 />
               Inspect
             </button>

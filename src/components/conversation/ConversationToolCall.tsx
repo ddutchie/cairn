@@ -12,7 +12,7 @@ import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/sha
 import { humanizeConnectorTool, humanizeTool } from "@/lib/humanize-tool";
 import { cairnNameLookup } from "@/lib/cairn-name-lookup";
 import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-risk";
-import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
+import { registerBuiltinToolViews } from "@/lib/tool-views";
 import type { ConversationToolCall } from "@/lib/conversation/message";
 import { useCairnStore } from "@/store";
 

@@ -15,7 +15,7 @@ import "./ctx-augment";
 import z from "zod";
 import { TOOL_SCHEMAS, createHostStore, toolParametersJsonSchema } from "./host-store";
 import { APPROVAL_SAFE_TOOLS } from "../../shared/agent/tool-risk";
-import { executeTool } from "./chat-executor";
+import { executeTool } from "../agent/tools/cairn-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { Database } from "better-sqlite3";

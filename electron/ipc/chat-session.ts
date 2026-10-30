@@ -11,7 +11,7 @@
 import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { SessionId } from "@deepseek-ai/dsh-session";
-import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
+import type { ReplayMessage, ReplaySubagent } from "../../shared/agent/session-wire";
 import { getAgentHost } from "../cordis/agent-host";
 import { engineOwns, getEngineHost } from "./engine-bridge";
 import type { ChatMessage } from "../../shared/types/chat";

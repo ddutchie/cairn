@@ -1,6 +1,6 @@
 /** User-configured MCP servers and custom HTTP services, exposed as `mcp__<id>__*` / `svc__*` tools. */
 import type Database from "better-sqlite3";
-import { createHostStore } from "../../cordis/host-store";
+import { createHostStore } from "../host-store";
 import { approvalPreview } from "../../../shared/agent/tool-risk";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";

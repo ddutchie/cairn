@@ -30,7 +30,7 @@ import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importDshSession } from "../agent/session/dsh-import";
 import { isLocalEndpoint } from "../lib/llm";
 import { getAgentHost } from "../cordis/agent-host";
-import { recordUsage } from "../cordis/host-store";
+import { recordUsage } from "../agent/host-store";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
 import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared/agent/chat-approval";

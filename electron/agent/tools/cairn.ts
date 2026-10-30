@@ -6,7 +6,7 @@
 import type Database from "better-sqlite3";
 import type { BrowserWindow } from "electron";
 import * as z from "zod";
-import { executeTool } from "../../cordis/chat-executor";
+import { executeTool } from "./cairn-executor";
 import type { LLMConfig } from "../../lib/llm";
 import type { ChatRequest } from "../../lib/tools";
 import { TOOL_SCHEMAS, toolParametersJsonSchema } from "../../lib/tool-schemas";

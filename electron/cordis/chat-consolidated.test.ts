@@ -11,7 +11,7 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createColumn, createNote, createCard, getNoteById, getCardById } from "../db/queries";
-import { executeTool } from "./chat-executor";
+import { executeTool } from "../agent/tools/cairn-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 

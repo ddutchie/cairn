@@ -20,7 +20,7 @@ import os from "os";
 import path from "path";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, createNote, getNoteById } from "../db/queries";
-import { executeTool } from "../cordis/chat-executor";
+import { executeTool } from "../agent/tools/cairn-executor";
 import { parseToolArgs } from "../../shared/chat/parse-tool-args";
 import type { LLMConfig } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";

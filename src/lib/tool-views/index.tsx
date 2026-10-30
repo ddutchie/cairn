@@ -1,9 +1,9 @@
 /**
  * §11 toolview micro-host — public entry.
  *
- * `<DshToolView tc={...} />` renders a Cairn ChatToolCall through a registered
+ * `<ToolView tc={...} />` renders a Cairn ChatToolCall through a registered
  * dsh `tool.call.toolview` component (looked up by tool name), wrapped in the
- * `.dsh-toolview-scope` div that provides the `--dsw-*` theme shim. Returns null
+ * `.tool-view-scope` div that provides the `--tv-*` theme shim. Returns null
  * when no dsh view is registered for the tool — the caller falls back to Cairn's
  * own chip.
  *
@@ -16,7 +16,7 @@ import type { ConversationLiveToolCall as ChatToolCall } from "@/lib/conversatio
 import { getToolView, registerToolView, registeredToolViewKeys } from "./registry";
 import { toToolCallViewProps } from "./adapter";
 import { SkillRow } from "./SkillRow";
-import "./dsw-theme.css";
+import "./tool-views.css";
 
 let registered = false;
 
@@ -35,7 +35,7 @@ export function hasToolView(toolName: string): boolean {
   return getToolView(toolName) !== undefined;
 }
 
-export function DshToolView({
+export function ToolView({
   tc,
   cwd,
   home,
@@ -59,7 +59,7 @@ export function DshToolView({
   if (!View) return null;
   const props = toToolCallViewProps(tc, { cwd, home, openFile, inspect });
   return (
-    <div className="dsh-toolview-scope">
+    <div className="tool-view-scope">
       {React.createElement(View, props)}
     </div>
   );

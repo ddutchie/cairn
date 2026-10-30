@@ -6,7 +6,7 @@ import type { SessionConversationQuestion, SessionConversationToolCall } from "@
  * Live tool-call and question shapes for the shared conversation layer.
  *
  * These used to live in `@/hooks/useChatStream`, which meant the profile-neutral
- * conversation components (and `@/lib/dsh-toolview`) imported from the CHAT
+ * conversation components (and `@/lib/tool-views`) imported from the CHAT
  * hook — the shared layer depending on one of its two consumers. They are
  * declared here so both chat and coding depend on the shared layer instead, not
  * on each other. `useChatStream` re-exports them for compatibility.
