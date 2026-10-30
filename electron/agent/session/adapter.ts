@@ -66,6 +66,10 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
       case "context/overflow":
         projections.push(makeSessionProjection(sessionId, "compact", { status: "start", auto: true }));
         break;
+      case "compaction":
+        projections.push(makeSessionProjection(sessionId, "compact-result", { messageCount: event.keepCount, summary: event.summary }));
+        projections.push(makeSessionProjection(sessionId, "compact", { status: "end", auto: event.trigger !== "manual" }));
+        break;
       case "auto/paused":
         projections.push(makeSessionProjection(sessionId, "error", { message: event.reason, code: "auto-paused" }));
         break;

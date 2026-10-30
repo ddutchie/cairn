@@ -1,5 +1,6 @@
 import { fauxAssistantMessage, fauxToolCall, type Message } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
+import { applyCompaction, type CompactionTrigger } from "./context";
 import type { AgentEvent } from "./events";
 import type { Gate } from "./gate";
 import { runTurn } from "./loop";
@@ -11,6 +12,8 @@ import { Type } from "@earendil-works/pi-ai";
 import { drive, makeHarness, makeTools, ofType, toolResults, types, type Harness } from "./test-harness";
 
 const call = (name: string, args: Record<string, unknown>, id: string) => fauxToolCall(name, args as never, { id });
+const fail = (msg: string) => fauxAssistantMessage([], { stopReason: "error", errorMessage: msg });
+const noWait = async () => {};
 const toolUse = (...calls: ReturnType<typeof call>[]) => fauxAssistantMessage(calls, { stopReason: "toolUse" });
 
 /** Approve/deny every ask as it appears. */
@@ -79,8 +82,6 @@ describe("runTurn: basics", () => {
 });
 
 describe("runTurn: retry and overflow", () => {
-  const fail = (msg: string) => fauxAssistantMessage([], { stopReason: "error", errorMessage: msg });
-  const noWait = async () => {};
 
   it("retries a transient failure before any output and then succeeds", async () => {
     const h = makeHarness();
@@ -134,6 +135,53 @@ describe("runTurn: retry and overflow", () => {
     expect(types(events)).not.toContain("retry");
     expect(types(events)).not.toContain("error");
     expect(events.at(-1)).toEqual({ type: "turn/end", reason: "overflow" });
+  });
+});
+
+describe("runTurn: compaction", () => {
+  const compact = (calls: string[]) => async (history: readonly Message[], trigger: CompactionTrigger) => {
+    calls.push(trigger);
+    const event = { type: "compaction" as const, summary: "S", keepCount: 1, tokensBefore: 10, trigger };
+    return { event, history: applyCompaction(history, event) };
+  };
+
+  it("compacts and retries when the provider rejects the request as too large", async () => {
+    const h = makeHarness();
+    const calls: string[] = [];
+    h.history.push({ role: "user", content: "old", timestamp: 1 }, fauxAssistantMessage("older answer"));
+    h.faux.setResponses([fail("This model's maximum context length is 8192 tokens (prompt is too long)"), fauxAssistantMessage("fine")]);
+    const events = await drive(runTurn(h.opts({ sleep: noWait, compaction: { compact: compact(calls) } })));
+    expect(calls).toEqual(["overflow"]);
+    expect(types(events)).toEqual(expect.arrayContaining(["context/overflow", "compaction", "assistant/message"]));
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "stop" });
+    expect(h.history[0]).toMatchObject({ role: "user" });
+    expect((h.history[0] as { content: string }).content).toContain("S");
+  });
+
+  it("gives up with an overflow end when compaction cannot help", async () => {
+    const h = makeHarness();
+    h.faux.setResponses([fail("maximum context length is 8192 tokens (prompt is too long)")]);
+    const events = await drive(runTurn(h.opts({ sleep: noWait, compaction: { compact: async () => undefined } })));
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "overflow" });
+  });
+
+  it("compacts before the next step once the last request reached the threshold", async () => {
+    const h = makeHarness();
+    const calls: string[] = [];
+    h.faux.setResponses([toolUse(call("echo", { text: "x" }, "c1")), fauxAssistantMessage("done")]);
+    const events = await drive(runTurn(h.opts({ compaction: { threshold: 1, compact: compact(calls) } })));
+    expect(calls).toEqual(["threshold"]);
+    const order = types(events);
+    expect(order.indexOf("compaction")).toBeGreaterThan(order.indexOf("tool/result"));
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "stop" });
+  });
+
+  it("reports a failing compactor as an error event and carries on", async () => {
+    const h = makeHarness();
+    h.faux.setResponses([toolUse(call("echo", { text: "x" }, "c1")), fauxAssistantMessage("done")]);
+    const events = await drive(runTurn(h.opts({ compaction: { threshold: 1, compact: async () => { throw new Error("nope"); } } })));
+    expect(ofType(events, "error")[0].message).toContain("nope");
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "stop" });
   });
 });
 

@@ -398,7 +398,7 @@ Decision: no vendoring or locking phase — dsh is replaced outright, so
   only while nothing has been emitted for the attempt, never for context
   overflow; emits `retry` events. pi-ai gets `maxRetries: 0`.
 * Context overflow ends the turn with `context/overflow` / `overflow` so the
-  caller can compact and re-run (compaction itself is still to do).
+  caller can compact and re-run.
 * **No replay translation.** Sessions persist pi-ai's own `AssistantMessage`
   (thinking blocks + signatures included), so dsh's `toPiReplayState` /
   `foreignAssistant` layer disappears. The log schema must keep the message
@@ -427,3 +427,20 @@ credential store, OAuth flows, catalog providers.
   them into a per-turn summary ("5 calls auto-approved")?
 * Path-scoped rules for MCP tools — is `host`/`tool` matching enough?
 * Should `global` rules be syncable across devices (sync layer exists)?
+
+## Context and compaction (built)
+
+* `context.ts`: `buildContextView(records)` is the single fold from log events to provider
+  history; the live loop and replay share it, so `keepCount` means the same in both. A
+  `compaction` event stores `{summary, keepCount}` — the summary replaces everything but the last
+  `keepCount` messages. Repair runs at each `turn/start`, mirroring the loop.
+* `planCompaction` cuts only at a user/assistant message, never a tool result. `compactHistory`
+  summarizes the head through the normal `streamFn` (plain-text transcript, no tools) and
+  returns `{event, history}`; an earlier summary in the head is merged into the new one.
+* `pruneToolResults` is request-time only (`TurnOptions.transformContext`): old bulky outputs
+  become stubs, stored history is untouched.
+* Loop: `TurnOptions.compaction` compacts before a step when the last request reached `threshold`
+  (`compactionThreshold` = 80% of the message budget) and, on provider overflow, compacts and
+  retries the step. At most `maxPerTurn` (2); a failing compactor is reported as `error` and the
+  turn continues, an unhelpful one ends the turn with `overflow` as before.
+* Not yet: image offload (events carry no images yet), manual `/compact` command wiring.

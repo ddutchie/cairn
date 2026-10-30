@@ -30,6 +30,7 @@ import {
   type UserMessage,
 } from "@earendil-works/pi-ai";
 import type { AgentEvent, DecisionSource } from "./events";
+import type { CompactionResult, CompactionTrigger } from "./context";
 import { Gate, type AskInput } from "./gate";
 import { callSignature, decide, type Decision, type Mode } from "./policy";
 import { repairInterrupted } from "./repair";
@@ -69,6 +70,17 @@ export interface TurnOptions {
   /** Pass the same set every turn so a doom-loop "allow" is remembered. */
   doomAcked?: Set<string>;
   streamOptions?: Omit<SimpleStreamOptions, "signal">;
+  /** Pure rewrite of the history sent to the model (e.g. tool-output pruning). The stored history is untouched. */
+  transformContext?: (messages: Message[]) => Message[];
+  /**
+   * Context management. `compact` summarizes older history; it runs before a step when the last
+   * request's size reached `threshold`, and once the provider rejects a request as too large.
+   */
+  compaction?: {
+    threshold?: number;
+    maxPerTurn?: number;
+    compact(history: readonly Message[], trigger: CompactionTrigger): Promise<CompactionResult | undefined>;
+  };
   /** Transient-error retry. Defaults to DEFAULT_RETRY; `{ enabled: false, … }` turns it off. */
   retry?: RetryPolicy;
   /** Backoff sleep; injectable for tests. Must resolve early when `signal` aborts. */
@@ -98,7 +110,7 @@ async function* streamAssistant(o: TurnOptions): AsyncGenerator<AgentEvent, Assi
     let emitted = false;
     const context: Context = {
       systemPrompt: o.systemPrompt,
-      messages: o.history,
+      messages: o.transformContext ? o.transformContext(o.history) : o.history,
       tools: o.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
     };
     const stream = o.streamFn(o.model, context, { ...o.streamOptions, signal: o.signal });
@@ -154,8 +166,31 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
   o.history.push({ role: "user", content: o.input, timestamp: Date.now() } satisfies UserMessage);
   yield { type: "user/message", content: o.input };
 
+  let compactions = 0;
+  let lastContextTokens = 0;
+  const maxCompactions = o.compaction?.maxPerTurn ?? 2;
+  /** Try to compact; a failure is reported but never fatal. */
+  const tryCompact = async function* (trigger: CompactionTrigger): AsyncGenerator<AgentEvent, boolean> {
+    if (!o.compaction || compactions >= maxCompactions) return false;
+    compactions++;
+    try {
+      const result = await o.compaction.compact(o.history, trigger);
+      if (!result) return false;
+      o.history.splice(0, o.history.length, ...result.history);
+      yield result.event;
+      return true;
+    } catch (err) {
+      if (!o.signal?.aborted) yield { type: "error", message: `Compaction failed: ${err instanceof Error ? err.message : String(err)}` };
+      return false;
+    }
+  };
+
   for (let step = 0; step < maxSteps; step++) {
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
+    const threshold = o.compaction?.threshold;
+    if (threshold && lastContextTokens >= threshold) {
+      if (yield* tryCompact("threshold")) lastContextTokens = 0;
+    }
 
     let final: AssistantMessage;
     try {
@@ -170,6 +205,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
     if (final.stopReason === "aborted") { yield { type: "turn/end", reason: "aborted" }; return; }
     if (final.stopReason === "error" && isContextOverflow(final, o.model.contextWindow)) {
       yield { type: "context/overflow" };
+      if (yield* tryCompact("overflow")) { step--; continue; }
       yield { type: "turn/end", reason: "overflow" };
       return;
     }
@@ -180,6 +216,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
     }
 
     o.history.push(final);
+    lastContextTokens = final.usage.totalTokens || final.usage.input + final.usage.cacheRead + final.usage.cacheWrite + final.usage.output;
     yield { type: "assistant/message", message: final };
 
     const calls = final.content.filter((b): b is ToolCall => b.type === "toolCall");

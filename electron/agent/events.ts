@@ -25,5 +25,6 @@ export type AgentEvent =
   | { type: "auto/paused"; reason: string }
   | { type: "retry"; attempt: number; maxAttempts: number; delayMs: number; error: string }
   | { type: "context/overflow" }
+  | { type: "compaction"; summary: string; keepCount: number; tokensBefore: number; trigger: "threshold" | "overflow" | "manual" }
   | { type: "error"; message: string }
   | { type: "turn/end"; reason: TurnEndReason };
