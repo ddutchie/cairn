@@ -94,7 +94,7 @@ describe("importLegacySession", () => {
     const dst = await mkdtemp(path.join(os.tmpdir(), "dsh-redo-dst-"));
     await mkdir(path.join(src, "p", "w"), { recursive: true });
     await writeFile(path.join(src, "p", "w", "session.v4.jsonl.zstd"), zstdCompressSync(Buffer.from(v4)));
-    await writeImportedSession(dst, { type: "session", version: SESSION_FORMAT, id: "w", origin: "legacy-import" }, []);
+    await writeImportedSession(dst, { type: "session", version: SESSION_FORMAT, id: "w", createdAt: 1, origin: "legacy-import" }, []);
     expect(await importLegacySession(src, dst, "w")).toBe(true);
     expect((await readSession(dst, "w"))?.records.length).toBeGreaterThan(0);
     expect(await importLegacySession(src, dst, "w")).toBe(false);
