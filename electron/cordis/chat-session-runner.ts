@@ -157,13 +157,7 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
   const opencodeSessionId = `chat-${req.threadId}`;
   setCurrentOpencodeSessionId(opencodeSessionId);
 
-  // Runtime-loaded development plugins need one process-level fs chain.
   try {
-    const { pluginsDevEnabled } = await import("./plugin-loader");
-    if (pluginsDevEnabled() && !ctx.get("fs")) {
-      const { mountFsChain } = await import("./cordis-coding-tools");
-      await mountFsChain(ctx, { cwd: workspacePath });
-    }
     const now = Date.now();
     const g = globalThis as unknown as { __cairnArtifactHygieneAt?: number };
     if (!g.__cairnArtifactHygieneAt || now - g.__cairnArtifactHygieneAt > 10 * 60 * 1000) {
@@ -173,11 +167,11 @@ export async function runChatCordisSession(opts: RunCordisLoopOptions): Promise<
       } catch { /* best-effort hygiene */ }
     }
   } catch (error) {
-    console.error("[cordis] fs chain mount for plugins failed:", error instanceof Error ? error.message : error);
+    console.error("[cordis] workspace hygiene failed:", error instanceof Error ? error.message : error);
   }
   // Runs synchronous fs walks over the workspace, throttled to once per 10 min —
   // so it is invisible on most turns and pays a one-off cost on others.
-  timer.mark("plugin fs chain + artifact hygiene");
+  timer.mark("artifact hygiene");
 
   const baseSystem = withPersonality(buildSystemPrompt(req), req.personality);
   // Per-request policy from the chat picker; requests that don't carry one

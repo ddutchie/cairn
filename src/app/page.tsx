@@ -10,8 +10,6 @@ import { CairnEvents } from "@/lib/events";
 import { historyManager } from "@/lib/history";
 import { markAiNoteWriteStarted, markAiNoteWriteEnded } from "@/store/ipc";
 import { useIpcErrorToasts } from "@/hooks/useIpcErrorToasts";
-import { AppOverlayLayer, AppStatusBar } from "@/lib/plugin-ui/SlotOutlet";
-import { startUIPlugins } from "@/lib/plugin-ui/loader";
 import { TitleBar } from "@/components/layout/title-bar";
 import { UnifiedRail } from "@/components/layout/shells/UnifiedRail";
 import { DockSidebar } from "@/components/layout/shells/DockSidebar";
@@ -117,11 +115,6 @@ export default function Home() {
   const onboardingStateRef = useRef<"workspace" | "create" | "dev" | false | null>(null);
   // Keep ref in sync whenever state changes
   useEffect(() => { onboardingStateRef.current = onboardingState; }, [onboardingState]);
-
-  // Start the UI-plugin loader once (dev-gated in main; no-op otherwise). Pulls
-  // renderer-side plugin sources from <userData>/plugins and activates them into
-  // Cairn's plugin-UI slots (app.overlay, statusbar, …), live-reloading on change.
-  useEffect(() => { startUIPlugins(); }, []);
 
   // Expose the chat panel width as a :root CSS variable so the fixed chat panel
   // and the centered content margin share one live source. The drag writes the
@@ -544,8 +537,6 @@ export default function Home() {
       <NewFeatureModal onClose={handleNewFeatureModalClose} />
       <QuickCapture />
       <AppTutorial />
-      <AppOverlayLayer activeView={activeView} activeProjectId={activeProjectId} />
-      <AppStatusBar activeView={activeView} activeProjectId={activeProjectId} />
     </main>
   );
 }

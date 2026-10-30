@@ -8,7 +8,7 @@
  * That mechanism relies on the augmenting module being imported somewhere
  * in the compilation — normally each service's value import already
  * satisfies it. This module collects Cairn's OWN additions to that same
- * interface (`ctx.cairn`, our plugin-facing seam) and re-exports the dsh
+ * interface (`ctx.cairn`, the host seam) and re-exports the dsh
  * augmentations via side-effect imports so a caller who needs the fully-
  * augmented Context type has one thing to import.
  *
@@ -59,28 +59,19 @@ import "@deepseek-ai/cordis-plugin-loader";
 export type Context = import("@deepseek-ai/cordis").Context;
 
 /**
- * The Cairn-owned surface on `ctx.cairn`. Third-party plugins consume this;
- * changing shape here is a wire-level contract change and must be handled
- * carefully.
- *   - `defineTool` — bridge into `ctx.tools.register` for plugin authors.
- *   - `confirm` — host-mediated confirmation seam (plugins call this to
- *     ask the user before doing something risky; the transport routes to
- *     the interactive approval card in the running Electron shell, and to
- *     a headless allow/deny in an automation run). See
- *     `electron/cordis/approval-transports.ts`.
+ * The Cairn-owned surface on `ctx.cairn`, consumed by Cairn's own engine
+ * modules (e.g. the doom-loop guard).
+ *   - `confirm` — host-mediated confirmation seam (ask the user before doing
+ *     something risky; the transport routes to the interactive approval card
+ *     in the running Electron shell, and to a headless allow/deny in an
+ *     automation run). See `electron/cordis/approval-transports.ts`.
  */
 export interface CairnHostContext {
-  /** Register a Cairn-shaped tool onto `ctx.tools`. Same schema DSL as dsh. */
-  defineTool: unknown;
   /**
-   * Ask the host to confirm a plugin-mediated action. Resolves to one of:
+   * Ask the host to confirm a risky action. Resolves to one of:
    *   - "allowed-once"  — user approved this call only
    *   - "rejected"      — user denied
    *   - "cancelled"     — the ask expired / the turn aborted / no transport
-   *
-   * Kept structurally-typed rather than importing dsh types here, so third-
-   * party plugins in a separate build (with their own dsh-tools resolution)
-   * still satisfy the shape without a compile mismatch.
    */
   confirm: (
     sessionId: string,
@@ -92,7 +83,7 @@ export interface CairnHostContext {
 declare module "@deepseek-ai/cordis" {
   interface Context {
     /**
-     * Cairn's plugin-facing seam. Populated by run-cordis-loop.ts's
+     * Cairn's host seam. Populated by run-cordis-loop.ts's
      * getContext() once the shared context is built; undefined during
      * boot before that assignment lands.
      */

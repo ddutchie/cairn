@@ -18,7 +18,6 @@ import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 import type { ChatHistoryEntry } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
-import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
@@ -822,7 +821,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", isView(activeView, "chat") && "max-w-3xl mx-auto w-full")}>
               {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
               <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
-              <ChatFooterSlot threadId={threadId ?? null} usage={activeThread?.lastUsage ? { ...activeThread.lastUsage, contextLimit: activeThread.lastUsage.contextLimit ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000, contextWindow: activeThread.lastUsage.contextWindow ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000 } : undefined} />
             </div>
           )}
           composerRef={inputRef}

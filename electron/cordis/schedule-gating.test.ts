@@ -33,7 +33,6 @@ vi.mock("electron", () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
-import { setPluginsRoot } from "./plugin-loader";
 import { setSessionRoot, getContext, __resetContextForTest } from "./run-cordis-loop";
 import { isScheduleEnabled } from "./cordis-context";
 import { listSchedules } from "./schedule-read";
@@ -43,7 +42,6 @@ import { scopeOf } from "@deepseek-ai/dsh-scope";
 beforeEach(() => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-schedule-"));
   setSessionRoot(path.join(tmp, "sessions"));
-  setPluginsRoot(path.join(tmp, "plugins"));
 });
 
 function makeRecord(afterSeconds = 3600) {

@@ -312,15 +312,6 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "registry:fetchChatThemes": true,
   "registry:refreshChatThemes": true,
 
-  // ── Plugins (install/update fetch and run third-party code) ──
-  "plugins:listUi": false,
-  "plugins:list": false,
-  "plugins:setEnabled": false,
-  "plugins:openFolder": false,
-  "plugins:install": false,
-  "plugins:update": false,
-  "plugins:uninstall": false,
-
   // ── Embeddings + runtimes: status and search only ──
   "embeddings:status": true,
   "embeddings:stop": false,

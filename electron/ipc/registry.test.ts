@@ -153,10 +153,10 @@ describe("Mobile Access allowlist", () => {
     const { registerContractHandle, getIpcHandler } = await import("./registry");
     const { ipcMain } = await import("electron");
     const ok = async () => ({ data: { ok: true as const } });
-    registerContractHandle("plugins:openFolder", ok);
+    registerContractHandle("chat:popOut", ok as never);
     registerContractHandle("runtime:status", ok as never);
-    expect(ipcMain.handle).toHaveBeenCalledWith("plugins:openFolder", expect.any(Function));
-    expect(getIpcHandler("plugins:openFolder")).toBeUndefined();
+    expect(ipcMain.handle).toHaveBeenCalledWith("chat:popOut", expect.any(Function));
+    expect(getIpcHandler("chat:popOut")).toBeUndefined();
     expect(getIpcHandler("runtime:status")).toBeTypeOf("function");
   });
 

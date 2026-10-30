@@ -41,18 +41,4 @@ export const runtimeApi = {
     regeneratePin: () => invokeContract("mobile:regeneratePin"),
     onStatusChanged: (cb: (status: MobileStatus) => void) => onIpcEvent("mobile:status-changed", cb),
   },
-  /** UI plugins (dev-gated): pull renderer-side plugin sources + live-change events. */
-  plugins: {
-    listUi: () => invokeContract("plugins:listUi"),
-    onUiChanged: (cb: () => void) => onIpcEvent("plugins:ui-changed", cb),
-    /** Settings section: full manifest (enabled + disabled), toggle, open folder. */
-    list: () => invokeContract("plugins:list"),
-    setEnabled: (id: string, enabled: boolean) => invokeContract("plugins:setEnabled", { id, enabled }),
-    openFolder: () => invokeContract("plugins:openFolder"),
-    /** Install from a spec (github:owner/repo | owner/repo | local path). Dev-gated. */
-    install: (spec: string) => invokeContract("plugins:install", { spec }),
-    /** Update an installed plugin by re-running its recorded source spec. Dev-gated. */
-    update: (id: string) => invokeContract("plugins:update", { id }),
-    uninstall: (id: string) => invokeContract("plugins:uninstall", { id }),
-  },
 } as const;

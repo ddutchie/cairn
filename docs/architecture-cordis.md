@@ -5,10 +5,9 @@ engine, how the parts talk to each other, how to keep the stack up to date, and
 what is still open after the `feat/cordis-runtime` refactor.
 
 > scope: electron main + renderer. The runtime is Cordis (the engine), dsh
-> provides the agent/session/tools stack, Cairn owns the UI, DB, tools bridge
-> and plugin system. `docs/plans/cordis-runtime.md` holds the chronological plan
-> (§1–§23); this file is the state-of-the-world reference. Plugin service
-> coverage: **`docs/dsh-plugin-compatibility.md`**. Pre-Cordis leftovers audit +
+> provides the agent/session/tools stack, Cairn owns the UI, DB, tools bridge.
+> `docs/plans/cordis-runtime.md` holds the chronological plan (§1–§23); this
+> file is the state-of-the-world reference. Pre-Cordis leftovers audit +
 > cleanup plan: **`docs/pre-cordis-leftovers-audit.md`**. Approval-gating audit
 > + fix plan: **`docs/approval-gating-audit.md`**.
 
@@ -59,11 +58,6 @@ what is still open after the `feat/cordis-runtime` refactor.
 │                                                                                             │
 │  ┌─ dsh agent-loop ─▶ dsh-llm-pi-ai adapter ─▶ provider bridge (responses | completions)    │
 │  └─ dsh session-persistence-jsonl ─▶ <userData>/sessions/**/session.jsonl[.zstd]  (THRUTH)  │
-│                                                                                             │
-│  Plugin runtime (CAIRN_PLUGINS_DEV=1):                                                     │
-│    plugin-loader.ts  reads <userData>/plugins/plugins.yml → mounts on LIVE ctx              │
-│    plugin-installer.ts fetches github:/ → installed/<id>/ + symlinks app deps               │
-│    ui-plugin-handlers.ts  serves `ui:` sources to the renderer                              │
 └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -309,26 +303,17 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 
 ## 9. Open / possibly-missed (post-refactor inventory)
 
-1. **Tier-3 untrusted-code sandbox** — plugins run with full main-process
-   privileges today (`CAIRN_PLUGINS_DEV=1`). `plugins:install` is dev-gated and
-   must warn "trusted sources only" until a `node:vm`/worker sandbox exists
-   (plan §10.8). Highest priority before releasing the install flow.
-2. **Backend capability parity (`ctx.cairn`)** — dsh-visualize's tool executes
-   great; richer community backends need `ctx.get("sandboxPolicy")` resolution
-   and dsh `fs`/`skill`/`sandbox` shims for the inject-gated seams.
-3. **Upstream proposals** (both would remove Cairn-side shims):
-   - `dsh-visualize`: configurable artifacts dir (`Config.artifactsDir`) instead
-     of hardcoded `viz/` — lets hosts point it at `.chat` natively.
-   - toolview cards: accept an optional `palette`/inherit host CSS vars so hosts
-     can theme them (we fall back to `light-dark()` today).
-4. **Replay edge**: a raw probe once surfaced `session "chat-…" not found` from
+1. **Replay edge**: a raw probe once surfaced `session "chat-…" not found` from
    the persistence coordinator outside a full app boot; the handler swallows
    "not found/ENOENT". Worth a hermetic regression test against a fixture log.
-5. **Dead threads**: threads with neither jsonl nor SQLite remain listed forever
+2. **Dead threads**: threads with neither jsonl nor SQLite remain listed forever
    (pre-cutover purge). Consider hiding/removing them.
-6. **Cairn-styled secondary viz view**: if Cairn-exact theming is wanted for
-   community cards, register a thin Cairn-native `visualize` view with a lower
-   priority than the community entry (community stays canonical).
+3. **No user-plugin system.** The planned community plugin runtime (loader,
+   installer, renderer slots, Settings → Plugins) was never released and has
+   been removed. `ctx.cairn.confirm` remains as an internal host seam for the
+   doom-loop guard. The `viz/` artifact remap in `cordis-coding-tools.ts` and
+   matching hygiene in `artifact-hygiene.ts` are vestigial (they served
+   community plugins such as dsh-visualize).
 
 ---
 
@@ -340,9 +325,6 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Coding loop + fs/sandbox stack | `electron/cordis/run-cordis-coding.ts`, `cordis-coding-tools.ts` |
 | Replay / session-as-truth | `electron/ipc/chat-session.ts`, `session-handlers.ts`, `cordis/session-replay.ts` |
 | Tools bridge | `electron/cordis/cairn-tools.ts` |
-| Plugin runtime (backend) | `electron/cordis/plugin-loader.ts`, `plugin-installer.ts` |
-| Plugin IPC + service | `electron/ipc/ui-plugin-handlers.ts`, `electron/preload/runtime.ts` |
-| Plugin UI (renderer) | `src/lib/plugin-ui/{loader,platform-modules,dsh-client-ctx,dsh-slot-map,slot-matrix,registry}.ts`, `SlotOutlet.tsx` |
 | Toolview dispatch | `src/lib/dsh-toolview/{contract,adapter}.ts`, `src/components/conversation/ConversationMessageBubble.tsx` (+ `conversation-live.ts`) |
 | Attachment store | `electron/cordis/cairn-attachment-store.ts` |
 | Subagent messaging | `electron/cordis/subagent-control.ts` (host list/interrupt/message + `subagent:*` IPC), `src/components/conversation/SubagentCatalogAction.tsx` (header catalog) |
@@ -352,7 +334,7 @@ Full diff, wiring, and adopt/defer decisions (Schedule = opt-in, model selection
 | Terminal / LSP / web-fetch | `electron/cordis/terminal-backend.ts` (node-pty over shared `pty-sessions.ts`), `cordis-lsp.ts` (stdio, PATH detect), `dsh-web` seam + `web-fetch-http` (fetch-only, `search: false`) |
 | Export / workflows | `electron/cordis/session-export.ts` (Cairn shim, `/export`), PTC workflow engine (per coding turn) + `workflow`/`ralph` tools |
 | Host seam (app I/O) | `electron/cordis/host-store.ts` (sole `../db|../lib|child_process` importer in `cordis/`) |
-| Skill bridge | `electron/cordis/cairn-skill-provider.ts`, `src/lib/plugin-ui/` |
+| Skill bridge | `electron/cordis/cairn-skill-provider.ts` |
 | Per-surface tool inventory | `electron/lib/tool-inventory.ts` (static manifests + `CHAT_DENIED_GLOBAL_TOOLS`) → `runtime:tools:inventory` — chat/coding/automation-dev/mcp + live global tools; Settings → AI tabs render it |
 | Prompt previews | `runtime:systemPrompt:preview` (global dsh assembly, `cairn:system` under its real name) + `runtime:codingPrompt:preview` (board-tracking prompt); shared sections shown on both tabs, empty ones hidden |
 | Artifacts hygiene | `electron/lib/artifact-hygiene.ts`, `codebase-index.ts` |

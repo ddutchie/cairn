@@ -4,11 +4,10 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import type { Database } from "better-sqlite3";
 import { openCordisSessionAgent } from "./session-agent";
 import { peekChatAgentCache, getChatAgentCache } from "./chat-agent-cache";
-import { getContext, getSessionRoot, resolvePresentationMeta, resolveToolCallView, resolveToolResultView } from "./cordis-context";
+import { getContext, resolvePresentationMeta, resolveToolCallView, resolveToolResultView } from "./cordis-context";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { inspectSession, type InspectablePersistence } from "./session-inspect";
 
 export { getContext, dropChatAgentForThread, resolvePresentationMeta, resolveToolCallView, resolveToolResultView, withToolCallView, withToolResultView, getSessionRoot, setSessionRoot, __resetContextForTest, __setToolDefForTest } from "./cordis-context";
 export { ensureAgentAiAdapter } from "./session-runtime";
@@ -51,29 +50,6 @@ export function enrichToolCallsWithMeta<T extends { toolCalls?: Array<{ tool: st
     if (call.resultView === undefined) call.resultView = resolveToolResultView(call.tool, call.args, call.output);
   }
   return messages;
-}
-
-export async function prepareReplayContext(pers: InspectablePersistence, sessionId: string): Promise<void> {
-  try {
-    const { pluginsDevEnabled } = await import("./plugin-loader");
-    if (!pluginsDevEnabled()) return;
-    const ctx = await getContext();
-    if (!ctx.get("fs")) {
-      let cwd: string | undefined;
-      try { cwd = (await inspectSession(pers, sessionId)).header.cwd; } catch { /* fall back */ }
-      // Prefer the session's committed cwd; fall back to the current sessionRoot's
-      // parent (workspace) rather than process.cwd() which may be the app bundle dir
-      // and would over-permit the fs sandbox.
-      // Strip the trailing `sessions` dir cross-platform: on Windows the root
-      // ends with `\sessions`, which a forward-slash-only pattern would miss
-      // (leaving the fs sandbox rooted inside the sessions dir).
-      const fallbackCwd = cwd || getSessionRoot().replace(/[/\\]sessions[/\\]?$/, "") || process.cwd();
-      const { mountFsChain } = await import("./cordis-coding-tools");
-      await mountFsChain(ctx, { cwd: fallbackCwd });
-    }
-    const { settleLoader } = await import("./plugin-loader");
-    await settleLoader(ctx);
-  } catch (err) { console.error("[cordis] prepareReplayContext failed:", err instanceof Error ? err.message : err); }
 }
 
 export function getCachedChatAgent(threadId: string): unknown { return peekChatAgentCache()?.get(threadId); }

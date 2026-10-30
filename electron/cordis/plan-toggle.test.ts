@@ -1,13 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as os from "os"; import * as fs from "fs"; import * as path from "path";
-import { setPluginsRoot } from "./plugin-loader";
 import { setSessionRoot, getContext } from "./run-cordis-loop";
 
 let tmp: string;
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-plan-toggle-"));
   setSessionRoot(path.join(tmp, "sessions"));
-  setPluginsRoot(path.join(tmp, "plugins")); // no user plugins in probe
 });
 afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 

@@ -8,8 +8,7 @@ const CORDIS_ROOT = path.join(ELECTRON_ROOT, "cordis");
 // through electron/cordis/agent-host.ts. Pure helpers are NOT listed here and
 // stay directly importable: withToolCallView/withToolResultView,
 // normalizeSubagentScope, canonicalBashCommand (via run-cordis-loop /
-// subagent-control / approval-grants respectively), and the main-side plugin
-// file surface (plugin-loader: plugins.yml YAML + fs watcher stay in main).
+// subagent-control / approval-grants respectively).
 const BLOCKED_MODULES = new Set([
   "cordis-context",
   "plan-fold",

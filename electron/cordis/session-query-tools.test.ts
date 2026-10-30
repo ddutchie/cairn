@@ -9,7 +9,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
-import { setPluginsRoot } from "./plugin-loader";
 import { setSessionRoot, getContext } from "./run-cordis-loop";
 import { needsApproval, riskForTool } from "../../shared/agent/tool-risk";
 
@@ -22,7 +21,6 @@ vi.mock("electron", () => ({
 beforeEach(() => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-session-query-"));
   setSessionRoot(path.join(tmp, "sessions"));
-  setPluginsRoot(path.join(tmp, "plugins"));
 });
 
 const SESSION_TOOLS = ["session_search", "session_event_search", "session_trace", "session_event_trace", "session_event_read"];

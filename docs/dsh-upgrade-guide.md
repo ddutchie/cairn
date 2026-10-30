@@ -1,7 +1,7 @@
 # dsh Upgrade Guide — Universal Playbook
 
 > How to evaluate and land a new `deepseek-harness` (dsh) release on Cairn's **Cordis** runtime.  
-> Companion to `architecture-cordis.md` §8 (bump checklist) and `dsh-plugin-compatibility.md` (service coverage).  
+> Companion to `architecture-cordis.md` §8 (bump checklist).
 > Each release is `developer preview` and **will** contain breaking changes — treat every bump as a migration, not a version bump.
 
 ---
@@ -152,7 +152,6 @@ Most bumps ship **opt-in capabilities** — the stack still boots without them, 
 
 * Cairn's own `changelogs/vX.Y.Z.md` documents **user-visible** impact, not the full dsh diff. One line per newly-exposed capability ("Schedule reminders (dsh-schedule) now available as an opt-in overlay") is enough.
 * Update `docs/architecture-cordis.md` §8.1 `Known historical breakage points` table whenever a bump introduces a new row (e.g. `brandString`, `sessionQuery`).
-* Update `docs/dsh-plugin-compatibility.md` service-coverage matrix when mounting any new service.
 
 ---
 

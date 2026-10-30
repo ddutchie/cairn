@@ -1,7 +1,7 @@
 /**
- * cairn:doom-loop — bundled HITL plugin (PILOT for the user-space shape).
+ * cairn:doom-loop — bundled HITL guard.
  *
- * First consumer of `ctx.cairn.confirm()`: the plugin touches no app-internal
+ * Consumer of `ctx.cairn.confirm()`: the guard touches no app-internal
  * IPC wiring (no send/registerPending) — only the public host seam plus its
  * own tools/pre-execute guard. When a model issues the SAME tool with
  * IDENTICAL arguments this many times in a row, pause and ask the user to

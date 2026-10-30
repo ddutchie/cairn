@@ -386,7 +386,7 @@ export async function getContext(): Promise<Context> {
       }
     } catch { /* best-effort */ }
     try { if (ctx.skills) ctx.skills.registerProvider(() => createCairnSkillProvider()); } catch (err) { console.error("[cordis] cairn skill provider registration failed:", err instanceof Error ? err.message : err); }
-    try { const { defineTool } = await import("@deepseek-ai/dsh-tools"); ctx.cairn = { defineTool, confirm: async (sessionId, req, opts) => { const { getConfirmTransport } = await import("./approval-transports"); const transport = getConfirmTransport(sessionId); if (!transport) return "cancelled" as const; return transport.confirm({ ...req, signal: opts?.signal }); } }; } catch { /* best-effort */ }
+    ctx.cairn = { confirm: async (sessionId, req, opts) => { const { getConfirmTransport } = await import("./approval-transports"); const transport = getConfirmTransport(sessionId); if (!transport) return "cancelled" as const; return transport.confirm({ ...req, signal: opts?.signal }); } };
     try { const { default: ProjectionRegistry } = await import("@deepseek-ai/dsh-session-projection"); (ctx.plugin as (p: unknown, c?: unknown) => unknown)(ProjectionRegistry, {}); } catch (err) { console.warn("[cordis] session projections unavailable:", err instanceof Error ? err.message : err); }
     // Whole-log turn/step counts + LLM/tool/first-token/decode wall times
     // (`sessionStats` unit). Mounted post-bootstrap, NOT an ENTRY_LIST entry:
@@ -426,7 +426,6 @@ export async function getContext(): Promise<Context> {
     try { const { mountSessionTitleBridge } = await import("./plugins/session-title"); mountSessionTitleBridge(ctx); } catch (err) { console.warn("[cordis] session-title bridge unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountPruneGuard } = await import("./prune-hook"); mountPruneGuard(ctx); } catch (err) { console.warn("[cordis] prune guard unavailable:", err instanceof Error ? err.message : err); }
     try { const { mountSessionDurability } = await import("./plugins/session-durability"); mountSessionDurability(ctx); } catch (err) { console.warn("[cordis] session durability unavailable:", err instanceof Error ? err.message : err); }
-    try { const { loadUserPlugins, watchUserPlugins } = await import("./plugin-loader"); await loadUserPlugins(ctx); watchUserPlugins(ctx); } catch (err) { console.error("[cairn-plugins] runtime plugin layer failed to init:", err instanceof Error ? err.message : err); }
     // Background-job UI bridge: ctx.jobs change/completion → session:projection
     // kind:"jobs" for the renderer dock. Singleton-subscribed (idempotent).
     try { const { mountJobsBridge } = await import("./jobs-bridge"); mountJobsBridge(ctx); } catch (err) { console.warn("[cordis] jobs bridge unavailable:", err instanceof Error ? err.message : err); }

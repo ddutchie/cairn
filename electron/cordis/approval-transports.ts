@@ -1,8 +1,8 @@
 /**
- * ctx.cairn.confirm() — the host confirmation seam for plugins.
+ * ctx.cairn.confirm() — the host confirmation seam.
  *
- * A user-space/bundled plugin cannot reach Electron IPC or Cairn's pending
- * maps; it asks the HOST to confirm on its behalf. The host routes the ask
+ * Engine modules (e.g. the doom-loop guard) cannot reach Electron IPC or
+ * Cairn's pending maps; they ask the HOST to confirm on their behalf. The host routes the ask
  * through whichever transport fits the session — today the interactive coding
  * surface (synthetic pending chip + approval card + respond IPC), tomorrow
  * headless automation or mobile.

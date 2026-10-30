@@ -16,8 +16,7 @@ surfaces (tools, projections, views) for free; visual components
 
 ## Skills & MCP — Cairn-managed today, bridgeable tomorrow
 
-Cairn owns this layer end-to-end: community plugin runtime (`plugin-loader.ts`,
-`plugin-installer.ts`, `ui-plugin-handlers.ts`), the `cairn-skill-provider`,
+Cairn owns this layer end-to-end: the `cairn-skill-provider`,
 slash-command merge, and the MCP SDK wiring. dsh offers the native halves:
 
 | dsh package | What it adds | Decision needed |

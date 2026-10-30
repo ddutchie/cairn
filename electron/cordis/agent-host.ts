@@ -43,13 +43,6 @@ import {
 import { clearAllSecretGrants, clearSecretGrants } from "./secret-grants";
 import { abortTurn, endTurn, getRunningTurnIds, isTurnRunning, startTurn } from "./turn-runtime";
 import {
-  installPlugin as installPluginImpl,
-  uninstallPlugin as uninstallPluginImpl,
-  updatePlugin as updatePluginImpl,
-  type InstallResult,
-} from "./plugin-installer";
-import { setPluginsRoot, getPluginsRoot, stopWatchingUserPlugins } from "./plugin-loader";
-import {
   clearAllConfirmTransports,
   createHeadlessConfirmTransport,
   createInteractiveConfirmTransport,
@@ -124,9 +117,6 @@ export interface AgentHost {
   abortTurn(sessionId: string): void;
   isTurnRunning(sessionId: string): boolean;
   getRunningTurnIds(): string[];
-  installPlugin(spec: string): Promise<InstallResult>;
-  updatePlugin(id: string): Promise<InstallResult>;
-  uninstallPlugin(id: string): void;
   listCommands(): Promise<Array<{ name: string; description?: string }>>;
   compactChatSession(threadId: string, model: Partial<AgentSessionModel>): Promise<{ ok: boolean; compacted: boolean; error?: string; summaryText?: string }>;
   executeCommand(input: ExecuteCommandInput): Promise<CommandExecutionResult>;
@@ -142,8 +132,6 @@ export interface AgentHost {
   runAutomation(options: RunCordisCodingOptions): Promise<RunCordisCodingResult>;
   configureSessionRoot(root: string): void;
   getSessionRoot(): string;
-  configurePluginsRoot(root: string): void;
-  getPluginsRoot(): string;
   runOneShot(options: OneShotOptions): Promise<string>;
   readPendingApprovalArgs(sessionId: string, callId: string): Record<string, unknown> | undefined;
   forgetPendingApprovalArgs(sessionId: string, callId: string): void;
@@ -258,8 +246,6 @@ function createLocalAgentHost(): AgentHost {
       const ctx = await context();
       const persistence = (ctx as unknown as { sessionPersistence?: Parameters<typeof loadReplaySessionMessages>[0] }).sessionPersistence;
       if (!persistence) return { messages: [], subagents: [] };
-      const { prepareReplayContext } = await import("./run-cordis-loop");
-      await prepareReplayContext(persistence, sessionId);
       const liveSessions = (ctx as unknown as { sessions?: { list: () => Array<{ id: unknown; header?: { origin?: string; parentSession?: unknown; createdAt?: number } }> } }).sessions?.list?.bind((ctx as unknown as { sessions: unknown }).sessions);
       let statsSnapshot: SessionStatsSnapshot | undefined;
       try {
@@ -356,15 +342,6 @@ function createLocalAgentHost(): AgentHost {
     },
     getRunningTurnIds() {
       return getRunningTurnIds();
-    },
-    installPlugin(spec) {
-      return installPluginImpl(spec);
-    },
-    updatePlugin(id) {
-      return updatePluginImpl(id);
-    },
-    uninstallPlugin(id) {
-      uninstallPluginImpl(id);
     },
     async listCommands() {
       const ctx = await context();
@@ -604,12 +581,6 @@ function createLocalAgentHost(): AgentHost {
     getSessionRoot() {
       return getSessionRoot();
     },
-    configurePluginsRoot(root) {
-      setPluginsRoot(root);
-    },
-    getPluginsRoot() {
-      return getPluginsRoot();
-    },
     async runOneShot(options) {
       const { runOneShotWithContext } = await import("./one-shot");
       return runOneShotWithContext(await context(), options);
@@ -656,7 +627,6 @@ function createLocalAgentHost(): AgentHost {
       if (!shutdownPromise) {
         shutdownPromise = (async () => {
           for (const sessionId of getRunningTurnIds()) abortTurn(sessionId);
-          stopWatchingUserPlugins();
           clearAllPendingQuestions();
           clearAllApprovalState();
           clearAllSessionGrants();

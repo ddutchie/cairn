@@ -14,7 +14,6 @@ vi.mock("electron", () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
-import { setPluginsRoot } from "./plugin-loader";
 import { setSessionRoot, getContext } from "./run-cordis-loop";
 import { ensureAgentAiAdapter } from "./session-runtime";
 import { compactionPolicyFor, COMPACTION_THRESHOLD_RATIO } from "./compaction-budget";
@@ -22,7 +21,6 @@ import { compactionPolicyFor, COMPACTION_THRESHOLD_RATIO } from "./compaction-bu
 beforeEach(() => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-compaction-"));
   setSessionRoot(path.join(tmp, "sessions"));
-  setPluginsRoot(path.join(tmp, "plugins"));
 });
 
 /** dsh-compaction-basic 0.1.7's pressure threshold (resolveCompactSpec). */

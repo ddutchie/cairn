@@ -13,9 +13,6 @@ import { humanizeConnectorTool, humanizeTool } from "@/lib/humanize-tool";
 import { cairnNameLookup } from "@/lib/cairn-name-lookup";
 import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-risk";
 import { registerBuiltinToolViews } from "@/lib/dsh-toolview";
-import { toToolCallViewProps } from "@/lib/dsh-toolview/adapter";
-import { KeyedSlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
-import { useSlotEntries } from "@/lib/plugin-ui/registry";
 import type { ConversationToolCall } from "@/lib/conversation/message";
 import { useCairnStore } from "@/store";
 
@@ -191,21 +188,6 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
 
 /** Render a tool from its durable/live state, independent of session kind. */
 export function ConversationToolCall({ toolCall, sessionId, connectors }: ConversationToolCallProps) {
-  const toolViewEntries = useSlotEntries("tool.call.toolview");
-  if (toolViewEntries.some((entry) => entry.key === toolCall.name)) {
-    return <KeyedSlotOutlet name="tool.call.toolview" matchKey={toolCall.name} props={toToolCallViewProps({
-      tool: toolCall.name,
-      label: toolCall.label,
-      // Map the durable ConversationToolCall's `running` flag onto the adapter's
-      // ChatToolCall `status` — omitting it made the adapter always take the
-      // settled path, so a still-running keyed toolview rendered as done/OK.
-      status: toolCall.running ? "running" : "done",
-      args: JSON.stringify(toolCall.args ?? {}),
-      output: toolCall.output,
-      ok: toolCall.ok,
-      callId: toolCall.callId,
-    })} />;
-  }
   // Keyed by the per-ask nonce: dsh can ask twice for one callId (the tool
   // gate, then a sandbox escalation), and the second ask must get fresh
   // buttons rather than inherit the first card's "Allowed — running…" state.

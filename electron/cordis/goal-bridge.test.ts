@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
-import { setPluginsRoot } from "./plugin-loader";
 import { setSessionRoot, getContext } from "./run-cordis-loop";
 
 const sent: Array<{ channel: string; payload: unknown }> = [];
@@ -40,7 +39,6 @@ let tmp: string;
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-goal-"));
   setSessionRoot(path.join(tmp, "sessions"));
-  setPluginsRoot(path.join(tmp, "plugins"));
   sent.length = 0;
 });
 

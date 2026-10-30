@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   getPlanModeActive: vi.fn(),
   readPermissionsSnapshot: vi.fn(),
   loadSessionMessages: vi.fn(),
-  prepareReplayContext: vi.fn(),
   readSessionStatsSnapshot: vi.fn(),
   compactNow: vi.fn(),
   whenIdle: vi.fn(),
@@ -43,12 +42,6 @@ const mocks = vi.hoisted(() => ({
   clearAllApprovalState: vi.fn(),
   canonicalBashCommand: vi.fn(),
   createPendingAskRegistry: vi.fn(() => ({ record: vi.fn(), resolve: vi.fn(), listForSession: vi.fn(() => []), clearSession: vi.fn(), clearAll: vi.fn() })),
-  setPluginsRoot: vi.fn(),
-  getPluginsRoot: vi.fn(() => "/tmp/plugins"),
-  stopWatchingUserPlugins: vi.fn(),
-  installPlugin: vi.fn(),
-  updatePlugin: vi.fn(),
-  uninstallPlugin: vi.fn(),
   createInteractiveConfirmTransport: vi.fn(),
   createHeadlessConfirmTransport: vi.fn(),
   setConfirmTransport: vi.fn(),
@@ -64,7 +57,7 @@ vi.mock("./session-runtime", () => ({ ensureAgentAiAdapter: mocks.ensureAgentAiA
 vi.mock("./plan-fold", () => ({ getPlanModeActive: mocks.getPlanModeActive }));
 vi.mock("./permissions-bridge", () => ({ readPermissionsSnapshot: mocks.readPermissionsSnapshot, setPermissionPreset: vi.fn() }));
 vi.mock("./session-replay", () => ({ loadSessionMessages: mocks.loadSessionMessages }));
-vi.mock("./run-cordis-loop", () => ({ prepareReplayContext: mocks.prepareReplayContext, readContextRingWithContext: mocks.readContextRingWithContext }));
+vi.mock("./run-cordis-loop", () => ({ readContextRingWithContext: mocks.readContextRingWithContext }));
 vi.mock("./session-stats", () => ({ readSessionStatsSnapshot: mocks.readSessionStatsSnapshot }));
 vi.mock("./one-shot", () => ({ runOneShotWithContext: mocks.runOneShotWithContext }));
 vi.mock("./subagent-control", () => ({
@@ -98,16 +91,6 @@ vi.mock("./approval-transports", () => ({
 }));
 vi.mock("./jobs-bridge", () => ({ killJob: mocks.killJob }));
 vi.mock("./secret-grants", () => ({ clearSecretGrants: mocks.clearSecretGrants, clearAllSecretGrants: mocks.clearAllSecretGrants }));
-vi.mock("./plugin-loader", () => ({
-  setPluginsRoot: mocks.setPluginsRoot,
-  getPluginsRoot: mocks.getPluginsRoot,
-  stopWatchingUserPlugins: mocks.stopWatchingUserPlugins,
-}));
-vi.mock("./plugin-installer", () => ({
-  installPlugin: mocks.installPlugin,
-  updatePlugin: mocks.updatePlugin,
-  uninstallPlugin: mocks.uninstallPlugin,
-}));
 
 import { getAgentHost } from "./agent-host";
 import type { PendingQuestionRecord } from "./pending-question-broker";
@@ -120,22 +103,6 @@ beforeEach(() => {
 });
 
 describe("AgentHost", () => {
-  it("routes plugin lifecycle operations through the host", async () => {
-    const installed = { id: "demo", name: null, ui: null, kind: "backend" as const };
-    mocks.installPlugin.mockResolvedValue(installed);
-    mocks.updatePlugin.mockResolvedValue(installed);
-    mocks.uninstallPlugin.mockReturnValue(undefined);
-
-    const host = getAgentHost();
-    await expect(host.installPlugin("github:owner/demo")).resolves.toEqual(installed);
-    await expect(host.updatePlugin("demo")).resolves.toEqual(installed);
-    expect(() => host.uninstallPlugin("demo")).not.toThrow();
-
-    expect(mocks.installPlugin).toHaveBeenCalledWith("github:owner/demo");
-    expect(mocks.updatePlugin).toHaveBeenCalledWith("demo");
-    expect(mocks.uninstallPlugin).toHaveBeenCalledWith("demo");
-  });
-
   it("resolves the shared context for goal reads", async () => {
     const goal = { id: "goal-1" };
     mocks.readGoalSnapshot.mockResolvedValue(goal);
@@ -159,7 +126,6 @@ describe("AgentHost", () => {
     const messages = { messages: [], subagents: [] };
     mocks.getContext.mockResolvedValue(contextWithSessionData);
     mocks.readPermissionsSnapshot.mockResolvedValue(permissions);
-    mocks.prepareReplayContext.mockResolvedValue(undefined);
     mocks.readSessionStatsSnapshot.mockReturnValue(undefined);
     mocks.loadSessionMessages.mockResolvedValue(messages);
 
@@ -167,7 +133,6 @@ describe("AgentHost", () => {
     await expect(getAgentHost().loadSessionMessages("session-1")).resolves.toBe(messages);
 
     expect(mocks.readPermissionsSnapshot).toHaveBeenCalledWith(contextWithSessionData, "session-1", { readEvents: expect.any(Function) });
-    expect(mocks.prepareReplayContext).toHaveBeenCalledWith(persistence, "session-1");
     expect(mocks.readSessionStatsSnapshot).toHaveBeenCalledWith(contextWithSessionData.sessionProjections, undefined);
     expect(mocks.loadSessionMessages).toHaveBeenCalledWith(persistence, expect.any(Function), "session-1", { usageFold: expect.any(Function) });
   });
@@ -331,14 +296,11 @@ describe("AgentHost", () => {
     expect(mocks.getContext).toHaveBeenCalledOnce();
   });
 
-  it("configures runtime roots through the host", () => {
+  it("configures the session root through the host", () => {
     getAgentHost().configureSessionRoot("/tmp/sessions");
-    getAgentHost().configurePluginsRoot("/tmp/plugins");
 
     expect(mocks.setSessionRoot).toHaveBeenCalledWith("/tmp/sessions");
-    expect(mocks.setPluginsRoot).toHaveBeenCalledWith("/tmp/plugins");
     expect(getAgentHost().getSessionRoot()).toBe("/tmp/sessions");
-    expect(getAgentHost().getPluginsRoot()).toBe("/tmp/plugins");
   });
 
   it("routes trusted approval args through the host", () => {

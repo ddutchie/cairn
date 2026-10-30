@@ -186,13 +186,6 @@ app.whenReady().then(async () => {
     // just doesn't run and the app boots as before.
   }
 
-  // ── Runtime plugin dir (§10 Tier 2/3) ──────────────────────────────────
-  // User/agent-authored plugins live here; with CAIRN_PLUGINS_DEV=1 the Cordis
-  // context loads <userData>/plugins/plugins.yml and hot-reloads on change.
-  try {
-    getAgentHost().configurePluginsRoot(path.join(userDataPath, "plugins"));
-  } catch { /* plugin loader is optional */ }
-
   // ── Resolve workspace path ────────────────────────────────────────────
   const config = readWorkspaceConfig(userDataPath);
   const initialWorkspacePath = config
@@ -268,15 +261,6 @@ app.whenReady().then(async () => {
   // ── Create main window ─────────────────────────────────────────────────
   const win = createWindow(isDev);
   _win = win;
-
-  // UI plugins (dev-gated): serve renderer-side plugin sources + live-change
-  // events from <userData>/plugins to this window.
-  try {
-    const { registerUiPluginHandlers } = await import("./ipc/ui-plugin-handlers");
-    registerUiPluginHandlers(() => _win?.webContents);
-  } catch (err) {
-    console.error("[cairn-plugins] ui handlers failed to register:", err instanceof Error ? err.message : err);
-  }
 
   // Close splash after the main window has finished loading its first page.
   // The main window is created hidden (show: false) so only the splash is

@@ -79,7 +79,6 @@ import type {
 import type {
   AutomationsFetchResult, ChatThemesFetchResult, PersonalitiesFetchResult, ProvidersFetchResult, RegistryFetchResult,
 } from "../chat/registry-schema";
-import type { InstalledPlugin, PluginList, UiPluginSource } from "../types/plugins";
 import type {
   AdjacentNote, EmbeddingDownloadProgress, EmbeddingModelManifestEntry, EmbeddingsStatus, NoteProjectionRow,
   ProjectionResult, ReindexResult, RuntimeEmbeddingModel, RuntimeStatus,
@@ -649,18 +648,6 @@ export interface IpcContract {
   "registry:fetchChatThemes": { args: []; result: ChatThemesFetchResult };
   "registry:refreshChatThemes": { args: []; result: ChatThemesFetchResult };
 
-  // ── Plugins (writes are gated behind CAIRN_PLUGINS_DEV=1 and reject otherwise) ─
-  /** Enabled UI plugins and their bundled source. */
-  "plugins:listUi": { args: []; result: UiPluginSource[] };
-  "plugins:list": { args: []; result: PluginList };
-  "plugins:setEnabled": { args: [req: { id: string; enabled: boolean }]; result: { ok: true } };
-  "plugins:openFolder": { args: []; result: { ok: true } };
-  /** `spec` is `github:owner/repo` or a local path. */
-  "plugins:install": { args: [req: { spec: string }]; result: InstalledPlugin };
-  /** Re-runs the plugin's recorded source spec. */
-  "plugins:update": { args: [req: { id: string }]; result: InstalledPlugin };
-  "plugins:uninstall": { args: [req: { id: string }]; result: { ok: true } };
-
   // ── Embeddings (semantic search + note map) ──────────────────────────────
   "embeddings:status": { args: []; result: EmbeddingsStatus };
   "embeddings:stop": { args: []; result: void };
@@ -755,8 +742,6 @@ export interface IpcEvents {
   "user-style:done": UserStyleDoneEvent;
   /** Desktop sync status transitions. */
   "sync:status": SyncStatus;
-  /** The plugins folder changed; re-pull `plugins:listUi`. */
-  "plugins:ui-changed": undefined;
   "embeddings:download-progress": EmbeddingDownloadProgress;
   "runtime:download-progress": EmbeddingDownloadProgress;
   "mobile:status-changed": MobileStatus;
@@ -1115,13 +1100,6 @@ const CHANNELS: ChannelRecord = {
   "registry:refreshPersonalities": "read",
   "registry:fetchChatThemes": "read",
   "registry:refreshChatThemes": "read",
-  "plugins:listUi": "read",
-  "plugins:list": "read",
-  "plugins:setEnabled": "read",
-  "plugins:openFolder": "read",
-  "plugins:install": "read",
-  "plugins:update": "read",
-  "plugins:uninstall": "read",
   "embeddings:status": "read",
   "embeddings:stop": "read",
   "embeddings:needsReindex": "read",

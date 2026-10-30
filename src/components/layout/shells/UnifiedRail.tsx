@@ -19,7 +19,6 @@ import { SyncStatusIndicator } from "../sync-status-indicator";
 import { QuickSettings } from "../QuickSettings";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { SlotOutlet } from "@/lib/plugin-ui/SlotOutlet";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { modKey } from "../sidebar-utils";
 import {
@@ -152,11 +151,6 @@ export function UnifiedRail() {
       {/* Spacer to keep right zone from overlapping absolute search on narrow widths */}
       <div className="flex-1 hidden sm:block" aria-hidden="true" />
       <div className="flex-1 sm:hidden" aria-hidden="true" />
-
-      {/* Plugin per-view actions */}
-      <div className="hidden md:flex shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        <SlotOutlet name="view.header.actions" props={{ view: activeView }} />
-      </div>
 
       {/* Right zone: chat, quicksettings, running, sync, bell, new */}
       <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
