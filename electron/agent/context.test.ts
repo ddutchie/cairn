@@ -1,6 +1,6 @@
 import { fauxAssistantMessage, fauxToolCall, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { applyCompaction, buildContextView, compactHistory, compactionThreshold, estimateTokens, isSummaryMessage, planCompaction, pruneToolResults } from "./context";
+import { applyCompaction, buildContextView, compactHistory, compactionThreshold, estimateTokens, isSummaryMessage, planCompaction, pruneImages, pruneToolResults, userContent } from "./context";
 import type { AgentEvent } from "./events";
 import { makeHarness } from "./test-harness";
 
@@ -83,5 +83,28 @@ describe("compactHistory", () => {
     const h = makeHarness();
     h.faux.setResponses([fauxAssistantMessage("")]);
     await expect(compactHistory([user("x".repeat(4000)), fauxAssistantMessage("y".repeat(4000)), user("z")], "manual", { model: h.faux.getModel(), streamFn: h.opts().streamFn, keepRecentTokens: 10 })).rejects.toThrow();
+  });
+});
+
+describe("images", () => {
+  const img = (data: string) => ({ mediaType: "image/png", data });
+  const imageCount = (m: Message) => (typeof m.content === "string" ? 0 : m.content.filter((b) => b.type === "image").length);
+
+  it("text alone stays a string; images make blocks", () => {
+    expect(userContent("hi")).toBe("hi");
+    expect(userContent("hi", [img("AAAA")])).toEqual([{ type: "text", text: "hi" }, { type: "image", data: "AAAA", mimeType: "image/png" }]);
+  });
+
+  it("rebuilds a user message with its images from the log", () => {
+    const view = buildContextView([{ event: { type: "user/message", content: "see", images: [img("AAAA")] }, time: 1 }]);
+    expect(imageCount(view[0])).toBe(1);
+  });
+
+  it("keeps only the newest images in the request, never touching the originals", () => {
+    const history: Message[] = [1, 2, 3].map((n) => ({ role: "user", content: userContent(`m${n}`, [img(`I${n}`)]), timestamp: n }) as Message);
+    const pruned = pruneImages(history, 2);
+    expect(pruned.map(imageCount)).toEqual([0, 1, 1]);
+    expect(JSON.stringify(pruned[0])).toContain("earlier image omitted");
+    expect(history.map(imageCount)).toEqual([1, 1, 1]);
   });
 });

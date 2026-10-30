@@ -11,8 +11,8 @@ import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { LoadSessionMessagesResult } from "../../shared/agent/session-wire";
 import { makeSessionProjection, type SessionProjection } from "../../shared/agent/session-projection";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
-import { buildContextView, compactHistory, compactionThreshold, pruneToolResults } from "./context";
-import type { AgentEvent } from "./events";
+import { buildContextView, compactHistory, compactionThreshold, pruneImages, pruneToolResults } from "./context";
+import type { AgentEvent, UserImage } from "./events";
 import { Gate, type AskSpec, type HumanDecision } from "./gate";
 import { runTurn, type Profile, type StreamFn } from "./loop";
 import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream } from "./provider";
@@ -25,6 +25,9 @@ import { openSession, readSession, sessionDir, type SessionWriter } from "./sess
 import { replayFromRecords } from "./session/replay";
 import type { SessionRecord } from "./session/format";
 import { rm } from "node:fs/promises";
+
+/** `/compact` keeps about one exchange verbatim; automatic compaction keeps more. */
+const MANUAL_KEEP_RECENT_TOKENS = 4_000;
 
 export type HostChannel = "session:event" | "session:projection";
 export type HostSend = (channel: HostChannel, payload: SessionEventEnvelope | SessionProjection) => void;
@@ -50,6 +53,7 @@ export interface HostDeps {
 export interface PromptRequest {
   sessionId: string;
   prompt: string;
+  images?: readonly UserImage[];
   cwd: string;
   profile: Profile;
   route: ModelRoute;
@@ -172,6 +176,7 @@ export class AgentHost {
         systemPrompt: req.systemPrompt,
         history: session.history,
         input: req.prompt,
+        images: req.images,
         tools: req.tools,
         profile: req.profile,
         rules: this.ruleView(session),
@@ -184,7 +189,7 @@ export class AgentHost {
         reviewerState: session.reviewerState,
         doomAcked: session.doomAcked,
         streamOptions: { ...(reasoning ? { reasoning } : {}), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}) },
-        transformContext: (m) => pruneToolResults(m),
+        transformContext: (m) => pruneImages(pruneToolResults(m)),
         compaction: {
           threshold,
           compact: (history, trigger) => compactHistory(history, trigger, { model, streamFn: streamFn as StreamFn, signal: controller.signal }),
@@ -197,6 +202,26 @@ export class AgentHost {
     } finally {
       session.running = false;
       session.controller = undefined;
+    }
+  }
+
+  /**
+   * Compact on demand. The `compaction` event is logged and projected like an automatic one.
+   * Returns false when the history has nothing worth folding.
+   */
+  async compact(sessionId: string, cwd: string, route: ModelRoute): Promise<boolean> {
+    const session = await this.open(sessionId, cwd);
+    if (session.running) throw new Error("Session is busy — already running.");
+    session.running = true;
+    try {
+      const { model, streamFn } = (this.deps.routeStream ?? createRouteStream)(route);
+      const result = await compactHistory(session.history, "manual", { model, streamFn: streamFn as StreamFn, keepRecentTokens: MANUAL_KEEP_RECENT_TOKENS });
+      if (!result) return false;
+      session.history.splice(0, session.history.length, ...result.history);
+      await this.record(session, result.event);
+      return true;
+    } finally {
+      session.running = false;
     }
   }
 

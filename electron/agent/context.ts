@@ -4,9 +4,9 @@
  * last `keepCount` messages with a summary, and old bulky tool output is
  * pruned at request time. Nothing here mutates or deletes logged data.
  */
-import type { Api, AssistantMessage, Message, Model, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Message, Model, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { COMPACTION_THRESHOLD_RATIO } from "../../shared/models/model-catalog";
-import type { AgentEvent } from "./events";
+import type { AgentEvent, UserImage } from "./events";
 import { repairInterrupted } from "./repair";
 import type { StreamFn } from "./loop";
 
@@ -49,6 +49,14 @@ export function compactionThreshold(contextWindow: number, maxTokens: number): n
   return Math.floor(COMPACTION_THRESHOLD_RATIO * (contextWindow - Math.max(0, maxTokens)));
 }
 
+// ── user content ─────────────────────────────────────────────────────────
+
+/** Text alone stays a string; attached images make it a block list. */
+export function userContent(text: string, images?: readonly UserImage[]): UserMessage["content"] {
+  if (!images?.length) return text;
+  return [{ type: "text", text }, ...images.map((i) => ({ type: "image" as const, data: i.data, mimeType: i.mediaType }))];
+}
+
 // ── derived view ─────────────────────────────────────────────────────────
 
 export function summaryMessage(summary: string, timestamp: number): Message {
@@ -73,7 +81,7 @@ export function buildContextView(records: ReadonlyArray<{ event: AgentEvent; tim
   for (const { event, time } of records) {
     switch (event.type) {
       case "turn/start": messages = repairInterrupted(messages, time); break;
-      case "user/message": messages.push({ role: "user", content: event.content, timestamp: time }); break;
+      case "user/message": messages.push({ role: "user", content: userContent(event.content, event.images), timestamp: time }); break;
       case "assistant/message": messages.push(event.message); break;
       case "tool/result":
         messages.push({ role: "toolResult", toolCallId: event.callId, toolName: event.name, content: [{ type: "text", text: event.text }], isError: event.isError, timestamp: time });
@@ -110,6 +118,26 @@ export function pruneToolResults(messages: readonly Message[], opts: PruneOption
       }
     }
     recent += estimateTokens(m);
+  }
+  return out;
+}
+
+/**
+ * Keep the newest `keep` images in the request and stub the rest, so a long
+ * conversation doesn't resend every screenshot. Pure; the log keeps them all.
+ */
+export function pruneImages(messages: readonly Message[], keep = 8): Message[] {
+  let seen = 0;
+  const out = messages.slice();
+  for (let i = out.length - 1; i >= 0; i--) {
+    const m = out[i];
+    if (m.role === "assistant" || typeof m.content === "string") continue;
+    if (!m.content.some((b) => b.type === "image")) continue;
+    const content = m.content.map((b) => {
+      if (b.type !== "image") return b;
+      return ++seen > keep ? { type: "text" as const, text: "[earlier image omitted]" } : b;
+    });
+    out[i] = { ...m, content } as Message;
   }
   return out;
 }

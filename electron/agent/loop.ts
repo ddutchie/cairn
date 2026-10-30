@@ -29,8 +29,8 @@ import {
   type ToolResultMessage,
   type UserMessage,
 } from "@earendil-works/pi-ai";
-import type { AgentEvent, DecisionSource } from "./events";
-import type { CompactionResult, CompactionTrigger } from "./context";
+import type { AgentEvent, DecisionSource, UserImage } from "./events";
+import { userContent, type CompactionResult, type CompactionTrigger } from "./context";
 import { Gate, type AskInput } from "./gate";
 import { callSignature, decide, type Decision, type Mode } from "./policy";
 import { repairInterrupted } from "./repair";
@@ -57,6 +57,8 @@ export interface TurnOptions {
   /** Provider messages so far. The loop appends to it as the turn progresses. */
   history: Message[];
   input: string;
+  /** Images attached to this prompt. */
+  images?: readonly UserImage[];
   tools: readonly AgentTool[];
   profile: Profile;
   rules: RuleStore;
@@ -164,8 +166,9 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
 
   o.history.splice(0, o.history.length, ...repairInterrupted(o.history));
   yield { type: "turn/start", sessionId: o.sessionId, profile: o.profile.id };
-  o.history.push({ role: "user", content: o.input, timestamp: Date.now() } satisfies UserMessage);
-  yield { type: "user/message", content: o.input };
+  const images = o.images?.length ? [...o.images] : undefined;
+  o.history.push({ role: "user", content: userContent(o.input, images), timestamp: Date.now() } satisfies UserMessage);
+  yield { type: "user/message", content: o.input, ...(images ? { images } : {}) };
 
   let compactions = 0;
   let lastContextTokens = 0;

@@ -16,7 +16,9 @@ import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
 import { getAgentHost } from "../cordis/agent-host";
-import { engineOwns, getEngineHost } from "./engine-bridge";
+import { engineEnabled, engineOwns, getEngineHost, readEnginePermissions, setEnginePermission } from "./engine-bridge";
+import { getCachedConfig } from "../lib/config-cache";
+import type { Mode } from "../../shared/agent/approval-mode";
 import type { AgentSessionMessage } from "../../shared/agent/session-wire";
 
 /** Map shared ReplayMessage[] to the coding-agent message shape the renderer expects. */
@@ -76,6 +78,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // existing cordis:executeCommand path (`/permission <preset>`), not here.
   registerContractHandle("session:permissions", (_e, { sessionId }) => handle(async () => {
     try {
+      if (await engineOwns(ctx, sessionId)) return { ok: true as const, value: readEnginePermissions(sessionId, getCachedConfig().agentConfig?.mode as Mode | undefined) };
       return { ok: true as const, value: await getAgentHost().readPermissionsSnapshot(sessionId) };
     } catch (err) {
       const code = (err as { code?: string })?.code ?? "internal";
@@ -90,6 +93,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // choice is queued and applied when the next coding turn mounts the service.
   registerContractHandle("session:permissions:set", (_e, { sessionId, preset }) => handle(async () => {
     try {
+      if (engineEnabled() || await engineOwns(ctx, sessionId)) return { ok: true as const, value: setEnginePermission(sessionId, preset, getCachedConfig().agentConfig?.mode as Mode | undefined) };
       return { ok: true as const, value: await getAgentHost().setPermissionPreset(sessionId, preset) };
     } catch (err) {
       const code = (err as { code?: string })?.code ?? "internal";

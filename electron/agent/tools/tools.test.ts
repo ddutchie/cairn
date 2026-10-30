@@ -194,3 +194,18 @@ describe("tools through the loop", () => {
     expect(await readFile(path.join(dir, "inside.txt"), "utf8")).toBe("a");
   });
 });
+
+describe("exit_plan_mode", () => {
+  it("hands the plan over and tells the model to wait", async () => {
+    const { planTools } = await import("./plan");
+    const plans: Array<[string, string]> = [];
+    const [tool] = planTools({ onPlan: (sid, plan) => plans.push([sid, plan]) });
+    expect(tool.risk({ plan: "x" })).toEqual({ class: "READ" });
+    const out = await tool.execute({ plan: "## Tasks\n- [ ] a" }, { sessionId: "s1", callId: "c1", workspaceRoot: "/ws" });
+    expect(plans).toEqual([["s1", "## Tasks\n- [ ] a"]]);
+    expect(out.isError).toBeFalsy();
+    const empty = await tool.execute({ plan: "  " }, { sessionId: "s1", callId: "c2", workspaceRoot: "/ws" });
+    expect(empty.isError).toBe(true);
+    expect(plans).toHaveLength(1);
+  });
+});

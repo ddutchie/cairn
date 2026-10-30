@@ -153,4 +153,37 @@ describe("AgentHost", () => {
     expect(await readdir(t.root)).toEqual([]);
     expect(await t.host.title("s1")).toBeNull();
   });
+
+  it("sends attached images with the prompt and logs them for replay", async () => {
+    const t = await setup();
+    t.h.faux.setResponses([fauxAssistantMessage("nice")]);
+    await t.host.prompt(t.req({ images: [{ mediaType: "image/png", data: "AAAA", name: "a.png" }] }));
+    const reopened = new AgentHost({ root: t.root, send: () => {}, routeStream: () => ({ model: t.h.faux.getModel(), streamFn: t.h.opts().streamFn }) });
+    const first = (await reopened.loadMessages("s1")).messages[0];
+    expect(first).toMatchObject({ role: "user", content: "hello" });
+    t.h.faux.setResponses([fauxAssistantMessage("again")]);
+    await reopened.prompt(t.req({ prompt: "and now?" }));
+    const log = await (await import("node:fs/promises")).readFile(path.join(t.root, "s1", "session.cairn.jsonl"), "utf8");
+    expect(log).toContain('"images":[{"mediaType":"image/png","data":"AAAA","name":"a.png"}]');
+  });
+
+  it("compacts on demand, logging and projecting the compaction", async () => {
+    const t = await setup();
+    for (const text of ["one", "two", "three"]) {
+      t.h.faux.setResponses([fauxAssistantMessage(`reply to ${text}`)]);
+      await t.host.prompt(t.req({ prompt: text.repeat(10_000) }));
+    }
+    t.h.faux.setResponses([fauxAssistantMessage("a summary")]);
+    expect(await t.host.compact("s1", "/ws", t.req().route)).toBe(true);
+    expect(t.proj("compact-result")[0].payload.data.summary).toBe("a summary");
+    expect(t.proj("compact").at(-1)?.payload.data).toMatchObject({ status: "end", auto: false });
+  });
+
+  it("refuses to compact a session that is mid-turn", async () => {
+    const t = await setup();
+    t.h.faux.setResponses([fauxAssistantMessage("slow")]);
+    const running = t.host.prompt(t.req());
+    await expect(t.host.compact("s1", "/ws", t.req().route)).rejects.toThrow(/busy/);
+    await running;
+  });
 });

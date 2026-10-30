@@ -14,6 +14,8 @@ import type { DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
 import { AgentHost, type HostSend } from "../agent/host";
 import type { AgentTool } from "../agent/tools";
+import { prepareAttachments, type Attachment } from "../agent/attachments";
+import { updateCodingSession } from "../db/sessions-queries";
 import type { Profile } from "../agent/loop";
 import type { Mode as EngineMode } from "../agent/policy";
 
@@ -50,6 +52,40 @@ export function engineProfile(mode: Mode | undefined, role: "default" | "automat
     mode: engineMode,
     externalAlwaysAsks: engineMode === "yolo",
   };
+}
+
+export const PLAN_MODE_PROMPT = `## Plan mode
+You are in plan mode: everything you can do is read-only. Investigate the code and the project, then write a complete plan in markdown (goal, approach, and a \`## Tasks\` checklist of \`- [ ]\` items). Present it by calling \`exit_plan_mode\` with the full plan, then stop and wait. Do not start the work until the user approves it.`;
+
+// ── permission presets (per session) ─────────────────────────────────────
+
+export const PERMISSION_PRESETS = [
+  { value: "ask", name: "Ask", description: "Ask before anything that changes files, runs commands, or calls external tools." },
+  { value: "yolo", name: "Allow all", description: "Run everything without asking, except external tool calls, which still ask." },
+] as const;
+type PermissionPreset = typeof PERMISSION_PRESETS[number]["value"];
+const sessionPreset = new Map<string, PermissionPreset>();
+
+/** The legacy approval mode a session would start with, as a preset. */
+const presetFromMode = (mode: Mode | undefined): PermissionPreset => (mode === "auto" ? "yolo" : "ask");
+
+function presetProfile(sessionId: string, mode: Mode | undefined, role: "default" | "automation-dev" | undefined): Profile {
+  const preset = sessionPreset.get(sessionId);
+  const base = engineProfile(mode, role);
+  if (!preset || base.mode === "plan") return base;
+  return { ...base, mode: preset === "yolo" ? "yolo" : "ask", externalAlwaysAsks: preset === "yolo" };
+}
+
+export function readEnginePermissions(sessionId: string, fallback: Mode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
+  return { options: PERMISSION_PRESETS.map((p) => ({ ...p })), currentValue: sessionPreset.get(sessionId) ?? presetFromMode(fallback) };
+}
+
+export function setEnginePermission(sessionId: string, preset: string, fallback: Mode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
+  if (!PERMISSION_PRESETS.some((p) => p.value === preset)) throw Object.assign(new Error(`Unknown permission preset: ${preset}`), { code: "bad-request" });
+  sessionPreset.set(sessionId, preset as PermissionPreset);
+  const view = readEnginePermissions(sessionId, fallback);
+  broadcastEvent("session:projection", makeSessionProjection(sessionId, "permissions", view));
+  return view;
 }
 
 /**
@@ -174,6 +210,10 @@ export interface EnginePromptArgs {
   role?: "default" | "automation-dev";
   /** Chat threads run the same engine with the chat toolset and approval policy. */
   chat?: { req: ChatRequest; policy: ChatApprovalPolicy };
+  /** Staged images/PDFs for this prompt. */
+  attachments?: readonly Attachment[];
+  /** Coding sessions: "plan" is read-only and ends in `exit_plan_mode`. */
+  sessionMode?: "plan" | "execute";
   /** Headless runs: tools added to the surface toolset, and the usage row's source. */
   extraTools?: readonly AgentTool[];
   usageSource?: "automation";
@@ -212,6 +252,8 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   const observed = observedFiles.get(a.sessionId) ?? new Set<string>();
   observedFiles.set(a.sessionId, observed);
   const role = a.role ?? "default";
+  const planning = a.sessionMode === "plan" && !chat && role === "default";
+  const prepared = prepareAttachments(a.prompt, a.attachments);
 
   const tools = await buildToolset({
     surface: chat ? "chat" : role === "automation-dev" ? "automation-dev" : "coding",
@@ -233,6 +275,12 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
     fs: { cwd: a.cwd, rgPath, observed },
     onTodos: (todos) => broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "todos", { todos })),
+    plan: planning ? {
+      onPlan: (sessionId, plan) => {
+        try { updateCodingSession(a.ctx.db, sessionId, { planContent: plan }); } catch (err) { console.warn("[agent] failed to persist plan:", err); }
+        broadcastEvent("session:projection", makeSessionProjection(sessionId, "plan-note", { planContent: plan }));
+      },
+    } : undefined,
   });
 
   if (a.extraTools?.length) tools.push(...a.extraTools);
@@ -242,11 +290,12 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   try {
     await h.prompt({
       sessionId: a.sessionId,
-      prompt: a.prompt,
+      prompt: prepared.text,
+      images: prepared.images,
       cwd: a.cwd,
-      profile: a.profile ?? chatProfile?.profile ?? engineProfile(a.llmConfig.mode, role),
+      profile: a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role),
       route: routeFromConfig(a.llmConfig),
-      systemPrompt: a.systemPrompt,
+      systemPrompt: planning ? `${a.systemPrompt}\n\n${PLAN_MODE_PROMPT}` : a.systemPrompt,
       tools,
       reasoningEffort: a.llmConfig.reasoningEffort,
       temperature: a.llmConfig.temperature,
@@ -280,7 +329,7 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
   }
   const policy = chatApprovalPolicyFor(req);
   await runEnginePrompt({
-    ctx, sessionId, prompt: req.message, cwd: ctx.workspacePath,
+    ctx, sessionId, prompt: req.message, cwd: ctx.workspacePath, attachments: req.images as Attachment[] | undefined,
     projectId: req.projectId, workspaceId: req.workspaceId,
     systemPrompt: chatSystemPrompt(req, policy),
     llmConfig: {
@@ -321,4 +370,17 @@ export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void
 /** Answer an ask raised by a headless run. */
 export function respondEngineAsk(ctx: DbContext, sessionId: string, callId: string, nonce: string | undefined, decision: { approved: boolean; grant?: "session" | "command" | "workspace" }): boolean {
   return getEngineHost(ctx).respondTool(sessionId, callId, nonce, decision);
+}
+
+/** `/compact`: fold the older history of a coding or chat session now. */
+export async function compactEngineSession(ctx: DbContext, args: { sessionId: string; cwd: string; llmConfig: AgentLLMConfig }): Promise<"compacted" | "nothing" | "busy"> {
+  const h = getEngineHost(ctx);
+  if (h.isRunning(args.sessionId)) return "busy";
+  broadcastEvent("session:projection", makeSessionProjection(args.sessionId, "compact", { status: "start" }));
+  try {
+    return (await h.compact(args.sessionId, args.cwd, routeFromConfig(args.llmConfig))) ? "compacted" : "nothing";
+  } catch (err) {
+    broadcastEvent("session:projection", makeSessionProjection(args.sessionId, "compact", { status: "end" }));
+    throw err;
+  }
 }

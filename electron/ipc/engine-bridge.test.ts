@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: { getPath: () => "/tmp/cairn-test" }, BrowserWindow: { getAllWindows: () => [] } }));
 
-const { chatEngineProfile, chatSystemPrompt, engineProfile, routeFromConfig } = await import("./engine-bridge");
+const { chatEngineProfile, chatSystemPrompt, engineProfile, readEnginePermissions, routeFromConfig, setEnginePermission } = await import("./engine-bridge");
 const { decide } = await import("../agent/policy");
 const { presetRules } = await import("../agent/rules");
 
@@ -74,5 +74,18 @@ describe("chat approval policy as engine policy", () => {
     expect(chatSystemPrompt(req, "safe")).toContain("destructive operations");
     expect(chatSystemPrompt(req, "external")).not.toContain("destructive operations");
     expect(chatSystemPrompt(req, "allow-all")).not.toContain("Tool approvals");
+  });
+});
+
+describe("permission presets", () => {
+  it("start from the legacy approval mode and switch per session", () => {
+    expect(readEnginePermissions("p1", "auto").currentValue).toBe("yolo");
+    expect(readEnginePermissions("p1", "interactive").currentValue).toBe("ask");
+    expect(setEnginePermission("p1", "yolo", "interactive").currentValue).toBe("yolo");
+    expect(readEnginePermissions("p1", "interactive").currentValue).toBe("yolo");
+    expect(readEnginePermissions("p2", "interactive").currentValue).toBe("ask");
+  });
+  it("rejects a preset it does not offer", () => {
+    expect(() => setEnginePermission("p1", "nope", undefined)).toThrow(/Unknown permission preset/);
   });
 });

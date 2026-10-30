@@ -11,9 +11,12 @@ export type DecisionSource = "profile" | "plan" | "rule" | "doom" | "protected" 
 
 export type TurnEndReason = "stop" | "aborted" | "error" | "max-steps" | "overflow";
 
+/** An image the user attached; `data` is base64. */
+export interface UserImage { mediaType: string; data: string; name?: string }
+
 export type AgentEvent =
   | { type: "turn/start"; sessionId: string; profile: string }
-  | { type: "user/message"; content: string }
+  | { type: "user/message"; content: string; images?: UserImage[] }
   | { type: "assistant/delta"; text: string }
   | { type: "assistant/thinking"; text: string }
   | { type: "assistant/message"; message: AssistantMessage }

@@ -40,7 +40,7 @@ import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { isShellTool } from "../../shared/agent/tool-risk";
 import { runSession } from "./session-run";
-import { answerQuestion, cancelQuestions, engineEnabled, engineOwns, getEngineHost, runEngineChat, runEnginePrompt } from "./engine-bridge";
+import { answerQuestion, cancelQuestions, compactEngineSession, engineEnabled, engineOwns, getEngineHost, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -314,7 +314,7 @@ export function registerSessionRuntimeHandlers(
         config: req.config,
       };
       const chatSessionId = `chat-${chatReq.threadId}`;
-      if (!chatReq.images?.length && (engineEnabled() || await engineOwns(ctx, chatSessionId))) {
+      if (engineEnabled() || await engineOwns(ctx, chatSessionId)) {
         await runEngineChat(ctx, chatReq);
         return;
       }
@@ -469,10 +469,9 @@ export function registerSessionRuntimeHandlers(
        role,
     });
 
-    // Native engine (opt-in, or a session that already lives in it). Plan-mode turns and
-    // attachments still go through Cordis until the engine grows those.
-    if (!req.attachments?.length && mode === "execute" && (engineEnabled() || await engineOwns(ctx, sessionId))) {
-      await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role });
+    // Native engine (opt-in, or a session that already lives in it).
+    if (engineEnabled() || await engineOwns(ctx, sessionId)) {
+      await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role, attachments: req.attachments, sessionMode: mode });
       return;
     }
 
@@ -529,7 +528,7 @@ export function registerSessionRuntimeHandlers(
 
     // Same concurrency guard as session:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
-    if (getAgentHost().isTurnRunning(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId) || getEngineHost(ctx).isRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -631,6 +630,19 @@ export function registerSessionRuntimeHandlers(
     const skills = discoverSkills(cwd);
     const systemPrompt = buildAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent, role });
 
+    if (engineEnabled() || await engineOwns(ctx, sessionId)) {
+      // The plan the model submitted with exit_plan_mode is stored on the session row; a PRD note is the older route.
+      const approvedPlan = sessionRow?.planContent?.trim() || planContent;
+      await runEnginePrompt({
+        ctx, sessionId, cwd, projectId, workspaceId, llmConfig, role, sessionMode: "execute",
+        systemPrompt: buildAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent: approvedPlan, role }),
+        prompt: planNoteId
+          ? `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_item if needed.`
+          : "The plan has been approved. Begin implementation now, following the approved plan in your instructions exactly.",
+      });
+      return;
+    }
+
     const toolCtx: AgentToolContext = {
       cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
       req: { message: "", threadId: sessionId, projectId, workspaceId,
@@ -669,7 +681,7 @@ export function registerSessionRuntimeHandlers(
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
     };
-    if (getAgentHost().isTurnRunning(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId) || getEngineHost(ctx).isRunning(sessionId)) {
       send("session:compact-result", { sessionId, messageCount: 0, summary: "Can't compact while the agent is working — try again when it finishes." });
       return;
     }
@@ -688,6 +700,18 @@ export function registerSessionRuntimeHandlers(
       contextWindow: req.config?.contextWindow,
       apiMode: req.config?.apiMode,
     };
+    if (engineEnabled() || await engineOwns(ctx, sessionId)) {
+      try {
+        const outcome = await compactEngineSession(ctx, { sessionId, cwd, llmConfig });
+        if (outcome === "nothing") {
+          send("session:compact-result", { sessionId, messageCount: 0, summary: "Nothing to compact." });
+          send("session:compact", { sessionId, status: "end" });
+        }
+      } catch (e) {
+        send("session:compact-result", { sessionId, messageCount: 0, summary: `Compaction unavailable: ${(e as Error).message}` });
+      }
+      return;
+    }
     send("session:compact", { sessionId, status: "start" });
     try {
       const result = await getAgentHost().compactSession({
@@ -723,13 +747,20 @@ export function registerSessionRuntimeHandlers(
       broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
       return;
     }
-    if (getAgentHost().isTurnRunning(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId) || getEngineHost(ctx).isRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot toggle plan mode while running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
     }
     void (async () => {
       try {
+        // On the engine the mode is chosen per prompt, so toggling only records it and tells the UI.
+        if (engineEnabled() || await engineOwns(ctx, sessionId)) {
+          q.updateCodingSession(ctx.db, sessionId, { mode, updatedAt: ts() });
+          broadcastEvent("session:mode-change", { sessionId, mode });
+          broadcastEvent("session:projection", makeSessionProjection(sessionId, "mode-change", { mode }));
+          return;
+        }
         const agentConfig = getCachedConfig().agentConfig;
         const committedMode = await getAgentHost().setSessionMode({
           sessionId,
