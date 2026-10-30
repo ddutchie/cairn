@@ -12,6 +12,17 @@ import { setFind } from "./note-find-extension";
 const HL = "cairn-find";
 const HL_CURRENT = "cairn-find-current";
 
+// The CSS build can't parse ::highlight(), so the two rules are injected once at runtime.
+const HL_STYLE_ID = "cairn-find-highlight-style";
+function ensureHighlightStyle() {
+  if (typeof document === "undefined" || document.getElementById(HL_STYLE_ID)) return;
+  const el = document.createElement("style");
+  el.id = HL_STYLE_ID;
+  el.textContent = `::highlight(${HL}) { background-color: color-mix(in srgb, var(--accent) 24%, transparent); color: inherit; }
+::highlight(${HL_CURRENT}) { background-color: color-mix(in srgb, var(--accent) 60%, transparent); color: inherit; }`;
+  document.head.appendChild(el);
+}
+
 type HighlightRegistry = { set(name: string, h: unknown): void; delete(name: string): void };
 function highlights(): HighlightRegistry | null {
   return (typeof CSS !== "undefined" && (CSS as unknown as { highlights?: HighlightRegistry }).highlights) || null;
@@ -121,6 +132,7 @@ export function NoteFindBar({ initialQuery, requestId, mode, content, getView, g
     if (ranges.length === 0) { clearReadHighlights(); return; }
     const idx = Math.min(current, ranges.length - 1);
     if (reg) {
+      ensureHighlightStyle();
       const Hl = (window as unknown as { Highlight: new (...r: Range[]) => unknown }).Highlight;
       reg.set(HL, new Hl(...ranges));
       reg.set(HL_CURRENT, new Hl(ranges[idx]));
