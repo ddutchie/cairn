@@ -79,7 +79,7 @@ export function decide(call: CallView, signature: string, state: PolicyState): D
   const denyRule = findRule(state.rules, call, ctx, ["deny"]);
   if (denyRule) return { kind: "deny", by: "rule", ruleId: denyRule.id, reason: denyRule.note ?? `Denied by rule ${denyRule.id}` };
 
-  if (call.risk.escalation) return { kind: "ask", by: "mode", reason: "Runs outside the sandbox" };
+  if (call.risk.escalation) return { kind: "ask", by: "mode", reason: `escalate sandbox to danger-full-access: ${call.risk.command ?? call.name}` };
 
   const threshold = state.doomThreshold ?? DOOM_THRESHOLD;
   if (!state.doomAcked.has(signature) && trailingRepeats(state.recent, signature) >= threshold - 1) {

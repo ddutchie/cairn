@@ -21,6 +21,10 @@ export interface SandboxOptions {
   writableRoots?: string[];
   /** Block outbound network. Default false. */
   blockNetwork?: boolean;
+  /** Directory whose tree is writable (the session cwd). Defaults to the command's cwd; a per-call workdir must not widen it. */
+  root?: string;
+  /** Command is an interactive shell on a PTY: keep its controlling terminal (no new session). */
+  pty?: boolean;
 }
 
 export interface SandboxStatus {
@@ -40,7 +44,8 @@ let bwrapPath: string | null | undefined;
 function findBwrap(): string | null {
   if (bwrapPath !== undefined) return bwrapPath;
   const r = spawnSync("bwrap", ["--version"], { stdio: "ignore" });
-  bwrapPath = r.status === 0 ? "bwrap" : null;
+  // --version works even where user namespaces are blocked; a real (no-op) run proves it can sandbox.
+  bwrapPath = r.status === 0 && spawnSync("bwrap", ["--ro-bind", "/", "/", "true"], { stdio: "ignore" }).status === 0 ? "bwrap" : null;
   return bwrapPath;
 }
 
@@ -63,8 +68,33 @@ function real(p: string): string {
   try { return fs.realpathSync(p); } catch { return path.resolve(p); }
 }
 
+const gitDirCache = new Map<string, string[]>();
+
+/** A linked worktree or submodule keeps its index/refs/objects outside the cwd. */
+function gitDirs(cwd: string): string[] {
+  const hit = gitDirCache.get(cwd);
+  if (hit) return hit;
+  let dirs: string[] = [];
+  try {
+    const r = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], { cwd, encoding: "utf8", timeout: 3000 });
+    if (r.status === 0) dirs = r.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  } catch { /* no git */ }
+  gitDirCache.set(cwd, dirs);
+  return dirs;
+}
+
+function darwinCacheDir(): string[] {
+  if (process.platform !== "darwin") return [];
+  try {
+    const r = spawnSync("getconf", ["DARWIN_USER_CACHE_DIR"], { encoding: "utf8", timeout: 2000 });
+    return r.status === 0 && r.stdout.trim() ? [r.stdout.trim()] : [];
+  } catch { return []; }
+}
+
+const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun", ".gradle", ".m2", ".node-gyp", "go", ".local/share/pnpm", "Library/pnpm", "Library/Caches"];
+
 export function writableRoots(cwd: string, extra: string[] = [], home = os.homedir(), tmp = os.tmpdir()): string[] {
-  const roots = [cwd, tmp, "/tmp", "/var/tmp", ...extra, path.join(home, ".npm"), path.join(home, ".cache"), path.join(home, ".cargo"), path.join(home, ".pnpm-store"), path.join(home, "Library", "Caches")];
+  const roots = [cwd, tmp, "/tmp", "/var/tmp", ...darwinCacheDir(), ...gitDirs(cwd), ...extra, ...HOME_CACHES.map((d) => path.join(home, d))];
   return [...new Set(roots.map(real))];
 }
 
@@ -84,10 +114,11 @@ export function seatbeltProfile(roots: string[], blockNetwork = false): string {
   return lines.join("\n");
 }
 
-export function bwrapArgs(roots: string[], blockNetwork = false): string[] {
+export function bwrapArgs(roots: string[], blockNetwork = false, pty = false): string[] {
   const args = ["--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--proc", "/proc"];
   for (const r of roots) if (fs.existsSync(r)) args.push("--bind", r, r);
-  args.push("--die-with-parent", "--new-session");
+  args.push("--die-with-parent");
+  if (!pty) args.push("--new-session");
   if (blockNetwork) args.push("--unshare-net");
   return args;
 }
@@ -97,9 +128,9 @@ export function wrapSandboxed(cmd: Spawnable, cwd: string, opts: SandboxOptions,
   if (opts.mode === "off") return cmd;
   const backend = backendFor(platform);
   if (backend === "none") return cmd;
-  const roots = writableRoots(cwd, opts.writableRoots);
+  const roots = writableRoots(opts.root ?? cwd, opts.writableRoots);
   if (backend === "seatbelt") return { file: SEATBELT, args: ["-p", seatbeltProfile(roots, opts.blockNetwork), cmd.file, ...cmd.args] };
-  return { file: "bwrap", args: [...bwrapArgs(roots, opts.blockNetwork), "--chdir", cwd, cmd.file, ...cmd.args] };
+  return { file: "bwrap", args: [...bwrapArgs(roots, opts.blockNetwork, opts.pty), "--chdir", cwd, cmd.file, ...cmd.args] };
 }
 
 /** Hint appended to a failed command that looks like a sandbox write denial. */

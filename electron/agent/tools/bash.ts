@@ -8,7 +8,7 @@ import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";
 import type { JobRegistry } from "../jobs";
-import { sandboxDenialHint, wrapSandboxed, type SandboxOptions } from "../sandbox";
+import { sandboxDenialHint, sandboxStatus, wrapSandboxed, type SandboxOptions } from "../sandbox";
 import { clampMiddle, fail, ok } from "./schema";
 
 export interface BashDeps {
@@ -44,13 +44,13 @@ export function bashTool(deps: BashDeps): AgentTool {
       workdir: Type.Optional(Type.String({ description: "Working directory; relative paths resolve against the session working directory." })),
       unsandboxed: Type.Optional(Type.Boolean({ description: "Run outside the sandbox (which limits writes to the working directory and temp dirs). Only after a sandboxed attempt failed because of it; the user is asked every time." })),
     }),
-    risk: (a) => ({ class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined, escalation: a.unsandboxed && deps.sandbox?.mode !== "off" ? true : undefined }),
+    risk: (a) => ({ class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined, escalation: a.unsandboxed && deps.sandbox && sandboxStatus(deps.sandbox.mode).active ? true : undefined }),
     preview: (a) => a.command,
     execute(a, ctx) {
       const cwd = a.workdir ? path.resolve(deps.cwd, a.workdir) : deps.cwd;
       const timeout = Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.floor(a.timeoutMs ?? DEFAULT_TIMEOUT_MS)));
       const raw = shellFor(a.command);
-      const { file, args } = deps.sandbox && !a.unsandboxed ? wrapSandboxed(raw, cwd, deps.sandbox) : raw;
+      const { file, args } = deps.sandbox && !a.unsandboxed ? wrapSandboxed(raw, cwd, { ...deps.sandbox, root: deps.cwd }) : raw;
       if (a.run_in_background && deps.jobs) {
         const job = deps.jobs.registry.start({ owner: deps.jobs.owner, label: a.description || a.command, file, args, cwd, env: deps.env });
         return Promise.resolve(ok(`Started background job ${job.id}. Use job_output to read it and job_kill to stop it.`));

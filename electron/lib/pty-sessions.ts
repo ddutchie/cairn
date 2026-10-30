@@ -374,7 +374,7 @@ export async function spawnShellPty(
   for (const attempt of filteredAttempts) {
     try {
       const resolvedAttemptCwd = await getRealPath(attempt.cwd);
-      const launch = opts.sandbox ? wrapSandboxed({ file: attempt.shell, args: [] }, resolvedAttemptCwd, opts.sandbox) : { file: attempt.shell, args: [] as string[] };
+      const launch = opts.sandbox ? wrapSandboxed({ file: attempt.shell, args: [] }, resolvedAttemptCwd, { ...opts.sandbox, pty: true }) : { file: attempt.shell, args: [] as string[] };
       pty = spawnFn()(launch.file, launch.args, {
         name: "xterm-256color",
         cols: 120,

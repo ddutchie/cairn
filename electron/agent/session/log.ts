@@ -76,7 +76,7 @@ export async function writeImportedSession(root: string, header: SessionHeader, 
   const file = path.join(dir, SESSION_FILE);
   if (await readSession(root, header.id)) return false;
   await mkdir(dir, { recursive: true });
-  const tmp = `${file}.tmp`;
+  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`;
   await writeFile(tmp, serializeLine(header) + records.map(serializeLine).join(""));
   await rename(tmp, file);
   return true;

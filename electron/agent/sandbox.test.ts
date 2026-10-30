@@ -77,3 +77,17 @@ describe("escalation policy", () => {
     expect(offeredGrants(call.risk)).toEqual([]);
   });
 });
+
+describe("sandbox root", () => {
+  it("a per-call workdir never widens the writable root", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-r-"));
+    const w = wrapSandboxed({ file: "/bin/bash", args: ["-c", "true"] }, os.homedir(), { mode: "workspace-write", root: work }, "darwin");
+    if (process.platform === "darwin") expect(w.args[1]).not.toContain(`(subpath "${fs.realpathSync(os.homedir())}")`);
+    expect(writableRoots(work)).not.toContain(fs.realpathSync(os.homedir()));
+    fs.rmSync(work, { recursive: true });
+  });
+  it("bwrap keeps the controlling terminal for PTYs", () => {
+    expect(bwrapArgs(["/tmp"])).toContain("--new-session");
+    expect(bwrapArgs(["/tmp"], false, true)).not.toContain("--new-session");
+  });
+});
