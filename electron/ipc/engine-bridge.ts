@@ -25,6 +25,7 @@ import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
 import { buildToolset } from "../agent/tools/index";
 import { JobRegistry } from "../agent/jobs";
 import { createHooks } from "../agent/hooks";
+import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importDshSession } from "../agent/session/dsh-import";
 import { isLocalEndpoint } from "../lib/llm";
 import { getAgentHost } from "../cordis/agent-host";
@@ -150,6 +151,12 @@ export function getJobRegistry(): JobRegistry {
     },
   });
   return jobRegistry;
+}
+
+let terminalRegistry: TerminalRegistry | undefined;
+function getTerminals(ctx: DbContext): TerminalRegistry {
+  terminalRegistry ??= new TerminalRegistry(() => sharedPtyAdapter(ctx.db));
+  return terminalRegistry;
 }
 
 export function getEngineHost(ctx: DbContext): AgentHost {
@@ -320,6 +327,7 @@ export async function listEngineSchedules(ctx: DbContext, sessionId: string) {
 
 export function forgetEngineSession(sessionId: string): void {
   jobRegistry?.killAll(sessionId);
+  terminalRegistry?.closeAll(sessionId);
   for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
 }
 
@@ -386,6 +394,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
     fs: { cwd: a.cwd, rgPath, observed, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
+    terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },
     goal: {
       get: () => h.goal(a.sessionId),
       create: (objective, maxRounds) => h.createGoal(a.sessionId, objective, maxRounds),

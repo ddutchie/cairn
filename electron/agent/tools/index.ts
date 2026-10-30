@@ -14,6 +14,7 @@ import { fsTools, type FsDeps } from "./fs";
 import { planTools, type PlanDeps } from "./plan";
 import { subagentTools, type SubagentDeps } from "./subagent";
 import { skillTool } from "./skill";
+import { terminalTools, type TerminalDeps } from "./terminal";
 import { todoTool, type TodoItem } from "./todo";
 import { webFetchTool } from "./web";
 
@@ -35,6 +36,7 @@ export interface ToolsetDeps {
   goal?: GoalDeps;
   schedule?: ScheduleDeps;
   jobs?: JobToolDeps;
+  terminals?: TerminalDeps;
 }
 
 export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
@@ -58,6 +60,7 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
     if (d.goal) tools.push(...goalTools(d.goal));
     if (d.schedule) tools.push(...scheduleTools(d.schedule));
     if (d.jobs) tools.push(...jobTools(d.jobs));
+    if (d.terminals) tools.push(...terminalTools(d.terminals));
   }
   if (d.plan && d.surface === "coding") tools.push(...planTools(d.plan));
   const seen = new Set<string>();
@@ -74,5 +77,6 @@ export * from "./schedule";
 export * from "./plan";
 export * from "./skill";
 export * from "./subagent";
+export * from "./terminal";
 export * from "./todo";
 export * from "./web";
