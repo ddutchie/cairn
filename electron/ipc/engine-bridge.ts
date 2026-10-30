@@ -15,7 +15,7 @@ import { broadcastEvent } from "./registry";
 import { AgentHost } from "../agent/host";
 import type { Profile } from "../agent/loop";
 import type { Mode as EngineMode } from "../agent/policy";
-import type { ModelRoute } from "../agent/provider";
+
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
 import { buildToolset } from "../agent/tools/index";
 import { importDshSession } from "../agent/session/dsh-import";

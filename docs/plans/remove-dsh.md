@@ -282,3 +282,37 @@ dependency on DeepSeek's npm scope within days.
 - **Restriction scope (§0.1)** — if it turns out not to cover MIT packages,
   Phase 1 is a valid pause point; the unified engine is still worth doing
   for simplicity, on our own schedule.
+
+---
+
+## 7. Status (2026-10-30)
+
+Phase 1 (vendor and lock dsh) was skipped by decision: we port straight to the
+engine in `electron/agent/` and delete dsh once nothing imports it.
+
+**Done:** kernel, `cairn-session/1` log + dsh importer, context/compaction,
+fs/bash/web/todo/Cairn/external tools, `AgentHost` + IPC bridge (opt-in via
+`CAIRN_AGENT_ENGINE=native`), chat profile, one-shot completions
+(`agent/one-shot.ts`; Cordis `one-shot.ts` deleted). Verified in the real app:
+a chat turn with Cairn data tools, and a coding turn with an approval ask,
+`write`, and `read`.
+
+**Still on Cordis** (each row lists the `getAgentHost()` methods or modules that
+must have an engine replacement before `electron/cordis/` can go):
+
+| Tranche | Cordis surface | Call sites |
+|---|---|---|
+| Automations | `runAutomation`, `startTurn`/`endTurn`, headless confirm transport, `readPendingApprovalArgs`; `RunCordisCodingOptions.extraTools` | `lib/heartbeat-runner.ts` |
+| Turn state + approvals | `isTurnRunning`, `abortTurn`, `getRunningTurnIds`, nonce mint/verify, pending-ask records, `grantSessionTool`/`grantSessionBash`, `readTrustedBashCommand` | `ipc/session-run.ts`, `ipc/session-runtime-handlers.ts`, `ipc/chat.ts` (all subsumed by `Gate` + `AgentHost`, so this is deletion once every path is on the engine) |
+| Session modes + commands | `setSessionMode`, `setPermissionPreset`, `readPermissionsSnapshot`, `compactSession`/`compactChatSession`, `listCommands`/`executeCommand`, `previewSystemPrompt`, plan mode, `session:approve-plan` | `ipc/session-handlers.ts`, `ipc/runtime-handlers.ts`, `ipc/session-runtime-handlers.ts` |
+| Attachments | image input, attachment store, missing-image offload, image budget | `session:prompt` fallback to Cordis when `attachments` is set |
+| Subagents | `listSubagentChildren`, `messageSubagentChild`, `interruptSubagentChild`, `subagent-control` | `ipc/session-runtime-handlers.ts` |
+| Goals, jobs, schedule | `readGoalSnapshot`, `killJob`, `listSchedules`, jobs/goal bridges | `ipc/session-runtime-handlers.ts` |
+| Workspace services | LSP, terminal backend, MCP bridge + resources, hooks, skills, workflow/PTC, `web_search` | engine tool inventory |
+| Reads | `loadSessionMessages`, `readSessionTitle`, `readContextRing`, session export/stats, `getSessionRoot` | `ipc/session-handlers.ts`, `ipc/chat-session.ts`, `ipc/usage-handlers.ts` |
+| Seam + packaging | `host-store.ts` (`recordUsage`, db services), `subprocess-runner.ts`, `dsh-context-ring`, `dsh-toolview` | move what survives under `electron/agent/`; `@vscode/ripgrep` becomes a direct dependency |
+
+**Deletion checklist (last):** flip the default to the engine and drop the
+`engine` toggle, delete `electron/cordis/`, remove the `@deepseek-ai/*` and
+`dsh-context-ring` dependencies and their patches, update `AGENTS.md`, the
+changelog, and the What's New entry.
