@@ -52,6 +52,7 @@
   "dependencies": {
     "@codemirror/search": "^6.7.0",
     "@dagrejs/dagre": "^3.0.0",
+    "@earendil-works/pi-ai": "0.87.1",
     "@huggingface/transformers": "^4.3.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@radix-ui/react-context-menu": "^2.2.16",

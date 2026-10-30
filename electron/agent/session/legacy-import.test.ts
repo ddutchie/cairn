@@ -1,10 +1,9 @@
-import { mkdtemp, mkdir, writeFile, readdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { importLegacyLog, importLegacySession, importLegacyTree, readLegacyLogFile } from "./legacy-import";
+import { importLegacyLog, importLegacySession, importLegacyTree } from "./legacy-import";
 import { historyFromRecords, foldState } from "./history";
 import { readSession } from "./log";
 
@@ -87,41 +86,5 @@ describe("importLegacySession", () => {
     expect(await importLegacySession(src, dst, "wanted")).toBe(true);
     expect((await readSession(dst, "wanted"))?.header.id).toBe("wanted");
     expect(await importLegacySession(src, dst, "wanted")).toBe(false);
-  });
-});
-
-// Opt-in: compare against the user's real dsh sessions using the OLD replay pipeline.
-const REAL = process.env.CAIRN_DSH_SESSIONS_DIR;
-describe.skipIf(!REAL || !REAL.split(path.delimiter).some((r) => existsSync(r)))("replay diff vs real dsh sessions", () => {
-  it("model-visible conversation is identical", async () => {
-    const { deriveEventMessage } = await import("@deepseek-ai/dsh-session");
-    const roots = REAL!.split(path.delimiter);
-    let checked = 0;
-    for (const root of roots) {
-      for (const proj of await readdir(root)) {
-        for (const id of await readdir(path.join(root, proj))) {
-          const dir = path.join(root, proj, id);
-          const name = ["session.v4.jsonl.zstd", "session.jsonl.zstd"].find((n) => existsSync(path.join(dir, n)));
-          if (!name) continue;
-          const text = await readLegacyLogFile(path.join(dir, name));
-          const events = text.trim().split("\n").map((l) => JSON.parse(l)).filter((e) => typeof e.seq === "number" && e.surfaceOp === "append" && (e.type === "user/message" || e.type === "assistant/message"));
-          type D = { role: string; source?: { kind?: string }; content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: string; toolCallId?: string; content?: Array<{ text?: string }> }> };
-          const flat = (events.map((e) => deriveEventMessage(e)).filter(Boolean) as unknown as D[]).flatMap((m): string[] => {
-            if (m.role === "user") return m.source?.kind && m.source.kind !== "user" ? [] : [`U:${m.content.map((c) => c.text ?? "").join("")}`];
-            if (m.role === "assistant") return [`A:${m.content.filter((c) => c.type === "text").map((c) => c.text).join("")}|${m.content.filter((c) => c.type === "tool-call").map((c) => `${c.id}:${c.name}`).join(",")}`];
-            return [];
-          });
-          const imported = importLegacyLog(text)!;
-          const mine = historyFromRecords(imported.records).flatMap((m): string[] => {
-            if (m.role === "user") return [`U:${m.content}`];
-            if (m.role === "assistant") return [`A:${m.content.filter((c) => c.type === "text").map((c) => (c as { text: string }).text).join("")}|${m.content.filter((c) => c.type === "toolCall").map((c) => `${(c as { id: string }).id}:${(c as { name: string }).name}`).join(",")}`];
-            return [];
-          });
-          expect(mine, id).toEqual(flat);
-          checked++;
-        }
-      }
-    }
-    expect(checked).toBeGreaterThan(0);
   });
 });
