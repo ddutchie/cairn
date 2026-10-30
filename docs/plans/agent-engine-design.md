@@ -444,3 +444,24 @@ credential store, OAuth flows, catalog providers.
   retries the step. At most `maxPerTurn` (2); a failing compactor is reported as `error` and the
   turn continues, an unhelpful one ends the turn with `overflow` as before.
 * Not yet: image offload (events carry no images yet), manual `/compact` command wiring.
+
+## Tools (ported)
+
+`electron/agent/tools/` — same tool names and argument shapes the model already uses.
+
+* `cairn.ts`: every `TOOL_SCHEMAS` entry as an `AgentTool` (schema via `Type.Unsafe`, execution through
+  the shared `executeTool`). Reads → `READ` (parallel); `delete` → `WRITE_LOCAL` (asks); all other
+  Cairn writes → `WRITE_CAIRN` (allowed by the `cairn-data` preset). `ask_questions` blocks on an
+  injected `askQuestions` seam.
+* `external.ts`: MCP / custom-service tools as `EXTERNAL` (`mcp__<id>__*` rules apply).
+* `fs.ts`: `read write edit read_image glob grep` (ripgrep via `@vscode/ripgrep`). Write/edit require the
+  file to have been read this session. Risk carries absolute paths for the path rules.
+* `bash.ts`: timeout, abort (process-group kill), bounded output; PowerShell on Windows.
+* `web.ts` (`web_fetch`, refuses private/loopback hosts incl. after redirects/DNS), `todo.ts`.
+* `index.ts`: `buildToolset({surface})` — chat = Cairn (+external); coding adds fs, bash, web_fetch, todo;
+  automation-dev = Cairn + fs.
+
+Not ported yet: OS sandbox for bash (seatbelt/landlock — the permission pipeline is the only guard),
+`web_search`, `lsp`, terminal sessions, background jobs, `subagent`/`delegate`, workflow/PTC, `skill`,
+`str_replace_editor` (superseded by `edit`), MCP resources + server instructions, `@vscode/ripgrep`
+as a direct dependency in package.json (currently transitive via dsh-tool-fs-search).
