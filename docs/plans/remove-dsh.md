@@ -200,6 +200,8 @@ Approach:
 - Exit: every session in a real profile imports and replays identically.
 
 ### Phase 3 — Unified engine, chat profile first (1–2 weeks)
+> Design: `docs/plans/agent-engine-design.md` (rules-as-data permissions,
+> policy pipeline, auto-mode reviewer).
 - [ ] `electron/agent/loop.ts` on pi-ai (stream, tool calls, parallel exec,
       abort, retry/backoff, token meter, doom-loop).
 - [ ] `ToolRegistry` built from `TOOL_SCHEMAS` + `tool-inventory.ts`;
