@@ -27,7 +27,8 @@ import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importLegacySession } from "../agent/session/legacy-import";
 import { isLocalEndpoint } from "../lib/llm";
-import { getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
+import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
+import { listSessionIdsForWorkspace } from "../db/workspace-queries";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
 import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared/agent/chat-approval";
@@ -426,6 +427,12 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   await adoptLegacySession(a.sessionId);
   if (a.workspaceId) sessionWorkspace.set(a.sessionId, a.workspaceId);
   const chat = a.chat;
+  // The session list, pop-out and session search key off these rows; the engine owns writing them now.
+  try {
+    const store = createHostStore(a.ctx.db);
+    store.upsertSessionProfile(a.sessionId, chat ? "chat" : a.role === "automation-dev" ? "automation-dev" : "coding", { cwd: a.cwd, workspaceId: a.workspaceId, projectId: a.projectId });
+    if (chat && a.workspaceId) store.indexChatThread(a.sessionId.replace(/^chat-/, ""), a.workspaceId, a.projectId);
+  } catch (err) { console.warn("[agent] could not record session profile:", err instanceof Error ? err.message : err); }
   const chatProfile = chat ? chatEngineProfile(chat.policy) : undefined;
   sessionRules.set(a.sessionId, chatProfile?.rules ?? []);
   usageMeta.set(a.sessionId, {
@@ -460,6 +467,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
     fs: { cwd: a.cwd, rgPath, observed, sandbox: () => ({ mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }), jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
+    sessions: role === "automation-dev" || !a.workspaceId ? undefined : { root: hostRoot(), currentSession: a.sessionId, workspaceSessionIds: () => new Set(listSessionIdsForWorkspace(a.ctx.db, a.workspaceId!)) },
     lsp: role === "automation-dev" ? undefined : { manager: getLsp(), cwd: a.cwd },
     terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },
     goal: {

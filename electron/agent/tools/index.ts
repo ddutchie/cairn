@@ -14,6 +14,7 @@ import { fsTools, type FsDeps } from "./fs";
 import { lspTool, type LspDeps } from "./lsp";
 import { planTools, type PlanDeps } from "./plan";
 import { subagentTools, type SubagentDeps } from "./subagent";
+import { sessionTools, type SessionToolDeps } from "./sessions";
 import { skillTool } from "./skill";
 import { workflowTools } from "./workflow";
 import { terminalTools, type TerminalDeps } from "./terminal";
@@ -39,6 +40,8 @@ export interface ToolsetDeps {
   schedule?: ScheduleDeps;
   jobs?: JobToolDeps;
   terminals?: TerminalDeps;
+  /** Search of earlier chats and coding sessions; offered on chat and coding. */
+  sessions?: SessionToolDeps;
   lsp?: LspDeps;
 }
 
@@ -58,6 +61,7 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
       if (skill) tools.push(skill);
     }
   }
+  if (d.sessions && d.surface !== "automation-dev") tools.push(...sessionTools(d.sessions));
   if (d.subagents && d.surface !== "automation-dev") tools.push(...subagentTools(d.subagents));
   if (d.subagents && d.surface === "coding") tools.push(...workflowTools(d.subagents));
   if (d.surface === "coding") {

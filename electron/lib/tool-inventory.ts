@@ -53,7 +53,7 @@ function inertDeps(surface: ToolSurface): ToolsetDeps {
     },
     fs: { cwd: process.cwd(), rgPath: "rg" },
     subagents: surface === "automation-dev" ? undefined : subagents,
-    goal: stub(), schedule: stub(), jobs: stub(),
+    goal: stub(), schedule: stub(), jobs: stub(), sessions: stub(),
     terminals: surface === "coding" ? stub() : undefined,
     lsp: surface === "coding" ? { manager: { available: true } as never, cwd: process.cwd() } : undefined,
   };
