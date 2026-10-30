@@ -248,7 +248,7 @@ async function adoptLegacySession(sessionId: string): Promise<void> {
 }
 
 /** Native session logs live beside the legacy ones; a missing Electron `app` (unit tests) falls back to tmp. */
-function hostRoot(): string {
+export function hostRoot(): string {
   let base: string;
   try { base = electron.app.getPath("userData"); } catch { base = os.tmpdir(); }
   return path.join(base, "sessions-native");

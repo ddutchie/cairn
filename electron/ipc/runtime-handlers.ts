@@ -7,6 +7,8 @@ import { ts } from "../db/utils";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { getAgentHost } from "../cordis/agent-host";
 import { errMsg } from "../host-shared/errors";
+import { engineEnabled, engineOwns } from "./engine-bridge";
+import { ENGINE_COMMANDS, executeEngineCommand, previewEnginePrompt } from "./engine-commands";
 
 let progressForwarderSetUp = false;
 
@@ -48,6 +50,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // List registry commands (name + description) so host UIs can render their
   // palettes from the same namespace plugins register into.
   registerContractHandle("cordis:listCommands", () => handle(async () => {
+    if (engineEnabled()) return ENGINE_COMMANDS.map((c) => ({ ...c }));
     const list = await getAgentHost().listCommands();
     return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
   }));
@@ -55,6 +58,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // Generic executor for registry commands (/plan, /compact, plugin commands)
   // on a session's resumed agent. Returns the command result {kind, text}.
   registerContractHandle("cordis:executeCommand", (_e, req) => handle(async () => {
+    if (engineEnabled() || await engineOwns(ctx, req.sessionId)) return executeEngineCommand(ctx, req);
     const agentConfig = (await import("../lib/config-cache")).getCachedConfig().agentConfig;
     const result = await getAgentHost().executeCommand({
       sessionId: req.sessionId,
@@ -91,6 +95,7 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // agent prompt (buildAgentSystemPrompt — the board-tracking workflow) is a
   // plain string (no dsh sections), returned alongside so Settings shows both.
   registerContractHandle("runtime:systemPrompt:preview", (_e, req) => handle(async () => {
+    if (engineEnabled()) return previewEnginePrompt(ctx, req?.cwd ?? "");
     try {
       return await getAgentHost().previewSystemPrompt(req?.cwd ?? "");
     } catch (err) {

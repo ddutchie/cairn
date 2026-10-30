@@ -328,8 +328,7 @@ export class AgentHost {
   }
 
   async createGoal(sessionId: string, objective: string, maxRounds?: number): Promise<GoalState> {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error("Session is not open.");
+    const session = await this.open(sessionId, "");
     const now = Date.now();
     const goal: GoalState = {
       id: `goal-${now.toString(36)}`, revision: 1, objective, phase: "active", roundsStarted: 0,
@@ -340,9 +339,9 @@ export class AgentHost {
   }
 
   async updateGoal(sessionId: string, patch: { phase?: GoalPhase; blockedReason?: string }): Promise<GoalState | undefined> {
-    const session = this.sessions.get(sessionId);
-    const current = session && foldGoal(session.records);
-    if (!session || !current) return undefined;
+    const session = await this.open(sessionId, "");
+    const current = foldGoal(session.records);
+    if (!current) return undefined;
     const phase = patch.phase ?? current.phase;
     const next: GoalState = {
       ...current, phase, revision: current.revision + 1, updatedAt: Date.now(),
@@ -353,8 +352,8 @@ export class AgentHost {
   }
 
   async clearGoal(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (session && foldGoal(session.records)) await this.record(session, { type: "goal/changed", operation: "clear", goal: null });
+    const session = await this.open(sessionId, "");
+    if (foldGoal(session.records)) await this.record(session, { type: "goal/changed", operation: "clear", goal: null });
   }
 
   async readSchedules(sessionId: string): Promise<ScheduleEntry[]> {
