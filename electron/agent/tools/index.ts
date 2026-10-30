@@ -9,6 +9,7 @@ import { cairnTools, type CairnToolDeps } from "./cairn";
 import { externalTools, type ExternalToolDeps } from "./external";
 import { fsTools, type FsDeps } from "./fs";
 import { planTools, type PlanDeps } from "./plan";
+import { subagentTools, type SubagentDeps } from "./subagent";
 import { todoTool, type TodoItem } from "./todo";
 import { webFetchTool } from "./web";
 
@@ -22,6 +23,8 @@ export interface ToolsetDeps {
   onTodos?: (todos: TodoItem[]) => void;
   /** Coding sessions in plan mode: how the model hands over its plan. */
   plan?: PlanDeps;
+  /** Offered on coding and chat; children never get it. */
+  subagents?: SubagentDeps;
 }
 
 export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
@@ -32,6 +35,7 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
     tools.push(...fsTools(d.fs));
     if (d.surface === "coding") tools.push(bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
   }
+  if (d.subagents && d.surface !== "automation-dev") tools.push(...subagentTools(d.subagents));
   if (d.plan && d.surface === "coding") tools.push(...planTools(d.plan));
   const seen = new Set<string>();
   return tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
@@ -42,5 +46,6 @@ export * from "./cairn";
 export * from "./external";
 export * from "./fs";
 export * from "./plan";
+export * from "./subagent";
 export * from "./todo";
 export * from "./web";

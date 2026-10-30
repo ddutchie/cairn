@@ -40,7 +40,7 @@ import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { isShellTool } from "../../shared/agent/tool-risk";
 import { runSession } from "./session-run";
-import { answerQuestion, cancelQuestions, compactEngineSession, engineEnabled, engineOwns, getEngineHost, runEngineChat, runEnginePrompt } from "./engine-bridge";
+import { answerQuestion, cancelQuestions, compactEngineSession, engineEnabled, engineOwns, forgetEngineSession, getEngineHost, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -228,13 +228,16 @@ export function registerSessionRuntimeHandlers(
     }
   };
   registerContractHandle("subagent:list", (_event, { parentSessionId, scope }) => handle(async () => {
+    if (await engineOwns(ctx, parentSessionId)) return subagentResult(() => listEngineSubagents(ctx, parentSessionId));
     const { normalizeSubagentScope } = await import("../cordis/subagent-control");
     return subagentResult(() => getAgentHost().listSubagentChildren(parentSessionId, normalizeSubagentScope(scope)));
   }));
   registerContractHandle("subagent:interrupt", (_event, { parentSessionId, childId }) => handle(async () => {
+    if (await engineOwns(ctx, parentSessionId)) return subagentResult(async () => interruptEngineSubagent(ctx, parentSessionId, childId));
     return subagentResult(() => getAgentHost().interruptSubagentChild(parentSessionId, childId));
   }));
   registerContractHandle("subagent:message", (_event, { parentSessionId, childId, text }) => handle(async () => {
+    if (await engineOwns(ctx, parentSessionId)) return subagentResult(() => messageEngineSubagent(ctx, parentSessionId, childId, text));
     return subagentResult(() => getAgentHost().messageSubagentChild(parentSessionId, childId, text));
   }));
 
@@ -935,6 +938,7 @@ export function registerSessionRuntimeHandlers(
       // session entry only retains the abort controller and persona.
       // Grants + any stray pendings die with the conversation.
       sweepSessionPendings(sessionId);
+      forgetEngineSession(sessionId);
       void getEngineHost(ctx).destroy(sessionId).catch(() => undefined);
       // Explicit session clearing wipes persisted todos too (the todowrite
       // replacement contract otherwise leaves them until the next write).
@@ -1026,6 +1030,7 @@ export function registerSessionRuntimeHandlers(
       sessions.delete(sessionId);
     }
     getEngineHost(ctx).release(sessionId);
+    forgetEngineSession(sessionId);
     cancelQuestions(sessionId);
     // The abort listeners inside the plugins resolve their own pendings on
     // abort; sweep whatever remains (e.g. an ask whose listeners were torn

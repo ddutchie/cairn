@@ -221,7 +221,7 @@ Approach:
 - Exit: every coding `*.live.test.ts` passes on the new engine.
 
 ### Phase 5 — Remaining features (2 weeks)
-- [ ] Subagents (nested turns, continuable, control/list).
+- [x] Subagents (nested turns, continuable, control/list). Child traces are not replayed in `loadMessages` yet.
 - [ ] Plan mode, todos, session title (first-prompt LLM), slash commands
       (`/compact`, `/goal`), skills (filesystem).
 - [ ] MCP client + resources on `@modelcontextprotocol/sdk`.
@@ -308,7 +308,6 @@ must have an engine replacement before `electron/cordis/` can go):
 |---|---|---|
 | Turn state + approvals | `isTurnRunning`, `abortTurn`, `getRunningTurnIds`, nonce mint/verify, pending-ask records, `grantSessionTool`/`grantSessionBash`, `readTrustedBashCommand` | `ipc/session-run.ts`, `ipc/session-runtime-handlers.ts`, `ipc/chat.ts` (all subsumed by `Gate` + `AgentHost`, so this is deletion once every path is on the engine) |
 | Commands + prompt preview | `listCommands`/`executeCommand`, `previewSystemPrompt` | `ipc/runtime-handlers.ts` |
-| Subagents | `listSubagentChildren`, `messageSubagentChild`, `interruptSubagentChild`, `subagent-control` | `ipc/session-runtime-handlers.ts` |
 | Goals, jobs, schedule | `readGoalSnapshot`, `killJob`, `listSchedules`, jobs/goal bridges | `ipc/session-runtime-handlers.ts` |
 | Workspace services | LSP, terminal backend, MCP bridge + resources, hooks, skills, workflow/PTC, `web_search` | engine tool inventory |
 | Reads | `loadSessionMessages`, `readSessionTitle`, `readContextRing`, session export/stats, `getSessionRoot` | `ipc/session-handlers.ts`, `ipc/chat-session.ts`, `ipc/usage-handlers.ts` |

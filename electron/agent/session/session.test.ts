@@ -113,3 +113,18 @@ describe("adapter", () => {
     expect(adapt({ type: "approval/decided", callId: "c", approved: true, by: "human" }).projections[0]).toMatchObject({ kind: "approval", data: { status: "resolved", callId: "c" } });
   });
 });
+
+describe("trace adapter", () => {
+  it("shows a child's work as traces under its parent, and its asks as the parent's approvals", async () => {
+    const { createTraceAdapter } = await import("./trace");
+    const adapt = createTraceAdapter("p1", "p1.sub-ab");
+    const data = (e: Parameters<typeof adapt>[0]) => adapt(e).projections.map((p) => ({ kind: p.kind, sessionId: p.sessionId, ...(p.data as object) }));
+    expect(data({ type: "user/message", content: "do the thing" })[0]).toMatchObject({ kind: "subagent-trace", sessionId: "p1", trace: "status", status: "start", childId: "p1.sub-ab", instruction: "do the thing" });
+    expect(data({ type: "user/message", content: "and more" })[0]).toMatchObject({ trace: "token", delta: "\n\nand more" });
+    expect(data({ type: "tool/call", callId: "c", name: "read", args: {}, risk: "READ" })[0]).toMatchObject({ trace: "tool-call", tool: "read", callId: "c" });
+    expect(data({ type: "tool/result", callId: "c", name: "read", text: "boom", isError: true })[0]).toMatchObject({ trace: "tool-done", ok: false, error: "boom" });
+    expect(data({ type: "approval/asked", ask: { sessionId: "p1", callId: "c2", nonce: "n", tool: "bash", risk: "EXEC", title: "Run", preview: "ls", reason: "r", grants: [], expiresAt: 1 } })[0]).toMatchObject({ kind: "approval", sessionId: "p1", status: "required", callId: "c2" });
+    expect(data({ type: "turn/end", reason: "aborted" })[0]).toMatchObject({ trace: "status", status: "done", error: "aborted" });
+    expect(adapt({ type: "assistant/delta", text: "x" }).events).toEqual([]);
+  });
+});

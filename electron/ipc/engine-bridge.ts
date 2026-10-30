@@ -14,6 +14,8 @@ import type { DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
 import { AgentHost, type HostSend } from "../agent/host";
 import type { AgentTool } from "../agent/tools";
+import type { SubagentDeps } from "../agent/tools/subagent";
+import type { ModelRoute } from "../agent/provider";
 import { prepareAttachments, type Attachment } from "../agent/attachments";
 import { updateCodingSession } from "../db/sessions-queries";
 import type { Profile } from "../agent/loop";
@@ -238,6 +240,86 @@ function hostRoot(): string {
   return path.join(base, "sessions-native");
 }
 
+// ── subagents ────────────────────────────────────────────────────────────
+
+const SUBAGENT_PROMPT = "\n\n## Subagent\nYou are a subagent working for another agent. Do the task you were given and finish with a concise report of what you found or did. You cannot start further subagents.";
+
+/** What a child needs from its parent, kept after the turn so the human can message a child later. */
+interface SpawnContext {
+  cwd: string;
+  profile: Profile;
+  route: ModelRoute;
+  systemPrompt: string;
+  tools: readonly AgentTool[];
+  reasoningEffort?: string;
+  temperature?: number;
+  maxSteps?: number;
+}
+const spawnContexts = new Map<string, SpawnContext>();
+
+function controlError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+function subagentDeps(ctx: DbContext): SubagentDeps {
+  const host = () => getEngineHost(ctx);
+  return {
+    run: async (parent, req) => {
+      const sc = spawnContexts.get(parent);
+      if (!sc) throw controlError("parent-unavailable", "Subagents are unavailable for this session.");
+      const childId = req.childId ?? `${parent}.sub-${randomBytes(4).toString("hex")}`;
+      const meta = usageMeta.get(parent);
+      if (meta) usageMeta.set(childId, meta);
+      sessionRules.set(childId, sessionRules.get(parent) ?? []);
+      const workspaceId = sessionWorkspace.get(parent);
+      if (workspaceId) sessionWorkspace.set(childId, workspaceId);
+      const out = await host().prompt({
+        sessionId: childId, parentSession: parent, prompt: req.prompt, cwd: sc.cwd, profile: sc.profile, route: sc.route,
+        systemPrompt: `${sc.systemPrompt}${SUBAGENT_PROMPT}`, tools: sc.tools, reasoningEffort: sc.reasoningEffort,
+        temperature: sc.temperature, maxSteps: sc.maxSteps, signal: req.signal,
+      });
+      return { childId, ...out };
+    },
+    list: (parent) => host().listChildren(parent),
+    interrupt: (parent, childId) => {
+      if (!childId.startsWith(`${parent}.sub-`) || !host().isRunning(childId)) return false;
+      host().abort(childId);
+      return true;
+    },
+    transcript: (parent) => host().transcript(parent),
+  };
+}
+
+/** The subagent catalog for the header popover. Children only: delegation is one level deep. */
+/** Drop what a closed or cleared session left in memory. */
+export function forgetEngineSession(sessionId: string): void {
+  for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
+}
+
+export async function listEngineSubagents(ctx: DbContext, parent: string): Promise<{ entries: Array<{ id: string; mode: "continuable"; label: string; activity: "running" | "inactive"; live: boolean; hasChildren: boolean }>; parentAvailable: boolean }> {
+  const children = await getEngineHost(ctx).listChildren(parent);
+  return {
+    entries: children.map((c) => ({ id: c.id, mode: "continuable" as const, label: c.label, activity: c.running ? "running" as const : "inactive" as const, live: c.running, hasChildren: false })),
+    parentAvailable: spawnContexts.has(parent),
+  };
+}
+
+export function interruptEngineSubagent(ctx: DbContext, parent: string, childId: string): { accepted: true } {
+  subagentDeps(ctx).interrupt(parent, childId);
+  return { accepted: true };
+}
+
+/** A human follow-up to a finished child. Runs in the background; the trace shows the reply. */
+export async function messageEngineSubagent(ctx: DbContext, parent: string, childId: string, text: string): Promise<{ messageId: string }> {
+  const deps = subagentDeps(ctx);
+  if (!spawnContexts.has(parent)) throw controlError("parent-unavailable", "Send the session a prompt first; its subagents can be messaged once it is running again.");
+  const known = (await deps.list(parent)).find((c) => c.id === childId);
+  if (!known) throw controlError("bad-request", "Unknown subagent.");
+  if (known.running) throw controlError("delivery-unavailable", "The subagent is still working.");
+  void deps.run(parent, { childId, prompt: text }).catch((err) => console.warn("[agent] subagent message failed:", err instanceof Error ? err.message : err));
+  return { messageId: childId };
+}
+
 export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   const h = getEngineHost(a.ctx);
   await adoptLegacySession(a.sessionId);
@@ -275,6 +357,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
     fs: { cwd: a.cwd, rgPath, observed },
     onTodos: (todos) => broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "todos", { todos })),
+    subagents: chat && !chat.req.useSubagents ? undefined : subagentDeps(a.ctx),
     plan: planning ? {
       onPlan: (sessionId, plan) => {
         try { updateCodingSession(a.ctx.db, sessionId, { planContent: plan }); } catch (err) { console.warn("[agent] failed to persist plan:", err); }
@@ -284,6 +367,14 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   });
 
   if (a.extraTools?.length) tools.push(...a.extraTools);
+  const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
+  const route = routeFromConfig(a.llmConfig);
+  const systemPrompt = planning ? `${a.systemPrompt}\n\n${PLAN_MODE_PROMPT}` : a.systemPrompt;
+  const subagentToolNames = new Set(["subagent", "delegate", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode"]);
+  spawnContexts.set(a.sessionId, {
+    cwd: a.cwd, profile, route, systemPrompt, tools: tools.filter((t) => !subagentToolNames.has(t.name)),
+    reasoningEffort: a.llmConfig.reasoningEffort, temperature: a.llmConfig.temperature, maxSteps: a.llmConfig.maxSteps,
+  });
   const onAbort = () => h.abort(a.sessionId);
   if (a.signal?.aborted) onAbort(); else a.signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -293,9 +384,9 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       prompt: prepared.text,
       images: prepared.images,
       cwd: a.cwd,
-      profile: a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role),
-      route: routeFromConfig(a.llmConfig),
-      systemPrompt: planning ? `${a.systemPrompt}\n\n${PLAN_MODE_PROMPT}` : a.systemPrompt,
+      profile,
+      route,
+      systemPrompt,
       tools,
       reasoningEffort: a.llmConfig.reasoningEffort,
       temperature: a.llmConfig.temperature,

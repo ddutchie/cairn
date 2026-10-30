@@ -63,6 +63,8 @@ export interface TurnOptions {
   profile: Profile;
   rules: RuleStore;
   gate: Gate;
+  /** Session the human sees asks under. A subagent asks through its parent. */
+  askSessionId?: string;
   workspaceRoot: string;
   signal?: AbortSignal;
   maxSteps?: number;
@@ -375,7 +377,7 @@ async function* resolveDecision(
   }
 
   const input: AskInput = {
-    sessionId: o.sessionId,
+    sessionId: o.askSessionId ?? o.sessionId,
     callId: call.id,
     tool: call.name,
     risk: risk.class,

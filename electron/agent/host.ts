@@ -11,7 +11,7 @@ import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { LoadSessionMessagesResult } from "../../shared/agent/session-wire";
 import { makeSessionProjection, type SessionProjection } from "../../shared/agent/session-projection";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
-import { buildContextView, compactHistory, compactionThreshold, pruneImages, pruneToolResults } from "./context";
+import { buildContextView, renderTranscript, compactHistory, compactionThreshold, pruneImages, pruneToolResults } from "./context";
 import type { AgentEvent, UserImage } from "./events";
 import { Gate, type AskSpec, type HumanDecision } from "./gate";
 import { runTurn, type Profile, type StreamFn } from "./loop";
@@ -20,8 +20,9 @@ import { createReviewerState, type Reviewer, type ReviewerState } from "./review
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
 import type { AgentTool } from "./tools";
 import { createAdapter } from "./session/adapter";
+import { createTraceAdapter } from "./session/trace";
 import { deriveTitle, foldState } from "./session/history";
-import { openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
+import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
 import { replayFromRecords } from "./session/replay";
 import type { SessionRecord } from "./session/format";
 import { rm } from "node:fs/promises";
@@ -64,7 +65,19 @@ export interface PromptRequest {
   maxSteps?: number;
   /** Fixed title to record (e.g. a coding-session task title). */
   title?: string;
+  /** Set for a subagent: its events are shown as traces under this session, and it asks through it. */
+  parentSession?: string;
+  /** Aborts this turn (a subagent stops when its parent does). */
+  signal?: AbortSignal;
 }
+
+export interface PromptOutcome {
+  /** The last assistant text of the turn. */
+  text: string;
+  reason: string;
+}
+
+export interface ChildInfo { id: string; label: string; running: boolean }
 
 interface Session {
   id: string;
@@ -73,7 +86,8 @@ interface Session {
   doomAcked: Set<string>;
   reviewerState: ReviewerState;
   writer: SessionWriter;
-  adapt: ReturnType<typeof createAdapter>;
+  adapt: (event: AgentEvent) => ReturnType<ReturnType<typeof createAdapter>>;
+  parent?: string;
   records: SessionRecord[];
   controller?: AbortController;
   /** callIds whose grant the human scoped to the workspace, awaiting the resulting rule. */
@@ -94,13 +108,13 @@ export class AgentHost {
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
-  private open(id: string, cwd: string): Promise<Session> {
+  private open(id: string, cwd: string, parent?: string): Promise<Session> {
     const existing = this.sessions.get(id);
     if (existing) return Promise.resolve(existing);
     let pending = this.opening.get(id);
     if (!pending) {
       pending = (async () => {
-        const { writer, existing: log } = await openSession(this.deps.root, { id, cwd });
+        const { writer, existing: log } = await openSession(this.deps.root, { id, cwd, parentId: parent });
         const records = log?.records ?? [];
         const state = foldState(records);
         const session: Session = {
@@ -111,7 +125,8 @@ export class AgentHost {
           doomAcked: new Set(),
           reviewerState: createReviewerState(),
           writer,
-          adapt: createAdapter(id),
+          adapt: (log?.header.parentId ?? parent) ? createTraceAdapter(log?.header.parentId ?? parent!, id) : createAdapter(id),
+          parent: log?.header.parentId ?? parent,
           records: [...records],
           running: false,
           workspaceGrantCalls: new Set(),
@@ -138,8 +153,12 @@ export class AgentHost {
     this.sessions.delete(id);
   }
 
-  /** Delete the session's log as well. */
+  /** Delete the session's log as well, and its subagents'. */
   async destroy(id: string): Promise<void> {
+    for (const child of await this.listChildren(id)) {
+      this.release(child.id);
+      await rm(sessionDir(this.deps.root, child.id), { recursive: true, force: true });
+    }
     this.release(id);
     await rm(sessionDir(this.deps.root, id), { recursive: true, force: true });
   }
@@ -159,12 +178,15 @@ export class AgentHost {
 
   // ── turns ─────────────────────────────────────────────────────────────
 
-  async prompt(req: PromptRequest): Promise<void> {
-    const session = await this.open(req.sessionId, req.cwd);
+  async prompt(req: PromptRequest): Promise<PromptOutcome> {
+    const session = await this.open(req.sessionId, req.cwd, req.parentSession);
     if (session.running) throw new Error("Session is busy — already running.");
     session.running = true;
     const controller = new AbortController();
     session.controller = controller;
+    const outcome: PromptOutcome = { text: "", reason: "error" };
+    const link = () => controller.abort();
+    if (req.signal?.aborted) controller.abort(); else req.signal?.addEventListener("abort", link, { once: true });
     try {
       const { model, streamFn } = (this.deps.routeStream ?? createRouteStream)(req.route);
       const reasoning = reasoningOption(model, req.reasoningEffort);
@@ -182,6 +204,7 @@ export class AgentHost {
         rules: this.ruleView(session),
         gate: this.gate,
         workspaceRoot: req.cwd,
+        askSessionId: session.parent,
         signal: controller.signal,
         maxSteps: req.maxSteps,
         askTtlMs: this.deps.askTtlMs,
@@ -195,14 +218,20 @@ export class AgentHost {
           compact: (history, trigger) => compactHistory(history, trigger, { model, streamFn: streamFn as StreamFn, signal: controller.signal }),
         },
       });
-      for await (const event of events) await this.record(session, event);
+      for await (const event of events) {
+        await this.record(session, event);
+        if (event.type === "assistant/message") outcome.text = event.message.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+        else if (event.type === "turn/end") outcome.reason = event.reason;
+      }
     } catch (err) {
       // runTurn reports its own failures as events; this is a host-level fault (e.g. the log write).
       this.deps.send("session:projection", makeSessionProjection(req.sessionId, "error", { message: err instanceof Error ? err.message : String(err) }));
     } finally {
+      req.signal?.removeEventListener("abort", link);
       session.running = false;
       session.controller = undefined;
     }
+    return outcome;
   }
 
   /**
@@ -249,10 +278,31 @@ export class AgentHost {
     const out = session.adapt(event);
     for (const e of out.events) this.deps.send("session:event", { sessionId: session.id, event: e });
     for (const p of out.projections) this.deps.send("session:projection", p);
-    if (event.type === "turn/end") {
+    if (event.type === "turn/end" && !session.parent) {
       const title = deriveTitle(session.records);
       if (title) this.deps.send("session:projection", makeSessionProjection(session.id, "title", { title }));
     }
+  }
+
+  /** The session's conversation as text, for a child that should see it. */
+  transcript(sessionId: string): string {
+    const history = this.sessions.get(sessionId)?.history;
+    return history ? renderTranscript(history) : "";
+  }
+
+  /** The subagents a session has started, from their logs (survives restarts). */
+  async listChildren(parentId: string): Promise<ChildInfo[]> {
+    const out: ChildInfo[] = [];
+    for (const id of await listSessions(this.deps.root)) {
+      if (!id.startsWith(`${parentId}.sub-`)) continue;
+      const log = this.sessions.get(id) ? undefined : await readSession(this.deps.root, id).catch(() => undefined);
+      const header = this.sessions.get(id)?.writer.header ?? log?.header;
+      if (header?.parentId !== parentId) continue;
+      const records = this.sessions.get(id)?.records ?? log?.records ?? [];
+      const first = records.find((r) => r.event.type === "user/message")?.event;
+      out.push({ id, label: first && first.type === "user/message" ? first.content.trim().replace(/\s+/g, " ").slice(0, 60) : "subagent", running: this.isRunning(id) });
+    }
+    return out;
   }
 
   /** Pin a title (manual rename). */
