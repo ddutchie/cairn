@@ -17,7 +17,7 @@ import { Gate, type AskSpec, type HumanDecision } from "./gate";
 import type { TurnHooks } from "./hooks";
 import { runTurn, type Profile, type StreamFn } from "./loop";
 import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream } from "./provider";
-import { createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
+import { createModelReviewer, createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
 import type { AgentTool } from "./tools";
 import { createAdapter } from "./session/adapter";
@@ -250,7 +250,9 @@ export class AgentHost {
         signal: controller.signal,
         maxSteps: req.maxSteps,
         askTtlMs: this.deps.askTtlMs,
-        reviewer: this.deps.reviewer,
+        reviewer: this.deps.reviewer ?? (req.profile.mode === "auto"
+          ? createModelReviewer({ model, streamFn: streamFn as StreamFn, cwd: req.cwd, userRequests: () => session.history.flatMap((m) => m.role === "user" ? [typeof m.content === "string" ? m.content : m.content.flatMap((c) => c.type === "text" ? [c.text] : []).join("\n")] : []) })
+          : undefined),
         reviewerState: session.reviewerState,
         doomAcked: session.doomAcked,
         streamOptions: { ...(reasoning ? { reasoning } : {}), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}) },

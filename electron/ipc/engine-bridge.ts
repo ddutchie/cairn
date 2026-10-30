@@ -62,6 +62,7 @@ You are in plan mode: everything you can do is read-only. Investigate the code a
 
 export const PERMISSION_PRESETS = [
   { value: "ask", name: "Ask", description: "Ask before anything that changes files, runs commands, or calls external tools." },
+  { value: "auto", name: "Auto", description: "A model reviews each risky action: routine ones run, dangerous ones are blocked, unclear ones ask you. External tool calls still ask." },
   { value: "yolo", name: "Allow all", description: "Run everything without asking, except external tool calls, which still ask." },
 ] as const;
 type PermissionPreset = typeof PERMISSION_PRESETS[number]["value"];
@@ -74,7 +75,7 @@ function presetProfile(sessionId: string, mode: Mode | undefined, role: "default
   const preset = sessionPreset.get(sessionId);
   const base = engineProfile(mode, role);
   if (!preset || base.mode === "plan") return base;
-  return { ...base, mode: preset === "yolo" ? "yolo" : "ask", externalAlwaysAsks: preset === "yolo" };
+  return { ...base, mode: preset, externalAlwaysAsks: preset === "yolo" };
 }
 
 export function readEnginePermissions(sessionId: string, fallback: Mode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
