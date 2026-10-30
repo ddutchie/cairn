@@ -6,13 +6,14 @@
 import type { AgentTool } from "../tools";
 import { bashTool, type BashDeps } from "./bash";
 import { cairnTools, type CairnToolDeps } from "./cairn";
-import { externalTools, type ExternalToolDeps } from "./external";
+import { externalExtras, externalTools, type ExternalToolDeps } from "./external";
 import { goalTools, type GoalDeps } from "./goal";
 import { jobTools, type JobToolDeps } from "./jobs";
 import { scheduleTools, type ScheduleDeps } from "./schedule";
 import { fsTools, type FsDeps } from "./fs";
 import { planTools, type PlanDeps } from "./plan";
 import { subagentTools, type SubagentDeps } from "./subagent";
+import { skillTool } from "./skill";
 import { todoTool, type TodoItem } from "./todo";
 import { webFetchTool } from "./web";
 
@@ -22,6 +23,8 @@ export interface ToolsetDeps {
   surface: ToolSurface;
   cairn?: CairnToolDeps;
   external?: ExternalToolDeps;
+  /** Receives MCP server instructions, for the system prompt. */
+  onInstructions?: (text: string) => void;
   fs?: FsDeps & BashDeps;
   onTodos?: (todos: TodoItem[]) => void;
   /** Coding sessions in plan mode: how the model hands over its plan. */
@@ -38,9 +41,17 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
   const tools: AgentTool[] = [];
   if (d.cairn) tools.push(...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
   if (d.external) tools.push(...await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return []; }));
+  if (d.external) {
+    const extras = await externalExtras(d.external).catch((err) => { console.error("[agent] MCP extras unavailable:", err); return undefined; });
+    if (extras) { tools.push(...extras.tools); if (extras.instructions) d.onInstructions?.(extras.instructions); }
+  }
   if (d.surface !== "chat" && d.fs) {
     tools.push(...fsTools(d.fs));
-    if (d.surface === "coding") tools.push(bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
+    if (d.surface === "coding") {
+      tools.push(bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
+      const skill = skillTool({ cwd: d.fs.cwd });
+      if (skill) tools.push(skill);
+    }
   }
   if (d.subagents && d.surface !== "automation-dev") tools.push(...subagentTools(d.subagents));
   if (d.surface === "coding") {
@@ -61,6 +72,7 @@ export * from "./goal";
 export * from "./jobs";
 export * from "./schedule";
 export * from "./plan";
+export * from "./skill";
 export * from "./subagent";
 export * from "./todo";
 export * from "./web";

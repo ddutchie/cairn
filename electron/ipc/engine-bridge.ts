@@ -363,7 +363,9 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   const planning = a.sessionMode === "plan" && !chat && role === "default";
   const prepared = prepareAttachments(a.prompt, a.attachments);
 
+  let mcpInstructions = "";
   const tools = await buildToolset({
+    onInstructions: (text) => { mcpInstructions = text; },
     surface: chat ? "chat" : role === "automation-dev" ? "automation-dev" : "coding",
     // Develop sessions edit scripts only: no Cairn data tools.
     cairn: role === "automation-dev" ? undefined : {
@@ -406,7 +408,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   if (a.extraTools?.length) tools.push(...a.extraTools);
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
-  const systemPrompt = planning ? `${a.systemPrompt}\n\n${PLAN_MODE_PROMPT}` : a.systemPrompt;
+  const systemPrompt = [a.systemPrompt, planning ? PLAN_MODE_PROMPT : "", mcpInstructions].filter(Boolean).join("\n\n");
   const subagentToolNames = new Set(["subagent", "delegate", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode"]);
   spawnContexts.set(a.sessionId, {
     cwd: a.cwd, profile, route, systemPrompt, tools: tools.filter((t) => !subagentToolNames.has(t.name)),
