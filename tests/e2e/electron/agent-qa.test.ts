@@ -117,63 +117,49 @@ async function storeGet(page: Page): Promise<Record<string, unknown>> {
   });
 }
 
+/** Call a store action inside the page (functions don't survive page.evaluate serialisation). */
+async function storeCall<T = unknown>(page: Page, action: string, ...args: unknown[]): Promise<T> {
+  return page.evaluate(async ({ action, args }) => {
+    const w = window as unknown as { __cairnStoreRef?: { getState: () => Record<string, (...a: unknown[]) => unknown> } };
+    const fn = w.__cairnStoreRef?.getState()[action];
+    if (typeof fn !== "function") throw new Error(`store action ${action} missing`);
+    return (await fn(...args)) as unknown;
+  }, { action, args }) as Promise<T>;
+}
+
 /** Seed a workspace + project + note via the real store (what onboarding does). */
 async function seedProject(page: Page, workspace: string): Promise<{ workspaceId: string; projectId: string }> {
-  const state = await storeGet(page);
-  await (state.initWorkspacePath as (p: string) => Promise<void>)(workspace);
-  const s2 = await storeGet(page);
-  const workspaceObj = await (s2.createWorkspace as (name: string, icon?: string) => Promise<{ id: string }>)("QA Workspace", "🧪");
-  const project = await (s2.createProject as (wid: string, name: string, icon?: string) => Promise<{ id: string }>)(
-    workspaceObj.id,
-    "QA Project",
-    "📓",
-  );
-  await (s2.createNote as (pid: string, title: string, type?: string, folder?: string, content?: string) => unknown)(
-    project.id,
-    "Readme",
-    "note",
-    "",
+  await storeCall(page, "initWorkspacePath", workspace);
+  const workspaceObj = await storeCall<{ id: string }>(page, "createWorkspace", "QA Workspace", "🧪");
+  const project = await storeCall<{ id: string }>(page, "createProject", workspaceObj.id, "QA Project", "📓");
+  await storeCall(
+    page, "createNote", project.id, "Readme", "note", "",
     "# QA Project\n\nThis is a small fixture project used to verify the agent loops.\n\n- Key fact: Cairn is a notes + tasks desktop app.\n- The chat loop should summarise these bullets.\n- Agent loop can read this file.\n- Heartbeat loop can scan it.",
   );
 
   // Seed a couple of tasks so task-related prompts return real content. The
   // project auto-creates default columns (Backlog/Todo/In Progress/Review/Done).
-  const s3 = await storeGet(page);
-  const cols = (s3.columns as Array<{ id: string; projectId: string; name: string }>)
-    .filter((c) => c.projectId === project.id);
+  const state = await storeGet(page);
+  const cols = (state.columns as Array<{ id: string; projectId: string; name: string }>).filter((c) => c.projectId === project.id);
   const colByName = Object.fromEntries(cols.map((c) => [c.name, c.id]));
-  const makeCard = s3.createCard as (cid: string, pid: string, title: string, extras?: { dueDate?: string; assignee?: string }) => unknown;
-  if (colByName["In Progress"]) makeCard(colByName["In Progress"], project.id, "Port chat loop onto agent runtime", { dueDate: "2026-08-22", assignee: "Sam" });
-  if (colByName["Todo"]) makeCard(colByName["Todo"], project.id, "Write onboarding copy", { dueDate: "2026-08-25" });
-  if (colByName["Done"]) makeCard(colByName["Done"], project.id, "Ship local-first notes", { assignee: "Maya" });
+  if (colByName["In Progress"]) await storeCall(page, "createCard", colByName["In Progress"], project.id, "Port chat loop onto agent runtime", { dueDate: "2026-08-22", assignee: "Sam" });
+  if (colByName["Todo"]) await storeCall(page, "createCard", colByName["Todo"], project.id, "Write onboarding copy", { dueDate: "2026-08-25" });
+  if (colByName["Done"]) await storeCall(page, "createCard", colByName["Done"], project.id, "Ship local-first notes", { assignee: "Maya" });
 
-  // Note: we do NOT wait for the sidebar here — the onboarding overlay (set at
-  // boot before seeding) stays mounted. The QA loops are driven via the IPC /
-  // store (page.evaluate), which work regardless of the overlay, so it's fine.
+  // The onboarding overlay stays mounted; the loops are driven via IPC / the store, which work regardless.
   return { workspaceId: workspaceObj.id, projectId: project.id };
 }
 
 /** Point the in-memory store ai/agent config at the live bridge. */
 async function configureLlm(page: Page): Promise<void> {
-  const state = await storeGet(page);
-  await (state.setAIConfig as (p: Record<string, unknown>) => void)({
-    provider: "openai",
-    baseUrl: BASE,
-    model: MODEL,
-    apiKey: "local",
-  });
-  await (state.setAgentConfig as (p: Record<string, unknown>) => void)({
-    baseUrl: BASE,
-    model: MODEL,
-    apiKey: "local",
-    maxSteps: 8,
-    autoApprove: true,
-  });
+  await storeCall(page, "setAIConfig", { provider: "openai", baseUrl: BASE, model: MODEL, apiKey: "local" });
+  await storeCall(page, "setAgentConfig", { baseUrl: BASE, model: MODEL, apiKey: "local", maxSteps: 8, autoApprove: true });
 }
 
 // ── Suite ────────────────────────────────────────────────────────────────────
 
 test.describe("agent loops in the real Electron app", () => {
+  test.setTimeout(180_000);
   test.skip(!LIVE, "Requires the live model bridge (CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local)");
 
   let app: ElectronApplication;
@@ -218,12 +204,22 @@ test.describe("agent loops in the real Electron app", () => {
 
       return new Promise<{ content: string; error?: string }>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("Timed out waiting for session completion")), 120_000);
+        let content = "";
+        const types: string[] = [];
         const unsub = el.session.onEvent((e) => {
-          if (e.sessionId !== `chat-${threadId}` || e.event.type !== "assistant/message") return;
-          clearTimeout(timer);
-          unsub();
-          const data = e.event.data as { message?: { content?: Array<{ type?: string; text?: string }> } };
-          resolve({ content: data.message?.content?.filter((part) => part.type === "text").map((part) => part.text ?? "").join("") ?? "" });
+          if (e.sessionId !== `chat-${threadId}`) return;
+          types.push(e.event.type);
+          if (e.event.type === "assistant/message") {
+            const data = e.event.data as { message?: { content?: Array<{ type?: string; text?: string }> } };
+            content += data.message?.content?.filter((part) => part.type === "text").map((part) => part.text ?? "").join("") ?? "";
+          }
+          // A reply may start with tool calls; the turn is only over at turn/end.
+          if (e.event.type === "turn/end") {
+            clearTimeout(timer);
+            unsub();
+            const reason = (e.event.data as { reason?: { kind?: string } }).reason?.kind;
+            resolve({ content, error: reason && reason !== "stop" && reason !== "completed" ? `${reason} (${[...new Set(types)].join(",")})` : undefined });
+          }
         });
         el.session.prompt({
           sessionId: `chat-${threadId}`,
@@ -258,9 +254,11 @@ test.describe("agent loops in the real Electron app", () => {
       return new Promise<{ tokens: number; toolEnds: number; done: boolean; error?: string }>((resolve, reject) => {
         let tokens = 0;
         let toolEnds = 0;
-        const timer = setTimeout(() => reject(new Error("Timed out waiting for pi-agent:done")), 120_000);
+        const seen: string[] = [];
+        const timer = setTimeout(() => reject(new Error(`Timed out waiting for turn/end; saw: ${[...new Set(seen)].join(",")}`)), 120_000);
         const unsub = el.session.onEvent((e) => {
           if (e.sessionId !== sessionId) return;
+          seen.push(e.event.type + (e.event.type === "tool/call" ? `:${(e.event.data as { name?: string }).name}` : ""));
           if (e.event.type === "assistant/chunk") {
             const chunk = e.event.data as { chunk?: { type?: string; text?: string } };
             if (chunk.chunk?.type === "text-delta") tokens += chunk.chunk.text?.length ?? 0;
@@ -268,7 +266,7 @@ test.describe("agent loops in the real Electron app", () => {
           if (e.event.type === "tool/result") toolEnds += 1;
           if (e.event.type === "turn/end") {
             const reason = (e.event.data as { reason?: { kind?: string } }).reason?.kind;
-            finish(reason === "completed", reason && reason !== "completed" ? reason : undefined);
+            finish(reason === "stop" || reason === "completed", reason && reason !== "stop" && reason !== "completed" ? reason : undefined);
           }
         });
         const finish = (done: boolean, error?: string) => {
@@ -278,7 +276,8 @@ test.describe("agent loops in the real Electron app", () => {
         };
         el.session.prompt({
           sessionId,
-          prompt: "Open the note titled 'Readme' (use the read_note tool) and tell me the first bullet point.",
+          profile: "coding",
+          prompt: "Open the note titled 'Readme' (use your tools to read it) and tell me the first bullet point.",
           projectId,
           workspaceId,
           cwd,
