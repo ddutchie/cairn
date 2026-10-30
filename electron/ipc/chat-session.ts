@@ -13,6 +13,7 @@ import { handle, type DbContext } from "./result-helpers";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
 import { getAgentHost } from "../cordis/agent-host";
+import { engineOwns, getEngineHost } from "./engine-bridge";
 import type { ChatMessage } from "../../shared/types/chat";
 import { errMsg } from "../host-shared/errors";
 
@@ -37,6 +38,10 @@ function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessag
 export function registerChatSessionHandlers(ctxDb: DbContext): void {
   registerContractHandle("db:chat:sessionMessages", (_e, { threadId }) => handle(async () => {
     if (!threadId) return { messages: [] as ChatMessage[] };
+    if (await engineOwns(ctxDb, `chat-${threadId}`)) {
+      const { messages, usage, title } = await getEngineHost(ctxDb).loadMessages(`chat-${threadId}`);
+      return { messages: toChatMessages(threadId, messages), usage, title };
+    }
     try {
       const stableId = String(SessionId(`chat-${threadId}`));
       const { messages, usage, contextRing, todos, stats, title } = await getAgentHost().loadSessionMessages(stableId);
@@ -64,6 +69,7 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
   registerContractHandle("session:title", (_e, { threadId, sessionId }) => handle(async () => {
     const sid = sessionId ?? (threadId ? String(SessionId(`chat-${threadId}`)) : "");
     if (!sid || !sid.startsWith("chat-")) return { title: null as string | null };
+    if (await engineOwns(ctxDb, sid)) return { title: await getEngineHost(ctxDb).title(sid) };
     try {
       return { title: await getAgentHost().readSessionTitle(sid) };
     } catch {
@@ -76,7 +82,9 @@ export function registerChatSessionHandlers(ctxDb: DbContext): void {
     const sid = sessionId ?? (threadId ? String(SessionId(`chat-${threadId}`)) : "");
     if (!sid || !sid.startsWith("chat-")) throw new Error("renameTitle: only chat threads can be renamed");
     if (typeof title !== "string" || !title.trim()) throw new Error("renameTitle: title must be non-empty");
-    const renamedTitle = await getAgentHost().renameSessionTitle(sid, title);
+    const renamedTitle = (await engineOwns(ctxDb, sid))
+      ? await getEngineHost(ctxDb).rename(sid, title, ctxDb.workspacePath)
+      : await getAgentHost().renameSessionTitle(sid, title);
     try {
       const q = await import("../db/queries");
       const db = ctxDb.db;

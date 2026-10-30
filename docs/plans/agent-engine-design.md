@@ -480,5 +480,12 @@ as a direct dependency in package.json (currently transitive via dsh-tool-fs-sea
   (`db:session:messages`, `session:is-running`, `session:running-ids`) and the respond/abort/clear/
   destroy handlers also consult the engine, so a session that lives in it keeps working with the
   toggle off. Everything else still goes to Cordis.
-* Still on Cordis: chat profile, plan-mode turns, attachments, `session:approve-plan`,
+* Chat runs on the engine too (`runEngineChat`): chat toolset (Cairn + connectors, `CHAT_EXCLUDED_TOOLS` withheld),
+  personality + approval note in the prompt, and the chat approval policy as engine policy — `safe` = mode ask
+  (deletes and connectors ask because nothing allows them), `external` adds an allow for `delete`,
+  `allow-all` = yolo. Grants stay able to override because no `ask` rules are used. Token usage is recorded per
+  assistant message through `onAssistantMessage`; `db:changed` fires after a turn; a manual rename is a
+  `session/title` event. A session that only has a dsh log is imported on its first native turn
+  (`importDshSession`). Turns with attachments still use Cordis.
+* Still on Cordis: plan-mode turns, attachments, `session:approve-plan`,
   `session:compact-now`, `session:set-mode`, permissions presets, goals/jobs/schedule, subagents.

@@ -40,7 +40,7 @@ import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { isShellTool } from "../../shared/agent/tool-risk";
 import { runSession } from "./session-run";
-import { answerQuestion, cancelQuestions, engineEnabled, engineOwns, getEngineHost, runEnginePrompt } from "./engine-bridge";
+import { answerQuestion, cancelQuestions, engineEnabled, engineOwns, getEngineHost, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -313,6 +313,11 @@ export function registerSessionRuntimeHandlers(
         useSubagents: req.useSubagents,
         config: req.config,
       };
+      const chatSessionId = `chat-${chatReq.threadId}`;
+      if (!chatReq.images?.length && (engineEnabled() || await engineOwns(ctx, chatSessionId))) {
+        await runEngineChat(ctx, chatReq);
+        return;
+      }
       await runChatPrompt(ctx, event, chatReq);
       return;
     }

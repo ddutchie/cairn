@@ -23,7 +23,7 @@ export interface ToolsetDeps {
 
 export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
   const tools: AgentTool[] = [];
-  if (d.cairn) tools.push(...cairnTools(d.cairn));
+  if (d.cairn) tools.push(...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
   if (d.external) tools.push(...await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return []; }));
   if (d.surface !== "chat" && d.fs) {
     tools.push(...fsTools(d.fs));

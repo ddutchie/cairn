@@ -7,7 +7,8 @@
  */
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { app } from "electron";
+import os from "node:os";
+import * as electron from "electron";
 import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
@@ -17,6 +18,13 @@ import type { Mode as EngineMode } from "../agent/policy";
 import type { ModelRoute } from "../agent/provider";
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
 import { buildToolset } from "../agent/tools/index";
+import { importDshSession } from "../agent/session/dsh-import";
+import { isLocalEndpoint } from "../lib/llm";
+import { getAgentHost } from "../cordis/agent-host";
+import { recordUsage } from "../cordis/host-store";
+import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
+import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
+import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared/agent/chat-approval";
 import { addWorkspaceApprovalGrant, getWorkspaceApprovalGrants } from "../db/approval-grant-queries";
 import { getCachedConfig } from "../lib/config-cache";
 import { notifyAgentAttention } from "../lib/agent-attention";
@@ -40,6 +48,27 @@ export function engineProfile(mode: Mode | undefined, role: "default" | "automat
     externalAlwaysAsks: engineMode === "yolo",
   };
 }
+
+/**
+ * Chat approvals as engine policy. `safe` asks for deletes (WRITE_LOCAL) and connector calls (EXTERNAL)
+ * simply because nothing allows them; `external` adds an allow for deletes; `allow-all` is yolo.
+ * Grants stay overridable, which an `ask` rule would not be.
+ */
+export function chatEngineProfile(policy: ChatApprovalPolicy): { profile: Profile; rules: Rule[] } {
+  const rules: Rule[] = policy === "external"
+    ? [{ id: "policy:chat-external-delete", effect: "allow", scope: "global", source: "preset", match: { tool: "delete" }, note: "Chat policy: external approve" }]
+    : [];
+  return { profile: { id: "chat", interactive: true, mode: policy === "allow-all" ? "yolo" : "ask" }, rules };
+}
+
+export function chatSystemPrompt(req: ChatRequest, policy: ChatApprovalPolicy): string {
+  const base = withPersonality(buildSystemPrompt(req), req.personality);
+  if (policy === "allow-all") return base;
+  return `${base}\n\n## Tool approvals\nExternal tools (like web search via Tavily)${policy === "safe" ? " and destructive operations" : ""} require user approval. To use them, simply call the tool — the system will automatically show an approval card to the user and pause your turn until they respond. Do NOT ask for permission in your text and do NOT use ask_questions to request approval. Just call the tool.`;
+}
+
+export const chatApprovalPolicyFor = (req: ChatRequest): ChatApprovalPolicy =>
+  resolveChatApprovalPolicy(req.approvalPolicy ?? (getCachedConfig().aiConfig as { chatApprovalPolicy?: unknown } | undefined)?.chatApprovalPolicy);
 
 export function routeFromConfig(cfg: AgentLLMConfig): ModelRoute {
   const configured = cfg.apiMode === "responses" ? "openai-responses" : cfg.apiMode === "anthropic-messages" ? "anthropic-messages" : "openai-completions";
@@ -71,6 +100,9 @@ function grantsToRules(sessionId: string, grants: Array<{ id: string; tool: stri
 let host: AgentHost | undefined;
 let hostCtx: DbContext | undefined;
 const sessionWorkspace = new Map<string, string>();
+const sessionRules = new Map<string, Rule[]>();
+interface UsageMeta { source: "chat" | "coding"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
+const usageMeta = new Map<string, UsageMeta>();
 const observedFiles = new Map<string, Set<string>>();
 
 interface PendingQuestion { nonce: string; resolve(answers: string): void; reject(err: Error): void }
@@ -80,11 +112,11 @@ const qKey = (sessionId: string, callId: string) => `${sessionId}::${callId}`;
 export function getEngineHost(ctx: DbContext): AgentHost {
   hostCtx = ctx;
   host ??= new AgentHost({
-    root: path.join(app.getPath("userData"), "sessions-native"),
+    root: hostRoot(),
     send: (channel, payload) => broadcastEvent(channel, payload),
     askTtlMs: undefined,
     globalRules: (sessionId) => {
-      const base = presetRules("cairn-data", "safe-shell");
+      const base = [...presetRules("cairn-data", "safe-shell"), ...(sessionRules.get(sessionId) ?? [])];
       const workspaceId = sessionWorkspace.get(sessionId);
       if (!workspaceId || !hostCtx) return base;
       try { return [...base, ...grantsToRules(sessionId, getWorkspaceApprovalGrants(hostCtx.db, workspaceId))]; } catch { return base; }
@@ -93,6 +125,20 @@ export function getEngineHost(ctx: DbContext): AgentHost {
       const workspaceId = sessionWorkspace.get(sessionId);
       if (!workspaceId || !hostCtx) return;
       addWorkspaceApprovalGrant(hostCtx.db, workspaceId, rule.match.tool ?? "", rule.match.command?.exact ?? null);
+    },
+    onAssistantMessage: (sessionId, message) => {
+      const meta = usageMeta.get(sessionId);
+      const u = message.usage;
+      if (!meta || !u) return;
+      const promptTokens = u.input + u.cacheRead + u.cacheWrite;
+      if (promptTokens === 0 && u.output === 0) return;
+      // Cost is left unset: the usage recorder prices tokens itself.
+      recordUsage({
+        source: meta.source, sessionId, projectId: meta.projectId, workspaceId: meta.workspaceId,
+        provider: meta.provider, model: meta.model, baseUrl: meta.baseUrl,
+        promptTokens, completionTokens: u.output, reasoningTokens: u.reasoning ?? 0,
+        cacheReadTokens: u.cacheRead, cacheCreationTokens: u.cacheWrite,
+      } as never);
     },
     onAsk: (ask) => {
       if (hostCtx) notifyAgentAttention(hostCtx.db, { sessionId: ask.sessionId, kind: "approval", detail: ask.title });
@@ -132,19 +178,47 @@ export interface EnginePromptArgs {
   systemPrompt: string;
   llmConfig: AgentLLMConfig;
   role?: "default" | "automation-dev";
+  /** Chat threads run the same engine with the chat toolset and approval policy. */
+  chat?: { req: ChatRequest; policy: ChatApprovalPolicy };
+}
+
+/** First native use of a session that only exists as a dsh log: bring its history over. */
+async function adoptLegacySession(sessionId: string): Promise<void> {
+  try {
+    const dsh = getAgentHost().getSessionRoot();
+    if (dsh && hostRoot()) await importDshSession(dsh, hostRoot(), sessionId);
+  } catch (err) {
+    console.warn(`[agent] legacy import skipped for ${sessionId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** Native session logs live beside the legacy ones; a missing Electron `app` (unit tests) falls back to tmp. */
+function hostRoot(): string {
+  let base: string;
+  try { base = electron.app.getPath("userData"); } catch { base = os.tmpdir(); }
+  return path.join(base, "sessions-native");
 }
 
 export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   const h = getEngineHost(a.ctx);
+  await adoptLegacySession(a.sessionId);
   if (a.workspaceId) sessionWorkspace.set(a.sessionId, a.workspaceId);
+  const chat = a.chat;
+  const chatProfile = chat ? chatEngineProfile(chat.policy) : undefined;
+  sessionRules.set(a.sessionId, chatProfile?.rules ?? []);
+  usageMeta.set(a.sessionId, {
+    source: chat ? "chat" : "coding", workspaceId: a.workspaceId ?? "", projectId: a.projectId,
+    provider: a.llmConfig.provider, model: a.llmConfig.model, baseUrl: a.llmConfig.baseUrl,
+  });
   const observed = observedFiles.get(a.sessionId) ?? new Set<string>();
   observedFiles.set(a.sessionId, observed);
   const role = a.role ?? "default";
 
   const tools = await buildToolset({
-    surface: role === "automation-dev" ? "automation-dev" : "coding",
+    surface: chat ? "chat" : role === "automation-dev" ? "automation-dev" : "coding",
     // Develop sessions edit scripts only: no Cairn data tools.
     cairn: role === "automation-dev" ? undefined : {
+      exclude: chat ? new Set<string>(CHAT_EXCLUDED_TOOLS) : undefined,
       getDb: () => a.ctx.db,
       req: { message: a.prompt, threadId: a.sessionId, projectId: a.projectId, workspaceId: a.workspaceId, config: { baseUrl: a.llmConfig.baseUrl, model: a.llmConfig.model, apiKey: a.llmConfig.apiKey } },
       workspacePath: a.ctx.workspacePath,
@@ -167,7 +241,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       sessionId: a.sessionId,
       prompt: a.prompt,
       cwd: a.cwd,
-      profile: engineProfile(a.llmConfig.mode, role),
+      profile: chatProfile?.profile ?? engineProfile(a.llmConfig.mode, role),
       route: routeFromConfig(a.llmConfig),
       systemPrompt: a.systemPrompt,
       tools,
@@ -175,9 +249,46 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       temperature: a.llmConfig.temperature,
       maxSteps: a.llmConfig.maxSteps,
     });
+    broadcastEvent("db:changed", null);
   } catch (err) {
     const busy = err instanceof Error && /busy/.test(err.message);
     broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "error", { message: err instanceof Error ? err.message : String(err), code: busy ? "already-running" : undefined }));
     if (busy) broadcastEvent("session:busy", { sessionId: a.sessionId, reason: "already-running" });
   }
+}
+
+/** A chat turn on the engine. Mirrors the checks `runChatPrompt` makes before it starts. */
+export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<void> {
+  const sessionId = `chat-${req.threadId}`;
+  const h = getEngineHost(ctx);
+  if (h.isRunning(sessionId)) {
+    broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "already-running" }));
+    broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+    return;
+  }
+  // Lazy: chat.ts pulls in the pop-out window module, which needs a live Electron `app` at import time.
+  const { resolveAIConfig } = await import("./chat");
+  const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);
+  if (!apiKey && !isLocalEndpoint(baseUrl)) {
+    broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Missing API key — configure provider in Settings.", code: "missing-api-key" }));
+    broadcastEvent("session:busy", { sessionId, reason: "missing-api-key" });
+    return;
+  }
+  const policy = chatApprovalPolicyFor(req);
+  await runEnginePrompt({
+    ctx, sessionId, prompt: req.message, cwd: ctx.workspacePath,
+    projectId: req.projectId, workspaceId: req.workspaceId,
+    systemPrompt: chatSystemPrompt(req, policy),
+    llmConfig: {
+      baseUrl, model, apiKey, provider,
+      maxSteps: req.config?.maxSteps ?? 30,
+      temperature: req.config?.temperature,
+      maxTokens: req.config?.maxTokens,
+      contextWindow: req.config?.contextLimit ?? req.config?.contextWindow,
+      reasoningEffort: req.config?.reasoningEffort,
+      isReasoningModel: req.config?.isReasoningModel,
+      apiMode: req.config?.apiMode,
+    } as AgentLLMConfig,
+    chat: { req, policy },
+  });
 }

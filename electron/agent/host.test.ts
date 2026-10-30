@@ -124,6 +124,27 @@ describe("AgentHost", () => {
     expect(usage?.promptTokens).toBeGreaterThan(0);
   });
 
+  it("reports each assistant message for usage accounting", async () => {
+    const seen: Array<[string, number]> = [];
+    const t = await setup({ onAssistantMessage: (id, m) => seen.push([id, m.usage.input]) });
+    t.h.faux.setResponses([toolUse(call("echo", { text: "x" }, "c1")), fauxAssistantMessage("done")]);
+    await t.host.prompt(t.req());
+    expect(seen.map(([id]) => id)).toEqual(["s1", "s1"]);
+  });
+
+  it("a renamed title is pinned, survives a restart and wins over the derived one", async () => {
+    const t = await setup();
+    t.h.faux.setResponses([fauxAssistantMessage("a"), fauxAssistantMessage("b")]);
+    await t.host.prompt(t.req());
+    expect(await t.host.rename("s1", "  My chat  ")).toBe("My chat");
+    expect(t.proj("title").at(-1)!.payload.data.title).toBe("My chat");
+    const t2 = await setup({ root: t.root });
+    expect(await t2.host.title("s1")).toBe("My chat");
+    await t2.host.prompt(t2.req({ prompt: "another" }));
+    expect(await t2.host.title("s1")).toBe("My chat");
+    await expect(t.host.rename("s1", "   ")).rejects.toThrow();
+  });
+
   it("destroy removes the log", async () => {
     const t = await setup();
     t.h.faux.setResponses([fauxAssistantMessage("x")]);

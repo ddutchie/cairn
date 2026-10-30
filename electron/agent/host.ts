@@ -7,7 +7,7 @@
  * No Electron imports: the transport is injected as `send`, so the host is
  * testable with a faux model. See docs/plans/agent-engine-design.md.
  */
-import type { Message } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { LoadSessionMessagesResult } from "../../shared/agent/session-wire";
 import { makeSessionProjection, type SessionProjection } from "../../shared/agent/session-projection";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
@@ -43,6 +43,8 @@ export interface HostDeps {
   askTtlMs?: number;
   /** Called for each `approval/asked`, e.g. to raise a desktop notification. */
   onAsk?: (ask: AskSpec) => void;
+  /** Each settled assistant message (e.g. to record token usage). */
+  onAssistantMessage?: (sessionId: string, message: AssistantMessage) => void;
 }
 
 export interface PromptRequest {
@@ -216,6 +218,9 @@ export class AgentHost {
       session.workspaceGrantArmed = false;
       try { this.deps.onWorkspaceGrant?.(session.id, event.rule); } catch { /* persistence is best effort; the session grant still applies */ }
     }
+    if (event.type === "assistant/message") {
+      try { this.deps.onAssistantMessage?.(session.id, event.message); } catch { /* accounting must never break a turn */ }
+    }
     const out = session.adapt(event);
     for (const e of out.events) this.deps.send("session:event", { sessionId: session.id, event: e });
     for (const p of out.projections) this.deps.send("session:projection", p);
@@ -223,6 +228,14 @@ export class AgentHost {
       const title = deriveTitle(session.records);
       if (title) this.deps.send("session:projection", makeSessionProjection(session.id, "title", { title }));
     }
+  }
+
+  /** Pin a title (manual rename). */
+  async rename(sessionId: string, title: string, cwd = ""): Promise<string> {
+    const clean = title.trim();
+    if (!clean) throw new Error("title must be non-empty");
+    await this.record(await this.open(sessionId, cwd), { type: "session/title", title: clean });
+    return clean;
   }
 
   // ── reads ─────────────────────────────────────────────────────────────

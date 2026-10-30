@@ -51,8 +51,12 @@ export function foldState(records: readonly SessionRecord[]): SessionState {
   return records.reduce(reduce, initialState());
 }
 
-/** First user message, trimmed, as a fallback title. */
+/** The last explicit title, else the first user message, trimmed. */
 export function deriveTitle(records: readonly SessionRecord[], max = 60): string | undefined {
+  for (let i = records.length - 1; i >= 0; i--) {
+    const e = records[i].event;
+    if (e.type === "session/title") return e.title;
+  }
   for (const { event } of records) {
     if (event.type !== "user/message") continue;
     const line = event.content.trim().split("\n")[0] ?? "";

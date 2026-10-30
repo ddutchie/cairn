@@ -18,7 +18,7 @@ import { resolveLlmApiKey } from "../lib/secure-store";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { getAgentHost } from "../cordis/agent-host";
 
-function resolveAIConfig(config?: {
+export function resolveAIConfig(config?: {
   provider?: string;
   baseUrl?: string;
   model?: string;

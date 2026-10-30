@@ -26,5 +26,6 @@ export type AgentEvent =
   | { type: "retry"; attempt: number; maxAttempts: number; delayMs: number; error: string }
   | { type: "context/overflow" }
   | { type: "compaction"; summary: string; keepCount: number; tokensBefore: number; trigger: "threshold" | "overflow" | "manual" }
+  | { type: "session/title"; title: string }
   | { type: "error"; message: string }
   | { type: "turn/end"; reason: TurnEndReason };

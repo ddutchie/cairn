@@ -22,6 +22,8 @@ export interface CairnToolDeps {
   llmConfig: LLMConfig;
   getWin?: () => BrowserWindow | null;
   /** Blocks until the human answers; wired to the question UI. Without it ask_questions echoes. */
+  /** Tool names to withhold on this surface. */
+  exclude?: ReadonlySet<string>;
   askQuestions?: (questions: unknown[], ctx: ToolContext) => Promise<unknown>;
 }
 

@@ -82,6 +82,9 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
         // Clears the card on every transport, whoever (or whatever) decided.
         projections.push(makeSessionProjection(sessionId, "approval", { sessionId, status: "resolved", callId: event.callId, approved: event.approved, by: event.by }));
         break;
+      case "session/title":
+        projections.push(makeSessionProjection(sessionId, "title", { title: event.title }));
+        break;
       case "user/message": case "rule/added": break;
     }
     return { events, projections };

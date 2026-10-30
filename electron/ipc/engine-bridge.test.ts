@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: { getPath: () => "/tmp/cairn-test" }, BrowserWindow: { getAllWindows: () => [] } }));
 
-const { engineProfile, routeFromConfig } = await import("./engine-bridge");
+const { chatEngineProfile, chatSystemPrompt, engineProfile, routeFromConfig } = await import("./engine-bridge");
+const { decide } = await import("../agent/policy");
+const { presetRules } = await import("../agent/rules");
 
 const cfg = { baseUrl: "https://api.example.com/v1", model: "gpt-x", apiKey: "k", maxSteps: 20 };
 
@@ -36,5 +38,41 @@ describe("routeFromConfig", () => {
   });
   it("leaves keyless local servers without an apiKey", () => {
     expect(routeFromConfig({ ...cfg, apiKey: "" } as never).apiKey).toBeUndefined();
+  });
+});
+
+describe("chat approval policy as engine policy", () => {
+  const state = (policy: "safe" | "external" | "allow-all") => {
+    const { profile, rules } = chatEngineProfile(policy);
+    return { mode: profile.mode, deniedTools: [], rules: [...presetRules("cairn-data"), ...rules], workspaceRoot: "/ws", recent: [], doomAcked: new Set<string>() };
+  };
+  const cairnWrite = { name: "create_task", risk: { class: "WRITE_CAIRN" as const } };
+  const del = { name: "delete", risk: { class: "WRITE_LOCAL" as const } };
+  const connector = { name: "mcp__x__y", risk: { class: "EXTERNAL" as const } };
+
+  it("safe: Cairn writes run, deletes and connectors ask", () => {
+    expect(decide(cairnWrite, "a", state("safe")).kind).toBe("allow");
+    expect(decide(del, "b", state("safe")).kind).toBe("ask");
+    expect(decide(connector, "c", state("safe")).kind).toBe("ask");
+  });
+  it("external: deletes run too, connectors still ask", () => {
+    expect(decide(del, "b", state("external")).kind).toBe("allow");
+    expect(decide(connector, "c", state("external")).kind).toBe("ask");
+  });
+  it("allow-all: nothing asks", () => {
+    expect(decide(del, "b", state("allow-all")).kind).toBe("allow");
+    expect(decide(connector, "c", state("allow-all")).kind).toBe("allow");
+  });
+  it("a user grant still beats the connector ask", () => {
+    const st = state("safe");
+    st.rules.push({ id: "g", effect: "allow", scope: "workspace", source: "grant", match: { tool: "mcp__x__y" } });
+    expect(decide(connector, "c", st).kind).toBe("allow");
+  });
+  it("only tells the model about approvals when something can ask", () => {
+    const req = { message: "hi", threadId: "t" } as never;
+    expect(chatSystemPrompt(req, "safe")).toContain("Tool approvals");
+    expect(chatSystemPrompt(req, "safe")).toContain("destructive operations");
+    expect(chatSystemPrompt(req, "external")).not.toContain("destructive operations");
+    expect(chatSystemPrompt(req, "allow-all")).not.toContain("Tool approvals");
   });
 });

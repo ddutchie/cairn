@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { importDshLog, importDshTree, readDshLogFile } from "./dsh-import";
+import { importDshLog, importDshSession, importDshTree, readDshLogFile } from "./dsh-import";
 import { historyFromRecords, foldState } from "./history";
 import { readSession } from "./log";
 
@@ -73,6 +73,20 @@ describe("importDshTree", () => {
     const second = await importDshTree(src, dst);
     expect(second).toMatchObject({ imported: [], existing: ["abc"] });
     expect(await readdir(path.join(src, "proj", "abc"))).toHaveLength(2);
+  });
+});
+
+describe("importDshSession", () => {
+  it("imports one session by id from any project folder, once", async () => {
+    const src = await mkdtemp(path.join(os.tmpdir(), "dsh-one-src-"));
+    const dst = await mkdtemp(path.join(os.tmpdir(), "dsh-one-dst-"));
+    await mkdir(path.join(src, "projA", "other"), { recursive: true });
+    await mkdir(path.join(src, "projB", "wanted"), { recursive: true });
+    await writeFile(path.join(src, "projB", "wanted", "session.v4.jsonl.zstd"), zstdCompressSync(Buffer.from(v4)));
+    expect(await importDshSession(src, dst, "missing")).toBe(false);
+    expect(await importDshSession(src, dst, "wanted")).toBe(true);
+    expect((await readSession(dst, "wanted"))?.header.id).toBe("wanted");
+    expect(await importDshSession(src, dst, "wanted")).toBe(false);
   });
 });
 

@@ -245,3 +245,21 @@ export async function importDshTree(dshRoot: string, cairnRoot: string): Promise
 }
 
 
+
+/** Import one session by id from a dsh tree (any project folder). False when it is absent or already imported. */
+export async function importDshSession(dshRoot: string, cairnRoot: string, sessionId: string): Promise<boolean> {
+  if (await readSession(cairnRoot, sessionId)) return false;
+  let projects: string[];
+  try { projects = (await readdir(dshRoot, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return false; }
+  for (const project of projects) {
+    const dir = path.join(dshRoot, project, sessionId);
+    const names = await readdir(dir).catch(() => undefined);
+    const name = names && LOG_NAMES.find((n) => names.includes(n));
+    if (!name) continue;
+    const parsed = importDshLog(await readDshLogFile(path.join(dir, name)));
+    if (!parsed) return false;
+    parsed.header.id = sessionId;
+    return writeImportedSession(cairnRoot, parsed.header, parsed.records);
+  }
+  return false;
+}
