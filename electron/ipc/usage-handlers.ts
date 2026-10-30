@@ -9,7 +9,6 @@
 import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { queryUsageOverview, queryRecentUsage, queryUsageThreads, clearLlmUsage, type UsageQueryFilter } from "../db/usage-queries";
-import { getAgentHost } from "../cordis/agent-host";
 import { getEngineHost } from "./engine-bridge";
 import { setModelPricing, setNoTemperatureModels, setEndpointProtocols } from "../lib/model-pricing";
 
@@ -76,10 +75,9 @@ export function registerUsageHandlers(ctx: DbContext): void {
       const groups = queryUsageThreads(ctx.db, toFilter(args), args?.limit ?? 50);
       // Chat titles live in the session log (chat_threads.title is mostly empty),
       // so resolve the untitled chat groups from there.
-      const host = getAgentHost();
       await Promise.all(groups.map(async (g) => {
         if (g.title || !g.sessionId.startsWith("chat-")) return;
-        try { g.title = ((await getEngineHost(ctx).title(g.sessionId)) ?? (await host.readSessionTitle(g.sessionId))) || null; } catch { /* keep the id fallback */ }
+        try { g.title = (await getEngineHost(ctx).title(g.sessionId)) || null; } catch { /* keep the id fallback */ }
       }));
       return groups;
     });

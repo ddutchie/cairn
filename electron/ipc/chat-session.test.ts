@@ -1,12 +1,7 @@
 /**
- * Chat session rename — shared opener coverage.
- *
- * `session:renameTitle` must open a not-yet-live chat session through the
- * canonical coding-loop opener (`openCordisAgent` from
- * `../cordis/run-cordis-coding`, which delegates to `openCordisSessionAgent`
- * with internal adapter pinning) — not via a direct `session-agent` import
- * plus a duplicated `ensureAgentAiAdapter` call. These tests mock the shared
- * helper and assert the rename path calls it with the same session id.
+ * Chat session rename — `session:renameTitle` renames through the engine host
+ * (the session log is the title's source of truth) and mirrors the title into
+ * the thread row without disturbing its other fields.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -22,41 +17,13 @@ vi.mock("electron", () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
-const {
-  getContextMock,
-  openCordisAgentMock,
-  getSessionRootMock,
-  getCachedConfigMock,
-  renameMock,
-  sessionsGetMock,
-  disposeMock,
-} = vi.hoisted(() => ({
-  getContextMock: vi.fn(),
-  openCordisAgentMock: vi.fn(),
-  getSessionRootMock: vi.fn(() => "/tmp/ws/sessions"),
-  getCachedConfigMock: vi.fn(() => ({
-    agentConfig: { baseUrl: "http://test.invalid", model: "test-model", apiKey: "k" },
-  })),
-  renameMock: vi.fn(( _sess: unknown, title: string) => ({ title })),
-  sessionsGetMock: vi.fn(),
-  disposeMock: vi.fn(async () => {}),
+const { renameMock } = vi.hoisted(() => ({
+  renameMock: vi.fn(async (_id: string, title: string) => title),
 }));
 
-vi.mock("../cordis/run-cordis-loop", () => ({
-  getContext: getContextMock,
-}));
-
-vi.mock("../cordis/run-cordis-coding", () => ({
-  openCordisAgent: openCordisAgentMock,
-}));
-
-vi.mock("../cordis/cordis-context", () => ({
-  getContext: getContextMock,
-  getSessionRoot: getSessionRootMock,
-}));
-
-vi.mock("../lib/config-cache", () => ({
-  getCachedConfig: getCachedConfigMock,
+vi.mock("./engine-bridge", () => ({
+  engineOwns: vi.fn(async () => true),
+  getEngineHost: () => ({ rename: renameMock, title: vi.fn(async () => null) }),
 }));
 
 import { registerChatSessionHandlers } from "./chat-session";
@@ -70,64 +37,22 @@ function makeCtxDb(): DbContext {
   return { db, workspacePath: "/tmp/ws", getWin: () => null };
 }
 
-function liveCtx() {
-  return {
-    sessions: { get: sessionsGetMock },
-    sessionTitle: { rename: renameMock },
-  };
-}
+const call = (name: string, args: unknown) =>
+  (getIpcHandler(name) as (e: unknown, args: unknown) => Promise<unknown>)({}, args);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getSessionRootMock.mockReturnValue("/tmp/ws/sessions");
-  getCachedConfigMock.mockReturnValue({
-    agentConfig: { baseUrl: "http://test.invalid", model: "test-model", apiKey: "k" },
-  });
-  renameMock.mockImplementation((_sess: unknown, title: string) => ({ title }));
-  disposeMock.mockResolvedValue(undefined);
+  renameMock.mockImplementation(async (_id: string, title: string) => title);
 });
 
-describe("session:renameTitle uses the shared opener", () => {
-  it("opens a not-yet-live session via openCordisAgent with the same session id", async () => {
-    sessionsGetMock.mockReturnValue(undefined);
-    getContextMock.mockResolvedValue(liveCtx());
-    openCordisAgentMock.mockResolvedValue({
-      agent: { session: { id: "chat-t1" } },
-      dispose: disposeMock,
-    });
-
+describe("session:renameTitle", () => {
+  it("renames the chat session through the engine host", async () => {
     registerChatSessionHandlers(makeCtxDb());
-    const handler = getIpcHandler("session:renameTitle");
-    expect(handler).toBeDefined();
+    const result = await call("session:renameTitle", { threadId: "t1", title: "New Title" });
 
-    const result = await (handler as (e: unknown, args: unknown) => Promise<unknown>)(
-      {},
-      { threadId: "t1", title: "New Title" },
-    );
-
-    expect(openCordisAgentMock).toHaveBeenCalledTimes(1);
-    const opts = openCordisAgentMock.mock.calls[0]?.[1] as { sessionId?: string } | undefined;
-    expect(opts?.sessionId).toBe("chat-t1");
     expect(renameMock).toHaveBeenCalledTimes(1);
+    expect(renameMock.mock.calls[0]?.[0]).toBe("chat-t1");
     expect(result).toEqual({ data: { title: "New Title" } });
-    expect(disposeMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips the opener when the session is already live", async () => {
-    const live = { id: "chat-t1" };
-    sessionsGetMock.mockReturnValue(live);
-    getContextMock.mockResolvedValue(liveCtx());
-
-    registerChatSessionHandlers(makeCtxDb());
-    const handler = getIpcHandler("session:renameTitle");
-    const result = await (handler as (e: unknown, args: unknown) => Promise<unknown>)(
-      {},
-      { threadId: "t1", title: "Live Rename" },
-    );
-
-    expect(openCordisAgentMock).not.toHaveBeenCalled();
-    expect(renameMock).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ data: { title: "Live Rename" } });
   });
 
   it("keeps the thread's subagents flag when it syncs the renamed title", async () => {
@@ -138,32 +63,20 @@ describe("session:renameTitle uses the shared opener", () => {
     applySchema(db);
     q.createWorkspace(db, { id: "ws1", name: "WS" });
     q.upsertChatThread(db, { id: "t1", scope: "workspace", workspaceId: "ws1", title: "Old", useSubagents: true });
-    sessionsGetMock.mockReturnValue({ id: "chat-t1" });
-    getContextMock.mockResolvedValue(liveCtx());
 
     registerChatSessionHandlers({ db, workspacePath: "/tmp/ws", getWin: () => null });
-    const handler = getIpcHandler("session:renameTitle");
-    await (handler as (e: unknown, args: unknown) => Promise<unknown>)({}, { threadId: "t1", title: "Renamed" });
+    await call("session:renameTitle", { threadId: "t1", title: "Renamed" });
 
     const [thread] = q.getChatThreads(db, "ws1");
     expect(thread.title).toBe("Renamed");
     expect(thread.useSubagents).toBe(true);
   });
 
-  it("rejects empty titles without opening a session", async () => {
-    sessionsGetMock.mockReturnValue(undefined);
-    getContextMock.mockResolvedValue(liveCtx());
-
+  it("rejects empty titles without touching the session", async () => {
     registerChatSessionHandlers(makeCtxDb());
-    const handler = getIpcHandler("session:renameTitle");
-    const result = await (handler as (e: unknown, args: unknown) => Promise<unknown>)(
-      {},
-      { threadId: "t1", title: "   " },
-    );
+    const result = await call("session:renameTitle", { threadId: "t1", title: "   " });
 
-    expect(openCordisAgentMock).not.toHaveBeenCalled();
-    expect(result).toEqual(
-      expect.objectContaining({ error: expect.stringContaining("non-empty") }),
-    );
+    expect(renameMock).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ error: expect.stringContaining("non-empty") }));
   });
 });

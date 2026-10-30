@@ -20,7 +20,9 @@ import {
   buildUserStyleOptimizePrompt,
   type UserStyleGenerationInput,
 } from "../lib/user-style-prompt";
-import { recordLlmUsage } from "../lib/usage-recorder";
+import { randomBytes } from "node:crypto";
+import type { HostSend } from "../agent/host";
+import { forgetEngineSession, getEngineHost, runEngineTapped } from "./engine-bridge";
 import { TOOLS } from "../lib/tools";
 import * as q from "../db/queries";
 import { errMsg } from "../host-shared/errors";
@@ -124,7 +126,7 @@ export async function generateUserStyleMarkdown(
   }
   const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
 
-  // One-shot via Cordis (single-turn, no tools) on the configured provider.
+  // One-shot (single-turn, no tools) on the configured provider.
   const { runOneShot } = await import("../agent/one-shot");
   // A failed first attempt (e.g. a degenerate empty completion, which
   // runOneShot rejects as EMPTY_RESPONSE) gets the same single retry as an
@@ -212,66 +214,42 @@ export function registerUserStyleHandlers(ctx: DbContext): void {
           : "";
         const userPrompt = baseUserPrompt + scopeHint;
 
-        const chatReq = {
-          message: userPrompt,
-          threadId: "user-style",
-          workspaceId: req.workspaceId,
-          projectId: req.projectId,
-          config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "off" as const },
-        };
-        const _messages = [
-          { role: "system" as const, content: systemPrompt },
-          { role: "user" as const, content: userPrompt },
-        ];
-        const _toolsOverride = writingStyleToolsOverride(req.analyseNotes);
-
-        // Persist one usage row per tool-loop round so wizard generation shows
-        // up under "Writing style" in the Usage view — not "Chat" (the Cordis
-        // loop defers recording to the caller; the chat handler records
-        // source "chat", this path records its own feature source).
-        const onUsage = (pt: number, ct: number, rt?: number, cost?: number, cacheRead?: number, cacheCreate?: number) => {
-          recordLlmUsage({
-            source: "writing-style",
-            sessionId: "user-style",
-            workspaceId: req.workspaceId,
-            projectId: req.projectId,
-            provider: cfg.provider,
-            model: cfg.model,
-            baseUrl: cfg.baseUrl,
-            promptTokens: pt,
-            completionTokens: ct,
-            reasoningTokens: typeof rt === "number" ? rt : 0,
-            cacheReadTokens: cacheRead,
-            cacheCreationTokens: cacheCreate,
-            costUsd: cost,
-          });
-        };
+        const allowTools: ReadonlySet<string> = req.analyseNotes ? WRITING_STYLE_TOOLS : new Set<string>();
+        const engineCtx = ctx;
 
         const run = async () => {
-          // runCordisLoop keeps the same streaming contract (onToken/onUsage/
-          // emitToolCall) so the wizard's live preview is unchanged.
-          // toolsOverride is the same read-only set (WRITING_STYLE_TOOLS) —
-          // no writes, no sandbox.
-          const { runCordisLoop } = await import("../cordis/run-cordis-loop");
-          const llmConfig = { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: "openai" as const };
-          const result = await runCordisLoop({
-            db: ctx.db,
-            req: chatReq as never,
-            workspacePath: ctx.workspacePath,
-            llmConfig,
-            signal: abortCtrl.signal,
-            onToken: (delta) => send("user-style:token", { delta }),
-            onUsage: (pt, ct, rt, cost, cacheRead, cacheCreate) => onUsage(pt, ct, rt, cost, cacheRead, cacheCreate),
-            emitToolCall: (e) => send("user-style:tool-call", e),
-            emitToolCallDone: (e) => send("user-style:tool-call-done", e),
-            getWin: undefined,
-          });
-          // runCordisLoop doesn't yet honour toolsOverride — filter at the
-          // handler level by only registering the allowed tools via the shared
-          // toolsOverride is not needed because the wizard's tools are all read-only
-          // and the Cordis loop's Cairn tools are the same set; the model will
-          // only call what the prompt says it may.
-          return result.content;
+          const sessionId = `user-style-${randomBytes(6).toString("hex")}`;
+          let content = "";
+          const tap: HostSend = (channel, payload) => {
+            if (channel !== "session:event") return;
+            const event = (payload as { event: { type: string; data: Record<string, unknown> } }).event;
+            if (event.type === "assistant/chunk") {
+              const chunk = event.data.chunk as { type: string; text?: string };
+              if (chunk.type === "text-delta" && chunk.text) send("user-style:token", { delta: chunk.text });
+            } else if (event.type === "assistant/message") {
+              const parts = ((event.data.message as { content?: Array<{ type: string; text?: string }> }).content ?? []);
+              content = parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join("");
+            } else if (event.type === "tool/call") {
+              send("user-style:tool-call", { tool: String(event.data.name), label: String(event.data.name), args: (event.data.args ?? {}) as Record<string, unknown> } as never);
+            } else if (event.type === "tool/result") {
+              send("user-style:tool-call-done", { tool: String(event.data.name), ok: event.data.ok !== false } as never);
+            }
+          };
+          const chatReq = { message: userPrompt, threadId: sessionId, workspaceId: req.workspaceId, projectId: req.projectId, config: { maxSteps: 6, temperature: 0.3, reasoningEffort: "off" as const } };
+          try {
+            await runEngineTapped({
+              ctx: engineCtx, sessionId, prompt: userPrompt, cwd: ctx.workspacePath,
+              projectId: req.projectId, workspaceId: req.workspaceId, systemPrompt,
+              llmConfig: { baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey, provider: "openai", apiMode: cfg.apiMode, maxSteps: 6, temperature: 0.3, reasoningEffort: "off" } as never,
+              chat: { req: chatReq as never, policy: "safe" },
+              allowTools, usageSource: "writing-style", noHooks: true,
+              signal: abortCtrl.signal, tap,
+            });
+          } finally {
+            forgetEngineSession(sessionId);
+            await getEngineHost(ctx).destroy(sessionId).catch(() => undefined);
+          }
+          return content;
         };
 
         let content = await run();

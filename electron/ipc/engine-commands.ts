@@ -111,8 +111,8 @@ export async function previewEnginePrompt(ctx: DbContext, cwd: string): Promise<
   try {
     const text = buildAgentSystemPrompt({ projectName: "Project", cwd: cwd || ctx.workspacePath || process.cwd(), mode: "execute", role: "default" });
     const chat = buildSystemPrompt({ message: "", threadId: "preview", projectId: "", workspaceId: "" } as never);
-    const { buildStaticInventory } = await import("../lib/tool-inventory");
-    const tools = buildStaticInventory([]).coding.map((t) => ({ name: t.name, description: t.description })).sort((a, b) => a.name.localeCompare(b.name));
+    const { buildInventory } = await import("../lib/tool-inventory");
+    const tools = (await buildInventory()).coding.map((t) => ({ name: t.name, description: t.description })).sort((a, b) => a.name.localeCompare(b.name));
     return {
       text,
       sections: [{ name: "coding", order: 0, text, index: 0 }, { name: "chat", order: 1, text: chat, index: 1 }],

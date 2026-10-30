@@ -41,7 +41,7 @@ import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";
-import { getAgentHost } from "./cordis/agent-host";
+import { shutdownEngine } from "./ipc/engine-bridge";
 import { dispose as disposeEmbeddingsWorker } from "./embeddings/client";
 import * as runtime from "./runtime/client";
 import { BootSplash } from "./splash/bootsplash";
@@ -120,21 +120,19 @@ app.whenReady().then(async () => {
   setDebugLogRoot(userDataPath);
   dlog("main", "app starting", { userDataPath, version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch });
 
-  // ── Configure dsh session persistence root (jsonl) ──────────────────────
-  // Chats/sessions live in dsh's jsonl session log under userData, NOT in
-  // Cairn's SQLite (the DB is for MCP/tool access only). Must be set before the
-  // first Cordis context is built.
+  // ── Session log roots ───────────────────────────────────────────────────
+  // Chats/sessions live in the engine's JSONL logs under userData, NOT in
+  // Cairn's SQLite (the DB is for MCP/tool access only). `sessions` holds the
+  // retired harness's logs, read once to import old history; `sessions-native`
+  // is where the engine writes.
   const sessionRoot = path.join(userDataPath, "sessions");
-  fs.mkdirSync(sessionRoot, { recursive: true });
-  getAgentHost().configureSessionRoot(sessionRoot);
-  // Writability probe: chat/coding transcripts only survive restarts if the
-  // dsh JSONL backend can write under sessionRoot. A backend failure is
-  // silent by design (best-effort flush), so record up front whether the
-  // directory itself accepts fsync'd writes — this separates "OS/volume
-  // won't let us write here" (permissions, AV locks, read-only profile)
-  // from "the directory is fine but the backend publish path fails".
+  const nativeRoot = path.join(userDataPath, "sessions-native");
+  fs.mkdirSync(nativeRoot, { recursive: true });
+  // Writability probe: record up front whether the directory itself accepts
+  // fsync'd writes — this separates "OS/volume won't let us write here"
+  // (permissions, AV locks, read-only profile) from a failure further down.
   try {
-    const probe = path.join(sessionRoot, `.write-probe-${process.pid}.tmp`);
+    const probe = path.join(nativeRoot, `.write-probe-${process.pid}.tmp`);
     const handle = fs.openSync(probe, "w");
     try {
       fs.writeFileSync(handle, "probe");
@@ -144,16 +142,16 @@ app.whenReady().then(async () => {
     }
     const roundTrip = fs.readFileSync(probe, "utf-8") === "probe";
     fs.rmSync(probe, { force: true });
-    dlog("main", "session root writability probe", { sessionRoot, writable: roundTrip });
-    if (!roundTrip) dlog("main", "session root probe round-trip mismatch — session writes may not persist", { sessionRoot });
+    dlog("main", "session root writability probe", { nativeRoot, writable: roundTrip });
+    if (!roundTrip) dlog("main", "session root probe round-trip mismatch — session writes may not persist", { nativeRoot });
   } catch (err) {
     dlog("main", "session root is NOT writable — chat history will not persist across restarts", {
-      sessionRoot,
+      nativeRoot,
       error: errMsg(err),
     });
   }
 
-  // Session-log retention (§ H16 from the pre-merge review): dsh's jsonl
+  // Session-log retention (§ H16 from the pre-merge review): retired-harness
   // session logs accumulate indefinitely — a heavy user (~20 sessions/day)
   // grows GBs per year with no ceiling. Sweep at boot + every 24h thereafter.
   // Default budget 90 days; overridable via CAIRN_SESSION_MAX_AGE_DAYS env
@@ -754,7 +752,7 @@ app.on("before-quit", (event) => {
       // can never wedge the quit: the dev supervisor uses the same 5s
       // force-kill window on restart.
       await Promise.race([
-        Promise.all([getAgentHost().shutdown(), quitSyncWork ?? Promise.resolve()]),
+        Promise.all([Promise.resolve().then(shutdownEngine), quitSyncWork ?? Promise.resolve()]),
         new Promise((resolve) => setTimeout(resolve, 5000)),
       ]);
     } catch (err) {

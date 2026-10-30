@@ -1,7 +1,7 @@
 /**
  * Runtime-lookup guard for bundled dependencies.
  *
- * Cairn bundles dsh (and friends) into dist-electron/ and runs it inside the
+ * Cairn bundles its dependencies into dist-electron/ and runs them inside the
  * Electron main process. That breaks code that finds files, packages or
  * executables relative to itself at runtime, or that spawns
  * `process.execPath` assuming it's Node. Those caused the sandbox-runner,
@@ -22,9 +22,6 @@ const ROOT = path.resolve(__dirname, "..");
 
 const LOOKUP_BUNDLES = [
   "dist-electron/main.js",
-  "dist-electron/process.js",
-  "dist-electron/subprocess-runner.cjs",
-  "dist-electron/windows-acl-runner.cjs",
 ];
 
 const LOOKUP_PATTERNS: Record<string, RegExp> = {
@@ -46,61 +43,7 @@ const LOOKUP_PATTERNS: Record<string, RegExp> = {
 const PLAN = "docs/plans/electron-host-runtime.md";
 
 /** `<pattern> <bundle> <module>` → how the site is handled. */
-const REVIEWED_RUNTIME_LOOKUPS: Record<string, string> = {
-  // ── dist-electron/main.js ──────────────────────────────────────────────
-  "createRequire dist-electron/main.js node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js":
-    "requireInternal() — only used when --expose-internals is passed, which Cairn doesn't.",
-  "createRequire dist-electron/main.js node_modules/@deepseek-ai/dsh-llm/lib/index.js":
-    "Reads ../package.json for APP_IDENTITY.version; resolves to Cairn's package.json when bundled, so it reports Cairn's version. Harmless.",
-  "createRequire dist-electron/main.js node_modules/@deepseek-ai/node-addon-system/lib/flock.js":
-    "POSIX session lock (dsh-session-persistence-jsonl) loads bin/system.node from @deepseek-ai/node-addon-system-<platform>-<arch>; shipped + unpacked (electron-builder.yml, RUNTIME_RESOLVED_FILES below), every arch fetched by scripts/fetch-cross-arch-natives.js.",
-  "createRequire dist-electron/main.js node_modules/@deepseek-ai/node-addon-system/lib/index.js":
-    "Linux Landlock launcher default path — overridden by pinLandlockLauncher (cordis-coding-tools.ts), which points at the app.asar.unpacked copy.",
-  "createRequire dist-electron/main.js node_modules/fflate/esm/index.mjs":
-    "Probes the worker_threads builtin only.",
-  "execPath dist-electron/main.js node_modules/@deepseek-ai/dsh-sandbox-local/lib/index.js":
-    "Windows ACL runner spawn — entry pinned and ELECTRON_RUN_AS_NODE added by runWindowsAclRunnerAsNode (cordis-coding-tools.ts).",
-  "execPath dist-electron/main.js node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
-    "Containment runner spawn — shim maps it to subprocess-runner.cjs; patchSubprocessRunnerEnv adds ELECTRON_RUN_AS_NODE (compile-electron.js).",
-  "execPath dist-electron/main.js node_modules/@deepseek-ai/dsh-tool-fs-search/lib/index.js":
-    "pkg `-rg` sidecar check, gated on `\"pkg\" in process`; ripgrep comes from electron/lib/ripgrep-path.ts.",
-  "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-sandbox-local/lib/index.js":
-    "Windows ACL runner lookup — skipped because internals.windowsAclRunnerEntry is pinned; the source fallback is dev-only.",
-  "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js":
-    "tsx bootstrap for the verification worker — only when running from .ts source.",
-  "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
-    "Runner entry — shim maps it to dist-electron/subprocess-runner.cjs; the tsx branch is dev-only.",
-  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-sandbox-windows-acl/lib/types-*.js":
-    "registerAclDiagnosisSkill (Windows only, dsh 0.2.0+) reads ../assets/diagnose-windows-sandbox-acl/ beside the bundle and throws if missing — compile-electron.js stages it to <root>/assets/ and electron-builder.yml ships assets/**/* (asserted below). NOT yet verified on a real Windows install.",
-  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js":
-    "worker.cjs for verifyCurrentGenerationInWorker — never called (dead code); plus the .ts-source branch.",
-  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
-    "SOURCE_TSCONFIG_PATH and bin.ts — used only by the .ts-source runner branch.",
-  "createRequire dist-electron/main.js node_modules/@deepseek-ai/dsh-lazy-require/lib/index.js":
-    "createLazyRequire(specifier, import.meta.url) for koffi / node-pty (dsh ≥0.1.7). The banner shim makes import.meta.url dist-electron/main.js, so require() resolves the shipped externals from the app's node_modules.",
-  "execPath dist-electron/main.js node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js":
-    "PTC bootstrap spawn (workflow scripts) — patchPtcRuntimeElectronEnv adds ELECTRON_RUN_AS_NODE (compile-electron.js).",
-  "importMetaResolve dist-electron/main.js node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js":
-    "Source-bootstrap helper — only when running from .ts source.",
-  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js":
-    "./process.js — built to dist-electron/process.js by compile-electron.js; the .ts branch is dev-only.",
-  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/dsh-sandbox-local/lib/index.js":
-    "tsconfig path for the Windows ACL runner's .ts-source fallback — skipped because internals.windowsAclRunnerEntry is pinned and exists.",
-  "urlFromImportMeta dist-electron/main.js node_modules/@deepseek-ai/node-addon-system/lib/index.js":
-    "Landlock launcher fallback path (Linux) — unused once pinLandlockLauncher sets internals.landlockLauncher.",
-  "worker dist-electron/main.js node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js":
-    "Verification worker — never called (dead code).",
-  // ── dist-electron/subprocess-runner.cjs ────────────────────────────────
-  "importMetaStub dist-electron/subprocess-runner.cjs node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner.js":
-    "import.meta.main auto-run guard, intentionally inert; electron/subprocess-runner.ts calls runSelectedSubprocessRunner.",
-  "createRequire dist-electron/subprocess-runner.cjs node_modules/@deepseek-ai/dsh-lazy-require/lib/index.js":
-    "createLazyRequire(\"koffi\", import.meta.url); the banner shim keeps import.meta.url valid, so koffi resolves from the app's node_modules.",
-  "urlFromImportMeta dist-electron/subprocess-runner.cjs node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js":
-    "SOURCE_TSCONFIG_PATH computed at load; the banner shim keeps import.meta.url valid and the value is only used from .ts source.",
-  // ── dist-electron/windows-acl-runner.cjs ───────────────────────────────
-  "createRequire dist-electron/windows-acl-runner.cjs node_modules/@deepseek-ai/dsh-lazy-require/lib/index.js":
-    "createLazyRequire(\"koffi\", import.meta.url); windowsAclRunner now carries the import.meta.url banner shim (compile-electron.js), so koffi resolves from the app's node_modules.",
-};
+const REVIEWED_RUNTIME_LOOKUPS: Record<string, string> = {};
 
 /** Hits inside node_modules code, keyed `<pattern> <bundle> <module>`. */
 function scanRuntimeLookups(): Set<string> {
@@ -136,11 +79,6 @@ const allBuilt = LOOKUP_BUNDLES.every((b) => fs.existsSync(path.join(ROOT, b)));
  * macOS/Linux packages on disk.
  */
 const RUNTIME_RESOLVED_FILES = [
-  // Session-lock flock binding + Landlock launcher (node-addon-system).
-  "node_modules/@deepseek-ai/node-addon-system-darwin-arm64/bin/system.node",
-  "node_modules/@deepseek-ai/node-addon-system-darwin-x64/bin/system.node",
-  "node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/landlock-run",
-  "node_modules/@deepseek-ai/node-addon-system-linux-arm64/bin/landlock-run",
   // ripgrep for glob/grep (electron/lib/ripgrep-path.ts).
   "node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe",
   "node_modules/@vscode/ripgrep-darwin-arm64/bin/rg",
@@ -181,16 +119,6 @@ describe("runtime lookups in bundled dependencies", () => {
       problems,
       "electron-builder.yml drops or packs a runtime-resolved native package. Add `node_modules/<pkg>-*/**/*` to `files` AFTER the `!node_modules/!(…)` exclusion (last match wins) and to `asarUnpack`.\n  Problems:\n    - " + problems.join("\n    - "),
     ).toHaveLength(0);
-  });
-
-  it("Windows ACL diagnosis skill assets are staged and shipped", () => {
-    const shipped = builderFilter("files");
-    const skill = "assets/diagnose-windows-sandbox-acl";
-    expect(shipped(`${skill}/SKILL.md`)).toBe(true);
-    expect(shipped(`${skill}/scripts/diagnose-windows-sandbox-acl.ps1`)).toBe(true);
-    if (!allBuilt) return;
-    expect(fs.existsSync(path.join(ROOT, skill, "SKILL.md"))).toBe(true);
-    expect(fs.existsSync(path.join(ROOT, skill, "scripts/diagnose-windows-sandbox-acl.ps1"))).toBe(true);
   });
 
   it("REVIEWED_RUNTIME_LOOKUPS has no stale entries", () => {

@@ -27,10 +27,7 @@ import {
   saveMcpServer,
 } from "../db/queries";
 import {
-  CAIRN_DB,
-  CAIRN_HOST,
   createHostStore,
-  getHostStore,
   getGitBranch,
   runWorkspaceHygiene,
   isScheduleEnabled,
@@ -256,35 +253,7 @@ describe("host-store seam delegation", () => {
     }
   });
 
-  it("getHostStore prefers the provided store, falls back to the db handle", () => {
-    const db = openDb();
-    try {
-      const provided = createHostStore(db);
-      const calls: Array<[string, unknown]> = [];
-      const fakeCtx = {
-        get: (key: string) => {
-          calls.push([key, undefined]);
-          if (key === CAIRN_HOST) return provided;
-          if (key === CAIRN_DB) return db;
-          return undefined;
-        },
-      } as never;
-      expect(getHostStore(fakeCtx)).toBe(provided);
-
-      const dbOnlyCtx = { get: (key: string) => (key === CAIRN_DB ? db : undefined) } as never;
-      const fallback = getHostStore(dbOnlyCtx);
-      expect(fallback).toBeDefined();
-      expect(fallback?.getSessionTodos("sess-1")).toEqual([]);
-
-      const emptyCtx = { get: () => undefined } as never;
-      expect(getHostStore(emptyCtx)).toBeUndefined();
-      expect(getHostStore(emptyCtx, db)).toBeDefined();
-    } finally {
-      db.close();
-    }
-  });
-
-  it("getMcpServer returns workspace-scoped rows (powers the dsh-mcp-client spike)", () => {
+  it("getMcpServer returns workspace-scoped rows ", () => {
     const db = openDb();
     try {
       seedWorkspace(db);

@@ -1,10 +1,8 @@
 /**
  * Bridge between the session IPC handlers and the Cairn-owned agent engine
- * (electron/agent). Opt-in while the dsh/Cordis runtime still exists:
- * `CAIRN_AGENT_ENGINE=native` or `agentConfig.engine: "native"` in the config
- * cache. Reads (messages, running state, pending asks) work for any session
- * that has a native log, whatever the toggle says.
+ * (electron/agent). Sessions the retired dsh harness wrote are imported on first touch.
  */
+import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import os from "node:os";
@@ -29,7 +27,6 @@ import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importDshSession } from "../agent/session/dsh-import";
 import { isLocalEndpoint } from "../lib/llm";
-import { getAgentHost } from "../cordis/agent-host";
 import { recordUsage } from "../agent/host-store";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
@@ -43,11 +40,6 @@ import type { Mode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 
 export { routeFromConfig };
-
-export function engineEnabled(): boolean {
-  if (process.env.CAIRN_AGENT_ENGINE) return process.env.CAIRN_AGENT_ENGINE !== "cordis";
-  return (getCachedConfig().agentConfig as { engine?: string } | undefined)?.engine !== "cordis";
-}
 
 /** Legacy approval modes onto engine modes. `auto` here keeps its old meaning: allow everything except EXTERNAL. */
 export function engineProfile(mode: Mode | undefined, role: "default" | "automation-dev" | undefined): Profile {
@@ -133,11 +125,11 @@ let hostCtx: DbContext | undefined;
 const sessionWorkspace = new Map<string, string>();
 const sessionRules = new Map<string, Rule[]>();
 const sessionTaps = new Map<string, HostSend>();
-interface UsageMeta { source: "chat" | "coding" | "automation"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
+interface UsageMeta { source: "chat" | "coding" | "automation" | "writing-style"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
 const usageMeta = new Map<string, UsageMeta>();
 const observedFiles = new Map<string, Set<string>>();
 
-interface PendingQuestion { nonce: string; resolve(answers: string): void; reject(err: Error): void }
+interface PendingQuestion { nonce: string; questions: unknown; resolve(answers: string): void; reject(err: Error): void }
 const pendingQuestions = new Map<string, PendingQuestion>();
 const qKey = (sessionId: string, callId: string) => `${sessionId}::${callId}`;
 
@@ -209,7 +201,10 @@ export function getEngineHost(ctx: DbContext): AgentHost {
 export async function engineOwns(ctx: DbContext, sessionId: string): Promise<boolean> {
   const h = getEngineHost(ctx);
   if (h.isRunning(sessionId)) return true;
-  return (await h.title(sessionId).catch(() => null)) !== null || (await h.loadMessages(sessionId).then((m) => m.messages.length > 0, () => false));
+  const has = async () => (await h.title(sessionId).catch(() => null)) !== null || (await h.loadMessages(sessionId).then((m) => m.messages.length > 0, () => false));
+  if (await has()) return true;
+  await adoptLegacySession(sessionId);
+  return has();
 }
 
 export function answerQuestion(sessionId: string, callId: string, nonce: string | undefined, answers: string): boolean {
@@ -218,6 +213,12 @@ export function answerQuestion(sessionId: string, callId: string, nonce: string 
   pendingQuestions.delete(qKey(sessionId, callId));
   pending.resolve(answers);
   return true;
+}
+
+/** Outstanding question asks, so a reloading renderer can re-open the card. */
+export function listPendingQuestions(sessionId: string): Array<{ callId: string; questions: never; nonce: string }> {
+  const prefix = `${sessionId}::`;
+  return [...pendingQuestions].filter(([k]) => k.startsWith(prefix)).map(([k, p]) => ({ callId: k.slice(prefix.length), questions: p.questions as never, nonce: p.nonce }));
 }
 
 export function cancelQuestions(sessionId: string): void {
@@ -244,7 +245,11 @@ export interface EnginePromptArgs {
   sessionMode?: "plan" | "execute";
   /** Headless runs: tools added to the surface toolset, and the usage row's source. */
   extraTools?: readonly AgentTool[];
-  usageSource?: "automation";
+  usageSource?: "automation" | "writing-style";
+  /** Run with exactly these tools (by name), whatever the surface offers. */
+  allowTools?: ReadonlySet<string>;
+  /** Skip the user's prompt/tool hooks (internal one-off runs). */
+  noHooks?: boolean;
   profile?: Profile;
   signal?: AbortSignal;
 }
@@ -252,10 +257,34 @@ export interface EnginePromptArgs {
 /** First native use of a session that only exists as a dsh log: bring its history over. */
 async function adoptLegacySession(sessionId: string): Promise<void> {
   try {
-    const dsh = getAgentHost().getSessionRoot();
-    if (dsh && hostRoot()) await importDshSession(dsh, hostRoot(), sessionId);
+    await importDshSession(legacyRoot(), hostRoot(), sessionId);
   } catch (err) {
     console.warn(`[agent] legacy import skipped for ${sessionId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** Where the retired dsh harness kept its logs; read only to bring old history over. */
+export function legacyRoot(): string {
+  let base: string;
+  try { base = electron.app.getPath("userData"); } catch { base = os.tmpdir(); }
+  return path.join(base, "sessions");
+}
+
+/**
+ * Remove retired-harness logs whose directory name matches, so a cleared or deleted session is not
+ * re-imported on next touch. Looks one level below each project directory (`<root>/<project>/<id>`).
+ */
+export function removeLegacySessions(match: (name: string) => boolean): void {
+  const root = legacyRoot();
+  let projects: string[];
+  try { projects = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return; }
+  for (const project of projects) {
+    let names: string[];
+    try { names = fs.readdirSync(path.join(root, project)); } catch { continue; }
+    for (const name of names) {
+      if (!match(name)) continue;
+      try { fs.rmSync(path.join(root, project, name), { recursive: true, force: true }); } catch { /* best effort */ }
+    }
   }
 }
 
@@ -335,6 +364,12 @@ export function forgetEngineSession(sessionId: string): void {
   for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
 }
 
+/** Quit: stop running turns, their jobs and terminals, and any language servers. */
+export function shutdownEngine(): void {
+  for (const id of host?.runningIds() ?? []) { host?.abort(id); forgetEngineSession(id); }
+  lspManager?.disposeAll();
+}
+
 export async function listEngineSubagents(ctx: DbContext, parent: string): Promise<{ entries: Array<{ id: string; mode: "continuable"; label: string; activity: "running" | "inactive"; live: boolean; hasChildren: boolean }>; parentAvailable: boolean }> {
   const children = await getEngineHost(ctx).listChildren(parent);
   return {
@@ -367,7 +402,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   const chatProfile = chat ? chatEngineProfile(chat.policy) : undefined;
   sessionRules.set(a.sessionId, chatProfile?.rules ?? []);
   usageMeta.set(a.sessionId, {
-    source: chat ? "chat" : a.usageSource ?? "coding", workspaceId: a.workspaceId ?? "", projectId: a.projectId,
+    source: a.usageSource ?? (chat ? "chat" : "coding"), workspaceId: a.workspaceId ?? "", projectId: a.projectId,
     provider: a.llmConfig.provider, model: a.llmConfig.model, baseUrl: a.llmConfig.baseUrl,
   });
   const observed = observedFiles.get(a.sessionId) ?? new Set<string>();
@@ -390,7 +425,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       getWin: a.ctx.getWin,
       askQuestions: (questions, tool) => new Promise((resolve, reject) => {
         const nonce = randomBytes(16).toString("hex");
-        pendingQuestions.set(qKey(a.sessionId, tool.callId), { nonce, resolve: (answers) => { try { resolve(JSON.parse(answers)); } catch { resolve(answers); } }, reject });
+        pendingQuestions.set(qKey(a.sessionId, tool.callId), { nonce, questions, resolve: (answers) => { try { resolve(JSON.parse(answers)); } catch { resolve(answers); } }, reject });
         tool.signal?.addEventListener("abort", () => { if (pendingQuestions.delete(qKey(a.sessionId, tool.callId))) reject(new Error("cancelled")); }, { once: true });
         broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "question", { callId: tool.callId, questions, nonce }));
       }),
@@ -421,6 +456,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   });
 
   if (a.extraTools?.length) tools.push(...a.extraTools);
+  if (a.allowTools) { const keep = tools.filter((t) => a.allowTools!.has(t.name)); tools.length = 0; tools.push(...keep); }
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
   const systemPrompt = [a.systemPrompt, planning ? PLAN_MODE_PROMPT : "", mcpInstructions].filter(Boolean).join("\n\n");
@@ -437,7 +473,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       sessionId: a.sessionId,
       prompt: prepared.text,
       images: prepared.images,
-      hooks: role === "automation-dev" ? undefined : createHooks({ sessionId: a.sessionId, cwd: a.cwd }),
+      hooks: role === "automation-dev" || a.noHooks ? undefined : createHooks({ sessionId: a.sessionId, cwd: a.cwd }),
       cwd: a.cwd,
       profile,
       route,
@@ -508,6 +544,16 @@ export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void
       usageSource: "automation",
       profile: { id: "automation", interactive: true, mode: a.autoApprove ? "yolo" : "ask", externalAlwaysAsks: a.autoApprove },
     });
+  } finally {
+    sessionTaps.delete(a.sessionId);
+  }
+}
+
+/** A run whose events go to `tap` instead of the renderer (internal wizards). */
+export async function runEngineTapped(a: Omit<EnginePromptArgs, "role" | "profile"> & { tap: HostSend }): Promise<void> {
+  sessionTaps.set(a.sessionId, a.tap);
+  try {
+    await runEnginePrompt(a);
   } finally {
     sessionTaps.delete(a.sessionId);
   }

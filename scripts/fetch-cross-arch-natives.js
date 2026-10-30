@@ -26,7 +26,7 @@ const root = path.resolve(__dirname, "..");
 const nodeModules = path.join(root, "node_modules");
 
 /** Parent packages whose `<parent>-<platform>-<arch>` optional deps are resolved at runtime. */
-const PARENTS = ["@vscode/ripgrep", "@deepseek-ai/node-addon-system"];
+const PARENTS = ["@vscode/ripgrep"];
 
 /** Matches the `arch:` lists in electron-builder.yml. */
 const TARGETS = {

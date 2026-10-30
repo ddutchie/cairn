@@ -77,35 +77,6 @@ const eslintConfig = defineConfig([
       }],
     },
   },
-  {
-    // HostStore seam (electron/cordis/host-store.ts header): engine code
-    // reaches app I/O only through ./host-store. host-store.ts itself and
-    // test harnesses (which construct their own db handle) are exempt;
-    // type-only imports are exempt (erased at compile time).
-    files: ["electron/cordis/**/*.ts"],
-    ignores: ["electron/cordis/host-store.ts", "electron/cordis/**/*.test.ts"],
-    rules: {
-      "no-restricted-imports": ["error", {
-        patterns: [
-          {
-            group: ["../db/*", "../db/**/*", "../../db/*", "../../db/**/*"],
-            allowTypeImports: true,
-            message: "Cordis engine must reach ../db/* through ./host-store (HostStore seam).",
-          },
-          {
-            group: ["../lib/*", "../lib/**/*", "../../lib/*", "../../lib/**/*"],
-            allowTypeImports: true,
-            message: "Cordis engine must reach ../lib/* through ./host-store (HostStore seam).",
-          },
-        ],
-        paths: [{
-          name: "node:child_process",
-          allowTypeImports: true,
-          message: "child_process is owned by host-store.ts — import through ./host-store.",
-        }],
-      }],
-    },
-  },
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",

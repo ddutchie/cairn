@@ -1,13 +1,8 @@
-import { registerContractHandle, broadcastEvent, sendIpcEvent } from "./registry";
+import { registerContractHandle, sendIpcEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
-import * as q from "../db/queries";
-import { ts } from "../db/utils";
-import { makeSessionProjection } from "../../shared/agent/session-projection";
-import { getAgentHost } from "../cordis/agent-host";
 import { errMsg } from "../host-shared/errors";
-import { engineEnabled, engineOwns } from "./engine-bridge";
 import { ENGINE_COMMANDS, executeEngineCommand, previewEnginePrompt } from "./engine-commands";
 
 let progressForwarderSetUp = false;
@@ -49,33 +44,10 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   // ── Command execution (dsh commands runtime) ────────────────────────
   // List registry commands (name + description) so host UIs can render their
   // palettes from the same namespace plugins register into.
-  registerContractHandle("cordis:listCommands", () => handle(async () => {
-    if (engineEnabled()) return ENGINE_COMMANDS.map((c) => ({ ...c }));
-    const list = await getAgentHost().listCommands();
-    return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
-  }));
+  registerContractHandle("cordis:listCommands", () => handle(async () => ENGINE_COMMANDS.map((c) => ({ ...c }))));
 
-  // Generic executor for registry commands (/plan, /compact, plugin commands)
-  // on a session's resumed agent. Returns the command result {kind, text}.
-  registerContractHandle("cordis:executeCommand", (_e, req) => handle(async () => {
-    if (engineEnabled() || await engineOwns(ctx, req.sessionId)) return executeEngineCommand(ctx, req);
-    const agentConfig = (await import("../lib/config-cache")).getCachedConfig().agentConfig;
-    const result = await getAgentHost().executeCommand({
-      sessionId: req.sessionId,
-      cwd: ctx.workspacePath || process.cwd(),
-      baseUrl: agentConfig?.baseUrl ?? "",
-      model: agentConfig?.model ?? "",
-      apiKey: agentConfig?.apiKey ?? "",
-      line: req.line,
-    });
-    if (result.mode) {
-      try {
-        q.updateCodingSession(ctx.db, req.sessionId, { mode: result.mode, updatedAt: ts() });
-      } catch { }
-      broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "mode-change", { mode: result.mode }));
-    }
-    return { kind: result.kind, text: result.text };
-  }));
+  // Generic executor for slash commands (/plan, /compact, /goal, …); returns {kind, text}.
+  registerContractHandle("cordis:executeCommand", (_e, req) => handle(async () => executeEngineCommand(ctx, req)));
 
   // ── Runtime health & lifecycle ─────────────────────────────
   registerContractHandle("runtime:status", () => handle(async () => {
@@ -87,21 +59,8 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
     return { ok: true as const };
   }));
 
-  // ── System-prompt introspection (Cordis) ─────────────────────────────
-  // Assemble the REAL dsh system prompt the Cordis engine sends, plus a
-  // breakdown of its sections (name + order). Cairn's own identity section
-  // (cairn:system) is mounted per-turn inside the loop, so to reflect a real
-  // turn we temporarily mount it here, assemble, then remove it. The coding
-  // agent prompt (buildAgentSystemPrompt — the board-tracking workflow) is a
-  // plain string (no dsh sections), returned alongside so Settings shows both.
-  registerContractHandle("runtime:systemPrompt:preview", (_e, req) => handle(async () => {
-    if (engineEnabled()) return previewEnginePrompt(ctx, req?.cwd ?? "");
-    try {
-      return await getAgentHost().previewSystemPrompt(req?.cwd ?? "");
-    } catch (err) {
-      return { text: "", sections: [], contexts: [], skills: [], tools: [], variables: {}, error: errMsg(err) };
-    }
-  }));
+  // ── System-prompt introspection ──────────────────────────────────────
+  registerContractHandle("runtime:systemPrompt:preview", (_e, req) => handle(async () => previewEnginePrompt(ctx, req?.cwd ?? "")));
 
   // ── Coding-agent prompt preview ──────────────────────────────────────
   // The coding loop's system prompt is NOT a dsh section — it is the plain
@@ -126,21 +85,12 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
     }
   }));
 
-  // ── Tool inventory (per-surface, dynamic) ────────────────────────────
-  // What the model can actually call differs per surface (chat = Cairn data
-  // tools only; coding = + filesystem/exec stack; automation-dev = file
-  // tools only; MCP = minus chat-only). Static part comes from
-  // lib/tool-inventory (same sources the loops use); global dsh tools
-  // (subagent/delegate/jobs/skill/web_fetch/…) are read live from the
-  // registry and merged in.
+  // ── Tool inventory (per-surface) ─────────────────────────────────────
+  // What the model can call differs per surface; computed from the engine's own toolsets.
   registerContractHandle("runtime:tools:inventory", () => handle(async () => {
     try {
-      const [{ buildStaticInventory }] = await Promise.all([
-        import("../lib/tool-inventory"),
-      ]);
-      const globalTools = (await getAgentHost().getGlobalTools()).map((tool) => ({ ...tool, description: tool.description ?? "", category: "exec" as const, source: "global" as const }));
-      const surfaces = buildStaticInventory(globalTools);
-      return { surfaces };
+      const { buildInventory } = await import("../lib/tool-inventory");
+      return { surfaces: await buildInventory() };
     } catch (err) {
       return { surfaces: null, error: errMsg(err) };
     }

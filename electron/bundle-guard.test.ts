@@ -80,14 +80,6 @@ const RUNTIME_SHIPPED = new Set([
 const SHIPPED_NATIVE = new Set([
   "better-sqlite3",
   "node-pty",
-  // koffi (native FFI, pulled in transitively by dsh-fs-local,
-  // dsh-session-persistence-jsonl, dsh-subprocess-local, …) resolves its
-  // prebuilt binary at runtime relative to its own package dir
-  // (node_modules/koffi + node_modules/@koromix/koffi-<platform>-<arch>).
-  // Bundling it inlines that lookup into main.js with a broken dirname, so
-  // it stays external like the other natives. Its platform binaries ship
-  // via electron-builder.yml (`node_modules/koffi` + `node_modules/@koromix`).
-  "koffi",
 ]);
 
 /**
@@ -308,39 +300,6 @@ describe("import.meta stub guards (esbuild CJS breaks ESM import.meta.*)", () =>
       `dist-electron/main.js calls a stubbed import.meta.resolve (${offenders.length}x). Add a define+banner shim in scripts/compile-electron.js (scripts/build.js reuses it via --electron-only).`,
     ).toHaveLength(0);
   });
-
-  it("windows sandbox runner ships beside the bundle", () => {
-    // dsh-sandbox-local's Windows ACL runner is pinned via
-    // internals.windowsAclRunnerEntry (cordis-coding-tools.ts) — the file
-    // must exist in dist-electron/ (covered by the existing
-    // `dist-electron/**/*` ship glob in electron-builder.yml).
-    if (!fs.existsSync(mainBundle)) return;
-    expect(
-      fs.existsSync(path.join(ROOT, "dist-electron/windows-acl-runner.cjs")),
-      "dist-electron/windows-acl-runner.cjs missing — run `npm run compile` (scripts/compile-electron.js builds it from dsh-sandbox-windows-acl).",
-    ).toBe(true);
-  });
-
-  it("subprocess containment runner ships and is launched in Node mode", () => {
-    // dsh-subprocess-local spawns `[process.execPath, runner]` — Electron.exe
-    // in Cairn. The resolve shim points at the bundled bootstrap and the
-    // patchSubprocessRunnerEnv plugin adds ELECTRON_RUN_AS_NODE to the
-    // runner's env; without both, every agent subprocess boots a second app.
-    if (!fs.existsSync(mainBundle)) return;
-    const src = fs.readFileSync(mainBundle, "utf8");
-    expect(fs.existsSync(path.join(ROOT, "dist-electron/subprocess-runner.cjs")), "dist-electron/subprocess-runner.cjs missing — run `npm run compile`.").toBe(true);
-    expect(src, "resolve shim no longer maps the dsh-subprocess-local runner to subprocess-runner.cjs").toContain("'subprocess-runner.cjs'");
-    expect(src, "patchSubprocessRunnerEnv did not apply — runnerEnvironment lacks ELECTRON_RUN_AS_NODE").toMatch(/\[SUBPROCESS_RUNNER_ENV\]: selection,\s*\.\.\.\(?process\.versions\.electron \? \{ ELECTRON_RUN_AS_NODE: "1" \}/);
-  });
-
-  it("PTC bootstrap ships beside the bundle and runs Electron as Node", () => {
-    // dsh-ptc-runtime-node launches new URL("./process.js", import.meta.url)
-    // with process.execPath; patchPtcRuntimeElectronEnv adds ELECTRON_RUN_AS_NODE.
-    if (!fs.existsSync(mainBundle)) return;
-    const src = fs.readFileSync(mainBundle, "utf8");
-    expect(fs.existsSync(path.join(ROOT, "dist-electron/process.js")), "dist-electron/process.js missing — run `npm run compile`.").toBe(true);
-    expect(src, "patchPtcRuntimeElectronEnv did not apply").toMatch(/if \(process\.versions\.electron\) env\d*\.ELECTRON_RUN_AS_NODE = "1";/);
-  });
 });
 
 describe("allowlist drift checks", () => {
@@ -352,22 +311,6 @@ describe("allowlist drift checks", () => {
     expect(
       drift,
       "scripts/compile-electron.js `external: [...]` (or package.json `compile` `--external:<pkg>`) declares <pkg> but it isn't in any allowlist group in bundle-guard.test.ts. Either add the package to the appropriate group (RUNTIME_PROVIDED / OPTIONAL_TRANSITIVE / RUNTIME_SHIPPED / SHIPPED_NATIVE / MCP_SDK_SHIPPED) or remove the external (and let esbuild bundle it in).\n  Untracked externals:\n    - " + drift.join("\n    - "),
-    ).toHaveLength(0);
-  });
-
-  it("koffi native binaries ship via electron-builder.yml (koffi + @koromix scope)", () => {
-    // koffi's prebuilt .node files live in @koromix/koffi-<platform>-<arch>
-    // and are resolved via an absolute path at runtime — invisible to the
-    // `require()` scan. Without the scope-wide glob the packaged app throws
-    // "Cannot find the native Koffi module" on first session flush.
-    const missing: string[] = [];
-    if (!shipped.has("koffi")) missing.push("koffi (node_modules/koffi/**/*)");
-    if (!shipped.has("@koromix/*"))
-      missing.push("@koromix/* (node_modules/@koromix/**/*)");
-    expect(
-      missing,
-      "koffi is external but its runtime files don't ship. Add `node_modules/koffi/**/*` and `node_modules/@koromix/**/*` to electron-builder.yml `files` + `asarUnpack` and the negation-glob allowlist.\n  Missing:\n    - " +
-        missing.join("\n    - "),
     ).toHaveLength(0);
   });
 

@@ -1,3 +1,5 @@
+> **Status: complete (2026-10-30).** The harness, Cordis, its patches and the subprocess/sandbox runners are gone; this file is kept as the migration record.
+
 # Plan: Remove Cordis/dsh (`@deepseek-ai/*`) from Cairn
 
 > Branch: `refactor/remove-dsh` · Opened 2026-10-30 · Status: **draft**

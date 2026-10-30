@@ -9,7 +9,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## Stack summary
 
 - **Electron + Next.js 16** (App Router, static export) — desktop app
-- **Cordis agent runtime** (DeepSeek harness: `@deepseek-ai/cordis` + `dsh-*`) — one shared context drives chat + coding turns: model loop, sessions, tools, approvals, subagents, jobs, compaction. Never reach past the HostStore seam (`electron/cordis/host-store.ts`) from engine code. Full reference: `docs/architecture-cordis.md`
+- **Cairn agent engine** (`electron/agent/`) — one engine drives chat, coding and automation turns: pi-ai model streaming, JSONL sessions (`cairn-session/1`), tools, approvals (pure `decide()` policy + `Gate`), subagents, goals, jobs, terminals, LSP, hooks, compaction. The IPC handlers reach it through `electron/ipc/engine-bridge.ts`; app I/O goes through `electron/agent/host-store.ts`. History written by the retired DeepSeek harness is imported on first touch (`agent/session/dsh-import.ts`). Design: `docs/plans/agent-engine-design.md`
 - **Tailwind CSS v4** — all colours via CSS custom properties (`var(--token)`), never raw Tailwind colour names
 - **Zustand** — domain slices in `src/store/slices/`; composed in `src/store/index.ts`
 - **better-sqlite3** — v13+ N-API (single binary for Electron + pkg/Node 24 + Node), arch-separated (arm64 + x64); all DB access goes through IPC from the renderer
@@ -152,7 +152,7 @@ Notes write to both `.md` files and SQLite simultaneously. (Dashboards were remo
 ## Agent tools & surfaces
 
 - **Source of truth**: `TOOL_SCHEMAS` in `electron/lib/tool-schemas.ts` (minus `CHAT_ONLY_TOOLS` on MCP, minus nothing on chat/coding — chat gates deletes via approval instead of exclusion)
-- **Per-surface inventory**: `electron/lib/tool-inventory.ts` computes what each surface actually registers (chat = Cairn tools only, no `read`/`edit`/`bash`, no `skill`; coding = + filesystem/exec stack; automation-dev = file tools only; MCP = minus chat-only) merged with live global dsh tools — served by `runtime:tools:inventory`, displayed in Settings → AI tabs
+- **Per-surface inventory**: `electron/lib/tool-inventory.ts` builds each surface's toolset with the engine's own `buildToolset` (chat = Cairn tools only, no `read`/`edit`/`bash`; coding = + filesystem/exec stack, subagents, goals, jobs, terminals; automation-dev = file tools only; MCP = minus chat-only) — served by `runtime:tools:inventory`, displayed in Settings → AI tabs
 - **Coding prompt**: `electron/lib/coding-session-prompt.ts` carries the board-tracking workflow (In Progress → Review/Done, PRD checklists, session summaries); chat prompt is `buildSystemPrompt` in `electron/lib/tools.ts`
 - Never construct a `Database` instance outside `electron/db/client.ts` (Electron), `mcp-server.ts` (MCP runtime), and the readonly probe in `electron/mcp/db.ts` (`findDbPath`) — those are the only three ABI bootstrap sites (see "better-sqlite3 ABI" above)
 - All DB writes from renderer go through `ipc()` / `ipcAwait()` to the Electron main process
