@@ -208,6 +208,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
 
   for (let step = 0; step < maxSteps; step++) {
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
+    for (const t of o.tools) if (!toolMap.has(t.name)) toolMap.set(t.name, t); // tool_search can add tools mid-turn
     const threshold = o.compaction?.threshold;
     if (threshold && lastContextTokens >= threshold) {
       if (yield* tryCompact("threshold")) lastContextTokens = 0;
