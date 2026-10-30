@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { zstdCompressSync } from "node:zlib";
