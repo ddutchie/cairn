@@ -14,6 +14,7 @@ import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import { buildContextView, renderTranscript, compactHistory, compactionThreshold, pruneImages, pruneToolResults } from "./context";
 import type { AgentEvent, GoalPhase, GoalState, ScheduleEntry, UserImage } from "./events";
 import { Gate, type AskSpec, type HumanDecision } from "./gate";
+import type { TurnHooks } from "./hooks";
 import { runTurn, type Profile, type StreamFn } from "./loop";
 import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream } from "./provider";
 import { createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
@@ -67,6 +68,7 @@ export interface PromptRequest {
   title?: string;
   /** Set for a subagent: its events are shown as traces under this session, and it asks through it. */
   parentSession?: string;
+  hooks?: TurnHooks;
   /** Aborts this turn (a subagent stops when its parent does). */
   signal?: AbortSignal;
 }
@@ -231,6 +233,7 @@ export class AgentHost {
         input: req.prompt,
         images: req.images,
         tools: req.tools,
+        hooks: req.hooks,
         profile: req.profile,
         rules: this.ruleView(session),
         gate: this.gate,

@@ -7,7 +7,7 @@ import type { AssistantMessage, JsonObject } from "@earendil-works/pi-ai";
 import type { AskSpec } from "./gate";
 import type { GrantKind, RiskClass, Rule } from "./rules";
 
-export type DecisionSource = "profile" | "plan" | "rule" | "doom" | "protected" | "default" | "mode" | "human" | "reviewer" | "timeout" | "abort" | "headless";
+export type DecisionSource = "profile" | "plan" | "rule" | "doom" | "protected" | "default" | "mode" | "human" | "reviewer" | "timeout" | "abort" | "headless" | "hook";
 
 export type TurnEndReason = "stop" | "aborted" | "error" | "max-steps" | "overflow";
 

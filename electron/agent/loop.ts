@@ -32,6 +32,7 @@ import {
 import type { AgentEvent, DecisionSource, UserImage } from "./events";
 import { userContent, type CompactionResult, type CompactionTrigger } from "./context";
 import { Gate, type AskInput } from "./gate";
+import type { TurnHooks } from "./hooks";
 import { callSignature, decide, type Decision, type Mode } from "./policy";
 import { repairInterrupted } from "./repair";
 import { createReviewerState, recordVerdict, type Reviewer, type ReviewerState } from "./reviewer";
@@ -86,6 +87,8 @@ export interface TurnOptions {
     maxPerTurn?: number;
     compact(history: readonly Message[], trigger: CompactionTrigger): Promise<CompactionResult | undefined>;
   };
+  /** Command hooks around the prompt, tool calls and the end of the turn. */
+  hooks?: TurnHooks;
   /** Transient-error retry. Defaults to DEFAULT_RETRY; `{ enabled: false, … }` turns it off. */
   retry?: RetryPolicy;
   /** Backoff sleep; injectable for tests. Must resolve early when `signal` aborts. */
@@ -93,6 +96,8 @@ export interface TurnOptions {
 }
 
 /** 5 retries, 500 ms doubling, capped at 10 s — what the dsh route used. */
+const MAX_STOP_CONTINUATIONS = 3;
+
 export const DEFAULT_RETRY: RetryPolicy = { enabled: true, maxRetries: 5, baseDelayMs: 500, maxAgentDelayMs: 10_000 };
 
 const abortableSleep = (ms: number, signal?: AbortSignal): Promise<void> =>
@@ -169,8 +174,16 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
   o.history.splice(0, o.history.length, ...repairInterrupted(o.history));
   yield { type: "turn/start", sessionId: o.sessionId, profile: o.profile.id };
   const images = o.images?.length ? [...o.images] : undefined;
-  o.history.push({ role: "user", content: userContent(o.input, images), timestamp: Date.now() } satisfies UserMessage);
+  const promptHook = await o.hooks?.userPrompt?.(o.input).catch(() => ({} as { block?: string; context?: string }));
+  const modelInput = promptHook?.context ? `${o.input}\n\n<hook_context>\n${promptHook.context}\n</hook_context>` : o.input;
+  o.history.push({ role: "user", content: userContent(modelInput, images), timestamp: Date.now() } satisfies UserMessage);
   yield { type: "user/message", content: o.input, ...(images ? { images } : {}) };
+  if (promptHook?.block) {
+    yield { type: "error", message: `Prompt blocked by a hook: ${promptHook.block}` };
+    yield { type: "turn/end", reason: "stop" };
+    return;
+  }
+  let stopContinuations = 0;
 
   let compactions = 0;
   let lastContextTokens = 0;
@@ -226,7 +239,17 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
     yield { type: "assistant/message", message: final };
 
     const calls = final.content.filter((b): b is ToolCall => b.type === "toolCall");
-    if (calls.length === 0) { yield { type: "turn/end", reason: "stop" }; return; }
+    if (calls.length === 0) {
+      // A Stop hook can ask for more work; the cap keeps a hook that always objects from looping forever.
+      const stop = stopContinuations < MAX_STOP_CONTINUATIONS ? await o.hooks?.stop?.().catch(() => ({} as { continueWith?: string })) : undefined;
+      if (stop?.continueWith) {
+        stopContinuations++;
+        o.history.push({ role: "user", content: `continue: ${stop.continueWith}`, timestamp: Date.now() } satisfies UserMessage);
+        continue;
+      }
+      yield { type: "turn/end", reason: "stop" };
+      return;
+    }
 
     const results = yield* runToolCalls(o, calls, toolMap, { recent, doomAcked, reviewerState });
     o.history.push(...results);
@@ -275,10 +298,16 @@ async function* runToolCalls(
   const messages: ToolResultMessage[] = [];
   for (const p of prepared) {
     const out: ToolOutput = p.refusal ? { content: p.refusal, isError: true } : outputs.get(p.call.id) ?? { content: "No result.", isError: true };
-    const text = textOf(out);
-    const isError = out.isError === true;
+    let text = textOf(out);
+    let isError = out.isError === true;
+    let original: ToolOutput | undefined = out;
+    if (o.hooks?.postTool && !p.refusal && p.args) {
+      const post = await o.hooks.postTool({ name: p.call.name, args: p.args, callId: p.call.id }, { text, isError }).catch(() => ({} as { block?: string; context?: string }));
+      if (post.block) { text = `Blocked by PostToolUse hook: ${post.block}`; isError = true; original = undefined; }
+      else if (post.context) { text = `${text}\n\n<hook_context>\n${post.context}\n</hook_context>`; original = undefined; }
+    }
     yield { type: "tool/result", callId: p.call.id, name: p.call.name, text, isError };
-    messages.push(resultMessage(p.call, text, isError, out));
+    messages.push(resultMessage(p.call, text, isError, original));
   }
   return messages;
 }
@@ -314,7 +343,13 @@ async function* prepare(o: TurnOptions, call: ToolCall, toolMap: Map<string, Age
   });
   state.recent.push(signature);
 
-  const resolution = yield* resolveDecision(o, { call, tool, args }, risk, signature, decision, state);
+  // A hook can only tighten what policy decided: deny always wins, ask upgrades an allow.
+  let effective = decision;
+  const gate = await o.hooks?.preTool?.({ name: call.name, args, callId: call.id }).catch(() => ({} as { decision?: "deny" | "ask"; reason?: string }));
+  if (gate?.decision === "deny" && decision.kind !== "deny") effective = { kind: "deny", by: "hook", reason: gate.reason ?? "blocked by PreToolUse hook" };
+  else if (gate?.decision === "ask" && decision.kind === "allow") effective = { kind: "ask", by: "hook", reason: gate.reason ?? "A PreToolUse hook asked for approval" };
+
+  const resolution = yield* resolveDecision(o, { call, tool, args }, risk, signature, effective, state);
   return resolution.approved ? { call, tool, args } : { call, tool, args, refusal: resolution.refusal };
 }
 

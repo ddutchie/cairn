@@ -24,6 +24,7 @@ import type { Mode as EngineMode } from "../agent/policy";
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
 import { buildToolset } from "../agent/tools/index";
 import { JobRegistry } from "../agent/jobs";
+import { createHooks } from "../agent/hooks";
 import { importDshSession } from "../agent/session/dsh-import";
 import { isLocalEndpoint } from "../lib/llm";
 import { getAgentHost } from "../cordis/agent-host";
@@ -422,6 +423,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       sessionId: a.sessionId,
       prompt: prepared.text,
       images: prepared.images,
+      hooks: role === "automation-dev" ? undefined : createHooks({ sessionId: a.sessionId, cwd: a.cwd }),
       cwd: a.cwd,
       profile,
       route,
