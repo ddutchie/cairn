@@ -329,7 +329,7 @@ describe("AgentHost", () => {
       })];
       t.h.faux.setResponses([toolUse(call("schedule_create", { prompt: "check the build", afterMinutes: 0 }, "c1")), fauxAssistantMessage("ok"), fauxAssistantMessage("build checked")]);
       await t.host.prompt(t.req({ tools }));
-      await until(() => t.of("turn/start").length === 2);
+      await until(() => t.of("turn/start").length === 2, 6_000);
       await until(() => !t.host.isRunning("s1"));
       expect(t.of("turn/start")).toHaveLength(2);
       expect(await t.host.readSchedules("s1")).toEqual([]);

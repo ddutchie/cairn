@@ -25,6 +25,7 @@ import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
 import { buildToolset } from "../agent/tools/index";
 import { JobRegistry } from "../agent/jobs";
 import { createHooks } from "../agent/hooks";
+import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importDshSession } from "../agent/session/dsh-import";
 import { isLocalEndpoint } from "../lib/llm";
@@ -152,6 +153,9 @@ export function getJobRegistry(): JobRegistry {
   });
   return jobRegistry;
 }
+
+let lspManager: LspManager | undefined;
+const getLsp = () => (lspManager ??= new LspManager());
 
 let terminalRegistry: TerminalRegistry | undefined;
 function getTerminals(ctx: DbContext): TerminalRegistry {
@@ -394,6 +398,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
     fs: { cwd: a.cwd, rgPath, observed, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
+    lsp: role === "automation-dev" ? undefined : { manager: getLsp(), cwd: a.cwd },
     terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },
     goal: {
       get: () => h.goal(a.sessionId),
@@ -419,7 +424,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
   const systemPrompt = [a.systemPrompt, planning ? PLAN_MODE_PROMPT : "", mcpInstructions].filter(Boolean).join("\n\n");
-  const subagentToolNames = new Set(["subagent", "delegate", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode"]);
+  const subagentToolNames = new Set(["subagent", "delegate", "workflow", "ralph", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode"]);
   spawnContexts.set(a.sessionId, {
     cwd: a.cwd, profile, route, systemPrompt, tools: tools.filter((t) => !subagentToolNames.has(t.name)),
     reasoningEffort: a.llmConfig.reasoningEffort, temperature: a.llmConfig.temperature, maxSteps: a.llmConfig.maxSteps,

@@ -84,7 +84,7 @@ const DEFAULT_GOAL_ROUNDS = 10;
 const GOAL_CONTINUE = (objective: string) =>
   `Continue working toward the goal: ${objective}\nWhen it is met call update_goal with phase "complete"; if you cannot proceed call it with phase "blocked" and a blockedReason.`;
 /** How long a reminder waits when its session is mid-turn before trying again. */
-const REMINDER_RETRY_MS = 15_000;
+const REMINDER_RETRY_MS = 1_000;
 
 export interface ChildInfo { id: string; label: string; running: boolean }
 

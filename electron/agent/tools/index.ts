@@ -11,9 +11,11 @@ import { goalTools, type GoalDeps } from "./goal";
 import { jobTools, type JobToolDeps } from "./jobs";
 import { scheduleTools, type ScheduleDeps } from "./schedule";
 import { fsTools, type FsDeps } from "./fs";
+import { lspTool, type LspDeps } from "./lsp";
 import { planTools, type PlanDeps } from "./plan";
 import { subagentTools, type SubagentDeps } from "./subagent";
 import { skillTool } from "./skill";
+import { workflowTools } from "./workflow";
 import { terminalTools, type TerminalDeps } from "./terminal";
 import { todoTool, type TodoItem } from "./todo";
 import { webFetchTool } from "./web";
@@ -37,6 +39,7 @@ export interface ToolsetDeps {
   schedule?: ScheduleDeps;
   jobs?: JobToolDeps;
   terminals?: TerminalDeps;
+  lsp?: LspDeps;
 }
 
 export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
@@ -56,11 +59,14 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
     }
   }
   if (d.subagents && d.surface !== "automation-dev") tools.push(...subagentTools(d.subagents));
+  if (d.subagents && d.surface === "coding") tools.push(...workflowTools(d.subagents));
   if (d.surface === "coding") {
     if (d.goal) tools.push(...goalTools(d.goal));
     if (d.schedule) tools.push(...scheduleTools(d.schedule));
     if (d.jobs) tools.push(...jobTools(d.jobs));
     if (d.terminals) tools.push(...terminalTools(d.terminals));
+    const lsp = d.lsp && lspTool(d.lsp);
+    if (lsp) tools.push(lsp);
   }
   if (d.plan && d.surface === "coding") tools.push(...planTools(d.plan));
   const seen = new Set<string>();
@@ -74,9 +80,11 @@ export * from "./fs";
 export * from "./goal";
 export * from "./jobs";
 export * from "./schedule";
+export * from "./lsp";
 export * from "./plan";
 export * from "./skill";
 export * from "./subagent";
 export * from "./terminal";
 export * from "./todo";
+export * from "./workflow";
 export * from "./web";
