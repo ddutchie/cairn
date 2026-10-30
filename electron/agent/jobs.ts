@@ -65,6 +65,11 @@ export class JobRegistry {
     return true;
   }
 
+  /** Quit: stop every running job whoever owns it. */
+  killEvery(): void {
+    for (const j of this.jobs.values()) if (j.status === "running") { j.status = "stopping"; j.kill(); }
+  }
+
   killAll(owner: string): void {
     for (const j of this.jobs.values()) if (j.ownerSession === owner && j.status === "running") { j.status = "stopping"; j.kill(); }
   }

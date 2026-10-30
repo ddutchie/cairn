@@ -46,6 +46,8 @@ export interface HostDeps {
   routeStream?: (route: ModelRoute) => RoutedStream;
   reviewer?: Reviewer;
   askTtlMs?: number;
+  /** Runs before a session is first opened in memory (e.g. import a retired log). */
+  beforeOpen?: (id: string) => Promise<void>;
   /** Called for each `approval/asked`, e.g. to raise a desktop notification. */
   onAsk?: (ask: AskSpec) => void;
   /** Each settled assistant message (e.g. to record token usage). */
@@ -128,6 +130,7 @@ export class AgentHost {
     let pending = this.opening.get(id);
     if (!pending) {
       pending = (async () => {
+        await this.deps.beforeOpen?.(id);
         const { writer, existing: log } = await openSession(this.deps.root, { id, cwd, parentId: parent });
         const records = log?.records ?? [];
         const state = foldState(records);
@@ -202,16 +205,19 @@ export class AgentHost {
     session.running = true;
     session.lastReq = req;
     const notices = session.notices.splice(0);
-    let outcome = await this.runTurnOnce(session, notices.length ? { ...req, prompt: `${notices.map((n) => `<notice>${n}</notice>`).join("\n")}\n${req.prompt}` } : req);
-    // A standing goal keeps the session going until it is met, blocked or out of rounds.
-    while (!session.parent && outcome.reason === "stop" && !req.signal?.aborted) {
-      const goal = foldGoal(session.records);
-      if (!goal || goal.phase !== "active" || goal.roundsStarted >= goal.maxGoalRounds) break;
-      await this.record(session, { type: "goal/changed", operation: "round", goal: { ...goal, roundsStarted: goal.roundsStarted + 1, revision: goal.revision + 1, updatedAt: Date.now() } });
-      outcome = await this.runTurnOnce(session, { ...req, prompt: GOAL_CONTINUE(goal.objective) });
+    try {
+      let outcome = await this.runTurnOnce(session, notices.length ? { ...req, prompt: `${notices.map((n) => `<notice>${n}</notice>`).join("\n")}\n${req.prompt}` } : req);
+      // A standing goal keeps the session going until it is met, blocked or out of rounds.
+      while (!session.parent && outcome.reason === "stop" && !req.signal?.aborted) {
+        const goal = foldGoal(session.records);
+        if (!goal || goal.phase !== "active" || goal.roundsStarted >= goal.maxGoalRounds) break;
+        await this.record(session, { type: "goal/changed", operation: "round", goal: { ...goal, roundsStarted: goal.roundsStarted + 1, revision: goal.revision + 1, updatedAt: Date.now() } });
+        outcome = await this.runTurnOnce(session, { ...req, prompt: GOAL_CONTINUE(goal.objective) });
+      }
+      return outcome;
+    } finally {
+      session.running = false;
     }
-    session.running = false;
-    return outcome;
   }
 
   private async runTurnOnce(session: Session, req: PromptRequest): Promise<PromptOutcome> {

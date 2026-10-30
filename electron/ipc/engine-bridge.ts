@@ -159,6 +159,7 @@ export function getEngineHost(ctx: DbContext): AgentHost {
   hostCtx = ctx;
   host ??= new AgentHost({
     root: hostRoot(),
+    beforeOpen: adoptLegacySession,
     send: (channel, payload) => {
       const sid = "sessionId" in payload ? String(payload.sessionId) : "";
       const tap = sessionTaps.get(sid);
@@ -229,6 +230,10 @@ export function cancelQuestions(sessionId: string): void {
 
 export interface EnginePromptArgs {
   ctx: DbContext;
+  /** Confine shell commands even when the user turned the sandbox off (unattended runs). */
+  forceSandbox?: boolean;
+  /** No human is watching: don't offer ask_questions. */
+  noQuestions?: boolean;
   sessionId: string;
   prompt: string;
   cwd: string;
@@ -365,10 +370,13 @@ export function forgetEngineSession(sessionId: string): void {
 }
 
 /** Quit: stop running turns, their jobs and terminals, and any language servers. */
-export function shutdownEngine(): void {
+export async function shutdownEngine(): Promise<void> {
   for (const id of host?.runningIds() ?? []) { host?.abort(id); forgetEngineSession(id); }
+  // Jobs and terminals outlive their turn, so idle sessions' ones must be stopped too.
+  jobRegistry?.killEvery();
+  terminalRegistry?.closeEvery();
   lspManager?.disposeAll();
-  void import("../lib/mcp-client").then((m) => m.disposeAll()).catch(() => undefined);
+  await import("../lib/mcp-client").then((m) => m.disposeAll()).catch(() => undefined);
 }
 
 export async function listEngineSubagents(ctx: DbContext, parent: string): Promise<{ entries: Array<{ id: string; mode: "continuable"; label: string; activity: "running" | "inactive"; live: boolean; hasChildren: boolean }>; parentAvailable: boolean }> {
@@ -396,6 +404,24 @@ export async function messageEngineSubagent(ctx: DbContext, parent: string, chil
 }
 
 export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
+  try {
+    await runEnginePromptInner(a);
+  } catch (err) {
+    // Setup failed before the turn started (toolset, attachments, route): surface it instead of a dangling spinner.
+    reportPromptError(a.sessionId, err);
+  }
+}
+
+/** Error projection to the run's tap when it has one (automations), else the renderer. */
+function reportPromptError(sessionId: string, err: unknown): void {
+  const busy = err instanceof Error && /busy/.test(err.message);
+  const projection = makeSessionProjection(sessionId, "error", { message: err instanceof Error ? err.message : String(err), code: busy ? "already-running" : undefined });
+  const tap = sessionTaps.get(sessionId);
+  if (tap) tap("session:projection", projection as never); else broadcastEvent("session:projection", projection);
+  if (busy) broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+}
+
+async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const h = getEngineHost(a.ctx);
   await adoptLegacySession(a.sessionId);
   if (a.workspaceId) sessionWorkspace.set(a.sessionId, a.workspaceId);
@@ -424,7 +450,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       workspacePath: a.ctx.workspacePath,
       llmConfig: { baseUrl: a.llmConfig.baseUrl, model: a.llmConfig.model, apiKey: a.llmConfig.apiKey } as never,
       getWin: a.ctx.getWin,
-      askQuestions: (questions, tool) => new Promise((resolve, reject) => {
+      askQuestions: a.noQuestions ? undefined : (questions, tool) => new Promise((resolve, reject) => {
         const nonce = randomBytes(16).toString("hex");
         pendingQuestions.set(qKey(a.sessionId, tool.callId), { nonce, questions, resolve: (answers) => { try { resolve(JSON.parse(answers)); } catch { resolve(answers); } }, reject });
         tool.signal?.addEventListener("abort", () => { if (pendingQuestions.delete(qKey(a.sessionId, tool.callId))) reject(new Error("cancelled")); }, { once: true });
@@ -432,7 +458,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       }),
     },
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
-    fs: { cwd: a.cwd, rgPath, observed, sandbox: { mode: getSandboxMode() }, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
+    fs: { cwd: a.cwd, rgPath, observed, sandbox: { mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
     lsp: role === "automation-dev" ? undefined : { manager: getLsp(), cwd: a.cwd },
     terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },
@@ -487,10 +513,9 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
     });
     broadcastEvent("db:changed", null);
   } catch (err) {
+    reportPromptError(a.sessionId, err);
+  } finally {
     a.signal?.removeEventListener("abort", onAbort);
-    const busy = err instanceof Error && /busy/.test(err.message);
-    broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "error", { message: err instanceof Error ? err.message : String(err), code: busy ? "already-running" : undefined }));
-    if (busy) broadcastEvent("session:busy", { sessionId: a.sessionId, reason: "already-running" });
   }
 }
 
@@ -544,10 +569,15 @@ export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void
     await runEnginePrompt({
       ...a,
       usageSource: "automation",
+      forceSandbox: true,
+      noQuestions: true,
       profile: { id: "automation", interactive: true, mode: a.autoApprove ? "yolo" : "ask", externalAlwaysAsks: a.autoApprove },
     });
   } finally {
     sessionTaps.delete(a.sessionId);
+    // Nothing will clear an unattended run later: stop what it left running and drop its in-memory state.
+    forgetEngineSession(a.sessionId);
+    host?.release(a.sessionId);
   }
 }
 

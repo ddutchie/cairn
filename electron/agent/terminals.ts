@@ -140,6 +140,11 @@ export class TerminalRegistry {
     this.terms.delete(id);
   }
 
+  /** Quit: close every terminal whoever owns it. */
+  closeEvery(): void {
+    for (const t of [...this.terms.values()]) this.close(t.owner, t.id);
+  }
+
   closeAll(owner: string): void {
     for (const t of [...this.terms.values()]) if (t.owner === owner) this.close(owner, t.id);
   }

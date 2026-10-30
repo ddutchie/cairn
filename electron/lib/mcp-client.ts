@@ -215,25 +215,52 @@ function reportIfAuthError(cfg: McpServerRuntimeConfig, e: unknown): boolean {
   return true;
 }
 
+const connecting = new Map<string, Promise<Conn>>();
+
 /** Connect (or reuse a cached connection) to a server. Throws on failure. */
-async function connect(cfg: McpServerRuntimeConfig): Promise<Conn> {
+function connect(cfg: McpServerRuntimeConfig): Promise<Conn> {
   const signature = configSignature(cfg);
   const existing = conns.get(cfg.id);
   if (existing && existing.signature === signature) {
     touch(existing);
-    return existing;
+    return Promise.resolve(existing);
   }
+  // Parallel tool calls on a cold server must share one spawn, not race several.
+  const inflight = connecting.get(cfg.id);
+  if (inflight) return inflight;
+  const p = openConnection(cfg, signature, existing).finally(() => connecting.delete(cfg.id));
+  connecting.set(cfg.id, p);
+  return p;
+}
+
+async function openConnection(cfg: McpServerRuntimeConfig, signature: string, stale: Conn | undefined): Promise<Conn> {
   // Config changed (or no connection yet) — drop any stale transport first.
-  if (existing) await dispose(cfg.id);
+  if (stale) await dispose(cfg.id);
 
   const client = new Client(
     { name: "cairn", version: "1.0.0" },
     { capabilities: {} }
   );
   const transport = makeTransport(cfg);
-  await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP connect to ${cfg.id}`);
+  try {
+    await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP connect to ${cfg.id}`);
+  } catch (e) {
+    // A timed-out or failed connect must not leave the child process behind.
+    await client.close().catch(() => undefined);
+    await transport.close().catch(() => undefined);
+    throw e;
+  }
   const conn: Conn = { client, transport, lastUsed: Date.now(), idleTimer: null, signature };
   conns.set(cfg.id, conn);
+  // A crashed server must not stay cached: the next call reconnects.
+  const prevClose = transport.onclose;
+  transport.onclose = () => {
+    prevClose?.();
+    if (conns.get(cfg.id) === conn) {
+      conns.delete(cfg.id);
+      if (conn.idleTimer) clearTimeout(conn.idleTimer);
+    }
+  };
   touch(conn);
   return conn;
 }
