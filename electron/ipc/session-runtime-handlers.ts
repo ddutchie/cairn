@@ -453,7 +453,7 @@ export function registerSessionRuntimeHandlers(
     const planContent = sessionRow?.planContent?.trim()
       ? sessionRow.planContent
       : planNoteId
-        ? (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? ""
+        ? (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId ?? "") as { content: string } | undefined)?.content ?? ""
         : undefined;
 
     // Session persona (persisted on the row) — "automation-dev" restricts the
@@ -614,7 +614,7 @@ export function registerSessionRuntimeHandlers(
       session.abortCtrl = new AbortController();
     }
 
-    const planContent = (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId) as { content: string } | undefined)?.content ?? "";
+    const planContent = (ctx.db.prepare("SELECT content FROM notes WHERE id = ?").get(planNoteId ?? "") as { content: string } | undefined)?.content ?? "";
 
     send("session:mode-change", { sessionId, mode: "execute", planNoteId });
     const projectName = projectId

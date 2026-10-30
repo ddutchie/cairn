@@ -293,19 +293,21 @@ engine in `electron/agent/` and delete dsh once nothing imports it.
 **Done:** kernel, `cairn-session/1` log + dsh importer, context/compaction,
 fs/bash/web/todo/Cairn/external tools, `AgentHost` + IPC bridge (opt-in via
 `CAIRN_AGENT_ENGINE=native`), chat profile, one-shot completions
-(`agent/one-shot.ts`; Cordis `one-shot.ts` deleted). Verified in the real app:
-a chat turn with Cairn data tools, and a coding turn with an approval ask,
-`write`, and `read`.
+(`agent/one-shot.ts`; Cordis `one-shot.ts` deleted), automations (headless runs
+with a per-session tap), plan mode (`exit_plan_mode`, approve-plan), image
+attachments (inline in the log, newest 8 per request; PDFs get a notice),
+`/compact`, plan toggle and the Ask / Allow all permission presets. Verified in
+the real app: chat with Cairn data tools, a coding turn with an approval ask,
+an automation run with a parked ask, a plan then approve, an image the model
+described, and a manual compaction.
 
 **Still on Cordis** (each row lists the `getAgentHost()` methods or modules that
 must have an engine replacement before `electron/cordis/` can go):
 
 | Tranche | Cordis surface | Call sites |
 |---|---|---|
-| Automations | `runAutomation`, `startTurn`/`endTurn`, headless confirm transport, `readPendingApprovalArgs`; `RunCordisCodingOptions.extraTools` | `lib/heartbeat-runner.ts` |
 | Turn state + approvals | `isTurnRunning`, `abortTurn`, `getRunningTurnIds`, nonce mint/verify, pending-ask records, `grantSessionTool`/`grantSessionBash`, `readTrustedBashCommand` | `ipc/session-run.ts`, `ipc/session-runtime-handlers.ts`, `ipc/chat.ts` (all subsumed by `Gate` + `AgentHost`, so this is deletion once every path is on the engine) |
-| Session modes + commands | `setSessionMode`, `setPermissionPreset`, `readPermissionsSnapshot`, `compactSession`/`compactChatSession`, `listCommands`/`executeCommand`, `previewSystemPrompt`, plan mode, `session:approve-plan` | `ipc/session-handlers.ts`, `ipc/runtime-handlers.ts`, `ipc/session-runtime-handlers.ts` |
-| Attachments | image input, attachment store, missing-image offload, image budget | `session:prompt` fallback to Cordis when `attachments` is set |
+| Commands + prompt preview | `listCommands`/`executeCommand`, `previewSystemPrompt` | `ipc/runtime-handlers.ts` |
 | Subagents | `listSubagentChildren`, `messageSubagentChild`, `interruptSubagentChild`, `subagent-control` | `ipc/session-runtime-handlers.ts` |
 | Goals, jobs, schedule | `readGoalSnapshot`, `killJob`, `listSchedules`, jobs/goal bridges | `ipc/session-runtime-handlers.ts` |
 | Workspace services | LSP, terminal backend, MCP bridge + resources, hooks, skills, workflow/PTC, `web_search` | engine tool inventory |
