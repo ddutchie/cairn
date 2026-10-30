@@ -504,10 +504,10 @@ export function AgentSettings() {
           })}
         />
 
-        {/* Session reminders (dsh schedule overlay, opt-in) */}
+        {/* Session reminders (opt-in) */}
         <SettingsRow
           label="Session reminders"
-          description="Let the agent set session-local reminders (schedule_create / schedule_list / schedule_delete) with an alarm pill in the chat header. Off by default; takes effect after an app restart. This is not Cairn's background heartbeat."
+          description="Let the agent set session-local reminders (schedule_create / schedule_list / schedule_cancel) with an alarm pill in the chat header. Off by default; takes effect after an app restart. This is not Cairn's background heartbeat."
         >
           <input
             id="scheduleEnabled"

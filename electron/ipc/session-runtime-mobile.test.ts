@@ -30,7 +30,6 @@ vi.mock("./engine-bridge", async (orig) => ({
   ...(await orig<typeof import("./engine-bridge")>()),
   runEngineChat: (...a: unknown[]) => runChatPrompt(...a),
 }));
-vi.mock("../cordis/agent-host", () => ({ getAgentHost: () => ({ isTurnRunning: () => false }) }));
 const cacheLlmConnection = vi.fn();
 const REF = "secret-ref:llm/openai";
 vi.mock("../lib/config-cache", () => ({

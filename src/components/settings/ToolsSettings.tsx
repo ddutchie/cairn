@@ -51,14 +51,6 @@ export function ToolsSettings() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  // Dev-mode flag (unpackaged builds) — gates the MCP dsh-path spike toggle.
-  const [isDev, setIsDev] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void window.electron?.isDev?.().then((v) => { if (live) setIsDev(v === true); }).catch(() => {});
-    return () => { live = false; };
-  }, []);
-
   useEffect(() => {
     if (activeWorkspaceId) fetchTools(activeWorkspaceId);
   }, [activeWorkspaceId, fetchTools]);
@@ -206,7 +198,7 @@ export function ToolsSettings() {
           </div>
         </div>
 
-        {addingMcp && <McpForm dev={isDev} onSave={handleSaveMcp} onCancel={() => setAddingMcp(false)} />}
+        {addingMcp && <McpForm onSave={handleSaveMcp} onCancel={() => setAddingMcp(false)} />}
 
         {mcpServers.length === 0 && !addingMcp && (
           <EmptyState icon={Server} title="No MCP servers configured yet." />
@@ -214,7 +206,7 @@ export function ToolsSettings() {
 
         {mcpServers.map((server) =>
           editingMcp === server.id ? (
-            <McpForm key={server.id} initial={server} dev={isDev} onSave={handleSaveMcp} onCancel={() => setEditingMcp(null)} />
+            <McpForm key={server.id} initial={server} onSave={handleSaveMcp} onCancel={() => setEditingMcp(null)} />
           ) : (
             <ToolRow
               key={server.id}
@@ -231,17 +223,6 @@ export function ToolsSettings() {
               onDelete={() => deleteMcpServer(server.id)}
             >
               <div className="flex flex-col gap-2">
-                {isDev && (
-                  <label className="flex items-center gap-2 text-[0.714rem] text-[var(--text-secondary)] cursor-pointer w-fit" title="Dev-only: route this server through dsh-mcp-client instead of the hand bridge. Parity is verified per turn with automatic fallback.">
-                    <input
-                      type="checkbox"
-                      checked={server.dshPath ?? false}
-                      onChange={(e) => { void saveMcpServer({ ...server, dshPath: e.target.checked }).catch((er) => setSaveError(er instanceof Error ? er.message : "Failed to update server.")); }}
-                      className="accent-[var(--accent)]"
-                    />
-                    Route via dsh <span className="text-[var(--text-tertiary)]">(dev)</span>
-                  </label>
-                )}
                 {server.transport !== "stdio" && server.authMode === "oauth" ? (
                   <McpAuthButton
                     serverId={server.id}

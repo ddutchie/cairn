@@ -241,13 +241,12 @@ export async function getExternalToolDefs(
     ? filterRequiredConfigs(scoped, requires)
     : scoped;
 
-  // Query each in-scope REMOTE server independently so one unreachable /
-  // failing server can't hide the tools of the healthy servers (or the custom
-  // services below). Stdio servers are served exclusively by the dsh path
-  // (mcp-dsh-bridge) and never appear in hand-bridge defs. mcpClient.listTools
-  // already degrades to [] internally, but allSettled also guards
-  // toRuntimeConfig / filterDisabledMcpDefs against an unexpected throw.
-  const remoteServers = mcpServers.filter((s) => s.transport !== "stdio");
+  // Query each in-scope server independently so one unreachable / failing
+  // server can't hide the tools of the healthy servers (or the custom
+  // services below). mcpClient.listTools already degrades to [] internally,
+  // but allSettled also guards toRuntimeConfig / filterDisabledMcpDefs
+  // against an unexpected throw.
+  const remoteServers = mcpServers;
   const mcpResults = await Promise.allSettled(
     remoteServers.map(async (s) => {
       const defs = await mcpClient.listTools(toRuntimeConfig(s));

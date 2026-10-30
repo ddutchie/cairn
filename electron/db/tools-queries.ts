@@ -69,8 +69,6 @@ interface McpServerBaseInput {
   enabled: boolean; source: string; communityId?: string; version?: string;
   /** Raw (un-namespaced) tool names disabled for this server, workspace-wide. */
   disabledTools?: string[];
-  /** Dev-only: route this server through dsh-mcp-client (parity spike). */
-  dshPath?: boolean;
 }
 
 export interface McpRemoteServerInput extends McpServerBaseInput {
@@ -133,7 +131,7 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
     remote?.oauthClientId ?? null, remote?.oauthRedirectUri ?? null, remote?.oauthClientIdRequired ? 1 : 0,
     stdio?.command ?? null, j(stdio?.args ?? []), j(stdio?.env ?? {}), stdio?.cwd ?? null,
     s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
-    j(s.disabledTools ?? []), s.dshPath ? 1 : 0, now, now,
+    j(s.disabledTools ?? []), 0, now, now,
   );
   return getMcpServerById(db, s.id)!;
 }

@@ -14,13 +14,11 @@ export function McpForm({
   initial,
   onSave,
   onCancel,
-  dev = false,
 }: {
   initial?: McpServerConfig;
   onSave: (s: Partial<McpServerConfig>, headerRows: HeaderRow[]) => void;
   onCancel: () => void;
   /** Dev builds only: show the dsh-path spike toggle (remote only). */
-  dev?: boolean;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -52,7 +50,6 @@ export function McpForm({
   const [cwd, setCwd] = useState(initial?.transport === "stdio" ? (initial.cwd ?? "") : "");
   const [claudeJson, setClaudeJson] = useState("");
   const [claudeError, setClaudeError] = useState<string | null>(null);
-  const [dshPath, setDshPath] = useState(initial?.dshPath ?? false);
 
   const valid = isStdio
     ? name.trim().length > 0 && command.trim().length > 0 && (cwd.trim() === "" || isAbsolutePath(cwd.trim()))
@@ -104,7 +101,6 @@ export function McpForm({
           command: command.trim(),
           args,
           cwd: cwd.trim() || undefined,
-          dshPath: undefined,
           enabled: initial?.enabled ?? false,
           source: initial?.source ?? "manual",
         },
@@ -124,7 +120,6 @@ export function McpForm({
         oauthClientId: authMode === "oauth" ? oauthClientId.trim() || undefined : undefined,
         oauthRedirectUri: authMode === "oauth" ? oauthRedirectUri.trim() || undefined : undefined,
         oauthClientIdRequired: authMode === "oauth" ? oauthClientIdRequired : undefined,
-        dshPath: dev ? dshPath : initial?.dshPath,
         enabled: initial?.enabled ?? false,
         source: initial?.source ?? "manual",
       },
@@ -272,14 +267,6 @@ export function McpForm({
             <HeaderEditor rows={rows} onChange={setRows} />
           )}
         </>
-      )}
-      {dev && !isStdio && (
-        <label className="flex items-start gap-2 text-xs text-[var(--text-secondary)] cursor-pointer rounded border border-dashed border-[var(--border)] px-2 py-1.5" title="Dev-only: route this server through dsh-mcp-client instead of the hand bridge. Parity is verified per turn with automatic fallback.">
-          <input type="checkbox" checked={dshPath} onChange={(e) => setDshPath(e.target.checked)} className="accent-[var(--accent)] mt-0.5" />
-          <span>
-            Route via dsh <span className="text-[var(--text-tertiary)]">(dev spike — parity-checked per turn, falls back automatically)</span>
-          </span>
-        </label>
       )}
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="ghost" size="sm" onClick={onCancel}>

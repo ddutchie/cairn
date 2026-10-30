@@ -27,7 +27,7 @@ import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importDshSession } from "../agent/session/dsh-import";
 import { isLocalEndpoint } from "../lib/llm";
-import { recordUsage } from "../agent/host-store";
+import { isScheduleEnabled, recordUsage } from "../agent/host-store";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
 import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared/agent/chat-approval";
@@ -368,6 +368,7 @@ export function forgetEngineSession(sessionId: string): void {
 export function shutdownEngine(): void {
   for (const id of host?.runningIds() ?? []) { host?.abort(id); forgetEngineSession(id); }
   lspManager?.disposeAll();
+  void import("../lib/mcp-client").then((m) => m.disposeAll()).catch(() => undefined);
 }
 
 export async function listEngineSubagents(ctx: DbContext, parent: string): Promise<{ entries: Array<{ id: string; mode: "continuable"; label: string; activity: "running" | "inactive"; live: boolean; hasChildren: boolean }>; parentAvailable: boolean }> {
@@ -440,7 +441,8 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
       create: (objective, maxRounds) => h.createGoal(a.sessionId, objective, maxRounds),
       update: (patch) => h.updateGoal(a.sessionId, patch),
     },
-    schedule: {
+    // Session reminders are opt-in (Settings → Agent).
+    schedule: !isScheduleEnabled() ? undefined : {
       list: () => h.schedules(a.sessionId),
       add: (prompt, at, kind) => h.addSchedule(a.sessionId, prompt, at, kind),
       cancel: (id) => h.cancelSchedule(a.sessionId, id),
