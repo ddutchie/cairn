@@ -360,6 +360,28 @@ child named, and reviewer verdicts record the child session.
 5. Input guard, two-stage reviewer, environment config, eval harness — behind a setting.
 6. Settings → Permissions UI (rules, presets, dry-run, environment, recently denied).
 
+### Spike status (2026-10-30)
+
+Step 1 is built in `electron/agent/` (events, rules, policy, gate, reviewer
+seam, tools, repair, loop) with 108 tests on `pi-ai`'s faux provider; nothing
+imports it yet, so the app is unaffected. Covered: allow / ask / deny paths,
+grants as rules, exact-command grants, headless deny, ask TTL, abort mid-ask
+with closed history, plan mode, protected paths, doom-loop (incl. yolo),
+parallel tools, crash-repair, reviewer allow / block / ask / failure,
+3-consecutive-block pause. Not yet: model-backed reviewer stages, input guard
+and taint, session log writer, context view / compaction, IPC adapter,
+subagents, rule persistence.
+
+Learned while building:
+
+* `pi-ai` validation **coerces** compatible scalars (`42` → `"42"`), so a call
+  that looks malformed can be valid; only structural errors reach the model as
+  "Invalid arguments".
+* An allow *preset* can be more specific than a user's allow rule, so "explicit
+  rules unlock protected paths" must filter by `source`, not take the best match.
+* The Gate must register an ask before the `approval/asked` event is yielded;
+  otherwise a transport that answers synchronously loses the race.
+
 ## 10. Open questions
 
 * Reviewer default model per provider when the user has only one configured.

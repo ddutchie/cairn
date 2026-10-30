@@ -1,0 +1,27 @@
+/**
+ * AgentEvent — the only thing the loop emits. The session log is an append of
+ * these events and every projection (live UI, replay, stats) is a fold over
+ * them. See docs/plans/agent-engine-design.md §1.
+ */
+import type { AssistantMessage, JsonObject } from "@earendil-works/pi-ai";
+import type { AskSpec } from "./gate";
+import type { GrantKind, RiskClass, Rule } from "./rules";
+
+export type DecisionSource = "profile" | "plan" | "rule" | "doom" | "protected" | "default" | "mode" | "human" | "reviewer" | "timeout" | "abort" | "headless";
+
+export type TurnEndReason = "stop" | "aborted" | "error" | "max-steps";
+
+export type AgentEvent =
+  | { type: "turn/start"; sessionId: string; profile: string }
+  | { type: "user/message"; content: string }
+  | { type: "assistant/delta"; text: string }
+  | { type: "assistant/thinking"; text: string }
+  | { type: "assistant/message"; message: AssistantMessage }
+  | { type: "tool/call"; callId: string; name: string; args: JsonObject; risk: RiskClass }
+  | { type: "approval/asked"; ask: AskSpec }
+  | { type: "approval/decided"; callId: string; approved: boolean; by: DecisionSource; reason?: string; ruleId?: string; grant?: GrantKind }
+  | { type: "rule/added"; rule: Rule }
+  | { type: "tool/result"; callId: string; name: string; text: string; isError: boolean }
+  | { type: "auto/paused"; reason: string }
+  | { type: "error"; message: string }
+  | { type: "turn/end"; reason: TurnEndReason };
