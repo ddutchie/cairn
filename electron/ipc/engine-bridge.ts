@@ -45,8 +45,8 @@ import { makeSessionProjection } from "../../shared/agent/session-projection";
 export { routeFromConfig };
 
 export function engineEnabled(): boolean {
-  if (process.env.CAIRN_AGENT_ENGINE) return process.env.CAIRN_AGENT_ENGINE === "native";
-  return (getCachedConfig().agentConfig as { engine?: string } | undefined)?.engine === "native";
+  if (process.env.CAIRN_AGENT_ENGINE) return process.env.CAIRN_AGENT_ENGINE !== "cordis";
+  return (getCachedConfig().agentConfig as { engine?: string } | undefined)?.engine !== "cordis";
 }
 
 /** Legacy approval modes onto engine modes. `auto` here keeps its old meaning: allow everything except EXTERNAL. */
