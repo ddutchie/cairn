@@ -1,3 +1,5 @@
+> **Historical.** This describes the retired DeepSeek harness (Cordis / `dsh-*`), removed in v3.1.8. The current engine is in `electron/agent/` (see `docs/plans/agent-engine-design.md`).
+
 # Cairn Cordis Runtime — Rollout Plan
 
 > **Superseded as a reference** — the chronological plan below is retained as

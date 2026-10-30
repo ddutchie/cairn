@@ -101,7 +101,7 @@ export function writableRoots(cwd: string, extra: string[] = [], home = os.homed
 const q = (s: string) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
 /** Seatbelt policy: everything allowed except writes outside `roots` (and the network when blocked). */
-export function seatbeltProfile(roots: string[], blockNetwork = false): string {
+export function seatbeltProfile(roots: string[], blockNetwork = false, readOnly: string[] = []): string {
   const lines = [
     "(version 1)",
     "(allow default)",
@@ -110,17 +110,28 @@ export function seatbeltProfile(roots: string[], blockNetwork = false): string {
     '  (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper")',
     '  (regex #"^/dev/(tty|ttys[0-9]+|pty[a-z0-9]+|fd/[0-9]+)$"))',
   ];
+  // Carve-outs inside writable roots (last match wins): places where a write becomes code that later runs unconfined.
+  if (readOnly.length) lines.push(`(deny file-write* ${readOnly.map((r) => `(subpath ${q(r)})`).join(" ")})`);
   if (blockNetwork) lines.push("(deny network*)", '(allow network* (remote unix-socket))');
   return lines.join("\n");
 }
 
-export function bwrapArgs(roots: string[], blockNetwork = false, pty = false): string[] {
+export function bwrapArgs(roots: string[], blockNetwork = false, pty = false, readOnly: string[] = []): string[] {
   const args = ["--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--proc", "/proc"];
   for (const r of roots) if (fs.existsSync(r)) args.push("--bind", r, r);
+  for (const r of readOnly) if (fs.existsSync(r)) args.push("--ro-bind", r, r);
   args.push("--die-with-parent");
   if (!pty) args.push("--new-session");
   if (blockNetwork) args.push("--unshare-net");
   return args;
+}
+
+/** Inside the writable roots, these stay read-only: git hooks and tool shims that later run outside the sandbox. */
+export function readOnlyCarveOuts(roots: string[], cwd: string, home = os.homedir()): string[] {
+  const out = [path.join(home, ".cargo", "bin")];
+  for (const r of roots) out.push(path.join(r, ".git", "hooks"));
+  for (const d of gitDirs(cwd)) out.push(path.join(d, "hooks"));
+  return [...new Set(out.map(real))].filter((p) => roots.some((r) => p === r || p.startsWith(r + path.sep)));
 }
 
 /** Wrap a command so it runs confined; returns it unchanged when the sandbox is off or unavailable. */
@@ -129,8 +140,9 @@ export function wrapSandboxed(cmd: Spawnable, cwd: string, opts: SandboxOptions,
   const backend = backendFor(platform);
   if (backend === "none") return cmd;
   const roots = writableRoots(opts.root ?? cwd, opts.writableRoots);
-  if (backend === "seatbelt") return { file: SEATBELT, args: ["-p", seatbeltProfile(roots, opts.blockNetwork), cmd.file, ...cmd.args] };
-  return { file: "bwrap", args: [...bwrapArgs(roots, opts.blockNetwork, opts.pty), "--chdir", cwd, cmd.file, ...cmd.args] };
+  const ro = readOnlyCarveOuts(roots, opts.root ?? cwd);
+  if (backend === "seatbelt") return { file: SEATBELT, args: ["-p", seatbeltProfile(roots, opts.blockNetwork, ro), cmd.file, ...cmd.args] };
+  return { file: "bwrap", args: [...bwrapArgs(roots, opts.blockNetwork, opts.pty, ro), "--chdir", cwd, cmd.file, ...cmd.args] };
 }
 
 /** Hint appended to a failed command that looks like a sandbox write denial. */

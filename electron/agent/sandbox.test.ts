@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { bwrapArgs, sandboxDenialHint, sandboxStatus, seatbeltProfile, wrapSandboxed, writableRoots } from "./sandbox";
+import { bwrapArgs, readOnlyCarveOuts, sandboxDenialHint, sandboxStatus, seatbeltProfile, wrapSandboxed, writableRoots } from "./sandbox";
 import { decide, type PolicyState } from "./policy";
 import { offeredGrants } from "./rules";
 
@@ -89,5 +89,22 @@ describe("sandbox root", () => {
   it("bwrap keeps the controlling terminal for PTYs", () => {
     expect(bwrapArgs(["/tmp"])).toContain("--new-session");
     expect(bwrapArgs(["/tmp"], false, true)).not.toContain("--new-session");
+  });
+});
+
+describe("carve-outs", () => {
+  it("keeps git hooks read-only inside the writable root", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-g-"));
+    fs.mkdirSync(path.join(work, ".git", "hooks"), { recursive: true });
+    const roots = writableRoots(work);
+    const ro = readOnlyCarveOuts(roots, work);
+    expect(ro).toContain(path.join(fs.realpathSync(work), ".git", "hooks"));
+    expect(seatbeltProfile(roots, false, ro)).toContain(`(subpath "${path.join(fs.realpathSync(work), ".git", "hooks")}")`);
+    if (process.platform === "darwin") {
+      const run = (cmd: string) => { const w = wrapSandboxed({ file: "/bin/bash", args: ["-c", cmd] }, work, { mode: "workspace-write" }); return spawnSync(w.file, w.args, { cwd: work, encoding: "utf8" }); };
+      expect(run("echo x > ok.txt").status).toBe(0);
+      expect(run("echo x > .git/hooks/pre-commit").status).not.toBe(0);
+    }
+    fs.rmSync(work, { recursive: true, force: true });
   });
 });

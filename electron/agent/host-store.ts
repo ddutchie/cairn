@@ -280,6 +280,7 @@ export interface HostStore {
     projectId: string,
     name: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): ReturnType<typeof executeExternalToolType>;
   getExternalMcpServerMeta(
     workspaceId: string,
@@ -510,9 +511,10 @@ export function createHostStore(db: Database.Database): HostStore {
       projectId: string,
       name: string,
       args: Record<string, unknown>,
+      signal?: AbortSignal,
     ): ReturnType<typeof executeExternalToolType> {
       const { executeExternalTool } = await import("../lib/external-tools");
-      return executeExternalTool(db, workspaceId, projectId, name, args);
+      return executeExternalTool(db, workspaceId, projectId, name, args, signal);
     },
 
     async getExternalMcpServerMeta(

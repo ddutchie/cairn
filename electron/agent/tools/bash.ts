@@ -17,7 +17,7 @@ export interface BashDeps {
   /** When set, `run_in_background` is offered and jobs are owned by `jobs.owner`. */
   jobs?: { registry: JobRegistry; owner: string };
   /** Confinement for commands; omitted means unconfined (tests, automation-dev). */
-  sandbox?: SandboxOptions;
+  sandbox?: SandboxOptions | (() => SandboxOptions);
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -31,6 +31,8 @@ function shellFor(command: string): { file: string; args: string[] } {
 }
 
 export function bashTool(deps: BashDeps): AgentTool {
+  // Read per call so toggling the setting applies to the next command, not the next session.
+  const sandboxOf = (): SandboxOptions | undefined => (typeof deps.sandbox === "function" ? deps.sandbox() : deps.sandbox);
   return defineTool({
     name: "bash",
     description: process.platform === "win32"
@@ -44,13 +46,13 @@ export function bashTool(deps: BashDeps): AgentTool {
       workdir: Type.Optional(Type.String({ description: "Working directory; relative paths resolve against the session working directory." })),
       unsandboxed: Type.Optional(Type.Boolean({ description: "Run outside the sandbox (which limits writes to the working directory and temp dirs). Only after a sandboxed attempt failed because of it; the user is asked every time." })),
     }),
-    risk: (a) => ({ class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined, escalation: a.unsandboxed && deps.sandbox && sandboxStatus(deps.sandbox.mode).active ? true : undefined }),
+    risk: (a) => ({ class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined, escalation: a.unsandboxed && sandboxOf() && sandboxStatus(sandboxOf()!.mode).active ? true : undefined }),
     preview: (a) => a.command,
     execute(a, ctx) {
       const cwd = a.workdir ? path.resolve(deps.cwd, a.workdir) : deps.cwd;
       const timeout = Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.floor(a.timeoutMs ?? DEFAULT_TIMEOUT_MS)));
       const raw = shellFor(a.command);
-      const { file, args } = deps.sandbox && !a.unsandboxed ? wrapSandboxed(raw, cwd, { ...deps.sandbox, root: deps.cwd }) : raw;
+      const { file, args } = sandboxOf() && !a.unsandboxed ? wrapSandboxed(raw, cwd, { ...sandboxOf()!, root: deps.cwd }) : raw;
       if (a.run_in_background && deps.jobs) {
         const job = deps.jobs.registry.start({ owner: deps.jobs.owner, label: a.description || a.command, file, args, cwd, env: deps.env });
         return Promise.resolve(ok(`Started background job ${job.id}. Use job_output to read it and job_kill to stop it.`));
@@ -76,7 +78,7 @@ export function bashTool(deps: BashDeps): AgentTool {
         child.on("error", (err) => done(fail(`Failed to start shell: ${err.message}`)));
         child.on("close", (code, signal) => {
           const body = clampMiddle(out.trimEnd(), MAX_OUTPUT_CHARS);
-          const hint = code !== 0 && deps.sandbox && !a.unsandboxed ? sandboxDenialHint(out) : undefined;
+          const hint = code !== 0 && sandboxOf() && !a.unsandboxed ? sandboxDenialHint(out) : undefined;
           if (ctx.signal?.aborted) return done(fail(`${body}\n[aborted]`.trim()));
           if (timedOut) return done(fail(`${body}\n[timed out after ${timeout}ms and was killed]`.trim()));
           if (code === 0) return done(ok(body || "(no output)"));

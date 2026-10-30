@@ -7,7 +7,7 @@
   "scripts": {
     "test": "node scripts/generate-licenses.js && node scripts/generate-features.js && npm run compile && vitest run",
     "test:fast": "vitest run",
-    "test:live": "CAIRN_LIVE_TESTS=1 CORDIS_LIVE=1 vitest run",
+    "test:live": "CAIRN_LIVE_TESTS=1 CAIRN_LIVE=1 vitest run",
     "test:unit": "vitest run --project node",
     "bench:graph": "vitest bench --project node --run electron/db/bench/graph.bench.ts",
     "test:component": "vitest run --project component",

@@ -8,10 +8,10 @@
  * webContents.capturePage() and piped into ffmpeg at a high bitrate, bypassing
  * Playwright's lossy recordVideo encoder entirely, so the source is crisp.
  *
- * Requires the live model bridge (CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local), the
+ * Requires the live model bridge (CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local), the
  * Next dev server, and ffmpeg. Run:
  *   npm run compile
- *   CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local node --experimental-strip-types scripts/demo-record.ts
+ *   CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local node --experimental-strip-types scripts/demo-record.ts
  *
  * Output: <repo>/electron-recordings/demo.mp4 (set RECORD_DIR to change).
  */
@@ -21,8 +21,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
-const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
+const BASE = process.env.CAIRN_TEST_BASE_URL ?? "http://localhost:3042/v1";
+const MODEL = process.env.CAIRN_TEST_MODEL ?? "claude-sonnet-4-5";
 const MAIN = path.resolve("dist-electron/main.js");
 const RECORD_DIR = process.env.RECORD_DIR ?? path.resolve("electron-recordings");
 // Match the Electron BrowserWindow's 1400x900 exactly (no letterboxing/borders).
@@ -31,8 +31,8 @@ const H = 900;
 // Capture rate — a UI demo is fine around 12fps; bump for smoother motion.
 const FPS = 12;
 
-if (process.env.CORDIS_LIVE !== "1") {
-  console.error("Set CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local to record a demo (needs the model bridge).");
+if (process.env.CAIRN_LIVE !== "1") {
+  console.error("Set CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local to record a demo (needs the model bridge).");
   process.exit(1);
 }
 

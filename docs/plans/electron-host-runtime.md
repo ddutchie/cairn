@@ -1,3 +1,5 @@
+> **Historical.** This describes the retired DeepSeek harness (Cordis / `dsh-*`), removed in v3.1.8. The current engine is in `electron/agent/` (see `docs/plans/agent-engine-design.md`).
+
 # Running dsh inside Electron — runtime-lookup fixes and the host-process plan
 
 > **Status (2026-09-23):** Stage 1 fixes landed in 3.0.9. Phase 0 implementation is complete on `feat/agent-host-facade`: direct `getContext()` callers, shared runtime state, automations, runtime-root configuration, turn lifecycle, plugin lifecycle, and quit/dev lifecycle now cross `AgentHost`; the boundary guard and automated checks pass. Cross-OS installed/live verification remains a release-matrix gate. Stage 2 host process is not started.

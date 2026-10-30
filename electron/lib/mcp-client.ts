@@ -23,6 +23,7 @@ import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import * as os from "node:os";
 import { resolveSecrets } from "./secure-store";
 import { resolveStdioEnv, validateStdioServer } from "./mcp-stdio";
 import { isOAuthServer, makeProvider } from "./mcp-oauth";
@@ -127,7 +128,9 @@ function makeTransport(cfg: McpServerRuntimeConfig) {
       command: cfg.command.trim(),
       args: cfg.args ?? [],
       env: resolveStdioEnv(cfg.env),
-      cwd: cfg.cwd?.trim() || undefined,
+      // Never inherit Electron's own cwd (the app bundle when packaged).
+      cwd: cfg.cwd?.trim() || os.homedir(),
+      stderr: "pipe",
     });
   }
   const url = new URL(cfg.baseUrl);
@@ -242,9 +245,12 @@ async function openConnection(cfg: McpServerRuntimeConfig, signature: string, st
     { capabilities: {} }
   );
   const transport = makeTransport(cfg);
+  // Piped stderr must be drained or a chatty server blocks; the tail also explains startup failures.
+  const stderrTail = captureStderrTail(transport instanceof StdioClientTransport ? transport.stderr : undefined);
   try {
     await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, `MCP connect to ${cfg.id}`);
-  } catch (e) {
+  } catch (e0) {
+    const e = transport instanceof StdioClientTransport ? withStderr(e0, stderrTail()) : e0;
     // A timed-out or failed connect must not leave the child process behind.
     await client.close().catch(() => undefined);
     await transport.close().catch(() => undefined);
@@ -419,7 +425,8 @@ export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<Li
 export async function callTool(
   cfg: McpServerRuntimeConfig,
   namespaced: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const parsed = parseToolName(namespaced);
   if (!parsed || parsed.serverId !== cfg.id) {
@@ -428,7 +435,7 @@ export async function callTool(
   try {
     const conn = await connect(cfg);
     const res = await withTimeout(
-      conn.client.callTool({ name: parsed.toolName, arguments: args }),
+      conn.client.callTool({ name: parsed.toolName, arguments: args }, undefined, { signal }),
       CALL_TIMEOUT_MS,
       `MCP callTool ${namespaced}`
     );

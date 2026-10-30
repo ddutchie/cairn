@@ -354,7 +354,8 @@ export async function executeExternalTool(
   workspaceId: string,
   projectId: string,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
 
@@ -372,7 +373,8 @@ export async function executeExternalTool(
     return mcpClient.callTool(
       toRuntimeConfig(server),
       name,
-      args
+      args,
+      signal,
     );
   }
 

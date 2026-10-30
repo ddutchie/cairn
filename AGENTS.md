@@ -26,7 +26,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Shell sandbox
 
-`electron/agent/sandbox.ts` wraps agent shell commands (bash, background jobs, model terminals) so writes stay within the cwd + temp/cache dirs: macOS `sandbox-exec` seatbelt, Linux `bwrap`, none on Windows. Mode lives in `agentConfig.sandbox` (default `workspace-write`; read via `getSandboxMode()` in host-store). `bash`'s `unsandboxed` param sets `RiskInfo.escalation`, which `decide()` always turns into an ask (even in yolo) with no grants offered. MCP servers and the `workflow` tool are not sandboxed.
+`electron/agent/sandbox.ts` wraps agent shell commands (bash, background jobs, model terminals) so writes stay within the cwd + temp/cache dirs: macOS `sandbox-exec` seatbelt, Linux `bwrap`, none on Windows. Mode lives in `agentConfig.sandbox` (default `workspace-write`; read via `getSandboxMode()` in host-store). `bash`'s `unsandboxed` param sets `RiskInfo.escalation`, which `decide()` always turns into an ask (even in yolo) with no grants offered. `.git/hooks` and `~/.cargo/bin` stay read-only inside it; the mode is read per command. MCP servers and the `workflow` tool are not sandboxed.
 
 ## Build
 

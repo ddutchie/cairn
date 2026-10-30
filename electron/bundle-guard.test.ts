@@ -191,7 +191,7 @@ function parseEsbuildExternals(): Set<string> {
   const re = /--external:([^\s]+)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(compileCmd)) !== null) out.add(m[1]);
-  // scripts/compile-electron.js — `external: [ "electron", "koffi", … ]`.
+  // scripts/compile-electron.js — `external: [ "electron", "better-sqlite3", … ]`.
   // Quoted strings inside an `external:` array literal.
   try {
     const compileJs = fs.readFileSync(
@@ -202,7 +202,7 @@ function parseEsbuildExternals(): Set<string> {
     let em: RegExpExecArray | null;
     while ((em = extRe.exec(compileJs)) !== null) {
       // Strip line + block comments — they may contain quoted strings
-      // (e.g. "Cannot find the native Koffi module") that aren't externals.
+      // that aren't externals.
       const code = em[1]
         .replace(/\/\/.*$/gm, "")
         .replace(/\/\*[\s\S]*?\*\//g, "");
@@ -221,9 +221,8 @@ function parseEsbuildExternals(): Set<string> {
  * `node_modules/` — i.e. all `node_modules/<pkg>` paths in `files:` and
  * `asarUnpack:`, ignoring negation patterns. Handles scoped packages
  * (`@scope/name`) in addition to bare names (`better-sqlite3`), plus
- * scope-wide globs (`node_modules/@koromix/**`) which ship every package
- * under that scope (used for koffi's per-platform `@koromix/koffi-*`
- * binaries).
+ * scope-wide globs (`node_modules/@scope/**`) which ship every package
+ * under that scope (e.g. per-platform binary packages).
  */
 function parseShippedPackages(): Set<string> {
   const ymlPath = path.join(ROOT, "electron-builder.yml");
@@ -244,8 +243,7 @@ function parseShippedPackages(): Set<string> {
     for (const pkg of ALLOWED_EXTERNALS) {
       if (pkg.startsWith(`${scope}/`)) out.add(pkg);
     }
-    // koffi's binaries live under @koromix but are resolved via an absolute
-    // path built at runtime (not a bare `require()`), so they never appear
+    // Binaries resolved via an absolute path built at runtime never appear
     // in ALLOWED_EXTERNALS — mark the scope itself as shipped so the
     // SHIPPED_NATIVE check below can accept them.
     out.add(`${scope}/*`);

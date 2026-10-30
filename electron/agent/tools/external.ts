@@ -22,9 +22,9 @@ export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]
     // Leaves the device through a connected service; asks unless a rule (e.g. `mcp__github__*`) allows it.
     risk: () => ({ class: "EXTERNAL" }),
     preview: (args) => approvalPreview(name, args),
-    async execute(args) {
+    async execute(args, ctx) {
       try {
-        return { content: renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>)) };
+        return { content: renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>, ctx.signal)) };
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }

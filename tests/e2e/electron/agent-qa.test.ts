@@ -1,23 +1,23 @@
 /**
- * Cairn — Cordis QA e2e (boots the REAL Electron app)
+ * Cairn — agent QA e2e (boots the REAL Electron app)
  *
- * Drives each Cordis loop end-to-end through the actual app — renderer → preload
- * → main process → Cordis engine → events back — against the live model bridge.
+ * Drives each agent loop end-to-end through the actual app — renderer → preload
+ * → main process → agent engine → events back — against the live model bridge.
  * This is the "confirm everything works in the real app" tier that sits between
- * the unit/live tests (which call runCordisLoop directly) and the mocked-IPC
+ * the unit/live tests (which call the chat loop directly) and the mocked-IPC
  * browser smoke tests (which never run a loop).
  *
  * Loops covered:
- *   - Chat loop:      window.electron.session.prompt → runCordisLoop → raw turn/end
-  *   - Coding loop:    window.electron.session.prompt → runCordisCodingLoop → pi-agent:done
+ *   - Chat loop:      window.electron.session.prompt → the chat loop → raw turn/end
+  *   - Coding loop:    window.electron.session.prompt → the coding loop → pi-agent:done
  *   - Heartbeat loop: automation.runNow → runAutomationNow → runAutomation → finished
  *
- * Gated behind CORDIS_LIVE=1 (+ CORDIS_DUMMY_KEY=local), like the unit live
+ * Gated behind CAIRN_LIVE=1 (+ CAIRN_DUMMY_KEY=local), like the unit live
  * tests. Without the env every test is a no-op skip so `test:e2e` / CI is safe.
  *
  * Run:
  *   npm run compile
- *   CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npm run test:e2e:electron
+ *   CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local npm run test:e2e:electron
  */
 
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
@@ -25,12 +25,12 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
-const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
+const BASE = process.env.CAIRN_TEST_BASE_URL ?? "http://localhost:3042/v1";
+const MODEL = process.env.CAIRN_TEST_MODEL ?? "claude-sonnet-4-5";
 
 // The env gate — checked once. When the live bridge isn't available the whole
 // suite is skipped.
-const LIVE = process.env.CORDIS_LIVE === "1" && process.env.CORDIS_DUMMY_KEY !== undefined;
+const LIVE = process.env.CAIRN_LIVE === "1" && process.env.CAIRN_DUMMY_KEY !== undefined;
 
 const MAIN = path.join(__dirname, "..", "..", "..", "dist-electron", "main.js");
 
@@ -69,8 +69,8 @@ async function bootApp(): Promise<{ app: ElectronApplication; page: Page; worksp
     args: [MAIN],
     env: {
       ...(process.env as Record<string, string>),
-      CORDIS_LIVE: process.env.CORDIS_LIVE ?? "1",
-      CORDIS_DUMMY_KEY: process.env.CORDIS_DUMMY_KEY ?? "local",
+      CAIRN_LIVE: process.env.CAIRN_LIVE ?? "1",
+      CAIRN_DUMMY_KEY: process.env.CAIRN_DUMMY_KEY ?? "local",
       CAIRN_USER_DATA_DIR: userData,
       NODE_ENV: "development",
     },
@@ -133,7 +133,7 @@ async function seedProject(page: Page, workspace: string): Promise<{ workspaceId
     "Readme",
     "note",
     "",
-    "# QA Project\n\nThis is a small fixture project used to verify the Cordis loops.\n\n- Key fact: Cairn is a notes + tasks desktop app.\n- The chat loop should summarise these bullets.\n- Agent loop can read this file.\n- Heartbeat loop can scan it.",
+    "# QA Project\n\nThis is a small fixture project used to verify the agent loops.\n\n- Key fact: Cairn is a notes + tasks desktop app.\n- The chat loop should summarise these bullets.\n- Agent loop can read this file.\n- Heartbeat loop can scan it.",
   );
 
   // Seed a couple of tasks so task-related prompts return real content. The
@@ -143,7 +143,7 @@ async function seedProject(page: Page, workspace: string): Promise<{ workspaceId
     .filter((c) => c.projectId === project.id);
   const colByName = Object.fromEntries(cols.map((c) => [c.name, c.id]));
   const makeCard = s3.createCard as (cid: string, pid: string, title: string, extras?: { dueDate?: string; assignee?: string }) => unknown;
-  if (colByName["In Progress"]) makeCard(colByName["In Progress"], project.id, "Port chat loop onto Cordis runtime", { dueDate: "2026-08-22", assignee: "Sam" });
+  if (colByName["In Progress"]) makeCard(colByName["In Progress"], project.id, "Port chat loop onto agent runtime", { dueDate: "2026-08-22", assignee: "Sam" });
   if (colByName["Todo"]) makeCard(colByName["Todo"], project.id, "Write onboarding copy", { dueDate: "2026-08-25" });
   if (colByName["Done"]) makeCard(colByName["Done"], project.id, "Ship local-first notes", { assignee: "Maya" });
 
@@ -173,8 +173,8 @@ async function configureLlm(page: Page): Promise<void> {
 
 // ── Suite ────────────────────────────────────────────────────────────────────
 
-test.describe("Cordis loops in the real Electron app", () => {
-  test.skip(!LIVE, "Requires the live model bridge (CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local)");
+test.describe("agent loops in the real Electron app", () => {
+  test.skip(!LIVE, "Requires the live model bridge (CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local)");
 
   let app: ElectronApplication;
   let page: Page;

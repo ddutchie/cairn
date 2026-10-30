@@ -1,3 +1,5 @@
+> **Historical.** This describes the retired DeepSeek harness (Cordis / `dsh-*`), removed in v3.1.8. The current engine is in `electron/agent/` (see `docs/plans/agent-engine-design.md`).
+
 # dsh `0.1.2-rc.1` Evaluation — Upgrade Plan for Cairn v3.0.x
 
 > **Status:** landed on `ddutchie/dsh_012` at `0.1.2-rc.1` — compile + `type-check:all` + full Electron suite green, **live sweep done** (see §5.1). **Continuable-subagent full slice implemented** (see §9); PR-2 (Schedule opt-in) not started.  

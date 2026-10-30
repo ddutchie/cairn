@@ -458,7 +458,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
       }),
     },
     external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
-    fs: { cwd: a.cwd, rgPath, observed, sandbox: { mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }, jobs: { registry: getJobRegistry(), owner: a.sessionId } },
+    fs: { cwd: a.cwd, rgPath, observed, sandbox: () => ({ mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }), jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
     lsp: role === "automation-dev" ? undefined : { manager: getLsp(), cwd: a.cwd },
     terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },
