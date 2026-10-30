@@ -16,7 +16,6 @@ import { planTools, type PlanDeps } from "./plan";
 import { subagentTools, type SubagentDeps } from "./subagent";
 import { sessionTools, type SessionToolDeps } from "./sessions";
 import { skillTool } from "./skill";
-import { DEFER_THRESHOLD_TOKENS, toolSearchTool, toolTokens } from "./tool-search";
 import { workflowTools } from "./workflow";
 import { terminalTools, type TerminalDeps } from "./terminal";
 import { todoTool, type TodoItem } from "./todo";
@@ -49,13 +48,7 @@ export interface ToolsetDeps {
 export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
   const tools: AgentTool[] = [];
   if (d.cairn) tools.push(...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
-  let live: AgentTool[] = tools;
-  if (d.external) {
-    const external = await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return [] as AgentTool[]; });
-    // Big connector surfaces cost every request; offer names only and let the model load what it needs.
-    if (toolTokens(external) > DEFER_THRESHOLD_TOKENS) tools.push(toolSearchTool(external, () => live));
-    else tools.push(...external);
-  }
+  if (d.external) tools.push(...await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return []; }));
   if (d.external) {
     const extras = await externalExtras(d.external).catch((err) => { console.error("[agent] MCP extras unavailable:", err); return undefined; });
     if (extras) { tools.push(...extras.tools); if (extras.instructions) d.onInstructions?.(extras.instructions); }
@@ -81,8 +74,7 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
   }
   if (d.plan && d.surface === "coding") tools.push(...planTools(d.plan));
   const seen = new Set<string>();
-  live = tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
-  return live;
+  return tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
 }
 
 export * from "./bash";
