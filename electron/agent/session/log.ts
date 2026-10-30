@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent } from "../events";
 import { isPersisted, parseLog, serializeLine, SESSION_FORMAT, type ParsedLog, type SessionHeader, type SessionRecord } from "./format";
@@ -68,4 +68,16 @@ export async function openSession(
     },
   };
   return { writer, existing };
+}
+
+/** Write a complete log in one atomic step (temp file + rename). Used by importers; refuses to overwrite. */
+export async function writeImportedSession(root: string, header: SessionHeader, records: readonly SessionRecord[]): Promise<boolean> {
+  const dir = sessionDir(root, header.id);
+  const file = path.join(dir, SESSION_FILE);
+  if (await readSession(root, header.id)) return false;
+  await mkdir(dir, { recursive: true });
+  const tmp = `${file}.tmp`;
+  await writeFile(tmp, serializeLine(header) + records.map(serializeLine).join(""));
+  await rename(tmp, file);
+  return true;
 }

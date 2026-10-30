@@ -1,0 +1,113 @@
+import { mkdtemp, mkdir, writeFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { zstdCompressSync } from "node:zlib";
+import { describe, expect, it } from "vitest";
+import { importDshLog, importDshTree, readDshLogFile } from "./dsh-import";
+import { historyFromRecords, foldState } from "./history";
+import { readSession } from "./log";
+
+const jsonl = (...rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join("\n");
+const user = (seq: number, text: string, source: unknown = { kind: "user" }) => ({ type: "user/message", seq, time: seq, data: { content: [{ type: "text", text }], source } });
+
+// v0: tool-result wrapped in content[0]; v4: role "tool" message. Both appear on disk.
+const v0 = jsonl(
+  { type: "session", version: 0, id: "s0", createdAt: 5, cwd: "/w" },
+  { type: "turn/start", seq: 1, time: 1, data: { turn: 1 } },
+  user(2, "hi"),
+  user(3, "<system-reminder>", { kind: "agent-instructions" }),
+  { type: "session/title", seq: 4, time: 4, data: { title: "Greeting" } },
+  { type: "assistant/message", seq: 5, time: 5, data: { message: { role: "assistant", content: [{ type: "reasoning", text: "hmm" }, { type: "tool-call", id: "c1", name: "get", arguments: "{\"a\":1}" }], source: { kind: "model", provider: "p", model: "m", replayState: { response: { api: "openai-completions", stopReason: "toolUse" }, blocks: [{ thinkingSignature: "reasoning_content" }, {}] } } }, usage: { inputTokens: 7, outputTokens: 3 } } },
+  { type: "tool/call", seq: 6, time: 6, data: { callId: "c1", name: "get", arguments: "{\"a\":1}" } },
+  { type: "tool/result", seq: 7, time: 7, data: { message: { source: { callId: "c1" }, content: [{ type: "tool-result", toolCallId: "c1", content: [{ type: "text", text: "result!" }] }] } } },
+  { type: "assistant/message", seq: 8, time: 8, data: { message: { role: "assistant", content: [{ type: "text", text: "done" }], source: { provider: "p", model: "m" } } } },
+  { type: "turn/end", seq: 9, time: 9, data: { reason: { kind: "completed" } } },
+);
+const v4 = jsonl(
+  { type: "session", version: 4, id: "s4", createdAt: 5 },
+  { type: "turn/start", seq: 1, time: 1, data: { turn: 1 } },
+  user(2, "q"),
+  { type: "tool/call", seq: 3, time: 3, data: { callId: "c", name: "t", arguments: "{}" } },
+  { type: "tool/result", seq: 4, time: 4, data: { message: { role: "tool", toolCallId: "c", isError: true, content: [{ type: "text", text: "bad" }] } } },
+  { type: "turn/end", seq: 5, time: 5, data: { reason: { kind: "aborted" } } },
+);
+
+describe("importDshLog", () => {
+  it("maps a v0 log: user text only, thinking signature, usage, wrapped tool result", () => {
+    const out = importDshLog(v0)!;
+    expect(out.header).toMatchObject({ id: "s0", cwd: "/w", title: "Greeting", origin: "dsh-import" });
+    const msgs = historyFromRecords(out.records);
+    expect(msgs.map((m) => m.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
+    const a = msgs[1] as { content: unknown[]; usage: { input: number }; stopReason: string };
+    expect(a.content).toEqual([{ type: "thinking", thinking: "hmm", thinkingSignature: "reasoning_content" }, { type: "toolCall", id: "c1", name: "get", arguments: { a: 1 } }]);
+    expect(a.usage.input).toBe(7);
+    expect(a.stopReason).toBe("toolUse");
+    expect(msgs[2]).toMatchObject({ toolCallId: "c1", toolName: "get", isError: false, content: [{ text: "result!" }] });
+    expect(foldState(out.records).lastEnd).toBe("stop");
+  });
+
+  it("maps a v4 log: role-tool results, errors and abort", () => {
+    const out = importDshLog(v4)!;
+    const msgs = historyFromRecords(out.records);
+    expect(msgs.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ text: "bad" }] });
+    expect(foldState(out.records).lastEnd).toBe("aborted");
+  });
+
+  it("rejects non-session input and tolerates garbage lines", () => {
+    expect(importDshLog("{\"type\":\"turn/start\"}")).toBeUndefined();
+    expect(importDshLog(`${v4}\nnot json`)!.report.skipped).toBe(1);
+  });
+});
+
+describe("importDshTree", () => {
+  it("imports zstd logs idempotently and never touches the source", async () => {
+    const src = await mkdtemp(path.join(os.tmpdir(), "dsh-src-"));
+    const dst = await mkdtemp(path.join(os.tmpdir(), "dsh-dst-"));
+    await mkdir(path.join(src, "proj", "abc"), { recursive: true });
+    await writeFile(path.join(src, "proj", "abc", "session.jsonl.zstd"), zstdCompressSync(Buffer.from(v0)));
+    await writeFile(path.join(src, "proj", "abc", "session.lock"), "x");
+    const first = await importDshTree(src, dst);
+    expect(first.imported).toEqual(["abc"]);
+    expect((await readSession(dst, "abc"))?.header.title).toBe("Greeting");
+    const second = await importDshTree(src, dst);
+    expect(second).toMatchObject({ imported: [], existing: ["abc"] });
+    expect(await readdir(path.join(src, "proj", "abc"))).toHaveLength(2);
+  });
+});
+
+// Opt-in: compare against the user's real dsh sessions using the OLD replay pipeline.
+const REAL = process.env.CAIRN_DSH_SESSIONS_DIR;
+describe.skipIf(!REAL || !REAL.split(path.delimiter).some((r) => existsSync(r)))("replay diff vs real dsh sessions", () => {
+  it("model-visible conversation is identical", async () => {
+    const { deriveEventMessage } = await import("@deepseek-ai/dsh-session");
+    const roots = REAL!.split(path.delimiter);
+    let checked = 0;
+    for (const root of roots) {
+      for (const proj of await readdir(root)) {
+        for (const id of await readdir(path.join(root, proj))) {
+          const dir = path.join(root, proj, id);
+          const name = ["session.v4.jsonl.zstd", "session.jsonl.zstd"].find((n) => existsSync(path.join(dir, n)));
+          if (!name) continue;
+          const text = await readDshLogFile(path.join(dir, name));
+          const events = text.trim().split("\n").map((l) => JSON.parse(l)).filter((e) => typeof e.seq === "number" && e.surfaceOp === "append" && (e.type === "user/message" || e.type === "assistant/message"));
+          type D = { role: string; source?: { kind?: string }; content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: string; toolCallId?: string; content?: Array<{ text?: string }> }> };
+          const flat = (events.map((e) => deriveEventMessage(e)).filter(Boolean) as unknown as D[]).flatMap((m): string[] => {
+            if (m.role === "user") return m.source?.kind && m.source.kind !== "user" ? [] : [`U:${m.content.map((c) => c.text ?? "").join("")}`];
+            if (m.role === "assistant") return [`A:${m.content.filter((c) => c.type === "text").map((c) => c.text).join("")}|${m.content.filter((c) => c.type === "tool-call").map((c) => `${c.id}:${c.name}`).join(",")}`];
+            return [];
+          });
+          const imported = importDshLog(text)!;
+          const mine = historyFromRecords(imported.records).flatMap((m): string[] => {
+            if (m.role === "user") return [`U:${m.content}`];
+            if (m.role === "assistant") return [`A:${m.content.filter((c) => c.type === "text").map((c) => (c as { text: string }).text).join("")}|${m.content.filter((c) => c.type === "toolCall").map((c) => `${(c as { id: string }).id}:${(c as { name: string }).name}`).join(",")}`];
+            return [];
+          });
+          expect(mine, id).toEqual(flat);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+});
