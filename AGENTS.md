@@ -9,7 +9,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## Stack summary
 
 - **Electron + Next.js 16** (App Router, static export) — desktop app
-- **Cairn agent engine** (`electron/agent/`) — one engine drives chat, coding and automation turns: pi-ai model streaming, JSONL sessions (`cairn-session/1`), tools, approvals (pure `decide()` policy + `Gate`), subagents, goals, jobs, terminals, LSP, hooks, compaction. The IPC handlers reach it through `electron/ipc/engine-bridge.ts`; app I/O goes through `electron/agent/host-store.ts`. History written by the retired DeepSeek harness is imported on first touch (`agent/session/dsh-import.ts`). Design: `docs/plans/agent-engine-design.md`
+- **Cairn agent engine** (`electron/agent/`) — one engine drives chat, coding and automation turns: pi-ai model streaming, JSONL sessions (`cairn-session/1`), tools, approvals (pure `decide()` policy + `Gate`), subagents, goals, jobs, terminals, LSP, hooks, compaction. The IPC handlers reach it through `electron/ipc/engine-bridge.ts`; app I/O goes through `electron/agent/host-store.ts`. History written by the retired DeepSeek harness is imported on first touch (`agent/session/legacy-import.ts`). Design: `docs/plans/agent-engine-design.md`
 - **Tailwind CSS v4** — all colours via CSS custom properties (`var(--token)`), never raw Tailwind colour names
 - **Zustand** — domain slices in `src/store/slices/`; composed in `src/store/index.ts`
 - **better-sqlite3** — v13+ N-API (single binary for Electron + pkg/Node 24 + Node), arch-separated (arm64 + x64); all DB access goes through IPC from the renderer

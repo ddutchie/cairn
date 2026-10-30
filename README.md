@@ -119,7 +119,7 @@ Configure the AI endpoint in **Settings → AI** (tabs: Chat, Coding Agents, MCP
 
 Cairn includes a native coding agent that runs directly inside the app — no external CLI binary required. It is accessible from the Agent view (`⌘5`) by choosing **Cairn Agent** in the spawn modal.
 
-The agent runs on the Cordis agent runtime (DeepSeek harness): a shared engine drives the model↔tool loop, session persistence, approvals, subagents, background jobs, and context compaction — Cairn contributes its workspace tools, board-aware system prompt, and renderer bridges. See [Architecture](#architecture).
+The agent runs on Cairn's own engine (pi-ai model streaming): a shared engine drives the model↔tool loop, session persistence, approvals, subagents, background jobs, and context compaction — Cairn contributes its workspace tools, board-aware system prompt, and renderer bridges. See [Architecture](#architecture).
 
 ### What makes it Cairn-specific
 
@@ -213,8 +213,8 @@ The MCP surface is derived from the same schemas the in-app agents use (`electro
 Two processes share a single SQLite database (WAL mode):
 
 - **Renderer** (`src/`) — React/Next.js. All data flows through IPC via `window.electron.*`; never touches the DB or filesystem directly.
-- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, the Cordis agent runtime, and PTY sessions for coding agents. IPC handlers are split into per-domain registrars (`db-handlers.ts`, `flow-handlers.ts`, `chat.ts`, `session-runtime-handlers.ts`, `runtime-handlers.ts`, etc.) orchestrated by `handlers.ts`.
-- **Agent runtime** (`electron/cordis/`) — one shared Cordis context drives chat turns (`runChatCordisSession`) and coding turns (`runCordisCodingLoop`): model↔tool loop, session persistence (JSONL), approvals, subagents, background jobs, skills, and auto-compaction via DeepSeek harness plugins. Cairn contributes its workspace tools (`cairn-tools.ts`), the board-aware coding prompt (`lib/coding-session-prompt.ts`), and renderer bridges (`cairn-plugins.ts`). App I/O crosses into the engine only through the HostStore seam (`host-store.ts`). See `docs/architecture-cordis.md`.
+- **Main process** (`electron/`) — Node.js. Owns SQLite, file I/O, the agent engine, and PTY sessions for coding agents. IPC handlers are split into per-domain registrars (`db-handlers.ts`, `flow-handlers.ts`, `chat.ts`, `session-runtime-handlers.ts`, `runtime-handlers.ts`, etc.) orchestrated by `handlers.ts`.
+- **Agent engine** (`electron/agent/`) — one engine drives chat, coding and automation turns: model↔tool loop (pi-ai), JSONL sessions, approvals (`decide()` policy), subagents, background jobs, terminals, skills, auto-compaction, and an OS sandbox for shell commands. Cairn contributes its workspace tools, the board-aware coding prompt (`lib/coding-session-prompt.ts`) and renderer bridges (`ipc/engine-bridge.ts`). App I/O crosses into the engine only through the HostStore seam (`host-store.ts`). See `docs/plans/agent-engine-design.md`.
 - **MCP server** (`electron/mcp-server.ts`) — self-contained binary; connects external agents to the same DB via WAL polling. SQL query helpers are shared with the Electron main process via `electron/db/queries.ts` (single source of truth).
 
 Notes are plain `.md` files (YAML frontmatter); SQLite is the read/search cache. Writes are atomic (`.tmp` rename). A chokidar watcher syncs external edits at runtime. `notes` and `task_cards` carry a `version` integer; MCP write tools accept `expectedVersion` for conflict detection.
@@ -259,7 +259,7 @@ Unit/integration tests (`electron/**/*.test.ts`) cover SQLite queries, file I/O,
 | better-sqlite3 | SQLite (arch-separated native bindings for Electron + MCP + vitest) |
 | gray-matter | YAML frontmatter parsing for note files |
 | chokidar | File watcher for external `.md` edits |
-| @deepseek-ai/cordis + dsh-* | Agent runtime: model loop, sessions, tools, approvals, subagents, jobs, compaction |
+| @earendil-works/pi-ai | Model streaming for the agent engine |
 | onnxruntime-node + @huggingface/transformers | Local embeddings for semantic search |
 | @modelcontextprotocol/sdk | MCP server |
 | Zod | Schema validation |

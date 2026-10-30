@@ -59,7 +59,7 @@ run("cross-env ELECTRON_BUILD=true next build");
 // 3. Bundle Electron main + preload and the helpers that run beside it
 // (Windows sandbox runner, subprocess containment runner, workflow worker).
 // Shares scripts/compile-electron.js so release builds get the same
-// import.meta shims, ripgrep alias and dsh runner env patch (an esbuild
+// import.meta shims, ripgrep alias (an esbuild
 // plugin — not expressible as CLI flags) as `npm run compile`.
 run("node scripts/compile-electron.js --electron-only");
 
@@ -75,7 +75,7 @@ run("esbuild electron/mcp-server.ts --bundle --platform=node --target=node24 --e
 // 5. Build self-contained cairn-mcp binary (bundles Node 24 + better-sqlite3)
 run(`node scripts/build-mcp-binary.js ${platformFlags}`);
 
-// 6. Fetch runtime-resolved native packages (ripgrep, dsh node-addon-system)
+// 6. Fetch runtime-resolved native packages (ripgrep)
 // for every packaged arch — npm only installed the build machine's.
 run(`node scripts/fetch-cross-arch-natives.js ${platformFlags}`);
 

@@ -5,8 +5,7 @@
  *
  * npm installs optional platform packages only for the host CPU, but mac and
  * win are packaged for both arm64 and x64 from one machine. Without this, the
- * non-host installer ships without ripgrep (glob/grep) and without the dsh
- * native addon (macOS/Linux session lock, Linux Landlock launcher).
+ * non-host installer ships without ripgrep (glob/grep)
  * scripts/after-pack.js strips the other arch from each app afterwards.
  *
  * Uses `npm pack` + in-process extraction rather than `npm install --no-save`, which
