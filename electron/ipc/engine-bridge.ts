@@ -12,7 +12,8 @@ import * as electron from "electron";
 import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
-import { AgentHost } from "../agent/host";
+import { AgentHost, type HostSend } from "../agent/host";
+import type { AgentTool } from "../agent/tools";
 import type { Profile } from "../agent/loop";
 import type { Mode as EngineMode } from "../agent/policy";
 
@@ -89,7 +90,8 @@ let host: AgentHost | undefined;
 let hostCtx: DbContext | undefined;
 const sessionWorkspace = new Map<string, string>();
 const sessionRules = new Map<string, Rule[]>();
-interface UsageMeta { source: "chat" | "coding"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
+const sessionTaps = new Map<string, HostSend>();
+interface UsageMeta { source: "chat" | "coding" | "automation"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
 const usageMeta = new Map<string, UsageMeta>();
 const observedFiles = new Map<string, Set<string>>();
 
@@ -101,7 +103,11 @@ export function getEngineHost(ctx: DbContext): AgentHost {
   hostCtx = ctx;
   host ??= new AgentHost({
     root: hostRoot(),
-    send: (channel, payload) => broadcastEvent(channel, payload),
+    send: (channel, payload) => {
+      const sid = "sessionId" in payload ? String(payload.sessionId) : "";
+      const tap = sessionTaps.get(sid);
+      if (tap) tap(channel, payload); else broadcastEvent(channel, payload);
+    },
     askTtlMs: undefined,
     globalRules: (sessionId) => {
       const base = [...presetRules("cairn-data", "safe-shell"), ...(sessionRules.get(sessionId) ?? [])];
@@ -168,6 +174,11 @@ export interface EnginePromptArgs {
   role?: "default" | "automation-dev";
   /** Chat threads run the same engine with the chat toolset and approval policy. */
   chat?: { req: ChatRequest; policy: ChatApprovalPolicy };
+  /** Headless runs: tools added to the surface toolset, and the usage row's source. */
+  extraTools?: readonly AgentTool[];
+  usageSource?: "automation";
+  profile?: Profile;
+  signal?: AbortSignal;
 }
 
 /** First native use of a session that only exists as a dsh log: bring its history over. */
@@ -195,7 +206,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
   const chatProfile = chat ? chatEngineProfile(chat.policy) : undefined;
   sessionRules.set(a.sessionId, chatProfile?.rules ?? []);
   usageMeta.set(a.sessionId, {
-    source: chat ? "chat" : "coding", workspaceId: a.workspaceId ?? "", projectId: a.projectId,
+    source: chat ? "chat" : a.usageSource ?? "coding", workspaceId: a.workspaceId ?? "", projectId: a.projectId,
     provider: a.llmConfig.provider, model: a.llmConfig.model, baseUrl: a.llmConfig.baseUrl,
   });
   const observed = observedFiles.get(a.sessionId) ?? new Set<string>();
@@ -224,12 +235,16 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
     onTodos: (todos) => broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "todos", { todos })),
   });
 
+  if (a.extraTools?.length) tools.push(...a.extraTools);
+  const onAbort = () => h.abort(a.sessionId);
+  if (a.signal?.aborted) onAbort(); else a.signal?.addEventListener("abort", onAbort, { once: true });
+
   try {
     await h.prompt({
       sessionId: a.sessionId,
       prompt: a.prompt,
       cwd: a.cwd,
-      profile: chatProfile?.profile ?? engineProfile(a.llmConfig.mode, role),
+      profile: a.profile ?? chatProfile?.profile ?? engineProfile(a.llmConfig.mode, role),
       route: routeFromConfig(a.llmConfig),
       systemPrompt: a.systemPrompt,
       tools,
@@ -239,6 +254,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
     });
     broadcastEvent("db:changed", null);
   } catch (err) {
+    a.signal?.removeEventListener("abort", onAbort);
     const busy = err instanceof Error && /busy/.test(err.message);
     broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "error", { message: err instanceof Error ? err.message : String(err), code: busy ? "already-running" : undefined }));
     if (busy) broadcastEvent("session:busy", { sessionId: a.sessionId, reason: "already-running" });
@@ -279,4 +295,30 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
     } as AgentLLMConfig,
     chat: { req, policy },
   });
+}
+
+export interface EngineAutomationArgs extends Omit<EnginePromptArgs, "chat" | "role" | "usageSource" | "profile"> {
+  /** Every event and projection of the run goes here instead of to the renderer. */
+  tap: HostSend;
+  /** Unattended mode: `yolo` when approvals are automatic, otherwise every ask reaches the tap. */
+  autoApprove: boolean;
+}
+
+/** A headless coding run (automations): same engine and tools, events delivered to `tap` only. */
+export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void> {
+  sessionTaps.set(a.sessionId, a.tap);
+  try {
+    await runEnginePrompt({
+      ...a,
+      usageSource: "automation",
+      profile: { id: "automation", interactive: true, mode: a.autoApprove ? "yolo" : "ask", externalAlwaysAsks: a.autoApprove },
+    });
+  } finally {
+    sessionTaps.delete(a.sessionId);
+  }
+}
+
+/** Answer an ask raised by a headless run. */
+export function respondEngineAsk(ctx: DbContext, sessionId: string, callId: string, nonce: string | undefined, decision: { approved: boolean; grant?: "session" | "command" | "workspace" }): boolean {
+  return getEngineHost(ctx).respondTool(sessionId, callId, nonce, decision);
 }

@@ -19,29 +19,34 @@ import { createAutomation, createAutomationRun, getAutomationRunById } from "../
 import { automationFolderDir, automationRunDir } from "./automation-folder";
 // vi.mock calls are hoisted above this import, so the static import sees the
 // mocked config-cache / chat-loop / external-tools modules.
-import { runAutomation, runAutomationNow } from "./heartbeat-runner";
+import { runAutomation, runAutomationNow, resolveAutomationApproval } from "./heartbeat-runner";
 
-const { runCordisCodingLoopMock, getExternalToolDefsMock, agentHostMock } = vi.hoisted(() => ({
+const { runCordisCodingLoopMock, getExternalToolDefsMock, engineMock } = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   runCordisCodingLoopMock: vi.fn(async (_opts: any): Promise<any> => ({ ok: true })),
   getExternalToolDefsMock: vi.fn(async () => []),
-  agentHostMock: {
-    startTurn: vi.fn(() => new AbortController()),
-    endTurn: vi.fn(),
-    runAutomation: vi.fn((opts: unknown) => runCordisCodingLoopMock(opts)),
-    bindHeadlessConfirmTransport: vi.fn(),
-    unbindConfirmTransport: vi.fn(),
-    readPendingApprovalArgs: vi.fn(() => undefined),
-  },
+  engineMock: { runEngineAutomation: vi.fn(), respondEngineAsk: vi.fn(() => true) },
 }));
+
+// The engine bridge is mocked: the old loop mock keeps its shape (req / cwd /
+// onSessionEvent / {ok,error}), and a failed result surfaces as the engine's
+// error projection.
+engineMock.runEngineAutomation.mockImplementation(async (opts: Record<string, unknown>) => {
+  const tap = opts.tap as (channel: string, payload: unknown) => void;
+  const sessionId = opts.sessionId as string;
+  const result = await runCordisCodingLoopMock({
+    ...opts,
+    req: { message: opts.prompt, threadId: sessionId },
+    onSessionEvent: (event: unknown) => tap("session:event", { sessionId, event }),
+  });
+  if (result && result.ok === false) tap("session:projection", { sessionId, kind: "error", data: { message: result.error } });
+});
 
 vi.mock("./config-cache", () => ({
   getCachedConfig: () => ({ aiConfig: { baseUrl: "https://api.test.invalid", model: "gpt-test" } }),
 }));
 
-vi.mock("../cordis/agent-host", () => ({
-  getAgentHost: () => agentHostMock,
-}));
+vi.mock("../ipc/engine-bridge", () => engineMock);
 
 // Keep the REAL checkRequirements (that's the gate under test) but stub the
 // live MCP tool discovery so the "attached → runs" case never hits the network.
@@ -93,6 +98,7 @@ interface LoopOpts {
   cwd?: string;
   systemPrompt?: string;
   onSessionEvent?: (event: unknown) => void;
+  tap?: (channel: string, payload: unknown) => void;
 }
 function lastLoopOpts(): LoopOpts {
    
@@ -387,6 +393,35 @@ describe("runAutomation folder plumbing", () => {
     const autoDir = automationFolderDir(root, automation.id, "P");
     const log = JSON.parse(fs.readFileSync(path.join(automationRunDir(autoDir, run.id), "run-log.json"), "utf8"));
     expect(log.status).toBe("error");
+  });
+
+  it("answers engine asks: auto-allows policy-covered tools, parks the rest until the human decides", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1" });
+    const run = createAutomationRun(db, automation.id, "running");
+    const root = makeRoot();
+    engineMock.respondEngineAsk.mockClear();
+    const ask = (name: string, callId: string, nonce: string) => lastLoopOpts().tap?.("session:projection", { sessionId: run.id, kind: "approval", data: { status: "required", callId, nonce, name, label: name } });
+
+    let release!: (v: unknown) => void;
+    runCordisCodingLoopMock.mockImplementation(() => {
+      ask("write", "c1", "n1");       // auto mode: allowed straight away
+      ask("run_script", "c2", "n2");  // code execution is always gated
+      return new Promise((r) => { release = r; });
+    });
+
+    const pending = runAutomation({ db, workspacePath: root }, run, automation);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(engineMock.respondEngineAsk).toHaveBeenCalledTimes(1);
+    expect(engineMock.respondEngineAsk).toHaveBeenCalledWith(expect.anything(), run.id, "c1", "n1", { approved: true });
+
+    resolveAutomationApproval("c2", false);
+    expect(engineMock.respondEngineAsk).toHaveBeenLastCalledWith(expect.anything(), run.id, "c2", "n2", { approved: false, grant: undefined });
+
+    release({ ok: true });
+    await pending;
   });
 
   it("flushes the transcript incrementally as tools complete (survives a crash mid-run)", async () => {
