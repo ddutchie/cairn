@@ -100,6 +100,7 @@ describe("adapter", () => {
   it("projects approvals with their nonce", () => {
     const adapt = createAdapter("s1");
     const { projections } = adapt({ type: "approval/asked", ask: { sessionId: "s1", callId: "c", nonce: "n1", tool: "bash", risk: "EXEC", title: "Run", preview: "ls", reason: "r", grants: [], expiresAt: 5 } });
-    expect(projections[0]).toMatchObject({ kind: "approval", data: { callId: "c", nonce: "n1", name: "bash" } });
+    expect(projections[0]).toMatchObject({ kind: "approval", data: { status: "required", callId: "c", nonce: "n1", name: "bash" } });
+    expect(adapt({ type: "approval/decided", callId: "c", approved: true, by: "human" }).projections[0]).toMatchObject({ kind: "approval", data: { status: "resolved", callId: "c" } });
   });
 });

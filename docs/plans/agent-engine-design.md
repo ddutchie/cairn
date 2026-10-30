@@ -465,3 +465,20 @@ Not ported yet: OS sandbox for bash (seatbelt/landlock — the permission pipeli
 `web_search`, `lsp`, terminal sessions, background jobs, `subagent`/`delegate`, workflow/PTC, `skill`,
 `str_replace_editor` (superseded by `edit`), MCP resources + server instructions, `@vscode/ripgrep`
 as a direct dependency in package.json (currently transitive via dsh-tool-fs-search).
+
+## IPC wiring (opt-in)
+
+* `electron/agent/host.ts` — `AgentHost`: per-session state, one `runTurn` per prompt, every event
+  appended to the log before it is forwarded as `session:event` / `session:projection`. Restores
+  history and grants from the log on restart; `respondTool` is nonce-guarded through the `Gate`;
+  workspace-scoped grants are handed to `onWorkspaceGrant`.
+* `electron/ipc/engine-bridge.ts` — builds the host (logs under `<userData>/sessions-native`), maps
+  the legacy config (`AgentLLMConfig`, approval `Mode`) to a model route and engine profile, builds the
+  toolset, brokers `ask_questions`, and turns persisted workspace approval grants into rules.
+  Legacy `auto` = engine `yolo` + `externalAlwaysAsks`. Default rules: `cairn-data`, `safe-shell`.
+* Toggle: `CAIRN_AGENT_ENGINE=native` or `agentConfig.engine: "native"` in the config cache. Reads
+  (`db:session:messages`, `session:is-running`, `session:running-ids`) and the respond/abort/clear/
+  destroy handlers also consult the engine, so a session that lives in it keeps working with the
+  toggle off. Everything else still goes to Cordis.
+* Still on Cordis: chat profile, plan-mode turns, attachments, `session:approve-plan`,
+  `session:compact-now`, `session:set-mode`, permissions presets, goals/jobs/schedule, subagents.

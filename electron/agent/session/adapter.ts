@@ -55,7 +55,7 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
       case "approval/asked": {
         const a = event.ask;
         projections.push(makeSessionProjection(sessionId, "approval", {
-          sessionId, callId: a.callId, nonce: a.nonce, name: a.tool, label: a.title, preview: a.preview,
+          sessionId, status: "required", callId: a.callId, nonce: a.nonce, name: a.tool, label: a.title, preview: a.preview,
           reason: a.reason, risk: a.risk, grants: a.grants, expiresAt: a.expiresAt,
         }));
         break;
@@ -78,7 +78,11 @@ export function createAdapter(sessionId: string, now: () => number = Date.now) {
         break;
       case "turn/end": events.push(ev("turn/end", { reason: { kind: event.reason } })); break;
       // Recorded in the log; the UI learns of them via approval/permissions projections.
-      case "user/message": case "approval/decided": case "rule/added": break;
+      case "approval/decided":
+        // Clears the card on every transport, whoever (or whatever) decided.
+        projections.push(makeSessionProjection(sessionId, "approval", { sessionId, status: "resolved", callId: event.callId, approved: event.approved, by: event.by }));
+        break;
+      case "user/message": case "rule/added": break;
     }
     return { events, projections };
   };

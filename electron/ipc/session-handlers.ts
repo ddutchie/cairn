@@ -16,6 +16,7 @@ import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
 import { getAgentHost } from "../cordis/agent-host";
+import { engineOwns, getEngineHost } from "./engine-bridge";
 import type { AgentSessionMessage } from "../../shared/agent/session-wire";
 
 /** Map shared ReplayMessage[] to the coding-agent message shape the renderer expects. */
@@ -111,6 +112,11 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // silent upgrade would strand every pre-bump session with no diagnostic.
   registerContractHandle("db:session:messages", (_e, { sessionId }) => handle(async () => {
     if (!sessionId) return { messages: [] as AgentSessionMessage[] };
+    // Sessions that live in the native engine replay from their own log.
+    if (await engineOwns(ctx, sessionId)) {
+      const { messages, usage, title } = await getEngineHost(ctx).loadMessages(sessionId);
+      return { messages: toAgentMessages(messages), usage, title };
+    }
     try {
       const { messages, usage, contextRing, todos, stats } = await getAgentHost().loadSessionMessages(sessionId);
       const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");

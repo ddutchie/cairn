@@ -40,6 +40,7 @@ import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { isShellTool } from "../../shared/agent/tool-risk";
 import { runSession } from "./session-run";
+import { answerQuestion, cancelQuestions, engineEnabled, engineOwns, getEngineHost, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -176,10 +177,12 @@ export function registerSessionRuntimeHandlers(
   // prior push is useless without a valid callId. Nonces are cleared on
   // settle/sweep so this surface is only live while the ask is outstanding.
   registerContractHandle("session:is-running", (_event, { sessionId }) => handle(async () => {
-     const running = getAgentHost().isTurnRunning(sessionId);
+    const engine = getEngineHost(ctx);
+    const engineAsks = engine.pendingAsks(sessionId).map((a) => ({ sessionId, name: a.tool, label: a.title, callId: a.callId, nonce: a.nonce, reason: a.reason }));
+    const running = getAgentHost().isTurnRunning(sessionId) || engine.isRunning(sessionId);
     return {
       running,
-       pendingAsks: getAgentHost().listPendingApprovalAsks(sessionId),
+       pendingAsks: [...getAgentHost().listPendingApprovalAsks(sessionId), ...engineAsks],
       // Outstanding question asks (ask_questions / plan-review). The renderer
       // uses this to re-open a PlanReviewCard after a reload that swallowed
       // the original session:ask-questions push.
@@ -200,7 +203,7 @@ export function registerSessionRuntimeHandlers(
   // renderer's coalesced poller frozen on a stale "running" set (loop stays
   // green forever).
   registerContractHandle("session:running-ids", () => handle(async () => {
-     return { ids: getAgentHost().getRunningTurnIds() };
+     return { ids: [...new Set([...getAgentHost().getRunningTurnIds(), ...getEngineHost(ctx).runningIds()])] };
   }));
 
   // ── session:context-ring ─────────────────────────────────────────────────
@@ -265,6 +268,8 @@ export function registerSessionRuntimeHandlers(
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
     getAgentHost().abortTurn(sessionId);
+    getEngineHost(ctx).abort(sessionId);
+    cancelQuestions(sessionId);
   });
 
   // ── session:prompt ───────────────────────────────────────────────────────
@@ -327,7 +332,7 @@ export function registerSessionRuntimeHandlers(
     // starting a new loop would replace session.abortCtrl mid-flight and leave
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
-    if (getAgentHost().isTurnRunning(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId) || getEngineHost(ctx).isRunning(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -458,6 +463,13 @@ export function registerSessionRuntimeHandlers(
       projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
        role,
     });
+
+    // Native engine (opt-in, or a session that already lives in it). Plan-mode turns and
+    // attachments still go through Cordis until the engine grows those.
+    if (!req.attachments?.length && mode === "execute" && (engineEnabled() || await engineOwns(ctx, sessionId))) {
+      await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role });
+      return;
+    }
 
     const toolCtx: AgentToolContext = {
       cwd, db: ctx.db, workspacePath: ctx.workspacePath, sessionId, send, getWin, skills,
@@ -767,6 +779,7 @@ export function registerSessionRuntimeHandlers(
     // auto-approve every ask. The nonce is minted main-side and returned
     // in the confirm-required event; only a legitimate consumer of that
     // event has it. Fail-closed on absence / mismatch.
+    if (getEngineHost(ctx).respondTool(sessionId, callId, nonce, { approved, grant })) return;
     if (!getAgentHost().verifyApprovalNonce(sessionId, callId, nonce)) {
       console.warn(`[session] respond-tool rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
@@ -831,6 +844,7 @@ export function registerSessionRuntimeHandlers(
       console.warn(`[session] respond-questions rejected: invalid id for ${String(sessionId)}/${String(callId)}`);
       return;
     }
+    if (answerQuestion(sessionId, callId, nonce, answers)) return;
     if (!getAgentHost().verifyApprovalNonce(sessionId, callId, nonce)) {
       console.warn(`[session] respond-questions rejected: bad or missing nonce for ${sessionId}/${callId}`);
       return;
@@ -866,7 +880,7 @@ export function registerSessionRuntimeHandlers(
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
     // defensive. Clear is rejected if running or already clearing (atomic gate).
-    if (getAgentHost().isTurnRunning(sessionId) || clearingSessions.has(sessionId)) {
+    if (getAgentHost().isTurnRunning(sessionId) || getEngineHost(ctx).isRunning(sessionId) || clearingSessions.has(sessionId)) {
       broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
       broadcastEvent("session:busy", { sessionId, reason: "already-running" });
       return;
@@ -885,6 +899,7 @@ export function registerSessionRuntimeHandlers(
       // session entry only retains the abort controller and persona.
       // Grants + any stray pendings die with the conversation.
       sweepSessionPendings(sessionId);
+      void getEngineHost(ctx).destroy(sessionId).catch(() => undefined);
       // Explicit session clearing wipes persisted todos too (the todowrite
       // replacement contract otherwise leaves them until the next write).
       q.saveSessionTodos(ctx.db, sessionId, []);
@@ -974,6 +989,8 @@ export function registerSessionRuntimeHandlers(
       getAgentHost().abortTurn(sessionId);
       sessions.delete(sessionId);
     }
+    getEngineHost(ctx).release(sessionId);
+    cancelQuestions(sessionId);
     // The abort listeners inside the plugins resolve their own pendings on
     // abort; sweep whatever remains (e.g. an ask whose listeners were torn
     // down abnormally) so nothing leaks across sessions.

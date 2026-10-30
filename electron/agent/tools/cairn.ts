@@ -11,7 +11,7 @@ import type { LLMConfig } from "../../lib/llm";
 import type { ChatRequest } from "../../lib/tools";
 import { TOOL_SCHEMAS, toolParametersJsonSchema } from "../../lib/tool-schemas";
 import { APPROVAL_SAFE_TOOLS, approvalPreview } from "../../../shared/agent/tool-risk";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool, type ToolContext } from "../tools";
 import type { RiskInfo } from "../rules";
 import { fail, fromJsonSchema, ok, renderValue } from "./schema";
 
@@ -22,7 +22,7 @@ export interface CairnToolDeps {
   llmConfig: LLMConfig;
   getWin?: () => BrowserWindow | null;
   /** Blocks until the human answers; wired to the question UI. Without it ask_questions echoes. */
-  askQuestions?: (questions: unknown[], signal?: AbortSignal) => Promise<unknown>;
+  askQuestions?: (questions: unknown[], ctx: ToolContext) => Promise<unknown>;
 }
 
 /** Deletes are the one Cairn-data write that is not allowed by default. */
@@ -55,7 +55,7 @@ export function cairnTools(deps: CairnToolDeps, opts: { exclude?: ReadonlySet<st
           const questions = (args as { questions?: unknown[] }).questions;
           if (Array.isArray(questions) && questions.length > 0) {
             try {
-              return ok(renderValue({ ok: true, answers: await deps.askQuestions(questions, ctx.signal) }));
+              return ok(renderValue({ ok: true, answers: await deps.askQuestions(questions, ctx) }));
             } catch (err) {
               return fail(`ask_questions failed: ${err instanceof Error ? err.message : String(err)}`);
             }

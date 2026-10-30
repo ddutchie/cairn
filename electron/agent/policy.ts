@@ -32,6 +32,8 @@ export interface PolicyState {
   /** Signatures a human already allowed through the doom-loop pause. */
   doomAcked: ReadonlySet<string>;
   doomThreshold?: number;
+  /** In yolo mode, still ask for EXTERNAL calls (the legacy "auto" approval mode did). */
+  externalAlwaysAsks?: boolean;
   now?: number;
 }
 
@@ -98,7 +100,9 @@ export function decide(call: CallView, signature: string, state: PolicyState): D
   if (risk === "READ") return { kind: "allow", by: "default" };
 
   switch (state.mode) {
-    case "yolo": return { kind: "allow", by: "mode", reason: "auto-approve is on" };
+    case "yolo":
+      if (risk === "EXTERNAL" && state.externalAlwaysAsks) return { kind: "ask", by: "mode", reason: "External calls always need approval" };
+      return { kind: "allow", by: "mode", reason: "auto-approve is on" };
     case "auto": return { kind: "review", reason: "No rule covers this call" };
     default: return { kind: "ask", by: "mode", reason: "No rule covers this call" };
   }

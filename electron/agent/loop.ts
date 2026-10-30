@@ -46,6 +46,7 @@ export interface Profile {
   interactive: boolean;
   mode: Mode;
   deniedTools?: readonly string[];
+  externalAlwaysAsks?: boolean;
 }
 
 export interface TurnOptions {
@@ -300,6 +301,7 @@ async function* prepare(o: TurnOptions, call: ToolCall, toolMap: Map<string, Age
   const decision = decide({ name: call.name, risk }, signature, {
     mode: o.profile.mode,
     deniedTools: o.profile.deniedTools ?? [],
+    externalAlwaysAsks: o.profile.externalAlwaysAsks,
     rules: o.rules.list(),
     workspaceRoot: o.workspaceRoot,
     recent: state.recent,
