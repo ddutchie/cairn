@@ -9,7 +9,7 @@ import type { GrantKind, RiskClass, Rule } from "./rules";
 
 export type DecisionSource = "profile" | "plan" | "rule" | "doom" | "protected" | "default" | "mode" | "human" | "reviewer" | "timeout" | "abort" | "headless";
 
-export type TurnEndReason = "stop" | "aborted" | "error" | "max-steps";
+export type TurnEndReason = "stop" | "aborted" | "error" | "max-steps" | "overflow";
 
 export type AgentEvent =
   | { type: "turn/start"; sessionId: string; profile: string }
@@ -23,5 +23,7 @@ export type AgentEvent =
   | { type: "rule/added"; rule: Rule }
   | { type: "tool/result"; callId: string; name: string; text: string; isError: boolean }
   | { type: "auto/paused"; reason: string }
+  | { type: "retry"; attempt: number; maxAttempts: number; delayMs: number; error: string }
+  | { type: "context/overflow" }
   | { type: "error"; message: string }
   | { type: "turn/end"; reason: TurnEndReason };

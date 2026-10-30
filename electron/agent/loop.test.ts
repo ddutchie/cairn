@@ -70,10 +70,70 @@ describe("runTurn: basics", () => {
 
   it("reports a failed model request", async () => {
     const h = makeHarness();
-    h.faux.setResponses([fauxAssistantMessage([], { stopReason: "error", errorMessage: "rate limited" })]);
+    h.faux.setResponses([fauxAssistantMessage([], { stopReason: "error", errorMessage: "invalid api key" })]);
     const events = await drive(runTurn(h.opts()));
-    expect(ofType(events, "error")[0].message).toContain("rate limited");
+    expect(ofType(events, "error")[0].message).toContain("invalid api key");
+    expect(types(events)).not.toContain("retry");
     expect(events.at(-1)).toEqual({ type: "turn/end", reason: "error" });
+  });
+});
+
+describe("runTurn: retry and overflow", () => {
+  const fail = (msg: string) => fauxAssistantMessage([], { stopReason: "error", errorMessage: msg });
+  const noWait = async () => {};
+
+  it("retries a transient failure before any output and then succeeds", async () => {
+    const h = makeHarness();
+    h.faux.setResponses([fail("503 Service Unavailable: overloaded"), fail("overloaded"), fauxAssistantMessage("finally")]);
+    const events = await drive(runTurn(h.opts({ sleep: noWait })));
+    const retries = ofType(events, "retry");
+    expect(retries.map((r) => r.attempt)).toEqual([1, 2]);
+    expect(retries[0]).toMatchObject({ maxAttempts: 5, error: expect.stringContaining("overloaded") });
+    expect(types(events)).not.toContain("error");
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "stop" });
+    expect(h.history.map((m) => m.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("gives up after maxRetries and reports the error", async () => {
+    const h = makeHarness();
+    h.faux.setResponses(Array.from({ length: 6 }, () => fail("overloaded")));
+    const events = await drive(runTurn(h.opts({ sleep: noWait, retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } })));
+    expect(ofType(events, "retry")).toHaveLength(2);
+    expect(ofType(events, "error")).toHaveLength(1);
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "error" });
+  });
+
+  it("does not retry when disabled", async () => {
+    const h = makeHarness();
+    h.faux.setResponses([fail("overloaded"), fauxAssistantMessage("never")]);
+    const events = await drive(runTurn(h.opts({ sleep: noWait, retry: { enabled: false, maxRetries: 5, baseDelayMs: 1 } })));
+    expect(types(events)).not.toContain("retry");
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "error" });
+  });
+
+  it("backs off with the policy's delays and stops waiting on abort", async () => {
+    const h = makeHarness();
+    const ctl = new AbortController();
+    const waits: number[] = [];
+    h.faux.setResponses([fail("overloaded"), fauxAssistantMessage("never")]);
+    const events = await drive(runTurn(h.opts({
+      signal: ctl.signal,
+      retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
+      sleep: async (ms) => { waits.push(ms); ctl.abort(); },
+    })));
+    expect(waits[0]).toBeGreaterThanOrEqual(900);
+    expect(waits[0]).toBeLessThanOrEqual(1100);
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "aborted" });
+  });
+
+  it("does not retry a context overflow; it ends the turn so the caller can compact", async () => {
+    const h = makeHarness();
+    h.faux.setResponses([fail("This model's maximum context length is 8192 tokens (prompt is too long)"), fauxAssistantMessage("never")]);
+    const events = await drive(runTurn(h.opts({ sleep: noWait })));
+    expect(types(events)).toContain("context/overflow");
+    expect(types(events)).not.toContain("retry");
+    expect(types(events)).not.toContain("error");
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "overflow" });
   });
 });
 

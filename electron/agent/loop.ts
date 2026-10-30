@@ -12,6 +12,9 @@
  *    emitted, so a transport answering instantly cannot race the waiter
  */
 import {
+  isContextOverflow,
+  isRetryableAssistantError,
+  retryDelayMs,
   validateToolCall,
   type Api,
   type AssistantMessage,
@@ -20,6 +23,7 @@ import {
   type JsonObject,
   type Message,
   type Model,
+  type RetryPolicy,
   type SimpleStreamOptions,
   type ToolCall,
   type ToolResultMessage,
@@ -65,6 +69,56 @@ export interface TurnOptions {
   /** Pass the same set every turn so a doom-loop "allow" is remembered. */
   doomAcked?: Set<string>;
   streamOptions?: Omit<SimpleStreamOptions, "signal">;
+  /** Transient-error retry. Defaults to DEFAULT_RETRY; `{ enabled: false, … }` turns it off. */
+  retry?: RetryPolicy;
+  /** Backoff sleep; injectable for tests. Must resolve early when `signal` aborts. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
+/** 5 retries, 500 ms doubling, capped at 10 s — what the dsh route used. */
+export const DEFAULT_RETRY: RetryPolicy = { enabled: true, maxRetries: 5, baseDelayMs: 500, maxAgentDelayMs: 10_000 };
+
+const abortableSleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(done, ms);
+    function done() { clearTimeout(timer); signal?.removeEventListener("abort", done); resolve(); }
+    signal?.addEventListener("abort", done, { once: true });
+  });
+
+/**
+ * One assistant response, retrying transient failures. Only retries while
+ * nothing has been emitted for the attempt, so a user never sees output from an
+ * attempt that is then silently replaced.
+ */
+async function* streamAssistant(o: TurnOptions): AsyncGenerator<AgentEvent, AssistantMessage> {
+  const policy = o.retry ?? DEFAULT_RETRY;
+  const sleep = o.sleep ?? abortableSleep;
+  for (let attempt = 0; ; attempt++) {
+    let emitted = false;
+    const context: Context = {
+      systemPrompt: o.systemPrompt,
+      messages: o.history,
+      tools: o.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+    };
+    const stream = o.streamFn(o.model, context, { ...o.streamOptions, signal: o.signal });
+    for await (const ev of stream) {
+      if (ev.type === "text_delta") { emitted = true; yield { type: "assistant/delta", text: ev.delta }; }
+      else if (ev.type === "thinking_delta") { emitted = true; yield { type: "assistant/thinking", text: ev.delta }; }
+      else if (ev.type !== "start" && ev.type !== "done" && ev.type !== "error") emitted = true;
+    }
+    const final = await stream.result();
+
+    const retryable = policy.enabled && final.stopReason === "error" && !emitted && attempt < policy.maxRetries
+      && !isContextOverflow(final, o.model.contextWindow) && isRetryableAssistantError(final);
+    if (!retryable) return final;
+
+    const base = retryDelayMs(policy, attempt + 1);
+    const delayMs = Math.round(base * (1 + (Math.random() * 2 - 1) * 0.1));
+    yield { type: "retry", attempt: attempt + 1, maxAttempts: policy.maxRetries, delayMs, error: final.errorMessage ?? "" };
+    await sleep(delayMs, o.signal);
+    if (o.signal?.aborted) return { ...final, stopReason: "aborted" };
+  }
 }
 
 interface Prepared {
@@ -105,17 +159,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
 
     let final: AssistantMessage;
     try {
-      const context: Context = {
-        systemPrompt: o.systemPrompt,
-        messages: o.history,
-        tools: o.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
-      };
-      const stream = o.streamFn(o.model, context, { ...o.streamOptions, signal: o.signal });
-      for await (const ev of stream) {
-        if (ev.type === "text_delta") yield { type: "assistant/delta", text: ev.delta };
-        else if (ev.type === "thinking_delta") yield { type: "assistant/thinking", text: ev.delta };
-      }
-      final = await stream.result();
+      final = yield* streamAssistant(o);
     } catch (err) {
       if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
       yield { type: "error", message: err instanceof Error ? err.message : String(err) };
@@ -124,6 +168,11 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
     }
 
     if (final.stopReason === "aborted") { yield { type: "turn/end", reason: "aborted" }; return; }
+    if (final.stopReason === "error" && isContextOverflow(final, o.model.contextWindow)) {
+      yield { type: "context/overflow" };
+      yield { type: "turn/end", reason: "overflow" };
+      return;
+    }
     if (final.stopReason === "error") {
       yield { type: "error", message: final.errorMessage ?? "The model request failed" };
       yield { type: "turn/end", reason: "error" };

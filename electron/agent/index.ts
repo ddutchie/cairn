@@ -6,3 +6,4 @@ export * from "./repair";
 export * from "./reviewer";
 export * from "./rules";
 export * from "./tools";
+export * from "./provider";

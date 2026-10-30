@@ -352,8 +352,7 @@ child named, and reviewer verdicts record the child session.
 ## 9. Build order
 
 1. `events.ts`, `loop.ts`, `policy.ts`, `rules.ts`, `gate.ts` + faux-provider tests (no UI).
-2. Port the `dsh-llm-pi-ai` patch behaviour (tool-call streaming, reasoning
-   replay) — **read the patch first**; this is where provider quirks live.
+2. ~~Port the `dsh-llm-pi-ai` patch behaviour~~ — done, see *Provider port*.
 3. Session log + adapter mapping `AgentEvent` → today's `session:event` /
    `session:projection` channels so the renderer is unchanged.
 4. Chat profile on the toggle; then coding; then the rest (`remove-dsh.md` §4).
@@ -381,6 +380,45 @@ Learned while building:
   rules unlock protected paths" must filter by `source`, not take the best match.
 * The Gate must register an ask before the `approval/asked` event is yielded;
   otherwise a transport that answers synchronously loses the race.
+
+### Provider port (2026-10-30)
+
+Decision: no vendoring or locking phase — dsh is replaced outright, so
+`remove-dsh.md` Phase 1 is skipped. `electron/agent/provider.ts` replaces
+`@deepseek-ai/dsh-llm-pi-ai` for turns:
+
+* `buildModel` / `createRouteStream` turn a route (baseUrl, model, wire api,
+  limits, reasoning) into a pi-ai `Model` + `StreamFn`. Protocols:
+  openai-completions, openai-responses, anthropic-messages and
+  google-generative-ai (the one thing the dsh patch added).
+* Reasoning: same level table dsh declared; Responses routes mark `off`
+  unsupported (pi-ai would otherwise send `effort:"none"`); `reasoningOption`
+  clamps an unoffered effort instead of throwing mid-turn.
+* Retry moved into the loop: 5 tries, 500 ms doubling, 10 s cap, ±10 % jitter,
+  only while nothing has been emitted for the attempt, never for context
+  overflow; emits `retry` events. pi-ai gets `maxRetries: 0`.
+* Context overflow ends the turn with `context/overflow` / `overflow` so the
+  caller can compact and re-run (compaction itself is still to do).
+* **No replay translation.** Sessions persist pi-ai's own `AssistantMessage`
+  (thinking blocks + signatures included), so dsh's `toPiReplayState` /
+  `foreignAssistant` layer disappears. The log schema must keep the message
+  verbatim.
+
+Patches: `@earendil-works+pi-ai` (stops re-parsing tool-call JSON on every
+delta) stays; both `@deepseek-ai/*` patches go with the packages.
+`wireApiFor` / `wireBaseUrlFor` live in `electron/lib/model-pricing.ts` and
+survive; callers apply them before `createRouteStream`.
+
+Verified live on `localhost:3042` (`claude-sonnet-4-5`, which is gpt-oss behind
+the bridge): streamed answer, READ tool round-trip, headless deny, and a Cairn
+write allowed by the `cairn-data` preset. `CAIRN_LIVE_TESTS=1 npx vitest run
+electron/agent/provider.live.test.ts` (override with `AGENT_LIVE_*`). The local
+Ornith model was not running, so it is untested.
+
+Still to port from dsh-llm-pi-ai: stream idle timeout (dsh default 5 min),
+request-image budgets (resize/limit before send), `cacheRetention` /
+`thinkingBudgets` pass-through, model discovery. Not needed for chat parity:
+credential store, OAuth flows, catalog providers.
 
 ## 10. Open questions
 
