@@ -149,6 +149,8 @@ interface Prepared {
   args?: JsonObject;
   /** Set when the call will not run; the text becomes its error result. */
   refusal?: string;
+  /** Approved while in plan mode, so the tool runs read-only. */
+  readOnly?: boolean;
 }
 
 interface Resolution {
@@ -287,7 +289,7 @@ async function* runToolCalls(
     await Promise.all(batch.map(async (p) => {
       if (o.signal?.aborted) { outputs.set(p.call.id, { content: "Cancelled before it ran.", isError: true }); return; }
       try {
-        outputs.set(p.call.id, await p.tool!.execute(p.args, { sessionId: o.sessionId, callId: p.call.id, signal: o.signal, workspaceRoot: o.workspaceRoot }));
+        outputs.set(p.call.id, await p.tool!.execute(p.args, { sessionId: o.sessionId, callId: p.call.id, signal: o.signal, workspaceRoot: o.workspaceRoot, readOnly: p.readOnly }));
       } catch (err) {
         outputs.set(p.call.id, { content: `Tool error: ${err instanceof Error ? err.message : String(err)}`, isError: true });
       }
@@ -350,7 +352,7 @@ async function* prepare(o: TurnOptions, call: ToolCall, toolMap: Map<string, Age
   else if (gate?.decision === "ask" && decision.kind === "allow") effective = { kind: "ask", by: "hook", reason: gate.reason ?? "A PreToolUse hook asked for approval" };
 
   const resolution = yield* resolveDecision(o, { call, tool, args }, risk, signature, effective, state);
-  return resolution.approved ? { call, tool, args } : { call, tool, args, refusal: resolution.refusal };
+  return resolution.approved ? { call, tool, args, readOnly: o.profile.mode === "plan" } : { call, tool, args, refusal: resolution.refusal };
 }
 
 async function* resolveDecision(

@@ -287,6 +287,25 @@ describe("runTurn: policy", () => {
     expect(textOfResult(h)).toContain("Plan mode is read-only");
   });
 
+  it("plan mode runs a confinable tool read-only, and refuses one that is not", async () => {
+    const seen: Array<boolean | undefined> = [];
+    const probe = (confinable: boolean) => defineTool({
+      name: "probe", description: "p", parameters: Type.Object({}),
+      risk: () => ({ class: "EXEC", confinable }),
+      execute: async (_a, ctx) => { seen.push(ctx.readOnly); return { content: "ran" }; },
+    });
+    for (const [mode, confinable] of [["plan", true], ["plan", false], ["yolo", true]] as const) {
+      const h = makeHarness({ profile: { mode }, tools: [probe(confinable)] });
+      h.faux.setResponses([toolUse(call("probe", {}, "c1")), fauxAssistantMessage("ok")]);
+      const events = await drive(runTurn(h.opts()));
+      const decided = ofType(events, "approval/decided")[0];
+      if (mode === "plan" && !confinable) expect(decided).toMatchObject({ approved: false, by: "plan" });
+      else expect(decided).toMatchObject({ approved: true });
+    }
+    // Only the plan-mode run is told to stay read-only.
+    expect(seen).toEqual([true, false]);
+  });
+
   it("the profile's denied tools never run", async () => {
     const h = makeHarness({ profile: { mode: "yolo", deniedTools: ["bash"] } });
     h.faux.setResponses([toolUse(call("bash", { command: "ls" }, "c1")), fauxAssistantMessage("ok")]);

@@ -56,7 +56,7 @@ export function engineProfile(mode: Mode | undefined, role: "default" | "automat
 }
 
 export const PLAN_MODE_PROMPT = `## Plan mode
-You are in plan mode: everything you can do is read-only. Investigate the code and the project, then write a complete plan in markdown (goal, approach, and a \`## Tasks\` checklist of \`- [ ]\` items). Present it by calling \`exit_plan_mode\` with the full plan, then stop and wait. Do not start the work until the user approves it.`;
+You are in plan mode: everything you can do is read-only (shell commands run in a read-only sandbox, so they can inspect but not change anything). Investigate the code and the project, then write a complete plan in markdown (goal, approach, and a \`## Tasks\` checklist of \`- [ ]\` items). Present it by calling \`exit_plan_mode\` with the full plan, then stop and wait. Do not start the work until the user approves it.`;
 
 // ── permission presets (per session) ─────────────────────────────────────
 

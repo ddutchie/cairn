@@ -17,6 +17,8 @@ export interface RiskInfo {
   host?: string;
   /** The call leaves the OS sandbox; always asks the human, never grantable. */
   escalation?: boolean;
+  /** The tool will run this call in a read-only sandbox when plan mode asks it to, so plan mode may allow it. */
+  confinable?: boolean;
   /** Why the call leaves (or cannot use) the sandbox; shown on the approval card. */
   escalationReason?: string;
 }

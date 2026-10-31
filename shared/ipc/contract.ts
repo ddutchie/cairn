@@ -193,7 +193,7 @@ export interface IpcContract {
   /** Registry commands (built-in + plugin) for the command palettes. */
   "commands:list": { args: [req: { cwd?: string }]; result: Array<{ name: string; description: string; skill?: boolean }> };
   /** Whether agent shell commands are really confined right now (and why not). */
-  "sandbox:status": { args: []; result: { mode: "workspace-write" | "off"; active: boolean; supported: boolean; backend: "seatbelt" | "bubblewrap" | "none"; reason?: string } };
+  "sandbox:status": { args: []; result: { mode: "read-only" | "workspace-write" | "off"; active: boolean; supported: boolean; backend: "seatbelt" | "bubblewrap" | "none"; reason?: string } };
 
   // ── Workspaces & projects ────────────────────────────────────────────────
   "db:workspace:list": { args: []; result: Workspace[] };

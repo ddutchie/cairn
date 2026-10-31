@@ -7,6 +7,8 @@ export interface ToolContext {
   callId: string;
   signal?: AbortSignal;
   workspaceRoot: string;
+  /** The call was approved under plan mode: the tool must not change anything (EXEC runs in a read-only sandbox). */
+  readOnly?: boolean;
 }
 
 export interface ToolOutput {

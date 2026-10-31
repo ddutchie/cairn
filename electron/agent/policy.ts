@@ -72,12 +72,15 @@ export function decide(call: CallView, signature: string, state: PolicyState): D
   if (state.deniedTools.includes(call.name)) {
     return { kind: "deny", by: "profile", reason: `${call.name} is not available in this profile` };
   }
-  if (state.mode === "plan" && risk !== "READ") {
+  if (state.mode === "plan" && risk !== "READ" && !call.risk.confinable) {
     return { kind: "deny", by: "plan", reason: "Plan mode is read-only; exit plan mode to make changes" };
   }
 
   const denyRule = findRule(state.rules, call, ctx, ["deny"]);
   if (denyRule) return { kind: "deny", by: "rule", ruleId: denyRule.id, reason: denyRule.note ?? `Denied by rule ${denyRule.id}` };
+
+  // The tool runs a confinable call read-only in plan mode (enforced by the OS sandbox), so it is as safe as a read.
+  if (state.mode === "plan" && risk !== "READ") return { kind: "allow", by: "plan", reason: "runs read-only in plan mode" };
 
   if (call.risk.escalation) return { kind: "ask", by: "mode", reason: `escalate sandbox to danger-full-access: ${call.risk.escalationReason ?? call.risk.command ?? call.name}` };
 

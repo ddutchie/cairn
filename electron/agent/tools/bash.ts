@@ -55,15 +55,19 @@ export function bashTool(deps: BashDeps): AgentTool {
       const escalation = Boolean(leaving || broken);
       return {
         class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined,
+        // Plan mode may run it: the sandbox is up and this call stays inside it.
+        ...(sb && !a.unsandboxed && sandboxStatus(sb.mode).active ? { confinable: true } : {}),
         ...(escalation ? { escalation: true, escalationReason: `${a.unsandboxed ? (a.reason?.trim() || "(no reason given)") : `the sandbox is unavailable (${broken})`} — ${a.command}` } : {}),
       };
     },
     preview: (a) => a.command,
     execute(a, ctx) {
+      // Plan mode: the policy let this through only because it can be confined read-only; never run it any other way.
+      if (ctx.readOnly && (a.unsandboxed || !sandboxOf() || !sandboxStatus(sandboxOf()!.mode).active)) return Promise.resolve(fail("Plan mode only allows shell commands inside the read-only sandbox, which is not available."));
       const cwd = a.workdir ? path.resolve(deps.cwd, a.workdir) : deps.cwd;
       const timeout = Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.floor(a.timeoutMs ?? DEFAULT_TIMEOUT_MS)));
       const raw = shellFor(a.command);
-      const { file, args } = sandboxOf() && !a.unsandboxed ? wrapSandboxed(raw, cwd, { ...sandboxOf()!, root: deps.cwd }) : raw;
+      const { file, args } = sandboxOf() && !a.unsandboxed ? wrapSandboxed(raw, cwd, { ...sandboxOf()!, ...(ctx.readOnly ? { mode: "read-only" as const } : {}), root: deps.cwd }) : raw;
       if (a.run_in_background && deps.jobs) {
         const job = deps.jobs.registry.start({ owner: deps.jobs.owner, label: a.description || a.command, file, args, cwd, env: deps.env });
         return Promise.resolve(ok(`Started background job ${job.id}. Use job_output to read it and job_kill to stop it.`));
@@ -89,7 +93,7 @@ export function bashTool(deps: BashDeps): AgentTool {
         child.on("error", (err) => done(fail(`Failed to start shell: ${err.message}`)));
         child.on("close", (code, signal) => {
           const body = clampMiddle(out.trimEnd(), MAX_OUTPUT_CHARS);
-          const hint = code !== 0 && sandboxOf() && !a.unsandboxed ? sandboxDenialHint(out) : undefined;
+          const hint = code !== 0 && sandboxOf() && !a.unsandboxed ? sandboxDenialHint(out, ctx.readOnly) : undefined;
           if (ctx.signal?.aborted) return done(fail(`${body}\n[aborted]`.trim()));
           if (timedOut) return done(fail(`${body}\n[timed out after ${timeout}ms and was killed]`.trim()));
           if (code === 0) return done(ok(body || "(no output)"));

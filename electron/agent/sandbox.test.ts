@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { bwrapArgs, readOnlyCarveOuts, sandboxDenialHint, sandboxPolicyNote, sandboxStatus, sandboxUnavailable, seatbeltProfile, wrapSandboxed, writableRoots } from "./sandbox";
+import { bwrapArgs, readOnlyCarveOuts, sandboxDenialHint, sandboxPolicyNote, sandboxStatus, sandboxUnavailable, seatbeltProfile, tempRoots, wrapSandboxed, writableRoots } from "./sandbox";
 import { bashTool } from "./tools/bash";
 import { decide, type PolicyState } from "./policy";
 import { offeredGrants } from "./rules";
@@ -151,5 +151,52 @@ describe("fail closed", () => {
   it("does not ask when the sandbox is off", () => {
     const tool = bashTool({ cwd: "/w", sandbox: { mode: "off" } });
     expect(tool.risk({ command: "ls", description: "d", unsandboxed: true } as never).escalation).toBeUndefined();
+  });
+});
+
+describe("read-only mode (plan)", () => {
+  it("leaves only scratch space writable", () => {
+    const work = fs.mkdtempSync(path.join(os.homedir(), ".sbx-ro-"));
+    try {
+      expect(tempRoots()).toContain(fs.realpathSync(os.tmpdir()));
+      expect(tempRoots()).not.toContain(fs.realpathSync(work));
+      expect(writableRoots(work)).toContain(fs.realpathSync(work));
+    } finally { fs.rmSync(work, { recursive: true, force: true }); }
+  });
+
+  it("explains a blocked write as plan mode, not the sandbox", () => {
+    expect(sandboxDenialHint("touch: x: Operation not permitted", true)).toContain("plan mode");
+  });
+
+  it.runIf(process.platform === "darwin")("bash in plan mode reads but cannot write the workspace (macOS)", async () => {
+    const work = fs.mkdtempSync(path.join(os.homedir(), ".sbx-plan-"));
+    fs.writeFileSync(path.join(work, "a.txt"), "hello");
+    try {
+      const tool = bashTool({ cwd: work, sandbox: { mode: "workspace-write" } });
+      const run = (command: string, ctx: Record<string, unknown> = { readOnly: true }) => tool.execute({ command, description: "d" } as never, { sessionId: "s", callId: "c", workspaceRoot: work, ...ctx });
+      expect(await run("cat a.txt")).toMatchObject({ content: "hello" });
+      const write = await run("echo x > b.txt");
+      expect(write.isError).toBe(true);
+      expect(fs.existsSync(path.join(work, "b.txt"))).toBe(false);
+      expect(String(write.content)).toContain("plan mode");
+      expect(await run("echo y > /tmp/plan-scratch-ok")).not.toMatchObject({ isError: true });
+      // Outside plan mode the same write is fine.
+      expect((await run("echo x > b.txt", {})).isError).toBeFalsy();
+      expect(fs.existsSync(path.join(work, "b.txt"))).toBe(true);
+    } finally { fs.rmSync(work, { recursive: true, force: true }); }
+  });
+
+  it("bash refuses to run unconfined in plan mode", async () => {
+    const tool = bashTool({ cwd: os.tmpdir() });
+    const r = await tool.execute({ command: "echo hi", description: "d" } as never, { sessionId: "s", callId: "c", workspaceRoot: os.tmpdir(), readOnly: true });
+    expect(r.isError).toBe(true);
+  });
+
+  it("policy allows only confinable calls in plan mode, and a deny rule still wins", () => {
+    const st = { mode: "plan", rules: [], deniedTools: [], protectedPaths: [], workspaceRoot: "/w", recent: [], doomAcked: new Set(), now: () => 0 } as unknown as PolicyState;
+    const bash = (risk: object) => ({ name: "bash", args: {}, risk: { class: "EXEC" as const, command: "ls", ...risk } }) as never;
+    expect(decide(bash({ confinable: true }), "s", st)).toMatchObject({ kind: "allow", by: "plan" });
+    expect(decide(bash({}), "s", st)).toMatchObject({ kind: "deny", by: "plan" });
+    expect(decide(bash({ confinable: true }), "s", { ...st, deniedTools: ["bash"] })).toMatchObject({ kind: "deny" });
   });
 });

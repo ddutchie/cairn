@@ -17,7 +17,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-export type SandboxMode = "workspace-write" | "off";
+/** `read-only` is the plan-mode profile: nothing writable but temp dirs. It is chosen per call, never in settings. */
+export type SandboxMode = "read-only" | "workspace-write" | "off";
 
 export interface SandboxOptions {
   mode: SandboxMode;
@@ -129,8 +130,13 @@ function darwinCacheDir(): string[] {
 
 const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun", ".gradle", ".m2", ".node-gyp", "go", ".local/share/pnpm", "Library/pnpm", "Library/Caches"];
 
+/** Scratch space every command needs (pagers, heredocs, compilers); not the user's files. */
+export function tempRoots(tmp = os.tmpdir()): string[] {
+  return [...new Set([tmp, "/tmp", "/var/tmp", ...darwinCacheDir()].map(real))];
+}
+
 export function writableRoots(cwd: string, extra: string[] = [], home = os.homedir(), tmp = os.tmpdir()): string[] {
-  const roots = [cwd, tmp, "/tmp", "/var/tmp", ...darwinCacheDir(), ...gitDirs(cwd), ...extra, ...HOME_CACHES.map((d) => path.join(home, d))];
+  const roots = [cwd, ...tempRoots(tmp), ...gitDirs(cwd), ...extra, ...HOME_CACHES.map((d) => path.join(home, d))];
   return [...new Set(roots.map(real))];
 }
 
@@ -175,14 +181,16 @@ export function wrapSandboxed(cmd: Spawnable, cwd: string, opts: SandboxOptions,
   if (opts.mode === "off") return cmd;
   const backend = backendFor(platform);
   if (backend === "none") return cmd;
-  const roots = writableRoots(opts.root ?? cwd, opts.writableRoots);
+  // Read-only (plan mode): the workspace, git dirs and caches are all off limits; only scratch space is writable.
+  const roots = opts.mode === "read-only" ? tempRoots() : writableRoots(opts.root ?? cwd, opts.writableRoots);
   const ro = readOnlyCarveOuts(roots, opts.root ?? cwd);
   if (backend === "seatbelt") return { file: SEATBELT, args: ["-p", seatbeltProfile(roots, opts.blockNetwork, ro), cmd.file, ...cmd.args] };
   return { file: "bwrap", args: [...bwrapArgs(roots, opts.blockNetwork, opts.pty, ro), "--chdir", cwd, cmd.file, ...cmd.args] };
 }
 
 /** Hint appended to a failed command that looks like a sandbox write denial. */
-export function sandboxDenialHint(output: string): string | undefined {
+export function sandboxDenialHint(output: string, readOnly = false): string | undefined {
   if (!/Operation not permitted|Read-only file system|Permission denied/i.test(output)) return undefined;
+  if (readOnly) return "[plan mode: shell commands run read-only, so this write was blocked. Put the change in the plan; it can be made once the user approves.]";
   return "[this may be the sandbox: writes are limited to the working directory and temp dirs. If the command really needs to write elsewhere, retry with unsandboxed=true (the user will be asked).]";
 }
