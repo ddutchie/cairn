@@ -804,9 +804,17 @@ input[type="url"] {
   color: #fff;
 }
 
-/* Effective chat panel width: the chosen width; page.tsx overrides it inline with
-   the full content width when the window is too narrow for side-by-side. */
+/* Window drag-resize: the chat panel tracks the window instantly, so the main column must too
+   (page.tsx sets data-window-resizing for the duration of a resize). */
+html[data-window-resizing] [data-chat-margin] {
+  transition: none !important;
+}
+
+/* Effective chat panel width: the chosen width, clamped so the main column keeps at least
+   480px (MIN_MAIN_CONTENT_WIDTH) and the panel never drops below 240px (MIN_CHAT_PANEL_WIDTH).
+   A saved width that no longer fits a smaller window just shrinks, and the drag handle keeps
+   working. When even 240px won't fit, page.tsx switches chat to the expanded view instead. */
 :root {
-  --chat-panel-eff: var(--chat-panel-width, 320px);
+  --chat-panel-eff: clamp(240px, var(--chat-panel-width, 320px), calc(100vw - var(--dock-sidebar-width, 0px) - 480px));
 }
 

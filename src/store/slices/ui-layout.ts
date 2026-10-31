@@ -27,7 +27,7 @@ export const FAVORITE_MODELS_KEY = "favoriteModels";
 export const DEFAULT_CHAT_PANEL_WIDTH = 320; // px  (≈ w-80 at default font scale)
 export const MIN_CHAT_PANEL_WIDTH     = 240; // px
 export const MAX_CHAT_PANEL_WIDTH     = 1000; // px
-export const MIN_MAIN_CONTENT_WIDTH   = 480;  // px — below this the chat slides to full width instead of squeezing the view
+export const MIN_MAIN_CONTENT_WIDTH   = 480;  // px — the drawer never takes the main column below this; if even MIN_CHAT_PANEL_WIDTH won't fit, chat opens expanded instead (keep in step with --chat-panel-eff in globals.css)
 
 // ── Notes sidebar width ───────────────────────────────────────────────────────
 
@@ -111,6 +111,18 @@ export interface LayoutSlice extends AppUIState {
   chatSliding: boolean;
   setChatSliding: (sliding: boolean) => void;
 
+  /** True when the window is too narrow for even a minimum-width chat drawer beside the
+   *  main column. Measured by the page; never persisted. While set, chat is either closed
+   *  or expanded (center) — there is no drawer. */
+  windowNarrow: boolean;
+  /** True when the expanded view was entered automatically because the window narrowed, so
+   *  widening again can hand the chat back to the drawer. Cleared once the user navigates. */
+  chatAutoExpanded: boolean;
+  setWindowNarrow: (narrow: boolean) => void;
+  /** Bring chat placement in line with the window: expanded when narrow, drawer again when
+   *  it widens after an automatic expansion. Idempotent; call after any related state change. */
+  reconcileNarrowChat: () => void;
+
   /** Optional target section for the Settings view (consumed once on open). */
   settingsSection: SettingsSection | null;
   setSettingsSection: (section: SettingsSection | null) => void;
@@ -172,6 +184,8 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   lastContentView: "overview",
   sessionPresentation: "drawer",
   chatSliding: false,
+  windowNarrow: false,
+  chatAutoExpanded: false,
   settingsSection: null,
   notificationOpen: false,
   calendarProjectIds: [],
@@ -342,6 +356,10 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
         // Flag the geometry switch in the SAME commit so the panel's
         // left/width transition is armed before the values change.
         ...(leavingCenter ? { chatSliding: true } : {}),
+        chatAutoExpanded: false,
+        // A narrow window has no drawer to fall back to, so leaving the expanded
+        // chat closes it (otherwise reconcileNarrowChat would pull it straight back).
+        ...(get().windowNarrow ? { chatOpen: false } : {}),
       });
     } else {
       const enteringCenter = view === "chat" && get().sessionPresentation !== "center";
@@ -360,6 +378,27 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
 
   setChatSliding(sliding) {
     set({ chatSliding: sliding });
+  },
+
+  setWindowNarrow(narrow) {
+    if (get().windowNarrow === narrow) return;
+    set({ windowNarrow: narrow });
+    get().reconcileNarrowChat();
+  },
+
+  reconcileNarrowChat() {
+    const s = get();
+    if (s.windowNarrow) {
+      if (s.sessionPresentation !== "drawer") return;
+      if (s.activeView === "chat") s.setSessionPresentation("center");
+      else if (s.chatOpen) {
+        s.setView("chat");
+        set({ chatAutoExpanded: true });
+      }
+    } else if (s.chatAutoExpanded) {
+      set({ chatAutoExpanded: false });
+      if (s.activeView === "chat" && s.sessionPresentation === "center") s.setView(s.lastContentView);
+    }
   },
 
   setSettingsSection(section) {
