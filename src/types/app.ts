@@ -12,7 +12,6 @@ export type SettingsSection =
   | "tools"
   | "commands"
   | "writing-style"
-  | "plugins"
   | "mobile"
   | "sync"
   | "data"

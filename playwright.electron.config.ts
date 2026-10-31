@@ -5,16 +5,16 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * Unlike the browser smoke config (`playwright.config.ts`, which runs the
  * Next.js dev server with a mocked `window.electron`), this config boots the
- * REAL Electron app (`_electron.launch`) and drives the Cordis loops (chat /
+ * REAL Electron app (`_electron.launch`) and drives the agent loops (chat /
  * coding agent / heartbeat) end-to-end through the real IPC + preload bridge
- * + main process, against the live model bridge at CORDIS_TEST_BASE_URL.
+ * + main process, against the live model bridge at CAIRN_TEST_BASE_URL.
  *
  * The Electron window loads the SAME Next.js dev server on :3000 in dev mode
  * (see electron/main.ts loadURL), so that webServer is shared here.
  *
- * Run:   CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local npm run test:e2e:electron
+ * Run:   CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local npm run test:e2e:electron
  *
- * Every spec in tests/e2e/electron is gated behind CORDIS_LIVE=1 — without
+ * Every spec in tests/e2e/electron is gated behind CAIRN_LIVE=1 — without
  * the env it skips (no-op), so CI/`test:e2e` never break on the missing bridge.
  */
 export default defineConfig({

@@ -3,7 +3,7 @@ import path from "node:path";
 import { assertSafeId, isSafeId, resolveWithinRoot } from "./path-safety";
 
 describe("assertSafeId", () => {
-  it("accepts the id shapes Cairn / dsh actually mint", () => {
+  it("accepts the id shapes Cairn / engine actually mint", () => {
     for (const id of [
       "thr-XyZ_123",
       "chat-thr-abc",

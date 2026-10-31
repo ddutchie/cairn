@@ -3,7 +3,7 @@
 /**
  * AgentGoalChip — compact current-goal line above the coding-agent composer.
  *
- * Data comes from the dsh goal domain: an initial `session:goal` snapshot on
+ * Data comes from the engine goal domain: an initial `session:goal` snapshot on
  * pane mount, then live `session:projection kind:"goal"` updates from
  * goal-bridge. Renders the objective text + phase; hidden when there is no
  * current goal (pre-create / cleared / complete shows as a settled line).

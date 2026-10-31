@@ -241,13 +241,12 @@ export async function getExternalToolDefs(
     ? filterRequiredConfigs(scoped, requires)
     : scoped;
 
-  // Query each in-scope REMOTE server independently so one unreachable /
-  // failing server can't hide the tools of the healthy servers (or the custom
-  // services below). Stdio servers are served exclusively by the dsh path
-  // (mcp-dsh-bridge) and never appear in hand-bridge defs. mcpClient.listTools
-  // already degrades to [] internally, but allSettled also guards
-  // toRuntimeConfig / filterDisabledMcpDefs against an unexpected throw.
-  const remoteServers = mcpServers.filter((s) => s.transport !== "stdio");
+  // Query each in-scope server independently so one unreachable / failing
+  // server can't hide the tools of the healthy servers (or the custom
+  // services below). mcpClient.listTools already degrades to [] internally,
+  // but allSettled also guards toRuntimeConfig / filterDisabledMcpDefs
+  // against an unexpected throw.
+  const remoteServers = mcpServers;
   const mcpResults = await Promise.allSettled(
     remoteServers.map(async (s) => {
       const defs = await mcpClient.listTools(toRuntimeConfig(s));
@@ -296,7 +295,7 @@ export async function getExternalMcpServerMeta(
 /**
  * Run one resource operation on an in-scope MCP server. Re-validates scope
  * like {@link executeExternalTool}, but throws instead of returning an error
- * string (the dsh resource tools report thrown errors to the model).
+ * string (the engine resource tools report thrown errors to the model).
  */
 export async function requestExternalMcpResource(
   db: Database.Database,
@@ -355,7 +354,8 @@ export async function executeExternalTool(
   workspaceId: string,
   projectId: string,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
 
@@ -373,7 +373,8 @@ export async function executeExternalTool(
     return mcpClient.callTool(
       toRuntimeConfig(server),
       name,
-      args
+      args,
+      signal,
     );
   }
 

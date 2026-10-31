@@ -13,16 +13,16 @@ interface QuestionFormProps {
   /** Called with a formatted answer string ready to send as a user message. */
   onSubmit: (answersText: string) => void;
   /**
-   * Called with structured answers (JSON blob) for the blocking Cordis flow.
+   * Called with structured answers (JSON blob) for the blocking engine flow.
    * When it returns true it handled the submit (same-turn answer); when false
    * or absent, the form falls back to onSubmit(text) (built-in new-turn).
    *
-   * dsh's `interaction.ask()` blocks the tool call and unblocks on this JSON:
+   * engine's `interaction.ask()` blocks the tool call and unblocks on this JSON:
    *   { answers: [{ id, selected: string[], custom?: string }] }
-   * The `selected` array carries chosen option LABELS (dsh compares by
+   * The `selected` array carries chosen option LABELS (engine compares by
    * label — `answer.selected[0] === APPROVE_LABEL`), and `custom` is the
    * user's free-text override. Sending `custom: undefined` (not `""`) is
-   * critical for plan-mode: dsh's `exit_plan_mode` requires
+   * critical for plan-mode: engine's `exit_plan_mode` requires
    * `item.custom === undefined` to treat a selection as approval — an
    * empty string is treated as "keep planning with this feedback".
    */
@@ -30,7 +30,7 @@ interface QuestionFormProps {
   disabled?: boolean;
 }
 
-/** dsh option objects can be strings or {label, description}. Normalise both. */
+/** engine option objects can be strings or {label, description}. Normalise both. */
 function optionLabel(opt: PendingQuestionOption): string {
   return typeof opt === "string" ? opt : opt.label;
 }
@@ -38,33 +38,33 @@ function optionDescription(opt: PendingQuestionOption): string | undefined {
   return typeof opt === "string" ? undefined : opt.description;
 }
 
-/** Short heading — dsh 'header', Cairn 'label', fall back to a truncated body. */
+/** Short heading — engine 'header', Cairn 'label', fall back to a truncated body. */
 function questionHeader(q: PendingQuestion): string {
   return q.header?.trim() || q.label?.trim() || questionBody(q).slice(0, 60);
 }
 
-/** Full body — dsh 'question', Cairn 'prompt', fall back to header for
+/** Full body — engine 'question', Cairn 'prompt', fall back to header for
  *  degenerate payloads that carry only a title. */
 function questionBody(q: PendingQuestion): string {
   return (q.question?.trim() || q.prompt?.trim() || q.header?.trim() || q.label?.trim() || "");
 }
 
-/** True when this question is dsh-plan-mode's `exit_plan_mode` review. */
+/** True when this question is engine-plan-mode's `exit_plan_mode` review. */
 function isPlanReview(q: PendingQuestion): boolean {
   return q.intent?.kind === "plan-review";
 }
 
 // ── Specialised plan-review UI ───────────────────────────────────────────────
 //
-// dsh-plan-mode's `exit_plan_mode` tool commits the completed plan for user
+// engine-plan-mode's `exit_plan_mode` tool commits the completed plan for user
 // review via `ctx.userQuestions.ask()`, with the FULL markdown plan carried
 // in `detail`, `question: 'Approve this plan and leave plan mode?'`, and
 // `intent.kind === 'plan-review'`. A generic textarea+options form would
 // bury the plan under UI chrome and put the wrong affordance forward.
 // PlanReviewCard renders the plan front and centre with big Approve /
 // Request-changes controls, and — on Approve — sends the structured answer
-// dsh requires: `{selected: ['Approve'], custom: undefined}`. Feedback in
-// the textarea becomes `{selected: [], custom: '<feedback>'}` which dsh
+// engine requires: `{selected: ['Approve'], custom: undefined}`. Feedback in
+// the textarea becomes `{selected: [], custom: '<feedback>'}` which engine
 // interprets as "keep planning".
 
 interface PlanReviewCardProps {
@@ -89,9 +89,9 @@ function PlanReviewCard({ question, disabled, onDecide, onDismiss }: PlanReviewC
   const doApprove = () => {
     if (busy || disabled) return;
     setBusy(true);
-    // dsh's exit_plan_mode requires `custom === undefined` for approval:
+    // engine's exit_plan_mode requires `custom === undefined` for approval:
     // stringify drops undefined keys, so passing `undefined` here maps to
-    // an absent `custom` field on the wire (which is what dsh checks).
+    // an absent `custom` field on the wire (which is what engine checks).
     onDecide([approveLabel], undefined);
   };
   const doKeepPlanning = () => {
@@ -99,14 +99,14 @@ function PlanReviewCard({ question, disabled, onDecide, onDismiss }: PlanReviewC
     const custom = feedback.trim();
     setBusy(true);
     if (!custom) {
-      // Empty feedback: send the "Keep planning" selection so dsh returns
+      // Empty feedback: send the "Keep planning" selection so engine returns
       // the standard keep-planning error and the model tries again.
       onDecide([keepLabel], undefined);
       return;
     }
-    // Non-empty feedback: dsh's exit_plan_mode requires `custom === undefined`
+    // Non-empty feedback: engine's exit_plan_mode requires `custom === undefined`
     // for approval, so ANY custom string is treated as feedback. Send an
-    // empty selected[] with the custom text — dsh's error message will
+    // empty selected[] with the custom text — engine's error message will
     // include the feedback in the message the model sees.
     onDecide([], custom);
   };
@@ -193,7 +193,7 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
   // If the whole payload is a plan-review, present the specialised card
   // instead of a generic form. Plan-mode always sends exactly one question
   // with intent.kind==='plan-review'; a payload mixing plan-review with
-  // other questions is not a shape dsh emits, so we don't try to compose.
+  // other questions is not a shape engine emits, so we don't try to compose.
   const planReviewQ = questions.length === 1 && isPlanReview(questions[0]) ? questions[0] : null;
 
   const dispatchStructured = (payloadAnswers: Array<{ id: string; selected: string[]; custom?: string }>): void => {
@@ -245,7 +245,7 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
   }
 
   // A question is "filled" when the user has either typed a free-text answer
-  // OR (for a dsh options question) clicked one of the choices.
+  // OR (for a engine options question) clicked one of the choices.
   const isFilled = (q: PendingQuestion) => {
     if ((answers[q.id] ?? "").trim().length > 0) return true;
     const sel = selected[q.id] ?? [];
@@ -255,7 +255,7 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
 
   function handleSubmit() {
     if (!allFilled || submitted || disabled) return;
-    // dsh's blocking path expects a structured JSON with each answer's
+    // engine's blocking path expects a structured JSON with each answer's
     // selected + custom. Sending `custom: undefined` (NOT `""`) matters for
     // plan-review (empty string is 'keep planning with empty feedback', not
     // approval). See PlanReviewCard for the plan-mode-specific handling.

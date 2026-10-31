@@ -760,7 +760,7 @@ export const useCairnStore = create<CairnStore>()(
       mergeEntitySnapshot(set, get, snap, isRefresh);
       const snapWorkspaces: Workspace[] = snap.workspaces ?? [];
 
-      // Chat threads/messages live in their own session persistence (dsh session logs)
+      // Chat threads/messages live in their own session persistence (engine session logs)
       // separate from the Cairn SQLite snapshot. Chat does NOT participate in db:changed
       // refresh hydrations. On the initial cold hydrate only, read them back so
       // conversations survive restarts + app updates.

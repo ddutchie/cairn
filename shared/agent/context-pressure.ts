@@ -1,12 +1,12 @@
 /**
- * Prompt-side context size of one model request, from a dsh `TokenUsage`.
+ * Prompt-side context size of one model request, from a engine `TokenUsage`.
  *
- * dsh ≥0.2 reports DISJOINT counts: `inputTokens` is the uncached input only,
+ * engine ≥0.2 reports DISJOINT counts: `inputTokens` is the uncached input only,
  * cached input arrives separately as `cacheReadTokens` / `cacheWriteTokens`
- * (see `TokenUsage` in `@deepseek-ai/dsh-llm`). With prompt caching on, a
+ * (see `TokenUsage` in `@deepseek-ai/engine-llm`). With prompt caching on, a
  * mid-session request reports a tiny `inputTokens` (just the new delta), so
  * reading it as "context size" collapsed the Context Ring to the system-prompt
- * slice. This mirrors dsh token-meter's own `pressureFrom`.
+ * slice. This mirrors engine token-meter's own `pressureFrom`.
  *
  * A usage already normalised by Cairn (carries `promptTokens`) is taken as-is.
  */

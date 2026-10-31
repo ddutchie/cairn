@@ -5,7 +5,7 @@
  *
  * v1 design decisions (see plan note §7 "Persona design"):
  *   - The default persona is the KNOWLEDGE-WORK agent: it runs through the
- *     Cordis loop, whose `executeTool` surface is Cairn data tools only
+ *     engine loop, whose `executeTool` surface is Cairn data tools only
  *     (notes/tasks/tags/idea-flow/knowledge-graph) — no bash, no
  *     arbitrary file writes. This keeps a background run's blast radius bounded
  *     to Cairn entities, even when it auto-approves its own writes.
@@ -54,8 +54,6 @@ import {
   writeRunFile,
   deliverFile,
   RUN_SCRIPT_TOOL_NAME,
-  WRITE_RUN_FILE_TOOL_NAME,
-  DELIVER_FILE_TOOL_NAME,
   runScriptToolDefinition,
   writeRunFileToolDefinition,
   deliverFileToolDefinition,
@@ -67,8 +65,12 @@ import {
   type DeliverFileArgs,
   type DeliverFileHandler,
 } from "./automation-script";
-import type { RunCordisCodingOptions } from "../cordis/run-cordis-coding";
-import { getAgentHost } from "../cordis/agent-host";
+import { runEngineAutomation, respondEngineAsk } from "../ipc/engine-bridge";
+import type { HostSend } from "../agent/host";
+import { defineTool, type AgentTool } from "../agent/tools";
+import { fromJsonSchema } from "../agent/tools/schema";
+import type { DbContext } from "../ipc/result-helpers";
+import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";
 import { getSecretValue } from "./secure-store";
 import { toSlug } from "../host-shared/text-utils";
@@ -86,7 +88,7 @@ export interface AutomationRunContext {
   send?: (channel: string, payload: unknown) => void;
 }
 
-// ── HITL approval forwarding (Cordis) ───────────────────────────────────────
+// ── HITL approval forwarding (engine) ───────────────────────────────────────
 // The coding agent's approval seam blocks on resolve({approved}); for a headless
 // heartbeat we forward to the renderer via an automation:run approval event +
 // a new automation:approve IPC (resolves this map). Keyed by callId, but scoped
@@ -130,10 +132,10 @@ export function resolveAutomationApproval(callId: string, approved: boolean, gra
 
 /**
  * Decide whether a tool call is auto-allowed by the automation's approval
- * policy, or must be forwarded to the user for approval. The Cordis seam
+ * policy, or must be forwarded to the user for approval. The engine seam
  * resolves via resolve({approved}) — no DB approval inbox behind it (the
  * inbox and its makeApprovalGate/parkAndWait mechanics were retired with
- * the pre-Cordis loop).
+ * the legacy loop).
  *   - read tools + standing rules → allow
  *   - 'ask' mode → gate every write (forward)
  *   - 'auto' mode → only forward external MCP/service calls when connector-aware
@@ -215,7 +217,7 @@ export function runAutomationNow(ctx: AutomationRunContext, automationId: string
       await runAutomation(ctx, run, automation);
     } catch (err) {
       // runAutomation normally sets its own terminal status, but if it throws
-      // (e.g. a provider/network failure inside the Cordis loop) transition the run
+      // (e.g. a provider/network failure inside the engine loop) transition the run
       // out of running so it doesn't block later runs / report a phantom run,
       // persist a run-log.json, and emit `finished` so watchers close cleanly.
       failRun(ctx, run, errMsg(err));
@@ -388,7 +390,7 @@ export async function runAutomation(
   // getExternalToolDefs filters to enabled + project/global-attached connectors,
   // so a missing/attached-only requirement simply contributes no tools and the
   // agent works with what's actually in scope. External calls stay gated by
-  // the Cordis approval waterfall (shouldAutoAllowAutomationTool below +
+  // the engine approval waterfall (shouldAutoAllowAutomationTool below +
   // cairnApprovalPlugin) — never auto-approved side effects.
   // A connector-load failure is NOT degraded away: the recipe declared these
   // connectors as required, so a run that can't assemble their tools is failed
@@ -502,27 +504,13 @@ export async function runAutomation(
 
   emitRun("started", { recipe });
 
-  // ── Cordis engine (only path) — run a FULL coding agent in the run folder ──
-  // Heartbeat drives runCordisCodingLoop (the full agent: bash/write/edit/read/
+  // ── engine (only path) — run a FULL coding agent in the run folder ──
+  // Heartbeat drives runEngineCodingLoop (the full agent: bash/write/edit/read/
   // grep/todo + Cairn data tools + connector/MCP tools + skill) scoped to the
   // per-run folder, so an automation can actually make changes (write files,
   // run scripts, call connectors) — not just a data-only chat turn.
   const runDirForAgent = runDir ?? workspacePath;
   let finalContent = "";
-  // Tool name per pending approval callId, captured from the coding agent's
-  // `session:tool-confirm-required` event (the seam doesn't carry the name).
-  const confirmToolByCallId = new Map<string, string>();
-  const loopSend = (channel: string, payload: Record<string, unknown>) => {
-    if (channel !== "session:projection") return;
-    const projection = payload as unknown as SessionProjection;
-    const data = projection.data as Record<string, unknown>;
-    if (projection.kind === "approval" && data.status === "required" && typeof data.callId === "string") {
-      confirmToolByCallId.set(data.callId as string, (data.name as string | undefined) ?? "tool");
-      emitRun("toolConfirmRequired", { tool: data.name, callId: data.callId, label: data.label });
-      return;
-    }
-  };
-
   const fold = createSessionEventFold({
     onText: (text) => { finalContent += text; emitRun("token", { delta: text }); },
     onReasoning: (text) => { log.thoughts += text; emitRun("thought", { delta: text }); },
@@ -539,7 +527,7 @@ export async function runAutomation(
       emitRun("toolDone", { tool: result.name, ok: result.ok, output: result.output, error: result.error, callId: result.callId });
     },
     // Usage is recorded by cairnUsagePlugin (source "automation", passed via
-    // runCordisCodingLoop's usageSource). Recording it here as well double-counted
+    // runEngineCodingLoop's usageSource). Recording it here as well double-counted
     // every automation run in the Usage view.
   });
 
@@ -547,66 +535,99 @@ export async function runAutomation(
   // write_run_file (agent→script data bridge into runDir), deliver_file (copy
   // out/ → <workspace>/attachments/<automationId>/ so the note can embed the
   // generated images). Only offered when the folders exist.
-  const automationTools: RunCordisCodingOptions["extraTools"] = [];
-  if (runScript) automationTools.push({ name: RUN_SCRIPT_TOOL_NAME, description: runScriptToolDefinition.function.description, parameters: runScriptToolDefinition.function.parameters, execute: (a) => runScript(a as never) });
-  if (writeRunFileHandler) automationTools.push({ name: WRITE_RUN_FILE_TOOL_NAME, description: writeRunFileToolDefinition.function.description, parameters: writeRunFileToolDefinition.function.parameters, execute: (a) => writeRunFileHandler(a as never) });
-  if (deliverFileHandler) automationTools.push({ name: DELIVER_FILE_TOOL_NAME, description: deliverFileToolDefinition.function.description, parameters: deliverFileToolDefinition.function.parameters, execute: (a) => deliverFileHandler(a as never) });
-
-  // Register the turn immediately before the try that owns endTurn cleanup,
-  // so connector-load failures above return without leaking a running turn.
-  // abortCtrl is only read by lazily executed closures (run_script handler,
-  // loop options below), which all run inside the try.
-  const turnController = getAgentHost().startTurn(run.id);
-  const abortCtrl = turnController;
-
-  let codingResult: { ok: boolean; error?: string };
-  try {
-    getAgentHost().bindHeadlessConfirmTransport(run.id, {
-      emitApproval: ({ callId, toolName, title, detail }) => emitRun("approval", { tool: toolName, callId, title, detail }),
-      registerPending: (callId, resolve) => {
-        const key = automationKey(run.id, callId);
-        const trusted = getAgentHost().readPendingApprovalArgs(run.id, callId) ?? {};
-        pendingAutomationApprovals.set(key, { tool: "plugin_confirm", args: trusted, db, runId: run.id, resolve: (d) => resolve(d.approved) });
-        return () => { pendingAutomationApprovals.delete(key); };
+  const automationTools: AgentTool[] = [];
+  const addTool = (def: { function: { name: string; description: string; parameters: Record<string, unknown> } }, risk: AgentTool["risk"], run: (args: never) => Promise<unknown>) => {
+    automationTools.push(defineTool({
+      name: def.function.name,
+      description: def.function.description,
+      parameters: fromJsonSchema(def.function.parameters),
+      risk,
+      execute: async (args) => {
+        const out = await run(args as never);
+        return { content: typeof out === "string" ? out : JSON.stringify(out) };
       },
+    }));
+  };
+  if (runScript) addTool(runScriptToolDefinition as never, () => ({ class: "EXEC" }), (a) => runScript(a));
+  if (writeRunFileHandler) addTool(writeRunFileToolDefinition as never, () => ({ class: "WRITE_LOCAL" }), (a) => writeRunFileHandler(a));
+  if (deliverFileHandler) addTool(deliverFileToolDefinition as never, () => ({ class: "WRITE_LOCAL" }), (a) => deliverFileHandler(a));
 
+  // Aborted by session:abort (which stops the engine run) or by the run_script handler's own signal.
+  const abortCtrl = new AbortController();
+
+  // Arguments per call, so a standing rule can match on the real target when an ask arrives.
+  const argsByCall = new Map<string, Record<string, unknown>>();
+  const engineCtx = { db, workspacePath, getWin: () => null } as unknown as DbContext;
+  const tap: HostSend = (channel, payload) => {
+    if (channel === "session:event") {
+      const event = (payload as SessionEventEnvelope).event;
+      if (event.type === "tool/call") {
+        const d = event.data as { callId?: string; args?: Record<string, unknown> };
+        if (d.callId) argsByCall.set(d.callId, d.args ?? {});
+      }
+      fold(event);
+      return;
+    }
+    const projection = payload as SessionProjection;
+    if (projection.kind !== "approval") return;
+    const data = projection.data as Record<string, unknown>;
+    if (data.status !== "required" || typeof data.callId !== "string") return;
+    const callId = data.callId;
+    const toolName = (data.name as string | undefined) ?? "tool";
+    const nonce = data.nonce as string | undefined;
+    const trusted = argsByCall.get(callId) ?? {};
+    emitRun("toolConfirmRequired", { tool: toolName, callId, label: data.label });
+    if (shouldAutoAllowAutomationTool(db, run, automation, toolName, trusted)) {
+      respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: true });
+      return;
+    }
+    const key = automationKey(run.id, callId);
+    pendingAutomationApprovals.set(key, {
+      tool: toolName, args: trusted, db, runId: run.id,
+      resolve: (d) => { respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: d.approved, grant: d.grant }); },
     });
+    emitRun("approval", { tool: toolName, callId });
+  };
 
-    codingResult = await getAgentHost().runAutomation({
-      db,
-      req,
-      workspacePath,
+  let codingResult: { ok: boolean; error?: string } = { ok: true };
+  let turnError: string | undefined;
+  const tapWithErrors: HostSend = (channel, payload) => {
+    if (channel === "session:projection") {
+      const p = payload as SessionProjection;
+      if (p.kind === "error") turnError = (p.data as { message?: string }).message ?? "Agent turn failed.";
+    }
+    if (channel === "session:event") {
+      const ev = (payload as SessionEventEnvelope).event;
+      if (ev.type === "turn/end") {
+        const kind = (ev.data as { reason?: { kind?: string; message?: string } }).reason?.kind;
+        if (kind && kind !== "stop") turnError ??= `Agent turn ended: ${kind}.`;
+      }
+    }
+    tap(channel, payload);
+  };
+  try {
+    await runEngineAutomation({
+      ctx: engineCtx,
       sessionId: run.id,
+      prompt: recipe,
       cwd: runDirForAgent,
-      systemPrompt: recipe,
-      llmConfig: { baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai" },
-      mode: "execute",
-      sandboxMode: "workspace-write",
-      usageSource: "automation",
+      projectId: automation.projectId ?? undefined,
+      workspaceId: automation.workspaceId,
+      systemPrompt: buildSystemPrompt(req),
+      llmConfig: {
+        baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai",
+        maxSteps: cached.maxSteps ?? DEFAULT_MAX_STEPS, temperature: req.config?.temperature,
+      } as never,
+      extraTools: automationTools,
       autoApprove: automation.approvalMode !== "ask",
       signal: abortCtrl.signal,
-      send: loopSend,
-      extraTools: automationTools,
-      approvals: {
-        registerPending: (callId, resolve) => {
-          const toolName = confirmToolByCallId.get(callId) ?? "tool";
-          confirmToolByCallId.delete(callId);
-          const trusted = getAgentHost().readPendingApprovalArgs(run.id, callId) ?? {};
-          if (shouldAutoAllowAutomationTool(db, run, automation, toolName, trusted)) {
-            resolve({ approved: true });
-            return () => {};
-          }
-          const key = automationKey(run.id, callId);
-          pendingAutomationApprovals.set(key, { tool: toolName, args: trusted, db, runId: run.id, resolve });
-          emitRun("approval", { tool: toolName, callId });
-          return () => { pendingAutomationApprovals.delete(key); };
-        },
-      },
-      onSessionEvent: fold,
+      tap: tapWithErrors,
     });
+    if (turnError) codingResult = { ok: false, error: turnError };
+  } catch (err) {
+    codingResult = { ok: false, error: errMsg(err) };
   } finally {
-    getAgentHost().unbindConfirmTransport(run.id);
-    getAgentHost().endTurn(run.id, turnController);
+    for (const k of [...pendingAutomationApprovals.keys()]) if (k.startsWith(`${run.id}::`)) pendingAutomationApprovals.delete(k);
   }
   const result = { content: finalContent || recipe, exhausted: !codingResult.ok, error: codingResult.error };
   emitRun("finished", { exhausted: Boolean(result.exhausted), content: result.content, error: result.error });

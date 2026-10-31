@@ -2,7 +2,7 @@
 
 /**
  * SchedulePill — read-only alarm pill showing a session's active reminder
- * count (dsh schedule overlay, opt-in). Self-hiding when the overlay is off
+ * count (engine schedule overlay, opt-in). Self-hiding when the overlay is off
  * or there are no reminders. Polled on mount + whenever `pollKey` changes
  * (callers pass the turn loading flag so the count refreshes at turn end) —
  * deliberately no standing subscription.

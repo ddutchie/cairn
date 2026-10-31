@@ -32,19 +32,18 @@ import { EmbeddingsSettings } from "./EmbeddingsSettings";
 import { ToolsSettings } from "./ToolsSettings";
 import { CommandsSettings } from "./CommandsSettings";
 import { UserStyleSettings } from "./UserStyleSettings";
-import { PluginsSettings } from "./PluginsSettings";
 import type { SettingsSection } from "@/types";
 
 export function SettingsView() {
   const { workspaces, projects, notes, cards, settingsSection, setSettingsSection } = useCairnStore(useShallow((s) => ({ workspaces: s.workspaces, projects: s.projects, notes: s.notes, cards: s.cards, settingsSection: s.settingsSection, setSettingsSection: s.setSettingsSection })));
 
   // Map legacy section ids to new consolidated parents (so deep-links keep working).
-  // general now holds Tags; ai holds agents; extensions holds tools/commands/plugins; system holds shortcuts/data/about.
+  // general now holds Tags; ai holds agents; extensions holds tools/commands; system holds shortcuts/data/about.
   function mapLegacySection(s: SettingsSection | null): SettingsSection {
     if (!s) return "general";
     if (s === "tags") return "general";
     if (s === "agents") return "ai";
-    if (s === "tools" || s === "commands" || s === "plugins") return "extensions";
+    if (s === "tools" || s === "commands") return "extensions";
     if (s === "shortcuts" || s === "data" || s === "about") return "system";
     return s;
   }
@@ -53,9 +52,8 @@ export function SettingsView() {
     if (s === "about") return "about";
     return "shortcuts";
   }
-  function initialExtensionsSubtab(s: SettingsSection | null): "tools" | "commands" | "plugins" {
+  function initialExtensionsSubtab(s: SettingsSection | null): "tools" | "commands" {
     if (s === "commands") return "commands";
-    if (s === "plugins") return "plugins";
     return "tools";
   }
 
@@ -68,7 +66,7 @@ export function SettingsView() {
   const [aiSubtab, setAiSubtab] = useState<"chat" | "agents" | "mcp">(
     () => (settingsSection === "agents" ? "agents" : "chat"),
   );
-  const [extensionsSubtab, setExtensionsSubtab] = useState<"tools" | "commands" | "plugins">(
+  const [extensionsSubtab, setExtensionsSubtab] = useState<"tools" | "commands">(
     () => initialExtensionsSubtab(settingsSection as SettingsSection | null),
   );
   const [systemSubtab, setSystemSubtab] = useState<"shortcuts" | "data" | "about">(
@@ -80,7 +78,7 @@ export function SettingsView() {
         // Sync subtab when deep-link arrives
         if (settingsSection === "agents") setAiSubtab("agents");
         if (settingsSection === "ai") setAiSubtab("chat");
-        if (settingsSection === "tools" || settingsSection === "commands" || settingsSection === "plugins") {
+        if (settingsSection === "tools" || settingsSection === "commands") {
           setExtensionsSubtab(initialExtensionsSubtab(settingsSection));
         }
         if (settingsSection === "shortcuts" || settingsSection === "data" || settingsSection === "about") {
@@ -172,12 +170,10 @@ export function SettingsView() {
                 options={[
                   { value: "tools", label: "Tools", icon: <Wrench size={12} /> },
                   { value: "commands", label: "Commands", icon: <SlashSquare size={12} /> },
-                  { value: "plugins", label: "Plugins", icon: <Puzzle size={12} /> },
                 ]}
               />
               {extensionsSubtab === "tools" && <ToolsSettings />}
               {extensionsSubtab === "commands" && <CommandsSettings />}
-              {extensionsSubtab === "plugins" && <PluginsSettings />}
             </div>
           )}
           {section === "writing-style" && <UserStyleSettings />}
@@ -213,7 +209,6 @@ export function SettingsView() {
           {section === "agents" && <AgentSettings />}
           {section === "tools" && <ToolsSettings />}
           {section === "commands" && <CommandsSettings />}
-          {section === "plugins" && <PluginsSettings />}
           {section === "tags" && <TagsSettings />}
           {section === "shortcuts" && <ShortcutsSettings />}
           {section === "data" && (

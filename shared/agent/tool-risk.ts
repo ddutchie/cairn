@@ -15,7 +15,7 @@ export type GrantScope = "none" | "command" | "session";
 
 /**
  * Shell tools with a `command` argument. `pwsh` replaces `bash` on Windows
- * (dsh-tool-pwsh, upstream's win32 default); both are EXEC and bind standing
+ * (engine-tool-pwsh, upstream's win32 default); both are EXEC and bind standing
  * grants to the exact command.
  */
 const SHELL_TOOLS = new Set<string>(["bash", "pwsh"]);
@@ -35,19 +35,19 @@ export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "get_context", "get_item", "search_notes", "search_tasks",
   "get_user_writing_style", "get_idea_flow", "get_graph", "codebase_query",
   "ask_questions", "skill",
-  // Read-only continuable-child discovery (dsh-tool-subagent-control/list-agents).
+  // Read-only continuable-child discovery (engine-tool-subagent-control/list-agents).
   "list_agents",
-  // Background-job reads (dsh-tool-jobs): listing and collecting a job's
+  // Background-job reads (engine-tool-jobs): listing and collecting a job's
   // output mutate nothing (collection is the job's own completion path).
   "job_list", "job_output",
-  // Read-only terminal session inspection (dsh-tool-terminal): listing sessions
+  // Read-only terminal session inspection (engine-tool-terminal): listing sessions
   // and reading a session's own output mutate nothing. open/send/signal/close
   // are EXEC below (shell-capable).
   "terminal_list", "terminal_read",
-  // Read-only LSP navigation (dsh-tool-lsp): transient open → query → close,
+  // Read-only LSP navigation (engine-tool-lsp): transient open → query → close,
   // no workspace mutation possible through the 4-op union.
   "lsp",
-  // Past-session search/read (dsh-tool-session-query): read-only, and
+  // Past-session search/read (engine-tool-session-query): read-only, and
   // limited to sessions in the caller's own workspace folder.
   "session_search", "session_event_search", "session_trace",
   "session_event_trace", "session_event_read",
@@ -62,7 +62,7 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "codebase_reindex", "suggest_connections", "update_user_writing_style",
 ]);
 
-/** Mutating dsh coding-stack tools (fs/editor/todo). bash is EXEC, not here. */
+/** Mutating engine coding-stack tools (fs/editor/todo). bash is EXEC, not here. */
 const DSH_WRITE_TOOLS = new Set<string>(["write", "edit", "str_replace_editor", "todo_write"]);
 
 /** Does this call need the user's approval before it runs? */
@@ -85,18 +85,18 @@ export function needsApprovalForCall(name: string, args: Record<string, unknown>
 
 export function riskForTool(name: string): RiskClass {
   if (/^(?:mcp|svc)__/.test(name)) return "EXTERNAL";
-  // Shared MCP resource tools (dsh-mcp-resources): they reach a user-configured
+  // Shared MCP resource tools (engine-mcp-resources): they reach a user-configured
   // external server just like its mcp__ tools, so they carry the same class.
   if (name === "list_mcp_resources" || name === "list_mcp_resource_templates" || name === "read_mcp_resource") return "EXTERNAL";
   if (isShellTool(name)) return "EXEC";
-  // `subagent` (dsh-tool-subagent, registered under toolName "subagent") spawns
+  // `subagent` (engine-tool-subagent, registered under toolName "subagent") spawns
   // an in-process child agent that inherits the coding tool stack — including
   // bash/fs/editor — so it reaches the shell and is EXEC-class, not a local
   // write. The old `spawn_subagent` name matched nothing the runtime registers,
   // so the real tool silently fell through to WRITE_LOCAL and was offered a
   // standing "session" grant (understating a shell-capable delegation).
   if (name === "subagent") return "EXEC";
-  // `delegate` (dsh-tool-subagent under toolName "delegate", backgroundMode
+  // `delegate` (engine-tool-subagent under toolName "delegate", backgroundMode
   // continuable) spawns the same shell-capable in-process child — EXEC, and
   // one-off (no standing grant: each delegation deserves its own decision).
   if (name === "delegate") return "EXEC";
@@ -108,7 +108,7 @@ export function riskForTool(name: string): RiskClass {
   // `job_kill` stops a background job (terminal delivery is reported, so the
   // model is never left believing it still runs). One-off like interrupt.
   if (name === "job_kill") return "EXEC";
-  // Persistent-terminal process control (dsh-tool-terminal): open/send/signal
+  // Persistent-terminal process control (engine-tool-terminal): open/send/signal
   // reach a login shell with ambient authority (no Seatbelt/Landlock sandbox,
   // unlike one-shot bash-sandbox) — EXEC-class like bash, one-off with no
   // standing grant. read/list are READ above; close kills the session (own or

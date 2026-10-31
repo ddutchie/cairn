@@ -6,7 +6,7 @@ import type { SessionConversationQuestion, SessionConversationToolCall } from "@
  * Live tool-call and question shapes for the shared conversation layer.
  *
  * These used to live in `@/hooks/useChatStream`, which meant the profile-neutral
- * conversation components (and `@/lib/dsh-toolview`) imported from the CHAT
+ * conversation components (and `@/lib/tool-views`) imported from the CHAT
  * hook — the shared layer depending on one of its two consumers. They are
  * declared here so both chat and coding depend on the shared layer instead, not
  * on each other. `useChatStream` re-exports them for compatibility.
@@ -22,9 +22,9 @@ export interface ConversationToolCall {
   callId?: string;
   name: string;
   label: string;
-  /** Tool-authored title from dsh `presentCall`; ToolCallBody prefers it over humanized text. */
+  /** Tool-authored title from engine `presentCall`; ToolCallBody prefers it over humanized text. */
   viewTitle?: string;
-  /** Tool-authored result view from dsh `presentResult`; ToolCallBody renders terminal/generic cards. */
+  /** Tool-authored result view from engine `presentResult`; ToolCallBody renders terminal/generic cards. */
   resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   args?: Record<string, unknown>;
   running?: boolean;

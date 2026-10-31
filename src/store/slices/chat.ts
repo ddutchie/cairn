@@ -22,7 +22,7 @@ export interface ChatSlice {
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
   activeChatThreadId: string | null;
-  /** Projected titles from dsh's session/title fold (null = no title yet). Chat-only. */
+  /** Projected titles from engine's session/title fold (null = no title yet). Chat-only. */
   projectedTitles: Record<string, string | null>;
   /** Threads with assistant/system output the user hasn't opened yet (e.g. a
    *  background turn that finished while another thread was active). Cleared
@@ -111,9 +111,9 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     if ("error" in threadsRes) return;
     const dbThreads = threadsRes.data;
 
-    // Pull messages for every thread in parallel — dsh's JSONL session log
+    // Pull messages for every thread in parallel — engine's JSONL session log
     // (JsonlSessionPersistence, stable id `chat-<threadId>`) is the sole
-    // source of truth. The pre-Cordis `chat_messages` SQLite table was
+    // source of truth. The legacy `chat_messages` SQLite table was
     // dropped in migration v49; there is no SQLite fallback. A thread that
     // has no session log yet (a brand-new thread whose first turn hasn't
     // been persisted) simply renders empty until the first assistant reply
@@ -178,7 +178,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
         else if (title === null) nextProjected[tid] = null;
       }
 
-      // Merge messages: session (dsh) is the source of truth for all loaded
+      // Merge messages: session (engine) is the source of truth for all loaded
       // threads. Replace in-memory copies for those threads so stale optimistic
       // streaming bubbles (e.g. empty content + tools) do not duplicate
       // alongside replayed turns.
@@ -229,7 +229,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     get().persist();
 
     // Drop redundant duplicate rows. Older builds indexed every chat event under
-    // the dsh session id (`chat-<threadId>`) instead of the thread id, leaving
+    // the engine session id (`chat-<threadId>`) instead of the thread id, leaving
     // an untitled phantom `chat-<id>` row next to the real `<id>` row (or the
     // reverse, when the conversation continued on the phantom). A blank,
     // untitled row is redundant when its counterpart holds the conversation.
@@ -362,7 +362,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
           : s.unreadThreadIds,
     }));
     get().persist();
-    // Chat transcripts are persisted by dsh's JSONL session log (session-as-truth,
+    // Chat transcripts are persisted by engine's JSONL session log (session-as-truth,
     // read back via db:chat:sessionMessages), NOT the chat_messages SQLite table.
     // We keep the message in memory (optimistic render for the live turn +
     // localStorage via persist()), but no longer write it to SQLite — that table
@@ -436,7 +436,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       projectedTitles: { ...s.projectedTitles, [threadId]: trimmed || null },
     }));
     get().persist();
-    // Pin via dsh's sessionTitle.rename (kind:'user' — stops auto-titling).
+    // Pin via engine's sessionTitle.rename (kind:'user' — stops auto-titling).
     // Chat-only: coding sessions are not auto-titled in phase 1.
     ipcAwait((e) => e.session.renameTitle(threadId, trimmed));
     // Also keep SQLite index row in sync (SQLite is the thread-list fallback).
@@ -476,8 +476,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     };
     set((s) => ({ chatMessages: [...s.chatMessages, tempMsg] }));
 
-    // Session-as-truth compaction: the electron handler runs dsh's compactNow,
-    // which rewrites the thread's dsh session surface (a summary `replace` node).
+    // Session-as-truth compaction: the electron handler runs engine's compactNow,
+    // which rewrites the thread's engine session surface (a summary `replace` node).
     // We then re-read the thread from the session log so the compacted history
     // (summary node + retained tail) replaces the in-memory transcript.
     const result = await ipcResult((e) => e.chat.compactThread({
@@ -497,7 +497,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
     if ("error" in result) console.warn("[chat] compact failed", result.error);
     else {
-      // Reload this thread's messages from the (now compacted) dsh session log so
+      // Reload this thread's messages from the (now compacted) engine session log so
       // the summary node + retained tail render, and the thread persists across
       // reload (session is the source of truth). Replace only THIS thread's
       // messages to avoid disturbing other threads' in-memory state.

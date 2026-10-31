@@ -3,8 +3,8 @@
  *
  * Single owner of every PTY child process in the main process: the
  * renderer's bottom-terminal tabs (`agent:spawnShell` et al. in
- * `electron/ipc/agent.ts`) AND the dsh model terminal backend
- * (`electron/cordis/terminal-backend.ts`) both allocate through here, so
+ * `electron/ipc/agent.ts`) AND the engine model terminal backend
+ * (`electron/agent/terminal-backend.ts`) both allocate through here, so
  * there is exactly one spawn/validation/kill implementation and one live
  * session table. Kill propagation is trivially bidirectional at this
  * level: `killPtySession` kills the OS process regardless of which side
@@ -25,6 +25,7 @@ import { createRequire } from "node:module";
 import type { Database } from "better-sqlite3";
 import type * as nodePty from "node-pty";
 import { newId } from "../db/utils";
+import { sandboxUnavailable, wrapSandboxed } from "../agent/sandbox";
 import type { ModelPtyEvent, ModelTerminal } from "../../shared/types/coding-agent";
 
 /** Structural subset of node-pty's IPty used by every consumer here. */
@@ -88,7 +89,7 @@ const sessions = new Map<string, PtySessionEntry>();
 
 // ── Model-PTY observation ─────────────────────────────────────────────────────
 //
-// Model-owned PTYs (`kind: "model"`) are spawned by the dsh terminal backend,
+// Model-owned PTYs (`kind: "model"`) are spawned by the engine terminal backend,
 // not by a renderer, so no `webContents` is listening. Observers (the IPC
 // layer, which fans out to windows) subscribe here; raw output is also kept in
 // a bounded per-session ring so a late-opened tab can replay it.
@@ -286,6 +287,8 @@ export interface SpawnShellPtyOptions {
   agentId?: string;
   taskId?: string;
   kind?: PtySessionKind;
+  /** Confine the shell (model terminals): writes limited to the cwd and temp dirs. */
+  sandbox?: import("../agent/sandbox").SandboxOptions;
 }
 
 export async function spawnShellPty(
@@ -359,10 +362,14 @@ export async function spawnShellPty(
 
   // Model shells have no human to press `q`: a pager (`git log`, `man`) would
   // block the send until timeout and paint full-screen control codes. Same
-  // overrides dsh-bash-local applies to one-shot bash calls.
+  // overrides engine-bash-local applies to one-shot bash calls.
   const env = opts.kind === "model"
     ? { ...process.env, PAGER: "cat", GIT_PAGER: "cat", NO_COLOR: "1" } as Record<string, string>
     : process.env as Record<string, string>;
+
+  // Fail closed: a sandboxed terminal must not quietly start unconfined.
+  const unavailable = opts.sandbox && sandboxUnavailable(opts.sandbox.mode);
+  if (unavailable) throw new Error(`Sandbox unavailable, terminal not started: ${unavailable}`);
 
   let pty: PtyHandle | undefined;
   let lastError: Error | null = null;
@@ -371,7 +378,8 @@ export async function spawnShellPty(
   for (const attempt of filteredAttempts) {
     try {
       const resolvedAttemptCwd = await getRealPath(attempt.cwd);
-      pty = spawnFn()(attempt.shell, [], {
+      const launch = opts.sandbox ? wrapSandboxed({ file: attempt.shell, args: [] }, resolvedAttemptCwd, { ...opts.sandbox, pty: true }) : { file: attempt.shell, args: [] as string[] };
+      pty = spawnFn()(launch.file, launch.args, {
         name: "xterm-256color",
         cols: 120,
         rows: 30,

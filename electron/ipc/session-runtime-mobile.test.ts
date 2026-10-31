@@ -25,8 +25,11 @@ vi.mock("./registry", () => ({
   sendIpcEvent: vi.fn(),
 }));
 const runChatPrompt = vi.fn();
-vi.mock("./chat", () => ({ runChatPrompt: (...a: unknown[]) => runChatPrompt(...a) }));
-vi.mock("../cordis/agent-host", () => ({ getAgentHost: () => ({ isTurnRunning: () => false }) }));
+vi.mock("./chat", () => ({ runChatPrompt: vi.fn() }));
+vi.mock("./engine-bridge", async (orig) => ({
+  ...(await orig<typeof import("./engine-bridge")>()),
+  runEngineChat: (...a: unknown[]) => runChatPrompt(...a),
+}));
 const cacheLlmConnection = vi.fn();
 const REF = "secret-ref:llm/openai";
 vi.mock("../lib/config-cache", () => ({
@@ -62,7 +65,7 @@ describe("session:prompt from Mobile Access", () => {
       config: { baseUrl: "https://evil.example", apiKey: REF, model: "m", mode: "auto", autoApprove: true },
     });
     expect(runChatPrompt).toHaveBeenCalledTimes(1);
-    const chatReq = runChatPrompt.mock.calls[0][2] as { approvalPolicy?: unknown; config: Record<string, unknown> };
+    const chatReq = runChatPrompt.mock.calls[0][1] as { approvalPolicy?: unknown; config: Record<string, unknown> };
     expect(chatReq.approvalPolicy).toBeUndefined();
     expect(chatReq.config).toEqual({ baseUrl: "https://api.openai.com", apiKey: REF, provider: "openai", model: "m" });
   });
@@ -73,7 +76,7 @@ describe("session:prompt from Mobile Access", () => {
       sessionId: "chat-t2", prompt: "hi", profile: "chat", cwd: "/", approvalPolicy: "allow-all",
       config: { baseUrl: "http://localhost:1234", apiKey: "", model: "m" },
     });
-    const chatReq = runChatPrompt.mock.calls[0][2] as { approvalPolicy?: unknown; config: Record<string, unknown> };
+    const chatReq = runChatPrompt.mock.calls[0][1] as { approvalPolicy?: unknown; config: Record<string, unknown> };
     expect(chatReq.approvalPolicy).toBe("allow-all");
     expect(chatReq.config.baseUrl).toBe("http://localhost:1234");
   });

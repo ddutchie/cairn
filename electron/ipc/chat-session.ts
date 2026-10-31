@@ -1,20 +1,13 @@
 /**
- * Cairn — Chat session IPC (dsh as source of truth).
- *
- * Loads chat history directly from dsh's JSONL session log via the shared
- * session-replay helpers (electron/cordis/session-replay.ts), which use the
- * canonical surface (foldSurface + deriveEventMessage) and attach subagent
- * children. The coding-session load path uses the SAME helpers so both surfaces
- * stay in lockstep (session-as-truth, not the duplicated SQLite tables).
+ * Cairn — Chat session IPC. Chat history replays from the engine's session log,
+ * the same source the coding-session load path uses.
  */
 
 import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
-import { SessionId } from "@deepseek-ai/dsh-session";
-import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
-import { getAgentHost } from "../cordis/agent-host";
+import type { ReplayMessage, ReplaySubagent } from "../../shared/agent/session-wire";
+import { engineOwns, getEngineHost } from "./engine-bridge";
 import type { ChatMessage } from "../../shared/types/chat";
-import { errMsg } from "../host-shared/errors";
 
 function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessage[] {
   return messages.map((m) => ({
@@ -37,46 +30,29 @@ function toChatMessages(threadId: string, messages: ReplayMessage[]): ChatMessag
 export function registerChatSessionHandlers(ctxDb: DbContext): void {
   registerContractHandle("db:chat:sessionMessages", (_e, { threadId }) => handle(async () => {
     if (!threadId) return { messages: [] as ChatMessage[] };
-    try {
-      const stableId = String(SessionId(`chat-${threadId}`));
-      const { messages, usage, contextRing, todos, stats, title } = await getAgentHost().loadSessionMessages(stableId);
-      const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
-      const chatMessages = toChatMessages(threadId, enrichToolCallsWithMeta(messages));
-
-      return {
-        messages: chatMessages,
-        usage,
-        contextRing,
-        todos,
-        stats,
-        title: title ?? null,
-      };
-    } catch (err) {
-      const msg = errMsg(err);
-      if (msg.includes("not found") || msg.includes("no such") || msg.includes("ENOENT") || msg.includes("but this backend is configured for compression") || msg.includes("encodingMismatch")) return { messages: [] as ChatMessage[] };
-      throw err;
+    if (await engineOwns(ctxDb, `chat-${threadId}`)) {
+      const { messages, usage, title, contextRing, todos } = await getEngineHost(ctxDb).loadMessages(`chat-${threadId}`);
+      return { messages: toChatMessages(threadId, messages), usage, title, contextRing, todos };
     }
+    return { messages: [] as ChatMessage[] };
   }));
 
   // ── Session title (chat-only, phase 1) ───────────────────────────────────
   // Direct read of the latest folded title for one chat thread (session:projection
   // is the live push path; this is the cold read / reload path).
   registerContractHandle("session:title", (_e, { threadId, sessionId }) => handle(async () => {
-    const sid = sessionId ?? (threadId ? String(SessionId(`chat-${threadId}`)) : "");
+    const sid = sessionId ?? (threadId ? `chat-${threadId}` : "");
     if (!sid || !sid.startsWith("chat-")) return { title: null as string | null };
-    try {
-      return { title: await getAgentHost().readSessionTitle(sid) };
-    } catch {
-      return { title: null as string | null };
-    }
+    if (await engineOwns(ctxDb, sid)) return { title: await getEngineHost(ctxDb).title(sid) };
+    return { title: null as string | null };
   }));
 
   // Manual rename — pins the title (kind:'user'). Chat-only.
   registerContractHandle("session:renameTitle", (_e, { threadId, sessionId, title }) => handle(async () => {
-    const sid = sessionId ?? (threadId ? String(SessionId(`chat-${threadId}`)) : "");
+    const sid = sessionId ?? (threadId ? `chat-${threadId}` : "");
     if (!sid || !sid.startsWith("chat-")) throw new Error("renameTitle: only chat threads can be renamed");
     if (typeof title !== "string" || !title.trim()) throw new Error("renameTitle: title must be non-empty");
-    const renamedTitle = await getAgentHost().renameSessionTitle(sid, title);
+    const renamedTitle = await getEngineHost(ctxDb).rename(sid, title, ctxDb.workspacePath);
     try {
       const q = await import("../db/queries");
       const db = ctxDb.db;

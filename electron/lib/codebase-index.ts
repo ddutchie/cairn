@@ -40,7 +40,7 @@ const IGNORED_DIRS = new Set([
   // Rust / Go / JVM / C#
   "target", "bin", "obj", "vendor",
   // Agent-generated artifact output (community plugins write here — e.g.
-  // dsh-visualize renders cards to viz/<slug>-<hash>.html). Never source.
+  // engine-visualize renders cards to viz/<slug>-<hash>.html). Never source.
   "viz",
   // Cairn chat-artifact dir (.chat/viz/…) + app dir inside a workspace (skills).
   ".chat", ".cairn",

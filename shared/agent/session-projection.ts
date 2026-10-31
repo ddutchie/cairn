@@ -17,7 +17,7 @@ export interface GoalSummary {
   updatedAt: number;
 }
 
-/** Renderer-safe summary of one dsh background job (`JobSnapshot` subset). */
+/** Renderer-safe summary of one engine background job (`JobSnapshot` subset). */
 export interface JobSummary {
   id: string;
   kind: string;
@@ -65,7 +65,7 @@ export type SessionProjectionData = {
   error: { message: string; code?: SessionBusyReason | string };
   jobs: { ownerSession?: string; jobs: JobSummary[] };
   goal: { goal: GoalSummary | null; operation?: string };
-  /** dsh permission-presets `permissions` view: preset options + current value. */
+  /** engine permission-presets `permissions` view: preset options + current value. */
   permissions: {
     options: Array<{ value: string; name: string; description?: string }>;
     currentValue: string;

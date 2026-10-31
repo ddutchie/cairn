@@ -56,8 +56,9 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "session:job-kill": true,
   "session:goal": true,
   "session:schedule-list": true,
-  "cordis:listCommands": true,
-  "cordis:executeCommand": false, // slash commands run with the desktop agent config
+  "commands:list": true,
+  "sandbox:status": false,
+  "commands:execute": false, // slash commands run with the desktop agent config
 
   // ── Workspace data ──
   "db:workspace:list": true,
@@ -311,15 +312,6 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "registry:refreshPersonalities": true,
   "registry:fetchChatThemes": true,
   "registry:refreshChatThemes": true,
-
-  // ── Plugins (install/update fetch and run third-party code) ──
-  "plugins:listUi": false,
-  "plugins:list": false,
-  "plugins:setEnabled": false,
-  "plugins:openFolder": false,
-  "plugins:install": false,
-  "plugins:update": false,
-  "plugins:uninstall": false,
 
   // ── Embeddings + runtimes: status and search only ──
   "embeddings:status": true,

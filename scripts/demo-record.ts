@@ -8,10 +8,10 @@
  * webContents.capturePage() and piped into ffmpeg at a high bitrate, bypassing
  * Playwright's lossy recordVideo encoder entirely, so the source is crisp.
  *
- * Requires the live model bridge (CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local), the
+ * Requires the live model bridge (CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local), the
  * Next dev server, and ffmpeg. Run:
  *   npm run compile
- *   CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local node --experimental-strip-types scripts/demo-record.ts
+ *   CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local node --experimental-strip-types scripts/demo-record.ts
  *
  * Output: <repo>/electron-recordings/demo.mp4 (set RECORD_DIR to change).
  */
@@ -21,8 +21,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-const BASE = process.env.CORDIS_TEST_BASE_URL ?? "http://localhost:3042/v1";
-const MODEL = process.env.CORDIS_TEST_MODEL ?? "claude-sonnet-4-5";
+const BASE = process.env.CAIRN_TEST_BASE_URL ?? "http://localhost:3042/v1";
+const MODEL = process.env.CAIRN_TEST_MODEL ?? "claude-sonnet-4-5";
 const MAIN = path.resolve("dist-electron/main.js");
 const RECORD_DIR = process.env.RECORD_DIR ?? path.resolve("electron-recordings");
 // Match the Electron BrowserWindow's 1400x900 exactly (no letterboxing/borders).
@@ -31,8 +31,8 @@ const H = 900;
 // Capture rate — a UI demo is fine around 12fps; bump for smoother motion.
 const FPS = 12;
 
-if (process.env.CORDIS_LIVE !== "1") {
-  console.error("Set CORDIS_LIVE=1 CORDIS_DUMMY_KEY=local to record a demo (needs the model bridge).");
+if (process.env.CAIRN_LIVE !== "1") {
+  console.error("Set CAIRN_LIVE=1 CAIRN_DUMMY_KEY=local to record a demo (needs the model bridge).");
   process.exit(1);
 }
 
@@ -51,7 +51,7 @@ function cleanStaleDemoTmp() {
       }
     }
   } catch {}
-  // Also clear any leftover session.jsonl.zstd in /tmp from cordis runs
+  // Also clear any leftover session.jsonl.zstd in /tmp from agent runs
   try { fs.rmSync("/tmp/session.jsonl", { force: true }); } catch {}
   try { fs.rmSync("/tmp/session.jsonl.zstd", { force: true }); } catch {}
 }
@@ -257,7 +257,7 @@ async function main() {
       { title: "Ship the shared-workspaces beta", col: "Todo", due: "2026-09-01", assignee: "Aria" },
       { title: "Write onboarding copy for new vaults", col: "Todo", due: "2026-08-25" },
       // In Progress — active this sprint
-      { title: "Port the coding agent onto the Cordis runtime", col: "In Progress", due: "2026-08-22", assignee: "Sam" },
+      { title: "Port the coding agent onto the new agent engine", col: "In Progress", due: "2026-08-22", assignee: "Sam" },
       { title: "Stream thinking blocks for the chat loop", col: "In Progress", due: "2026-08-21", assignee: "Sam" },
       { title: "Add cross-note AI summaries", col: "In Progress", due: "2026-08-28", assignee: "Aria" },
       // Review — waiting on validation

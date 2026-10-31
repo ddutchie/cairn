@@ -1,3 +1,5 @@
+> **Historical.** This describes the retired DeepSeek harness (Cordis / `dsh-*`), removed in v3.1.8. The current engine is in `electron/agent/` (see `docs/plans/agent-engine-design.md`).
+
 # Approval-Gating Audit — dsh ↔ Cairn
 
 > **Fixes landed; pointers rotted.** The gating design and Phase A–C fixes described here match the code, but all file:line refs predate the refactor — verify against `electron/cordis/cairn-plugins.ts`, `approval-grants.ts`, `approval-transports.ts`, and `shared/agent/tool-risk.ts`, not the cited lines.

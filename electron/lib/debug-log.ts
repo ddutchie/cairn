@@ -95,8 +95,8 @@ function ensureStream(): fs.WriteStream | null {
 
 /**
  * Append one structured entry. `scope` groups related lines (e.g. "chat",
- * "cordis-coding"); `fields` is JSON-serialised with circular refs and Errors
- * flattened so a raw dsh event or failure object can be passed verbatim.
+ * "engine-coding"); `fields` is JSON-serialised with circular refs and Errors
+ * flattened so a raw engine event or failure object can be passed verbatim.
  */
 export function dlog(scope: string, message: string, fields?: Fields): void {
   const line = { t: new Date().toISOString(), scope, message, ...(fields ?? {}) };
@@ -114,7 +114,7 @@ export function dlog(scope: string, message: string, fields?: Fields): void {
 
 /**
  * JSON.stringify that tolerates the shapes we actually pass in: Errors (which
- * serialise to `{}` by default), circular graphs (dsh sessions/contexts), and
+ * serialise to `{}` by default), circular graphs (engine sessions/contexts), and
  * BigInt. Falls back to a marker string rather than throwing.
  */
 function safeStringify(value: unknown): string {

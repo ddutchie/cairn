@@ -28,7 +28,7 @@ interface PreviewsState {
 
 /**
  * Shared loader for the AI Settings tabs (Chat / Coding Agents / MCP).
- * Fetches the live Cordis prompt assembly, the coding-agent prompt, and the
+ * Fetches the live engine prompt assembly, the coding-agent prompt, and the
  * per-surface tool inventory in parallel. Each tab renders only its slice —
  * Chat shows the chat prompt + chat tools, Coding Agents the coding prompt +
  * coding/automation-dev tools, MCP the server config + MCP tools.

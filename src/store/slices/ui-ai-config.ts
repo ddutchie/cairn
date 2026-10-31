@@ -402,12 +402,14 @@ export interface AgentConfig {
    */
   reasoningEffort?: ReasoningEffort;
   /**
-   * Opt-in dsh session reminders (`schedule_create`/`schedule_list`/
-   * `schedule_delete` tools + header alarm pill). Read once at Cordis
+   * Opt-in engine session reminders (`schedule_create`/`schedule_list`/
+   * `schedule_delete` tools + header alarm pill). Read once at engine
    * bootstrap to gate the schedule overlay mount — toggling needs an app
    * restart. Default OFF. Explicitly NOT Cairn's own heartbeat.
    */
   scheduleEnabled?: boolean;
+  /** OS sandbox for agent shell commands (default "workspace-write"). */
+  sandbox?: "workspace-write" | "off";
 }
 
 // ── Slice interface ───────────────────────────────────────────────────────────

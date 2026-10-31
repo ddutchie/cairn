@@ -357,7 +357,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       onExit:           makeListener("agent.onExit"),
     },
 
-    // ── Cairn native agent (pi) — Cordis/dsh unified session ─────────────────
+    // ── Cairn native agent (pi) — agent/dsh unified session ─────────────────
     // Single source of truth: src/test-utils/session-mock.ts (embedded by
     // source so the page script stays import-free).
     session: (${buildSessionMock.toString()})({ noop, makeListener }),

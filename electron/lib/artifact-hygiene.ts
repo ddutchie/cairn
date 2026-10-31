@@ -2,8 +2,8 @@
  * artifact-hygiene — keep agent-generated files out of sight and self-limiting.
  *
  * Community plugins write artifacts into the workspace through ctx.fs
- * (dsh-visualize renders cards to `viz/<slug>-<hash>.html`). The chat fs chain
- * remaps those under `<workspace>/.chat/` (see cordis-coding-tools.ts), so this
+ * (engine-visualize renders cards to `viz/<slug>-<hash>.html`). The chat fs chain
+ * remaps those under `<workspace>/.chat/` (see engine-coding-tools.ts), so this
  * module handles the rest of the lifecycle:
  *   - migrate: move a legacy top-level `viz/` (pre-remap runs) into `.chat/`,
  *   - git: list `.chat/` (+ legacy `viz/`) in `.git/info/exclude` — local-only,
@@ -84,8 +84,8 @@ export function pruneChatArtifacts(root: string, sub: string, keep: number = KEE
   return removed;
 }
 
-// ── dsh session-log retention ────────────────────────────────────────────────
-// The Cordis runtime persists every chat + coding turn to a JSONL session log
+// ── engine session-log retention ────────────────────────────────────────────────
+// The engine runtime persists every chat + coding turn to a JSONL session log
 // under `<userData>/sessions/<encoded-cwd>/<sessionId>/session.jsonl.zstd`.
 // Nothing else prunes those, so a heavy user (~20 sessions/day) accumulates
 // GBs per year with no ceiling. Age-based sweep runs at boot and periodically
@@ -137,7 +137,7 @@ function dirSizeBytes(dir: string): number {
 }
 
 /**
- * Sweep the dsh session root for session dirs whose mtime is older than
+ * Sweep the engine session root for session dirs whose mtime is older than
  * `maxAgeDays`. Session layout: `<sessionRoot>/<encoded-cwd>/<sessionId>/`
  * — we recurse ONE level (the encoded-cwd projects) and inspect each
  * session dir's mtime. Empty encoded-cwd dirs are cleaned up too.

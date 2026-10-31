@@ -25,8 +25,6 @@ export interface CachedConfig {
     contextLimit?: number;
     aiEnabled?: boolean;
     subagentsEnabled?: boolean;
-    /** @deprecated — engine is now always cordis; this field is ignored. Remove in Phase 2. */
-    engine?: "builtin" | "cordis";
     // Max output tokens: Auto (default) sends a generous 32K cap (bounded by the
     // model's declared output limit) so the model can finish naturally; a manual
     // value is a deliberate cap. Persisted so main-process consumers (e.g. the
@@ -73,10 +71,12 @@ export interface CachedConfig {
     // The coding agent's active saved-provider id. The provider LIST itself is
     // shared and persisted under aiConfig.savedProviders (single source of truth).
     activeProviderId?: string;
-    // Opt-in dsh session reminders (schedule_create/list/delete tools). Read
-    // once at Cordis bootstrap to gate the schedule overlay mount; toggling
+    // Opt-in engine session reminders (schedule_create/list/delete tools). Read
+    // once at engine bootstrap to gate the schedule overlay mount; toggling
     // needs an app restart. Default OFF.
     scheduleEnabled?: boolean;
+    // OS sandbox for agent shell commands. Unset = "workspace-write".
+    sandbox?: "workspace-write" | "off";
   };
   embeddingsConfig?: CachedEmbeddingsConfig;
   theme?: string;
@@ -185,7 +185,6 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         contextLimit: typeof configRecord.contextLimit === "number" ? configRecord.contextLimit : current.aiConfig?.contextLimit,
         aiEnabled: typeof configRecord.aiEnabled === "boolean" ? configRecord.aiEnabled : current.aiConfig?.aiEnabled,
         subagentsEnabled: typeof configRecord.subagentsEnabled === "boolean" ? configRecord.subagentsEnabled : current.aiConfig?.subagentsEnabled,
-        engine: configRecord.engine === "cordis" || configRecord.engine === "builtin" ? configRecord.engine : current.aiConfig?.engine,
         maxOutputAuto: typeof configRecord.maxOutputAuto === "boolean" ? configRecord.maxOutputAuto : current.aiConfig?.maxOutputAuto,
         // Normalize the candidate through the same helper consumers use: only a
         // value resolveMaxOutputTokens honours (>= 1, floored) is persisted; an
@@ -249,6 +248,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         mode: nextMode as import("../../shared/agent/approval-mode").Mode | undefined,
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.agentConfig?.activeProviderId,
         scheduleEnabled: typeof configRecord.scheduleEnabled === "boolean" ? configRecord.scheduleEnabled : current.agentConfig?.scheduleEnabled,
+        sandbox: configRecord.sandbox === "off" || configRecord.sandbox === "workspace-write" ? configRecord.sandbox : current.agentConfig?.sandbox,
       };
     } else if (type === "embeddings" && configRecord) {
       current.embeddingsConfig = {

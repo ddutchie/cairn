@@ -4,7 +4,7 @@
  * AgentJobsDock — live background-job list for an agent session.
  *
  * Rendered above the input area in AgentChatPane alongside AgentTodoDock.
- * Data comes from the jobs bridge (`electron/cordis/jobs-bridge.ts` → 
+ * Data comes from the jobs bridge (`electron/agent/jobs-bridge.ts` → 
  * `session:projection kind:"jobs"`): one-shot `run_in_background` and
  * continuable `delegate` work the model started. Previously this work was
  * invisible — completions only reached the model inbox.

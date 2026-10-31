@@ -61,7 +61,7 @@ describe("tool approval presentation rules", () => {
 // Drift regressions (audit G7): these were labelled READ/no-grant by the old
 // renderer-only taxonomy while the main gate asked for them.
 describe("taxonomy drift fixes (shared source of truth)", () => {
-  it("labels dsh editor/todo writes as session-grantable local writes", () => {
+  it("labels engine editor/todo writes as session-grantable local writes", () => {
     expect(riskForTool("str_replace_editor")).toBe("WRITE_LOCAL");
     expect(approvalGrantScope("str_replace_editor")).toBe("session");
     expect(riskForTool("todo_write")).toBe("WRITE_LOCAL");

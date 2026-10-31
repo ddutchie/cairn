@@ -40,9 +40,9 @@ export interface AgentMessage {
     callId: string;
     name: string;
     label: string;
-    /** Tool-authored title from dsh `presentCall` (main-attached on tool/call). */
+    /** Tool-authored title from engine `presentCall` (main-attached on tool/call). */
     viewTitle?: string;
-    /** Tool-authored result view from dsh `presentResult` (main-attached on tool/result). */
+    /** Tool-authored result view from engine `presentResult` (main-attached on tool/result). */
     resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
     args?: Record<string, unknown>;
     running: boolean;
@@ -87,7 +87,7 @@ export interface TerminalSession {
   role?: "default" | "automation-dev";
   planNoteId?: string;
   /**
-   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`,
+   * The last plan the agent committed via engine-plan-mode's `exit_plan_mode`,
    * hydrated from the DB on session load. Preferred over planNoteId for the
    * plan-review card in plan mode and for the PlanTaskList in execute mode.
    */
@@ -105,7 +105,7 @@ export interface CodingSessionSummary {
   mode: "plan" | "execute";
   planNoteId: string | null;
   /**
-   * The last plan the agent committed via dsh-plan-mode's `exit_plan_mode`
+   * The last plan the agent committed via engine-plan-mode's `exit_plan_mode`
    * for this session (persisted by the coding-plugin's tool/call handler).
    * NULL when the session never called exit_plan_mode; sessions that used
    * the legacy PRD-note flow only will have planNoteId set instead.

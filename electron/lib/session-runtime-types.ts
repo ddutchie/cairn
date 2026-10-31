@@ -1,8 +1,8 @@
 /**
  * session-runtime-types — shared types for the coding session runtime.
  *
- * `electron/ipc/session-runtime-handlers.ts` and the Cordis coding runner
- * (`run-cordis-coding.ts`) share these stable shapes.
+ * `electron/ipc/session-runtime-handlers.ts` and the engine coding runner
+ * (`run-engine-coding.ts`) share these stable shapes.
  */
 
 import type { BrowserWindow } from "electron";
@@ -34,10 +34,10 @@ export interface AgentLLMConfig {
   /** Whether the selected model is a reasoning/thinking model. */
   isReasoningModel?: boolean;
   /** Reasoning effort for reasoning-capable models. "auto"/unset → omit (vendor
-   *  default). Maps to the pi-ai reasoning vocabulary via prepareCordisRuntime. */
+   *  default). Maps to the pi-ai reasoning vocabulary via the engine runtime prep. */
   reasoningEffort?: "off" | "low" | "medium" | "high";
   /** Explicit wire protocol for this endpoint (Cairn never auto-probes on the
-   *  Cordis path). completions→openai-completions, responses→openai-responses,
+   *  engine path). completions→openai-completions, responses→openai-responses,
    *  anthropic-messages→anthropic-messages. Absent = completions. Pinned per
    *  saved provider so resumed sessions stay on a stable protocol. */
   apiMode?: "responses" | "completions" | "anthropic-messages";

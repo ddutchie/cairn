@@ -118,7 +118,7 @@ export function registerAppHandlers(
     readWorkspaceConfig(userDataPath) === null
   ));
 
-  // Dev-mode flag for dev-gated UI (MCP dsh-path spike toggle). True when
+  // Dev-mode flag for dev-gated UI (MCP engine-path spike toggle). True when
   // running unpackaged (local dev / dev build); always false in the release.
   registerContractHandle("app:isDev", () => handle(() => !app.isPackaged));
 

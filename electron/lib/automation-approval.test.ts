@@ -1,10 +1,10 @@
 /**
- * Cairn — automation-approval unit tests (post-Cordis).
+ * Cairn — automation-approval unit tests (post-engine).
  *
- * The pre-Cordis `automation-approval.test.ts` (deleted in 90f0b960) covered a
+ * The legacy `automation-approval.test.ts` (deleted in 90f0b960) covered a
  * runtime approval-inbox gate (`makeApprovalGate`/`waitForApproval`) that no
- * longer exists — the gate is now the Cordis approval waterfall
- * (electron/cordis/cairn-plugins.ts) and the automation-specific auto-allow
+ * longer exists — the gate is now the engine approval waterfall
+ * (electron/agent/cairn-plugins.ts) and the automation-specific auto-allow
  * transport (electron/lib/heartbeat-runner.ts). What DOES still live in this
  * module is a small set of security-relevant classifiers + a standing-rule
  * sanitiser that the manifest sync path calls on ingest, and the gate reads

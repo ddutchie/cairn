@@ -24,7 +24,6 @@ vi.mock("electron", () => ({
   shell: {},
   dialog: {},
 }));
-vi.mock("../cordis/agent-host", () => ({ getAgentHost: () => ({}) }));
 
 const REF = "secret-ref:llm/openai";
 const AGENT_REF = "secret-ref:llm/anthropic";

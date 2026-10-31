@@ -79,7 +79,6 @@ import type {
 import type {
   AutomationsFetchResult, ChatThemesFetchResult, PersonalitiesFetchResult, ProvidersFetchResult, RegistryFetchResult,
 } from "../chat/registry-schema";
-import type { InstalledPlugin, PluginList, UiPluginSource } from "../types/plugins";
 import type {
   AdjacentNote, EmbeddingDownloadProgress, EmbeddingModelManifestEntry, EmbeddingsStatus, NoteProjectionRow,
   ProjectionResult, ReindexResult, RuntimeEmbeddingModel, RuntimeStatus,
@@ -122,7 +121,7 @@ export interface IpcContract {
 
   // ── Chat threads ─────────────────────────────────────────────────────────
   "db:chat:threads": { args: [req: { workspaceId: string }]; result: ChatThread[] };
-  /** Transcript from the thread's dsh session log; empty for a thread with no log yet. */
+  /** Transcript from the thread's engine session log; empty for a thread with no log yet. */
   "db:chat:sessionMessages": {
     args: [req: { threadId: string }];
     result: SessionLoadExtras & { messages: ChatMessage[]; title?: string | null };
@@ -162,7 +161,7 @@ export interface IpcContract {
   "db:session:create": { writes: true; args: [input: CodingSessionCreateInput]; result: CodingSessionRow };
   "db:session:delete": { writes: true; args: [req: { id: string }]; result: void };
   "db:session:todos": { args: [req: { sessionId: string }]; result: SessionTodo[] };
-  /** Transcript from the session's dsh log; rejects on corrupt/unsupported logs, empty when missing. */
+  /** Transcript from the session's engine log; rejects on corrupt/unsupported logs, empty when missing. */
   "db:session:messages": {
     args: [req: { sessionId: string }];
     result: SessionLoadExtras & { messages: AgentSessionMessage[] };
@@ -192,7 +191,9 @@ export interface IpcContract {
   "session:goal": { args: [req: { sessionId: string }]; result: ControlResult<GoalWire | null> };
   "session:schedule-list": { args: [req: { sessionId: string }]; result: ControlResult<ScheduleWire[]> };
   /** Registry commands (built-in + plugin) for the command palettes. */
-  "cordis:listCommands": { args: []; result: Array<{ name: string; description: string }> };
+  "commands:list": { args: [req: { cwd?: string }]; result: Array<{ name: string; description: string; skill?: boolean }> };
+  /** Whether agent shell commands are really confined right now (and why not). */
+  "sandbox:status": { args: []; result: { mode: "read-only" | "workspace-write" | "off"; active: boolean; supported: boolean; backend: "seatbelt" | "bubblewrap" | "none"; reason?: string } };
 
   // ── Workspaces & projects ────────────────────────────────────────────────
   "db:workspace:list": { args: []; result: Workspace[] };
@@ -649,18 +650,6 @@ export interface IpcContract {
   "registry:fetchChatThemes": { args: []; result: ChatThemesFetchResult };
   "registry:refreshChatThemes": { args: []; result: ChatThemesFetchResult };
 
-  // ── Plugins (writes are gated behind CAIRN_PLUGINS_DEV=1 and reject otherwise) ─
-  /** Enabled UI plugins and their bundled source. */
-  "plugins:listUi": { args: []; result: UiPluginSource[] };
-  "plugins:list": { args: []; result: PluginList };
-  "plugins:setEnabled": { args: [req: { id: string; enabled: boolean }]; result: { ok: true } };
-  "plugins:openFolder": { args: []; result: { ok: true } };
-  /** `spec` is `github:owner/repo` or a local path. */
-  "plugins:install": { args: [req: { spec: string }]; result: InstalledPlugin };
-  /** Re-runs the plugin's recorded source spec. */
-  "plugins:update": { args: [req: { id: string }]; result: InstalledPlugin };
-  "plugins:uninstall": { args: [req: { id: string }]; result: { ok: true } };
-
   // ── Embeddings (semantic search + note map) ──────────────────────────────
   "embeddings:status": { args: []; result: EmbeddingsStatus };
   "embeddings:stop": { args: []; result: void };
@@ -696,9 +685,9 @@ export interface IpcContract {
   "runtime:embeddings:setDefault": { args: [req: { modelId: string }]; result: { ok: true } };
 
   // ── Agent runtime introspection (Settings → AI) ──────────────────────────
-  /** Runs a dsh registry command (/plan, /compact, …) on the session's agent. */
-  "cordis:executeCommand": { args: [req: { sessionId: string; line: string }]; result: { kind?: string; text?: string } };
-  /** The assembled dsh system prompt; `error` is set (not thrown) when assembly fails. */
+  /** Runs a engine registry command (/plan, /compact, …) on the session's agent. */
+  "commands:execute": { args: [req: { sessionId: string; line: string }]; result: { kind?: string; text?: string } };
+  /** The assembled engine system prompt; `error` is set (not thrown) when assembly fails. */
   "runtime:systemPrompt:preview": { args: [req: { cwd?: string; projectName?: string }]; result: SystemPromptPreview };
   /** The coding agent's plain-string prompt; `error` is set (not thrown) on failure. */
   "runtime:codingPrompt:preview": {
@@ -755,8 +744,6 @@ export interface IpcEvents {
   "user-style:done": UserStyleDoneEvent;
   /** Desktop sync status transitions. */
   "sync:status": SyncStatus;
-  /** The plugins folder changed; re-pull `plugins:listUi`. */
-  "plugins:ui-changed": undefined;
   "embeddings:download-progress": EmbeddingDownloadProgress;
   "runtime:download-progress": EmbeddingDownloadProgress;
   "mobile:status-changed": MobileStatus;
@@ -768,7 +755,7 @@ export interface IpcEvents {
   /** The in-app AI started / finished writing a note (editor goes read-only meanwhile). */
   "note:aiWriteStarted": { noteId: string };
   "note:aiWriteEnded": { noteId: string };
-  /** Canonical raw DSH session/event stream shared by Chat and Coding. */
+  /** Canonical raw engine session/event stream shared by Chat and Coding. */
   "session:event": SessionEventEnvelope;
   "session:projection": SessionProjection;
   /** AI Tool Builder stream (`tool-builder:prompt`). */
@@ -887,7 +874,8 @@ const CHANNELS: ChannelRecord = {
   "session:job-kill": "read",
   "session:goal": "read",
   "session:schedule-list": "read",
-  "cordis:listCommands": "read",
+  "commands:list": "read",
+  "sandbox:status": "read",
   "db:workspace:list": "read",
   "db:workspace:create": "write",
   "db:workspace:update": "write",
@@ -1115,13 +1103,6 @@ const CHANNELS: ChannelRecord = {
   "registry:refreshPersonalities": "read",
   "registry:fetchChatThemes": "read",
   "registry:refreshChatThemes": "read",
-  "plugins:listUi": "read",
-  "plugins:list": "read",
-  "plugins:setEnabled": "read",
-  "plugins:openFolder": "read",
-  "plugins:install": "read",
-  "plugins:update": "read",
-  "plugins:uninstall": "read",
   "embeddings:status": "read",
   "embeddings:stop": "read",
   "embeddings:needsReindex": "read",
@@ -1141,7 +1122,7 @@ const CHANNELS: ChannelRecord = {
   "runtime:embeddings:install": "read",
   "runtime:embeddings:remove": "read",
   "runtime:embeddings:setDefault": "read",
-  "cordis:executeCommand": "read",
+  "commands:execute": "read",
   "runtime:systemPrompt:preview": "read",
   "runtime:codingPrompt:preview": "read",
   "runtime:tools:inventory": "read",

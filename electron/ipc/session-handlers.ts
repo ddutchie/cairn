@@ -3,7 +3,7 @@
  *
  * The agent loop itself lives in `electron/ipc/session-runtime-handlers.ts` (streaming events
  * via `session:*`). These channels are the READ surface used by the
- * renderer's SessionPane to load coding-agent session history from the dsh
+ * renderer's SessionPane to load coding-agent session history from the engine
  * JSONL session log (session-as-truth) plus a small SQLite metadata layer
  * for the session index + todos.
  *
@@ -14,8 +14,10 @@ import { registerContractHandle } from "./registry";
 import { isMobileCaller } from "./mobile-caller";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
-import { type ReplayMessage, type ReplaySubagent } from "../cordis/session-replay";
-import { getAgentHost } from "../cordis/agent-host";
+import type { ReplayMessage, ReplaySubagent } from "../../shared/agent/session-wire";
+import { engineOwns, getEngineHost, readEnginePermissions, setEnginePermission } from "./engine-bridge";
+import { getCachedConfig } from "../lib/config-cache";
+import type { Mode } from "../../shared/agent/approval-mode";
 import type { AgentSessionMessage } from "../../shared/agent/session-wire";
 
 /** Map shared ReplayMessage[] to the coding-agent message shape the renderer expects. */
@@ -34,21 +36,6 @@ function toAgentMessages(messages: ReplayMessage[]): AgentSessionMessage[] {
     // every historical message with "now"; the renderer will omit the label.
     timestamp: "",
   }));
-}
-
-/**
- * Loose match for "this session doesn't exist on disk" errors from
- * dsh-session-persistence-jsonl / node's fs layer. We swallow those and
- * return an empty transcript (new session, clean state). Anything else
- * — a version-format bump, a permission error, a corrupt file — is a
- * SIGNAL, not silence, and gets rethrown so the renderer can show it.
- */
-function isMissingSessionError(err: unknown): boolean {
-  const e = err as { code?: string; message?: string; name?: string };
-  if (!e) return false;
-  if (e.code === "ENOENT") return true;
-  const msg = String(e.message ?? "");
-  return /not found|does not exist|no such session/i.test(msg);
 }
 
 export function registerSessionHandlers(ctx: DbContext): void {
@@ -72,10 +59,10 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // permissions-bridge). Same {ok:true,value}|{ok:false,code,message} envelope
   // as subagent:* — unavailable while the presets service is inject-gated on
   // per-turn `shell` (the switcher hides until then). Writes go through the
-  // existing cordis:executeCommand path (`/permission <preset>`), not here.
+  // `/permission <preset>` command, not here.
   registerContractHandle("session:permissions", (_e, { sessionId }) => handle(async () => {
     try {
-      return { ok: true as const, value: await getAgentHost().readPermissionsSnapshot(sessionId) };
+      return { ok: true as const, value: readEnginePermissions(sessionId, getCachedConfig().agentConfig?.mode as Mode | undefined) };
     } catch (err) {
       const code = (err as { code?: string })?.code ?? "internal";
       return { ok: false as const, code, message: err instanceof Error ? err.message : "permissions snapshot failed" };
@@ -83,52 +70,24 @@ export function registerSessionHandlers(ctx: DbContext): void {
   }));
 
   // ── session:permissions:set ──────────────────────────────────────────
-  // Preset switch for the renderer switcher. Unlike `/permission <preset>`
-  // through cordis:executeCommand, this works while the session is idle (no
-  // per-turn `shell` → no presets service → no `/permission` command): the
-  // choice is queued and applied when the next coding turn mounts the service.
+  // Preset switch for the renderer switcher; works while the session is idle.
   registerContractHandle("session:permissions:set", (_e, { sessionId, preset }) => handle(async () => {
     try {
-      return { ok: true as const, value: await getAgentHost().setPermissionPreset(sessionId, preset) };
+      return { ok: true as const, value: setEnginePermission(sessionId, preset, getCachedConfig().agentConfig?.mode as Mode | undefined) };
     } catch (err) {
       const code = (err as { code?: string })?.code ?? "internal";
       return { ok: false as const, code, message: err instanceof Error ? err.message : "permission switch failed" };
     }
   }));
 
-  // Session-as-truth load: rebuild the coding session's transcript from the dsh
-  // JSONL session log (same source the agent resumes from) via the shared
-  // session-replay helpers, matching the chat path. The coding agent's dsh session id
-  // IS the raw sessionId (run-cordis-coding.ts:263 SessionId(sessionId)), so no
-  // prefix.
-  //
-  // Error policy: we ONLY swallow "session not found" (a genuine new/blank
-  // session). Corruption, permission errors, a dsh SESSION_FORMAT_VERSION
-  // bump (SessionFormatUnsupportedError from
-  // dsh-session-persistence-jsonl:184), or any other unexpected error is
-  // rethrown so the renderer can surface it — an empty transcript is
-  // indistinguishable from data loss, and hiding a version mismatch on a
-  // silent upgrade would strand every pre-bump session with no diagnostic.
+  // Session-as-truth load: rebuild the transcript from the engine's session log.
   registerContractHandle("db:session:messages", (_e, { sessionId }) => handle(async () => {
     if (!sessionId) return { messages: [] as AgentSessionMessage[] };
-    try {
-      const { messages, usage, contextRing, todos, stats } = await getAgentHost().loadSessionMessages(sessionId);
-      const { enrichToolCallsWithMeta } = await import("../cordis/run-cordis-loop");
-      const agentMessages = toAgentMessages(enrichToolCallsWithMeta(messages));
-      return { messages: agentMessages, usage, contextRing, todos, stats };
-    } catch (err) {
-      if (isMissingSessionError(err)) {
-        return { messages: [] as AgentSessionMessage[] };
-      }
-      // Attach a useful diagnostic prefix so the renderer's error toast is
-      // actionable (users have historically opened issues with the raw
-      // "Cannot read properties of undefined" and no clue what session or
-      // path failed).
-      const e = err as { message?: string; name?: string };
-      const prefix = e?.name === "SessionFormatUnsupportedError"
-        ? `Session '${sessionId}' was recorded on a newer runtime version and cannot be read by this build`
-        : `Failed to load session '${sessionId}'`;
-      throw new Error(`${prefix}: ${e?.message ?? String(err)}`);
+    // Sessions that live in the native engine replay from their own log.
+    if (await engineOwns(ctx, sessionId)) {
+      const { messages, usage, title, contextRing, todos } = await getEngineHost(ctx).loadMessages(sessionId);
+      return { messages: toAgentMessages(messages), usage, title, contextRing, todos };
     }
+    return { messages: [] as AgentSessionMessage[] };
   }));
 }

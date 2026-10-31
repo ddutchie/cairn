@@ -94,7 +94,7 @@ function seedProject(db: Database.Database, workspaceId = "ws1", id = "proj1") {
 describe("session_profiles migration and queries", () => {
   it("creates v53 metadata and upserts it by session id", () => {
     const db = makeDb();
-    expect(db.pragma("user_version", { simple: true })).toBe(64);
+    expect(db.pragma("user_version", { simple: true })).toBe(65);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_profiles'").get()).toBeTruthy();
 
     const first = upsertSessionProfile(db, {
@@ -693,13 +693,6 @@ describe("MCP server queries", () => {
     const figma = getMcpServerById(db, "m2");
     expect(figma?.authMode).toBe("oauth");
     expect(figma?.oauthScope).toBe("read:files");
-  });
-
-  it("defaults dshPath to false and round-trips the dev spike flag", () => {
-    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a", enabled: true, source: "manual" });
-    expect(getMcpServerById(db, "m1")?.dshPath).toBe(false);
-    saveMcpServer(db, { id: "m1", workspaceId: "ws1", name: "A", transport: "http", baseUrl: "https://a", enabled: true, source: "manual", dshPath: true });
-    expect(getMcpServerById(db, "m1")?.dshPath).toBe(true);
   });
 
   it("defaults disabledTools to [] and round-trips the list", () => {

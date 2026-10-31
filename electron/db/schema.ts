@@ -1721,6 +1721,25 @@ const MIGRATIONS: Migration[] = [
       db.exec("ALTER TABLE mcp_servers ADD COLUMN cwd TEXT");
     }
   },
+
+  // v65: semantic index of past chat / coding sessions. One row per exchange
+  // (a user message and the replies up to the next one). Only vectors are kept:
+  // the text stays in the session log, which is where hits are read back from.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_embeddings (
+        session_id    TEXT NOT NULL,
+        chunk_idx     INTEGER NOT NULL,
+        workspace_id  TEXT NOT NULL,
+        model         TEXT NOT NULL,
+        content_hash  TEXT NOT NULL,
+        vector        TEXT NOT NULL,
+        embedded_at   TEXT NOT NULL,
+        PRIMARY KEY (session_id, chunk_idx)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_emb_ws ON session_embeddings(workspace_id, model);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {

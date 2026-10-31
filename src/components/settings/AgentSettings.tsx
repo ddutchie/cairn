@@ -288,9 +288,18 @@ export function AgentSettings() {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
+  // Whether the sandbox is really confining commands here (it can be on in settings yet unable to start).
+  const [sandboxNote, setSandboxNote] = useState("");
+  useEffect(() => {
+    void window.electron?.runtime?.sandboxStatus?.().then((st) => {
+      if (st && agentConfig.sandbox !== "off" && !st.active) setSandboxNote(st.supported ? `Currently unavailable: ${st.reason}. Shell commands will ask before running.` : `${st.reason}; commands run unconfined.`);
+      else setSandboxNote("");
+    });
+  }, [agentConfig.sandbox]);
+
   // Connection fields (baseUrl/apiKey/model) are managed by the ProviderManager
   // switcher below; here we only need `model` (context lookup) + behavioural fields.
-  // No auto-approve toggle: coding sessions follow dsh — the per-session
+  // No auto-approve toggle: coding sessions follow engine — the per-session
   // permission preset (workspace-write / danger-full-access, picked in the
   // session header) is the guard, and only sandbox escalations ask.
   const { model: modelAgent, maxSteps: maxStepsAgent, temperature: temperatureAgent, contextLimit: contextLimitAgent } = agentConfig;
@@ -504,16 +513,30 @@ export function AgentSettings() {
           })}
         />
 
-        {/* Session reminders (dsh schedule overlay, opt-in) */}
+        {/* Session reminders (opt-in) */}
         <SettingsRow
           label="Session reminders"
-          description="Let the agent set session-local reminders (schedule_create / schedule_list / schedule_delete) with an alarm pill in the chat header. Off by default; takes effect after an app restart. This is not Cairn's background heartbeat."
+          description="Let the agent set session-local reminders (schedule_create / schedule_list / schedule_cancel) with an alarm pill in the chat header. Off by default; takes effect after an app restart. This is not Cairn's background heartbeat."
         >
           <input
             id="scheduleEnabled"
             type="checkbox"
             checked={agentConfig.scheduleEnabled ?? false}
             onChange={(e) => updateAgent({ scheduleEnabled: e.target.checked })}
+            className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
+          />
+        </SettingsRow>
+
+        {/* Shell sandbox */}
+        <SettingsRow
+          label="Sandbox shell commands"
+          description={`Confine the agent's shell commands to writing inside the working directory and temp folders (macOS seatbelt, Linux bubblewrap; not available on Windows). The agent can ask to run a command outside it; you are asked every time. Applies to new sessions.${sandboxNote ? ` ${sandboxNote}` : ""}`}
+        >
+          <input
+            id="sandboxEnabled"
+            type="checkbox"
+            checked={(agentConfig.sandbox ?? "workspace-write") === "workspace-write"}
+            onChange={(e) => updateAgent({ sandbox: e.target.checked ? "workspace-write" : "off" })}
             className="w-4 h-4 rounded border-[var(--border)] bg-[var(--surface-2)] text-[var(--accent)] accent-[var(--accent)] cursor-pointer"
           />
         </SettingsRow>

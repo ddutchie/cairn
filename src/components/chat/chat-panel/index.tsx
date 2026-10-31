@@ -18,7 +18,6 @@ import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 import type { ChatHistoryEntry } from "@/types";
 
 import { Tooltip } from "@/components/ui/tooltip";
-import { ChatFooterSlot } from "@/lib/plugin-ui/SlotOutlet";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
@@ -230,7 +229,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     if (!threadId) return;
     // Preserve project context across the clear (the "lose project context after
     // clear" bug — after a clear the next turn's req.projectId was null because
-    // the in-memory Cordis session was not remounted with the thread's project).
+    // the in-memory engine session was not remounted with the thread's project).
     const thread = useCairnStore.getState().chatThreads.find((t) => t.id === threadId);
     const projectIdToRestore = thread?.projectId ?? activeProjectId ?? null;
     const workspaceIdToRestore = thread?.workspaceId ?? activeWorkspaceId ?? null;
@@ -511,7 +510,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         return;
       }
 
-      // Other dsh registry commands (e.g. /plan from a future chat surface,
+      // Other engine registry commands (e.g. /plan from a future chat surface,
       // plugin commands) execute through the runtime on this thread's agent.
       const commandName = trimmed.startsWith("/")
         ? trimmed.slice(1).trim().split(/\s+/, 1)[0]
@@ -623,7 +622,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       return history;
     };
 
-    // Timeline scrub is view-only (like dsh TrajectoryTimeline timelineFocusIndexes) — it dims
+    // Timeline scrub is view-only (like engine TrajectoryTimeline timelineFocusIndexes) — it dims
     // rows outside range via visibleMessages for Virtuoso, but history sent to the
     // model is always the full transcript (messages), not the scrubbed slice. The
     // previous bug was historyForLog derived from visibleMessages, so scrubbing to
@@ -822,7 +821,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", isView(activeView, "chat") && "max-w-3xl mx-auto w-full")}>
               {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
               <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
-              <ChatFooterSlot threadId={threadId ?? null} usage={activeThread?.lastUsage ? { ...activeThread.lastUsage, contextLimit: activeThread.lastUsage.contextLimit ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000, contextWindow: activeThread.lastUsage.contextWindow ?? (aiConfig.contextAuto === false ? aiConfig.contextLimit : undefined) ?? getModelInfo(aiConfig.model)?.context ?? aiConfig.contextLimit ?? 128000 } : undefined} />
             </div>
           )}
           composerRef={inputRef}

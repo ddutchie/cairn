@@ -21,9 +21,9 @@ export interface SessionConversationToolCall {
   meta?: Record<string, unknown>;
   /** Note/task the tool touched (from result `meta`); renders the clickable ref chip. */
   cairnRef?: { type: "note" | "task"; id: string; title: string };
-  /** Tool-authored title from dsh `presentCall` (main-attached); humanize fallback otherwise. */
+  /** Tool-authored title from engine `presentCall` (main-attached); humanize fallback otherwise. */
   viewTitle?: string;
-  /** Tool-authored result view from dsh `presentResult` (main-attached); raw output fallback otherwise. */
+  /** Tool-authored result view from engine `presentResult` (main-attached); raw output fallback otherwise. */
   resultView?: { card?: string; title?: string; output?: string; exitCode?: number; signal?: string; content?: unknown };
   confirmRequired?: boolean;
   approvalNonce?: string;
@@ -376,7 +376,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     const unsubscribeEvent = electron.session.onEvent((envelope: SessionEventEnvelope) => {
       const key = transientKey(envelope.sessionId);
       if (!matches(envelope.sessionId) && !watchedRef.current.has(key)) return;
-      // keep raw events for live stats fallback (mirrors electron/cordis/session-replay.ts replay path)
+      // keep raw events for live stats fallback (mirrors electron/agent/session-replay.ts replay path)
       getTransient(key).events.push(envelope.event as { type: string; time?: unknown; data?: unknown });
       getFold(key, envelope.sessionId)(envelope.event);
     });

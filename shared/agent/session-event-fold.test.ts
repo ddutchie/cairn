@@ -4,7 +4,7 @@ import { cairnRefFromMeta, createSessionEventFold, type FoldedToolResult } from 
 const event = (type: string, data: unknown) => ({ type, seq: 1, time: 1, data });
 
 describe("renderer session event fold", () => {
-  it("reads dsh disjoint usage as context size (input + cache read + cache write)", () => {
+  it("reads engine disjoint usage as context size (input + cache read + cache write)", () => {
     const usage: unknown[] = [];
     const fold = createSessionEventFold({ onUsage: (value) => usage.push(value) });
     fold(event("assistant/message", { message: { content: [{ type: "text", text: "hi" }] }, usage: { inputTokens: 35, outputTokens: 10, cacheReadTokens: 20480, cacheWriteTokens: 5 } }));

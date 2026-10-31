@@ -146,7 +146,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const sessionTodos = useCairnStore((s) => s.sessionTodos[session.sessionId]);
   const sessionJobs = useCairnStore((s) => s.sessionJobs[session.sessionId]);
   const customCommands = useCairnStore((s) => s.customCommands);
-  const registryCommands = useRegistryCommands();
+  const registryCommands = useRegistryCommands(session.cwd);
   const agentCommands = useMemo(
     () => getCommandsForScope("agent", customCommands, registryCommands),
     [customCommands, registryCommands]
@@ -189,7 +189,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   const [retryInfo, setRetryInfo]                 = useState<{ attempt: number; maxRetries: number; delayMs: number } | null>(null);
   // Compaction state — shown in status bar while an LLM summary call is in flight
   const [isCompacting, setIsCompacting]           = useState(false);
-  // Current same-session goal (dsh goal domain) — snapshot on mount, live via
+  // Current same-session goal (engine goal domain) — snapshot on mount, live via
   // session:projection kind:"goal". Null = no current goal → chip hides.
   const [sessionGoal, setSessionGoal]             = useState<GoalSummary | null>(null);
   const [connectorEntries, setConnectorEntries]   = useState<RegistryFetchResult["manifest"] | null>(null);
@@ -476,7 +476,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       return;
     }
 
-    // Other registry commands (/plan, plugin commands) execute through the dsh
+    // Other registry commands (/plan, plugin commands) execute through the engine
     // command runtime on this session's resumed agent.
     const commandName = trimmed.startsWith("/")
       ? trimmed.slice(1).trim().split(/\s+/, 1)[0]
@@ -485,11 +485,18 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       ? registryCommands.find((c) => c.name === commandName)
         ?? (commandName === "plan" ? { name: "plan", description: "Enter or leave plan mode" } : undefined)
       : undefined;
+    if (commandMatch && "skill" in commandMatch && commandMatch.skill) {
+      // A skill is a prompt, not a command: have the model load it (rest of the line is its task).
+      const task = trimmed.slice(1).trim().slice(commandName.length).trim();
+      setInput("");
+      void sendPromptRef.current(`Use the "${commandName}" skill${task ? `: ${task}` : "."}`);
+      return;
+    }
     if (commandMatch) {
       setInput("");
       const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
       void window.electron?.runtime?.executeCommand({ sessionId: session.sessionId, line: trimmed }).then((result) => {
-        // dsh's /plan handler uses agent.steer() for its suffix. That works
+        // engine's /plan handler uses agent.steer() for its suffix. That works
         // while a live turn is open, but this command runs on an idle resumed
         // agent in Cairn. Submit the suffix as a normal user turn after the
         // command commits so it is not stranded in the disposed agent inbox.
@@ -650,8 +657,8 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     window.electron?.session.clear(session.sessionId);
   }
 
-  // Plan approval flows through dsh's exit_plan_mode tool and the structured
-  // review ask in QuestionForm. Approval unblocks the same coding turn; dsh
+  // Plan approval flows through engine's exit_plan_mode tool and the structured
+  // review ask in QuestionForm. Approval unblocks the same coding turn; engine
   // applies the mode exit at the next step boundary.
 
 
@@ -711,7 +718,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
         allowImages,
         allowPdf,
         providerModelTarget: "agent",
-        // Permission preset (dsh permission-presets select) — rendered from the
+        // Permission preset (engine permission-presets select) — rendered from the
         // static preset table until a turn mounts the service. Lives in the
         // composer footer, same spot as chat's approvals picker. Keyed by
         // session so a switch never flashes the previous session's preset.

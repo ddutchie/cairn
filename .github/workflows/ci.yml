@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       run_electron_e2e:
-        description: "Run the Electron E2E suite (CORDIS_LIVE=1). Requires CORDIS_DUMMY_KEY secret."
+        description: "Run the Electron E2E suite (CAIRN_LIVE=1). Requires CAIRN_DUMMY_KEY secret."
         required: false
         default: "false"
         type: choice
@@ -167,7 +167,7 @@ jobs:
   # ── Bundle guards ───────────────────────────────────────────────────────────
   # test:bundle runs three lightweight suites that assert the shipped
   # main.ts / mcp-server.ts / native binding bundle is intact — a wrong
-  # esbuild --external, a missing @deepseek-ai package, or a dsh service
+  # esbuild --external, or a missing runtime dependency
   # dropping a peer would surface here before it broke a real build. Kept
   # separate from `test` because it needs a fresh compile that the unit-test
   # job's cached artifacts don't cover.
@@ -311,8 +311,8 @@ jobs:
   # Boots the real desktop app against an isolated throwaway profile and
   # exercises chat / coding-agent / heartbeat end-to-end through IPC and the
   # renderer. Gated behind workflow_dispatch (not run on every PR) because
-  # each turn needs a reachable model endpoint (CORDIS_DUMMY_KEY secret) and
-  # takes minutes, not seconds. See tests/e2e/electron/cordis-qa.test.ts and
+  # each turn needs a reachable model endpoint (CAIRN_DUMMY_KEY secret) and
+  # takes minutes, not seconds. See tests/e2e/electron/agent-qa.test.ts and
   # playwright.electron.config.ts.
   e2e-electron:
     name: E2E tests (Electron, opt-in)
@@ -359,8 +359,8 @@ jobs:
 
       - name: Run Electron E2E suite
         env:
-          CORDIS_LIVE: "1"
-          CORDIS_DUMMY_KEY: ${{ secrets.CORDIS_DUMMY_KEY || 'local' }}
+          CAIRN_LIVE: "1"
+          CAIRN_DUMMY_KEY: ${{ secrets.CORDIS_DUMMY_KEY || 'local' }}
         run: xvfb-run -a npm run test:e2e:electron
 
       - name: Upload Playwright report

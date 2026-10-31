@@ -1,12 +1,11 @@
-import { registerContractHandle, broadcastEvent, sendIpcEvent } from "./registry";
+import { registerContractHandle, sendIpcEvent } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
-import * as q from "../db/queries";
-import { ts } from "../db/utils";
-import { makeSessionProjection } from "../../shared/agent/session-projection";
-import { getAgentHost } from "../cordis/agent-host";
 import { errMsg } from "../host-shared/errors";
+import { sandboxStatus } from "../agent/sandbox";
+import { getSandboxMode } from "../agent/host-store";
+import { ENGINE_COMMANDS, executeEngineCommand, previewEnginePrompt } from "./engine-commands";
 
 let progressForwarderSetUp = false;
 
@@ -44,34 +43,24 @@ function ensureProgressForwarder(getWin: () => BrowserWindow | null): void {
 
 export function registerRuntimeHandlers(ctx: DbContext): void {
   ensureProgressForwarder(ctx.getWin);
-  // ── Command execution (dsh commands runtime) ────────────────────────
+  // ── Command execution (engine commands runtime) ────────────────────────
   // List registry commands (name + description) so host UIs can render their
   // palettes from the same namespace plugins register into.
-  registerContractHandle("cordis:listCommands", () => handle(async () => {
-    const list = await getAgentHost().listCommands();
-    return list.map((c) => ({ name: c.name, description: c.description ?? "" }));
+  registerContractHandle("commands:list", (_e, req) => handle(async () => {
+    const base: Array<{ name: string; description: string; skill?: boolean }> = ENGINE_COMMANDS.map((c) => ({ ...c }));
+    if (!req?.cwd) return base;
+    // Skills are user-invocable by name in coding sessions (`/<skill>`); engine commands win a name clash.
+    const { discoverSkills } = await import("../lib/skills");
+    const taken = new Set(base.map((c) => c.name));
+    let skills: ReturnType<typeof discoverSkills> = [];
+    try { skills = discoverSkills(req.cwd); } catch { /* unreadable skill dirs */ }
+    return [...base, ...skills.filter((s) => !s.disableUserInvocation && !taken.has(s.name)).map((s) => ({ name: s.name, description: s.description, skill: true }))];
   }));
 
-  // Generic executor for registry commands (/plan, /compact, plugin commands)
-  // on a session's resumed agent. Returns the command result {kind, text}.
-  registerContractHandle("cordis:executeCommand", (_e, req) => handle(async () => {
-    const agentConfig = (await import("../lib/config-cache")).getCachedConfig().agentConfig;
-    const result = await getAgentHost().executeCommand({
-      sessionId: req.sessionId,
-      cwd: ctx.workspacePath || process.cwd(),
-      baseUrl: agentConfig?.baseUrl ?? "",
-      model: agentConfig?.model ?? "",
-      apiKey: agentConfig?.apiKey ?? "",
-      line: req.line,
-    });
-    if (result.mode) {
-      try {
-        q.updateCodingSession(ctx.db, req.sessionId, { mode: result.mode, updatedAt: ts() });
-      } catch { }
-      broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "mode-change", { mode: result.mode }));
-    }
-    return { kind: result.kind, text: result.text };
-  }));
+  registerContractHandle("sandbox:status", () => handle(async () => sandboxStatus(getSandboxMode())));
+
+  // Generic executor for slash commands (/plan, /compact, /goal, …); returns {kind, text}.
+  registerContractHandle("commands:execute", (_e, req) => handle(async () => executeEngineCommand(ctx, req)));
 
   // ── Runtime health & lifecycle ─────────────────────────────
   registerContractHandle("runtime:status", () => handle(async () => {
@@ -83,26 +72,14 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
     return { ok: true as const };
   }));
 
-  // ── System-prompt introspection (Cordis) ─────────────────────────────
-  // Assemble the REAL dsh system prompt the Cordis engine sends, plus a
-  // breakdown of its sections (name + order). Cairn's own identity section
-  // (cairn:system) is mounted per-turn inside the loop, so to reflect a real
-  // turn we temporarily mount it here, assemble, then remove it. The coding
-  // agent prompt (buildAgentSystemPrompt — the board-tracking workflow) is a
-  // plain string (no dsh sections), returned alongside so Settings shows both.
-  registerContractHandle("runtime:systemPrompt:preview", (_e, req) => handle(async () => {
-    try {
-      return await getAgentHost().previewSystemPrompt(req?.cwd ?? "");
-    } catch (err) {
-      return { text: "", sections: [], contexts: [], skills: [], tools: [], variables: {}, error: errMsg(err) };
-    }
-  }));
+  // ── System-prompt introspection ──────────────────────────────────────
+  registerContractHandle("runtime:systemPrompt:preview", (_e, req) => handle(async () => previewEnginePrompt(ctx, req?.cwd ?? "")));
 
   // ── Coding-agent prompt preview ──────────────────────────────────────
-  // The coding loop's system prompt is NOT a dsh section — it is the plain
+  // The coding loop's system prompt is NOT a engine section — it is the plain
   // string built by buildAgentSystemPrompt (identity + Mandatory Cairn
   // workflow: board tracking, PRD checklists, session summaries). The 3.0
-  // Cordis cutover moved it out of the assembled dsh prompt, so the preview
+  // engine cutover moved it out of the assembled engine prompt, so the preview
   // above no longer shows it. Return it here so Settings can display it.
   registerContractHandle("runtime:codingPrompt:preview", (_e, req) => handle(async () => {
     try {
@@ -121,21 +98,12 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
     }
   }));
 
-  // ── Tool inventory (per-surface, dynamic) ────────────────────────────
-  // What the model can actually call differs per surface (chat = Cairn data
-  // tools only; coding = + filesystem/exec stack; automation-dev = file
-  // tools only; MCP = minus chat-only). Static part comes from
-  // lib/tool-inventory (same sources the loops use); global dsh tools
-  // (subagent/delegate/jobs/skill/web_fetch/…) are read live from the
-  // registry and merged in.
+  // ── Tool inventory (per-surface) ─────────────────────────────────────
+  // What the model can call differs per surface; computed from the engine's own toolsets.
   registerContractHandle("runtime:tools:inventory", () => handle(async () => {
     try {
-      const [{ buildStaticInventory }] = await Promise.all([
-        import("../lib/tool-inventory"),
-      ]);
-      const globalTools = (await getAgentHost().getGlobalTools()).map((tool) => ({ ...tool, description: tool.description ?? "", category: "exec" as const, source: "global" as const }));
-      const surfaces = buildStaticInventory(globalTools);
-      return { surfaces };
+      const { buildInventory } = await import("../lib/tool-inventory");
+      return { surfaces: await buildInventory() };
     } catch (err) {
       return { surfaces: null, error: errMsg(err) };
     }

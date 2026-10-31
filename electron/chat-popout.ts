@@ -4,7 +4,7 @@
  * When a chat pop-out is active, the main window's chat panel shows a
  * placeholder. All chat interactions happen in the pop-out window.
  * The main process relays only session identity between windows. Session
- * history and events remain owned by the canonical dsh session surface.
+ * history and events remain owned by the canonical engine session surface.
  *
  * State flow:
  *   popOut  → main renderer sends a session id → main process creates pop-out

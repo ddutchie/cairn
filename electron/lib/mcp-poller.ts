@@ -107,7 +107,7 @@ export function startMcpNotificationPoller({
 
   function pushUnread(count: number): void {
     // Dock/tray badge = unread notifications. (The legacy DB approval inbox —
-    // once also counted here — was retired with the pre-Cordis engines.)
+    // once also counted here — was retired with the legacy engines.)
     updateBadge(count);
     if (count !== lastUnread) {
       lastUnread = count;

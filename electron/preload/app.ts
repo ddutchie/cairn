@@ -19,7 +19,7 @@ export const appApi = {
   selectWorkspaceFolder: () => invokeContract("app:selectWorkspaceFolder"),
   getWorkspacePath: () => invokeContract("app:getWorkspacePath"),
   needsWorkspaceSetup: () => invokeContract("app:needsWorkspaceSetup"),
-  /** True when running unpackaged — gates dev-only UI (MCP dsh-path toggle). */
+  /** True when running unpackaged — gates dev-only UI (MCP engine-path toggle). */
   isDev: () => invokeContract("app:isDev"),
   setTheme: (theme: string) => invokeContract("app:setTheme", theme),
   setAccent: (accent: string) => invokeContract("app:setAccent", accent),

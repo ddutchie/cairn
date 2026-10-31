@@ -9,12 +9,8 @@ import { formatBalance, formatUsd } from "../../../shared/chat/provider-credits"
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
 import { cacheHitColor } from "@/lib/cache-metrics";
-// The ring donut itself is the shared dsh-context-ring component (also shipped
-// as a dsh community plugin). Cairn imports it here and projects it into its own
-// rich popover + placements, so there is ONE ring implementation. Cairn supplies
-// its extra breakdown categories + fill-threshold colour; the popover, cache,
-// cost, and account-balance sections stay Cairn-specific below.
-import { ContextRing as SharedRing, type ContextRingCategory } from "dsh-context-ring/react";
+// The ring glyph is ContextRingGlyph; the popover, cache, cost and account-balance sections below are specific to this view.
+import { ContextRingGlyph, type ContextRingCategory } from "./ContextRingGlyph";
 
 /** Provider remaining-balance (account-level), the desktop CreditInfo shape. */
 interface ProviderBalance {
@@ -196,13 +192,13 @@ export function ContextRing({
     return num.toString();
   }
 
-  // Cairn's ordered breakdown slices for the shared ring (its 8 categories).
+  // Ordered breakdown slices for the ring (its 8 categories).
   const ringCategories: ContextRingCategory[] = categories.map((c) => ({ key: c.label, value: c.count, color: c.color }));
 
   const ringSvg = (
     <div className="cursor-pointer select-none flex-shrink-0 hover:opacity-80 transition-opacity flex items-center justify-center">
-      <SharedRing
-        usage={{ promptTokens, completionTokens: completionTokens ?? 0, contextLimit, contextWindow: contextLimit }}
+      <ContextRingGlyph
+        usage={{ promptTokens, contextLimit, contextWindow: contextLimit }}
         size={size}
         strokeWidth={stroke}
         categories={ringCategories}

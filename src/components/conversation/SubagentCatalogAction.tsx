@@ -48,7 +48,7 @@ function errorHint(code: string): string {
 }
 
 /**
- * Header action for continuable subagents (dsh 0.1.2 Streamline seam).
+ * Header action for continuable subagents (engine 0.1.2 Streamline seam).
  * Lists the session's durable children with live activity, and lets the user
  * message a continuable child or stop its current turn — the human equivalent
  * of the model's send_message / interrupt_agent tools. Lives in the shared

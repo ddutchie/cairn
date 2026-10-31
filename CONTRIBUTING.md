@@ -120,7 +120,7 @@ cairn/
 │   │   ├── migration-handlers.ts # app:*igration* channels
 │   │   ├── settings-handlers.ts # app:{get,save}* settings channels
 │   │   ├── agent.ts        # agent:* IPC channels — PTY spawn, file I/O, git diff
-│   │   ├── chat.ts         # AI chat turn runner (Cordis) + compact-thread helper
+│   │   ├── chat.ts         # AI config resolution + compact-thread / transcript-summary IPC
 │   │   ├── chat-session.ts # db:chat:sessionMessages replay reads (session-as-truth)
 │   │   └── registry.ts     # registerContractHandle/registerIpcOn; db:changed after `writes: true` channels
 │   ├── lib/
@@ -203,15 +203,16 @@ Cairn has two processes that share the same `cairn.db` (SQLite WAL mode):
 
 **External agent workspace** (`electron/ipc/agent.ts`) — PTY sessions spawned via `node-pty` in the main process. File I/O is validated against registered `code_directory` paths before any read/write. Sessions are keyed by `sessionId`; PTY output is streamed to the renderer via `agent:data` IPC events. The renderer-side `TerminalManager` singleton holds `xterm.js` instances so they survive view navigation.
 
-**Cairn coding agent** — a stateful multi-turn dsh/Cordis agent running entirely in the main process. No external binary required. Session type `"coding"` in the terminal sessions store; rendered by `AgentChatPane` instead of xterm. Key files:
+**Cairn coding agent** — a stateful multi-turn agent (Cairn's own engine in `electron/agent/`) running entirely in the main process. No external binary required. Session type `"coding"` in the terminal sessions store; rendered by `AgentChatPane` instead of xterm. Key files:
 
 - `electron/ipc/session-runtime-handlers.ts` — IPC handler; abort/persona lifecycle and `session:*` channels
-- `electron/cordis/run-cordis-coding.ts` — mounts the dsh coding stack, creates/resumes agents, and bridges coding turns
-- `electron/cordis/cairn-plugins.ts` — Cairn adapters for persistence, usage, questions, approvals, and renderer events
-- `electron/cordis/cordis-coding-tools.ts` — dsh filesystem, search, shell, todo, sandbox, and instruction plugins
-- `electron/lib/coding-session-prompt.ts` — stable Cairn coding-session context; plan guidance comes from dsh
+- `electron/ipc/engine-bridge.ts` — the seam between IPC handlers and the engine: builds each turn's toolset, profile and hooks, runs chat, coding and automation turns
+- `electron/agent/host.ts` — `AgentHost`: sessions, turns, approvals (`gate.ts` + pure `policy.ts`), subagents, goals; JSONL logs in `agent/session/`
+- `electron/agent/tools/` — the tools (fs, bash, jobs, terminals, LSP, subagents, Cairn data tools, MCP); `agent/sandbox.ts` confines shell commands
+- `electron/agent/host-store.ts` — the single adapter between the engine and app I/O (DB, config, usage)
+- `electron/lib/coding-session-prompt.ts` — stable Cairn coding-session context
 
-The agent has access to a curated subset of Cairn's data tools (notes CRUD, task management, idea flow) through the dsh tool registry. `ensure_note` is the preferred write tool — idempotent by title, no duplicates. `AgentView` is always mounted (CSS-hidden when inactive) so agent refs and IPC subscriptions survive view switches.
+The agent has access to a curated subset of Cairn's data tools (notes CRUD, task management, idea flow) through the engine's toolset. `ensure_note` is the preferred write tool — idempotent by title, no duplicates. `AgentView` is always mounted (CSS-hidden when inactive) so agent refs and IPC subscriptions survive view switches.
 
 **MCP server** (`electron/mcp-server.ts`) — a separate compiled binary that external AI agents connect to. Shares the same SQLite database and writes `.md` files directly; the Electron UI refreshes automatically via WAL mtime polling. The MCP tool files in `electron/mcp/tools/*` import query helpers from `electron/db/queries.ts` and `electron/db/graph-queries.ts` — these are the same helpers used by the Electron main process. The only ABI-sensitive operation is constructing the `Database` instance (once, in `mcp-server.ts` via `new Database(dbPath, { nativeBinding })`); after that, all `db.prepare(...).run(...)` calls work on that handle regardless of which TS file defines them.
 
@@ -349,19 +350,19 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/file-watcher.ts` | chokidar watcher on workspace root; syncs external `.md` edits to SQLite |
 | `electron/ipc/handlers.ts` | Orchestrator — calls per-domain registrars (`db-handlers`, `flow-handlers`, `ai-handlers`, `llama-handlers`, `graph-handlers`, `chat-db-handlers`, `session-handlers`, `pdf-export`, `url-metadata`, `mobile-handlers`, `migration-handlers`, `settings-handlers`); all wrapped in `handle()` returning `IpcResult<T>` |
 | `electron/ipc/agent.ts` | All `agent:*` IPC channels — PTY spawn/kill, file I/O, git diff, `assertWithinCodeDirectory` |
-| `electron/ipc/chat.ts` | AI chat IPC handler and Cordis chat-loop adapter |
-| `electron/cordis/chat-executor.ts` | `executeTool` — all AI tool implementations |
+| `electron/ipc/chat.ts` | AI config resolution, compact-thread and transcript-summary IPC |
+| `electron/agent/tools/cairn-executor.ts` | Executes the Cairn data tools for the engine |
 | `electron/ipc/session-runtime-handlers.ts` | Coding-session IPC adapter — abort/persona lifecycle and `session:*` channels |
-| `electron/cordis/run-cordis-loop.ts` | Shared Cordis context, plugin composition, chat agent lifecycle, and session replay helpers |
-| `electron/cordis/run-cordis-coding.ts` | Coding-agent lifecycle, dsh stack mounting, and live-turn bridge |
-| `electron/cordis/cairn-plugins.ts` | Cairn persistence, usage, questions, approval, and renderer-event adapters |
-| `electron/cordis/cordis-coding-tools.ts` | dsh sandbox, filesystem, search, shell, todo, and instruction plugins |
-| `electron/lib/coding-session-prompt.ts` | Stable Cairn coding-session context; plan guidance comes from dsh |
+| `electron/ipc/engine-bridge.ts` | Engine seam: toolset/profile assembly and chat, coding and automation turns |
+| `electron/agent/host.ts` | `AgentHost`: sessions, turns, approvals, subagents, goals |
+| `electron/agent/host-store.ts` | Adapter between the engine and app I/O (DB, config, usage) |
+| `electron/agent/tools/` + `electron/agent/sandbox.ts` | Filesystem, search, shell (sandboxed), jobs, terminals, LSP and subagent tools |
+| `electron/lib/coding-session-prompt.ts` | Stable Cairn coding-session context; plan guidance lives in the engine's plan-mode prompt |
 | `electron/lib/truncation.ts` | `truncateOutput(text, opts)` — unified byte+line cap for all coding tool outputs; exports `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationResult` |
-| `electron/cordis/plugins/` | Cairn-owned Cordis plugins, including workspace context and context-ring projections |
+| `electron/agent/session/` | JSONL session log, history folding, projection adapter and legacy-log import |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
 | `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
-| `electron/cordis/chat-executor.ts` | `executeTool` — chat tool execution (consolidated tools via `mcp/tools/consolidated.ts`, plus chat-only tools) |
+| `electron/agent/tools/cairn-executor.ts` | Cairn data-tool execution (consolidated tools via `mcp/tools/consolidated.ts`, plus chat-only tools) |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
 | `electron/db/queries.ts` | Single source of truth for all SQL query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`). Imported by both the Electron main process and the MCP server (`electron/mcp/tools/*`) — the only ABI-sensitive operation is `new Database(...)` which happens once in `mcp-server.ts` |
 | `electron/host-shared/text-utils.ts` | Pure text helpers shared across the process boundary: `toSlug`, `stripMarkdown` |
@@ -397,7 +398,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `src/components/agent/AgentView.tsx` | Three-pane layout — drag-resize dividers, Editor/Diff tab bar; always mounted (CSS-hidden when inactive) |
 | `src/components/agent/SessionPane.tsx` | Session content shell — selected Chat/Coding/PTY view, session creation, and panel actions |
 | `src/components/agent/SessionBrowser.tsx` | Project-scoped Conversations browser — Chat/Coding/PTY session selection and search |
-| `src/components/agent/AgentChatPane.tsx` | Cairn native coding-agent UI — Cordis IPC subscriptions, prompt lifecycle, context ring |
+| `src/components/agent/AgentChatPane.tsx` | Cairn native coding-agent UI — session IPC subscriptions, prompt lifecycle, context ring |
 | `src/components/agent/AgentMessageBubble.tsx` | Coding-agent message renderer — user/assistant/error bubbles, tool calls, Cairn references, and subagent blocks |
 | `src/components/agent/ContextRing.tsx` | Reusable SVG context usage ring; `size` and `stroke` props; colour shifts at 65 % and 85 % |
 | `src/components/agent/AgentEditor.tsx` | Multi-file tabbed editor — tab management, preview toggle, save |
@@ -528,69 +529,56 @@ The Cairn coding agent (`sessionType: "coding"`) runs in the Electron main proce
 
 **Adding a new coding tool**
 
-1. Register it through the appropriate dsh/Cordis tool plugin or in `electron/cordis/cairn-tools.ts`.
-2. Mount the plugin in the Cordis composition if it is not already part of the coding stack.
-3. Add presentation metadata or a renderer tool view only when the result needs a specialized display.
-4. Add the tool to the shared risk classification if its approval behavior differs from the default.
+1. Define it with `defineTool` in `electron/agent/tools/` (give it a `risk()` that classifies the call: READ, WRITE_CAIRN, WRITE_LOCAL, EXEC or EXTERNAL) and add it to `buildToolset` in `electron/agent/tools/index.ts` for the surfaces that should have it.
+2. Add presentation metadata or a renderer tool view only when the result needs a specialized display.
+3. Add the tool to the shared risk classification if its approval behavior differs from the default.
 
 **Adding a new Cairn data tool to the agent**
 
-The coding agent exposes Cairn tools through the dsh tool registry. To expose a new tool:
-
-1. Register the tool with `registerCairnTools()` in `electron/cordis/cairn-tools.ts`.
-2. Update the relevant dsh/Cairn system-prompt section if the tool warrants explicit mention.
-3. If it returns a Cairn reference, provide the appropriate `presentationMeta` so replayed results remain linkable.
-4. Add it to the shared approval-risk classification when needed.
+Cairn data tools come from `TOOL_SCHEMAS` (`electron/lib/tool-schemas.ts`) and run through `electron/agent/tools/cairn-executor.ts`. See "Adding a new MCP / AI chat tool" below; the engine picks them up through `cairnTools()`.
 
 **IPC event flow for a single agent turn**
 
-The dsh engine runs the model↔tool loop internally — Cairn only translates
-what it emits. The renderer gets two streams (see `runSession` in
-`electron/ipc/session-runtime-handlers.ts` and `cairnCodingPlugin` in
-`electron/cordis/cairn-plugins.ts`):
+The engine runs the model↔tool loop (`electron/agent/loop.ts`); the bridge in `electron/ipc/engine-bridge.ts` forwards what it emits. The renderer gets two streams:
 
 ```
 renderer                         main process
    │                                  │
-   ├─ session:prompt ───────────────► runCordisCodingLoop()
-   │                                  │  dsh agent loop runs model↔tool steps
-   │ ◄── session:event ───────────────┤  raw DSH events (no flattening)
+   ├─ session:prompt ───────────────► runEnginePrompt()
+   │                                  │  engine loop runs model↔tool steps
+   │ ◄── session:event ───────────────┤  raw session events
    │ ◄── session:projection ──────────┤  typed UI updates: token, thought,
    │                                  │  tool-call, tool-done, todos, usage,
    │                                  │  retry, compact, plan-note, mode-change
-   ├─ session:abort ───────────────► agent.cancel({ kind: "user" })
-   ├─ session:respond-tool ────────► pending approval resolver
+   ├─ session:abort ───────────────► abort the running turn
+   ├─ session:respond-tool ────────► pending approval (Gate)
    ├─ session:respond-questions ───► pending question resolver
    ├─ session:approve-plan ────────► execute mode with PRD context
 ```
 
-Live token/thought deltas stream via `session:event`; chips, todos, usage,
-and status lines arrive as `session:projection`. The session log (JSONL) is
-the source of truth for interrupted prefixes and reloads.
+Live token/thought deltas stream via `session:event`; chips, todos, usage, and status lines arrive as `session:projection`. The session log (JSONL, `cairn-session/1`) is the source of truth for interrupted prefixes and reloads.
 
-**Parallel tool execution** — dsh owns tool scheduling and session event ordering. Cairn tools must be safe to execute through the dsh tool registry; per-domain persistence and file guards remain in their respective adapters.
+**Approvals** — a pure `decide()` (`agent/policy.ts`) turns a tool call's risk, the session mode (ask / auto / yolo / plan) and rules-as-data into allow / ask / deny; the `Gate` holds pending asks with nonces. Do not add per-tool approval prompts elsewhere.
 
-**Automatic retry** — dsh's retry plugin handles transient provider failures on the request-recovery seam. Cairn forwards the resulting retry events to the renderer; do not add a second retry loop in an IPC handler.
+**Shell sandbox** — `bash`, background jobs and model terminals run inside `agent/sandbox.ts` (seatbelt on macOS, bubblewrap on Linux). A tool that spawns processes must go through it; leaving the sandbox is only possible via `bash`'s `unsandboxed`, which always asks.
 
-**Context compaction** — dsh's compaction plugin owns automatic and manual compaction. Cairn only supplies the model adapter and forwards compaction lifecycle events to the renderer.
+**Retry and compaction** — the engine retries transient provider failures and compacts context itself (`loop.ts`, `session/`). Do not add a second retry or compaction loop in an IPC handler; `/compact` goes through the command registry (`ipc/engine-commands.ts`).
 
-**`/compact` slash command** — the command registry routes `/compact` to the dsh compaction service. Keep command handling in the registry rather than adding another prompt-specific IPC implementation.
+**Cancellation** — `host.abort(sessionId)` aborts the turn and cancels its pending approvals; the session log keeps the interrupted prefix.
 
-**Cancellation** — call the live dsh agent's `cancel({ kind: "user" })`; aborting a Cairn wrapper controller alone is insufficient. The session log remains the source of truth for the interrupted prefix.
-
-**Output limits** — use the limits and retention behavior supplied by dsh tool plugins. Cairn adapters should not introduce a second formatting or truncation contract.
+**Output limits** — tools clamp their own output (`tools/schema.ts` `clampMiddle`); adapters should not introduce a second truncation contract.
 
 **Subagents**
 
-`subagent` (one-shot) and `delegate` (continuable) are supplied by the dsh subagent stack. Cairn's bridge forwards child events through the shared subagent channel and keeps parent and child session state separate.
+`subagent` (one-shot) and `delegate` (continuable) are tools in `electron/agent/tools/subagent.ts`. Children are separate sessions linked to the parent; the bridge forwards their events through the shared subagent channel.
 
 **Plan Mode**
 
-Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is logged by dsh as `plan/mode`, adds the configured plan policy, and keeps the stable `exit_plan_mode` tool available. The renderer presents the plan-review card supplied by dsh; approval unblocks the current tool call and dsh applies the exit at the next step boundary. Cairn's base system prompt remains unchanged between modes. Implemented in `@deepseek-ai/dsh-plan-mode`, `electron/cordis/run-cordis-coding.ts`, and `src/components/conversation/QuestionForm.tsx`.
+Launch with `mode: "plan"` for a planning session. Plan mode is read-only by policy and the model hands over its plan with `exit_plan_mode`; the renderer shows the plan-review card and approving it starts execute mode with the plan as context.
 
 **System prompt**
 
-`buildExecuteModePrompt()` in `coding-session-prompt.ts` provides the stable Cairn coding-session context, including the project name, `cwd`, active task title, date, and (when available) the approved plan for execution. Plan-mode behavior belongs to dsh's configured `plan:policy` section, not to a second Cairn system-prompt variant.
+`buildExecuteModePrompt()` in `coding-session-prompt.ts` provides the stable Cairn coding-session context, including the project name, `cwd`, active task title, date, and (when available) the approved plan for execution. Plan-mode behavior belongs to the engine's plan-mode prompt, not to a second Cairn system-prompt variant.
 
 ### Adding a new analytics canvas
 
@@ -605,7 +593,7 @@ Launch with `mode: "plan"` to begin a dsh-native planning session. Plan mode is 
 1. Add or extend the Zod schema in `electron/lib/tool-schemas.ts` — `TOOL_SCHEMAS`, and `CHAT_ONLY_TOOLS` / `CHAT_EXCLUDED_TOOLS` if it is surface-specific
 2. Add a `TOOL_LABELS` entry in `electron/lib/tools.ts` (the `TOOLS` array is auto-derived), a `humanizeTool` case in `src/lib/humanize-tool.ts`, and classify it in `shared/agent/tool-risk.ts`
 3. Implement it: a per-operation handler in `electron/mcp/tools/` (`notes.ts`, `tasks.ts`, `flow.ts`, … — delegate to `q.*` helpers from `db/queries.ts`), routed from `electron/mcp/tools/consolidated.ts` when the tool is a consolidated one
-4. If chat needs extra behaviour (AI write locks, active context), add it in `electron/cordis/chat-executor.ts`
+4. If chat needs extra behaviour (AI write locks, active context), add it in `electron/agent/tools/cairn-executor.ts`
 5. Add a corresponding query helper to `electron/db/queries.ts` if needed
 
 ### Adding a new database table
@@ -651,15 +639,15 @@ vitest runs **three projects** (see `vitest.config.ts`):
 | `electron/db/queries.test.ts` | SQLite query helpers — CRUD, search, soft-delete |
 | `electron/notes-files.test.ts` | File I/O, slug generation, frontmatter round-trip, atomic writes, startup sync |
 | `electron/mcp-server.test.ts` | All MCP tools end-to-end via in-memory SQLite — happy path, edge cases, conflict detection |
-| `electron/ipc/chat-executor.test.ts` | Every tool case in `executeTool` |
+| `electron/ipc/chat-executor.test.ts` | Every Cairn data-tool case |
 | `electron/ipc/handlers.test.ts` | IPC data layer, `executeReadTool`, `buildContextResponse` |
-| `electron/cordis/*.test.ts` | Cordis session, plan-mode, approval, persistence, and runtime integration tests |
+| `electron/agent/**/*.test.ts` | Engine loop, policy, gate, sandbox, session log, tools and host tests |
 
-**Live integration tests** — Cordis live tests are gated by their documented environment variables and are automatically skipped when the required endpoint or key is absent.
+**Live integration tests** — Engine live tests (`*.live.test.ts`, `npm run test:live`) are gated by their documented environment variables and are automatically skipped when the required endpoint or key is absent.
 
 **Please add or update tests when:**
 - Adding a new query helper to `queries.ts`
-- Adding a new tool to `electron/cordis/cairn-tools.ts` or a Cordis tool plugin
+- Adding a new tool under `electron/agent/tools/`
 - Fixing a bug — a test that would have caught it prevents regression
 
 vitest uses a SQLite shim (`vitest-sqlite-shim.cjs`) to ensure the system Node ABI binary is used instead of the Electron-compiled one. This is handled automatically — you don't need to think about it.

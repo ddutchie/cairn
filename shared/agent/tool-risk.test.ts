@@ -25,9 +25,9 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "codebase_reindex", "suggest_connections", "update_user_writing_style",
 ]);
 const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
-// dsh coding-stack tools are registered by mountCodingStack, not
+// engine coding-stack tools are registered by mountCodingStack, not
 // TOOL_SCHEMAS — the coverage check below asserts only Cairn-owned tools
-// (the TOOL_SCHEMAS keys), while riskForTool ALSO handles dsh names.
+// (the TOOL_SCHEMAS keys), while riskForTool ALSO handles engine names.
 const DSH_TOOL_NAMES = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
   "write", "edit", "str_replace_editor", "todo_write", "skill", "bash", "pwsh",
@@ -42,8 +42,8 @@ const DSH_TOOL_NAMES = new Set<string>([
   "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
 ]);
 
-// Expected risk bucket + approval behaviour for each dsh coding-stack tool the
-// runtime actually registers (names taken from cordis-context.ts / dsh
+// Expected risk bucket + approval behaviour for each engine coding-stack tool the
+// runtime actually registers (names taken from engine-context.ts / engine
 // tool-*). This locks the taxonomy to the real names so a rename (like the
 // old `spawn_subagent` phantom) can't silently mis-gate a tool again.
 const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
@@ -58,7 +58,7 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   ["str_replace_editor", "WRITE_LOCAL", true, "session"],
   ["todo_write", "WRITE_LOCAL", true, "session"],
   ["bash", "EXEC", true, "command"],
-  // Windows mounts dsh-tool-pwsh in place of dsh-tool-bash — same gating.
+  // Windows mounts engine-tool-pwsh in place of engine-tool-bash — same gating.
   ["pwsh", "EXEC", true, "command"],
   ["subagent", "EXEC", true, "none"],
   ["delegate", "EXEC", true, "none"],
@@ -78,7 +78,7 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   // Untrusted external content stays an explicit per-call decision (v1).
   ["web_search", "WRITE_LOCAL", true, "none"],
   ["web_fetch", "WRITE_LOCAL", true, "none"],
-  // Past-session search: read-only, workspace-scoped (dsh-tool-session-query).
+  // Past-session search: read-only, workspace-scoped (engine-tool-session-query).
   ["session_search", "READ", false, "none"],
   ["session_event_search", "READ", false, "none"],
   ["session_trace", "READ", false, "none"],
@@ -106,7 +106,7 @@ describe("tool-risk classifier — set membership", () => {
     expect(doubles, `Cairn tools double-classified in tool-risk.ts: ${doubles.join(", ")}`).toEqual([]);
   });
 
-  it("no phantom names — every entry in APPROVAL_SAFE_TOOLS is either a Cairn tool or a known dsh tool", () => {
+  it("no phantom names — every entry in APPROVAL_SAFE_TOOLS is either a Cairn tool or a known engine tool", () => {
     const phantom: string[] = [];
     for (const name of APPROVAL_SAFE_TOOLS) {
       if (name in TOOL_SCHEMAS) continue;
@@ -180,7 +180,7 @@ describe("tool-risk classifier — set membership", () => {
     expect(approvalGrantScope("list_agents")).toBe("none");
   });
 
-  it("every registered dsh coding-stack tool maps to its expected risk bucket", () => {
+  it("every registered engine coding-stack tool maps to its expected risk bucket", () => {
     for (const [name, risk, gated, scope] of DSH_TOOL_EXPECTATIONS) {
       expect(riskForTool(name), `${name} risk`).toBe(risk);
       expect(needsApproval(name), `${name} gated`).toBe(gated);

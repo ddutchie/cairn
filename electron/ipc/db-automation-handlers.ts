@@ -106,7 +106,7 @@ export function registerAutomationHandlers(ctx: DbContext): void {
     return runId === null ? { skipped: true as const } : { runId };
   }));
 
-  // Resolve a pending tool approval for a running automation (Cordis engine).
+  // Resolve a pending tool approval for a running automation (engine).
   // The renderer fires this when the user approves/denies a gated tool; it
   // resolves the coding agent's approval seam. grant "session" remembers for
   // the turn; "always" persists an "always allow" standing rule on the automation.

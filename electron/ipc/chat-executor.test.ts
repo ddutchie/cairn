@@ -25,7 +25,7 @@ import {
   createWorkspace, createProject, createNote, updateNote,
   createColumn, createCard, getCardById, getNoteById, findLiveNoteByTitle,
 } from "../db/queries";
-import { executeTool } from "../cordis/chat-executor";
+import { executeTool } from "../agent/tools/cairn-executor";
 import type { LLMConfig } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 
