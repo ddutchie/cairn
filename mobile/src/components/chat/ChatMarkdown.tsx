@@ -48,7 +48,7 @@ function markdownStyle(t: Theme, fontFamily: string | undefined, fontWeight: num
       "^cairn://": { color: t.accent, underline: true, backgroundColor: withAlpha(t.accent, 0.12) },
       // A wikilink that resolves to nothing: dimmed, and the tap is ignored.
       "^cairn://dead/": { color: t.textTertiary, underline: false, backgroundColor: "transparent" },
-      // Colour literals: a ■ glyph painted in the colour, followed by the literal as inline code.
+      // Colour literals: a █ glyph painted in the colour, followed by the literal as inline code.
       ...Object.fromEntries(
         colors.map((c) => [`^${escapeRegExp(`${COLOR_SCHEME}${encodeURIComponent(c)}`)}$`, { color: c, underline: false, backgroundColor: "transparent" }]),
       ),

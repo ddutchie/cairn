@@ -153,7 +153,7 @@ export function findColorLiterals(src: string): string[] {
 }
 
 /**
- * A colour written in a reply gets a swatch: a `■` link to `cairn://swatch/…`, which a per-colour
+ * A colour written in a reply gets a swatch: a `█` link to `cairn://swatch/…`, which a per-colour
  * link variant paints in that colour, followed by the colour as inline code. The native renderer
  * has no inline widgets, so a coloured glyph is the closest to the classic swatch. Covers inline code (`#ff0000`, any hex length) and bare
  * 6/8-digit hex and rgb()/hsl() calls in prose; bare 3-digit hex is left alone (`#123` is usually
@@ -166,7 +166,7 @@ export function colorLiteralsToLinks(src: string): string {
   return mapOutsideFences(src, (line) =>
     line.replace(COLOR_OR_CODE_RE, (all, code: string | undefined, bare: string | undefined) => {
       const literal = (code ?? bare ?? "").trim();
-      return COLOR_LITERAL_RE.test(literal) ? `[■](${COLOR_SCHEME}${encodeURIComponent(literal)}) \`${literal}\`` : all;
+      return COLOR_LITERAL_RE.test(literal) ? `[█](${COLOR_SCHEME}${encodeURIComponent(literal)}) \`${literal}\`` : all;
     }),
   );
 }
