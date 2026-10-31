@@ -12,6 +12,8 @@ import type { CaptureProposal } from "@/capture/types";
 import { listProjects } from "@/db/queries";
 import { DictationMic } from "@/components/DictationMic";
 import { useDictation } from "@/dictation/useDictation";
+import { ListeningOrb } from "@/components/animations/ListeningOrb";
+import { useListeningOrb } from "@/lib/dev-flags";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { RestingStickyView } from "@/components/chat/RestingStickyView";
 import { ICON_CLOSE } from "@/components/toolbar-icons";
@@ -43,6 +45,7 @@ export function CaptureSheet({
   const [stage, setStage] = useState<Stage>("input");
   const [text, setText] = useState(initialText);
   const dictation = useDictation({ text, setText });
+  const orbOn = useListeningOrb();
   const [proposal, setProposal] = useState<CaptureProposal | null>(null);
   const [skipped, setSkipped] = useState<ReadonlySet<number>>(new Set());
   const [pickingProject, setPickingProject] = useState(false);
@@ -200,6 +203,7 @@ export function CaptureSheet({
           <RestingStickyView offset={{ closed: 0, opened: 0 }}>
           <Animated.View style={[styles.footer, footerPad]}>
             {dictation.available && <DictationMic dictation={dictation} size={36} />}
+            {orbOn && <ListeningOrb listening={dictation.listening} level={dictation.level} size={36} />}
             <Pressable
               style={[styles.ghostBtn, dictation.listening && styles.disabled]}
               // Dictation rewrites the field from the text it started with, so pasted text would be lost.

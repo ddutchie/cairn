@@ -39,6 +39,8 @@ import { useChatScroll } from "@/chat/useChatScroll";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { DictationMic } from "@/components/DictationMic";
 import { useDictation } from "@/dictation/useDictation";
+import { ListeningOrb } from "@/components/animations/ListeningOrb";
+import { useListeningOrb } from "@/lib/dev-flags";
 import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
 import { streamingPhase } from "@cairn/shared/conversation/work-phase";
@@ -116,6 +118,7 @@ export default function ChatScreen() {
 
   const [input, setInput] = useState("");
   const dictation = useDictation({ text: input, setText: setInput });
+  const orbOn = useListeningOrb();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   // The in-flight turn's phase, from the same signals the message loader reads. The boolean
@@ -820,6 +823,7 @@ export default function ChatScreen() {
           input={input}
           onChangeInput={setInput}
           mic={dictation.available ? <DictationMic dictation={dictation} /> : undefined}
+          orb={orbOn ? <ListeningOrb listening={dictation.listening} level={dictation.level} size={36} /> : undefined}
           micActive={dictation.listening}
           attachments={attachments}
           pendingIds={[]}
