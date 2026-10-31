@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { View, Text, Image, StyleSheet, Pressable } from "react-native";
 import { Bot, User, Copy, Check } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
-import { MarkdownView } from "@/components/MarkdownView";
+import { ChatMarkdown } from "./ChatMarkdown";
 import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { ToolTrail } from "./ToolTrail";
@@ -26,17 +26,7 @@ function AssistantBody({ m }: { m: UiMessage }) {
   const t = useTheme();
   const live = useStreamingText(!!m.streaming);
   const content = m.streaming ? live : m.content;
-  return (
-    <MarkdownView
-      content={content}
-      resolveLinks
-      useNoteFont={false}
-      fontFamilyOverride={t.chatFont}
-      fontWeightOverride={t.chatFontWeight}
-      trackingOverride={t.chatTracking}
-      lineHeightOverride={t.chatLineHeight}
-    />
-  );
+  return <ChatMarkdown content={content} fontFamily={t.chatFont} fontWeight={t.chatFontWeight} lineHeight={t.chatLineHeight} />;
 }
 
 /** What the turn is doing right now, drawn below the bubble until it finishes. */
