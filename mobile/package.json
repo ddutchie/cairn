@@ -99,6 +99,7 @@
     "eslint": "^9.39.5",
     "eslint-config-expo": "~58.0.4",
     "eslint-import-resolver-typescript": "^3.10.1",
+    "loadersz": "^0.9.0",
     "typescript": "~6.0.3"
   },
   "expo": {

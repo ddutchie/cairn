@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Linking, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
+import { WorkLoader } from "./WorkLoader";
 import { CheckCircle, ChevronDown, ChevronRight, ExternalLink } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { prettifyToolLabel } from "@cairn/shared/ui/constants";
@@ -66,7 +67,7 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
           // Tool is executing — show a spinner chip until its result arrives.
           return (
             <View key={i} style={styles.toolChip}>
-              <ActivityIndicator size="small" color={t.textSecondary} style={styles.spinner} />
+              <WorkLoader phase="tools" size={14} />
               <Text style={styles.toolChipText}>{label}…</Text>
             </View>
           );
@@ -309,6 +310,5 @@ function makeStyles(t: Theme) {
     jsonChevron: { color: t.textTertiary },
     toolChipText: { ...typeScale.caption, color: t.textSecondary },
     toolChipLink: { color: t.accent, maxWidth: 220 },
-    spinner: { transform: [{ scale: 0.7 }], width: 10, height: 10 },
   });
 }
