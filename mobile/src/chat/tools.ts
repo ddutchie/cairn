@@ -87,7 +87,8 @@ async function semanticHits(kind: "notes" | "tasks", query: string, limit: numbe
   for (const ws of q.listWorkspaceIds()) {
     hits.push(...(await (kind === "notes" ? semanticSearch(ws, query) : semanticSearchTasks(ws, query))));
   }
-  finalizeRanking(hits);
+  // Adaptive-k: the agent gets fewer, cleaner results when scores fall off a cliff.
+  finalizeRanking(hits, { adaptive: true, maxK: limit });
   return hits.slice(0, limit).map((h) => ({ id: h.noteId, title: h.title, section: h.sectionTitle, score: h.score }));
 }
 
