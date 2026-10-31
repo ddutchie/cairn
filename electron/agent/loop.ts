@@ -208,6 +208,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
 
   for (let step = 0; step < maxSteps; step++) {
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
+    for (const t of o.tools) if (!toolMap.has(t.name)) toolMap.set(t.name, t); // tool_search can add tools mid-turn
     const threshold = o.compaction?.threshold;
     if (threshold && lastContextTokens >= threshold) {
       if (yield* tryCompact("threshold")) lastContextTokens = 0;
@@ -289,7 +290,7 @@ async function* runToolCalls(
     await Promise.all(batch.map(async (p) => {
       if (o.signal?.aborted) { outputs.set(p.call.id, { content: "Cancelled before it ran.", isError: true }); return; }
       try {
-        outputs.set(p.call.id, await p.tool!.execute(p.args, { sessionId: o.sessionId, callId: p.call.id, signal: o.signal, workspaceRoot: o.workspaceRoot, readOnly: p.readOnly }));
+        outputs.set(p.call.id, await p.tool!.execute(p.args, { sessionId: o.sessionId, callId: p.call.id, signal: o.signal, workspaceRoot: o.workspaceRoot, readOnly: p.readOnly, tools: o.tools as AgentTool[] }));
       } catch (err) {
         outputs.set(p.call.id, { content: `Tool error: ${err instanceof Error ? err.message : String(err)}`, isError: true });
       }
