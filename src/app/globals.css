@@ -720,13 +720,6 @@ select:focus {
   background: color-mix(in srgb, var(--accent) 50%, transparent) !important;
 }
 
-/* ── Mobile Input Auto-Zoom Prevention ─────────────────── */
-@media (max-width: 767px) {
-  input, textarea, select {
-    font-size: 16px !important;
-  }
-}
-
 /* ── iOS Safari textareas and inputs resets ─────────── */
 textarea,
 input[type="text"],
@@ -738,16 +731,6 @@ input[type="tel"],
 input[type="url"] {
   -webkit-appearance: none;
   appearance: none;
-}
-
-/* ── Mobile Overview Chat Input Bottom Overlay Fade ──── */
-.overview-chat-overlay {
-  background-image: linear-gradient(
-    to top,
-    var(--background) 0%,
-    color-mix(in srgb, var(--background) 80%, transparent) 60%,
-    color-mix(in srgb, var(--background) 0%, transparent) 100%
-  );
 }
 
 /* ── Print Stylesheet Reset ──────────────────────────── */

@@ -308,8 +308,8 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
 
   return (
     <div
-      className="flex flex-col bg-[var(--background)] overflow-hidden h-full md:h-auto w-full"
-      style={typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? {} : { height }}
+      className="flex flex-col bg-[var(--background)] overflow-hidden w-full"
+      style={{ height }}
     >
       {/* Tab bar */}
       <div className="flex items-center gap-0 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 h-8 overflow-x-auto">

@@ -116,7 +116,6 @@ cairn/
 │   │   ├── session-handlers.ts   # db:session:* channels
 │   │   ├── pdf-export.ts   # app:exportNotePdf (uses lib/pdf-template.ts)
 │   │   ├── url-metadata.ts # db:flow:url:fetch (uses lib/url-metadata.ts)
-│   │   ├── mobile-handlers.ts# mobile:* channels
 │   │   ├── migration-handlers.ts # app:*igration* channels
 │   │   ├── settings-handlers.ts # app:{get,save}* settings channels
 │   │   ├── agent.ts        # agent:* IPC channels — PTY spawn, file I/O, git diff
@@ -191,7 +190,7 @@ cairn/
 | Agent | _(dynamic)_ | Project | Coding agent workspace — Cairn native agent (chat UI) or external PTY agent (Claude Code, OpenCode, Aider); file tree, CM6 editor, xterm.js terminal, git diff viewer |
 | Knowledge Graph | _(dynamic)_ | Workspace | Force-directed and Radial tree of notes/cards/tags (`GraphLayoutMode = "force" \| "radial"`) |
 | Insights | _(dynamic)_ | Workspace | Analytics canvases: Ridgeline, Beeswarm, Bullet, Sankey, Timeline, Matrix, Table |
-| Settings | — | App | General, AI (Chat / Coding Agents / MCP tabs), Extensions, Embeddings, Writing Style, Mobile Access, Device Sync, System |
+| Settings | — | App | General, AI (Chat / Coding Agents / MCP tabs), Extensions, Embeddings, Writing Style, Device Sync, System |
 
 ### Process model
 

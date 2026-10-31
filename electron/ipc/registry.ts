@@ -143,13 +143,12 @@ export function broadcastEvent(channel: string, payload: unknown): void {
 
 // ── Centralised session broadcast ─────────────────────────────────────────
 //
-// `broadcastEvent` (all windows + mobile) vs `broadcastToChat` (chat
+// `broadcastEvent` (all windows) vs `broadcastToChat` (chat
 // participants only: main + pop-out) was previously split across
 // `registry.ts` and `chat-popout.ts` with only a comment distinguishing
 // them. Centralise the intent here so call-sites express scope explicitly.
-// `chat` scope is participant-gated and deliberately excludes mobile (so HITL
-// nonces never leave desktop). Coding sessions use `all` because they are not
-// participant-gated.
+// `chat` scope is participant-gated (main + pop-out only). Coding sessions use
+// `all` because they are not participant-gated.
 
 export type BroadcastScope = "all" | "chat";
 
@@ -172,8 +171,6 @@ export function broadcastSession(
       broadcastToChat(channel, payload, excludeId);
       // The sender's own window already received via event.sender.send in
       // chat.ts; broadcastToChat fans out to the *other* participant(s).
-      // For non-chat-triggered broadcasts (e.g. busy errors), also fan out
-      // via broadcastEvent's mobile path is intentionally skipped — chat-only.
       return;
     } catch {
       // Fall through to broadcastEvent (no participant set available).

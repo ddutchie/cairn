@@ -83,7 +83,7 @@ export function registerIpcHandlers(ctx: DbContext): void {
 }
 
 /**
- * Register app-level IPC handlers (workspace setup, theme, mobile, PDF,
+ * Register app-level IPC handlers (workspace setup, theme, PDF,
  * URL fetch, migrations, settings, updater). Called from main.ts after the
  * workspace is selected.
  */
