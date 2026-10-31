@@ -9,6 +9,7 @@
  * finishes with plain text (no tool calls).
  */
 
+import { DEFAULT_RETRY as RETRY, abortableSleep, isRetryableErrorMessage, retryDelayMs, withJitter } from "@cairn/shared/agent/retry";
 import { resolveProvider } from "./providers";
 import {
   msgId,
@@ -32,13 +33,16 @@ import { getCachedPersonalitiesManifest } from "./personalities-registry";
 // desktop default (DEFAULT_AGENT_CONFIG.maxSteps in src/lib/constants.ts).
 
 export interface AgentEvent {
-  type: "text-delta" | "reasoning-delta" | "reasoning-summary-delta" | "tool-start" | "tool" | "usage" | "final" | "error";
+  type: "text-delta" | "reasoning-delta" | "reasoning-summary-delta" | "tool-start" | "tool" | "usage" | "retry" | "final" | "error";
   delta?: string; // for text-delta / reasoning-delta / reasoning-summary-delta
   tool?: string;
   toolCallId?: string; // correlates a "tool-start" with its later "tool"
   args?: unknown;
   result?: unknown;
-  text?: string; // full text for final / error
+  text?: string; // full text for final / error; the failure being retried, on "retry"
+  attempt?: number; // "retry": which retry this is
+  maxAttempts?: number; // "retry": the retry budget
+  delayMs?: number; // "retry": backoff before the next attempt
   reasoning?: string; // accumulated reasoning text, on "final"
   reasoningSummary?: string; // condensed reasoning summary, on "final"
   usage?: ChatUsage; // context-window usage — per-turn on "usage", final round on "final"
@@ -212,60 +216,76 @@ export async function runAgent(
     // previous round's numbers into this turn's "usage" event.
     usage = undefined;
 
-    try {
-      for await (const ev of provider.stream(conversation, tools, signal, streamOptions)) {
-        if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
-          const delta = (ev as { delta: string }).delta;
-          text += delta;
-          onEvent?.({ type: "text-delta", delta });
-        } else if (ev.type === "reasoning-delta" && typeof (ev as { delta?: string }).delta === "string") {
-          const delta = (ev as { delta: string }).delta;
-          reasoning += delta;
-          turnReasoning += delta;
-          const field = (ev as { field?: string }).field;
-          if (field) turnReasoningField ??= field;
-          onEvent?.({ type: "reasoning-delta", delta });
-        } else if (ev.type === "reasoning-summary-delta" && typeof (ev as { delta?: string }).delta === "string") {
-          const delta = (ev as { delta: string }).delta;
-          reasoningSummary += delta;
-          onEvent?.({ type: "reasoning-summary-delta", delta });
-        } else if (ev.type === "reasoning-items") {
-          turnReasoningItems = (ev as { items: Record<string, unknown>[] }).items;
-        } else if (ev.type === "tool-input-available") {
-          const e = ev as { toolCallId: string; toolName: string; input: unknown };
-          toolCalls.push({ id: e.toolCallId, name: e.toolName, input: e.input });
-        } else if (ev.type === "tool-executed") {
-          // Provider already ran this tool (e.g. Apple's native tool-calling).
-          // Record it in history for continuity and surface it for display, but
-          // do NOT queue it for re-execution.
-          const e = ev as { toolCallId: string; toolName: string; input: unknown; output: unknown };
-          assistant.parts.push({
-            type: `tool-${e.toolName}`,
-            toolCallId: e.toolCallId,
-            toolName: e.toolName,
-            state: "output-available",
-            input: e.input,
-            output: { type: "text", value: JSON.stringify(e.output ?? {}) },
-          } as UIPart);
-       onEvent?.({ type: "tool", tool: e.toolName, args: e.input, result: e.output });
-        } else if (ev.type === "finish") {
-          finishReason = (ev as { finishReason?: string }).finishReason;
-          const u = (ev as { usage?: ChatUsage }).usage;
-          if (u) usage = u;
+    // Transient provider failures are retried with backoff while nothing has streamed yet.
+    let attempt = 0;
+    for (;;) {
+      let emitted = false;
+      try {
+        for await (const ev of provider.stream(conversation, tools, signal, streamOptions)) {
+          // A retry is only safe while the user has seen nothing from this attempt.
+          if (ev.type !== "finish") emitted = true;
+          if (ev.type === "text-delta" && typeof (ev as { delta?: string }).delta === "string") {
+            const delta = (ev as { delta: string }).delta;
+            text += delta;
+            onEvent?.({ type: "text-delta", delta });
+          } else if (ev.type === "reasoning-delta" && typeof (ev as { delta?: string }).delta === "string") {
+            const delta = (ev as { delta: string }).delta;
+            reasoning += delta;
+            turnReasoning += delta;
+            const field = (ev as { field?: string }).field;
+            if (field) turnReasoningField ??= field;
+            onEvent?.({ type: "reasoning-delta", delta });
+          } else if (ev.type === "reasoning-summary-delta" && typeof (ev as { delta?: string }).delta === "string") {
+            const delta = (ev as { delta: string }).delta;
+            reasoningSummary += delta;
+            onEvent?.({ type: "reasoning-summary-delta", delta });
+          } else if (ev.type === "reasoning-items") {
+            turnReasoningItems = (ev as { items: Record<string, unknown>[] }).items;
+          } else if (ev.type === "tool-input-available") {
+            const e = ev as { toolCallId: string; toolName: string; input: unknown };
+            toolCalls.push({ id: e.toolCallId, name: e.toolName, input: e.input });
+          } else if (ev.type === "tool-executed") {
+            // Provider already ran this tool (e.g. Apple's native tool-calling).
+            // Record it in history for continuity and surface it for display, but
+            // do NOT queue it for re-execution.
+            const e = ev as { toolCallId: string; toolName: string; input: unknown; output: unknown };
+            assistant.parts.push({
+              type: `tool-${e.toolName}`,
+              toolCallId: e.toolCallId,
+              toolName: e.toolName,
+              state: "output-available",
+              input: e.input,
+              output: { type: "text", value: JSON.stringify(e.output ?? {}) },
+            } as UIPart);
+         onEvent?.({ type: "tool", tool: e.toolName, args: e.input, result: e.output });
+          } else if (ev.type === "finish") {
+            finishReason = (ev as { finishReason?: string }).finishReason;
+            const u = (ev as { usage?: ChatUsage }).usage;
+            if (u) usage = u;
+          }
         }
+        break;
+      } catch (e) {
+        const isAppleErr = e instanceof Error && e.name === "AppleLLMError";
+        const detail = e instanceof Error ? e.message : String(e);
+        if (!isAppleErr && !emitted && !signal?.aborted && attempt < RETRY.maxRetries && isRetryableErrorMessage(detail)) {
+          attempt++;
+          const delayMs = withJitter(retryDelayMs(RETRY, attempt));
+          onEvent?.({ type: "retry", attempt, maxAttempts: RETRY.maxRetries, delayMs, text: detail });
+          await abortableSleep(delayMs, signal);
+          if (!signal?.aborted) continue;
+        }
+        // AppleLLMError already carries a user-friendly message (quota, PCC network,
+        // unavailable, etc.) — pass it through verbatim rather than prefixing
+        // "Error:". Otherwise map generic network failures to a connection hint.
+        const msg = isAppleErr
+          ? (e as Error).message
+          : e instanceof Error && /network|fetch|abort|failed|\(5\d\d\)/i.test(e.message)
+            ? "Chat needs a connection. Reconnect and try again."
+            : `Error: ${e instanceof Error ? e.message : String(e)}`;
+        onEvent?.({ type: "error", text: msg });
+        return msg;
       }
-    } catch (e) {
-      // AppleLLMError already carries a user-friendly message (quota, PCC network,
-      // unavailable, etc.) — pass it through verbatim rather than prefixing
-      // "Error:". Otherwise map generic network failures to a connection hint.
-      const isAppleErr = e instanceof Error && e.name === "AppleLLMError";
-      const msg = isAppleErr
-        ? (e as Error).message
-        : e instanceof Error && /network|fetch|abort|failed|\(5\d\d\)/i.test(e.message)
-          ? "Chat needs a connection. Reconnect and try again."
-          : `Error: ${e instanceof Error ? e.message : String(e)}`;
-      onEvent?.({ type: "error", text: msg });
-      return msg;
     }
 
     // Record the assistant text part.
