@@ -58,7 +58,7 @@ export function HintOverlay({
       onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
     >
       {box && box.w > 0 ? (
-        <MorphingText text={hint} fitTexts={hints} width={box.w} height={box.h} color={color} fontSize={size} align="start" blurMax={4} />
+        <MorphingText systemFont text={hint} fitTexts={hints} width={box.w} height={box.h} color={color} fontSize={size} align="start" blurMax={4} />
       ) : null}
     </View>
   );

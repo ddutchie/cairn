@@ -120,9 +120,6 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
     >
       <View onLayout={(e) => onLayoutHeight(e.nativeEvent.layout.height)}>
         <View style={[styles.composerWrap]}>
-          <View pointerEvents="none" style={styles.glowSlot}>
-            <ComposerGlow phase={phase} radius={COMPOSER.radius} />
-          </View>
           <Glass radius={COMPOSER.radius} interactive={false} fallbackTint={fallbackBg} style={styles.glassRoot}>
             <Animated.View style={[styles.strip, stripStyle]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" keyboardDismissMode="none" style={styles.stripScroll} contentContainerStyle={styles.stripContent}>
@@ -183,6 +180,8 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 </Pressable>
               )}
             </View>
+            {/* Inside the glass: behind it, the glass would cover all but a sliver of the halo. */}
+            <ComposerGlow phase={phase} radius={COMPOSER.radius} />
           </Glass>
         </View>
       </View>
@@ -194,7 +193,6 @@ const styles = StyleSheet.create({
   composerOverlay: { position: "absolute", left: 0, right: 0, bottom: 0 },
   composerOverlayHidden: { position: "absolute", left: 0, right: 0, bottom: 0, opacity: 0 },
   composerWrap: { paddingHorizontal: GUTTER, paddingTop: 8 },
-  glowSlot: { position: "absolute", left: GUTTER - 3, right: GUTTER - 3, top: 8 - 3, bottom: -3 },
   glassRoot: { overflow: "hidden", borderCurve: "continuous" as const },
   strip: { overflow: "hidden", borderTopLeftRadius: COMPOSER.radius - COMPOSER.stripPaddingTop, borderTopRightRadius: COMPOSER.radius - COMPOSER.stripPaddingTop, borderCurve: "continuous" as const },
   stripScroll: { position: "absolute", left: 0, right: 0, top: COMPOSER.stripPaddingTop, height: COMPOSER.thumbSize },
