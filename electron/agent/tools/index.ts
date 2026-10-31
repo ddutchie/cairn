@@ -49,11 +49,10 @@ export interface ToolsetDeps {
 export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
   const tools: AgentTool[] = [];
   if (d.cairn) tools.push(...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
-  let live: AgentTool[] = tools;
   if (d.external) {
     const external = await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return [] as AgentTool[]; });
     // Big connector surfaces cost every request; offer names only and let the model load what it needs.
-    if (toolTokens(external) > DEFER_THRESHOLD_TOKENS) tools.push(toolSearchTool(external, () => live));
+    if (toolTokens(external) > DEFER_THRESHOLD_TOKENS) tools.push(toolSearchTool(external));
     else tools.push(...external);
   }
   if (d.external) {
@@ -81,8 +80,7 @@ export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
   }
   if (d.plan && d.surface === "coding") tools.push(...planTools(d.plan));
   const seen = new Set<string>();
-  live = tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
-  return live;
+  return tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
 }
 
 export * from "./bash";

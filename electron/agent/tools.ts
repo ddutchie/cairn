@@ -9,6 +9,8 @@ export interface ToolContext {
   workspaceRoot: string;
   /** The call was approved under plan mode: the tool must not change anything (EXEC runs in a read-only sandbox). */
   readOnly?: boolean;
+  /** The array the running loop offers tools from; a tool that loads others (tool_search) adds to it. */
+  tools?: AgentTool[];
 }
 
 export interface ToolOutput {

@@ -290,7 +290,7 @@ async function* runToolCalls(
     await Promise.all(batch.map(async (p) => {
       if (o.signal?.aborted) { outputs.set(p.call.id, { content: "Cancelled before it ran.", isError: true }); return; }
       try {
-        outputs.set(p.call.id, await p.tool!.execute(p.args, { sessionId: o.sessionId, callId: p.call.id, signal: o.signal, workspaceRoot: o.workspaceRoot, readOnly: p.readOnly }));
+        outputs.set(p.call.id, await p.tool!.execute(p.args, { sessionId: o.sessionId, callId: p.call.id, signal: o.signal, workspaceRoot: o.workspaceRoot, readOnly: p.readOnly, tools: o.tools as AgentTool[] }));
       } catch (err) {
         outputs.set(p.call.id, { content: `Tool error: ${err instanceof Error ? err.message : String(err)}`, isError: true });
       }
