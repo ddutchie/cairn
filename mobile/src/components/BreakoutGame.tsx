@@ -2,9 +2,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, Modal, Pressable, StyleSheet, PanResponder, AppState, useWindowDimensions } from "react-native";
 import Animated, {
   useAnimatedStyle,
+  Easing,
   useSharedValue,
   withSequence,
-  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { X } from "lucide-react-native";
@@ -265,7 +265,7 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           haptics.rigid();
           if (!g.reduced) {
             // The paddle squashes on impact and springs back; the ball's glow flares.
-            squash.set(withSequence(withTiming(1, { duration: 30 }), withSpring(0, { damping: 12, stiffness: 700 })));
+            squash.set(withSequence(withTiming(1, { duration: 30 }), withTiming(0, { duration: 90, easing: Easing.out(Easing.quad) })));
             kick.set(withSequence(withTiming(1, { duration: 30 }), withTiming(0, { duration: 160 })));
           }
           if (g.streak > 0) { g.streak = 0; setStreak(0); }
@@ -390,8 +390,8 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
   const paddleStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: paddleX.get() },
-      { scaleX: 1 + squash.get() * 0.14 },
-      { scaleY: 1 - squash.get() * 0.45 },
+      { scaleX: 1 + squash.get() * 0.02 },
+      { scaleY: 1 - squash.get() * 0.08 },
     ],
   }));
   const ballStyle = useAnimatedStyle(() => ({
@@ -486,7 +486,7 @@ const BrickView = memo(function BrickView({ brick, color, labelColor }: { brick:
   }, [brick.alive, motion.reduced, alive]);
   const style = useAnimatedStyle(() => ({
     opacity: alive.get(),
-    transform: [{ scale: 1 + (1 - alive.get()) * 0.18 }],
+    transform: [{ scale: 1 + (1 - alive.get()) * 0.05 }],
   }));
   if (!brick.alive && motion.reduced) return null;
   return (

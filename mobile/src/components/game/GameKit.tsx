@@ -2,11 +2,11 @@ import { memo, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, {
   FadeIn,
+  Easing,
   FadeInDown,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
-  withSpring,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
@@ -110,7 +110,7 @@ export function PopChip({ pulseKey, children }: { pulseKey: number; children: Re
   const s = useSharedValue(1);
   useEffect(() => {
     if (pulseKey <= 0 || motion.reduced) return;
-    s.set(withSequence(withTiming(1.2, { duration: 45 }), withSpring(1, { damping: 12, stiffness: 520 })));
+    s.set(withSequence(withTiming(1.06, { duration: 40 }), withTiming(1, { duration: 100, easing: Easing.out(Easing.quad) })));
   }, [pulseKey, motion.reduced, s]);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: s.get() }] }));
   return <Animated.View style={style}>{children}</Animated.View>;
@@ -192,7 +192,7 @@ export function GameOverCard({
   }, [fold, W, H]);
   const motion = useMotion();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const rise = (i: number) => (motion.reduced ? undefined : FadeInDown.delay(40 + i * 55).springify().damping(18).stiffness(300));
+  const rise = (i: number) => (motion.reduced ? undefined : FadeInDown.delay(40 + i * 55).duration(160).easing(Easing.out(Easing.cubic)));
   return (
     <Animated.View
       entering={motion.reduced ? undefined : FadeIn.duration(120)}

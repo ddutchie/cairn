@@ -2,9 +2,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, Modal, Pressable, StyleSheet, AppState, useWindowDimensions } from "react-native";
 import Animated, {
   useAnimatedStyle,
+  Easing,
   useSharedValue,
   withSequence,
-  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { X } from "lucide-react-native";
@@ -391,7 +391,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
   const overflowRows = Math.max(0, tower.length - (VISIBLE_ROWS - TOP_MARGIN_ROWS));
   const cameraY = overflowRows * ROW_H;
   useEffect(() => {
-    camera.set(motion.reduced ? cameraY : withSpring(cameraY, { damping: 24, stiffness: 280 }));
+    camera.set(motion.reduced ? cameraY : withTiming(cameraY, { duration: 220, easing: Easing.out(Easing.cubic) }));
   }, [cameraY, motion.reduced, camera]);
 
   const palette = useMemo(() => KINDS.map((k) => kindColor(k, t)), [t]);
@@ -528,11 +528,11 @@ const StoneView = memo(function StoneView({
   const ring = useSharedValue(0);
   useEffect(() => {
     if (!animate) return;
-    land.set(withSpring(0, { damping: 13, stiffness: 520 }));
+    land.set(withTiming(0, { duration: 110, easing: Easing.out(Easing.quad) }));
     if (stone.perfect) ring.set(withSequence(withTiming(0.001, { duration: 0 }), withTiming(1, { duration: 340 })));
   }, [animate, stone.perfect, land, ring]);
   const body = useAnimatedStyle(() => ({
-    transform: [{ scaleY: 1 - land.get() * 0.28 }, { scaleX: 1 + land.get() * 0.05 }],
+    transform: [{ scaleY: 1 - land.get() * 0.05 }, { scaleX: 1 + land.get() * 0.01 }],
   }));
   const ringStyle = useAnimatedStyle(() => ({
     opacity: ring.get() > 0 ? 0.9 * (1 - ring.get()) : 0,
