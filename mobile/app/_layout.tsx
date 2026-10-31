@@ -190,8 +190,9 @@ function RootNavigator({
   const contentStyle = { backgroundColor, paddingLeft: left, paddingRight: right };
   // No side insets: partial card/sheet presentations that never reach the rail.
   const cardStyle = { backgroundColor };
+  // iOS labels the back button with the previous screen's title; the tab group has none, so it read "(tabs)".
   return (
-    <Stack screenOptions={{ headerShown: true, ...headerStyle, contentStyle }}>
+    <Stack screenOptions={{ headerShown: true, headerBackTitle: "Back", ...headerStyle, contentStyle }}>
       {/* Tabs own their side-inset padding themselves (TabStack /
           useTabContentStyle, incl. the split view's overrides) — the root
           safe-zone padding must not inset the whole tab navigator twice. */}
