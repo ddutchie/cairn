@@ -46,6 +46,7 @@ import {
 } from "@/db/queries";
 import { splitIntoSections, type NoteSection } from "@cairn/shared/notes/sections";
 import { dotNormalized as dot } from "@cairn/shared/embeddings/vector";
+import { bm25Scores, hybridRank, queryTerms, type HybridOptions } from "@cairn/shared/retrieval/hybrid";
 
 // Chunk very long sections so we stay near the model's token budget; chunk
 // vectors are averaged + renormalised (same approach as desktop).
@@ -132,48 +133,17 @@ function displayScore(centered: number): number {
   return Math.round(scaled * 1000) / 1000;
 }
 
-// --- lexical (keyword) scoring for hybrid search --------------------------
+// --- hybrid ranking --------------------------------------------------------
 
 // Mean-pooled contextual embeddings capture broad topic/style but not keyword
 // salience, so on a homogeneous corpus pure cosine buries the obviously-correct
 // note (verified on the real 70-note DB: "how does semantic search work" ranked
-// the semantic-search note 36th). Production semantic search is therefore hybrid
-// — dense (vectors) + sparse (keywords). We blend a title-weighted lexical score
-// with the centred cosine; α=SEMANTIC_WEIGHT was tuned on the real corpus so
-// every query with a clear target note ranks it #1.
-const SEMANTIC_WEIGHT = 0.5; // weight on the dense (embedding) score; 1-α on lexical
+// the semantic-search note 36th). Ordering therefore fuses the dense ranking with
+// an in-memory BM25 keyword ranking via the shared hybrid ranker (reciprocal rank
+// fusion + term-coverage boost + MMR), the same logic desktop uses over FTS5.
 
-const STOPWORDS = new Set([
-  "the", "and", "for", "how", "does", "did", "was", "were", "are", "you", "your",
-  "with", "what", "why", "who", "can", "our", "this", "that", "into", "from",
-  "work", "works", "use", "used", "using", "get", "got", "has", "have", "a", "an",
-]);
-
-/** Distinct, meaningful (>2 chars, non-stopword) lowercased query terms. */
-function queryTerms(query: string): string[] {
-  const seen = new Set<string>();
-  for (const raw of query.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (raw.length > 2 && !STOPWORDS.has(raw)) seen.add(raw);
-  }
-  return [...seen];
-}
-
-/**
- * Title-weighted lexical score in [0,1]: each query term matched in the note
- * title counts double, in the body once. This is what lets a note literally
- * titled "…semantic search" win the query "how does semantic search work".
- */
-function lexicalScore(terms: string[], title: string, body: string): number {
-  if (terms.length === 0) return 0;
-  const t = title.toLowerCase();
-  const b = body.toLowerCase();
-  let score = 0;
-  for (const term of terms) {
-    if (t.includes(term)) score += 2;
-    else if (b.includes(term)) score += 1;
-  }
-  return score / (terms.length * 2);
-}
+/** Cap on body text kept per hit for keyword scoring / MMR similarity. */
+const HIT_TEXT_CHARS = 4000;
 
 function averageAndNormalise(vecs: Float32Array[]): Float32Array {
   const dim = vecs[0].length;
@@ -336,40 +306,49 @@ export interface SemanticHit {
   sectionTitle: string;
   /** Human-readable similarity (centred cosine, 0–1) shown in the UI. */
   score: number;
-  /** Blended dense+lexical score used for ORDERING. Callers merging results
-   *  across workspaces must call finalizeRanking() on the merged list first, so
-   *  the min-max normalisation spans the combined corpus (see finalizeRanking). */
+  /** Fused relevance (0–1) used for ORDERING. Callers merging results across
+   *  workspaces must call finalizeRanking() on the merged list first, so fusion
+   *  and keyword statistics span the combined corpus (see finalizeRanking). */
   rank: number;
   /** What `noteId` refers to. Defaults to "note"; task search sets "card" so
    *  callers can route to /note or /card. */
   kind?: "note" | "card";
   /** Raw centred-cosine (dense) score, retained so a merged multi-workspace list
-   *  can be re-normalised globally before blending. */
+   *  can be re-ranked globally. */
   _sem: number;
-  /** Raw title-weighted lexical score (already 0–1, corpus-independent). */
-  _lex: number;
+  /** Query and (truncated) body text, so finalizeRanking can compute keyword
+   *  scores and term coverage over the merged corpus. */
+  _query: string;
+  _text: string;
 }
 
 /**
- * Compute the ordering `rank` for a set of hits from their raw dense/lexical
- * components, min-max normalising the DENSE scores across the WHOLE set (so the
- * result is comparable across whatever corpus the set spans). Callers that merge
- * per-workspace results MUST call this on the merged list before sorting/slicing
- * — otherwise each workspace's `rank` was normalised only within its own corpus
- * and isn't comparable (a small workspace's top hit would outrank a large one's
- * unfairly). Mutates and returns the same array, sorted by `rank` desc.
+ * Compute the ordering `rank` for a set of hits by fusing their dense scores
+ * with keyword scores computed over the WHOLE set. Callers that merge
+ * per-workspace results MUST call this on the merged list before slicing —
+ * ranks from separate calls aren't comparable (a small workspace's top hit
+ * would outrank a large one's unfairly). Mutates and returns the same array,
+ * sorted by `rank` desc. Adaptive-k is off unless asked for (`opts.adaptive`) so
+ * the Search tab keeps a full, scrollable ordering.
  */
-export function finalizeRanking<T extends SemanticHit>(hits: T[]): T[] {
+export function finalizeRanking<T extends SemanticHit>(hits: T[], opts: HybridOptions = {}): T[] {
   if (hits.length === 0) return hits;
-  const sems = hits.map((h) => h._sem);
-  const lo = Math.min(...sems);
-  const hi = Math.max(...sems);
-  const span = Math.max(hi - lo, 1e-6);
-  for (const h of hits) {
-    const semN = (h._sem - lo) / span;
-    h.rank = SEMANTIC_WEIGHT * semN + (1 - SEMANTIC_WEIGHT) * h._lex;
-  }
-  hits.sort((a, b) => b.rank - a.rank);
+  const query = hits[0]._query;
+  const kw = bm25Scores(queryTerms(query), hits.map((h) => ({ title: h.title, text: h._text })));
+  const key = (h: T) => `${h.kind ?? "note"}:${h.noteId}`;
+  const ranked = hybridRank(
+    query,
+    hits.map((h, i) => ({ id: key(h), group: key(h), dense: h._sem, keyword: kw[i], title: h.title, text: h._text })),
+    { adaptive: false, ...opts },
+  );
+  const byKey = new Map(hits.map((h) => [key(h), h]));
+  const out = ranked.map((r) => {
+    const h = byKey.get(r.id)!;
+    h.rank = r.score;
+    return h;
+  });
+  hits.length = 0;
+  hits.push(...out);
   return hits;
 }
 
@@ -380,7 +359,7 @@ const QUERY_CACHE_MAX = 32;
 /**
  * Shared hybrid-search pipeline for notes and task cards. Notes and cards use an
  * identical ranking recipe — query-vector cache, corpus-centroid centring,
- * best-centred-cosine section per entity, min-max normalisation, and a
+ * best-centred-cosine section per entity, and a
  * dense+lexical blend — so both delegate here to prevent divergence. The caller
  * supplies only what differs: the row source, the id→text/title lookups, and the
  * result `kind` tag. See semanticSearch for the reasoning behind each step.
@@ -451,16 +430,14 @@ async function rankSemantic(
   const ids = [...bestSem.keys()];
   const texts = opts.getText(ids);
   const titleOf = opts.getTitle(ids);
-  const terms = queryTerms(q);
 
-  // Build hits carrying the RAW dense (centred cosine) + lexical components.
-  // finalizeRanking computes the blended `rank` with a min-max over this set;
-  // when a caller merges multiple workspaces it re-runs finalizeRanking over the
-  // combined list so normalisation spans the whole corpus (see finalizeRanking).
+  // Build hits carrying the RAW dense (centred cosine) score plus the text needed
+  // for keyword scoring. finalizeRanking fuses them into `rank`; when a caller
+  // merges multiple workspaces it re-runs finalizeRanking over the combined list
+  // so fusion spans the whole corpus (see finalizeRanking).
   const hits: SemanticHit[] = ids.map((id) => {
     const sem = bestSem.get(id)!;
     const info2 = texts.get(id);
-    const lex = lexicalScore(terms, info2?.title ?? "", info2?.text ?? "");
     return {
       noteId: id, // SemanticHit reuses `noteId`; for cards it's the card id
       title: titleOf(id),
@@ -470,10 +447,11 @@ async function rankSemantic(
       rank: 0, // set by finalizeRanking below
       kind: opts.kind,
       _sem: sem.score,
-      _lex: lex,
+      _query: q,
+      _text: (info2?.text ?? "").slice(0, HIT_TEXT_CHARS),
     };
   });
-  finalizeRanking(hits); // sorts by rank desc (single-corpus normalisation here)
+  finalizeRanking(hits); // sorts by rank desc (single-corpus fusion here)
   // Only slice when the caller asks. When merging across workspaces, callers
   // must merge the FULL lists and call finalizeRanking ONCE, then slice.
   return typeof k === "number" ? hits.slice(0, k) : hits;

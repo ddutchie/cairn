@@ -18,6 +18,7 @@ import {
 import type { NoteEmbeddingRecord } from "../db/queries";
 import { projectTo2d, normaliseProjection } from "./projection";
 import { toFloat32 } from "./cosine";
+import { fuseDenseAndKeyword, loadDocs, noteKeywordHits, taskKeywordHits, type DenseEntity } from "./hybrid";
 import { splitIntoSections, type NoteSection } from "./sections";
 import { EMBED_MODEL_ID, EMBED_DIM } from "./types";
 import type { EmbedTask } from "./types";
@@ -235,6 +236,9 @@ export async function reindexNotes(
 }
 
 
+/** Dense candidates (best section per entity) that go on to fusion with FTS hits. */
+const HYBRID_DENSE_POOL = 100;
+
 export async function searchAdjacent(
   db: Database.Database,
   workspaceId: string,
@@ -264,29 +268,36 @@ export async function searchAdjacent(
   const query = toFloat32(queryVec);
   const excludeSet = new Set(excludeIds);
 
-  const bestPerNote = new Map<string, { noteId: string; score: number; sectionTitle: string }>();
+  const bestPerNote = new Map<string, { noteId: string; score: number; sectionTitle: string; vector: Float32Array }>();
   for (const s of stored) {
     if (excludeSet.has(s.noteId)) continue;
-    const sim = cosineDot(query, toFloat32(s.vector));
+    const vec = toFloat32(s.vector);
+    const sim = cosineDot(query, vec);
     const cur = bestPerNote.get(s.noteId);
     if (!cur || sim > cur.score) {
-      bestPerNote.set(s.noteId, { noteId: s.noteId, score: sim, sectionTitle: s.sectionTitle });
+      bestPerNote.set(s.noteId, { noteId: s.noteId, score: sim, sectionTitle: s.sectionTitle, vector: vec });
     }
   }
 
-  const sorted = Array.from(bestPerNote.values()).sort((a, b) => b.score - a.score);
-  const top = sorted.slice(0, k);
+  // Hybrid: dense best-section ranking fused with FTS5 bm25 hits (exact names,
+  // ids and rare phrases that embeddings blur), then MMR + adaptive-k via the
+  // shared ranker. Only the strongest dense candidates are loaded for text.
+  const dense: DenseEntity[] = Array.from(bestPerNote.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, HYBRID_DENSE_POOL)
+    .map((d) => ({ id: d.noteId, score: d.score, sectionTitle: d.sectionTitle, vector: d.vector }));
+  const keyword = noteKeywordHits(db, workspaceId, trimmed).filter((h) => !excludeSet.has(h.id));
+  const kwIds = new Set(keyword.map((h) => h.id));
+  const docs = loadDocs(db, "notes", dense.map((d) => d.id).filter((id) => !kwIds.has(id)));
+  const top = fuseDenseAndKeyword(trimmed, dense, keyword, docs, k);
   if (top.length === 0) return [];
 
   const idToTitle = new Map<string, string>();
-  const placeholders = top.map(() => "?").join(",");
-  const rows = db.prepare(
-    `SELECT id, title FROM notes WHERE id IN (${placeholders})`
-  ).all(...top.map((r) => r.noteId)) as Array<{ id: string; title: string }>;
-  for (const r of rows) idToTitle.set(r.id, r.title);
+  for (const d of docs.values()) idToTitle.set(d.id, d.title);
+  for (const h of keyword) idToTitle.set(h.id, h.title);
   return top.map((r) => ({
-    noteId: r.noteId,
-    title: idToTitle.get(r.noteId) ?? r.noteId,
+    noteId: r.id,
+    title: idToTitle.get(r.id) ?? r.id,
     score: Math.round(r.score * 1000) / 1000,
     sectionTitle: r.sectionTitle,
   }));
@@ -406,34 +417,35 @@ export async function searchAdjacentTasks(
 
   // Rank the WHOLE corpus (best section per card), then slice — never a
   // per-batch cut, so a card that ranks low in one section isn't dropped early.
-  const bestPerCard = new Map<string, { cardId: string; score: number; sectionTitle: string }>();
+  const bestPerCard = new Map<string, DenseEntity>();
   for (const s of stored) {
-    const sim = cosineDot(query, toFloat32(s.vector));
+    const vec = toFloat32(s.vector);
+    const sim = cosineDot(query, vec);
     const cur = bestPerCard.get(s.cardId);
     if (!cur || sim > cur.score) {
-      bestPerCard.set(s.cardId, { cardId: s.cardId, score: sim, sectionTitle: s.sectionTitle });
+      bestPerCard.set(s.cardId, { id: s.cardId, score: sim, sectionTitle: s.sectionTitle, vector: vec });
     }
   }
-  const top = Array.from(bestPerCard.values()).sort((a, b) => b.score - a.score).slice(0, k);
+  const dense = Array.from(bestPerCard.values()).sort((a, b) => b.score - a.score).slice(0, HYBRID_DENSE_POOL);
+  const keyword = taskKeywordHits(db, workspaceId, trimmed);
+  const kwIds = new Set(keyword.map((h) => h.id));
+  // Restrict to live cards — archived cards may still have stale embedding rows
+  // (e.g. archived outside the app); FTS hits are already live-only, and dense
+  // candidates are checked here so an archived card never reaches the ranker.
+  const live = loadDocs(db, "tasks", dense.map((d) => d.id).filter((id) => !kwIds.has(id)), true);
+  const liveDense = dense.filter((d) => kwIds.has(d.id) || live.has(d.id));
+  const top = fuseDenseAndKeyword(trimmed, liveDense, keyword, live, k);
   if (top.length === 0) return [];
 
   const idToTitle = new Map<string, string>();
-  const placeholders = top.map(() => "?").join(",");
-  // Restrict to live cards — archived cards may still have stale embedding rows
-  // (e.g. archived outside the app), so exclude them from results here too.
-  const rows = db.prepare(
-    `SELECT id, title FROM task_cards WHERE id IN (${placeholders}) AND archived_at IS NULL`,
-  ).all(...top.map((r) => r.cardId)) as Array<{ id: string; title: string }>;
-  for (const r of rows) idToTitle.set(r.id, r.title);
-  // Drop any ranked card that didn't resolve to a live row (archived/deleted).
-  return top
-    .filter((r) => idToTitle.has(r.cardId))
-    .map((r) => ({
-      cardId: r.cardId,
-      title: idToTitle.get(r.cardId) ?? r.cardId,
-      score: Math.round(r.score * 1000) / 1000,
-      sectionTitle: r.sectionTitle,
-    }));
+  for (const d of live.values()) idToTitle.set(d.id, d.title);
+  for (const h of keyword) idToTitle.set(h.id, h.title);
+  return top.map((r) => ({
+    cardId: r.id,
+    title: idToTitle.get(r.id) ?? r.id,
+    score: Math.round(r.score * 1000) / 1000,
+    sectionTitle: r.sectionTitle,
+  }));
 }
 
 
