@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Brain, ChevronRight } from "lucide-react-native";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { haptics } from "@/haptics";
+import { DisclosureBody, DisclosureTurn, useDisclosure } from "@/components/Disclosure";
 
 /**
  * Collapsible "reasoning" (thinking) disclosure for models that stream it
@@ -21,11 +23,15 @@ export function ReasoningBlock({ text, summary, streaming, hasContent }: { text:
   const [override, setOverride] = useState<boolean | null>(null);
   const expanded = override !== null ? override : !!streaming && !hasContent;
   const collapsedText = summary && summary.trim() ? summary.trim() : null;
+  const disclosure = useDisclosure(expanded);
   return (
     <View style={styles.reasoning}>
       <Pressable
         style={styles.reasoningHeader}
-        onPress={() => setOverride((v) => (v === null ? !expanded : !v))}
+        onPress={() => {
+          haptics.impact();
+          setOverride((v) => (v === null ? !expanded : !v));
+        }}
         hitSlop={6}
         accessibilityRole="button"
         accessibilityLabel={expanded ? "Hide reasoning" : "Show reasoning"}
@@ -33,17 +39,16 @@ export function ReasoningBlock({ text, summary, streaming, hasContent }: { text:
       >
         <Brain size={11} color={t.textTertiary} />
         <Text style={styles.reasoningLabel}>{streaming && !hasContent ? "Thinking…" : "Reasoning"}</Text>
-        <ChevronRight
-          size={12}
-          color={t.textTertiary}
-          style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
-        />
+        <DisclosureTurn progress={disclosure.progress}>
+          <ChevronRight size={12} color={t.textTertiary} />
+        </DisclosureTurn>
       </Pressable>
-      {expanded ? (
-        // Prefer the raw trace; fall back to the summary so summary-only
-        // reasoning stays visible when expanded.
-        text ? <Text style={styles.reasoningText}>{text}</Text> : collapsedText ? <Text style={styles.reasoningText}>{collapsedText}</Text> : null
-      ) : collapsedText ? (
+      <DisclosureBody state={disclosure}>
+        {/* Prefer the raw trace; fall back to the summary so summary-only
+            reasoning stays visible when expanded. */}
+        {text ? <Text style={styles.reasoningText}>{text}</Text> : collapsedText ? <Text style={styles.reasoningText}>{collapsedText}</Text> : null}
+      </DisclosureBody>
+      {!disclosure.mounted && collapsedText ? (
         <Text style={styles.reasoningSummary} numberOfLines={2}>{collapsedText}</Text>
       ) : null}
     </View>

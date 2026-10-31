@@ -4,6 +4,7 @@ import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
 import { ResultRow } from "@/components/ResultRow";
+import { StaggerIn, useStaggerGate } from "@/components/StaggerIn";
 import { TabScreen } from "@/components/TabScreen";
 import { EmptyState } from "@/components/EmptyState";
 import { IndexingBar } from "@/components/IndexingBar";
@@ -355,6 +356,8 @@ export default function SearchScreen() {
   }, [semanticMode, typeFilter, notes, tasks]);
 
   const isListEmpty = (semanticMode ? hits.length : keywordResults.length) === 0;
+  // Rows fade in once when a result set first appears; typing within a set doesn't replay it.
+  const staggerGate = useStaggerGate(isListEmpty ? "empty" : "results");
 
   const typeLabel = (f: TypeFilter) => (f === "all" ? "All" : f === "notes" ? "Notes" : "Tasks");
   const placeholder = semanticMode ? "Search by meaning…" : "Search notes and tasks";
@@ -541,7 +544,8 @@ export default function SearchScreen() {
             refreshControl={
               <RefreshControl refreshing={reindexing} onRefresh={forceReindex} tintColor={t.textTertiary} />
             }
-            renderItem={({ item }) => (
+            renderItem={({ item, index }) => (
+              <StaggerIn id={`${item.kind ?? "note"}:${item.noteId}`} index={index} gate={staggerGate}>
               <ResultRow
                 title={item.title}
                 preview={item.kind === "card" ? `Task · ${item.sectionTitle}` : item.sectionTitle}
@@ -555,6 +559,7 @@ export default function SearchScreen() {
                   )
                 }
               />
+              </StaggerIn>
             )}
           />
         ) : (
@@ -562,7 +567,8 @@ export default function SearchScreen() {
             data={keywordResults}
             keyExtractor={(r) => `${r.kind}:${r.id}`}
             {...listProps}
-            renderItem={({ item }) => (
+            renderItem={({ item, index }) => (
+              <StaggerIn id={`${item.kind}:${item.id}`} index={index} gate={staggerGate}>
               <ResultRow
                 title={item.title}
                 preview={item.kind === "card" ? `Task · ${item.preview}` : item.preview}
@@ -576,6 +582,7 @@ export default function SearchScreen() {
                   )
                 }
               />
+              </StaggerIn>
             )}
           />
         )}

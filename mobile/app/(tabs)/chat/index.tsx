@@ -41,6 +41,7 @@ import { DictationMic } from "@/components/DictationMic";
 import { useDictation } from "@/dictation/useDictation";
 import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
+import { streamingPhase } from "@cairn/shared/conversation/work-phase";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
 import { CairnAttachmentHost, type CairnAttachmentHostHandle } from "@/components/chat/attachment-panel/CairnAttachmentHost";
@@ -117,6 +118,18 @@ export default function ChatScreen() {
   const dictation = useDictation({ text: input, setText: setInput });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
+  // The in-flight turn's phase, from the same signals the message loader reads. The boolean
+  // snapshot only changes when the first text arrives, so this re-renders twice a turn at most.
+  const streamHasText = useSyncExternalStore(streamStore.subscribe, () => streamStore.get().length > 0, () => false);
+  const turnPhase = useMemo(() => {
+    if (!busy) return null;
+    const live = [...messages].reverse().find((m) => m.streaming);
+    return streamingPhase({
+      hasContent: streamHasText,
+      hasReasoning: !!(live?.reasoning || live?.reasoningSummary),
+      toolRunning: !!live?.tools?.some((x) => x.running),
+    });
+  }, [busy, messages, streamHasText]);
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Attachments are stored alongside so staged
   // images/PDFs are never silently dropped. Session-scoped.
@@ -815,6 +828,7 @@ export default function ChatScreen() {
           onPlusPress={onPlusPress}
           onRemove={removeAttachment}
           busy={busy}
+          phase={turnPhase}
           canSend={canSend}
           onSend={send}
           onInputFocus={() => {

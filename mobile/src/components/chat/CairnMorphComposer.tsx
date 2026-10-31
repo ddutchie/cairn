@@ -7,6 +7,9 @@ import Animated, { Extrapolation, FadeOut, interpolate, LinearTransition, useAni
 import { scheduleOnRN } from "react-native-worklets";
 import { RestingStickyView } from "./RestingStickyView";
 import { useTheme, withAlpha, useIsDark, KEYBOARD_OPEN_GAP } from "@/theme";
+import { ComposerGlow } from "./ComposerGlow";
+import type { WorkPhase } from "@cairn/shared/conversation/work-phase";
+import { HintOverlay, useHintCycle } from "@/components/CyclingPlaceholder";
 import { Glass } from "./attachment-panel/glass";
 import { COMPOSER, COMPOSER_STRIP_HEIGHT, DURATION, GUTTER } from "./attachment-panel/constants";
 import type { Attachment } from "@/chat/agent";
@@ -24,6 +27,9 @@ function Thumbnail({ url, hidden, onRemove }: { url: string; hidden: boolean; on
   );
 }
 
+/** Empty-composer hints; the first is also the static placeholder. */
+const COMPOSER_HINTS = ["Message Cairn…", "Ask what changed this week", "Find notes about onboarding", "Add a task to a project"] as const;
+
 export interface CairnMorphComposerProps {
   input: string;
   onChangeInput: (v: string) => void;
@@ -34,6 +40,8 @@ export interface CairnMorphComposerProps {
   onPlusPress: () => void;
   onRemove: (idx: number) => void;
   busy: boolean;
+  /** What the in-flight turn is doing; drives the breathing glow. Null/omitted = no glow. */
+  phase?: WorkPhase | null;
   canSend: boolean;
   onSend: () => void;
   onInputFocus: () => void;
@@ -64,7 +72,7 @@ export interface CairnMorphComposerProps {
 }
 
 export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
-  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0, mic, micActive = false },
+  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, phase = null, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0, mic, micActive = false },
   ref,
 ) {
   const t = useTheme();
@@ -75,6 +83,8 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
   }, [hidden, leftInset]);
   const hasAttachments = attachments.length > 0;
   const showMic = !!mic && (micActive || (!canSend && !busy));
+  const [focused, setFocused] = useState(false);
+  const cycle = useHintCycle(COMPOSER_HINTS, !input && !focused && !micActive && !busy);
 
   const plusStyle = useAnimatedStyle(() => ({
     opacity: interpolate(plusOut.get(), [0, 0.75], [1, 0], Extrapolation.CLAMP),
@@ -128,15 +138,31 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 ref={ref}
                 value={input}
                 onChangeText={onChangeInput}
-                onFocus={onInputFocus}
-                onBlur={onInputBlur}
-                placeholder={micActive ? "Listening… slide left to cancel" : "Message Cairn…"}
+                onFocus={() => {
+                  setFocused(true);
+                  onInputFocus();
+                }}
+                onBlur={() => {
+                  setFocused(false);
+                  onInputBlur?.();
+                }}
+                accessibilityLabel="Message Cairn"
+                placeholder={micActive ? "Listening… slide left to cancel" : cycle.visible ? "" : COMPOSER_HINTS[0]}
                 editable={!micActive}
                 placeholderTextColor={isLight ? t.textSecondary : t.textTertiary}
                 multiline
                 textAlignVertical="center"
                 style={[styles.field, { color: t.textPrimary }]}
               />
+              {cycle.visible ? (
+                <HintOverlay
+                  hint={cycle.hint}
+                  hints={COMPOSER_HINTS}
+                  color={isLight ? t.textSecondary : t.textTertiary}
+                  fontSize={COMPOSER.fieldSize}
+                  style={{ left: COMPOSER.rowPaddingLeft + COMPOSER.plusHit + 10 + 2, right: 9 + 32 + 10 }}
+                />
+              ) : null}
               {showMic ? (
                 mic
               ) : (
@@ -154,6 +180,8 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                 </Pressable>
               )}
             </View>
+            {/* Inside the glass: behind it, the glass would cover all but a sliver of the halo. */}
+            <ComposerGlow phase={phase} radius={COMPOSER.radius} />
           </Glass>
         </View>
       </View>

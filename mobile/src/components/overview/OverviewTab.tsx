@@ -10,6 +10,7 @@ import { ProjectIcon } from "@/components/ProjectIcon";
 import { PressableScale } from "@/components/PressableScale";
 import { EmptyState } from "@/components/EmptyState";
 import { ProgressRing } from "./ProgressRing";
+import { RollingText } from "@/components/RollingText";
 import { HealthRadar } from "./HealthRadar";
 import { summarizeProject } from "./project-summary";
 import { celebrateProjectMilestone } from "@/gamification/rewards";
@@ -285,12 +286,13 @@ export function OverviewTab({
             <View style={styles.instrumentMain}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-                  <Text style={[typeScale.display, { color: t.textPrimary }]}>{instrumentPct}</Text>
+                  <RollingText text={String(instrumentPct)} style={{ ...typeScale.display, color: t.textPrimary }} />
                   <Text style={[typeScale.caption, { color: t.textTertiary }]}>%</Text>
                 </View>
-                <Text style={[typeScale.caption, { color: t.textTertiary, marginTop: 2 }]}>
-                  <Text style={{ color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }}>{instrumentDone} / {instrumentTotal}</Text> done · {openCards.length} open · {doneCards.length} done
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
+                  <RollingText text={`${instrumentDone} / ${instrumentTotal}`} style={{ ...typeScale.caption, color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }} />
+                  <Text style={[typeScale.caption, { color: t.textTertiary }]}> done · {openCards.length} open · {doneCards.length} done</Text>
+                </View>
               </View>
               <ProgressRing percent={instrumentPct} size={74} stroke={5} variant="instrument" />
             </View>

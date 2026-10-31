@@ -6,11 +6,12 @@ import {
   Group,
   Text as SkiaText,
   useFont,
+  matchFont,
   type DataSourceParam,
   type SkFont,
 } from '@shopify/react-native-skia';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import {
   useDerivedValue,
   useSharedValue,
@@ -221,6 +222,11 @@ export interface MorphingTextProps {
    * @default Manrope_600SemiBold
    */
   fontSource?: DataSourceParam;
+  /**
+   * Draw with the platform's UI font (the one a `TextInput` uses) instead of `fontSource`, so a
+   * placeholder matches the field it stands in for.
+   */
+  systemFont?: boolean;
   /** Family name used only by the pre-load fallback `<Text>`. */
   fallbackFontFamily?: string;
   /**
@@ -229,10 +235,25 @@ export interface MorphingTextProps {
    * @default [text]
    */
   fitTexts?: readonly string[];
+  /**
+   * Where the string sits in the canvas. `start` suits a placeholder that must line up with a
+   * text field's left edge. @default "center"
+   */
+  align?: 'center' | 'start';
   /** Per-character delay. @default 25 */
   staggerMs?: number;
   /** Peak Gaussian blur in px. @default 6 */
   blurMax?: number;
+}
+
+/** The Skia font for a file asset, or the platform UI font at regular weight when `system` is set. */
+function useResolvedFont(source: DataSourceParam, size: number, system: boolean) {
+  const loaded = useFont(system ? null : source, size);
+  const platform = useMemo(
+    () => (system ? matchFont({ fontFamily: Platform.select({ ios: 'System', default: 'sans-serif' }), fontSize: size, fontWeight: 'normal' }) : null),
+    [system, size],
+  );
+  return system ? platform : loaded;
 }
 
 export function MorphingText({
@@ -242,15 +263,17 @@ export function MorphingText({
   color,
   fontSize = 32,
   fontSource = Manrope_600SemiBold,
+  systemFont = false,
   fallbackFontFamily,
   fitTexts,
+  align = 'center',
   staggerMs = STAGGER_MS,
   blurMax = BLUR_MAX,
 }: MorphingTextProps) {
   // Measure at the requested size, then shrink to fit the widest string. Two
   // font instances is the cost of an exact fit — a per-character heuristic would
   // either clip a wide string or leave a narrow one too small.
-  const probeFont = useFont(fontSource, fontSize);
+  const probeFont = useResolvedFont(fontSource, fontSize, systemFont);
   const fittedSize = useMemo(() => {
     if (!probeFont) return fontSize;
     const candidates = fitTexts?.length ? fitTexts : [text];
@@ -262,7 +285,7 @@ export function MorphingText({
     return Math.floor(fontSize * (width / widest));
   }, [probeFont, fitTexts, text, width, fontSize]);
 
-  const font = useFont(fontSource, fittedSize);
+  const font = useResolvedFont(fontSource, fittedSize, systemFont);
   const baselineY = height / 2 + fittedSize * CENTER_RATIO;
 
   const [cells, setCells] = useState<Cell[]>([]);
@@ -276,7 +299,7 @@ export function MorphingText({
     const advances = font.getGlyphWidths(font.getGlyphIDs(text));
     const total = advances.reduce((sum, w) => sum + w, 0);
     // Centre the string within the canvas.
-    let cursor = (width - total) / 2;
+    let cursor = align === 'start' ? 0 : (width - total) / 2;
 
     const nextByKey = new Map<string, Cell>();
     keyed.forEach((k, index) => {
@@ -306,7 +329,7 @@ export function MorphingText({
       }
       return merged;
     });
-  }, [text, font, width]);
+  }, [text, font, width, align]);
 
   const removeCell = useCallback((key: string) => {
     setCells((previous) => {
@@ -321,7 +344,7 @@ export function MorphingText({
   // Until the Skia font loads, fall back to plain text so the copy still shows.
   if (!font) {
     return (
-      <View style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width, height, alignItems: align === 'start' ? 'flex-start' : 'center', justifyContent: 'center' }}>
         <Text
           numberOfLines={1}
           style={{ color, fontSize: fittedSize, fontFamily: fallbackFontFamily }}

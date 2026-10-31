@@ -4,6 +4,8 @@ import { SearchField } from "@/components/SearchField";
 import { useTheme, withAlpha, type as typeScale } from "@/theme";
 import type { TagRow } from "@/db/queries";
 
+const NOTE_FILTER_HINTS = ["Filter notes…", "Try a note title", "Try a word from the body", "Or tap a tag below"] as const;
+
 /**
  * The notes-tab filter row: a text search field plus a horizontal row of
  * tag-filter chips (tap to toggle). Mirrors the desktop note filter.
@@ -25,7 +27,7 @@ export function NoteFilterBar({
   const styles = useMemo(() => makeStyles(), []);
   return (
     <View style={styles.filterWrap}>
-      <SearchField value={filter} onChangeText={onFilter} placeholder="Filter notes…" />
+      <SearchField value={filter} onChangeText={onFilter} placeholder="Filter notes…" hints={NOTE_FILTER_HINTS} />
       {tags.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagFilterRow} keyboardShouldPersistTaps="handled">
           {tags.map((tag) => {

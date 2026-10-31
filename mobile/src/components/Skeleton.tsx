@@ -1,19 +1,51 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { View, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
+  cancelAnimation,
+  Easing,
+  makeMutable,
   useAnimatedStyle,
-  useSharedValue,
   withRepeat,
   withTiming,
-  Easing,
+  type SharedValue,
 } from "react-native-reanimated";
-import { useTheme } from "@/theme";
+import { useTheme, withAlpha } from "@/theme";
+import { useMotion } from "@/lib/use-motion";
+
+const SWEEP_MS = 1300;
+/** Width of the highlight band as a fraction of the block. */
+const BAND = 0.6;
 
 /**
- * A pulsing placeholder block — the mobile analogue of the desktop's
+ * One clock for every skeleton on screen. Each block derives its sweep position from this single
+ * value, so a list of twenty placeholders runs one animation rather than twenty, and they all
+ * shimmer in step. Started by the first mounted block, stopped when the last one unmounts.
+ */
+let shimmer: SharedValue<number> | null = null;
+let shimmerUsers = 0;
+
+function getShimmer(): SharedValue<number> {
+  if (!shimmer) shimmer = makeMutable(0);
+  return shimmer;
+}
+
+function acquireShimmer(): void {
+  if (shimmerUsers++ === 0) getShimmer().set(withRepeat(withTiming(1, { duration: SWEEP_MS, easing: Easing.inOut(Easing.ease) }), -1, false));
+}
+
+function releaseShimmer(): void {
+  if (--shimmerUsers === 0 && shimmer) {
+    cancelAnimation(shimmer);
+    shimmer.set(0);
+  }
+}
+
+/**
+ * A shimmering placeholder block — the mobile analogue of the desktop's
  * `animate-pulse bg-[var(--surface-2)]` skeletons (NoteMarkdownPreview,
- * ChatInput). Renders a rounded surface that gently fades in/out so lists feel
- * like they're loading rather than flashing empty then popping in.
+ * ChatInput). A soft highlight sweeps across a rounded surface so lists feel like they're
+ * loading rather than flashing empty then popping in. Reduce motion leaves a still block.
  */
 export function Skeleton({
   width,
@@ -27,26 +59,36 @@ export function Skeleton({
   style?: StyleProp<ViewStyle>;
 }) {
   const t = useTheme();
-  const opacity = useSharedValue(0.5);
+  const motion = useMotion();
+  const [w, setW] = useState(0);
+  const clock = getShimmer();
 
   useEffect(() => {
-    opacity.value = withRepeat(
-      withTiming(1, { duration: 850, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true,
-    );
-  }, [opacity]);
+    if (motion.reduced) return;
+    acquireShimmer();
+    return releaseShimmer;
+  }, [motion.reduced]);
 
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const sweep = useAnimatedStyle(() => ({
+    transform: [{ translateX: -w * BAND + clock.get() * w * (1 + BAND) }],
+  }));
 
   return (
-    <Animated.View
-      style={[
-        { width: width ?? "100%", height, borderRadius: radius, backgroundColor: t.surface2 },
-        animStyle,
-        style,
-      ]}
-    />
+    <View
+      onLayout={(e) => setW(e.nativeEvent.layout.width)}
+      style={[{ width: width ?? "100%", height, borderRadius: radius, backgroundColor: t.surface2, overflow: "hidden" }, style]}
+    >
+      {!motion.reduced && w > 0 ? (
+        <Animated.View style={[StyleSheet.absoluteFill, { width: w * BAND }, sweep]}>
+          <LinearGradient
+            colors={[withAlpha(t.surface3, 0), t.surface3, withAlpha(t.surface3, 0)]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      ) : null}
+    </View>
   );
 }
 
