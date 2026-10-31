@@ -442,9 +442,11 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           <ParticlePool data={particleBuf} palette={palette} />
 
           {/* Ball trail, glow and ball */}
-          {Array.from({ length: TRAIL_POINTS - 1 }, (_, i) => (
-            <TrailDot key={i} index={i + 1} trail={trail} color={t.textPrimary} />
-          ))}
+          {motion.reduced
+            ? null
+            : Array.from({ length: TRAIL_POINTS - 1 }, (_, i) => (
+                <TrailDot key={i} index={i + 1} trail={trail} color={t.textPrimary} />
+              ))}
           <Animated.View
             pointerEvents="none"
             style={[styles.glow, { backgroundColor: glowColor }, glowStyle]}
@@ -486,7 +488,7 @@ const BrickView = memo(function BrickView({ brick, color, labelColor }: { brick:
   }, [brick.alive, motion.reduced, alive]);
   const style = useAnimatedStyle(() => ({
     opacity: alive.get(),
-    transform: [{ scale: 1 + (1 - alive.get()) * 0.05 }],
+    transform: [{ scale: 1 - (1 - alive.get()) * 0.05 }],
   }));
   if (!brick.alive && motion.reduced) return null;
   return (
