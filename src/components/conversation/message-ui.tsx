@@ -3,6 +3,8 @@
 import React from "react";
 import { Bot, User, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { WorkLoader } from "@/components/ui/work-loader";
+import type { WorkPhase } from "@/lib/conversation/work-phase";
 
 export interface MessageAvatarProps {
   role: "user" | "assistant" | "bot" | "error";
@@ -48,23 +50,14 @@ export function MessageAvatar({ role, size = "md", className }: MessageAvatarPro
 
 export interface StreamingCursorProps {
   size?: "sm" | "md" | "lg";
+  /** What the turn is doing right now; picks the animation. */
+  phase?: WorkPhase;
   className?: string;
 }
 
-export function StreamingCursor({ size = "md", className }: StreamingCursorProps) {
-  const sizeClasses = {
-    sm: "h-2.5",
-    md: "h-3",
-    lg: "h-3.5",
-  };
+const CURSOR_PX = { sm: 16, md: 20, lg: 24 } as const;
 
-  return (
-    <span
-      className={cn(
-        "inline-block w-0.5 bg-[var(--accent)] animate-pulse ml-0.5 align-middle",
-        sizeClasses[size],
-        className
-      )}
-    />
-  );
+/** Trailing activity indicator for a streaming turn. */
+export function StreamingCursor({ size = "md", phase = "responding", className }: StreamingCursorProps) {
+  return <WorkLoader phase={phase} size={CURSOR_PX[size]} className={cn("ml-1", className)} />;
 }

@@ -14,6 +14,7 @@ import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 import type { VirtuosoHandle } from "react-virtuoso";
 import type { ConversationUsage } from "./ConversationHeader";
 import { cn } from "@/lib/utils";
+import { WorkLoader } from "@/components/ui/work-loader";
 
 export interface ConversationProjectionState {
   pendingQuestions?: PendingQuestion[] | null;
@@ -90,7 +91,7 @@ export function ConversationPane({
         data={messages}
         initialTopMostItemIndex={{ index: "LAST", align: "end" }}
         emptyPlaceholder={() => <>{emptyState ?? <ConversationEmptyState />}</>}
-        footer={transcriptFooter ?? (() => <div aria-live="polite" aria-atomic="true" className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading ? "Cairn is working…" : ""}<span className="sr-only">{isLoading ? "Working" : ""}</span></div>)}
+        footer={transcriptFooter ?? (() => <div aria-live="polite" aria-atomic="true" className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading && <span className="inline-flex items-center gap-1.5"><WorkLoader phase={pendingQuestions ? "waiting" : "working"} size={18} />Cairn is working…</span>}<span className="sr-only">{isLoading ? "Working" : ""}</span></div>)}
         itemContent={(_index, message) => (
           <div className={cn("px-3 py-1.5", centered && "max-w-3xl mx-auto w-full")}>
             <ConversationMessageBubble message={message} sessionId={sessionId} onRetry={onRetry} connectors={connectors} />

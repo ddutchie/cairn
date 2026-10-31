@@ -39,6 +39,7 @@ import { redactAgentToolCall } from "@/lib/redact-agent-transcript";
 import { toConversationMessage } from "@/lib/conversation/message";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
+import { overallPhase } from "@/lib/conversation/work-phase";
 import { ConversationQueueDock, ConversationWorkingStatus, type ConversationQueuedItem } from "@/components/conversation/ConversationComposerParts";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
 import { AgentPermissionSelect } from "./AgentPermissionSelect";
@@ -701,7 +702,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       )}
       composerBefore={(
         <div className={cn("flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
-          {isLoading && !pendingQuestions && <ConversationWorkingStatus label="Agent is working — you can queue messages below" />}
+          {isLoading && !pendingQuestions && <ConversationWorkingStatus phase={overallPhase({ retrying: Boolean(retryInfo), compacting: isCompacting })} label={isCompacting ? "Compacting context — you can queue messages below" : "Agent is working — you can queue messages below"} />}
           <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
           {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
           <AgentGoalChip goal={sessionGoal} />
