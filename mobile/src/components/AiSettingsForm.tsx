@@ -55,7 +55,7 @@ import {
   type ProviderPref,
   type SavedProvider,
 } from "@/chat/ai-config";
-import { isRorkAvailable } from "@/chat/providers/rork";import {
+import {
   isAppleProviderAvailable,
   isAppleServerProviderAvailable,
   isAppleDevEnabled,
@@ -133,10 +133,9 @@ function formatCredits(n: number): string {
  * in with the card. Lets the user pick the chat backend:
  *   - "Apple Intelligence (on-device)" — shown when the device supports it
  *     (iOS 26+, Apple Intelligence enabled). Runs fully offline, no key.
- *   - "Rork" — shown when a Rork endpoint is built into the app.
  *   - "OpenAI-compatible" — always available; the user supplies endpoint + key.
  *
- * The provider segment appears whenever more than one backend is available. The
+ * The provider segment appears when Apple Intelligence is available alongside OpenAI. The
  * OpenAI fields show only when OpenAI is the selected provider. Non-secret
  * fields (base URL, model) persist to local SQLite; the API key goes to the
  * device keychain (expo-secure-store). Saved on Done.
@@ -167,7 +166,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
     return () => { cancelled = true; };
   }, []);
   const router = useRouter();
-  const rorkBuiltIn = isRorkAvailable();
   const appleAvailable = isAppleProviderAvailable();
   // Which Apple model backs the "Apple Intelligence" option: PCC (user-facing)
   // or the dev-only on-device model.
@@ -191,13 +189,13 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // Apple backend; deeper levels trade latency + context for stronger analysis.
   const [reasoning, setReasoning] = useState<AppleReasoningLevel>(() => getAppleReasoningLevel());
   // Whether to show the provider chooser at all: only when there's a choice.
-  const showChooser = rorkBuiltIn || appleAvailable;
+  const showChooser = appleAvailable;
 
   // These initial values come from synchronous getters, so seed them via lazy
   // useState initializers (run once) rather than assigning in an effect — the
   // latter is a cascading setState-in-effect the linter flags. The API key is
   // async (secure store), so it's loaded in the effect below.
-  const [pref, setPref] = useState<ProviderPref>(() => getProviderPref(rorkBuiltIn));
+  const [pref, setPref] = useState<ProviderPref>(() => getProviderPref());
   const [baseUrl, setBaseUrl] = useState(() => getOpenAIBaseUrl());
   const [model, setModel] = useState(() => getOpenAIModel());
   // Optional manual context-window override (blank = auto via models.dev).
@@ -763,15 +761,6 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                       styles={styles}
                     />
                   )}
-                  {rorkBuiltIn && (
-                    <SegmentButton
-                      label="Rork"
-                      selected={pref === "rork"}
-                      onPress={() => setPref("rork")}
-                      t={t}
-                      styles={styles}
-                    />
-                  )}
                   <SegmentButton
                     label="OpenAI"
                     selected={pref === "openai"}
@@ -781,9 +770,9 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                   />
                 </View>
                 {pref === "apple" && (
-                  <View style={styles.rorkNote}>
+                  <View style={styles.note}>
                     <Cpu size={14} color={t.success} />
-                    <Text style={styles.rorkNoteText}>
+                    <Text style={styles.noteText}>
                       {appleIsServer
                         ? "Apple Intelligence runs on Private Cloud Compute — private, no API key, with a larger context window and stronger reasoning. Needs a connection and has a daily usage limit. Context window: ~32K tokens."
                         : "Apple Intelligence runs entirely on your device — private, offline, no API key. Best for quick chats; it has a small context window, so long conversations may need a fresh start. Context window: ~4K tokens."}
@@ -829,23 +818,13 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                     </Text>
                   </View>
                 )}
-                {pref === "rork" && (
-                  <View style={styles.rorkNote}>
-                    <ShieldCheck size={14} color={t.success} />
-                    <Text style={styles.rorkNoteText}>
-                      Rork is built into this app — no configuration needed. Switch to
-                      OpenAI-compatible to use your own endpoint and key. Context window:
-                      ~200K tokens (estimated).
-                    </Text>
-                  </View>
-                )}
               </>
             ) : (
-              <View style={styles.rorkNote}>
-                <Text style={styles.rorkNoteText}>
+              <View style={styles.note}>
+                <Text style={styles.noteText}>
                   {appleReason
                     ? `Apple Intelligence is unavailable: ${appleReason} Configure an OpenAI-compatible endpoint and API key below to enable chat.`
-                    : "This build has no bundled AI endpoint. Configure an OpenAI-compatible endpoint and API key below to enable chat."}
+                    : "Configure an OpenAI-compatible endpoint and API key below to enable chat."}
                 </Text>
               </View>
             )}

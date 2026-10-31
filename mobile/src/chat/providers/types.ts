@@ -2,22 +2,19 @@
  * AI provider abstraction — the seam between the agent loop and whichever
  * backend actually talks to a model.
  *
- * Two providers implement this:
- *   - rork.ts   — the Rork AI toolkit (/agent/chat, native tool-calling).
- *                 Zero-config for first-party builds; endpoint injected at build
- *                 time via a git-ignored env var (never hardcoded in source).
- *   - openai.ts — any OpenAI-compatible /v1/chat/completions endpoint, using a
- *                 base URL + API key the user supplies in-app. This is the path
- *                 for third-party builders (BYO key), so the app never depends on
- *                 our unauthenticated Rork endpoint.
+ * Providers implement this:
+ *   - openai.ts    — any OpenAI-compatible /v1/chat/completions endpoint, using a
+ *                    base URL + API key the user supplies in-app (BYO key).
+ *   - responses.ts — the same, for endpoints that serve the Responses API.
+ *   - apple.ts     — Apple Intelligence (Private Cloud Compute or on-device).
  *
- * Both normalise their wire format down to the same `StreamEvent` stream so the
+ * All normalise their wire format down to the same `StreamEvent` stream so the
  * agent loop (agent.ts) is provider-agnostic.
  */
 
 import type { TokenBreakdown } from "../token-breakdown";
 
-export type RorkRole = "system" | "user" | "assistant";
+export type ChatRole = "system" | "user" | "assistant";
 
 export interface TextPart {
   type: "text";
@@ -25,9 +22,8 @@ export interface TextPart {
 }
 
 /**
- * A binary attachment (image/pdf). For Rork /agent/chat this is a native
- * UIMessage "file" part whose `url` is a data URI; the OpenAI provider maps it
- * to an `image_url` content part.
+ * A binary attachment (image/pdf). It is a UIMessage "file" part whose
+ * `url` is a data URI; the OpenAI provider maps it to an `image_url` content part.
  */
 export interface FilePart {
   type: "file";
@@ -49,7 +45,7 @@ export type UIPart = TextPart | FilePart | ToolPart;
 
 export interface UIMessage {
   id: string;
-  role: RorkRole;
+  role: ChatRole;
   parts: UIPart[];
   /** Reasoning text round-tripped to a completions provider (same model). */
   reasoning?: string;
@@ -67,7 +63,7 @@ export interface UIMessage {
  * message. Non-assistant roles are always sendable (the provider only rejects
  * assistant turns for the missing-payload reason).
  */
-export function assistantTurnIsSendable(role: RorkRole, parts: UIPart[]): boolean {
+export function assistantTurnIsSendable(role: ChatRole, parts: UIPart[]): boolean {
   if (role !== "assistant") return true;
   const hasText = parts.some((p) => p.type === "text" && (p as TextPart).text.trim().length > 0);
   const hasTool = parts.some((p) => p.type !== "text" && p.type !== "file");
@@ -81,7 +77,7 @@ export interface AiTool {
 }
 
 /**
- * Normalised stream events every provider emits. This is the Rork
+ * Normalised stream events every provider emits. This is the
  * UI-message-stream subset; the OpenAI provider translates its
  * chat.completion.chunk deltas into these same shapes.
  */
@@ -109,7 +105,7 @@ export interface ChatUsage {
   promptTokens: number;
   contextLimit: number;
   /** True when promptTokens is a client-side estimate (no server usage / wrong
-   *  tokenizer family, e.g. Rork/Gemini counted with o200k_base). The ring shows
+   *  tokenizer family, e.g. Gemini counted with o200k_base). The ring shows
    *  a "~" and an "estimated" hint. */
   estimated?: boolean;
   /** Per-category prompt-token split (system prompt, tools, MCP, conversation,

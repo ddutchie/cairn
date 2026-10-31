@@ -50,7 +50,7 @@ export function makeAiSettingsStyles(t: Theme) {
     segmentText: { ...typeScale.control, color: t.textSecondary },
     segmentTextActive: { color: t.accentFg },
 
-    rorkNote: {
+    note: {
       flexDirection: "row",
       gap: 8,
       alignItems: "flex-start",
@@ -59,7 +59,7 @@ export function makeAiSettingsStyles(t: Theme) {
       padding: 12,
       marginTop: 4,
     },
-    rorkNoteText: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 18 },
+    noteText: { flex: 1, ...typeScale.caption, color: t.textSecondary, lineHeight: 18 },
 
     // PCC daily-usage 3-state bar.
     quotaCard: {

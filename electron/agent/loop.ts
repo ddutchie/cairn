@@ -13,8 +13,6 @@
  */
 import {
   isContextOverflow,
-  isRetryableAssistantError,
-  retryDelayMs,
   validateToolCall,
   type Api,
   type AssistantMessage,
@@ -23,12 +21,12 @@ import {
   type JsonObject,
   type Message,
   type Model,
-  type RetryPolicy,
   type SimpleStreamOptions,
   type ToolCall,
   type ToolResultMessage,
   type UserMessage,
 } from "@earendil-works/pi-ai";
+import { abortableSleep, DEFAULT_RETRY, isRetryableErrorMessage, retryDelayMs, withJitter, type RetryPolicy } from "../../shared/agent/retry";
 import type { AgentEvent, DecisionSource, UserImage } from "./events";
 import { userContent, type CompactionResult, type CompactionTrigger } from "./context";
 import { Gate, type AskInput } from "./gate";
@@ -95,18 +93,9 @@ export interface TurnOptions {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
-/** 5 retries, 500 ms doubling, capped at 10 s — what the engine route used. */
 const MAX_STOP_CONTINUATIONS = 3;
 
-export const DEFAULT_RETRY: RetryPolicy = { enabled: true, maxRetries: 5, baseDelayMs: 500, maxAgentDelayMs: 10_000 };
-
-const abortableSleep = (ms: number, signal?: AbortSignal): Promise<void> =>
-  new Promise((resolve) => {
-    if (signal?.aborted) return resolve();
-    const timer = setTimeout(done, ms);
-    function done() { clearTimeout(timer); signal?.removeEventListener("abort", done); resolve(); }
-    signal?.addEventListener("abort", done, { once: true });
-  });
+export { DEFAULT_RETRY };
 
 /**
  * One assistant response, retrying transient failures. Only retries while
@@ -132,11 +121,11 @@ async function* streamAssistant(o: TurnOptions): AsyncGenerator<AgentEvent, Assi
     const final = await stream.result();
 
     const retryable = policy.enabled && final.stopReason === "error" && !emitted && attempt < policy.maxRetries
-      && !isContextOverflow(final, o.model.contextWindow) && isRetryableAssistantError(final);
+      && !isContextOverflow(final, o.model.contextWindow) && isRetryableErrorMessage(final.errorMessage);
     if (!retryable) return final;
 
     const base = retryDelayMs(policy, attempt + 1);
-    const delayMs = Math.round(base * (1 + (Math.random() * 2 - 1) * 0.1));
+    const delayMs = withJitter(base);
     yield { type: "retry", attempt: attempt + 1, maxAttempts: policy.maxRetries, delayMs, error: final.errorMessage ?? "" };
     await sleep(delayMs, o.signal);
     if (o.signal?.aborted) return { ...final, stopReason: "aborted" };
