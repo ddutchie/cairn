@@ -11,7 +11,9 @@
  *                                           stripped)
  *   src/webview-assets/mermaid-assets.ts — Mermaid JS
  *
- * Re-run after bumping katex/mermaid:  node scripts/gen-webview-assets.js
+ *   src/webview-assets/loadersz-assets.ts — the chat work-phase loaders
+ *
+ * Re-run after bumping katex/mermaid/loadersz:  node scripts/gen-webview-assets.js
  */
 const fs = require("fs");
 const path = require("path");
@@ -65,7 +67,22 @@ if (!d3Path) throw new Error("d3.min.js not found in mobile or root node_modules
 const d3Js = fs.readFileSync(d3Path, "utf8");
 writeModule("d3-assets.ts", { D3_JS: d3Js });
 
-console.log("[gen-webview-assets] wrote katex-assets.ts + mermaid-assets.ts + d3-assets.ts");
+// ── loadersz ────────────────────────────────────────────────────────────────
+// One canvas animation per chat work phase (see src/components/chat/WorkLoader.tsx).
+// Each state is an ES module; wrap it in an IIFE (the minified top-level names
+// collide) and swap its `export` for a registration on window.__loaders.
+const LOADERSZ = path.join(MOBILE, "node_modules", "loadersz", "dist");
+const LOADER_STATES = ["rendering", "scanning", "typing", "prioritizing", "marqueeing", "retrying", "summarizing", "waiting"];
+const loaderSources = LOADER_STATES.map((state) => {
+  const src = fs.readFileSync(path.join(LOADERSZ, `${state}.js`), "utf8");
+  const exp = /export \{\s*(\w+) as LoaderszLoader[^}]*\};?\s*$/.exec(src);
+  if (!exp) throw new Error(`loadersz/${state}: unexpected export shape`);
+  const body = src.slice(0, exp.index).replace(/^\/\/# sourceMappingURL.*$/gm, "");
+  return `(function(){${body}\nwindow.__loaders[${JSON.stringify(state)}]=${exp[1]};})();`;
+});
+writeModule("loadersz-assets.ts", { LOADERSZ_JS: `window.__loaders={};\n${loaderSources.join("\n")}` });
+
+console.log("[gen-webview-assets] wrote katex-assets.ts + mermaid-assets.ts + d3-assets.ts + loadersz-assets.ts");
 
 /** Emit a TS module that exports each entry as a backtick string constant. */
 function writeModule(filename, entries) {

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { View, Text, Image, StyleSheet, ActivityIndicator, Pressable } from "react-native";
+import { View, Text, Image, StyleSheet, Pressable } from "react-native";
 import { Bot, User, Copy, Check } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import { MarkdownView } from "@/components/MarkdownView";
@@ -7,6 +7,8 @@ import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { ToolTrail } from "./ToolTrail";
 import type { UiMessage } from "@/chat/history";
+import { streamingPhase } from "@cairn/shared/conversation/work-phase";
+import { WorkLoader } from "./WorkLoader";
 import { useStreamingHasText, useStreamingText } from "@/chat/streaming-store";
 
 /**
@@ -24,7 +26,6 @@ function AssistantBody({ m }: { m: UiMessage }) {
   const t = useTheme();
   const live = useStreamingText(!!m.streaming);
   const content = m.streaming ? live : m.content;
-  if (m.streaming && !content) return <ActivityIndicator color={t.textTertiary} size="small" />;
   return (
     <MarkdownView
       content={content}
@@ -35,6 +36,21 @@ function AssistantBody({ m }: { m: UiMessage }) {
       trackingOverride={t.chatTracking}
       lineHeightOverride={t.chatLineHeight}
     />
+  );
+}
+
+/** What the turn is doing right now, drawn below the bubble until it finishes. */
+function StreamingLoader({ m }: { m: UiMessage }) {
+  const hasContent = useStreamingHasText(true);
+  const phase = streamingPhase({
+    hasContent,
+    hasReasoning: !!(m.reasoning || m.reasoningSummary),
+    toolRunning: !!m.tools?.some((x) => x.running),
+  });
+  return (
+    <View style={{ height: 24, justifyContent: "center", paddingLeft: 4 }}>
+      <WorkLoader phase={phase} size={20} />
+    </View>
   );
 }
 
@@ -49,6 +65,9 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
   const styles = useMemo(() => makeStyles(t), [t]);
   const isUser = m.role === "user";
   const [copied, setCopied] = useState(false);
+  const liveHasText = useStreamingHasText(!isUser && !!m.streaming);
+  // While nothing has streamed yet the loader stands alone; an empty bubble would just be a blank pill.
+  const showBubble = isUser || !m.streaming || liveHasText;
 
   // Copy the message content — same behaviour as the desktop copy button.
   const handleCopy = async () => {
@@ -103,7 +122,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
         {!isUser && m.tools && m.tools.length > 0 && <ToolTrail tools={m.tools} />}
         {!isUser && (m.reasoning || m.reasoningSummary) ? <AssistantReasoning m={m} /> : null}
 
-        <View
+        {showBubble ? <View
           style={[
             styles.bubble,
             { borderRadius: radius, borderTopLeftRadius: isUser ? radius : tail, borderTopRightRadius: isUser ? tail : radius },
@@ -132,7 +151,9 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: UiMessage }
           ) : (
             <AssistantBody m={m} />
           )}
-        </View>
+        </View> : null}
+
+        {!isUser && m.streaming ? <StreamingLoader m={m} /> : null}
 
         {!isUser && !m.streaming ? (
           <Pressable onPress={handleCopy} hitSlop={8} accessibilityLabel="Copy response" style={styles.copyBtn}>
