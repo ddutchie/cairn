@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Alert,
+  AppState,
   useWindowDimensions,
   Platform,
 } from "react-native";
@@ -53,6 +54,19 @@ import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
+/** A run that ended through `runAgent`'s error path, which reports failures as an event plus a returned message instead of throwing. */
+class RunFailure extends Error {}
+
+/** Resolves once the app is in the foreground (immediately if it already is). */
+function waitForForeground(): Promise<void> {
+  if (AppState.currentState === "active") return Promise.resolve();
+  return new Promise((resolve) => {
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st === "active") { sub.remove(); resolve(); }
+    });
+  });
+}
+
 function usageProviderLabel(): string {
   const pref = getProviderPref();
   if (pref === "apple") return "Apple";
@@ -319,6 +333,7 @@ export default function ChatScreen() {
     };
 
     try {
+      let runError: string | null = null;
       const onEvent = (e: AgentEvent) => {
         if (e.type === "text-delta" && e.delta) {
           acc += e.delta;
@@ -360,6 +375,8 @@ export default function ChatScreen() {
           else toolTrail.push(finalized);
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
+        } else if (e.type === "error") {
+          runError = e.text ?? "Something went wrong.";
         } else if (e.type === "usage" && e.usage) {
           // Accumulate the real spend across tool-calling rounds — each round
           // re-sends the whole conversation, so the last round alone under-
@@ -389,18 +406,50 @@ export default function ChatScreen() {
         // jump-to-latest button can appear mid-reply).
         setTimeout(() => scrollToEndIfFollowing(true), 20);
       };
-      const answer = await runAgent(conversation.current, onEvent);
+      // iOS suspends the app (and kills its sockets) when it leaves the
+      // foreground mid-reply. If that is what broke the run and no tool had
+      // started (so nothing can run twice), quietly run it again once the app is
+      // back; otherwise fall through to the error path, which keeps what streamed.
+      let answer = "";
+      for (let attempt = 0; ; attempt++) {
+        // runAgent also inserts a system message and edits in place, so restore the whole array.
+        const before = conversation.current.slice();
+        runError = null;
+        const wasAway = { current: false };
+        const sub = AppState.addEventListener("change", (st) => { if (st !== "active") wasAway.current = true; });
+        try {
+          answer = await runAgent(conversation.current, onEvent);
+          if (runError !== null) throw new RunFailure(runError);
+          break;
+        } catch (err) {
+          const retryable = attempt === 0 && (wasAway.current || AppState.currentState !== "active") && toolTrail.length === 0;
+          if (!retryable) throw err;
+          conversation.current.splice(0, conversation.current.length, ...before); // drop the half-run's messages
+          acc = "";
+          reasoningAcc = "";
+          reasoningSummaryAcc = "";
+          streamStore.reset();
+          patchAssistant({ reasoning: undefined, reasoningSummary: undefined });
+          await waitForForeground();
+        } finally {
+          sub.remove();
+        }
+      }
       streamStore.flush();
       const finalText = answer || acc;
       patchAssistant({ content: finalText, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
       saveChatMessage({ role: "assistant", content: finalText, tools: toolTrail.length ? toolTrail : undefined });
       haptics.success(); // response received
     } catch (e) {
-      const msg = e instanceof Error && /network|fetch|failed/i.test(e.message)
+      const note = e instanceof RunFailure
+        ? e.message // runAgent already phrased it for the user
+        : e instanceof Error && /network|fetch|failed/i.test(e.message)
         ? "Chat needs a connection. Reconnect and try again."
         : `Error: ${e instanceof Error ? e.message : String(e)}`;
-      patchAssistant({ content: msg, streaming: false });
-      saveChatMessage({ role: "assistant", content: msg });
+      // Keep whatever had already streamed; the note goes underneath it.
+      const msg = acc.trim() ? `${acc}\n\n_${note}_` : note;
+      patchAssistant({ content: msg, streaming: false, tools: toolTrail.length ? toolTrail : undefined });
+      saveChatMessage({ role: "assistant", content: msg, tools: toolTrail.length ? toolTrail : undefined });
       haptics.error(); // request failed
     } finally {
       setBusy(false);
