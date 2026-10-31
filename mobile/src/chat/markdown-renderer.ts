@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { getMeta, setMeta } from "@/db";
 
-/** Which markdown renderer the chat bubbles use. `native` is react-native-streamdown; `classic` is the markdown-it `MarkdownView`. */
+/** Which markdown renderer the chat bubbles use (the choice only exists in dev builds). `native` is react-native-streamdown; `classic` is the markdown-it `MarkdownView`. */
 export type ChatRenderer = "native" | "classic";
 
 const META_KEY = "chatMarkdownRenderer";
@@ -20,6 +20,8 @@ function read(): ChatRenderer {
 }
 
 export function getChatRenderer(): ChatRenderer {
+  // The classic renderer is a dev-only fallback; releases always use native.
+  if (!__DEV__) return DEFAULT_RENDERER;
   if (current === null) current = read();
   return current;
 }

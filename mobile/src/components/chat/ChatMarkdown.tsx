@@ -5,6 +5,11 @@ import { StreamdownText } from "react-native-streamdown";
 import { useTheme, withAlpha, type Theme } from "@/theme";
 import { findNoteIdByTitle, findCardIdByTitle, liveNoteTitleById, liveCardTitleById } from "@/db/queries";
 import { preprocessCairnMarkdown, noteTitleFromUrl, cardIdFromUrl, type WikilinkResolver } from "@cairn/shared/notes/markdown";
+import { SyncedImage } from "@/components/SyncedImage";
+import {
+  calloutsToAlerts, colorLiteralsToLinks, contrastText, escapeRegExp, escapeSpoilers, findColorLiterals,
+  inlineEmbedsToText, markDeadWikilinks, splitSegments, COLOR_SCHEME,
+} from "@/chat/native-markdown";
 
 // Mermaid ships its renderer as a ~1 MB inline string, so only load it when a diagram appears.
 const MermaidView = lazy(() => import("@/components/MermaidView").then((m) => ({ default: m.MermaidView })));
@@ -22,26 +27,7 @@ const resolveWikilink: WikilinkResolver = (ref) => {
   return null;
 };
 
-type Segment = { kind: "markdown"; text: string } | { kind: "mermaid"; code: string };
-
-/**
- * Pull closed ```mermaid fences out of the text, since the native renderer can't draw them. An
- * unclosed fence stays in the markdown part, so a diagram only appears once it has fully streamed.
- */
-export function splitMermaid(src: string): Segment[] {
-  const out: Segment[] = [];
-  const re = /^```mermaid[^\n]*\n([\s\S]*?)\n```[ \t]*$/gm;
-  let last = 0;
-  for (let m = re.exec(src); m; m = re.exec(src)) {
-    if (m.index > last) out.push({ kind: "markdown", text: src.slice(last, m.index) });
-    out.push({ kind: "mermaid", code: m[1] });
-    last = m.index + m[0].length;
-  }
-  if (last < src.length || out.length === 0) out.push({ kind: "markdown", text: src.slice(last) });
-  return out;
-}
-
-function markdownStyle(t: Theme, fontFamily: string | undefined, fontWeight: number | undefined, lineHeight: number | undefined) {
+function markdownStyle(t: Theme, fontFamily: string | undefined, fontWeight: number | undefined, lineHeight: number | undefined, colors: readonly string[]) {
   const base = { color: t.textPrimary, fontSize: 15, fontFamily, fontWeight: fontWeight ? (String(fontWeight) as "400" | "500") : undefined };
   const line = Math.round(15 * 1.7 * (lineHeight ?? 1));
   const heading = { ...base, fontWeight: "700" as const, marginTop: 18, marginBottom: 10 };
@@ -58,8 +44,25 @@ function markdownStyle(t: Theme, fontFamily: string | undefined, fontWeight: num
     strikethrough: { color: t.textTertiary },
     link: { color: t.accent, underline: true },
     // Wikilinks arrive as cairn:// links: underlined accent text on a faint wash, as in the classic renderer.
-    linkVariants: { "^cairn://": { color: t.accent, underline: true, backgroundColor: withAlpha(t.accent, 0.12) } },
-    blockquote: { ...base, lineHeight: line, borderColor: t.border, borderWidth: 3, gapWidth: 12, backgroundColor: "transparent", marginTop: 10, marginBottom: 10 },
+    linkVariants: {
+      "^cairn://": { color: t.accent, underline: true, backgroundColor: withAlpha(t.accent, 0.12) },
+      // A wikilink that resolves to nothing: dimmed, and the tap is ignored.
+      "^cairn://dead/": { color: t.textTertiary, underline: false, backgroundColor: "transparent" },
+      // Colour literals in inline code, painted in their own colour.
+      ...Object.fromEntries(
+        colors.map((c) => [`^${escapeRegExp(`${COLOR_SCHEME}${encodeURIComponent(c)}`)}$`, { color: contrastText(c), underline: false, backgroundColor: c, fontFamily: mono }]),
+      ),
+    },
+    blockquote: {
+      ...base, lineHeight: line, borderColor: t.border, borderWidth: 3, gapWidth: 12, backgroundColor: "transparent", marginTop: 10, marginBottom: 10,
+      admonitions: {
+        note: { color: t.accent, backgroundColor: withAlpha(t.accent, 0.08) },
+        tip: { color: t.success, backgroundColor: withAlpha(t.success, 0.08) },
+        important: { color: t.accent, backgroundColor: withAlpha(t.accent, 0.08) },
+        warning: { color: t.warning, backgroundColor: withAlpha(t.warning, 0.08) },
+        caution: { color: t.danger, backgroundColor: withAlpha(t.danger, 0.08) },
+      },
+    },
     code: { fontFamily: mono, fontSize: 13, color: t.textPrimary, backgroundColor: t.surface2, borderColor: t.border },
     codeBlock: { ...base, fontFamily: mono, fontSize: 13, lineHeight: 19, backgroundColor: t.surface2, borderColor: t.border, borderWidth: 1, borderRadius: 8, padding: 12, marginTop: 8, marginBottom: 12 },
     list: { ...base, lineHeight: line, bulletColor: t.accent, bulletSize: 4, markerColor: t.textSecondary, gapWidth: 13, itemSpacing: 6, marginTop: 8, marginBottom: 8 },
@@ -80,16 +83,29 @@ function markdownStyle(t: Theme, fontFamily: string | undefined, fontWeight: num
 /**
  * Chat markdown on the native renderer: remend repairs the half-finished text off the JS thread
  * (react-native-streamdown), `preprocessCairnMarkdown` turns wikilinks into cairn:// links, and
- * closed mermaid fences are drawn by `MermaidView` between native segments.
+ * the pieces it cannot draw (mermaid, synced images) are rendered by their own components between native segments.
  */
 export function ChatMarkdown({ content, fontFamily, fontWeight, lineHeight }: { content: string; fontFamily?: string; fontWeight?: number; lineHeight?: number }) {
   const t = useTheme();
   const router = useRouter();
-  const style = useMemo(() => markdownStyle(t, fontFamily, fontWeight, lineHeight), [t, fontFamily, fontWeight, lineHeight]);
-  const src = useMemo(() => preprocessCairnMarkdown(content, resolveWikilink), [content]);
-  const segments = useMemo(() => splitMermaid(src), [src]);
+  // Everything the native renderer can't take as-is is rewritten here, in one pass per content change.
+  const { segments, colors } = useMemo(() => {
+    const dead = new Set<string>();
+    const resolve: WikilinkResolver = (ref) => {
+      const hit = resolveWikilink(ref);
+      if (!hit) dead.add(ref);
+      return hit;
+    };
+    let src = preprocessCairnMarkdown(calloutsToAlerts(content), resolve, { imageEmbeds: true });
+    src = markDeadWikilinks(colorLiteralsToLinks(escapeSpoilers(src)), dead);
+    return { segments: splitSegments(src), colors: findColorLiterals(content) };
+  }, [content]);
+  const colorsKey = colors.join("|");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `colors` is a fresh array per content change; its joined key is the real dependency
+  const style = useMemo(() => markdownStyle(t, fontFamily, fontWeight, lineHeight, colors), [t, fontFamily, fontWeight, lineHeight, colorsKey]);
 
   const onLinkPress = useCallback(({ url }: { url: string }) => {
+    if (url.startsWith("cairn://dead/") || url.startsWith(COLOR_SCHEME)) return;
     const cardId = cardIdFromUrl(url);
     if (cardId != null) {
       const id = liveCardTitleById(cardId) != null ? cardId : findCardIdByTitle(cardId);
@@ -111,16 +127,18 @@ export function ChatMarkdown({ content, fontFamily, fontWeight, lineHeight }: { 
       {segments.map((s, i) =>
         s.kind === "mermaid" ? (
           <Suspense key={i} fallback={null}><MermaidView code={s.code} /></Suspense>
-        ) : s.text.trim() ? (
+        ) : s.kind === "image" ? (
+          <SyncedImage key={i} name={s.name} />
+        ) : (
           <StreamdownText
             key={i}
-            markdown={s.text}
+            markdown={inlineEmbedsToText(s.text)}
             flavor="github"
             md4cFlags={{ highlight: true }}
             markdownStyle={style}
             onLinkPress={onLinkPress}
           />
-        ) : null,
+        ),
       )}
     </View>
   );
