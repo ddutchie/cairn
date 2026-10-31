@@ -1,8 +1,8 @@
 /**
  * Streaming agent loop for mobile chat — provider-agnostic native tool-calling.
  *
- * Per turn we stream the model's response (via the active provider — Rork or
- * OpenAI-compatible, see providers/), surfacing text deltas live and collecting
+ * Per turn we stream the model's response (via the active provider — OpenAI-compatible
+ * or Apple, see providers/), surfacing text deltas live and collecting
  * any tool calls it emits. When the turn finishes with tool calls we execute
  * them locally (expo-sqlite), merge the results back into the assistant message
  * (state:"output-available"), and run the next turn. Loop until the model

@@ -3,7 +3,7 @@
  * note editors. Pure — no UI, no platform deps. The desktop toolbar and the
  * mobile toolbar both build their action rows from AI_ACTIONS and send
  * buildAIActionPrompt() to their respective LLM transports (Electron chat IPC /
- * Rork stream). The result replaces the user's current selection.
+ * the mobile chat provider). The result replaces the user's current selection.
  */
 
 export type AITextAction =

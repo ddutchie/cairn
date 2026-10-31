@@ -1,15 +1,14 @@
 /**
  * OpenAI-compatible provider — streaming POST {base}/chat/completions.
  *
- * This is the "bring your own key" path for third-party builders and anyone not
- * using the first-party Rork endpoint. It targets the standard OpenAI Chat
+ * This is the "bring your own key" path. It targets the standard OpenAI Chat
  * Completions API (also implemented by Azure OpenAI, OpenRouter, Together,
  * LM Studio, Ollama's OpenAI shim, etc.) so users can point Cairn at any
  * compatible endpoint with a base URL + API key configured in-app (ai-config).
  *
  * It maps our internal `UIMessage`/`AiTool` shapes onto OpenAI's request body,
  * and translates the streamed `chat.completion.chunk` deltas back into the same
- * normalised `StreamEvent`s the Rork provider emits, so agent.ts is unchanged.
+ * normalised `StreamEvent`s every provider emits, so agent.ts is unchanged.
  *
  * Tool-calling: OpenAI streams tool calls incrementally (id/name on the first
  * chunk, arguments as string fragments across chunks). We accumulate per index

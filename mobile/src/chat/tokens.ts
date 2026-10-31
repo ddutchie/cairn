@@ -3,8 +3,8 @@
  *
  * Uses js-tiktoken's pure-JS `lite` build with the o200k_base rank (the encoder
  * for gpt-4o / o200k-family models) — no WASM, works under Hermes. It's the
- * right encoder for OpenAI models and a good-enough approximation for others
- * (Rork), which is all a context-fill gauge needs.
+ * right encoder for OpenAI models and a good-enough approximation for others,
+ * which is all a context-fill gauge needs.
  *
  * The rank table is ~loaded lazily on first use so the ~2MB JSON never touches
  * startup — only when a provider without server-reported usage needs an estimate.

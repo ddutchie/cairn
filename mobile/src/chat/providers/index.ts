@@ -4,12 +4,10 @@
  * Respects the user's provider preference (ai-config), then falls back:
  *   1. If pref is "apple" and the device supports on-device Apple Intelligence → Apple.
  *   2. If pref is "openai" and an OpenAI key is configured → OpenAI.
- *   3. Rork — if the build injected EXPO_PUBLIC_TOOLKIT_URL (first-party builds).
- *      Zero config for the user; the default preference when Rork is built in.
- *   4. OpenAI-compatible — if the user configured a base URL + API key in-app.
- *   5. On-device Apple — as a last-resort fallback whenever it's available
+ *   3. OpenAI-compatible — if the user configured a base URL + API key in-app.
+ *   4. On-device Apple — as a last-resort fallback whenever it's available
  *      (works offline, no key), even when it wasn't the explicit preference.
- *   6. Neither → throw NoProviderError so the UI can prompt the user to add a
+ *   5. Neither → throw NoProviderError so the UI can prompt the user to add a
  *      key in Settings (or enable Apple Intelligence).
  */
 
@@ -22,14 +20,13 @@ import {
 } from "./apple";
 import { makeOpenAIProvider } from "./openai";
 import { makeResponsesProvider, supportsResponses } from "./responses";
-import { isRorkAvailable, rorkProvider } from "./rork";
 import { endpointProtocolForModel } from "../models-dev";
 import type { WireProtocol } from "@cairn/shared/models/model-catalog";
 import type { ChatProvider } from "./types";
 
 export * from "./types";
 
-/** Thrown when no AI backend is configured (no Rork build URL, no OpenAI key). */
+/** Thrown when no AI backend is configured (no OpenAI key, no Apple Intelligence). */
 export class NoProviderError extends Error {
   constructor() {
     super(
@@ -79,14 +76,12 @@ async function openaiCompatible(config: OpenAIConfig): Promise<ChatProvider> {
 
 /**
  * Resolve the active provider. Honours the user's preference first (Apple →
- * PCC when available, else dev on-device; OpenAI when configured), then Rork
- * when built in, then a configured OpenAI, then Apple as a fallback, else
- * NoProviderError. Async because reading the API key touches the keychain.
+ * PCC when available, else dev on-device; OpenAI when configured), then a
+ * configured OpenAI, then Apple as a fallback, else NoProviderError. Async because reading the API key touches the keychain.
  */
 export async function resolveProvider(): Promise<ChatProvider> {
-  const rork = isRorkAvailable();
   const apple = appleProviderOrNull();
-  const pref = getProviderPref(rork);
+  const pref = getProviderPref();
 
   if (pref === "apple") {
     if (apple) return apple;
@@ -97,8 +92,7 @@ export async function resolveProvider(): Promise<ChatProvider> {
     // Preferred OpenAI but not configured — fall back below.
   }
 
-  // Fallback order: Rork → configured OpenAI → Apple (PCC or dev on-device).
-  if (rork) return rorkProvider;
+  // Fallback order: configured OpenAI → Apple (PCC or dev on-device).
   const openai = await resolveOpenAIConfig();
   if (openai) return openaiCompatible(openai);
   if (apple) return apple;
@@ -107,7 +101,6 @@ export async function resolveProvider(): Promise<ChatProvider> {
 
 /** Whether any provider is usable right now (for gating the composer). */
 export async function hasProvider(): Promise<boolean> {
-  if (isRorkAvailable()) return true;
   if (appleProviderOrNull()) return true;
   return (await resolveOpenAIConfig()) != null;
 }
