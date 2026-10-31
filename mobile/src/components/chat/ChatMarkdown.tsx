@@ -48,9 +48,9 @@ function markdownStyle(t: Theme, fontFamily: string | undefined, fontWeight: num
       "^cairn://": { color: t.accent, underline: true, backgroundColor: withAlpha(t.accent, 0.12) },
       // A wikilink that resolves to nothing: dimmed, and the tap is ignored.
       "^cairn://dead/": { color: t.textTertiary, underline: false, backgroundColor: "transparent" },
-      // Colour literals in inline code, painted in their own colour.
+      // Colour literals: the colour as text on a neutral chip (white, or dark for light colours so they stay readable).
       ...Object.fromEntries(
-        colors.map((c) => [`^${escapeRegExp(`${COLOR_SCHEME}${encodeURIComponent(c)}`)}$`, { color: contrastText(c), underline: false, backgroundColor: c, fontFamily: mono }]),
+        colors.map((c) => [`^${escapeRegExp(`${COLOR_SCHEME}${encodeURIComponent(c)}`)}$`, { color: c, underline: false, backgroundColor: contrastText(c) === "#000000" ? "#1f1f1f" : "#ffffff", fontFamily: mono }]),
       ),
     },
     blockquote: {
