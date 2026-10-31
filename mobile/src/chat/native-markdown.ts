@@ -137,6 +137,8 @@ export function markDeadWikilinks(src: string, deadTitles: ReadonlySet<string>):
 
 const COLOR_LITERAL_RE = /^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(rgba?|hsla?)\s*\([^)]+\))$/;
 export const COLOR_SCHEME = "cairn://swatch/";
+/** The swatch is blank text on a coloured background: link text colour is overridden by iOS inside table cells, the background is not. */
+const SWATCH_TEXT = "\u00A0\u00A0\u00A0\u00A0";
 
 /** The distinct colour literals that `colorLiteralsToLinks` will chip, outside fenced blocks. */
 export function findColorLiterals(src: string): string[] {
@@ -153,8 +155,8 @@ export function findColorLiterals(src: string): string[] {
 }
 
 /**
- * A colour written in a reply gets a swatch: a `█` link to `cairn://swatch/…`, which a per-colour
- * link variant paints in that colour, followed by the colour as inline code. The native renderer
+ * A colour written in a reply gets a swatch: a blank link to `cairn://swatch/…` whose per-colour
+ * link variant paints the background in that colour, followed by the colour as inline code. The native renderer
  * has no inline widgets, so a coloured glyph is the closest to the classic swatch. Covers inline code (`#ff0000`, any hex length) and bare
  * 6/8-digit hex and rgb()/hsl() calls in prose; bare 3-digit hex is left alone (`#123` is usually
  * an issue number).
@@ -166,7 +168,7 @@ export function colorLiteralsToLinks(src: string): string {
   return mapOutsideFences(src, (line) =>
     line.replace(COLOR_OR_CODE_RE, (all, code: string | undefined, bare: string | undefined) => {
       const literal = (code ?? bare ?? "").trim();
-      return COLOR_LITERAL_RE.test(literal) ? `[█](${COLOR_SCHEME}${encodeURIComponent(literal)}) \`${literal}\`` : all;
+      return COLOR_LITERAL_RE.test(literal) ? `[${SWATCH_TEXT}](${COLOR_SCHEME}${encodeURIComponent(literal)}) \`${literal}\`` : all;
     }),
   );
 }

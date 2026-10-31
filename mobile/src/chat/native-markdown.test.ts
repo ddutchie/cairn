@@ -62,12 +62,12 @@ describe("colour literals", () => {
     expect(findColorLiterals(src)).toEqual(["#ff0000", "rgb(0, 128, 255)", "#00ff00"]);
   });
   it("turns colour inline code into colour links", () => {
-    expect(colorLiteralsToLinks("a `#f00` b `npm i`")).toBe("a [█](cairn://swatch/%23f00) `#f00` b `npm i`");
+    expect(colorLiteralsToLinks("a `#f00` b `npm i`")).toBe("a [\u00A0\u00A0\u00A0\u00A0](cairn://swatch/%23f00) `#f00` b `npm i`");
     expect(colorLiteralsToLinks("```\n`#f00`\n```")).toBe("```\n`#f00`\n```");
   });
   it("also chips bare 6/8-digit hex and rgb() in prose, but not #123 or URL fragments", () => {
-    expect(colorLiteralsToLinks("| Tag | #6366f1 |")).toBe("| Tag | [█](cairn://swatch/%236366f1) `#6366f1` |");
-    expect(colorLiteralsToLinks("blue is rgb(0, 128, 255).")).toBe("blue is [█](cairn://swatch/rgb(0%2C%20128%2C%20255)) `rgb(0, 128, 255)`."  );
+    expect(colorLiteralsToLinks("| Tag | #6366f1 |")).toBe("| Tag | [\u00A0\u00A0\u00A0\u00A0](cairn://swatch/%236366f1) `#6366f1` |");
+    expect(colorLiteralsToLinks("blue is rgb(0, 128, 255).")).toBe("blue is [\u00A0\u00A0\u00A0\u00A0](cairn://swatch/rgb(0%2C%20128%2C%20255)) `rgb(0, 128, 255)`."  );
     expect(colorLiteralsToLinks("fixes #123 see https://x.io/#ff0000")).toBe("fixes #123 see https://x.io/#ff0000");
   });
 });
