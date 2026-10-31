@@ -229,6 +229,11 @@ export interface MorphingTextProps {
    * @default [text]
    */
   fitTexts?: readonly string[];
+  /**
+   * Where the string sits in the canvas. `start` suits a placeholder that must line up with a
+   * text field's left edge. @default "center"
+   */
+  align?: 'center' | 'start';
   /** Per-character delay. @default 25 */
   staggerMs?: number;
   /** Peak Gaussian blur in px. @default 6 */
@@ -244,6 +249,7 @@ export function MorphingText({
   fontSource = Manrope_600SemiBold,
   fallbackFontFamily,
   fitTexts,
+  align = 'center',
   staggerMs = STAGGER_MS,
   blurMax = BLUR_MAX,
 }: MorphingTextProps) {
@@ -276,7 +282,7 @@ export function MorphingText({
     const advances = font.getGlyphWidths(font.getGlyphIDs(text));
     const total = advances.reduce((sum, w) => sum + w, 0);
     // Centre the string within the canvas.
-    let cursor = (width - total) / 2;
+    let cursor = align === 'start' ? 0 : (width - total) / 2;
 
     const nextByKey = new Map<string, Cell>();
     keyed.forEach((k, index) => {
@@ -306,7 +312,7 @@ export function MorphingText({
       }
       return merged;
     });
-  }, [text, font, width]);
+  }, [text, font, width, align]);
 
   const removeCell = useCallback((key: string) => {
     setCells((previous) => {
@@ -321,7 +327,7 @@ export function MorphingText({
   // Until the Skia font loads, fall back to plain text so the copy still shows.
   if (!font) {
     return (
-      <View style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width, height, alignItems: align === 'start' ? 'flex-start' : 'center', justifyContent: 'center' }}>
         <Text
           numberOfLines={1}
           style={{ color, fontSize: fittedSize, fontFamily: fallbackFontFamily }}

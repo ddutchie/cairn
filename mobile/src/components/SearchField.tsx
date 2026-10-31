@@ -1,7 +1,8 @@
 import { View, TextInput, Pressable, StyleSheet, type TextInputProps, type StyleProp, type ViewStyle } from "react-native";
 import { Search as SearchIcon, X } from "lucide-react-native";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { HintOverlay, useHintCycle } from "@/components/CyclingPlaceholder";
 
 /**
  * Shared inline search field — the roomy variant from the Notes filter bar
@@ -11,21 +12,29 @@ import { useTheme, type as typeScale, type Theme } from "@/theme";
  * Controlled: pass `value` + `onChangeText`. The clear button appears when
  * there's text and calls `onChangeText("")`. `containerStyle` lets a row layout
  * add `flex: 1`; by default it fills its parent's width (column layouts).
+ *
+ * `hints` makes the empty field teach by example: the placeholder morphs through them every few
+ * seconds, and stops on focus, once there is text, under reduce motion or a screen reader.
+ * `placeholder` stays the static fallback and the accessibility label.
  */
 export function SearchField({
   value,
   onChangeText,
   placeholder = "Search…",
+  hints,
   containerStyle,
   ...rest
 }: {
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
+  hints?: readonly string[];
   containerStyle?: StyleProp<ViewStyle>;
 } & Pick<TextInputProps, "returnKeyType" | "autoFocus" | "onSubmitEditing">) {
   const t = useTheme();
   const s = useMemo(() => makeStyles(t), [t]);
+  const [focused, setFocused] = useState(false);
+  const cycle = useHintCycle(hints ?? [], !!hints && !value && !focused);
   return (
     <View style={[s.row, containerStyle]}>
       <SearchIcon size={15} color={t.textTertiary} />
@@ -33,13 +42,17 @@ export function SearchField({
         style={s.input}
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={cycle.visible ? "" : placeholder}
+        accessibilityLabel={placeholder}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholderTextColor={t.textTertiary}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
         {...rest}
       />
+      {cycle.visible && hints ? <HintOverlay hint={cycle.hint} hints={hints} color={t.textTertiary} fontSize={typeScale.body.fontSize} style={s.hint} /> : null}
       {value ? (
         <Pressable onPress={() => onChangeText("")} hitSlop={8}>
           <X size={15} color={t.textTertiary} />
@@ -62,6 +75,8 @@ function makeStyles(t: Theme) {
       borderWidth: 1,
       borderColor: t.border,
     },
+    // Sits over the input's text area: after the icon (15 + gap 8) and the row padding.
+    hint: { left: 12 + 15 + 8, right: 12 },
     input: { flex: 1, color: t.textPrimary, ...typeScale.body, padding: 0 },
   });
 }
