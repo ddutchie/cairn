@@ -16,6 +16,7 @@ import Svg, { Line, Path, Text as SvgText } from "react-native-svg";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
 import { loadChatUsageHistory, clearChatUsageHistory, type ChatUsageRow } from "@/db/chat-store";
 import { ProviderLogo } from "@/components/ProviderLogo";
+import { RollingText } from "@/components/RollingText";
 import { getLogoProvider } from "@/chat/models-dev";
 import { formatUsd } from "@cairn/shared/chat/provider-credits";
 
@@ -259,7 +260,7 @@ function Stat({ label, value, sub, color }: { label: string; value: string; sub?
   const styles = useMemo(() => makeStatStyles(t), [t]);
   return (
     <View style={styles.card}>
-      <Text style={[styles.value, color ? { color } : null]} numberOfLines={1}>{value}</Text>
+      <RollingText text={value} style={{ ...styles.value, ...(color ? { color } : null) }} />
       <Text style={styles.label}>{label}</Text>
       {sub ? <Text style={styles.sub}>{sub}</Text> : null}
     </View>

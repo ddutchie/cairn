@@ -1,6 +1,13 @@
 import { View, Text, StyleSheet } from "react-native";
+import { useEffect } from "react";
 import Svg, { Circle } from "react-native-svg";
+import Animated, { Easing, useAnimatedProps, useSharedValue, withTiming } from "react-native-reanimated";
 import { useTheme, type as typeScale } from "@/theme";
+import { RollingText } from "@/components/RollingText";
+import { useMotion } from "@/lib/use-motion";
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const SWEEP_MS = 700;
 
 /**
  * Completion donut — the RN port of the desktop project-overview ProgressRing
@@ -10,6 +17,9 @@ import { useTheme, type as typeScale } from "@/theme";
  * `variant="instrument"` adds the knurled-meter look from the desktop Instrument
  * card (thicker track + centered % + 8 subtle ticks on the linear meter). The
  * default `variant` is the old simple ring for backward-compat call sites.
+ *
+ * The arc sweeps from 0 on first mount and from its previous value afterwards; the percent
+ * label rolls with it. Reduce motion sets both instantly.
  */
 export function ProgressRing({
   percent,
@@ -29,8 +39,14 @@ export function ProgressRing({
   const radius = instrument ? (size - stroke) / 2 - 8.5 : (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(100, percent));
-  const offset = circumference - (clamped / 100) * circumference;
   const center = size / 2;
+
+  const motion = useMotion();
+  const progress = useSharedValue(motion.reduced ? clamped : 0);
+  useEffect(() => {
+    progress.set(motion.reduced ? clamped : withTiming(clamped, { duration: SWEEP_MS, easing: Easing.out(Easing.cubic) }));
+  }, [clamped, motion.reduced, progress]);
+  const arcProps = useAnimatedProps(() => ({ strokeDashoffset: circumference - (progress.get() / 100) * circumference }));
 
   const outerShadow = instrument
     ? { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10, elevation: 4 }
@@ -69,7 +85,7 @@ export function ProgressRing({
         ) : null}
         <Svg width={size} height={size}>
           <Circle cx={center} cy={center} r={radius} stroke={t.surface3} strokeWidth={stroke} fill="none" />
-          <Circle
+          <AnimatedCircle
             cx={center}
             cy={center}
             r={radius}
@@ -78,14 +94,14 @@ export function ProgressRing({
             fill="none"
             strokeLinecap="round"
             strokeDasharray={circumference}
-            strokeDashoffset={offset}
+            animatedProps={arcProps}
             // Start the arc at 12 o'clock (SVG 0° is 3 o'clock). Add subtle glow via shadow on container, not SVG filter
             transform={`rotate(-90 ${center} ${center})`}
             opacity={0.98}
           />
         </Svg>
         <View style={styles.label}>
-          <Text style={[instrument ? typeScale.caption : typeScale.subtitle, { color: t.textPrimary, fontWeight: "700" }]}>{clamped}%</Text>
+          <RollingText text={`${clamped}%`} style={{ ...(instrument ? typeScale.caption : typeScale.subtitle), color: t.textPrimary, fontWeight: "700" }} />
         </View>
         </View>
       </View>

@@ -4,6 +4,7 @@ import { getDueDateStatus } from "@cairn/shared/format/date";
 import type { WorkspaceProgress } from "@/db/queries";
 import { useTheme, type as typeScale } from "@/theme";
 import { ProgressRing } from "./ProgressRing";
+import { RollingText } from "@/components/RollingText";
 
 /**
  * Workspace-wide progress header — the "overall progress" companion to the
@@ -40,15 +41,13 @@ export function WorkspaceProgressCard({ progress }: { progress: WorkspaceProgres
       <View style={styles.main}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-            <Text style={[typeScale.display, { color: t.textPrimary }]}>{progress.completionRate}</Text>
+            <RollingText text={String(progress.completionRate)} style={{ ...typeScale.display, color: t.textPrimary }} />
             <Text style={[typeScale.caption, { color: t.textTertiary }]}>%</Text>
           </View>
-          <Text style={[typeScale.caption, { color: t.textTertiary, marginTop: 2 }]} numberOfLines={2}>
-            <Text style={{ color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }}>
-              {progress.doneCards} / {progress.totalCards}
-            </Text>{" "}
-            done · {progress.openCards} open
-          </Text>
+          <View style={styles.countLine}>
+            <RollingText text={`${progress.doneCards} / ${progress.totalCards}`} style={{ ...typeScale.caption, color: t.textPrimary, fontWeight: "600", fontFamily: "Menlo" }} />
+            <Text style={[typeScale.caption, { color: t.textTertiary }]}> done · {progress.openCards} open</Text>
+          </View>
         </View>
         <ProgressRing percent={progress.completionRate} size={64} stroke={5} variant="instrument" />
       </View>
@@ -70,6 +69,7 @@ export function WorkspaceProgressCard({ progress }: { progress: WorkspaceProgres
 
 const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 10 },
+  countLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2 },
   main: { flexDirection: "row", alignItems: "center", gap: 12 },
   meterTrack: { height: 6, borderRadius: 3, overflow: "hidden", flexDirection: "row", alignItems: "center" },
   meterFill: { height: "100%", borderRadius: 3 },

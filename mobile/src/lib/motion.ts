@@ -38,3 +38,21 @@ export function digitsOf(value: number): number[] {
   const n = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
   return String(n).split("").map(Number);
 }
+
+export interface RollToken {
+  /** Stable across renders: counted from the right, so a number that gains a digit keeps its other digits. */
+  key: string;
+  ch: string;
+  /** The digit 0-9 for a reel, or null for punctuation/letters that stay put. */
+  digit: number | null;
+}
+
+/** Splits display text ("1,204", "$0.42", "12.3k") into reel digits and static characters. */
+export function rollTokens(text: string): RollToken[] {
+  const chars = [...text];
+  return chars.map((ch, i) => ({
+    key: `r${chars.length - 1 - i}`,
+    ch,
+    digit: /^[0-9]$/.test(ch) ? Number(ch) : null,
+  }));
+}

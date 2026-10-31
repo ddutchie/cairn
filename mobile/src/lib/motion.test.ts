@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { digitsOf, durationScale, nextIndex, scaleDuration, staggerDelay } from "./motion";
+import { digitsOf, durationScale, nextIndex, rollTokens, scaleDuration, staggerDelay } from "./motion";
 
 describe("durationScale / scaleDuration", () => {
   it("is 1 normally and 0 under reduce motion", () => {
@@ -46,5 +46,18 @@ describe("digitsOf", () => {
     expect(digitsOf(-5)).toEqual([0]);
     expect(digitsOf(NaN)).toEqual([0]);
     expect(digitsOf(12.6)).toEqual([1, 3]);
+  });
+});
+
+describe("rollTokens", () => {
+  it("marks digits and keeps separators static", () => {
+    const tokens = rollTokens("1,204");
+    expect(tokens.map((x) => x.digit)).toEqual([1, null, 2, 0, 4]);
+    expect(tokens.map((x) => x.ch).join("")).toBe("1,204");
+  });
+  it("keys from the right so a new leading digit leaves the rest in place", () => {
+    const a = rollTokens("99");
+    const b = rollTokens("100");
+    expect(b.slice(1).map((x) => x.key)).toEqual(a.map((x) => x.key));
   });
 });
