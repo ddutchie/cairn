@@ -11,11 +11,11 @@
  *   - `registerIpcHandlers(ctx)` — db + chat + flow + ai + llama + graph channels.
  *     Registered from `main.ts:188`.
  *   - `registerAppHandlers(ctx, userDataPath, updateTrayBadge, onReinitialise, onBadgeClear)`
- *     — app-level channels (workspace setup, theme, mobile, PDF, URL fetch,
+ *     — app-level channels (workspace setup, theme, PDF, URL fetch,
  *     migrations, settings, updater). Registered from `main.ts:286`.
  *
  * Channel naming convention: "db:<entity>:<action>" for DB CRUD; "app:<feature>"
- * for app-level; "<feature>:<action>" for everything else (`llama:*`, `mobile:*`,
+ * for app-level; "<feature>:<action>" for everything else (`llama:*`,
  * `ai:*`, `updater:*`, `mcp:*`).
  */
 
@@ -41,7 +41,6 @@ import { registerChatHandler } from "./chat";
 import { registerPdfExportHandler } from "./pdf-export";
 import { registerMarkdownExportHandler } from "./markdown-export";
 import { registerUrlMetadataHandler } from "./url-metadata";
-import { registerMobileHandlers } from "./mobile-handlers";
 import { registerMigrationHandlers } from "./migration-handlers";
 import { registerSettingsHandlers } from "./settings-handlers";
 import { registerUserStyleHandlers } from "./user-style-handlers";
@@ -313,9 +312,6 @@ export function registerAppHandlers(
   }));
 
   // ── Delegated registrars ──────────────────────────
-  // The mobile handlers need `ctx` (for the mobile server's DB access) and `userDataPath`.
-  registerMobileHandlers(ctx, userDataPath);
-
   // PDF export + URL metadata (each module owns its own channel registration).
   registerPdfExportHandler(ctx);
   registerMarkdownExportHandler(ctx);

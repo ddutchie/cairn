@@ -1,8 +1,7 @@
-/** Unified runtime, Mobile Access and UI plugins. */
+/** Unified runtime and UI plugins. */
 
 import { invokeContract, onIpcEvent } from "./ipc";
 import type { EmbeddingDownloadProgress } from "../../shared/types/embeddings";
-import type { MobileStatus } from "../../shared/types/runtime";
 
 export const runtimeApi = {
   // ── Unified Runtime (local embeddings for semantic search) ───────────
@@ -35,12 +34,5 @@ export const runtimeApi = {
       setDefault: (modelId: string) => invokeContract("runtime:embeddings:setDefault", { modelId }),
       onProgress: (cb: (e: EmbeddingDownloadProgress) => void) => onIpcEvent("runtime:download-progress", cb),
     },
-  },
-  // ── Mobile Access ────────────────────────────────
-  mobile: {
-    status: () => invokeContract("mobile:status"),
-    saveSettings: (newSettings: Record<string, unknown>) => invokeContract("mobile:saveSettings", newSettings),
-    regeneratePin: () => invokeContract("mobile:regeneratePin"),
-    onStatusChanged: (cb: (status: MobileStatus) => void) => onIpcEvent("mobile:status-changed", cb),
   },
 } as const;

@@ -3,7 +3,6 @@ import type { IpcMainInvokeEvent, IpcMainEvent, WebContents } from "electron";
 import { IPC_WRITE_CHANNELS } from "../../shared/ipc/contract";
 import type { IpcChannel, IpcArgs, IpcReturn, IpcEventChannel, IpcEventArgs } from "../../shared/ipc/contract";
 import type { IpcResult } from "./result-helpers";
-import { isMobileChannel } from "./mobile-access";
 
 /**
  * Erased storage type for the internal handler/listener maps. Event is `unknown`
@@ -32,7 +31,6 @@ const handlers = new Map<string, IpcHandler>();
 const listeners = new Map<string, IpcHandler>();
 const registeredListeners = new Map<string, IpcHandler>();
 
-let mobileBroadcastCallback: ((channel: string, payload: unknown) => void) | null = null;
 
 /**
  * Observer wrapped around every write channel's handler (`writes: true`). main.ts
@@ -122,44 +120,9 @@ export function registerIpcOn<T extends unknown[]>(
   ipcMain.on(channel, registered);
 }
 
-/**
- * Retrieve a registered handler or listener by channel name for a remote
- * caller (the Mobile Access bridge). Only channels on the Mobile Access
- * allowlist (`mobile-access.ts`) are exposed; everything else is desktop-only.
- */
+/** The registered handler or listener for a channel, so tests can invoke one in-process. */
 export function getIpcHandler(channel: string): IpcHandler | undefined {
-  if (!isMobileChannel(channel)) return undefined;
   return handlers.get(channel) || listeners.get(channel);
-}
-
-/**
- * Set the mobile broadcasting callback (used by mobile-server.ts on start).
- */
-export function setMobileBroadcastCallback(cb: ((channel: string, payload: unknown) => void) | null): void {
-  mobileBroadcastCallback = cb;
-}
-
-/**
- * Strip HITL nonces before forwarding to mobile — desktop needs the nonce
- * to answer approvals/questions, but mobile must never receive it (widens
- * the approval bypass surface via the mobile sync channel).
- */
-function stripNonceForMobile(payload: unknown): unknown {
-  if (payload === null || typeof payload !== "object") return payload;
-  const obj = payload as Record<string, unknown>;
-  const hasNonce = "nonce" in obj;
-  const data = obj["data"] as unknown;
-  const hasDataNonce = data !== null && typeof data === "object" && "nonce" in (data as Record<string, unknown>);
-  if (!hasNonce && !hasDataNonce) return payload;
-  // Shallow clone outer
-  const clone: Record<string, unknown> = { ...obj };
-  if (hasNonce) delete clone["nonce"];
-  if (hasDataNonce) {
-    const dataObj = data as Record<string, unknown>;
-    clone["data"] = { ...dataObj };
-    delete (clone["data"] as Record<string, unknown>)["nonce"];
-  }
-  return clone;
 }
 
 /** {@link broadcastEvent} for a contract push event, payload checked against `IpcEvents`. */
@@ -167,9 +130,7 @@ export function broadcastIpcEvent<E extends IpcEventChannel>(channel: E, ...payl
   broadcastEvent(channel, payload[0]);
 }
 
-/**
- * Broadcast an event to all Electron windows and all active mobile clients.
- */
+/** Broadcast an event to every Electron window. */
 export function broadcastEvent(channel: string, payload: unknown): void {
   // Send to all Electron windows
   const allWindows = BrowserWindow.getAllWindows();
@@ -177,12 +138,6 @@ export function broadcastEvent(channel: string, payload: unknown): void {
     if (!win.isDestroyed()) {
       win.webContents.send(channel, payload);
     }
-  }
-  // Send to all mobile clients — strip approval/question nonces so they never
-  // leak over the mobile sync transport (registry mobileBroadcastCallback).
-  if (mobileBroadcastCallback) {
-    const mobilePayload = stripNonceForMobile(payload);
-    mobileBroadcastCallback(channel, mobilePayload);
   }
 }
 

@@ -28,7 +28,6 @@ import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { assertSafeId } from "./path-safety";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
-import { agentFallback, isMobileCaller, sanitizeMobileRequest } from "./mobile-caller";
 import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
 import { answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
@@ -37,13 +36,6 @@ import { answerQuestion, cancelQuestions, compactEngineSession, listPendingQuest
 
 const sessions = new Map<string, AgentSession>();
 const clearingSessions = new Set<string>();
-
-/** A phone asked to run a coding session that has no stored working directory. */
-function rejectMobileRequest(sessionId: string): void {
-  const message = "This session can't be started from Mobile Access. Start it on the desktop first.";
-  broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message, code: "mobile-refused" }));
-  broadcastEvent("session:busy", { sessionId, reason: "mobile-refused", message });
-}
 
 // ── Request shape ──────────────────────────────────────────────────────────────
 
@@ -236,16 +228,6 @@ export function registerSessionRuntimeHandlers(
       return;
     }
     const profile = selected.profile;
-    const mobile = isMobileCaller(event);
-    if (mobile) {
-      const storedCwd = q.getCodingSessionById(ctx.db, req.sessionId)?.cwd;
-      if (profile !== "chat" && !storedCwd) {
-        rejectMobileRequest(req.sessionId);
-        return;
-      }
-      const config = getCachedConfig();
-      req = sanitizeMobileRequest(req, { config, fallback: profile === "chat" ? config.aiConfig : agentFallback(config), storedCwd });
-    }
     if (profile === "chat") {
       const chatReq = {
         message: req.prompt,
@@ -298,7 +280,7 @@ export function registerSessionRuntimeHandlers(
     // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
     // by the cache layer, never a raw key). Mode + autoApprove are co-persisted
     // so old renderers reading `autoApprove` and new code reading `mode` stay aligned.
-    if (!mobile) cacheLlmConnection("agent", {
+    cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
       apiKey: req.config?.apiKey,
@@ -415,16 +397,6 @@ export function registerSessionRuntimeHandlers(
       broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
       return;
     }
-    const mobile = isMobileCaller(event);
-    if (mobile) {
-      const storedCwd = q.getCodingSessionById(ctx.db, req.sessionId)?.cwd;
-      if (!storedCwd) {
-        rejectMobileRequest(req.sessionId);
-        return;
-      }
-      const config = getCachedConfig();
-      req = sanitizeMobileRequest(req, { config, fallback: agentFallback(config), storedCwd });
-    }
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -447,7 +419,7 @@ export function registerSessionRuntimeHandlers(
 
     // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
     // by the cache layer, never a raw key). Mode + autoApprove are co-persisted.
-    if (!mobile) cacheLlmConnection("agent", {
+    cacheLlmConnection("agent", {
       baseUrl: req.config?.baseUrl,
       model: req.config?.model,
       apiKey: req.config?.apiKey,
@@ -569,10 +541,6 @@ export function registerSessionRuntimeHandlers(
     }
     const sessionRow = q.getCodingSessionById(ctx.db, sessionId) as { cwd?: string } | undefined;
     const cwd = sessionRow?.cwd ?? "/";
-    if (isMobileCaller(event)) {
-      const config = getCachedConfig();
-      req = sanitizeMobileRequest(req, { config, fallback: agentFallback(config), storedCwd: cwd });
-    }
     const llmConfig: AgentLLMConfig = {
       baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
       model: req.config?.model || "gpt-5.6-luna",

@@ -83,7 +83,7 @@ import type {
   AdjacentNote, EmbeddingDownloadProgress, EmbeddingModelManifestEntry, EmbeddingsStatus, NoteProjectionRow,
   ProjectionResult, ReindexResult, RuntimeEmbeddingModel, RuntimeStatus,
 } from "../types/embeddings";
-import type { MobileStatus, SystemPromptPreview, ToolInventory } from "../types/runtime";
+import type { SystemPromptPreview, ToolInventory } from "../types/runtime";
 import type { SessionEventEnvelope } from "../agent/session-event";
 import type { SessionProjection } from "../agent/session-projection";
 import type {
@@ -695,12 +695,6 @@ export interface IpcContract {
     result: { text: string; error?: string };
   };
   "runtime:tools:inventory": { args: []; result: ToolInventory };
-
-  // ── Mobile Access ────────────────────────────────────────────────────────
-  "mobile:status": { args: []; result: MobileStatus };
-  /** Starts or stops the server per `enabled`; also pushed on `mobile:status-changed`. */
-  "mobile:saveSettings": { args: [settings: Record<string, unknown>]; result: MobileStatus };
-  "mobile:regeneratePin": { args: []; result: MobileStatus };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
@@ -746,7 +740,6 @@ export interface IpcEvents {
   "sync:status": SyncStatus;
   "embeddings:download-progress": EmbeddingDownloadProgress;
   "runtime:download-progress": EmbeddingDownloadProgress;
-  "mobile:status-changed": MobileStatus;
   /**
    * Workspace data changed (a write channel completed, or an MCP / sync write
    * landed). The registry broadcasts it with a `null` payload; listeners ignore it.
@@ -1126,16 +1119,13 @@ const CHANNELS: ChannelRecord = {
   "runtime:systemPrompt:preview": "read",
   "runtime:codingPrompt:preview": "read",
   "runtime:tools:inventory": "read",
-  "mobile:status": "read",
-  "mobile:saveSettings": "read",
-  "mobile:regeneratePin": "read",
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];
 
 /**
  * Channels that change workspace data. The registry broadcasts `db:changed`
- * after each one completes, so every window and paired phone refreshes.
+ * after each one completes, so every window refreshes.
  */
 export const IPC_WRITE_CHANNELS: ReadonlySet<IpcChannel> = new Set(
   IPC_CONTRACT_CHANNELS.filter((c) => CHANNELS[c] === "write"),

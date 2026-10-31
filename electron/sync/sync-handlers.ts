@@ -89,7 +89,7 @@ export function registerSyncHandlers(
   register("sync:now", () => wrap(async () => {
     const result = await syncDesktop(ctx.db);
     // Parity with the background sync loop (main.ts): if peer ops were applied,
-    // tell the renderer/mobile clients to re-hydrate so pulled edits show up.
+    // tell the renderer to re-hydrate so pulled edits show up.
     if (result.peerOpsApplied > 0 || result.conflictCopies > 0) ctx.broadcastDbChanged();
     return result;
   }));

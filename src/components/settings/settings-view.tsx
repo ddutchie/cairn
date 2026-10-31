@@ -6,7 +6,6 @@ import {
   Bot,
   Info,
   Tag,
-  Smartphone,
   Network,
   Wrench,
   FolderSync,
@@ -26,7 +25,6 @@ import { DataSettings } from "./DataSettings";
 import { AboutSection } from "./AboutSection";
 import { AgentSettings } from "./AgentSettings";
 import { McpSettingsTab } from "./MCPSettings";
-import { MobileSettings } from "./MobileSettings";
 import { SyncSettings } from "./SyncSettings";
 import { EmbeddingsSettings } from "./EmbeddingsSettings";
 import { ToolsSettings } from "./ToolsSettings";
@@ -101,7 +99,6 @@ export function SettingsView() {
           { id: "extensions" as const, label: "Extensions", icon: Puzzle },
           { id: "embeddings" as const, label: "Embeddings", icon: Network },
           { id: "writing-style" as const, label: "Writing Style", icon: PenLine },
-          { id: "mobile" as const, label: "Mobile Access", icon: Smartphone },
           { id: "sync" as const, label: "Device Sync", icon: FolderSync },
           { id: "system" as const, label: "System", icon: Info },
         ].map(({ id, label, icon: Icon }) => (
@@ -177,7 +174,6 @@ export function SettingsView() {
             </div>
           )}
           {section === "writing-style" && <UserStyleSettings />}
-          {section === "mobile" && <MobileSettings />}
           {section === "sync" && <SyncSettings />}
           {section === "system" && (
             <div className="space-y-6">
