@@ -136,16 +136,16 @@ export function markDeadWikilinks(src: string, deadTitles: ReadonlySet<string>):
 // ── Colour literals ───────────────────────────────────────────────────────────
 
 const COLOR_LITERAL_RE = /^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(rgba?|hsla?)\s*\([^)]+\))$/;
-const INLINE_CODE_RE = /`([^`\n]+)`/g;
 export const COLOR_SCHEME = "cairn://color/";
 
-/** The distinct colour literals written as inline code, outside fenced blocks. */
+/** The distinct colour literals that `colorLiteralsToLinks` will chip, outside fenced blocks. */
 export function findColorLiterals(src: string): string[] {
   const found = new Set<string>();
+  const re = new RegExp(COLOR_OR_CODE_RE.source, "g");
   mapOutsideFences(src, (line) => {
-    for (const m of line.matchAll(INLINE_CODE_RE)) {
-      const code = m[1].trim();
-      if (COLOR_LITERAL_RE.test(code)) found.add(code);
+    for (const m of line.matchAll(re)) {
+      const literal = (m[1] ?? m[2] ?? "").trim();
+      if (COLOR_LITERAL_RE.test(literal)) found.add(literal);
     }
     return line;
   });
@@ -153,14 +153,19 @@ export function findColorLiterals(src: string): string[] {
 }
 
 /**
- * Inline code that is a colour (`#ff0000`) becomes a `cairn://color/…` link, so a per-colour link
- * variant can paint it in that colour. The native renderer has no inline widgets, so a coloured
- * chip is the closest to the classic swatch.
+ * A colour written in a reply becomes a `cairn://color/…` link, so a per-colour link variant can
+ * paint it in that colour. The native renderer has no inline widgets, so a coloured chip is the
+ * closest to the classic swatch. Covers inline code (`#ff0000`, any hex length) and bare
+ * 6/8-digit hex and rgb()/hsl() calls in prose; bare 3-digit hex is left alone (`#123` is usually
+ * an issue number).
  */
+const COLOR_OR_CODE_RE =
+  /`([^`\n]+)`|(?<![\w/&#%.-])(#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6})|(?:rgba?|hsla?)\([^)\n]+\))(?![\w%])/g;
+
 export function colorLiteralsToLinks(src: string): string {
   return mapOutsideFences(src, (line) =>
-    line.replace(INLINE_CODE_RE, (all, code: string) => {
-      const literal = code.trim();
+    line.replace(COLOR_OR_CODE_RE, (all, code: string | undefined, bare: string | undefined) => {
+      const literal = (code ?? bare ?? "").trim();
       return COLOR_LITERAL_RE.test(literal) ? `[${literal}](${COLOR_SCHEME}${encodeURIComponent(literal)})` : all;
     }),
   );

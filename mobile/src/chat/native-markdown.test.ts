@@ -57,13 +57,18 @@ describe("inline embeds and dead links", () => {
 });
 
 describe("colour literals", () => {
-  it("finds colours written as inline code only", () => {
+  it("finds colours in code and prose, but not in fences", () => {
     const src = "use `#ff0000` and `rgb(0, 128, 255)`, not `npm i` or #00ff00 bare\n```\n`#123456`\n```";
-    expect(findColorLiterals(src)).toEqual(["#ff0000", "rgb(0, 128, 255)"]);
+    expect(findColorLiterals(src)).toEqual(["#ff0000", "rgb(0, 128, 255)", "#00ff00"]);
   });
   it("turns colour inline code into colour links", () => {
     expect(colorLiteralsToLinks("a `#f00` b `npm i`")).toBe("a [#f00](cairn://color/%23f00) b `npm i`");
     expect(colorLiteralsToLinks("```\n`#f00`\n```")).toBe("```\n`#f00`\n```");
+  });
+  it("also chips bare 6/8-digit hex and rgb() in prose, but not #123 or URL fragments", () => {
+    expect(colorLiteralsToLinks("| Tag | #6366f1 |")).toBe("| Tag | [#6366f1](cairn://color/%236366f1) |");
+    expect(colorLiteralsToLinks("blue is rgb(0, 128, 255).")).toBe("blue is [rgb(0, 128, 255)](cairn://color/rgb(0%2C%20128%2C%20255))."  );
+    expect(colorLiteralsToLinks("fixes #123 see https://x.io/#ff0000")).toBe("fixes #123 see https://x.io/#ff0000");
   });
   it("parses hex, rgb and hsl", () => {
     expect(parseColor("#f00")).toEqual([255, 0, 0]);
