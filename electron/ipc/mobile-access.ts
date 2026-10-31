@@ -57,6 +57,7 @@ export const MOBILE_INVOKE: { readonly [C in IpcChannel]: boolean } = {
   "session:goal": true,
   "session:schedule-list": true,
   "commands:list": true,
+  "sandbox:status": false,
   "commands:execute": false, // slash commands run with the desktop agent config
 
   // ── Workspace data ──

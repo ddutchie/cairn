@@ -8,7 +8,7 @@ import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";
 import type { JobRegistry } from "../jobs";
-import { sandboxDenialHint, sandboxStatus, wrapSandboxed, type SandboxOptions } from "../sandbox";
+import { sandboxDenialHint, sandboxStatus, sandboxUnavailable, wrapSandboxed, type SandboxOptions } from "../sandbox";
 import { clampMiddle, fail, ok } from "./schema";
 
 export interface BashDeps {
@@ -45,8 +45,19 @@ export function bashTool(deps: BashDeps): AgentTool {
       run_in_background: Type.Optional(Type.Boolean({ description: "Start the command as a background job and return its id immediately; check on it with job_output." })),
       workdir: Type.Optional(Type.String({ description: "Working directory; relative paths resolve against the session working directory." })),
       unsandboxed: Type.Optional(Type.Boolean({ description: "Run outside the sandbox (which limits writes to the working directory and temp dirs). Only after a sandboxed attempt failed because of it; the user is asked every time." })),
+      reason: Type.Optional(Type.String({ description: "With unsandboxed: why this command must run outside the sandbox. Shown to the user when they are asked." })),
     }),
-    risk: (a) => ({ class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined, escalation: a.unsandboxed && sandboxOf() && sandboxStatus(sandboxOf()!.mode).active ? true : undefined }),
+    risk: (a) => {
+      const sb = sandboxOf();
+      // Leaving the sandbox, or running with a sandbox that is on but cannot start, is the human's call.
+      const broken = sb && sandboxUnavailable(sb.mode);
+      const leaving = sb && a.unsandboxed && sandboxStatus(sb.mode).active;
+      const escalation = Boolean(leaving || broken);
+      return {
+        class: "EXEC", command: a.command, paths: a.workdir ? [path.resolve(deps.cwd, a.workdir)] : undefined,
+        ...(escalation ? { escalation: true, escalationReason: `${a.unsandboxed ? (a.reason?.trim() || "(no reason given)") : `the sandbox is unavailable (${broken})`} — ${a.command}` } : {}),
+      };
+    },
     preview: (a) => a.command,
     execute(a, ctx) {
       const cwd = a.workdir ? path.resolve(deps.cwd, a.workdir) : deps.cwd;

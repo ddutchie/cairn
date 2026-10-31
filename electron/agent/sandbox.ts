@@ -5,6 +5,10 @@
  * (`sandbox-exec`), Linux uses bubblewrap. Windows has no equivalent, so
  * commands run unconfined there and `sandboxStatus()` says so.
  *
+ * Where a backend exists but does not work (bwrap blocked by user namespaces, sandbox-exec refusing
+ * to nest) the sandbox is "unavailable", not off: `sandboxUnavailable()` reports it so callers fail
+ * closed (ask the human) instead of silently running unconfined.
+ *
  * The model can ask to leave the sandbox (`unsandboxed` on bash); that call is
  * always put to the human, one command at a time (see `RiskInfo.escalation`).
  */
@@ -31,6 +35,8 @@ export interface SandboxStatus {
   mode: SandboxMode;
   /** Whether commands are actually confined right now. */
   active: boolean;
+  /** Whether this platform has a sandbox backend at all (false on Windows). */
+  supported: boolean;
   backend: "seatbelt" | "bubblewrap" | "none";
   /** Why it is inactive, when it is. */
   reason?: string;
@@ -40,6 +46,15 @@ export interface Spawnable { file: string; args: string[] }
 
 const SEATBELT = "/usr/bin/sandbox-exec";
 let bwrapPath: string | null | undefined;
+let seatbeltWorks: boolean | undefined;
+
+/** `sandbox-exec` exists on every Mac but refuses to run inside another sandbox, so prove it works once. */
+function findSeatbelt(): boolean {
+  if (seatbeltWorks !== undefined) return seatbeltWorks;
+  seatbeltWorks = fs.existsSync(SEATBELT)
+    && spawnSync(SEATBELT, ["-p", "(version 1)(allow default)(deny file-write*)", "/usr/bin/true"], { stdio: "ignore", timeout: 5000 }).status === 0;
+  return seatbeltWorks;
+}
 
 function findBwrap(): string | null {
   if (bwrapPath !== undefined) return bwrapPath;
@@ -50,17 +65,38 @@ function findBwrap(): string | null {
 }
 
 function backendFor(platform: NodeJS.Platform): SandboxStatus["backend"] {
-  if (platform === "darwin") return fs.existsSync(SEATBELT) ? "seatbelt" : "none";
+  if (platform === "darwin") return findSeatbelt() ? "seatbelt" : "none";
   if (platform === "linux") return findBwrap() ? "bubblewrap" : "none";
   return "none";
 }
 
 export function sandboxStatus(mode: SandboxMode, platform: NodeJS.Platform = process.platform): SandboxStatus {
-  if (mode === "off") return { mode, active: false, backend: "none", reason: "Turned off in settings" };
+  const supported = platform === "darwin" || platform === "linux";
+  if (mode === "off") return { mode, active: false, supported, backend: "none", reason: "Turned off in settings" };
   const backend = backendFor(platform);
-  if (backend !== "none") return { mode, active: true, backend };
-  const reason = platform === "win32" ? "Windows has no supported sandbox" : platform === "linux" ? "Install bubblewrap (bwrap) to enable the sandbox" : "sandbox-exec is unavailable";
-  return { mode, active: false, backend, reason };
+  if (backend !== "none") return { mode, active: true, supported, backend };
+  const reason = platform === "win32" ? "Windows has no supported sandbox" : platform === "linux" ? "bubblewrap (bwrap) is missing or cannot create namespaces here; install it or allow unprivileged user namespaces" : "sandbox-exec is unavailable or refused to start (possibly because this app is itself sandboxed)";
+  return { mode, active: false, supported, backend, reason };
+}
+
+/**
+ * Why commands cannot be confined although the sandbox is on and this platform supports it; undefined
+ * when they can be, when it is off, or when the platform has no sandbox (Windows runs unconfined).
+ */
+export function sandboxUnavailable(mode: SandboxMode, platform: NodeJS.Platform = process.platform): string | undefined {
+  const st = sandboxStatus(mode, platform);
+  return mode !== "off" && st.supported && !st.active ? st.reason : undefined;
+}
+
+/** What the model is told about its shell confinement ("" when there is nothing to say). */
+export function sandboxPolicyNote(mode: SandboxMode, platform: NodeJS.Platform = process.platform): string {
+  const st = sandboxStatus(mode, platform);
+  if (st.active) {
+    return "Shell commands run in a sandbox: they can read anywhere and use the network, but can only write inside the code directory and temp/cache directories. \"Operation not permitted\" or \"Read-only file system\" on a write elsewhere is the sandbox, not a bug. If a command really must write elsewhere, retry it with `unsandboxed: true` and a `reason`; the user is asked every time.";
+  }
+  const why = sandboxUnavailable(mode, platform);
+  if (why) return `The shell sandbox is enabled but cannot start (${why}). Every shell command therefore needs the user's approval to run unsandboxed; keep them few and tell the user what you are doing.`;
+  return "";
 }
 
 /** Resolve symlinks (/tmp → /private/tmp on macOS): seatbelt matches real paths. */
@@ -117,7 +153,7 @@ export function seatbeltProfile(roots: string[], blockNetwork = false, readOnly:
 }
 
 export function bwrapArgs(roots: string[], blockNetwork = false, pty = false, readOnly: string[] = []): string[] {
-  const args = ["--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--proc", "/proc"];
+  const args = ["--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--unshare-pid", "--proc", "/proc"];
   for (const r of roots) if (fs.existsSync(r)) args.push("--bind", r, r);
   for (const r of readOnly) if (fs.existsSync(r)) args.push("--ro-bind", r, r);
   args.push("--die-with-parent");

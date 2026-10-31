@@ -3,7 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { bwrapArgs, readOnlyCarveOuts, sandboxDenialHint, sandboxStatus, seatbeltProfile, wrapSandboxed, writableRoots } from "./sandbox";
+import { bwrapArgs, readOnlyCarveOuts, sandboxDenialHint, sandboxPolicyNote, sandboxStatus, sandboxUnavailable, seatbeltProfile, wrapSandboxed, writableRoots } from "./sandbox";
+import { bashTool } from "./tools/bash";
 import { decide, type PolicyState } from "./policy";
 import { offeredGrants } from "./rules";
 
@@ -106,5 +107,49 @@ describe("carve-outs", () => {
       expect(run("echo x > .git/hooks/pre-commit").status).not.toBe(0);
     }
     fs.rmSync(work, { recursive: true, force: true });
+  });
+});
+
+describe("bwrap isolation", () => {
+  it("gives commands their own pid namespace", () => {
+    expect(bwrapArgs(["/tmp"])).toContain("--unshare-pid");
+  });
+});
+
+describe("fail closed", () => {
+  it("only reports unavailable where a backend is expected", () => {
+    expect(sandboxUnavailable("off")).toBeUndefined();
+    expect(sandboxUnavailable("workspace-write", "win32")).toBeUndefined();
+    expect(sandboxStatus("workspace-write", "win32")).toMatchObject({ supported: false, active: false });
+    expect(sandboxStatus("workspace-write", "darwin").supported).toBe(true);
+  });
+
+  it("tells the model about its confinement, or that it is stuck", () => {
+    expect(sandboxPolicyNote("off")).toBe("");
+    expect(sandboxPolicyNote("workspace-write", "win32")).toBe("");
+    // The host's real backend decides which of the two applies; either must be actionable.
+    const note = sandboxPolicyNote("workspace-write");
+    if (sandboxStatus("workspace-write").active) expect(note).toContain("unsandboxed: true");
+    else if (sandboxUnavailable("workspace-write")) expect(note).toContain("cannot start");
+  });
+
+  it("escalation reason reaches the approval ask", () => {
+    const risk = { class: "EXEC" as const, command: "rm -rf build", escalation: true, escalationReason: "needs to clean ../shared — rm -rf build" };
+    const d = decide({ name: "bash", args: {}, risk } as never, "sig", { mode: "yolo", rules: [], deniedTools: [], protectedPaths: [], workspaceRoot: "/w", recent: [], doomAcked: new Set(), now: () => 0 } as unknown as PolicyState);
+    expect(d).toMatchObject({ kind: "ask", reason: "escalate sandbox to danger-full-access: needs to clean ../shared — rm -rf build" });
+  });
+
+  it.runIf(process.platform === "darwin")("bash asks for an unsandboxed call and carries the model's reason", () => {
+    const tool = bashTool({ cwd: "/w", sandbox: { mode: "workspace-write" } });
+    const risk = tool.risk({ command: "touch ~/x", description: "d", unsandboxed: true, reason: "writes to home" } as never);
+    expect(risk).toMatchObject({ escalation: true });
+    expect(risk.escalationReason).toContain("writes to home");
+    expect(tool.risk({ command: "touch ~/x", description: "d", unsandboxed: true } as never).escalationReason).toContain("no reason given");
+    expect(tool.risk({ command: "ls", description: "d" } as never).escalation).toBeUndefined();
+  });
+
+  it("does not ask when the sandbox is off", () => {
+    const tool = bashTool({ cwd: "/w", sandbox: { mode: "off" } });
+    expect(tool.risk({ command: "ls", description: "d", unsandboxed: true } as never).escalation).toBeUndefined();
   });
 });

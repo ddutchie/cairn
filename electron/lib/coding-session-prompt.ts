@@ -17,6 +17,8 @@ export interface AgentPromptContext {
   planContent?: string;
   /** Session persona — "automation-dev" gets the automation-builder prompt. */
   role?: "default" | "automation-dev";
+  /** How shell commands are confined (see `sandboxPolicyNote`); omitted or empty adds nothing. */
+  sandboxNote?: string;
 }
 
 export function buildAgentSystemPrompt(ctx: AgentPromptContext): string {
@@ -86,7 +88,7 @@ You are not just a code executor. You are an active participant in the project: 
 **Code directory:** ${ctx.cwd}
 **Date:** ${date}${taskSection}${planSection}
 
-All file tools are scoped to the code directory above. Use relative paths such as \`src/...\` with \`read\`, \`grep\`, and \`glob\`; do not invent or query another checkout with an absolute path. If an optional tool path is not needed, omit the field entirely rather than sending an empty string. If a path is not under this code directory, it is outside this session's workspace.
+All file tools are scoped to the code directory above. Use relative paths such as \`src/...\` with \`read\`, \`grep\`, and \`glob\`; do not invent or query another checkout with an absolute path. If an optional tool path is not needed, omit the field entirely rather than sending an empty string. If a path is not under this code directory, it is outside this session's workspace.${ctx.sandboxNote ? `\n\n${ctx.sandboxNote}` : ""}
 
 ## Mandatory Cairn workflow
 

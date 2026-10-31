@@ -192,6 +192,8 @@ export interface IpcContract {
   "session:schedule-list": { args: [req: { sessionId: string }]; result: ControlResult<ScheduleWire[]> };
   /** Registry commands (built-in + plugin) for the command palettes. */
   "commands:list": { args: [req: { cwd?: string }]; result: Array<{ name: string; description: string; skill?: boolean }> };
+  /** Whether agent shell commands are really confined right now (and why not). */
+  "sandbox:status": { args: []; result: { mode: "workspace-write" | "off"; active: boolean; supported: boolean; backend: "seatbelt" | "bubblewrap" | "none"; reason?: string } };
 
   // ── Workspaces & projects ────────────────────────────────────────────────
   "db:workspace:list": { args: []; result: Workspace[] };
@@ -873,6 +875,7 @@ const CHANNELS: ChannelRecord = {
   "session:goal": "read",
   "session:schedule-list": "read",
   "commands:list": "read",
+  "sandbox:status": "read",
   "db:workspace:list": "read",
   "db:workspace:create": "write",
   "db:workspace:update": "write",

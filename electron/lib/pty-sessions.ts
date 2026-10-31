@@ -25,7 +25,7 @@ import { createRequire } from "node:module";
 import type { Database } from "better-sqlite3";
 import type * as nodePty from "node-pty";
 import { newId } from "../db/utils";
-import { wrapSandboxed } from "../agent/sandbox";
+import { sandboxUnavailable, wrapSandboxed } from "../agent/sandbox";
 import type { ModelPtyEvent, ModelTerminal } from "../../shared/types/coding-agent";
 
 /** Structural subset of node-pty's IPty used by every consumer here. */
@@ -366,6 +366,10 @@ export async function spawnShellPty(
   const env = opts.kind === "model"
     ? { ...process.env, PAGER: "cat", GIT_PAGER: "cat", NO_COLOR: "1" } as Record<string, string>
     : process.env as Record<string, string>;
+
+  // Fail closed: a sandboxed terminal must not quietly start unconfined.
+  const unavailable = opts.sandbox && sandboxUnavailable(opts.sandbox.mode);
+  if (unavailable) throw new Error(`Sandbox unavailable, terminal not started: ${unavailable}`);
 
   let pty: PtyHandle | undefined;
   let lastError: Error | null = null;

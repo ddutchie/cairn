@@ -288,6 +288,15 @@ export function AgentSettings() {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
+  // Whether the sandbox is really confining commands here (it can be on in settings yet unable to start).
+  const [sandboxNote, setSandboxNote] = useState("");
+  useEffect(() => {
+    void window.electron?.runtime?.sandboxStatus?.().then((st) => {
+      if (st && agentConfig.sandbox !== "off" && !st.active) setSandboxNote(st.supported ? `Currently unavailable: ${st.reason}. Shell commands will ask before running.` : `${st.reason}; commands run unconfined.`);
+      else setSandboxNote("");
+    });
+  }, [agentConfig.sandbox]);
+
   // Connection fields (baseUrl/apiKey/model) are managed by the ProviderManager
   // switcher below; here we only need `model` (context lookup) + behavioural fields.
   // No auto-approve toggle: coding sessions follow engine — the per-session
@@ -521,7 +530,7 @@ export function AgentSettings() {
         {/* Shell sandbox */}
         <SettingsRow
           label="Sandbox shell commands"
-          description="Confine the agent's shell commands to writing inside the working directory and temp folders (macOS seatbelt, Linux bubblewrap; not available on Windows). The agent can ask to run a command outside it; you are asked every time. Applies to new sessions."
+          description={`Confine the agent's shell commands to writing inside the working directory and temp folders (macOS seatbelt, Linux bubblewrap; not available on Windows). The agent can ask to run a command outside it; you are asked every time. Applies to new sessions.${sandboxNote ? ` ${sandboxNote}` : ""}`}
         >
           <input
             id="sandboxEnabled"

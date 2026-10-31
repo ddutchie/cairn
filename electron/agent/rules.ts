@@ -17,6 +17,8 @@ export interface RiskInfo {
   host?: string;
   /** The call leaves the OS sandbox; always asks the human, never grantable. */
   escalation?: boolean;
+  /** Why the call leaves (or cannot use) the sandbox; shown on the approval card. */
+  escalationReason?: string;
 }
 
 export type RuleEffect = "allow" | "ask" | "deny";

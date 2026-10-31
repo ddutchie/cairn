@@ -3,6 +3,8 @@ import { handle, type DbContext } from "./result-helpers";
 import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
 import { errMsg } from "../host-shared/errors";
+import { sandboxStatus } from "../agent/sandbox";
+import { getSandboxMode } from "../agent/host-store";
 import { ENGINE_COMMANDS, executeEngineCommand, previewEnginePrompt } from "./engine-commands";
 
 let progressForwarderSetUp = false;
@@ -54,6 +56,8 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
     try { skills = discoverSkills(req.cwd); } catch { /* unreadable skill dirs */ }
     return [...base, ...skills.filter((s) => !s.disableUserInvocation && !taken.has(s.name)).map((s) => ({ name: s.name, description: s.description, skill: true }))];
   }));
+
+  registerContractHandle("sandbox:status", () => handle(async () => sandboxStatus(getSandboxMode())));
 
   // Generic executor for slash commands (/plan, /compact, /goal, …); returns {kind, text}.
   registerContractHandle("commands:execute", (_e, req) => handle(async () => executeEngineCommand(ctx, req)));

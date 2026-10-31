@@ -16,6 +16,8 @@ import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types"
 import type { ChatRequest } from "../lib/tools";
 import { emitSessionChip } from "./engine-commands";
 import { buildAgentSystemPrompt } from "../lib/coding-session-prompt";
+import { sandboxPolicyNote } from "../agent/sandbox";
+import { getSandboxMode } from "../agent/host-store";
 import { normaliseBaseUrl } from "../lib/llm";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
@@ -395,7 +397,7 @@ export function registerSessionRuntimeHandlers(
 
     const systemPrompt = buildAgentSystemPrompt({
       projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
-       role,
+       role, sandboxNote: sandboxPolicyNote(getSandboxMode()),
     });
 
     await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role, attachments: req.attachments, sessionMode: mode });
@@ -535,7 +537,7 @@ export function registerSessionRuntimeHandlers(
       const approvedPlan = sessionRow?.planContent?.trim() || planContent;
       await runEnginePrompt({
         ctx, sessionId, cwd, projectId, workspaceId, llmConfig, role, sessionMode: "execute",
-        systemPrompt: buildAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent: approvedPlan, role }),
+        systemPrompt: buildAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent: approvedPlan, role, sandboxNote: sandboxPolicyNote(getSandboxMode()) }),
         prompt: planNoteId
           ? `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_item if needed.`
           : "The plan has been approved. Begin implementation now, following the approved plan in your instructions exactly.",
