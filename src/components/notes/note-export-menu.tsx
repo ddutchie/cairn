@@ -5,7 +5,7 @@ import { CheckCircle2, ChevronDown, FileDown, FileText, Moon, Sun } from "lucide
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { prepareNoteHtmlForPdf, pdfSafeTitle } from "./note-pdf-export";
+import { prepareNoteHtmlForPdf } from "./note-pdf-export";
 import { resolveFontPreset } from "../../../shared/ui/fonts";
 import type { FontFamilyId } from "@/store/slices/ui-appearance";
 
@@ -13,29 +13,12 @@ type ExportState = "idle" | "exporting" | "done";
 
 const isElectronRenderer = () => typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
 
-/** Share `blob` through the OS share sheet when available, else download it. */
-async function shareOrDownload(blob: Blob, filename: string, title: string): Promise<void> {
-  const file = new File([blob], filename, { type: blob.type });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title });
-    return;
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 const menuItem =
   "w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors";
 
 /**
  * Read-mode export button: PDF (light / dark) or Markdown. Desktop uses the
- * native save dialogs; the mobile webview shares or downloads the file.
+ * native save dialogs.
  */
 export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
   noteId: string;
@@ -64,7 +47,6 @@ export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
   const exportPdf = (theme: "light" | "dark") => run("PDF", async () => {
     if (!proseRef.current) return false;
     const isElectron = isElectronRenderer();
-    const isMobile = typeof window !== "undefined" && !!window.electron && !isElectron;
     // Print-friendly code blocks (light-palette remap, no Copy button).
     const html = prepareNoteHtmlForPdf(proseRef.current.innerHTML, theme);
     // The note font's CSS stack, so the PDF matches the editor (system stacks
@@ -74,28 +56,15 @@ export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
     if (isElectron && window.electron?.exportNotePdf) {
       // Desktop returns null when the save dialog was cancelled.
       return (await window.electron.exportNotePdf(title, html, { theme, fontFamily })) ? undefined : false;
-    } else if (isMobile && window.electron?.exportNotePdf) {
-      const result = await window.electron.exportNotePdf(title, html, { returnBuffer: true, theme, fontFamily });
-      if (result?.pdfBase64) {
-        const bytes = Uint8Array.from(atob(result.pdfBase64), (c) => c.charCodeAt(0));
-        await shareOrDownload(new Blob([bytes], { type: "application/pdf" }), `${pdfSafeTitle(title)}.pdf`, title);
-      }
     } else {
-      // Native browser printing (also enables printing / PDF saving on mobile).
       window.print();
     }
   });
 
   const exportMarkdown = () => run("Markdown", async () => {
     if (!window.electron?.exportMarkdown) return;
-    if (isElectronRenderer()) {
-      // Desktop returns null when the save dialog was cancelled.
-      return (await window.electron.exportMarkdown("note", noteId)) ? undefined : false;
-    }
-    const res = await window.electron.exportMarkdown("note", noteId, { returnText: true });
-    if (res?.markdown) {
-      await shareOrDownload(new Blob([res.markdown], { type: "text/markdown" }), `${pdfSafeTitle(title)}.md`, title);
-    }
+    // Desktop returns null when the save dialog was cancelled.
+    return (await window.electron.exportMarkdown("note", noteId)) ? undefined : false;
   });
 
   return (

@@ -21,7 +21,6 @@ interface AgentBottomTerminalProps {
   cwd: string;
   /** Controlled height in px — set by the parent drag divider */
   height: number;
-  visible?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -55,7 +54,7 @@ function fitTerm(m: TermMount, observed: boolean) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTerminalProps) {
+export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
   const fontScale = useCairnStore((s) => s.fontScale);
 
   const [tabs, setTabs]           = useState<ShellTab[]>([]);
@@ -180,7 +179,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     // Also fit after a short delay to ensure DOM has settled
     const timer = setTimeout(fit, 100);
     return () => clearTimeout(timer);
-  }, [height, activeId, visible]);
+  }, [height, activeId]);
 
   // Update font size when the user changes the font scale setting
   useEffect(() => {

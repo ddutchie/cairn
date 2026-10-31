@@ -16,7 +16,6 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { FileTree } from "./FileTree";
 import { AgentEditor } from "./AgentEditor";
-import { SessionPane } from "./SessionPane";
 import { AgentBottomTerminal } from "./AgentBottomTerminal";
 import { DiffViewer } from "./DiffViewer";
 import { GitView } from "./GitView";
@@ -49,7 +48,6 @@ export function AgentView() {
   }
 
   const [centreTab, setCentreTab] = useState<CentreTab>("editor");
-  const [mobileTab, setMobileTab] = useState<"agent" | "files" | "editor" | "diff" | "git" | "architecture" | "terminal">("agent");
   // Bottom terminal height lives in React state so AgentBottomTerminal re-renders with the new height
   const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
@@ -60,18 +58,9 @@ export function AgentView() {
   const leftDividerRef   = useRef<HTMLDivElement>(null);
   const bottomDividerRef = useRef<HTMLDivElement>(null);
 
-  const [isMobile, setIsMobile] = useState(false);
-
   // Set initial widths once on mount via DOM (avoids a React render cycle)
   useEffect(() => {
     if (treePaneRef.current) treePaneRef.current.style.width = `${DEFAULT_TREE_WIDTH}px`;
-
-    const media = window.matchMedia("(max-width: 767px)");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsMobile(media.matches);
-    const listener = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    media.addEventListener("change", listener);
-    return () => media.removeEventListener("change", listener);
     // Re-run when codeDirectory appears: the tree pane only mounts once a codebase
     // is connected, so an empty dep array would leave its width unset (the ref is
     // null at first mount when there's no codebase).
@@ -99,8 +88,8 @@ export function AgentView() {
   }, [codeDirectory]);
 
   // No codebase on this project — show only chat, not the coding-agent workspace.
-  // Chat is provided by the RightPanel drawer (auto-opened on agent view in page.tsx)
-  // on both desktop (side drawer) and mobile (full-screen overlay), so we must NOT
+  // Chat is provided by the RightPanel drawer (auto-opened on agent view in page.tsx),
+  // so we must NOT
   // render a SessionPane here — doing so double-mounts ChatPanel/useChatStream and
   // causes duplicate assistant messages (both onDone subscriptions call addMessage).
   if (!codeDirectory) {
@@ -127,60 +116,14 @@ export function AgentView() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-[var(--background)]">
-      {/* Mobile Tab Selector */}
-      <div className="md:hidden flex items-center justify-between px-2 py-1.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
-        <div className="flex-1 flex items-center gap-0.5 overflow-x-auto scrollbar-none">
-          {[
-            { id: "agent" as const, label: "Agent Console" },
-            { id: "files" as const, label: "Files" },
-            { id: "editor" as const, label: "Editor" },
-            ...(codeDirectory ? [{ id: "diff" as const, label: "Diff" }] : []),
-            ...(codeDirectory ? [{ id: "git" as const, label: "Git" }] : []),
-            ...(codeDirectory ? [{ id: "architecture" as const, label: "Architecture" }] : []),
-            ...(codeDirectory ? [{ id: "terminal" as const, label: "Terminal" }] : []),
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => {
-                setMobileTab(t.id);
-                setTimeout(() => TerminalManager.fitAll(), 50);
-              }}
-              className={cn(
-                "px-3 py-1 rounded-md text-[0.786rem] font-medium transition-colors whitespace-nowrap",
-                mobileTab === t.id
-                  ? "text-[var(--text-primary)] bg-[var(--surface-2)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => setProjectSettingsOpen(true)}
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors flex items-center justify-center ml-2 flex-shrink-0"
-          title="Project Settings"
-          aria-label="Project Settings"
-        >
-          <Settings size={14} />
-        </button>
-      </div>
-
       {/* ── Main layout row ── */}
-      <div className={cn(
-        "flex-1 min-h-0 overflow-hidden flex-col md:flex-row",
-        mobileTab === "terminal" ? "hidden md:flex" : "flex"
-      )}>
+      <div className="flex flex-1 min-h-0 overflow-hidden flex-row">
 
         {/* Left pane — file tree. No border-r on desktop: the resize divider to
             its right provides the visible separator (avoids a double line). */}
         <div
           ref={treePaneRef}
-          className={cn(
-            "flex-shrink-0 flex flex-col overflow-hidden",
-            "w-full md:w-auto max-md:!w-full",
-            mobileTab === "files" ? "flex flex-1" : "hidden md:flex"
-          )}
+          className="flex-shrink-0 flex flex-col overflow-hidden"
         >
           <FileTree project={project} />
         </div>
@@ -190,7 +133,7 @@ export function AgentView() {
             handle in the app (see PreviewPane / UnifiedChatPanel). */}
         <div
           ref={leftDividerRef}
-          className="group w-1.5 flex-shrink-0 cursor-col-resize bg-[var(--background)] flex justify-center hidden md:flex hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
+          className="group w-1.5 flex-shrink-0 cursor-col-resize bg-[var(--background)] flex justify-center hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
           role="separator"
           aria-label="Resize file tree"
         >
@@ -198,12 +141,9 @@ export function AgentView() {
         </div>
 
         {/* Centre pane — tab bar + editor/diff */}
-        <div className={cn(
-          "flex-1 min-w-0 flex flex-col overflow-hidden",
-          (mobileTab === "editor" || mobileTab === "diff" || mobileTab === "git" || mobileTab === "architecture") ? "flex h-full" : "hidden md:flex"
-        )}>
-          {/* Tab selector for editor / diff (only if not on mobile, since mobile has its own tabs) */}
-          <div className="hidden md:flex items-center gap-1 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* Tab selector for editor / diff / git / architecture */}
+          <div className="flex items-center gap-1 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
             <button
               onClick={() => setCentreTab("editor")}
               className={cn(
@@ -265,7 +205,7 @@ export function AgentView() {
           </div>
 
           {/* Editor content — editor + contextual architecture sidebar (desktop) */}
-          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-row", centreTab !== "editor" && "md:hidden", mobileTab !== "editor" && "max-md:hidden")}>
+          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-row", centreTab !== "editor" && "hidden")}>
             <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
               <AgentEditor />
             </div>
@@ -278,37 +218,25 @@ export function AgentView() {
 
           {/* Diff content */}
           {codeDirectory && (
-            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "diff" && "md:hidden", mobileTab !== "diff" && "max-md:hidden")}>
+            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "diff" && "hidden")}>
               <DiffViewer cwd={codeDirectory} />
             </div>
           )}
 
           {/* Git content */}
           {codeDirectory && (
-            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "git" && "md:hidden", mobileTab !== "git" && "max-md:hidden")}>
+            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "git" && "hidden")}>
               <GitView cwd={codeDirectory} />
             </div>
           )}
 
           {/* Architecture content */}
           {codeDirectory && (
-            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "architecture" && "md:hidden", mobileTab !== "architecture" && "max-md:hidden")}>
+            <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", centreTab !== "architecture" && "hidden")}>
               <ArchitectureView cwd={codeDirectory} />
             </div>
           )}
         </div>
-
-        {/* Right pane — agent terminal sessions (only on mobile, as desktop uses RightPanel drawer) */}
-        {isMobile && (
-          <div
-            className={cn(
-              "w-full flex-col flex-1 min-h-0 overflow-hidden md:hidden",
-              (mobileTab === "agent" || mobileTab === "terminal") ? "flex" : "hidden"
-            )}
-          >
-            <SessionPane />
-          </div>
-        )}
       </div>
 
       {/* ── Bottom terminal (only when a codeDirectory is set) ─────────────── */}
@@ -320,19 +248,14 @@ export function AgentView() {
               resize handle in the app. */}
           <div
             ref={bottomDividerRef}
-            className="group h-1.5 flex-shrink-0 cursor-row-resize bg-[var(--background)] flex items-center hidden md:flex hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
+            className="group h-1.5 flex-shrink-0 cursor-row-resize bg-[var(--background)] flex items-center hover:bg-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-colors"
             role="separator"
             aria-label="Resize bottom terminal"
           >
             <div className="h-px w-full bg-[var(--border)] group-hover:bg-transparent transition-colors" />
           </div>
-          <div
-            className={cn(
-              "flex-shrink-0",
-              mobileTab === "terminal" ? "flex flex-1 h-full w-full" : "hidden md:flex w-full",
-            )}
-          >
-            <AgentBottomTerminal cwd={codeDirectory} height={bottomHeight} visible={mobileTab === "terminal"} />
+          <div className="flex-shrink-0 flex w-full">
+            <AgentBottomTerminal cwd={codeDirectory} height={bottomHeight} />
           </div>
         </>
       )}

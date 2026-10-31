@@ -454,15 +454,15 @@ export interface IpcContract {
   "app:revealAssets": { args: []; result: void };
   /** Saves a pasted file to the attachments folder; returns its `![[name]]` embed. */
   "app:uploadAsset": { args: [req: { filename: string; data: ArrayBuffer }]; result: { assetUrl: string } };
-  /** null when the save dialog is cancelled; `pdfBase64` when `returnBuffer` is set. */
+  /** null when the save dialog is cancelled. */
   "app:exportNotePdf": {
-    args: [req: { title: string; html: string; options?: { returnBuffer?: boolean; theme?: PdfTheme; fontFamily?: string } }];
-    result: { filePath?: string; pdfBase64?: string } | null;
+    args: [req: { title: string; html: string; options?: { theme?: PdfTheme; fontFamily?: string } }];
+    result: { filePath?: string } | null;
   };
-  /** null when the save dialog is cancelled; `markdown` + `title` when `returnText` is set. */
+  /** null when the save dialog is cancelled. */
   "app:exportMarkdown": {
-    args: [req: { kind: "note" | "project"; id: string; returnText?: boolean }];
-    result: { filePath?: string; markdown?: string; title?: string } | null;
+    args: [req: { kind: "note" | "project"; id: string }];
+    result: { filePath?: string } | null;
   };
   "app:llmLeftovers": { args: []; result: LlmLeftovers };
   "app:clearLlmLeftovers": { args: []; result: { reclaimedBytes: number } };

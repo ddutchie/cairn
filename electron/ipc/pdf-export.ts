@@ -21,24 +21,19 @@ export function registerPdfExportHandler(ctx: DbContext): void {
     "app:exportNotePdf",
     (_e, { title, html, options }) =>
       handle(async () => {
-        const returnBuffer = options?.returnBuffer ?? false;
         const theme = options?.theme ?? "light";
         const fontFamily = options?.fontFamily;
         const safeTitle = sanitizeFilename(title);
 
-        let savePath = "";
-        if (!returnBuffer) {
-          const activeWin = ctx.getWin();
-          if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");
+        const activeWin = ctx.getWin();
+        if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");
 
-          const { canceled, filePath } = await dialog.showSaveDialog(activeWin, {
-            title: "Export Note as PDF",
-            defaultPath: `${safeTitle}.pdf`,
-            filters: [{ name: "PDF Document", extensions: ["pdf"] }],
-          });
-          if (canceled || !filePath) return null;
-          savePath = filePath;
-        }
+        const { canceled, filePath: savePath } = await dialog.showSaveDialog(activeWin, {
+          title: "Export Note as PDF",
+          defaultPath: `${safeTitle}.pdf`,
+          filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+        });
+        if (canceled || !savePath) return null;
 
         const fullHtml = buildPdfHtml(title, html, theme, "none", fontFamily);
 
@@ -64,10 +59,6 @@ export function registerPdfExportHandler(ctx: DbContext): void {
             // below is the custom-margin mode.)
             margins: { top: 0.79, bottom: 0.59, left: 0.87, right: 0.87 },
           });
-
-          if (returnBuffer) {
-            return { pdfBase64: pdfBuffer.toString("base64") };
-          }
 
           await fs.promises.writeFile(savePath, pdfBuffer);
           return { filePath: savePath };

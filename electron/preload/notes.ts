@@ -28,12 +28,12 @@ export const notesApi = {
   revealNote: (noteId: string, projectId: string) => invokeContract("app:revealNote", { noteId, projectId }),
 
   // ── Export note as PDF ────────────────────────
-  exportNotePdf: (title: string, html: string, options?: { returnBuffer?: boolean; theme?: "light" | "dark"; fontFamily?: string }) =>
+  exportNotePdf: (title: string, html: string, options?: { theme?: "light" | "dark"; fontFamily?: string }) =>
     invokeContract("app:exportNotePdf", { title, html, options }),
 
   // ── Export note / project as Markdown ─────────
-  exportMarkdown: (kind: "note" | "project", id: string, options?: { returnText?: boolean }) =>
-    invokeContract("app:exportMarkdown", { kind, id, returnText: options?.returnText }),
+  exportMarkdown: (kind: "note" | "project", id: string) =>
+    invokeContract("app:exportMarkdown", { kind, id }),
 
   // ── Asset upload (pasted images) ──────────────
   // data is an ArrayBuffer — Electron's structured-clone transfers it
