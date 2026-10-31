@@ -199,6 +199,7 @@ export function GameOverCard({
       style={[styles.overlay, halfInset]}
       pointerEvents="box-none"
     >
+      <View style={styles.card}>
       <Animated.Text entering={rise(0)} style={styles.title}>
         {title}
       </Animated.Text>
@@ -223,6 +224,7 @@ export function GameOverCard({
           <Text style={styles.closeText}>Close</Text>
         </Pressable>
       </Animated.View>
+      </View>
     </Animated.View>
   );
 }
@@ -238,6 +240,16 @@ function makeStyles(t: Theme) {
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: t.scrim,
+    },
+    // Opaque card so text never depends on what the scrim sits over.
+    card: {
+      alignItems: "center",
+      paddingHorizontal: 32,
+      paddingVertical: 28,
+      borderRadius: 20,
+      backgroundColor: t.surface2,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border,
     },
     title: { ...typeScale.display, color: t.textPrimary },
     scoreRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 6 },
