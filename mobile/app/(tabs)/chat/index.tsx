@@ -54,6 +54,9 @@ import { SidePreviewLayout, useSidePreview } from "@/components/SidePreview";
 import { useFold, useTopHalf } from "@/lib/use-fold";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
+/** A run that ended through `runAgent`'s error path, which reports failures as an event plus a returned message instead of throwing. */
+class RunFailure extends Error {}
+
 /** Resolves once the app is in the foreground (immediately if it already is). */
 function waitForForeground(): Promise<void> {
   if (AppState.currentState === "active") return Promise.resolve();
@@ -330,6 +333,7 @@ export default function ChatScreen() {
     };
 
     try {
+      let runError: string | null = null;
       const onEvent = (e: AgentEvent) => {
         if (e.type === "text-delta" && e.delta) {
           acc += e.delta;
@@ -371,6 +375,8 @@ export default function ChatScreen() {
           else toolTrail.push(finalized);
           patchAssistant({ tools: [...toolTrail] });
           haptics.impact(); // agent ran a tool
+        } else if (e.type === "error") {
+          runError = e.text ?? "Something went wrong.";
         } else if (e.type === "usage" && e.usage) {
           // Accumulate the real spend across tool-calling rounds — each round
           // re-sends the whole conversation, so the last round alone under-
@@ -406,16 +412,19 @@ export default function ChatScreen() {
       // back; otherwise fall through to the error path, which keeps what streamed.
       let answer = "";
       for (let attempt = 0; ; attempt++) {
-        const resumeFrom = conversation.current.length;
+        // runAgent also inserts a system message and edits in place, so restore the whole array.
+        const before = conversation.current.slice();
+        runError = null;
         const wasAway = { current: false };
         const sub = AppState.addEventListener("change", (st) => { if (st !== "active") wasAway.current = true; });
         try {
           answer = await runAgent(conversation.current, onEvent);
+          if (runError !== null) throw new RunFailure(runError);
           break;
         } catch (err) {
           const retryable = attempt === 0 && (wasAway.current || AppState.currentState !== "active") && toolTrail.length === 0;
           if (!retryable) throw err;
-          conversation.current.length = resumeFrom; // drop the half-run's messages
+          conversation.current.splice(0, conversation.current.length, ...before); // drop the half-run's messages
           acc = "";
           reasoningAcc = "";
           reasoningSummaryAcc = "";
@@ -432,7 +441,9 @@ export default function ChatScreen() {
       saveChatMessage({ role: "assistant", content: finalText, tools: toolTrail.length ? toolTrail : undefined });
       haptics.success(); // response received
     } catch (e) {
-      const note = e instanceof Error && /network|fetch|failed/i.test(e.message)
+      const note = e instanceof RunFailure
+        ? e.message // runAgent already phrased it for the user
+        : e instanceof Error && /network|fetch|failed/i.test(e.message)
         ? "Chat needs a connection. Reconnect and try again."
         : `Error: ${e instanceof Error ? e.message : String(e)}`;
       // Keep whatever had already streamed; the note goes underneath it.

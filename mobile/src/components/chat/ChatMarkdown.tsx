@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useMemo } from "react";
-import { Linking, View } from "react-native";
+import { Linking, Platform, View } from "react-native";
 import { useRouter } from "expo-router";
 import { StreamdownText } from "react-native-streamdown";
 import { useTheme, withAlpha, type Theme } from "@/theme";
@@ -31,7 +31,7 @@ function markdownStyle(t: Theme, fontFamily: string | undefined, fontWeight: num
   const base = { color: t.textPrimary, fontSize: 15, fontFamily, fontWeight: fontWeight ? (String(fontWeight) as "400" | "500") : undefined };
   const line = Math.round(15 * 1.7 * (lineHeight ?? 1));
   const heading = { ...base, fontWeight: "700" as const, marginTop: 18, marginBottom: 10 };
-  const mono = "Menlo";
+  const mono = Platform.select({ ios: "Menlo", default: "monospace" });
   return {
     paragraph: { ...base, lineHeight: line, marginTop: 8, marginBottom: 8 },
     h1: { ...heading, fontSize: 24, lineHeight: Math.round(30 * (lineHeight ?? 1)) },

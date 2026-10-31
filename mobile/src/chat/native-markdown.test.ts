@@ -71,3 +71,33 @@ describe("colour literals", () => {
     expect(colorLiteralsToLinks("fixes #123 see https://x.io/#ff0000")).toBe("fixes #123 see https://x.io/#ff0000");
   });
 });
+
+describe("CommonMark fence rules", () => {
+  it("only closes a fence with an equal-or-longer run", () => {
+    const src = "````md\n```js\n> [!NOTE]\n```\n````\n> [!NOTE]";
+    const out = calloutsToAlerts(src);
+    expect(out.split("\n").slice(0, 5).join("\n")).toBe("````md\n```js\n> [!NOTE]\n```\n````");
+    expect(out.endsWith("> [!NOTE]")).toBe(true);
+  });
+
+  it("does not treat a backtick run with backticks in the info string as a fence", () => {
+    expect(escapeSpoilers("```a``` x || y")).toBe("```a``` x \\|\\| y");
+  });
+
+  it("keeps an image embed inside a code block in one markdown segment", () => {
+    const src = "```md\n![diagram](cairn://embed/diagram.png)\n```";
+    expect(splitSegments(src)).toEqual([{ kind: "markdown", text: src }]);
+  });
+});
+
+describe("colour literals that are not colours", () => {
+  it("leaves rgb(r, g, b) placeholders alone", () => {
+    expect(colorLiteralsToLinks("use `rgb(r, g, b)` or `hsl(h, s, l)`")).toBe("use `rgb(r, g, b)` or `hsl(h, s, l)`");
+    expect(findColorLiterals("`rgb(r, g, b)`")).toEqual([]);
+  });
+
+  it("still accepts real functional colours", () => {
+    expect(findColorLiterals("`rgba(10, 20, 30, 0.5)` `hsl(210deg 50% 40%)` `rgb(0 0 0 / 50%)`")).toHaveLength(3);
+  });
+});
+

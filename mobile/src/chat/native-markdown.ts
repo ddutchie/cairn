@@ -17,21 +17,38 @@ const ALERT_FOR: Record<string, GithubAlert> = {
 };
 
 const GITHUB_NAMES = new Set(["note", "tip", "important", "warning", "caution"]);
-const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const CALLOUT_RE = /^(\s{0,3}>\s?)\[!([A-Za-z]+)\][+-]?[ \t]*(.*)$/;
+
+/** An open fenced block: the marker character and the length of the opening run. */
+type Fence = { char: string; len: number } | null;
+
+/**
+ * Advance CommonMark fence state by one line. A closing fence uses the same character, is at least as
+ * long as the opener and carries nothing but whitespace; a backtick opener can't have a backtick in
+ * its info string (that's inline code). `isFence` is true for the opening and closing lines themselves.
+ */
+function stepFence(line: string, fence: Fence): { fence: Fence; isFence: boolean } {
+  const m = FENCE_RE.exec(line);
+  if (!m) return { fence, isFence: false };
+  const run = m[1];
+  if (fence === null) {
+    if (run[0] === "`" && m[2].includes("`")) return { fence, isFence: false };
+    return { fence: { char: run[0], len: run.length }, isFence: true };
+  }
+  if (run[0] === fence.char && run.length >= fence.len && m[2].trim() === "") return { fence: null, isFence: true };
+  return { fence, isFence: false };
+}
 
 /** Apply `fn` to every line outside a fenced code block. */
 function mapOutsideFences(src: string, fn: (line: string) => string): string {
-  let fence: string | null = null;
+  let fence: Fence = null;
   return src
     .split("\n")
     .map((line) => {
-      const m = FENCE_RE.exec(line);
-      if (m) {
-        if (fence === null) fence = m[1][0];
-        else if (m[1][0] === fence) fence = null;
-        return line;
-      }
+      const step = stepFence(line, fence);
+      fence = step.fence;
+      if (step.isFence) return line;
       return fence === null ? fn(line) : line;
     })
     .join("\n");
@@ -91,8 +108,11 @@ export function splitSegments(src: string): Segment[] {
       if (text.trim()) out.push({ kind: "markdown", text });
       buf = [];
     };
+    let fence: Fence = null;
     for (const line of text.split("\n")) {
-      const m = IMAGE_LINE_RE.exec(line);
+      const step = stepFence(line, fence);
+      fence = step.fence;
+      const m = step.isFence || fence !== null ? null : IMAGE_LINE_RE.exec(line);
       if (m) {
         flush();
         let name = m[1];
@@ -135,7 +155,7 @@ export function markDeadWikilinks(src: string, deadTitles: ReadonlySet<string>):
 
 // ── Colour literals ───────────────────────────────────────────────────────────
 
-const COLOR_LITERAL_RE = /^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(rgba?|hsla?)\s*\([^)]+\))$/;
+const COLOR_LITERAL_RE = /^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(rgba?|hsla?)\(\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:%|deg|rad|grad|turn)?(?:\s*[,\s/]\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:%|deg|rad|grad|turn)?){2,3}\s*\))$/;
 export const COLOR_SCHEME = "cairn://swatch/";
 /** The swatch is blank text on a coloured background: link text colour is overridden by iOS inside table cells, the background is not. */
 const SWATCH_TEXT = "\u00A0\u00A0\u00A0\u00A0";
