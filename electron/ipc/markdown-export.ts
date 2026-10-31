@@ -19,7 +19,7 @@ import { serializeNoteMarkdown, serializeProjectMarkdown } from "../host-shared/
 export function registerMarkdownExportHandler(ctx: DbContext): void {
   registerContractHandle(
     "app:exportMarkdown",
-    (_e, { kind, id, returnText }) =>
+    (_e, { kind, id }) =>
       handle(async () => {
         const snap = getSnapshot(ctx.db);
         const result = kind === "note"
@@ -28,8 +28,6 @@ export function registerMarkdownExportHandler(ctx: DbContext): void {
 
         if ("error" in result) throw new Error(result.error);
         const { markdown, title } = result;
-
-        if (returnText) return { markdown, title };
 
         const activeWin = ctx.getWin();
         if (!activeWin || activeWin.isDestroyed()) throw new Error("No window");

@@ -72,7 +72,6 @@ const FEATURES = [
       "Obsidian Vault Compatibility: Point any Cairn workspace directly to an Obsidian folder, with native `![[image]]` embeds and vault-aware assets.",
       "Decoupled AI Configurations: Run lightweight on-device models for inline editor actions while using large cloud endpoints for coding loops.",
       "Local LLM Integration: Full cross-platform local engine routing — a 1-click llama-server binary downloader with CDN mirrors and self-healing output parsing.",
-      "Mobile Companion Service: Secure, local-network mobile access to Cairn notes, boards, and agents via QR pairing, with touch DnD and PDF export.",
     ],
   },
   {

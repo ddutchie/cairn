@@ -32,7 +32,7 @@ Success is a user staying in a single, calm environment from thought → plan �
 - **Workflows & views:** Overview (`⌘1`) → Notes (`⌘2`, split write/preview) → extra views on `⌘3`–`⌘9` in sidebar order (default: Board, Calendar, Idea Flow, Agent, Calendar-all, Knowledge Graph, Insights, Automations, Usage; hide views in General settings to compress). Board (drag-drop kanban with archive), Idea Flow (freeform canvas: idea / note_ref / task_ref / group / url / ai_summary nodes + labelled edges), Agent workspace (file tree + CodeMirror editor + xterm PTY + diff), Knowledge Graph (Force + Radial), Insights (seven analytics canvases). Global search (`⌘K` / `⌘⇧F`), AI chat (`⌘/`), interactive PRD generation, AI text actions on selected text, live dashboards (HTML + CodeMirror overlay + "Fix with AI").
 - **Environments:** Electron desktop (macOS arm64 + x64 DMG, Windows NSIS, Linux AppImage). Renderer (`src/`) is Next.js 16 App Router static export; Main process (`electron/`) owns SQLite, file I/O, the agent engine, PTY. Two processes share one WAL SQLite. MCP server (`electron/mcp-server.ts` → `dist-mcp/cairn-mcp`) is a self-contained `@yao-pkg/pkg` binary bundling its own Node + better-sqlite3 — runs independently of the app.
 - **Vault interoperability:** Point a workspace at any existing Obsidian folder. Renders `![[embed]]`, respects custom attachment folders, resolves local media via sequential-fallback, merges frontmatter non-destructively. Chokidar watches external `.md` edits at runtime.
-- **Mobile companion:** Local-network QR / PIN access with responsive drawers, touch drag-drop, and Idea Flow gestures; native PDF share sheets.
+- **Mobile app:** A separate native app syncs the workspace through Device Sync (a shared cloud folder).
 - **Data shape:** Workspace → Project → Notes (.md + SQLite row) / Dashboards (SQLite only, `type="dashboard"`) / BoardColumns → TaskCards / IdeaFlow → IdeaFlowNodes + IdeaFlowEdges / ChatThreads → ChatMessages.
 
 ## Capabilities and Constraints
@@ -58,7 +58,7 @@ Success is a user staying in a single, calm environment from thought → plan �
 - **Changelog / What's New:** Every user-facing change gets an entry in `changelogs/vX.Y.Z.md` ahead of current `package.json` version; headline features also appended to `scripts/features.config.js` → `src/generated/new-features.json` via `node scripts/generate-features.js`.
 
 **Explicitly undecided**
-- Distribution beyond desktop (full native mobile) — Mobile Companion is local-network companion only.
+- Distribution beyond desktop (full native mobile) — the native mobile app syncs via Device Sync.
 - Cloud/teams/multiplayer — out of scope for local-first position.
 - Pricing/tiers beyond MIT local — not defined.
 

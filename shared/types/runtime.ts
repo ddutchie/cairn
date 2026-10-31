@@ -1,6 +1,6 @@
 /**
- * Agent-runtime introspection (Settings → AI), slash-command execution and
- * Mobile Access status, shared by main, the typed IPC contract and the renderer.
+ * Agent-runtime introspection (Settings → AI) and slash-command execution,
+ * shared by main, the typed IPC contract and the renderer.
  */
 
 /** Result of running a engine registry command (/plan, /compact, …). */
@@ -41,11 +41,4 @@ export interface InventoryTool {
 export interface ToolInventory {
   surfaces: Record<InventorySurface, InventoryTool[]> | null;
   error?: string;
-}
-
-export interface MobileStatus {
-  running: boolean;
-  url: string;
-  qrCode: string;
-  pin: string;
 }

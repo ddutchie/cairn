@@ -83,7 +83,7 @@ import type {
   AdjacentNote, EmbeddingDownloadProgress, EmbeddingModelManifestEntry, EmbeddingsStatus, NoteProjectionRow,
   ProjectionResult, ReindexResult, RuntimeEmbeddingModel, RuntimeStatus,
 } from "../types/embeddings";
-import type { MobileStatus, SystemPromptPreview, ToolInventory } from "../types/runtime";
+import type { SystemPromptPreview, ToolInventory } from "../types/runtime";
 import type { SessionEventEnvelope } from "../agent/session-event";
 import type { SessionProjection } from "../agent/session-projection";
 import type {
@@ -454,15 +454,15 @@ export interface IpcContract {
   "app:revealAssets": { args: []; result: void };
   /** Saves a pasted file to the attachments folder; returns its `![[name]]` embed. */
   "app:uploadAsset": { args: [req: { filename: string; data: ArrayBuffer }]; result: { assetUrl: string } };
-  /** null when the save dialog is cancelled; `pdfBase64` when `returnBuffer` is set. */
+  /** null when the save dialog is cancelled. */
   "app:exportNotePdf": {
-    args: [req: { title: string; html: string; options?: { returnBuffer?: boolean; theme?: PdfTheme; fontFamily?: string } }];
-    result: { filePath?: string; pdfBase64?: string } | null;
+    args: [req: { title: string; html: string; options?: { theme?: PdfTheme; fontFamily?: string } }];
+    result: { filePath?: string } | null;
   };
-  /** null when the save dialog is cancelled; `markdown` + `title` when `returnText` is set. */
+  /** null when the save dialog is cancelled. */
   "app:exportMarkdown": {
-    args: [req: { kind: "note" | "project"; id: string; returnText?: boolean }];
-    result: { filePath?: string; markdown?: string; title?: string } | null;
+    args: [req: { kind: "note" | "project"; id: string }];
+    result: { filePath?: string } | null;
   };
   "app:llmLeftovers": { args: []; result: LlmLeftovers };
   "app:clearLlmLeftovers": { args: []; result: { reclaimedBytes: number } };
@@ -695,12 +695,6 @@ export interface IpcContract {
     result: { text: string; error?: string };
   };
   "runtime:tools:inventory": { args: []; result: ToolInventory };
-
-  // ── Mobile Access ────────────────────────────────────────────────────────
-  "mobile:status": { args: []; result: MobileStatus };
-  /** Starts or stops the server per `enabled`; also pushed on `mobile:status-changed`. */
-  "mobile:saveSettings": { args: [settings: Record<string, unknown>]; result: MobileStatus };
-  "mobile:regeneratePin": { args: []; result: MobileStatus };
 }
 
 /** Main → renderer push events (webContents.send / broadcast) and their payloads. */
@@ -746,7 +740,6 @@ export interface IpcEvents {
   "sync:status": SyncStatus;
   "embeddings:download-progress": EmbeddingDownloadProgress;
   "runtime:download-progress": EmbeddingDownloadProgress;
-  "mobile:status-changed": MobileStatus;
   /**
    * Workspace data changed (a write channel completed, or an MCP / sync write
    * landed). The registry broadcasts it with a `null` payload; listeners ignore it.
@@ -1126,16 +1119,13 @@ const CHANNELS: ChannelRecord = {
   "runtime:systemPrompt:preview": "read",
   "runtime:codingPrompt:preview": "read",
   "runtime:tools:inventory": "read",
-  "mobile:status": "read",
-  "mobile:saveSettings": "read",
-  "mobile:regeneratePin": "read",
 };
 
 export const IPC_CONTRACT_CHANNELS = Object.keys(CHANNELS) as IpcChannel[];
 
 /**
  * Channels that change workspace data. The registry broadcasts `db:changed`
- * after each one completes, so every window and paired phone refreshes.
+ * after each one completes, so every window refreshes.
  */
 export const IPC_WRITE_CHANNELS: ReadonlySet<IpcChannel> = new Set(
   IPC_CONTRACT_CHANNELS.filter((c) => CHANNELS[c] === "write"),

@@ -17,7 +17,6 @@ import { app, BrowserWindow, shell, protocol } from "electron";
 import path from "path";
 import fs from "fs";
 import { autoUpdater } from "electron-updater";
-import { loadMobileSettings, startMobileServer, stopMobileServer } from "./lib/mobile-server";
 import { initDb } from "./db/client";
 import { registerIpcHandlers, registerAppHandlers } from "./ipc/handlers";
 import { broadcastEvent, sendIpcEvent, setWriteObserver } from "./ipc/registry";
@@ -695,14 +694,9 @@ app.whenReady().then(async () => {
   }
   await wireBackgroundSync();
 
-  // Start mobile access server if enabled
-  try {
-    const mobileSettings = loadMobileSettings(userDataPath);
-    if (mobileSettings.enabled) {
-      startMobileServer(userDataPath, ctx);
-    }
-  } catch (err) {
-    console.error("[main] Failed to auto-start mobile server:", err);
+  // The LAN "Mobile Access" server is gone; drop its PIN and session tokens from disk.
+  for (const file of ["mobile-config.json", "mobile-sessions.json"]) {
+    fs.rm(path.join(userDataPath, file), { force: true }, () => {});
   }
 
   app.on("activate", () => {
@@ -714,11 +708,6 @@ app.whenReady().then(async () => {
 // processes that would otherwise linger (and block the relaunching
 // version's ports) without waiting on anything async.
 function teardownChildProcesses(): void {
-  // Terminate mobile access server if running
-  try {
-    stopMobileServer();
-  } catch { /* ignore */ }
-
   // Kill any bash child processes that are still running so they don't linger
   killTrackedBashProcesses();
   // Terminate the embeddings worker child process (HTTP server) so it doesn't linger

@@ -21,7 +21,6 @@ interface AgentBottomTerminalProps {
   cwd: string;
   /** Controlled height in px — set by the parent drag divider */
   height: number;
-  visible?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -55,7 +54,7 @@ function fitTerm(m: TermMount, observed: boolean) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTerminalProps) {
+export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
   const fontScale = useCairnStore((s) => s.fontScale);
 
   const [tabs, setTabs]           = useState<ShellTab[]>([]);
@@ -180,7 +179,7 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
     // Also fit after a short delay to ensure DOM has settled
     const timer = setTimeout(fit, 100);
     return () => clearTimeout(timer);
-  }, [height, activeId, visible]);
+  }, [height, activeId]);
 
   // Update font size when the user changes the font scale setting
   useEffect(() => {
@@ -309,8 +308,8 @@ export function AgentBottomTerminal({ cwd, height, visible }: AgentBottomTermina
 
   return (
     <div
-      className="flex flex-col bg-[var(--background)] overflow-hidden h-full md:h-auto w-full"
-      style={typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? {} : { height }}
+      className="flex flex-col bg-[var(--background)] overflow-hidden w-full"
+      style={{ height }}
     >
       {/* Tab bar */}
       <div className="flex items-center gap-0 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 h-8 overflow-x-auto">

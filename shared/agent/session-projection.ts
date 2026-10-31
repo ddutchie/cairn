@@ -44,8 +44,7 @@ export type SessionBusyReason =
   | "localllm-disabled"
   | "missing-api-key"
   | "invalid-attachment"
-  | "invalid-id"
-  | "mobile-refused";
+  | "invalid-id";
 
 /** Convenience: session:busy payload (reused for typing busy handlers). */
 export type SessionBusyPayload = { sessionId: string; reason: SessionBusyReason; message?: string };
