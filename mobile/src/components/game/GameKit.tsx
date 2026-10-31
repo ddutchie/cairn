@@ -93,11 +93,11 @@ export function useShake() {
     if (motion.reduced) return;
     x.set(
       withSequence(
-        withTiming(-9, { duration: 40 }),
-        withTiming(8, { duration: 60 }),
-        withTiming(-6, { duration: 60 }),
-        withTiming(4, { duration: 60 }),
-        withTiming(0, { duration: 50 }),
+        withTiming(-8, { duration: 30 }),
+        withTiming(7, { duration: 40 }),
+        withTiming(-5, { duration: 40 }),
+        withTiming(3, { duration: 40 }),
+        withTiming(0, { duration: 35 }),
       ),
     );
   }, [motion.reduced, x]);
@@ -110,7 +110,7 @@ export function PopChip({ pulseKey, children }: { pulseKey: number; children: Re
   const s = useSharedValue(1);
   useEffect(() => {
     if (pulseKey <= 0 || motion.reduced) return;
-    s.set(withSequence(withTiming(1.22, { duration: 70 }), withSpring(1, { damping: 7, stiffness: 260 })));
+    s.set(withSequence(withTiming(1.2, { duration: 45 }), withSpring(1, { damping: 12, stiffness: 520 })));
   }, [pulseKey, motion.reduced, s]);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: s.get() }] }));
   return <Animated.View style={style}>{children}</Animated.View>;
@@ -136,7 +136,7 @@ export function FloatText({
   useEffect(() => {
     if (fireKey <= 0 || motion.reduced) return;
     p.set(0);
-    p.set(withTiming(1, { duration: 760 }));
+    p.set(withTiming(1, { duration: 520 }));
   }, [fireKey, motion.reduced, p]);
   const style = useAnimatedStyle(() => {
     const v = p.get();
@@ -192,10 +192,10 @@ export function GameOverCard({
   }, [fold, W, H]);
   const motion = useMotion();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const rise = (i: number) => (motion.reduced ? undefined : FadeInDown.delay(90 + i * 90).springify().damping(16).stiffness(180));
+  const rise = (i: number) => (motion.reduced ? undefined : FadeInDown.delay(40 + i * 55).springify().damping(18).stiffness(300));
   return (
     <Animated.View
-      entering={motion.reduced ? undefined : FadeIn.duration(180)}
+      entering={motion.reduced ? undefined : FadeIn.duration(120)}
       style={[styles.overlay, halfInset]}
       pointerEvents="box-none"
     >

@@ -265,8 +265,8 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           haptics.rigid();
           if (!g.reduced) {
             // The paddle squashes on impact and springs back; the ball's glow flares.
-            squash.set(withSequence(withTiming(1, { duration: 50 }), withSpring(0, { damping: 6, stiffness: 320 })));
-            kick.set(withSequence(withTiming(1, { duration: 50 }), withTiming(0, { duration: 260 })));
+            squash.set(withSequence(withTiming(1, { duration: 30 }), withSpring(0, { damping: 12, stiffness: 700 })));
+            kick.set(withSequence(withTiming(1, { duration: 30 }), withTiming(0, { duration: 160 })));
           }
           if (g.streak > 0) { g.streak = 0; setStreak(0); }
         }
@@ -288,7 +288,7 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
             b.vy = -b.vy; // bounce vertically (simple + reliable for a grid)
             if (!g.reduced) {
               spawnParticles(g.particles, br);
-              kick.set(withSequence(withTiming(1, { duration: 40 }), withTiming(0, { duration: 220 })));
+              kick.set(withSequence(withTiming(1, { duration: 25 }), withTiming(0, { duration: 140 })));
             }
             g.streak += 1;
             g.score += 1;
@@ -482,7 +482,7 @@ const BrickView = memo(function BrickView({ brick, color, labelColor }: { brick:
   const motion = useMotion();
   const alive = useSharedValue(1);
   useEffect(() => {
-    alive.set(brick.alive ? 1 : motion.reduced ? 0 : withTiming(0, { duration: 170 }));
+    alive.set(brick.alive ? 1 : motion.reduced ? 0 : withTiming(0, { duration: 110 }));
   }, [brick.alive, motion.reduced, alive]);
   const style = useAnimatedStyle(() => ({
     opacity: alive.get(),

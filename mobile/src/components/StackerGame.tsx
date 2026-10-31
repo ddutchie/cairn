@@ -263,7 +263,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
       g.running = false;
       setStatus("lost");
       shake();
-      fall.set(motion.reduced ? 1 : withTiming(1, { duration: 520 }));
+      fall.set(motion.reduced ? 1 : withTiming(1, { duration: 380 }));
       // New personal best? Celebrate with a confetti burst; otherwise the
       // standard error buzz. Persist the record either way. (Toasts live behind
       // this fullscreen Modal, so the win is announced in the end overlay.)
@@ -391,7 +391,7 @@ export function StackerGame({ visible, onClose }: { visible: boolean; onClose: (
   const overflowRows = Math.max(0, tower.length - (VISIBLE_ROWS - TOP_MARGIN_ROWS));
   const cameraY = overflowRows * ROW_H;
   useEffect(() => {
-    camera.set(motion.reduced ? cameraY : withSpring(cameraY, { damping: 20, stiffness: 150 }));
+    camera.set(motion.reduced ? cameraY : withSpring(cameraY, { damping: 24, stiffness: 280 }));
   }, [cameraY, motion.reduced, camera]);
 
   const palette = useMemo(() => KINDS.map((k) => kindColor(k, t)), [t]);
@@ -528,8 +528,8 @@ const StoneView = memo(function StoneView({
   const ring = useSharedValue(0);
   useEffect(() => {
     if (!animate) return;
-    land.set(withSpring(0, { damping: 7, stiffness: 240 }));
-    if (stone.perfect) ring.set(withSequence(withTiming(0.001, { duration: 0 }), withTiming(1, { duration: 520 })));
+    land.set(withSpring(0, { damping: 13, stiffness: 520 }));
+    if (stone.perfect) ring.set(withSequence(withTiming(0.001, { duration: 0 }), withTiming(1, { duration: 340 })));
   }, [animate, stone.perfect, land, ring]);
   const body = useAnimatedStyle(() => ({
     transform: [{ scaleY: 1 - land.get() * 0.28 }, { scaleX: 1 + land.get() * 0.05 }],
