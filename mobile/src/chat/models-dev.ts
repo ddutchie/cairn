@@ -4,8 +4,7 @@
  * Fetches the public models.dev catalog (https://models.dev/api.json) and maps a
  * model id → model metadata (context window, per-1M-token input/output cost,
  * image-input support, tool-calling, owning provider logo). Consumers:
- *  - the chat context ring auto-sizes from `contextLimitForModel` (Rork's
- *    underlying model is uncertain, so it uses a fixed conservative cap instead)
+ *  - the chat context ring auto-sizes from `contextLimitForModel`
  *  - the AI settings model list shows per-model cost, provider logo, and
  *    image/tool markers
  *

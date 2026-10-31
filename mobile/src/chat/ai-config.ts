@@ -12,11 +12,9 @@
  *     Android keystore), never in SQLite and never synced. It was already global.
  *
  * Provider selection (see providers/index.ts):
- *   - If the build injected a Rork toolkit URL (EXPO_PUBLIC_TOOLKIT_URL), the
- *     app uses Rork with zero config.
- *   - Otherwise it uses the OpenAI-compatible provider configured here. This is
- *     the path for third-party builders: bring your own endpoint + key, so the
- *     app never leans on our unauthenticated Rork endpoint.
+ *   - The OpenAI-compatible provider configured here: bring your own endpoint
+ *     + key.
+ *   - Apple Intelligence, when the device supports it and the user picks it.
  */
 
 import * as SecureStore from "expo-secure-store";
@@ -26,7 +24,7 @@ import type { AppleReasoningLevel } from "@modules/apple-llm";
 const KEY_BASE_URL = "ai.openai.baseUrl";
 const KEY_MODEL = "ai.openai.model";
 const KEY_CONTEXT = "ai.openai.contextLimit"; // optional manual override (tokens)
-const KEY_PROVIDER = "ai.provider"; // "rork" | "openai" | "apple"
+const KEY_PROVIDER = "ai.provider"; // "openai" | "apple"
 const KEY_APPLE_REASONING = "ai.apple.reasoningLevel"; // "light" | "moderate" | "deep"
 const SECURE_KEY_APIKEY = "ai.openai.apiKey"; // secure-store key (legacy single key)
 
@@ -46,10 +44,9 @@ const MIGRATION_FLAG = "ai.config.migratedToMeta";
  * Which backend the user prefers when more than one is available.
  *   - "apple": Apple Intelligence — Private Cloud Compute (iOS 27+, no key,
  *     privacy-preserving) when available, else the dev on-device model.
- *   - "rork":  built-in first-party endpoint (network)
  *   - "openai": user-supplied OpenAI-compatible endpoint (network)
  */
-export type ProviderPref = "rork" | "openai" | "apple";
+export type ProviderPref = "openai" | "apple";
 
 /** Sensible default for an OpenAI-compatible endpoint. */
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -536,14 +533,14 @@ export function toggleFavoriteModel(model: string): Set<string> {
 
 /**
  * The user's preferred provider. If the user explicitly chose one, honour it.
- * Otherwise default to "rork" when a Rork endpoint was built in (first-party
- * builds are zero-config), else "openai". On-device Apple is never the implicit
- * default — the user opts into it — but it's always an available fallback.
+ * Otherwise "openai". On-device Apple is never the implicit default — the user
+ * opts into it — but it's always an available fallback. A stored "rork" (the
+ * retired built-in endpoint) reads as "openai", so those users land on the
+ * bring-your-own-key setup instead of a dead provider.
  */
-export function getProviderPref(rorkAvailable: boolean): ProviderPref {
+export function getProviderPref(): ProviderPref {
   const stored = getSetting(KEY_PROVIDER);
-  if (stored === "rork" || stored === "openai" || stored === "apple") return stored;
-  return rorkAvailable ? "rork" : "openai";
+  return stored === "apple" ? "apple" : "openai";
 }
 
 /** Persist the preferred provider. */

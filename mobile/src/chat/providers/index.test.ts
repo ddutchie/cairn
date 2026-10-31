@@ -15,7 +15,6 @@ vi.mock("./apple", () => ({
   appleProvider: {}, appleOnDeviceProvider: {},
   isAppleOnDeviceAvailable: () => false, isAppleServerProviderAvailable: () => false,
 }));
-vi.mock("./rork", () => ({ isRorkAvailable: () => false, rorkProvider: {} }));
 vi.mock("./openai", () => ({ makeOpenAIProvider: () => ({ name: "completions" }) }));
 vi.mock("./responses", () => ({ makeResponsesProvider: () => ({ name: "responses" }), supportsResponses: h.supportsResponses }));
 vi.mock("../models-dev", () => ({ endpointProtocolForModel: h.protocol }));

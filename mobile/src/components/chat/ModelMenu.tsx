@@ -14,7 +14,6 @@ import {
   type SavedProvider,
 } from "@/chat/ai-config";
 import { listModels } from "@/chat/providers/openai";
-import { isRorkAvailable } from "@/chat/providers/rork";
 import { ICON_MODEL } from "@/components/toolbar-icons";
 import { type as typeScale, useTheme } from "@/theme";
 import {
@@ -39,7 +38,7 @@ const MAX_MODELS = 40;
  *  - `Stack.Toolbar.Menu` in the right toolbar — `modelToolbarMenu`, used on
  *    Android and wherever the title is hidden (wide windows).
  * Hidden unless the OpenAI-compatible path is the one the chat actually uses
- * (Rork / Apple On-device have no user-selectable model list).
+ * (Apple On-device has no user-selectable model list).
  *
  * `Stack.Toolbar` keeps only children that are literally Button/Menu/Spacer/View
  * elements (`isChildOfType`), so the toolbar variant is a function returning the
@@ -80,7 +79,7 @@ export function useModelMenuState({ disabled = false, onChanged }: { disabled?: 
     const list = await listSavedProviders();
     if (!current()) return;
     const act = getActiveProvider();
-    setUsable(getProviderPref(isRorkAvailable()) === "openai" && list.length > 0);
+    setUsable(getProviderPref() === "openai" && list.length > 0);
     setProviders(list);
     setActive(act);
     setFavorites(getFavoriteModels());

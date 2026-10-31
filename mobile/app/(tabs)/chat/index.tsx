@@ -26,7 +26,6 @@ import { redactValue } from "@cairn/shared/chat/redaction";
 import { hasProvider, resolveProvider } from "@/chat/providers";
 import { resetAppleSession } from "@/chat/providers/apple";
 import { getOpenAIModel, getProviderPref, getActiveProvider } from "@/chat/ai-config";
-import { isRorkAvailable } from "@/chat/providers/rork";
 import { getModelInfo, getModelCatalogVersion, subscribeModelCatalog } from "@/chat/models-dev";
 import { supportsImageInput } from "@cairn/shared/models/model-catalog";
 import { type UIMessage, type ChatUsage, msgId } from "@/chat/providers/types";
@@ -55,13 +54,12 @@ import { useFold, useTopHalf } from "@/lib/use-fold";
 
 // Resolve the provider/model label for the chat-usage history (Usage screen).
 function usageProviderLabel(): string {
-  const pref = getProviderPref(isRorkAvailable());
+  const pref = getProviderPref();
   if (pref === "apple") return "Apple";
-  if (pref === "rork") return "Rork";
   return getActiveProvider()?.name ?? "OpenAI";
 }
 function usageModelLabel(): string {
-  const pref = getProviderPref(isRorkAvailable());
+  const pref = getProviderPref();
   return pref === "openai" ? getOpenAIModel() || "—" : pref;
 }
 
@@ -207,16 +205,16 @@ export default function ChatScreen() {
     setAttachments((prev) => [...prev, ...atts].slice(0, 8));
   }, []);
 
-  // Whether any AI provider is usable (built-in Rork or a configured OpenAI
-  // key). Re-checked whenever the chat screen regains focus — e.g. after the
+  // Whether any AI provider is usable (Apple Intelligence or a configured
+  // OpenAI key). Re-checked whenever the chat screen regains focus — e.g. after the
   // AI settings form-sheet route is dismissed.
   const refreshConfigured = useCallback(() => {
     hasProvider().then(setConfigured).catch(() => setConfigured(false));
   }, []);
 
   // Image attach is hidden when the ACTIVE provider is an OpenAI-compatible or
-  // Responses endpoint and its model is known not to accept images. Rork /
-  // Apple / unknown models stay permissive. Re-resolved on focus (provider may
+  // Responses endpoint and its model is known not to accept images. Apple /
+  // unknown models stay permissive. Re-resolved on focus (provider may
   // change in settings).
   const [openAiModelActive, setOpenAiModelActive] = useState<string | null>(null);
   // The header model menu switched provider/model: re-derive what depends on it
@@ -564,7 +562,7 @@ export default function ChatScreen() {
           scrollEdgeEffects: undefined,
           ...sp.screenOptions,
           // Context-window usage ring in the header-left when the active provider
-          // reports usage (Apple real, OpenAI real, Rork estimated). Not while a
+          // reports usage (Apple real, OpenAI real). Not while a
           // preview is open: its own bar owns the rail, and stacked above the chat
           // the pane's ✕ sits exactly where the ring would, which then swallows taps.
           headerLeft: contextRing && showHeaderTools ? () => contextRing : undefined,
