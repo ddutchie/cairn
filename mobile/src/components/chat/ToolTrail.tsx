@@ -16,6 +16,7 @@ import { listInstalledServices } from "@/chat/services";
 import { getCachedManifest } from "@/chat/registry";
 import { prettyToolOutput, safeToolOutput } from "@/chat/tool-output";
 import { useOpenInPreview } from "@/components/SidePreview";
+import { DisclosureBody, DisclosureTurn, useDisclosure } from "@/components/Disclosure";
 
 type Connector = { name: string; kind: "mcp" | "service"; iconSvg?: string; brandColor?: string };
 
@@ -131,6 +132,7 @@ export function ToolTrail({ tools }: { tools: ToolCall[] }) {
 
 function MobileConnectorCard({ tool, label, connector, t, styles }: { tool: ToolCall; label: string; connector: Connector; t: Theme; styles: ReturnType<typeof makeStyles> }) {
   const [expanded, setExpanded] = useState(false);
+  const disclosure = useDisclosure(expanded);
   const args = tool.args ? safeToolOutput(tool.args) : undefined;
   const output = prettyToolOutput(safeToolOutput(tool.output));
   const refs = collectExternalRefs(tool.externalRef, extractExternalRefs(output, 20));
@@ -143,14 +145,19 @@ function MobileConnectorCard({ tool, label, connector, t, styles }: { tool: Tool
         accessibilityRole="button"
         accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${connector.name} tool call`}
         accessibilityState={{ expanded }}
-        onPress={() => setExpanded((value) => !value)}
+        onPress={() => {
+          haptics.impact();
+          setExpanded((value) => !value);
+        }}
       >
         <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={22} />
         <Text style={styles.connectorName} numberOfLines={1}>{connector.name}</Text>
         <Text style={styles.connectorVia}>via {connector.kind === "mcp" ? "MCP" : "HTTP service"}</Text>
-        {expanded ? <ChevronDown size={12} color={t.textTertiary} /> : <ChevronRight size={12} color={t.textTertiary} />}
+        <DisclosureTurn progress={disclosure.progress}>
+          <ChevronRight size={12} color={t.textTertiary} />
+        </DisclosureTurn>
       </Pressable>
-      {expanded ? (
+      <DisclosureBody state={disclosure}>
         <View style={styles.connectorDetails}>
           <Text style={styles.toolChipText}>{label}</Text>
           <Text style={styles.connectorToolName}>Tool: {label}</Text>
@@ -167,7 +174,7 @@ function MobileConnectorCard({ tool, label, connector, t, styles }: { tool: Tool
             </View>
           ) : null}
         </View>
-      ) : null}
+      </DisclosureBody>
     </View>
   );
 }
