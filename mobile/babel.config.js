@@ -17,9 +17,16 @@ module.exports = function (api) {
           },
         },
       ],
-      // NOTE: react-native-worklets/plugin is NOT listed here — babel-preset-expo
-      // adds it automatically when react-native-worklets is installed (and keeps
-      // it last), so declaring it again would double-apply the plugin.
+      // react-native-streamdown runs remend on a worklet thread via Bundle Mode, which needs the
+      // worklets plugin configured explicitly (babel-preset-expo only adds it with defaults,
+      // and declaring it here makes the preset skip its own copy).
+      [
+        "react-native-worklets/plugin",
+        {
+          bundleMode: true,
+          importForwarding: { moduleNames: ["remend"] },
+        },
+      ],
     ],
   };
 };

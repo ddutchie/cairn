@@ -8,6 +8,7 @@
 
 const { getDefaultConfig } = require("expo/metro-config");
 const path = require("path");
+const { getBundleModeMetroConfig } = require("react-native-worklets/bundleMode");
 
 const projectRoot = __dirname;
 const repoRoot = path.resolve(projectRoot, "..");
@@ -31,4 +32,7 @@ config.resolver.nodeModulesPaths = [
   path.resolve(repoRoot, "node_modules"),
 ];
 
-module.exports = config;
+// Bundle Mode writes worklet modules to .worklets/ on the fly; watch it so Metro indexes them.
+config.watchFolders.push(path.resolve(projectRoot, "node_modules/react-native-worklets/.worklets"));
+
+module.exports = getBundleModeMetroConfig(config);

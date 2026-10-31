@@ -16,6 +16,7 @@ import { ICON_CHECK } from "@/components/toolbar-icons";
 import { haptics, toolbarPress } from "@/haptics";
 import { useEdgePad } from "@/lib/use-edge-pad";
 import { useTheme, useIsDark, useChatTheme, setChatThemeId } from "@/theme";
+import { useChatRenderer, setChatRenderer } from "@/chat/markdown-renderer";
 import { LinearGradient } from "expo-linear-gradient";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { ModalSafeView } from "@/components/ModalSafeView";
@@ -251,6 +252,7 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
   // Community chat themes for the Theme section (cache-first + background fetch).
   const [communityThemes, setCommunityThemes] = useState<ChatThemePreset[]>(() => getCachedThemePresets());
   const chatThemeId = useChatTheme();
+  const chatRenderer = useChatRenderer();
   // Which personality row is expanded to show its appended prompt.
   const [expandedPersonality, setExpandedPersonality] = useState<string | null>(null);
   // Model discovery via GET {base}/models.
@@ -1187,6 +1189,26 @@ export function AiSettingsForm({ onClose }: { onClose: () => void }) {
                 </View>
                 <ChevronRight size={18} color={t.textTertiary} />
               </Pressable>
+
+              {__DEV__ ? (
+                <>
+                <Text style={styles.sectionLabel}>Markdown renderer</Text>
+                <Text style={styles.compatHint}>
+                  How chat replies are drawn. Native renders on the platform text engine and keeps up
+                  better while a reply streams; Classic is the original renderer with full callout and
+                  code-block styling.
+                </Text>
+                <SegmentedControl
+                  style={{ height: 36, marginBottom: 16 }}
+                  tintColor={t.accent}
+                  fontStyle={{ color: t.textSecondary, fontSize: 14, fontWeight: "600" }}
+                  activeFontStyle={{ color: t.accentFg, fontSize: 14, fontWeight: "600" }}
+                  values={["Native", "Classic"]}
+                  selectedIndex={chatRenderer === "native" ? 0 : 1}
+                  onChange={(e) => setChatRenderer(e.nativeEvent.selectedSegmentIndex === 0 ? "native" : "classic")}
+                />
+                </>
+              ) : null}
 
               <Text style={styles.sectionLabel}>Chat theme</Text>
               <Text style={styles.compatHint}>
