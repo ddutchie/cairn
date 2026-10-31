@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/conversation/MarkdownContent";
 import { ThinkingPanel } from "@/components/conversation/ThinkingPanel";
 import { MessageAvatar, StreamingCursor } from "@/components/conversation/message-ui";
+import { streamingPhase } from "@/lib/conversation/work-phase";
 import type { LinkedContextReference } from "@/types";
 import { toConversationSubagent } from "@/lib/conversation/message";
 import type { ConversationMessage } from "@/lib/conversation/message";
@@ -55,8 +56,6 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
   // empty. Defensive `?? ""`: persisted transcripts predate the required type.
   const hasContent = (message.content ?? "").trim().length > 0;
   const hasReasoning = Boolean(message.reasoning || message.reasoningSummary);
-  const hasToolCalls = (message.toolCalls?.length ?? 0) > 0;
-  const hasSubagents = (message.subagents?.length ?? 0) > 0;
 
   if (isSystem) {
     return (
@@ -119,10 +118,9 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
             bubble — hence "a thinking block and an empty message below" on the
             coding agent only.
 
-            The streaming fallback keeps a visible cursor when there is nothing
-            else on screen yet (the equivalent of Chat's "Thinking…" chip), so a
-            live turn is never rendered as completely empty. */}
-        {(hasContent || (message.isStreaming && !hasReasoning && !hasToolCalls && !hasSubagents)) && (
+            A live turn is never completely empty: the activity loader below the
+            message stands in for the old empty-bubble cursor. */}
+        {hasContent && (
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div
@@ -132,36 +130,38 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
                 }}
                 className={cn("px-3 py-2.5 rounded-xl text-xs leading-relaxed max-w-full", isUser ? "chat-bubble-user rounded-tr-sm" : "chat-bubble-ai rounded-tl-sm")}
               >
-                {hasContent && <MarkdownContent content={message.content} isUser={isUser} />}
-                {!isUser && message.isStreaming && <StreamingCursor size="md" />}
+                <MarkdownContent content={message.content} isUser={isUser} />
               </div>
             </ContextMenuTrigger>
-            {hasContent && (
-              <ContextMenuContent>
-                {linkHref && (
-                  <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(linkHref)}>
-                    <Link2 size={13} /> Copy link address
-                  </ContextMenuItem>
-                )}
-                {selectedText && (
-                  <>
-                    <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(selectedText)}>
-                      <Copy size={13} /> Copy selection
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                  </>
-                )}
-                <ContextMenuItem onSelect={() => copy(message.content)}>
-                  <FileCode size={13} /> Copy as markdown
+            <ContextMenuContent>
+              {linkHref && (
+                <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(linkHref)}>
+                  <Link2 size={13} /> Copy link address
                 </ContextMenuItem>
-                {isUser && onRetry && (
-                  <ContextMenuItem onSelect={() => onRetry(message.content)}>
-                    <RotateCcw size={13} /> Retry
+              )}
+              {selectedText && (
+                <>
+                  <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(selectedText)}>
+                    <Copy size={13} /> Copy selection
                   </ContextMenuItem>
-                )}
-              </ContextMenuContent>
-            )}
+                  <ContextMenuSeparator />
+                </>
+              )}
+              <ContextMenuItem onSelect={() => copy(message.content)}>
+                <FileCode size={13} /> Copy as markdown
+              </ContextMenuItem>
+              {isUser && onRetry && (
+                <ContextMenuItem onSelect={() => onRetry(message.content)}>
+                  <RotateCcw size={13} /> Retry
+                </ContextMenuItem>
+              )}
+            </ContextMenuContent>
           </ContextMenu>
+        )}
+        {!isUser && message.isStreaming && (
+          <div className="flex h-5 items-center pl-1">
+            <StreamingCursor size="md" className="ml-0" phase={streamingPhase({ hasContent, hasReasoning, toolRunning: Boolean(message.toolCalls?.some((c) => c.running)) })} />
+          </div>
         )}
         {message.extraContent}
         {message.contextRefs && message.contextRefs.length > 0 && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { MIN_MAIN_CONTENT_WIDTH } from "@/store/slices/ui-layout";
+import { MIN_CHAT_PANEL_WIDTH, MIN_MAIN_CONTENT_WIDTH } from "@/store/slices/ui-layout";
 import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
@@ -127,11 +127,9 @@ export default function Home() {
 
   // Publish the dock sidebar's live width on :root so the effective chat width
   // (--chat-panel-eff, see globals.css) can leave the main column a minimum.
-  // When the window is too narrow for sidebar + the chat's chosen width + a
-  // usable main column, the chat slides to the full content width (overlay)
-  // instead of crushing the main view.
-  const [chatOverlay, setChatOverlay] = useState(false);
-  const overlayRef = useRef(false);
+  // The drawer shrinks to fit (see --chat-panel-eff). When the window is too narrow for the
+  // sidebar + even a minimum-width drawer + a usable main column, the chat is shown in the
+  // expanded view instead (store: windowNarrow → reconcileNarrowChat).
   useEffect(() => {
     const sidebar = document.querySelector<HTMLElement>("[data-sidebar]");
     if (!sidebar) return;
@@ -139,15 +137,7 @@ export default function Home() {
     const sync = () => {
       const sb = sidebar.getBoundingClientRect().width;
       root.style.setProperty("--dock-sidebar-width", `${sb}px`);
-      const overlay = window.innerWidth >= 768 && window.innerWidth - sb - chatPanelWidth < MIN_MAIN_CONTENT_WIDTH;
-      if (overlay) root.style.setProperty("--chat-panel-eff", "calc(100vw - var(--dock-sidebar-width, 0px))");
-      else root.style.removeProperty("--chat-panel-eff");
-      // Slide (animate left/width) when flipping between side panel and full width.
-      if (overlayRef.current !== overlay) {
-        overlayRef.current = overlay;
-        useCairnStore.getState().setChatSliding(true);
-      }
-      setChatOverlay(overlay);
+      useCairnStore.getState().setWindowNarrow(window.innerWidth >= 768 && window.innerWidth - sb - MIN_CHAT_PANEL_WIDTH < MIN_MAIN_CONTENT_WIDTH);
     };
     sync();
     const ro = new ResizeObserver(sync);
@@ -155,7 +145,28 @@ export default function Home() {
     window.addEventListener("resize", sync);
     return () => { ro.disconnect(); window.removeEventListener("resize", sync); };
     // The sidebar only mounts once onboarding resolves — re-run then.
-  }, [onboardingState, chatPanelWidth]);
+  }, [onboardingState]);
+
+  // While the window itself is being resized the chat panel's left edge follows it instantly
+  // (no transition), so the main column's margin-right transition — there for open/close —
+  // would lag behind it. Flag the resize so globals.css can switch that transition off.
+  useEffect(() => {
+    const root = document.documentElement;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      root.dataset.windowResizing = "";
+      clearTimeout(timer);
+      timer = setTimeout(() => { delete root.dataset.windowResizing; }, 150);
+    };
+    window.addEventListener("resize", onResize);
+    return () => { window.removeEventListener("resize", onResize); clearTimeout(timer); delete root.dataset.windowResizing; };
+  }, []);
+
+  // Anything that opens the chat as a drawer (toggle, new session, ⌘/) while the window is
+  // narrow gets the expanded view instead.
+  useEffect(() => {
+    useCairnStore.getState().reconcileNarrowChat();
+  }, [chatOpen, activeView, sessionPresentation]);
 
   // Auto-updater state — tracked separately so event order doesn't matter
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
@@ -520,8 +531,9 @@ export default function Home() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <DockSidebar />
         <div
+          data-chat-margin
           className={cn("flex flex-col flex-1 min-w-0 overflow-hidden", !chatPanelResizing && "transition-[margin-right] duration-300 ease-in-out")}
-          style={{ marginRight: (sessionPresentation !== "center" && chatOpen && !chatOverlay) ? "var(--chat-panel-eff, 320px)" : "0px" }}
+          style={{ marginRight: (sessionPresentation !== "center" && chatOpen) ? "var(--chat-panel-eff, 320px)" : "0px" }}
         >
           {mainViews}
         </div>

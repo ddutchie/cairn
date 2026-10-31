@@ -99,7 +99,6 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     onStart: () => setChatPanelResizing(true),
     startSize: () => panelRef.current?.offsetWidth ?? 0,
     onMove: (delta, start) => {
-      if (document.documentElement.style.getPropertyValue("--chat-panel-eff")) return; // overlay mode: width isn't adjustable
       // Panel is on the right; dragging left makes it wider. Write the live
       // width straight to :root so BOTH the fixed panel and the centered
       // content margin reflow instantly — no React re-render per mousemove
@@ -112,7 +111,6 @@ export function UnifiedChatPanel({ prefill, onPrefillConsumed }: UnifiedChatPane
     },
     onEnd: (interrupted) => {
       setChatPanelResizing(false);
-      if (document.documentElement.style.getPropertyValue("--chat-panel-eff")) return; // overlay mode: keep the saved width
       // Interrupted = torn down mid-drag (e.g. the user switched views while
       // resizing) — the panel may be gone, so commit the last dragged width.
       if (!interrupted && panelRef.current) {

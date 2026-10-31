@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronDown, Clock } from "lucide-react";
-import { Spinner } from "@/components/ui/spinner";
+import { WorkLoader } from "@/components/ui/work-loader";
+import type { WorkPhase } from "@/lib/conversation/work-phase";
 import { cn } from "@/lib/utils";
 
 export interface ConversationQueuedItem {
@@ -12,13 +13,14 @@ export interface ConversationQueuedItem {
 
 interface ConversationWorkingStatusProps {
   label: string;
+  phase?: WorkPhase;
 }
 
 /** Shared busy strip shown above a conversation composer. */
-export function ConversationWorkingStatus({ label }: ConversationWorkingStatusProps) {
+export function ConversationWorkingStatus({ label, phase = "working" }: ConversationWorkingStatusProps) {
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
-      <Spinner size={11} tone="accent" />
+      <WorkLoader phase={phase} size={16} />
       <span className="text-[0.714rem] text-[var(--text-secondary)]">{label}</span>
     </div>
   );

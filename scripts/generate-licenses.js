@@ -52,6 +52,7 @@ const ROLE_MAP = {
   "tailwind-merge":                ["tailwind-merge",      "Class merge utility",         "UI"],
   "clsx":                          ["clsx",                "Class utilities",             "UI"],
   "lucide-react":                  ["Lucide",              "Icons",                       "UI"],
+  "loadersz":                      ["loadersz",            "Activity loaders (chat)",     "UI"],
   "react-virtuoso":                ["react-virtuoso",      "Virtualized lists",           "UI"],
   "cmdk":                          ["cmdk",                "Command palette",             "UI"],
   "react-day-picker":              ["react-day-picker",    "Date picker",                 "UI"],

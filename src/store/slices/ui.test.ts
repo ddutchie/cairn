@@ -577,3 +577,87 @@ describe("chat personalities", () => {
     expect(get().aiConfig.personalityId).toBeNull();
   });
 });
+
+describe("narrow windows show chat expanded", () => {
+  function makeStore(initial: Record<string, unknown> = {}) {
+    let state: any = {};
+    const set = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const get = () => state;
+    state = { ...createUISlice(set, get, {} as any), ...initial };
+    return get;
+  }
+
+  it("opens an already-open drawer as the expanded view when the window narrows", () => {
+    const get = makeStore();
+    get().setView("board");
+    get().toggleChat();
+    expect(get().sessionPresentation).toBe("drawer");
+
+    get().setWindowNarrow(true);
+    expect(get().activeView).toBe("chat");
+    expect(get().sessionPresentation).toBe("center");
+    expect(get().chatAutoExpanded).toBe(true);
+    expect(get().lastContentView).toBe("board"); // the view to come back to is untouched
+  });
+
+  it("leaves a closed chat alone, and expands it when opened while narrow", () => {
+    const get = makeStore();
+    get().setView("board");
+    get().setWindowNarrow(true);
+    expect(get().activeView).toBe("board");
+
+    get().toggleChat();
+    get().reconcileNarrowChat(); // the page runs this when chatOpen changes
+    expect(get().activeView).toBe("chat");
+    expect(get().sessionPresentation).toBe("center");
+  });
+
+  it("closes the chat when you leave the expanded view, instead of bouncing back into it", () => {
+    const get = makeStore();
+    get().setView("board");
+    get().toggleChat();
+    get().setWindowNarrow(true);
+
+    get().setView("notes");
+    get().reconcileNarrowChat();
+    expect(get().activeView).toBe("notes");
+    expect(get().chatOpen).toBe(false);
+    expect(get().sessionPresentation).toBe("drawer");
+    expect(get().chatAutoExpanded).toBe(false);
+  });
+
+  it("hands the chat back to the drawer when the window widens after an automatic expansion", () => {
+    const get = makeStore();
+    get().setView("board");
+    get().toggleChat();
+    get().setWindowNarrow(true);
+
+    get().setWindowNarrow(false);
+    expect(get().activeView).toBe("board");
+    expect(get().sessionPresentation).toBe("drawer");
+    expect(get().chatOpen).toBe(true);
+    expect(get().chatAutoExpanded).toBe(false);
+  });
+
+  it("keeps an expanded view the user chose when the window widens", () => {
+    const get = makeStore();
+    get().setView("board");
+    get().setView("chat"); // explicit
+    get().setWindowNarrow(true);
+    get().setWindowNarrow(false);
+    expect(get().activeView).toBe("chat");
+    expect(get().sessionPresentation).toBe("center");
+  });
+
+  it("does not let a drawer request stick while narrow", () => {
+    const get = makeStore();
+    get().setWindowNarrow(true);
+    get().setView("chat");
+    get().setSessionPresentation("drawer"); // e.g. "new session" asking for the drawer
+    get().reconcileNarrowChat();
+    expect(get().sessionPresentation).toBe("center");
+  });
+});

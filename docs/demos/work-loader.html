@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cairn work-loader playground</title>
+<!--
+  Pseudo chat for iterating on the per-phase working indicator (src/components/ui/work-loader.tsx).
+  Open the file directly in a browser (needs network: loadersz comes from jsdelivr, pinned to 0.9.0).
+  Pick a loader per phase on the right, run a scripted turn on the left, then "Copy mapping" and
+  paste it back into the LOADERS map.
+-->
+<style>
+  :root {
+    --background: #0b0b0b; --surface: #131313; --surface-2: #1a1a1a; --surface-3: #222;
+    --border: #2a2a2a; --text-primary: #ececec; --text-secondary: #b4b4b4; --text-tertiary: #7d7d7d;
+    --accent: #8faf6f; --accent-dim: color-mix(in srgb, var(--accent) 14%, transparent);
+    --danger: #e5645a; --warning: #d9a441;
+  }
+  :root[data-theme="light"] {
+    --background: #f6f5f1; --surface: #fbfaf7; --surface-2: #efede7; --surface-3: #e5e2da;
+    --border: #d9d6cc; --text-primary: #1b1b1b; --text-secondary: #454545; --text-tertiary: #7a7a7a;
+    --accent: #5c7a3f;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--background); color: var(--text-primary); font: 14px/1.5 -apple-system, "Inter", system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: 100%; }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; grid-template-rows: 60% 40%; } }
+
+  /* ── chat ── */
+  .chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+  .chat-head { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-tertiary); display: flex; justify-content: space-between; }
+  .transcript { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  .col { max-width: 720px; margin: 0 auto; }
+  .row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; }
+  .row.user { flex-direction: row-reverse; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; flex: none; margin-top: 2px; display: grid; place-items: center; font-size: 10px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text-tertiary); }
+  .row.bot .avatar { background: var(--accent-dim); border-color: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--accent); }
+  .stack { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+  .row.user .stack { align-items: flex-end; flex: 0 1 auto; }
+  .bubble { padding: 10px 12px; border-radius: 12px; border-top-left-radius: 4px; font-size: 12.5px; line-height: 1.6; background: var(--surface-2); border: 1px solid var(--border); max-width: 100%; white-space: pre-wrap; }
+  .row.user .bubble { border-top-left-radius: 12px; border-top-right-radius: 4px; background: var(--surface-3); }
+  .thinking { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; width: 100%; }
+  .thinking > summary { list-style: none; cursor: pointer; display: flex; gap: 6px; align-items: center; padding: 6px 10px; font-size: 11px; color: var(--text-secondary); font-weight: 500; }
+  .thinking > summary::-webkit-details-marker { display: none; }
+  .thinking .body { padding: 8px 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-tertiary); max-height: 160px; overflow: auto; white-space: pre-wrap; }
+  .chip { display: inline-flex; gap: 6px; align-items: center; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); font-size: 11px; color: var(--text-secondary); width: fit-content; }
+  .chip .ok { color: var(--accent); }
+  .approval { border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border)); background: color-mix(in srgb, var(--warning) 7%, var(--surface)); border-radius: 10px; padding: 10px 12px; font-size: 12px; width: 100%; }
+  .approval code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; }
+  .approval .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  canvas { display: inline-block; vertical-align: middle; flex: none; }
+  .tailrow { height: 20px; padding-left: 4px; display: flex; align-items: center; }
+  .footer { padding: 10px 0 4px; font-size: 12px; color: var(--text-tertiary); min-height: 36px; display: flex; align-items: center; gap: 6px; }
+
+  /* composer */
+  .composer { border-top: 1px solid var(--border); background: var(--surface); }
+  .strip { display: flex; gap: 6px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-secondary); min-height: 30px; }
+  .strip[hidden] { display: none; }
+  .input { display: flex; gap: 8px; padding: 10px 12px; max-width: 744px; margin: 0 auto; }
+  textarea { flex: 1; resize: none; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); padding: 8px 10px; font: inherit; font-size: 13px; height: 40px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); padding: 6px 12px; font-size: 12px; }
+  button:hover { background: var(--surface-3); }
+  button.primary { background: var(--accent); color: var(--background); border-color: transparent; font-weight: 600; }
+  .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── controls ── */
+  .panel { overflow-y: auto; padding: 14px; background: var(--surface); display: flex; flex-direction: column; gap: 16px; }
+  h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-tertiary); font-weight: 600; }
+  .scen { display: flex; flex-wrap: wrap; gap: 6px; }
+  .field { display: grid; grid-template-columns: 70px 1fr 44px; gap: 8px; align-items: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .field input[type=range] { width: 100%; accent-color: var(--accent); }
+  .field output { text-align: right; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  .seg { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .map { display: grid; gap: 8px; }
+  .map-row { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: center; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+  .map-row .prev { width: 34px; height: 34px; display: grid; place-items: center; }
+  .map-row .meta { min-width: 0; }
+  .map-row .name { font-size: 11px; color: var(--text-secondary); display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .map-row .name button { padding: 0 6px; font-size: 10px; border-radius: 6px; }
+  .pick { display: grid; grid-template-columns: 24px 1fr 24px; gap: 4px; }
+  .pick button { padding: 2px 0; }
+  select { width: 100%; background: var(--surface-3); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px; font-size: 11.5px; }
+  .hint { font-size: 11px; color: var(--text-tertiary); }
+  pre { margin: 0; padding: 8px; border-radius: 8px; background: var(--surface-3); font-size: 11px; overflow: auto; max-height: 160px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="chat">
+    <div class="chat-head"><span>Pseudo chat — scripted turns, no model</span><span id="status">idle</span></div>
+    <div class="transcript" id="transcript"><div class="col" id="col"></div></div>
+    <div class="composer">
+      <div class="strip" id="strip" hidden></div>
+      <div class="input">
+        <textarea id="prompt" placeholder="Type a message and press Enter (runs the selected scenario)"></textarea>
+        <button class="primary" id="send">Send</button>
+        <button id="stop">Stop</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div>
+      <h2>Scenario</h2>
+      <div class="scen" id="scenarios"></div>
+      <p class="hint" style="margin:8px 0 0">Chips run a turn straight away. Enter in the box runs <b id="scenName"></b>.</p>
+    </div>
+
+    <div>
+      <h2>Look</h2>
+      <div class="seg">Theme
+        <button id="themeDark">Dark</button><button id="themeLight">Light</button>
+        <input type="color" id="accent" title="Accent colour" style="margin-left:auto;width:34px;height:24px;border:none;background:none;padding:0">
+      </div>
+      <label class="seg"><input type="checkbox" id="follow"> Footer &amp; strip follow the live phase</label>
+      <div class="field">Size<input type="range" id="size" min="12" max="40" step="1"><output id="sizeOut"></output></div>
+      <div class="field">Loader speed<input type="range" id="speed" min="0.35" max="3" step="0.05"><output id="speedOut"></output></div>
+      <div class="field">Turn pace<input type="range" id="pace" min="0.4" max="3" step="0.1"><output id="paceOut"></output></div>
+    </div>
+
+    <div>
+      <h2>Loader per phase</h2>
+      <p class="hint" style="margin:0 0 8px">▶ holds that phase on every surface so you can look at it. Preview is shown at 28px.</p>
+      <div class="map" id="map"></div>
+    </div>
+
+    <div>
+      <h2>Export</h2>
+      <div class="scen"><button id="copy">Copy mapping</button><button id="reset">Reset</button></div>
+      <pre id="out"></pre>
+    </div>
+  </aside>
+</div>
+
+<script type="module">
+const VERSION = "0.9.0";
+const BASE = `https://cdn.jsdelivr.net/npm/loadersz@${VERSION}/dist`;
+const { LOADER_STATES, LOADER_CATEGORIES } = await import(`${BASE}/states.js`);
+
+/* ── phases (mirror src/lib/conversation/work-phase.ts) ── */
+const PHASES = ["sending", "thinking", "responding", "tools", "working", "retrying", "compacting", "waiting"];
+const DEFAULT_MAP = { sending: "rendering", thinking: "scanning", responding: "typing", tools: "prioritizing", working: "marqueeing", retrying: "retrying", compacting: "summarizing", waiting: "waiting" };
+const WHEN = {
+  sending: "request out, nothing back yet", thinking: "reasoning is streaming", responding: "answer text is streaming",
+  tools: "a tool call is running", working: "generic busy (strip, footer)", retrying: "transient error, retrying",
+  compacting: "summarising context", waiting: "blocked on you",
+};
+const streamingPhase = (t) => t.toolRunning ? "tools" : t.hasContent ? "responding" : t.hasReasoning ? "thinking" : "sending";
+const overallPhase = (s) => s.waiting ? "waiting" : s.compacting ? "compacting" : s.retrying ? "retrying" : "working";
+const STRIP_LABEL = {
+  working: "Agent is working — you can queue messages below", compacting: "Compacting context — you can queue messages below",
+  retrying: "Transient error — retrying (1/5) in 2s…", waiting: "Waiting for your answer…",
+};
+
+/* ── settings (persisted) ── */
+const KEY = "cairn-work-loader-demo";
+const DEFAULTS = { map: DEFAULT_MAP, theme: "dark", accent: { dark: "#8faf6f", light: "#5c7a3f" }, size: 20, speed: 1, pace: 1, scenario: "full", follow: true };
+let S = structuredClone(DEFAULTS);
+try { const saved = JSON.parse(localStorage.getItem(KEY) || "null"); if (saved) S = { ...S, ...saved, map: { ...DEFAULT_MAP, ...saved.map }, accent: { ...DEFAULTS.accent, ...saved.accent } }; } catch {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
+
+/* ── loader plumbing ── */
+const modules = new Map();
+const loadState = (state) => {
+  if (!modules.has(state)) modules.set(state, import(`${BASE}/${state}.js`));
+  return modules.get(state);
+};
+const mounts = new Set();
+function mount(getPhase, getSize) {
+  const entry = { canvas: document.createElement("canvas"), getPhase, getSize, inst: null, token: 0 };
+  entry.canvas.setAttribute("aria-hidden", "true");
+  mounts.add(entry);
+  start(entry);
+  return entry;
+}
+async function start(entry) {
+  const token = ++entry.token;
+  entry.inst?.destroy(); entry.inst = null;
+  const size = entry.getSize(), state = S.map[entry.getPhase()];
+  entry.canvas.dataset.state = state;
+  entry.canvas.style.width = entry.canvas.style.height = size + "px";
+  try {
+    const mod = await loadState(state);
+    if (token !== entry.token) return;
+    entry.inst = new mod.LoaderszLoader(entry.canvas, { size, speed: S.speed, color: "var(--accent)" });
+  } catch (e) { console.warn("loader failed", state, e); }
+}
+function refreshAll() {
+  for (const e of [...mounts]) start(e);
+}
+function unmount(entry) { entry.token++; entry.inst?.destroy(); mounts.delete(entry); entry.canvas.remove(); }
+
+/* ── scene ── */
+const $ = (id) => document.getElementById(id);
+const col = $("col"), transcript = $("transcript"), strip = $("strip");
+const scroll = () => { transcript.scrollTop = transcript.scrollHeight; };
+const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
+
+const ui = { bubble: null, overall: null, held: null };   // bubble: {phase, entry, host}; overall: strip+footer
+function setStatus(t) { $("status").textContent = t; }
+
+function addUser(text) {
+  const r = el("div", "row user"); r.append(el("div", "avatar", "U"));
+  const st = el("div", "stack"); st.append(el("div", "bubble", escapeHtml(text))); r.append(st); col.append(r); scroll();
+}
+function addAssistant() {
+  const r = el("div", "row bot"); r.append(el("div", "avatar", "C"));
+  const st = el("div", "stack"); r.append(st); col.append(r); scroll();
+  return st;
+}
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+/* the loader for the live turn sits below the whole message (outside every bubble); one row, kept last */
+let cursor = null, cursorRow = null, cursorPhase = "sending";
+function setCursor(phase, stack) {
+  cursorPhase = phase;
+  if (!cursor) {
+    cursor = mount(() => cursorPhase, () => S.size);
+    cursorRow = el("div", "tailrow"); cursorRow.append(cursor.canvas);
+  }
+  if (stack) stack.append(cursorRow);          // append moves it, so it stays below anything added since
+  start(cursor);
+  syncBusy();
+  scroll();
+}
+function dropCursor() { if (cursor) { unmount(cursor); cursor = null; cursorRow?.remove(); cursorRow = null; syncBusy(); } }
+
+/* strip + footer: the overall phase (retry / compact / waiting win), else either generic "working" or,
+   with "follow", whatever the live turn is doing right now */
+let stripEntry = null, footerEntry = null, overall = "working", footer = null, footerLabel = null;
+const FOLLOW_LABEL = { sending: "Sending…", thinking: "Thinking…", responding: "Writing…", tools: "Running a tool…" };
+function shownPhase() { return S.follow && overall === "working" && cursor ? cursorPhase : overall; }
+function footerText() {
+  const p = shownPhase();
+  if (p === "waiting") return "Waiting for your answer…";
+  if (p === "retrying") return "Retrying…";
+  if (p === "compacting") return "Compacting context…";
+  return (S.follow && FOLLOW_LABEL[p]) || "Cairn is working…";
+}
+function syncBusy() {
+  if (stripEntry) start(stripEntry);
+  if (footerEntry) start(footerEntry);
+  if (footerLabel) footerLabel.textContent = footerText();
+}
+function showBusy(phase) {
+  overall = phase;
+  if (stripEntry) unmount(stripEntry);
+  if (footerEntry) unmount(footerEntry);
+  strip.hidden = false; strip.replaceChildren();
+  stripEntry = mount(shownPhase, () => 16);
+  strip.append(stripEntry.canvas, el("span", null, escapeHtml(STRIP_LABEL[phase] || STRIP_LABEL.working)));
+  if (!footer) { footer = el("div", "footer"); col.append(footer); }
+  footer.replaceChildren();
+  footerEntry = mount(shownPhase, () => 18);
+  footerLabel = el("span", null, footerText());
+  footer.append(footerEntry.canvas, footerLabel);
+  col.append(footer); scroll();
+}
+function hideBusy() {
+  strip.hidden = true; strip.replaceChildren();
+  if (stripEntry) unmount(stripEntry), stripEntry = null;
+  if (footerEntry) unmount(footerEntry), footerEntry = null;
+  footer?.remove(); footer = null; footerLabel = null;
+}
+
+/* ── scripted turns ── */
+let runId = 0;
+class Cancelled extends Error {}
+const sleep = (ms, id) => new Promise((res, rej) => setTimeout(() => (id === runId ? res() : rej(new Cancelled())), ms * S.pace));
+async function type(node, text, id, perWord = 38) {
+  for (const w of text.split(/(\s+)/)) { node.append(document.createTextNode(w)); scroll(); if (w.trim()) await sleep(perWord, id); }
+}
+const ANSWER = "Here is what I found. Three notes mention the export format, and the most recent one (\"Export v2 decisions\") settles on JSONL with one record per line, plus a manifest file. I have not changed anything yet — say the word and I will update the board card.";
+const THOUGHT = "The user wants to know what was decided about the export format. Notes are the likeliest source, so search those first, then check the board for a matching card. If two notes disagree, prefer the newest.";
+
+async function turn(opts, userText) {
+  const id = ++runId;
+  clearHold();
+  addUser(userText || "What did we decide about the export format?");
+  setStatus("running");
+  const stack = addAssistant();
+  const toolRunning = { v: false };
+  let bubble = null, thinkBody = null, reasoning = false, content = false;
+  const phaseNow = () => streamingPhase({ hasContent: content, hasReasoning: reasoning, toolRunning: toolRunning.v });
+  const place = () => setCursor(phaseNow(), stack);
+  try {
+    showBusy("working");
+    place();                                   // sending
+    await sleep(1400, id);
+
+    if (opts.retry) {
+      showBusy(overallPhase({ retrying: true }));
+      await sleep(2200, id);
+      showBusy("working");
+      await sleep(1200, id);
+    }
+    if (opts.compact) {
+      showBusy(overallPhase({ compacting: true }));
+      await sleep(2600, id);
+      stack.append(el("div", "chip", "<span class='ok'>✓</span> Context compacted (84k → 12k tokens)"));
+      showBusy("working");
+    }
+    if (opts.think) {
+      const d = el("details", "thinking"); d.open = true;
+      d.append(el("summary", null, "🧠 Thinking…"));
+      thinkBody = el("div", "body"); d.append(thinkBody); stack.append(d);
+      reasoning = true; place();
+      await type(thinkBody, THOUGHT, id, 55);
+      await sleep(400, id);
+      d.open = false; d.querySelector("summary").textContent = "🧠 Thought process"; thinkBody = null;
+    }
+    if (opts.approval) {
+      const card = el("div", "approval", "<b>Run a shell command?</b><div style='margin-top:4px;color:var(--text-secondary)'>The agent wants to run <code>git log --oneline -5</code> outside the sandbox.</div>");
+      const btns = el("div", "btns"); const deny = el("button", null, "Deny"), allow = el("button", "primary", "Allow");
+      btns.append(deny, allow); card.append(btns); stack.append(card);
+      showBusy(overallPhase({ waiting: true })); dropCursor(); scroll();
+      await new Promise((res, rej) => {
+        const done = () => (id === runId ? res() : rej(new Cancelled()));
+        allow.onclick = done; deny.onclick = done;
+        const poll = setInterval(() => { if (id !== runId) { clearInterval(poll); rej(new Cancelled()); } }, 200);
+        allow.addEventListener("click", () => clearInterval(poll)); deny.addEventListener("click", () => clearInterval(poll));
+      });
+      card.remove(); showBusy("working"); place();
+    }
+    if (opts.tool) {
+      const chip = el("div", "chip", "<span class='spin'></span> Searching notes for “export format”");
+      stack.append(chip); toolRunning.v = true; place();
+      await sleep(2600, id);
+      toolRunning.v = false; chip.innerHTML = "<span class='ok'>✓</span> Searched notes — 3 results";
+      place(); await sleep(350, id);
+    }
+    bubble = el("div", "bubble"); stack.append(bubble); content = true;
+    const live = el("span"); bubble.append(live); place();
+    await type(live, ANSWER, id);
+    dropCursor(); hideBusy(); setStatus("idle");
+  } catch (e) {
+    if (!(e instanceof Cancelled)) throw e;
+  }
+}
+const SCENARIOS = {
+  full:     { label: "Full turn",         opts: { think: true, tool: true } },
+  plain:    { label: "Plain answer",      opts: {} },
+  think:    { label: "Thinking",          opts: { think: true } },
+  tool:     { label: "Tool use",          opts: { tool: true } },
+  retry:    { label: "Retry",             opts: { retry: true } },
+  compact:  { label: "Compaction",        opts: { compact: true } },
+  approval: { label: "Needs approval",    opts: { approval: true, tool: true } },
+  all:      { label: "Everything",        opts: { retry: true, compact: true, think: true, approval: true, tool: true } },
+};
+function stop() {
+  runId++; clearHold(); dropCursor(); hideBusy(); setStatus("stopped");
+}
+
+/* ── hold a phase so it can be studied on every surface ── */
+let heldPhase = null;
+function hold(phase) {
+  stop(); heldPhase = phase; setStatus(`holding: ${phase}`);
+  addUser(`(holding “${phase}” — ${WHEN[phase]})`);
+  const stack = addAssistant();
+  const bubble = el("div", "bubble", "Streaming text sits here; the loader for this phase sits below the message."); stack.append(bubble);
+  setCursor(phase, stack);
+  overall = phase; showBusy(phase); overall = phase;      // strip and footer show the held phase too
+  strip.querySelector("span").textContent = `${phase} — ${WHEN[phase]}`;
+}
+function clearHold() { heldPhase = null; }
+
+/* ── controls ── */
+function applyLook() {
+  document.documentElement.dataset.theme = S.theme;
+  document.documentElement.style.setProperty("--accent", S.accent[S.theme]);
+  $("accent").value = S.accent[S.theme];
+  $("themeDark").style.outline = S.theme === "dark" ? "1px solid var(--accent)" : "none";
+  $("themeLight").style.outline = S.theme === "light" ? "1px solid var(--accent)" : "none";
+  $("size").value = S.size; $("sizeOut").textContent = S.size + "px";
+  $("speed").value = S.speed; $("speedOut").textContent = S.speed.toFixed(2) + "×";
+  $("pace").value = S.pace; $("paceOut").textContent = S.pace.toFixed(1) + "×";
+  $("scenName").textContent = SCENARIOS[S.scenario].label;
+  $("follow").checked = S.follow;
+}
+const changed = () => { save(); applyLook(); renderOut(); refreshAll(); };
+
+$("themeDark").onclick = () => { S.theme = "dark"; changed(); };
+$("themeLight").onclick = () => { S.theme = "light"; changed(); };
+$("accent").oninput = (e) => { S.accent[S.theme] = e.target.value; changed(); };
+$("follow").onchange = (e) => { S.follow = e.target.checked; changed(); syncBusy(); };
+$("size").oninput = (e) => { S.size = +e.target.value; changed(); };
+$("speed").oninput = (e) => { S.speed = +e.target.value; changed(); };
+$("pace").oninput = (e) => { S.pace = +e.target.value; changed(); };
+
+const scen = $("scenarios");
+for (const [key, sc] of Object.entries(SCENARIOS)) {
+  const b = el("button", null, sc.label);
+  b.onclick = () => { stop(); S.scenario = key; save(); applyLook(); turn(sc.opts); };
+  scen.append(b);
+}
+function send() {
+  const text = $("prompt").value.trim(); $("prompt").value = "";
+  stop(); turn(SCENARIOS[S.scenario].opts, text);
+}
+$("send").onclick = send; $("stop").onclick = stop;
+$("prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+
+/* mapping rows */
+const map = $("map");
+const previews = {};
+for (const phase of PHASES) {
+  const row = el("div", "map-row");
+  const prev = el("div", "prev"); previews[phase] = mount(() => phase, () => 28); prev.append(previews[phase].canvas);
+  const meta = el("div", "meta");
+  const name = el("div", "name"); name.append(el("span", null, `<b>${phase}</b> · ${WHEN[phase]}`));
+  const play = el("button", null, "▶"); play.title = "Hold this phase"; play.onclick = () => hold(phase); name.append(play);
+  const pick = el("div", "pick");
+  const prevBtn = el("button", null, "‹"), nextBtn = el("button", null, "›");
+  const sel = el("select");
+  for (const cat of LOADER_CATEGORIES) {
+    const g = document.createElement("optgroup"); g.label = cat.label;
+    for (const st of cat.states) g.append(new Option(st, st));
+    sel.append(g);
+  }
+  sel.value = S.map[phase];
+  const set = (state) => { S.map[phase] = state; sel.value = state; changed(); };
+  sel.onchange = () => set(sel.value);
+  const step = (d) => { const i = LOADER_STATES.indexOf(S.map[phase]); set(LOADER_STATES[(i + d + LOADER_STATES.length) % LOADER_STATES.length]); };
+  prevBtn.onclick = () => step(-1); nextBtn.onclick = () => step(1);
+  pick.append(prevBtn, sel, nextBtn); meta.append(name, pick); row.append(prev, meta); map.append(row);
+  row.sel = sel;
+}
+
+function exportText() {
+  const lines = PHASES.map((p) => `  ${p}: () => import("loadersz/${S.map[p]}"),`);
+  return `const LOADERS = {\n${lines.join("\n")}\n};`;
+}
+const renderOut = () => { $("out").textContent = exportText(); };
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(exportText()); $("copy").textContent = "Copied ✓"; }
+  catch { $("copy").textContent = "Select the text below"; }
+  setTimeout(() => ($("copy").textContent = "Copy mapping"), 1500);
+};
+$("reset").onclick = () => {
+  S.map = { ...DEFAULT_MAP };
+  [...map.children].forEach((r, i) => { r.sel.value = S.map[PHASES[i]]; });
+  changed();
+};
+
+applyLook(); renderOut();
+/* greet with an idle transcript */
+addUser("Try a scenario on the right, or type here.");
+{ const st = addAssistant(); st.append(el("div", "bubble", "Each turn walks through the phases the app uses: sending → thinking → tool → responding. Retry, compaction and approval have their own scenarios.")); }
+</script>
+</body>
+</html>
