@@ -1,19 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  Modal,
-  Pressable,
-  StyleSheet,
-  PanResponder,
-  AppState,
-  useWindowDimensions,
-} from "react-native";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, Modal, Pressable, StyleSheet, PanResponder, AppState, useWindowDimensions } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  Easing,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { X } from "lucide-react-native";
 import { listBreakoutBricks, type BrickKind } from "@/db/queries";
+import { getMeta, setMeta } from "@/db";
 import { haptics } from "@/haptics";
 import { InlineConfetti } from "@/components/Confetti";
-import { useTheme, type as typeScale, type Theme } from "@/theme";
+import { RollingText } from "@/components/RollingText";
+import { GameOverCard, ParticlePool, PARTICLE_POOL, PopChip, useShake } from "@/components/game/GameKit";
+import { comboTier, packParticles, pushTrail, seedTrail, type ComboTier } from "@/lib/game-feel";
+import { useMotion } from "@/lib/use-motion";
+import { useTheme, withAlpha, type as typeScale, type Theme } from "@/theme";
+
+// Persisted best score (device-global meta — survives source switches, never synced).
+const BREAKOUT_BEST_KEY = "breakout_best";
+function loadBreakoutBest(): number {
+  const raw = getMeta(BREAKOUT_BEST_KEY);
+  const n = raw ? parseInt(raw, 10) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 // ── Layout / physics constants ────────────────────────────────────────────────
 const BRICK_ROWS = 7;
@@ -30,6 +41,8 @@ const PADDLE_BOTTOM_FRAC = 0.2;
 // Particle burst on brick break.
 const PARTICLES_PER_BREAK = 10;
 const PARTICLE_LIFE = 28; // frames
+const TRAIL_POINTS = 7;
+const KINDS: BrickKind[] = ["project", "note", "card", "tag"];
 
 interface Brick {
   x: number;
@@ -48,7 +61,7 @@ interface Particle {
   vy: number;
   life: number; // remaining frames
   maxLife: number;
-  color: string;
+  color: number; // index into the kind palette
   size: number;
 }
 
@@ -63,10 +76,10 @@ function kindColor(kind: BrickKind, t: Theme): string {
 }
 
 /** Emit a small radial burst of particles from a broken brick's centre. */
-function spawnParticles(sink: Particle[], br: Brick, t: Theme): void {
+function spawnParticles(sink: Particle[], br: Brick): void {
   const cx = br.x + br.w / 2;
   const cy = br.y + br.h / 2;
-  const color = kindColor(br.kind, t);
+  const color = KINDS.indexOf(br.kind);
   for (let i = 0; i < PARTICLES_PER_BREAK; i++) {
     const ang = (Math.PI * 2 * i) / PARTICLES_PER_BREAK + Math.random() * 0.5;
     const speed = 2 + Math.random() * 3;
@@ -81,6 +94,15 @@ function spawnParticles(sink: Particle[], br: Brick, t: Theme): void {
       size: 3 + Math.random() * 3,
     });
   }
+  // Keep the burst pool bounded; the oldest particles are the most faded.
+  if (sink.length > PARTICLE_POOL) sink.splice(0, sink.length - PARTICLE_POOL);
+}
+
+/** The haptic detent for the nth brick in a row. */
+function fireBreakHaptic(tier: ComboTier): void {
+  if (tier === "flourish") haptics.impactHeavy();
+  else if (tier === "thud") haptics.rigid();
+  else haptics.impactMedium();
 }
 
 /**
@@ -88,66 +110,75 @@ function spawnParticles(sink: Particle[], br: Brick, t: Theme): void {
  * (projects / notes / tasks / tags), coloured by kind like the knowledge graph.
  * Triggered by tapping the Cairn icon in an EmptyState 5× quickly.
  *
- * A plain requestAnimationFrame loop drives ball + paddle + brick state; the
- * handful of entities render as absolutely-positioned Views (no Skia needed).
+ * A plain requestAnimationFrame loop drives the physics, but it writes shared values rather
+ * than React state: the ball, its glow and trail, the paddle and the particle pool all animate
+ * on the UI thread. React only re-renders when a brick breaks, the score changes or the run
+ * ends.
  */
 export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const t = useTheme();
+  const motion = useMotion();
   const { width: W, height: H } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const { style: shakeStyle, shake } = useShake();
 
   // Playfield sized to the screen, with a top band for the HUD.
   const HUD_H = 96;
   const fieldTop = HUD_H;
   const fieldBottom = H;
-  // Paddle line: 25% of the field height up from the bottom.
+  // Paddle line: 20% of the field height up from the bottom.
   const paddleY = fieldBottom - (fieldBottom - fieldTop) * PADDLE_BOTTOM_FRAC;
 
-  // Physics state lives in a stable mutable object (created once via a
-  // useState initialiser — not useRef, so the strict refs-during-render lint
-  // rule doesn't flag reads). The loop mutates it every frame and publishes an
-  // immutable snapshot to state for rendering.
+  // Physics state lives in a stable mutable object (useState initialiser, not useRef, so the
+  // refs-during-render lint rule doesn't flag reads). The loop mutates it every frame.
   const [gameState] = useState(() => ({
     ball: { x: W / 2, y: H / 2, vx: BASE_SPEED, vy: -BASE_SPEED },
     paddleX: W / 2 - PADDLE_W / 2,
     bricks: [] as Brick[],
     particles: [] as Particle[],
+    trail: [] as number[],
+    hadParticles: false,
+    score: 0,
+    streak: 0,
     running: false,
     paused: false,
+    reduced: false,
     width: W,
     paddleY,
   }));
   gameState.width = W;
   gameState.paddleY = paddleY;
-  interface Snapshot {
-    ballX: number;
-    ballY: number;
-    paddleX: number;
-    bricks: Brick[];
-    particles: Particle[];
-  }
-  const [snap, setSnap] = useState<Snapshot>({ ballX: W / 2, ballY: H / 2, paddleX: W / 2 - PADDLE_W / 2, bricks: [], particles: [] });
+  gameState.reduced = motion.reduced;
+
+  // UI-thread render state.
+  const ballX = useSharedValue(W / 2);
+  const ballY = useSharedValue(H / 2);
+  const paddleX = useSharedValue(W / 2 - PADDLE_W / 2);
+  const squash = useSharedValue(0);
+  const kick = useSharedValue(0);
+  const trail = useSharedValue<number[]>(seedTrail(W / 2, H / 2, TRAIL_POINTS));
+  const particleBuf = useSharedValue<number[]>(packParticles([], PARTICLE_POOL));
+
+  const [bricks, setBricks] = useState<Brick[]>([]);
   const [score, setScore] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [best, setBest] = useState(loadBreakoutBest);
+  const [newRecord, setNewRecord] = useState(false);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
   // Bumped to fire a confetti burst inside the Modal on a win (the app-root
   // ConfettiHost renders behind this fullscreen Modal). 0 = idle.
   const [celebrate, setCelebrate] = useState(0);
   const rafRef = useRef<number | null>(null);
 
-  const publish = useCallback(() => {
-    const g = gameState;
-    setSnap({ ballX: g.ball.x, ballY: g.ball.y, paddleX: g.paddleX, bricks: g.bricks, particles: g.particles });
-  }, [gameState]);
-
   const buildBricks = useCallback((): Brick[] => {
     const labels = listBreakoutBricks(BRICK_ROWS * BRICK_COLS);
     const usableW = W - WALL_PAD * 2;
     const brickW = (usableW - BRICK_GAP * (BRICK_COLS - 1)) / BRICK_COLS;
-    const bricks: Brick[] = [];
+    const out: Brick[] = [];
     for (let i = 0; i < labels.length; i++) {
       const row = Math.floor(i / BRICK_COLS);
       const col = i % BRICK_COLS;
-      bricks.push({
+      out.push({
         x: WALL_PAD + col * (brickW + BRICK_GAP),
         y: fieldTop + 24 + row * (BRICK_H + BRICK_GAP),
         w: brickW,
@@ -157,7 +188,7 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
         alive: true,
       });
     }
-    return bricks;
+    return out;
   }, [W, fieldTop]);
 
   const reset = useCallback(() => {
@@ -166,13 +197,33 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
     g.paddleX = W / 2 - PADDLE_W / 2;
     g.bricks = buildBricks();
     g.particles = [];
+    g.trail = seedTrail(g.ball.x, g.ball.y, TRAIL_POINTS);
+    g.hadParticles = false;
+    g.score = 0;
+    g.streak = 0;
     g.running = true;
     g.paused = AppState.currentState !== "active";
+    ballX.set(g.ball.x);
+    ballY.set(g.ball.y);
+    paddleX.set(g.paddleX);
+    trail.set(g.trail);
+    particleBuf.set(packParticles([], PARTICLE_POOL));
+    setBricks(g.bricks.map((b) => ({ ...b })));
     setScore(0);
+    setStreak(0);
+    setNewRecord(false);
     setStatus("playing");
     setCelebrate(0);
-    publish();
-  }, [W, H, buildBricks, publish, gameState]);
+  }, [W, H, buildBricks, gameState, ballX, ballY, paddleX, trail, particleBuf]);
+
+  /** Persist a new personal best and report whether this run set one. */
+  const settleBest = useCallback((final: number): boolean => {
+    const record = final > loadBreakoutBest();
+    if (record) setMeta(BREAKOUT_BEST_KEY, String(final));
+    setBest((b) => Math.max(b, final));
+    setNewRecord(record);
+    return record;
+  }, []);
 
   // Start / stop the loop with visibility.
   useEffect(() => {
@@ -212,6 +263,12 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           b.vx = hit * BASE_SPEED * 1.15;
           b.y = pY - BALL_R;
           haptics.rigid();
+          if (!g.reduced) {
+            // The paddle squashes on impact and springs back; the ball's glow flares.
+            squash.set(withSequence(withTiming(1, { duration: 30 }), withTiming(0, { duration: 90, easing: Easing.out(Easing.quad) })));
+            kick.set(withSequence(withTiming(1, { duration: 30 }), withTiming(0, { duration: 160 })));
+          }
+          if (g.streak > 0) { g.streak = 0; setStreak(0); }
         }
 
         // Bricks: handle at most one collision this frame, then count how many
@@ -229,16 +286,49 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           ) {
             br.alive = false;
             b.vy = -b.vy; // bounce vertically (simple + reliable for a grid)
-            spawnParticles(g.particles, br, t);
-            haptics.impactMedium();
-            setScore((s) => s + 1);
+            if (!g.reduced) {
+              spawnParticles(g.particles, br);
+              kick.set(withSequence(withTiming(1, { duration: 25 }), withTiming(0, { duration: 140 })));
+            }
+            g.streak += 1;
+            g.score += 1;
+            fireBreakHaptic(comboTier(g.streak));
+            setStreak(g.streak);
+            setScore(g.score);
+            setBricks(g.bricks.map((x) => ({ ...x })));
             break;
           }
         }
         let liveCount = 0;
         for (const br of g.bricks) if (br.alive) liveCount++;
 
-        // Advance particles (gravity + fade), dropping dead ones.
+        // Ball position + trail go straight to the UI thread.
+        ballX.set(b.x);
+        ballY.set(b.y);
+        if (!g.reduced) {
+          g.trail = pushTrail(g.trail, b.x, b.y, TRAIL_POINTS);
+          trail.set(g.trail);
+        }
+
+        // Win / lose.
+        if (liveCount === 0) {
+          g.running = false;
+          haptics.success();
+          settleBest(g.score);
+          setStatus("won");
+          // Clearing every brick is the big moment — celebrate with confetti.
+          if (!g.reduced) setCelebrate((n) => n + 1);
+        } else if (b.y - BALL_R > fieldBottom) {
+          g.running = false;
+          haptics.error();
+          shake();
+          settleBest(g.score);
+          setStatus("lost");
+        }
+      }
+      if (!g.paused) {
+        // Advance particles (gravity + fade), dropping dead ones — also after the run ends,
+        // so the last burst finishes instead of freezing on screen.
         if (g.particles.length) {
           const alive: Particle[] = [];
           for (const p of g.particles) {
@@ -251,21 +341,12 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
           }
           g.particles = alive;
         }
-
-        // Win / lose.
-        if (liveCount === 0) {
-          g.running = false;
-          haptics.success();
-          setStatus("won");
-          // Clearing every brick is the big moment — celebrate with confetti.
-          setCelebrate((n) => n + 1);
-        } else if (b.y - BALL_R > fieldBottom) {
-          g.running = false;
-          haptics.error();
-          setStatus("lost");
+        // Write the pool while anything is alive, plus one final clearing write.
+        if (g.particles.length || g.hadParticles) {
+          particleBuf.set(packParticles(g.particles, PARTICLE_POOL));
+          g.hadParticles = g.particles.length > 0;
         }
       }
-      publish();
       rafRef.current = requestAnimationFrame(step);
     };
     rafRef.current = requestAnimationFrame(step);
@@ -298,87 +379,96 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
       onPanResponderMove: (_e, gesture) => {
         const x = gesture.moveX - PADDLE_W / 2;
         gameState.paddleX = Math.max(0, Math.min(gameState.width - PADDLE_W, x));
+        paddleX.set(gameState.paddleX);
       },
     }),
   );
 
+  const palette = useMemo(() => KINDS.map((k) => kindColor(k, t)), [t]);
+  const glowColor = useMemo(() => withAlpha(t.accent, 0.35), [t]);
+
+  const paddleStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: paddleX.get() },
+      { scaleX: 1 + squash.get() * 0.02 },
+      { scaleY: 1 - squash.get() * 0.08 },
+    ],
+  }));
+  const ballStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: ballX.get() - BALL_R }, { translateY: ballY.get() - BALL_R }],
+  }));
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: 0.55 + kick.get() * 0.45,
+    transform: [
+      { translateX: ballX.get() - BALL_R * 2.6 },
+      { translateY: ballY.get() - BALL_R * 2.6 },
+      { scale: 1 + kick.get() * 0.7 },
+    ],
+  }));
+
   if (!visible) return null;
+
+  const best2 = Math.max(best, score);
 
   return (
     <Modal visible transparent={false} animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <View style={styles.root} {...pan.panHandlers}>
-        {/* HUD */}
-        <View style={[styles.hud, { height: HUD_H }]}>
-          <View>
-            <Text style={styles.hudTitle}>Cairn Breakout</Text>
-            <Text style={styles.hudScore}>Score {score}</Text>
-          </View>
-          <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn} accessibilityLabel="Close game">
-            <X size={20} color={t.textSecondary} />
-          </Pressable>
-        </View>
-
-        {/* Bricks */}
-        {snap.bricks.map((br, i) =>
-          br.alive ? (
-            <View
-              key={i}
-              style={[
-                styles.brick,
-                {
-                  left: br.x,
-                  top: br.y,
-                  width: br.w,
-                  height: br.h,
-                  backgroundColor: kindColor(br.kind, t),
-                },
-              ]}
-            >
-              <Text style={styles.brickLabel} numberOfLines={1}>{br.label}</Text>
+        <Animated.View style={[StyleSheet.absoluteFill, shakeStyle]}>
+          {/* HUD */}
+          <View style={[styles.hud, { height: HUD_H }]}>
+            <View>
+              <Text style={styles.hudTitle}>Cairn Breakout</Text>
+              <View style={styles.hudRow}>
+                <Text style={styles.hudScore}>Score </Text>
+                <RollingText text={String(score)} style={styles.hudScore} />
+                {streak >= 2 ? (
+                  <PopChip pulseKey={streak}>
+                    <Text style={styles.hudStreak}>{`  ·  ${streak}× streak`}</Text>
+                  </PopChip>
+                ) : null}
+              </View>
             </View>
-          ) : null,
-        )}
+            <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn} accessibilityLabel="Close game">
+              <X size={20} color={t.textSecondary} />
+            </Pressable>
+          </View>
 
-        {/* Particles (brick-break bursts) */}
-        {snap.particles.map((p, i) => (
-          <View
-            key={`p${i}`}
-            style={{
-              position: "absolute",
-              left: p.x - p.size / 2,
-              top: p.y - p.size / 2,
-              width: p.size,
-              height: p.size,
-              borderRadius: p.size / 2,
-              backgroundColor: p.color,
-              opacity: p.life / p.maxLife,
-            }}
+          {/* Bricks */}
+          {bricks.map((br, i) => (
+            <BrickView key={i} brick={br} color={palette[KINDS.indexOf(br.kind)]} labelColor={t.accentFg} />
+          ))}
+
+          {/* Particles (brick-break bursts) */}
+          <ParticlePool data={particleBuf} palette={palette} />
+
+          {/* Ball trail, glow and ball */}
+          {motion.reduced
+            ? null
+            : Array.from({ length: TRAIL_POINTS - 1 }, (_, i) => (
+                <TrailDot key={i} index={i + 1} trail={trail} color={t.textPrimary} />
+              ))}
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.glow, { backgroundColor: glowColor }, glowStyle]}
           />
-        ))}
+          <Animated.View pointerEvents="none" style={[styles.ball, ballStyle]} />
 
-        {/* Ball */}
-        <View
-          style={[
-            styles.ball,
-            { left: snap.ballX - BALL_R, top: snap.ballY - BALL_R, width: BALL_R * 2, height: BALL_R * 2 },
-          ]}
-        />
-
-        {/* Paddle */}
-        <View style={[styles.paddle, { left: snap.paddleX, top: paddleY, width: PADDLE_W, height: PADDLE_H }]} />
+          {/* Paddle */}
+          <Animated.View style={[styles.paddle, { top: paddleY }, paddleStyle]} />
+        </Animated.View>
 
         {/* End overlay */}
         {status !== "playing" ? (
-          <View style={styles.overlay} pointerEvents="box-none">
-            <Text style={styles.overlayTitle}>{status === "won" ? "Cleared!" : "Game over"}</Text>
-            <Text style={styles.overlaySub}>Score {score}</Text>
-            <Pressable onPress={reset} style={styles.playAgain}>
-              <Text style={styles.playAgainText}>Play again</Text>
-            </Pressable>
-            <Pressable onPress={onClose} hitSlop={12} style={styles.overlayClose}>
-              <Text style={styles.overlayCloseText}>Close</Text>
-            </Pressable>
-          </View>
+          <GameOverCard
+            title={status === "won" ? "Cleared!" : newRecord ? "New high score!" : "Game over"}
+            scoreLabel="Score"
+            score={score}
+            bestLine={best2 > 0 ? (newRecord ? `New best ${best2}` : `Best ${best2}`) : undefined}
+            record={newRecord}
+            primaryLabel="Play again"
+            onPrimary={reset}
+            onClose={onClose}
+          />
         ) : null}
 
         {/* Confetti on clearing the board — inside the Modal so it shows over
@@ -388,6 +478,61 @@ export function BreakoutGame({ visible, onClose }: { visible: boolean; onClose: 
     </Modal>
   );
 }
+
+/** A brick that shrinks and fades when it breaks. */
+const BrickView = memo(function BrickView({ brick, color, labelColor }: { brick: Brick; color: string; labelColor: string }) {
+  const motion = useMotion();
+  const alive = useSharedValue(1);
+  useEffect(() => {
+    alive.set(brick.alive ? 1 : motion.reduced ? 0 : withTiming(0, { duration: 110 }));
+  }, [brick.alive, motion.reduced, alive]);
+  const style = useAnimatedStyle(() => ({
+    opacity: alive.get(),
+    transform: [{ scale: 1 - (1 - alive.get()) * 0.05 }],
+  }));
+  if (!brick.alive && motion.reduced) return null;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        brickStyles.brick,
+        { left: brick.x, top: brick.y, width: brick.w, height: brick.h, backgroundColor: color },
+        style,
+      ]}
+    >
+      <Text style={[brickStyles.label, { color: labelColor }]} numberOfLines={1}>{brick.label}</Text>
+    </Animated.View>
+  );
+});
+
+/** One fading dot of the ball's trail, reading its own point from the shared history. */
+const TrailDot = memo(function TrailDot({ index, trail, color }: { index: number; trail: ReturnType<typeof useSharedValue<number[]>>; color: string }) {
+  const frac = 1 - index / TRAIL_POINTS;
+  const size = BALL_R * 2 * (0.35 + 0.65 * frac);
+  const style = useAnimatedStyle(() => {
+    const d = trail.get();
+    return {
+      transform: [{ translateX: (d[index * 2] ?? 0) - size / 2 }, { translateY: (d[index * 2 + 1] ?? 0) - size / 2 }],
+    };
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[{ position: "absolute", left: 0, top: 0, width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: 0.32 * frac }, style]}
+    />
+  );
+});
+
+const brickStyles = StyleSheet.create({
+  brick: {
+    position: "absolute",
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  label: { ...typeScale.micro, fontWeight: "600" },
+});
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
@@ -400,40 +545,19 @@ function makeStyles(t: Theme) {
       paddingBottom: 10,
     },
     hudTitle: { ...typeScale.title, color: t.textPrimary },
-    hudScore: { ...typeScale.caption, color: t.textTertiary, marginTop: 2, fontVariant: ["tabular-nums"] },
+    hudRow: { flexDirection: "row", alignItems: "center", marginTop: 2 },
+    hudScore: { ...typeScale.caption, color: t.textTertiary, fontVariant: ["tabular-nums"] },
+    hudStreak: { ...typeScale.caption, color: t.accent, fontWeight: "700" },
     closeBtn: { padding: 6 },
-    brick: {
+    glow: {
       position: "absolute",
-      borderRadius: 6,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: 4,
-    },
-    brickLabel: { ...typeScale.micro, color: "#fff", fontWeight: "600" },
-    ball: { position: "absolute", borderRadius: BALL_R, backgroundColor: t.textPrimary },
-    paddle: { position: "absolute", borderRadius: PADDLE_H / 2, backgroundColor: t.accent },
-    overlay: {
-      position: "absolute",
-      top: 0,
       left: 0,
-      right: 0,
-      bottom: 0,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: t.scrim,
+      top: 0,
+      width: BALL_R * 5.2,
+      height: BALL_R * 5.2,
+      borderRadius: BALL_R * 2.6,
     },
-    overlayTitle: { ...typeScale.display, color: t.textPrimary },
-    overlaySub: { ...typeScale.subtitle, color: t.textSecondary, marginTop: 6, fontVariant: ["tabular-nums"] },
-    playAgain: {
-      marginTop: 24,
-      backgroundColor: t.accent,
-      paddingHorizontal: 24,
-      paddingVertical: 12,
-      borderRadius: 12,
-    },
-    playAgainText: { ...typeScale.control, color: t.accentFg },
-    overlayClose: { marginTop: 14 },
-    // textSecondary (not textTertiary) so it stays legible over the scrim overlay.
-    overlayCloseText: { ...typeScale.control, color: t.textSecondary },
+    ball: { position: "absolute", left: 0, top: 0, width: BALL_R * 2, height: BALL_R * 2, borderRadius: BALL_R, backgroundColor: t.textPrimary },
+    paddle: { position: "absolute", left: 0, width: PADDLE_W, height: PADDLE_H, borderRadius: PADDLE_H / 2, backgroundColor: t.accent },
   });
 }
