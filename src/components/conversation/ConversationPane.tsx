@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import { ConversationComposer, type ConversationComposerProps } from "./ConversationComposer";
 import { ConversationEmptyState } from "./ConversationEmptyState";
 import { ConversationHeader } from "./ConversationHeader";
@@ -76,6 +76,12 @@ export function ConversationPane({
 
   const pendingQuestions = projection?.pendingQuestions ?? null;
   const submitQuestions = onAnswerQuestions ?? ((answers: string) => onPrompt(answers, []));
+  // Virtuoso takes the footer as a component type, so an inline arrow would be a new type on every
+  // render and remount it, restarting the loader. Keep it stable between the states it depends on.
+  const waitingOnUser = Boolean(pendingQuestions);
+  const renderDefaultFooter = useCallback(() => (
+    <div aria-live="polite" aria-atomic="true" className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading && <span className="inline-flex items-center gap-1.5"><WorkLoader phase={waitingOnUser ? "waiting" : "working"} size={18} />Cairn is working…</span>}<span className="sr-only">{isLoading ? "Working" : ""}</span></div>
+  ), [isLoading, waitingOnUser]);
 
   return (
     <div className={cn("flex flex-1 min-h-0 flex-col overflow-hidden", className)} data-session-profile={profile}>
@@ -91,7 +97,7 @@ export function ConversationPane({
         data={messages}
         initialTopMostItemIndex={{ index: "LAST", align: "end" }}
         emptyPlaceholder={() => <>{emptyState ?? <ConversationEmptyState />}</>}
-        footer={transcriptFooter ?? (() => <div aria-live="polite" aria-atomic="true" className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading && <span className="inline-flex items-center gap-1.5"><WorkLoader phase={pendingQuestions ? "waiting" : "working"} size={18} />Cairn is working…</span>}<span className="sr-only">{isLoading ? "Working" : ""}</span></div>)}
+        footer={transcriptFooter ?? renderDefaultFooter}
         itemContent={(_index, message) => (
           <div className={cn("px-3 py-1.5", centered && "max-w-3xl mx-auto w-full")}>
             <ConversationMessageBubble message={message} sessionId={sessionId} onRetry={onRetry} connectors={connectors} />

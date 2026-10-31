@@ -38,7 +38,8 @@ interface WorkLoaderProps {
  */
 export function WorkLoader({ phase, size = 16, className }: WorkLoaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [failed, setFailed] = useState(false);
+  // Per phase, so one state failing to load doesn't leave the spinner up for every later phase.
+  const [failedPhase, setFailedPhase] = useState<WorkPhase | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -50,14 +51,14 @@ export function WorkLoader({ phase, size = 16, className }: WorkLoaderProps) {
         if (cancelled) return;
         loader = new LoaderszLoader(canvas, { size, color: ACCENT });
       })
-      .catch(() => { if (!cancelled) setFailed(true); });
+      .catch(() => { if (!cancelled) setFailedPhase(phase); });
     // The accent is resolved once per setOptions, so re-apply it when the theme or accent changes.
     const recolor = new MutationObserver(() => loader?.setOptions({ size, color: ACCENT }));
     recolor.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style", "class"] });
     return () => { cancelled = true; recolor.disconnect(); loader?.destroy(); };
   }, [phase, size]);
 
-  if (failed) return <Spinner size={size} tone="accent" className={className} />;
+  if (failedPhase === phase) return <Spinner size={size} tone="accent" className={className} />;
   return (
     <canvas
       ref={canvasRef}

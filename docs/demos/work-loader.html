@@ -189,7 +189,7 @@ async function start(entry) {
   } catch (e) { console.warn("loader failed", state, e); }
 }
 function refreshAll() {
-  for (const e of [...mounts]) { if (!e.canvas.isConnected && e.dirty) { e.inst?.destroy(); mounts.delete(e); continue; } start(e); }
+  for (const e of [...mounts]) start(e);
 }
 function unmount(entry) { entry.token++; entry.inst?.destroy(); mounts.delete(entry); entry.canvas.remove(); }
 
@@ -247,6 +247,8 @@ function syncBusy() {
 }
 function showBusy(phase) {
   overall = phase;
+  if (stripEntry) unmount(stripEntry);
+  if (footerEntry) unmount(footerEntry);
   strip.hidden = false; strip.replaceChildren();
   stripEntry = mount(shownPhase, () => 16);
   strip.append(stripEntry.canvas, el("span", null, escapeHtml(STRIP_LABEL[phase] || STRIP_LABEL.working)));

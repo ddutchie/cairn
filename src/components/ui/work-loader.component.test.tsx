@@ -36,4 +36,10 @@ describe("WorkLoader", () => {
     expect(container.querySelector("svg.animate-spin")).not.toBeNull();
     expect(screen.queryByRole("img")).toBeNull();
   });
+  it("only falls back for the phase that failed, and draws a canvas again for the next one", async () => {
+    const { container, rerender } = render(<WorkLoader phase="sending" />);
+    await waitFor(() => expect(container.querySelector("canvas")).toBeNull());
+    rerender(<WorkLoader phase="responding" />);
+    await waitFor(() => expect(container.querySelector("canvas")).toHaveAttribute("data-work-phase", "responding"));
+  });
 });
