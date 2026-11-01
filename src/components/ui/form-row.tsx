@@ -6,7 +6,7 @@
  * so non-settings surfaces stop forking their own row geometry.
  */
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -186,8 +186,12 @@ export function StepperSettingsRow({
   // blur commits only what was typed, so tabbing through never turns Auto off.
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? (customOn ? String(value) : "");
+  // Escape blurs the field to cancel; the blur's commit runs in the same
+  // batch and still sees the old draft, so it checks this flag instead.
+  const cancelledRef = useRef(false);
 
   function commit() {
+    if (cancelledRef.current) { cancelledRef.current = false; setDraft(null); return; }
     if (draft === null) return;
     const raw = draft.trim();
     setDraft(null);
@@ -238,7 +242,7 @@ export function StepperSettingsRow({
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") { setDraft(null); (e.target as HTMLInputElement).blur(); }
+            if (e.key === "Escape") { cancelledRef.current = true; setDraft(null); (e.target as HTMLInputElement).blur(); }
           }}
           className={cn(
             "h-7 border-transparent bg-transparent px-2 py-1 text-xs text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none",

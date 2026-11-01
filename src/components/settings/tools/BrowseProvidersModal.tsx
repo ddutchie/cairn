@@ -28,7 +28,7 @@ const emptyResult: ProvidersFetchResult = {
  * refreshable), lists each provider preset, and installs the chosen one into the
  * shared saved-providers list. Providers that need a key prompt for it inline;
  * the key is stored in the OS keychain. The provider is NOT auto-selected — the
- * user picks it in the provider switcher afterwards.
+ * user picks it in the Provider row on the Chat or Coding agent page.
  */
 export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
   const { savedProviders, installCommunityProvider } = useCairnStore(
@@ -170,8 +170,8 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
       emptyText="No community providers available."
       belowList={
         <p className="mt-4 text-2xs text-[var(--text-tertiary)]">
-          Added providers join your shared provider list. Select one in the provider
-          switcher above to use it in AI Chat or the coding agent.
+          Added providers join your shared list. Choose one in the Provider row on
+          the Chat or Coding agent page to use it.
         </p>
       }
     >

@@ -90,7 +90,9 @@ export function LocalServersCard() {
         apiKey: "",
         apiMode: "completions",
       },
-      "ai",
+      // Models page: add to the shared list without changing what Chat or the
+      // coding agent currently uses.
+      "none",
     );
   }
 
@@ -114,7 +116,7 @@ export function LocalServersCard() {
         {scanned && found.length === 0 && (
           <p className="text-xs text-[var(--text-tertiary)]">
             Nothing answering on the usual ports. Start Ollama (`ollama serve`), LM Studio (server tab), or
-            `llama-server`, then scan again — or add the endpoint manually below.
+            `llama-server`, then scan again. To enter an endpoint by hand, use Add in the Provider row on the Chat or Coding agent page.
           </p>
         )}
         {found.map((server) => {
