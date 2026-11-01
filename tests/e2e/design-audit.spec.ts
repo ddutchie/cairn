@@ -6,7 +6,7 @@
  * the What's New modal are suppressed — every other dialog stays visible.
  */
 
-import { test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { buildScreenshotMock, PROJ_A } from "../fixtures/screenshot-fixture";
 import * as path from "path";
 import * as fs from "fs";
@@ -197,24 +197,31 @@ test.describe("design audit", () => {
 
       const dir = path.join(OUT_DIR, theme);
       fs.mkdirSync(dir, { recursive: true });
+      const failedSetups: string[] = [];
       for (const shot of SHOTS.filter((s) => wanted(s.file))) {
         await page.setViewportSize(shot.viewport ?? DEFAULT_VIEWPORT);
         await reset(page, shot.view);
         try {
           if (shot.setup) await shot.setup(page);
         } catch (e) {
+          // Don't capture the current screen under this shot's name; fail the run after the rest are captured.
+          failedSetups.push(shot.file);
           console.log(`[audit:${theme}] ${shot.file} setup failed: ${process.env.AUDIT_DEBUG ? (e as Error).message : (e as Error).message.split("\n")[0]}`);
+          continue;
         }
         await page.waitForTimeout(300);
         await page.screenshot({ path: path.join(dir, shot.file) });
         console.log(`[audit:${theme}] ${shot.file}`);
       }
       await context.close();
+      expect(failedSetups, "shots whose setup failed").toEqual([]);
     });
 
     // Onboarding runs on a fresh-install probe, so it gets its own page.
     test(`capture ${theme} onboarding`, async ({ browser }) => {
-      test.skip(!wanted("50-onboarding"), "filtered out by ONLY");
+      const folderShot = "50-onboarding-folder.png";
+      const appearanceShot = "51-onboarding-appearance.png";
+      test.skip(!wanted(folderShot) && !wanted(appearanceShot), "filtered out by ONLY");
       const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT, colorScheme: theme });
       const page = await context.newPage();
       await page.addInitScript({ content: buildScreenshotMock({ needsWorkspaceSetup: true }) });
@@ -224,13 +231,17 @@ test.describe("design audit", () => {
       await page.addStyleTag({ content: "nextjs-portal{display:none!important}" });
       const dir = path.join(OUT_DIR, theme);
       fs.mkdirSync(dir, { recursive: true });
-      await page.screenshot({ path: path.join(dir, "50-onboarding-folder.png") });
-      console.log(`[audit:${theme}] 50-onboarding-folder.png`);
-      // Dev-only ⌘⇧. jumps straight to the appearance step.
-      await page.keyboard.press("ControlOrMeta+Shift+Period");
-      await page.waitForTimeout(800);
-      await page.screenshot({ path: path.join(dir, "51-onboarding-appearance.png") });
-      console.log(`[audit:${theme}] 51-onboarding-appearance.png`);
+      if (wanted(folderShot)) {
+        await page.screenshot({ path: path.join(dir, folderShot) });
+        console.log(`[audit:${theme}] ${folderShot}`);
+      }
+      if (wanted(appearanceShot)) {
+        // Dev-only ⌘⇧. jumps straight to the appearance step.
+        await page.keyboard.press("ControlOrMeta+Shift+Period");
+        await page.waitForTimeout(800);
+        await page.screenshot({ path: path.join(dir, appearanceShot) });
+        console.log(`[audit:${theme}] ${appearanceShot}`);
+      }
       await context.close();
     });
   }
