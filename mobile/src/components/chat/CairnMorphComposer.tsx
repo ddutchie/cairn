@@ -67,12 +67,14 @@ export interface CairnMorphComposerProps {
    * WhatsApp's mic) and while a dictation is running; once there is text, send returns.
    */
   mic?: ReactNode;
+  /** Shown beside the field while dictating (the listening orb). Absent when the flag is off. */
+  orb?: ReactNode;
   /** True while dictating: the placeholder says so and the field is read-only. */
   micActive?: boolean;
 }
 
 export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphComposerProps>(function CairnMorphComposer(
-  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, phase = null, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0, mic, micActive = false },
+  { input, onChangeInput, attachments, pendingIds, strip, plusOut, onPlusPress, onRemove, busy, phase = null, canSend, onSend, onInputFocus, onInputBlur, hidden = false, leftInset = 0, closedLift, onLayoutHeight, allowImages = true, queuedCount = 0, mic, orb, micActive = false },
   ref,
 ) {
   const t = useTheme();
@@ -163,6 +165,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
                   style={{ left: COMPOSER.rowPaddingLeft + COMPOSER.plusHit + 10 + 2, right: 9 + 32 + 10 }}
                 />
               ) : null}
+              {micActive ? orb : null}
               {showMic ? (
                 mic
               ) : (

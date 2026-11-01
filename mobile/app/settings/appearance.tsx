@@ -4,7 +4,7 @@ import { Check } from "lucide-react-native";
 import { ModalSafeView } from "@/components/ModalSafeView";
 import { PressableScale } from "@/components/PressableScale";
 import { haptics } from "@/haptics";
-import { setFoldOverlay, useFoldOverlay } from "@/lib/dev-flags";
+import { setFoldOverlay, setListeningOrb, useFoldOverlay, useListeningOrb } from "@/lib/dev-flags";
 import {
   useTheme,
   useAccent,
@@ -33,6 +33,7 @@ export default function AppearanceSettingsScreen() {
   const accentId = useAccent();
   const fontId = useFont();
   const foldOverlay = useFoldOverlay();
+  const listeningOrb = useListeningOrb();
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
@@ -133,6 +134,23 @@ export default function AppearanceSettingsScreen() {
                 setFoldOverlay(v);
               }}
               accessibilityLabel="Fold overlay"
+            />
+          </View>
+          <View style={styles.row}>
+            <View style={styles.rowMain}>
+              <Text style={styles.rowTitle}>Listening orb</Text>
+              <Text style={styles.rowSub}>
+                An animated orb that swells with your voice while dictating. Not yet profiled on
+                older iPhones, so it is off by default and dev builds only.
+              </Text>
+            </View>
+            <Switch
+              value={listeningOrb}
+              onValueChange={(v) => {
+                haptics.selection();
+                setListeningOrb(v);
+              }}
+              accessibilityLabel="Listening orb"
             />
           </View>
         </View>
