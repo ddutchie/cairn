@@ -75,6 +75,7 @@ export function SyncStatusIndicator() {
         </IconButton>
       </PopoverTrigger>
       <PopoverContent
+        aria-label="Sync status"
         align="end"
         className="w-64 p-3"
         // Over the title bar: opt out of the window drag region so clicks land.

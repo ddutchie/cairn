@@ -43,7 +43,7 @@ export function TagsSettings() {
                     title="Change color"
                   />
                 </PopoverTrigger>
-                <PopoverContent className="p-2">
+                <PopoverContent aria-label={`Colour for ${tag.name}`} className="p-2">
                   <div className="grid grid-cols-7 gap-1.5">
                     {TAG_PALETTE.map(({ color, name }) => (
                       <button

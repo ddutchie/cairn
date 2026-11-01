@@ -67,7 +67,7 @@ const SHOTS: Shot[] = [
   { file: "14-chat-drawer-header-menu.png", view: "board", setup: async (p) => {
     await openChat(p);
     // The session switcher (SessionBrowser) in the drawer header — not the sidebar "Conversations" tree.
-    await p.locator('button[aria-haspopup="listbox"]').filter({ hasNotText: "Conversations" }).first().click();
+    await p.getByRole("button", { name: /Switch session|Choose a session/ }).first().click();
     await p.waitForTimeout(400);
   }},
   { file: "15-search.png", view: "board", setup: async (p) => {

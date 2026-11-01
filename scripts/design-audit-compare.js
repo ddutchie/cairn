@@ -164,7 +164,7 @@ const html = `<!doctype html>
   .diff { position: relative; }
   .diff .top { position: absolute; inset: 0; mix-blend-mode: difference; }
   .diff .top img { border: 0; }
-  .after-wrap { position: relative; }
+  .after-wrap { position: relative; overflow: hidden; border-radius: 6px; }
   .region { position: absolute; border: 2px solid var(--changed); border-radius: 3px; pointer-events: none;
     box-shadow: 0 0 0 9999px color-mix(in srgb, black 8%, transparent); }
   .empty { padding: 48px; text-align: center; color: var(--text-3); border: 1px dashed var(--border); border-radius: 6px; }
@@ -342,7 +342,13 @@ async function pixelDiff(changed) {
     console.warn("[compare] @playwright/test not available; falling back to byte comparison");
     return;
   }
-  const browser = await chromium.launch();
+  let browser;
+  try {
+    browser = await chromium.launch();
+  } catch (err) {
+    console.warn(`[compare] Chromium could not launch (${err.message.split("\n")[0]}); falling back to byte comparison`);
+    return;
+  }
   const page = await browser.newPage();
   for (const shot of changed) {
     const before = fs.readFileSync(shot._b).toString("base64");

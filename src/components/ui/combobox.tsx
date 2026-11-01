@@ -151,8 +151,6 @@ export function Combobox<V extends string>({
         <button
           type="button"
           disabled={disabled}
-          aria-label={ariaLabel}
-          aria-haspopup="listbox"
           aria-expanded={open}
           className={cn(
             "flex min-w-0 items-center justify-between gap-1.5 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] disabled:opacity-50",
@@ -162,6 +160,7 @@ export function Combobox<V extends string>({
             className,
           )}
         >
+          <span className="sr-only">{ariaLabel}: </span>
           {renderTrigger ? renderTrigger(selected) : (
             <span className="flex min-w-0 items-center gap-1.5">
               {selected?.icon && <span className="flex-shrink-0 text-[var(--text-tertiary)]">{selected.icon}</span>}
@@ -172,6 +171,7 @@ export function Combobox<V extends string>({
         </button>
       </PopoverTrigger>
       <PopoverContent
+        aria-label={ariaLabel}
         align={align}
         matchTriggerWidth
         className={cn("flex max-h-80 min-w-[16rem] flex-col overflow-hidden", contentClassName)}

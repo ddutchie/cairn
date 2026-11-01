@@ -76,14 +76,18 @@ export function Select<V extends string | number>({
           type="button"
           id={id}
           disabled={disabled}
-          aria-label={ariaLabel}
           className={cn(
             "flex items-center justify-between gap-1.5 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:border-[var(--accent)] disabled:opacity-50",
             SIZE_CLASSES[size],
             className
           )}
         >
-          <span className="truncate text-left">{selected ? selected.label : (placeholder ?? "Select…")}</span>
+          {/* A visually hidden prefix rather than aria-label, so the name keeps
+              the current value: "Label mode: Smart labels". */}
+          <span className="truncate text-left">
+            {ariaLabel && <span className="sr-only">{ariaLabel}: </span>}
+            {selected ? selected.label : (placeholder ?? "Select…")}
+          </span>
           <ChevronDown size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
         </button>
       </DropdownMenuTrigger>
@@ -95,6 +99,8 @@ export function Select<V extends string | number>({
               key={String(o.value)}
               disabled={o.disabled}
               onSelect={() => onChange(o.value)}
+              role="menuitemradio"
+              aria-checked={active}
               className={cn(active && "text-[var(--accent)] bg-[var(--accent-dim)]")}
             >
               <span className="w-4 flex-shrink-0 flex items-center justify-center">
