@@ -4,6 +4,10 @@ import { useColorScheme } from "react-native";
 import { resetProjectsSelection } from "@/components/ProjectsSplitView";
 import { useAppQuickActions } from "@/quick-actions";
 import { useTheme } from "@/theme";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
+
+// A crash inside a tab shows a recoverable screen instead of a white screen.
+export { RouteErrorBoundary as ErrorBoundary };
 
 /**
  * Native platform tab bar with SF Symbols (iOS) / Material icons (Android).
