@@ -18,6 +18,7 @@ vi.mock("./apple", () => ({
 vi.mock("./openai", () => ({ makeOpenAIProvider: () => ({ name: "completions" }) }));
 vi.mock("./responses", () => ({ makeResponsesProvider: () => ({ name: "responses" }), supportsResponses: h.supportsResponses }));
 vi.mock("../models-dev", () => ({ endpointProtocolForModel: h.protocol }));
+vi.mock("../ai-consent", () => ({ ensureAiConsent: async () => {} }));
 
 const { resolveProvider, UnsupportedModelProtocolError } = await import("./index");
 

@@ -12,6 +12,7 @@
  */
 
 import { getProviderPref, resolveOpenAIConfig, type OpenAIConfig } from "../ai-config";
+import { ensureAiConsent } from "../ai-consent";
 import {
   appleOnDeviceProvider,
   appleProvider,
@@ -62,6 +63,9 @@ function appleProviderOrNull(): ChatProvider | null {
  * else Chat Completions. The probe is a single cheap request and never throws.
  */
 async function openaiCompatible(config: OpenAIConfig): Promise<ChatProvider> {
+  // Every chat / note-AI request to a third-party endpoint passes here: ask once
+  // per host before anything is sent (throws AiConsentDeclinedError on decline).
+  await ensureAiConsent(config.baseUrl);
   // OpenCode serves each model over exactly one protocol (models.dev records
   // which), so the model decides — no probe, which can't see the model anyway.
   const protocol = await endpointProtocolForModel(config.baseUrl, config.model);
