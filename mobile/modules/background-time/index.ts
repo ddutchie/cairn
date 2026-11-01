@@ -16,15 +16,29 @@ declare class BackgroundTimeNativeModule extends NativeModule {
 export const BackgroundTime = requireOptionalNativeModule<BackgroundTimeNativeModule>("BackgroundTime");
 
 /**
+ * Ask iOS to keep the app running if it's backgrounded before the returned
+ * `release` is called. Taken while still in the foreground, it covers work that
+ * is scheduled now and finishes later. `release` is idempotent, and harmless
+ * after iOS has already expired the time.
+ */
+export function holdBackgroundTime(name: string): () => void {
+  let token = BackgroundTime?.begin(name) ?? 0;
+  return () => {
+    if (token) BackgroundTime?.end(token);
+    token = 0;
+  };
+}
+
+/**
  * Run `work`, keeping the app awake in the background until it settles. Call it
  * synchronously from the background transition: the time is requested before
  * the first await.
  */
 export async function withBackgroundTime<T>(name: string, work: () => Promise<T>): Promise<T> {
-  const token = BackgroundTime?.begin(name) ?? 0;
+  const release = holdBackgroundTime(name);
   try {
     return await work();
   } finally {
-    if (token) BackgroundTime?.end(token);
+    release();
   }
 }

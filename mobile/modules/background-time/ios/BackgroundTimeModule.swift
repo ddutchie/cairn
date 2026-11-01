@@ -48,6 +48,16 @@ public class BackgroundTimeModule: Module {
     Function("remainingTime") { () -> Double in
       Self.onMain { UIApplication.shared.backgroundTimeRemaining }
     }
+
+    // A JS reload tears the module down; tokens JS still holds die with it, so
+    // release their tasks rather than leaving them to expire.
+    OnDestroy {
+      self.lock.lock()
+      let ids = Array(self.tasks.values)
+      self.tasks.removeAll()
+      self.lock.unlock()
+      for id in ids { UIApplication.shared.endBackgroundTask(id) }
+    }
   }
 
   private func end(_ token: Int) {

@@ -39,6 +39,15 @@ describe("withBackgroundTime", () => {
     expect(h.native!.end).not.toHaveBeenCalled();
   });
 
+  it("holdBackgroundTime releases once, however often it's called", async () => {
+    const { holdBackgroundTime } = await import("./index");
+    const release = holdBackgroundTime("t");
+    expect(h.native!.begin).toHaveBeenCalledWith("t");
+    release();
+    release();
+    expect(h.native!.end).toHaveBeenCalledTimes(1);
+  });
+
   it("just runs the work without the native module (Android, Expo Go)", async () => {
     h.native = null;
     const { withBackgroundTime } = await import("./index");
