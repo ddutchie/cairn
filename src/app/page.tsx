@@ -39,6 +39,7 @@ import { isView } from "@/lib/views";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
 import { QuickCapture } from "@/components/layout/QuickCapture";
+import { visibleNumberedViews } from "@/components/layout/sidebar-utils";
 import { persist, reportIpcError } from "@/lib/ipc/client";
 
 export default function Home() {
@@ -100,10 +101,7 @@ export default function Home() {
     stopRunCountPolling:  s.stopRunCountPolling,
   })));
   // All navigable views in shortcut order; overview=⌘1, notes=⌘2, then visible extras
-  const ORDERED_VIEWS = (["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations", "usage"] as const).filter(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (v) => !hiddenViews.has(v as any)
-  );
+  const ORDERED_VIEWS = visibleNumberedViews(hiddenViews as { has(view: string): boolean });
 
   // null = still loading
   // "workspace" = needs workspace folder setup (existing or new user)
