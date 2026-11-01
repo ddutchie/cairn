@@ -743,7 +743,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
           {mode === "read" && <NoteExportMenu noteId={note.id} title={note.title} proseRef={proseRef} fontFamilyId={fontFamilyId} />}
           <div className="flex items-center gap-1">
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
-            <button
+            <button aria-label={note.isPinned ? "Unpin note" : "Pin note"}
               onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
               className={cn(
                 "p-1.5 rounded-md transition-colors",
@@ -769,7 +769,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             </button>
           </Tooltip>
           <Tooltip content={notesFullscreen ? "Exit distraction-free (⌘.)" : "Distraction-free mode (⌘.)"}>
-            <button
+            <button aria-label={notesFullscreen ? "Exit distraction-free mode" : "Distraction-free mode"}
               onClick={() => toggleNotesFullscreen()}
               className={cn(
                 "p-1.5 rounded-md transition-colors",

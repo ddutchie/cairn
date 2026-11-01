@@ -12,7 +12,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useLoadGraph } from "@/hooks/useLoadGraph";
 import { filterGraphNodes, EMPTY_GRAPH } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
-import { ViewTabs } from "@/components/ui/view-tabs";
+import { ViewTabs, viewTabId } from "@/components/ui/view-tabs";
 import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
@@ -132,6 +132,7 @@ export function InsightsView() {
       {/* Canvas tabs — every canvas labelled; count + reload on the right */}
       <ViewTabs
         ariaLabel="Insights canvases"
+        panelId="insights-canvas"
         tabs={LAYOUTS.map(({ key, icon, label, tip }) => ({ value: key, label, icon, title: tip }))}
         value={layout}
         onChange={setLayout}
@@ -219,7 +220,12 @@ export function InsightsView() {
 
       {/* Canvas + detail panel */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <div className="flex flex-1 min-w-0 overflow-hidden relative">
+        <div
+          role="tabpanel"
+          id="insights-canvas"
+          aria-labelledby={viewTabId("insights-canvas", layout)}
+          className="flex flex-1 min-w-0 overflow-hidden relative"
+        >
 
           {/* Blocking overlay only for the first load — later reloads keep the
               current canvases on screen (the toolbar spinner shows progress). */}

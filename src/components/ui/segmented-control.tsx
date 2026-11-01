@@ -14,8 +14,9 @@ export interface SegmentedControlProps<T> {
   value: T;
   onChange: (value: T) => void;
   className?: string;
-  /** Names the group for assistive tech. */
-  ariaLabel?: string;
+  /** Names the group for assistive tech. Required: a group of toggle
+   *  buttons means nothing to a screen reader without it. */
+  ariaLabel: string;
   /** "sm" fits a 36px toolbar (h-9 view headers). */
   size?: "sm" | "md";
 }

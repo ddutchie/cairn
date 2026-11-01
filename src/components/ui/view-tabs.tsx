@@ -14,16 +14,26 @@ export interface ViewTab<T extends string> {
   title?: string;
 }
 
+/** The id of a tab in a `ViewTabs` strip, for the panel's `aria-labelledby`. */
+export function viewTabId(panelId: string, value: string): string {
+  return `${panelId}-tab-${value}`;
+}
+
 /**
  * The strip of view tabs at the top of a view (Board / Archive, the Insights
  * canvases): an h-9 bar, every tab labelled, scrolling sideways when it runs
  * out of room rather than hiding labels.
+ *
+ * Keyboard: one tab stop; arrow keys, Home and End move between tabs and
+ * select them. Pass `panelId` and give the content `role="tabpanel"`, that
+ * id, and `aria-labelledby={viewTabId(panelId, value)}` to connect the two.
  */
 export function ViewTabs<T extends string>({
   tabs,
   value,
   onChange,
   ariaLabel,
+  panelId,
   children,
   className,
 }: {
@@ -31,13 +41,32 @@ export function ViewTabs<T extends string>({
   value: T;
   onChange: (value: T) => void;
   ariaLabel: string;
+  /** The id of the panel the tabs control. */
+  panelId?: string;
   /** Right-aligned extras in the same bar. */
   children?: React.ReactNode;
   className?: string;
 }) {
+  const listRef = React.useRef<HTMLDivElement>(null);
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    const i = tabs.findIndex((t) => t.value === value);
+    const last = tabs.length - 1;
+    const next =
+      e.key === "ArrowRight" ? (i >= last ? 0 : i + 1)
+      : e.key === "ArrowLeft" ? (i <= 0 ? last : i - 1)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? last
+      : null;
+    if (next === null) return;
+    e.preventDefault();
+    onChange(tabs[next].value);
+    listRef.current?.querySelectorAll<HTMLElement>("[role=tab]")[next]?.focus();
+  }
+
   return (
     <div className={cn("flex items-center gap-2 px-4 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0", className)}>
-      <div role="tablist" aria-label={ariaLabel} className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-none">
+      <div ref={listRef} role="tablist" aria-label={ariaLabel} onKeyDown={onKeyDown} className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-none">
         {tabs.map((tab) => {
           const active = tab.value === value;
           return (
@@ -45,7 +74,10 @@ export function ViewTabs<T extends string>({
               key={tab.value}
               type="button"
               role="tab"
+              id={panelId ? viewTabId(panelId, tab.value) : undefined}
               aria-selected={active}
+              aria-controls={active ? panelId : undefined}
+              tabIndex={active ? 0 : -1}
               title={tab.title}
               onClick={() => onChange(tab.value)}
               className={cn(

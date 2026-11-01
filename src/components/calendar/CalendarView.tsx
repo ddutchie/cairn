@@ -58,7 +58,7 @@ type CalendarLayout = "month" | "week";
  *     the workspace-level sidebar entry above Knowledge Graph.
  */
 export function CalendarView({ scope = "project" }: { scope?: "project" | "workspace" }) {
-  const { activeProjectId, cards, columns, projects, calendarProjectIds, setCalendarProjectIds, updateCard, setView, setCalendarScope } =
+  const { activeProjectId, cards, columns, projects, calendarProjectIds, setCalendarProjectIds, updateCard, setView } =
     useCairnStore(
       useShallow((s) => ({
         activeProjectId: s.activeProjectId,
@@ -71,7 +71,6 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
         setCalendarProjectIds: s.setCalendarProjectIds,
         updateCard: s.updateCard,
         setView: s.setView,
-        setCalendarScope: s.setCalendarScope,
       })),
     );
   const isWorkspace = scope === "workspace";
@@ -186,7 +185,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
   return (
     <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-[var(--background)]">
       {/* Toolbar */}
-      <div className="h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex items-center gap-2 px-3">
+      <div className="min-h-9 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-3">
         <div className="flex items-center gap-0.5">
           <button
             type="button"
@@ -217,21 +216,19 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
           <span className="text-2xs text-[var(--text-tertiary)] ml-1">· no tasks yet</span>
         )}
 
-        {/* One Calendar in the sidebar; the scope lives here. */}
-        <SegmentedControl
+        {/* One Calendar in the sidebar; the scope lives here. "This project"
+            needs a project, so the switch only shows when one is active. */}
+        {activeProjectId && <SegmentedControl
           ariaLabel="Calendar scope"
           size="sm"
           className="ml-2"
           value={isWorkspace ? "workspace" : "project"}
-          onChange={(v) => {
-            setCalendarScope(v);
-            setView(v === "workspace" ? "calendar-all" : "calendar");
-          }}
+          onChange={(v) => setView(v === "workspace" ? "calendar-all" : "calendar")}
           options={[
             { value: "project", label: "This project" },
             { value: "workspace", label: "All projects" },
           ]}
-        />
+        />}
 
         {/* Workspace scope: multi-select project filter (mirrors Insights/Graph). */}
         {isWorkspace && (

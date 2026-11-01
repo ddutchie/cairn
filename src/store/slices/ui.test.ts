@@ -69,8 +69,9 @@ describe("createUISlice", () => {
     state.openCalendar();
     expect(state.activeView).toBe("calendar");
 
+    // Any route into the all-projects calendar records the scope.
     storageSet.mockClear();
-    state.setCalendarScope("workspace");
+    state.setView("calendar-all");
     expect(storageSet).toHaveBeenCalledWith("calendarScope", "workspace");
     state.setView("board");
     state.openCalendar();

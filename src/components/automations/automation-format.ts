@@ -54,7 +54,10 @@ function describeDays(field: string): string | null {
   if (key === "6,0") return "weekends";
   if (sorted.length === 7) return "every day";
   const names = sorted.map((d) => DAY_NAMES[d]);
-  if (/^\d-\d$/.test(field) && names.length > 2) return `${names[0]}–${names[names.length - 1]}`;
+  // A single range reads from its own endpoints, so Sunday-first ranges
+  // (0-2) stay "Sunday–Tuesday" rather than following the Monday-first sort.
+  const single = field.match(/^(\d)-(\d)$/);
+  if (single && names.length > 2) return `${DAY_NAMES[Number(single[1]) % 7]}–${DAY_NAMES[Number(single[2]) % 7]}`;
   return names.length === 1 ? `${names[0]}s` : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
@@ -67,12 +70,14 @@ export function describeCron(expr: string): string | null {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [min, hour, dom, mon, dow] = parts;
+  // A step that doesn't divide the hour (or day) isn't a fixed interval:
+  // */40 runs at :00 and :40. Those fall through to the raw expression.
   const everyMin = min.match(/^\*\/(\d+)$/);
-  if (everyMin && hour === "*" && dom === "*" && mon === "*" && dow === "*") {
+  if (everyMin && 60 % Number(everyMin[1]) === 0 && hour === "*" && dom === "*" && mon === "*" && dow === "*") {
     return describeInterval(`${everyMin[1]} minutes`);
   }
   const everyHour = hour.match(/^\*\/(\d+)$/);
-  if (/^\d+$/.test(min) && everyHour && dom === "*" && mon === "*" && dow === "*") {
+  if (/^\d+$/.test(min) && everyHour && 24 % Number(everyHour[1]) === 0 && dom === "*" && mon === "*" && dow === "*") {
     return describeInterval(`${everyHour[1]} hours`) + (min === "0" ? "" : ` at :${min.padStart(2, "0")}`);
   }
   if (!/^\d+$/.test(min) || !/^\d+$/.test(hour) || mon !== "*") return null;

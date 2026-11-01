@@ -427,7 +427,9 @@ export function SearchPanel() {
                 <Search size={16} />
               </div>
               <p className="text-sm font-medium text-[var(--text-secondary)] mt-3">Search across projects</p>
-              <p className="text-xs text-[var(--text-tertiary)] mt-1 max-w-[32ch] mx-auto leading-relaxed">Start typing to search notes and tasks, by words or by meaning. Narrow it by type or project above.</p>
+              <p className="text-xs text-[var(--text-tertiary)] mt-1 max-w-[32ch] mx-auto leading-relaxed">{embeddingsReady
+                ? "Start typing to search notes and tasks, by words or by meaning. Narrow it by type or project above."
+                : "Start typing to search notes and tasks. Narrow it by type or project above."}</p>
             </div>
           )}
         </div>

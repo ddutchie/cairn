@@ -133,8 +133,9 @@ export interface LayoutSlice extends AppUIState {
    *  Dedicated to the calendar so it doesn't affect the graph/insights scope. */
   calendarProjectIds: string[];
   setCalendarProjectIds: (ids: string[]) => void;
-  /** The Calendar's last scope. The sidebar has one Calendar entry, and it
-   *  (and its shortcut) reopens whichever scope was used last. Persisted. */
+  /** The Calendar's last scope, recorded by setView on every route into the
+   *  calendar. The sidebar has one Calendar entry, and it (and its shortcut)
+   *  reopens whichever scope was used last. Persisted. */
   calendarScope: CalendarScope;
   setCalendarScope: (scope: CalendarScope) => void;
   /** Open the Calendar in its last scope. */
@@ -352,6 +353,12 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   },
 
   setView(view) {
+    // Every route into the calendar (sidebar, shortcut, the scope switch)
+    // records its scope, so openCalendar reopens whichever was used last.
+    if (view === "calendar" || view === "calendar-all") {
+      const scope = view === "calendar-all" ? "workspace" : "project";
+      if (get().calendarScope !== scope) get().setCalendarScope(scope);
+    }
     if (view !== "chat" && view !== "search") {
       const leavingCenter = get().sessionPresentation !== "drawer";
       set({

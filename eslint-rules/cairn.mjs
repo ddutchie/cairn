@@ -10,12 +10,32 @@
 
 const NAME_ATTRS = new Set(["aria-label", "aria-labelledby", "title"]);
 
-function isIconOnly(node) {
-  const kids = node.children.filter((c) => !(c.type === "JSXText" && !c.value.trim()));
-  if (kids.length !== 1 || kids[0].type !== "JSXElement") return false;
-  const el = kids[0];
+function isIcon(el) {
+  if (!el || el.type !== "JSXElement") return false;
   const name = el.openingElement.name;
   return name.type === "JSXIdentifier" && /^[A-Z]/.test(name.name) && el.children.length === 0;
+}
+
+/** An icon, or an expression that only ever renders an icon (or nothing):
+ *  `{pinned ? <PinOff /> : <Pin />}`, `{open && <X />}`. */
+function rendersOnlyIcon(node) {
+  if (isIcon(node)) return true;
+  if (node.type === "JSXExpressionContainer") return rendersOnlyIcon(node.expression);
+  if (node.type === "ConditionalExpression") {
+    const branches = [node.consequent, node.alternate];
+    return branches.some(isIcon) && branches.every((b) => isIcon(b) || isEmpty(b) || rendersOnlyIcon(b));
+  }
+  if (node.type === "LogicalExpression" && node.operator === "&&") return isIcon(node.right);
+  return false;
+}
+
+function isEmpty(node) {
+  return node.type === "Literal" && (node.value === null || node.value === false || node.value === "");
+}
+
+function isIconOnly(node) {
+  const kids = node.children.filter((c) => !(c.type === "JSXText" && !c.value.trim()));
+  return kids.length === 1 && rendersOnlyIcon(kids[0]);
 }
 
 const iconButtonLabel = {

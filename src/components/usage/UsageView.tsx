@@ -432,7 +432,7 @@ export function UsageView() {
                 )}
               </div>
               <div className="px-2 pb-2">
-                <UsageChart series={overview?.series ?? []} metric={metric} />
+                <UsageChart series={overview?.series ?? []} metric={metric} allTime={range.days == null} />
               </div>
             </div>
 

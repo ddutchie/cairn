@@ -224,6 +224,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
         <span className="text-xs text-[var(--text-secondary)]">Schedule</span>
         <div className="mt-1.5">
           <SegmentedControl
+            ariaLabel="Schedule"
             options={MODES.map((m) => ({ value: m.value, label: m.label }))}
             value={mode}
             onChange={(v) => handleModeChange(v as ScheduleMode)}

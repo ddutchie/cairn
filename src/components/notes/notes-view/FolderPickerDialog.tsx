@@ -159,7 +159,7 @@ function FolderPickerNode({
         style={{ paddingLeft: `${12 + indent}px`, paddingRight: "12px", paddingTop: "7px", paddingBottom: "7px" }}
       >
         {node.children.length > 0 ? (
-          <button
+          <button aria-label={open ? "Collapse folder" : "Expand folder"}
             onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
             className="shrink-0 text-[var(--text-tertiary)]"
           >
