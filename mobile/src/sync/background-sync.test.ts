@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   hasSource: true,
   active: "ws1" as string | null,
   requestSync: vi.fn(async () => {}),
+  state: "idle" as "idle" | "offline",
   lastResult: null as { connected: boolean; peerOpsApplied: number } | null,
   refreshWidgets: vi.fn(),
 }));
@@ -26,7 +27,7 @@ vi.mock("expo-task-manager", () => ({
 vi.mock("@/db", () => ({ initDatabase: () => ({ hasSource: h.hasSource }), getActiveSource: () => h.active }));
 vi.mock("@/dev/demo-seed", () => ({ isDemoSource: (ws: string | null) => ws === "demo" }));
 vi.mock("@/widgets", () => ({ refreshWidgets: h.refreshWidgets }));
-vi.mock("./controller", () => ({ requestSync: h.requestSync, getSnapshot: () => ({ lastResult: h.lastResult }) }));
+vi.mock("./controller", () => ({ requestSync: h.requestSync, getSnapshot: () => ({ state: h.state, lastResult: h.lastResult }) }));
 
 const { BACKGROUND_SYNC_TASK, runBackgroundSync, registerBackgroundSync } = await import("./background-sync");
 
@@ -36,6 +37,7 @@ beforeEach(() => {
   h.alreadyRegistered = false;
   h.hasSource = true;
   h.active = "ws1";
+  h.state = "idle";
   h.lastResult = null;
   h.requestSync.mockReset().mockResolvedValue(undefined);
   h.refreshWidgets.mockReset();
@@ -72,6 +74,13 @@ describe("runBackgroundSync", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     h.requestSync.mockRejectedValueOnce(new Error("boom"));
     expect(await runBackgroundSync()).toBe(2);
+  });
+
+  it("reports failure when the controller ended the sync offline", async () => {
+    h.state = "offline";
+    h.lastResult = { connected: true, peerOpsApplied: 3 };
+    expect(await runBackgroundSync()).toBe(2);
+    expect(h.refreshWidgets).not.toHaveBeenCalled();
   });
 });
 

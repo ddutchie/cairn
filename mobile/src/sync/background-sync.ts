@@ -31,8 +31,11 @@ export async function runBackgroundSync(): Promise<BackgroundTask.BackgroundTask
     if (!initDatabase().hasSource) return BackgroundTask.BackgroundTaskResult.Success;
     if (isDemoSource(getActiveSource())) return BackgroundTask.BackgroundTaskResult.Success;
     // Through the controller, so it can't overlap a foreground sync.
+    // The controller swallows sync errors into the snapshot (state "offline",
+    // which also covers an unreachable folder), so read the outcome from there.
     await requestSync("background-task");
-    const res = getSnapshot().lastResult;
+    const { state, lastResult: res } = getSnapshot();
+    if (state === "offline") return BackgroundTask.BackgroundTaskResult.Failed;
     if (res?.connected && res.peerOpsApplied > 0) refreshWidgets();
     return BackgroundTask.BackgroundTaskResult.Success;
   } catch (e) {

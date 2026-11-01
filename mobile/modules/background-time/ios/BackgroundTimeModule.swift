@@ -18,21 +18,25 @@ public class BackgroundTimeModule: Module {
     Name("BackgroundTime")
 
     Function("begin") { (name: String) -> Int in
-      self.lock.lock()
-      let token = self.nextToken
-      self.nextToken += 1
-      self.lock.unlock()
+      // UIKit calls the expiration handler on the main thread, so beginning and
+      // registering the task there means the handler can't run before the task
+      // is in `tasks` (it would find nothing to end and the task would leak).
+      Self.onMain { () -> Int in
+        self.lock.lock()
+        let token = self.nextToken
+        self.nextToken += 1
+        self.lock.unlock()
 
-      // beginBackgroundTask is safe to call off the main thread.
-      let id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-        self?.end(token)
+        let id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+          self?.end(token)
+        }
+        if id == .invalid { return 0 }
+
+        self.lock.lock()
+        self.tasks[token] = id
+        self.lock.unlock()
+        return token
       }
-      if id == .invalid { return 0 }
-
-      self.lock.lock()
-      self.tasks[token] = id
-      self.lock.unlock()
-      return token
     }
 
     Function("end") { (token: Int) in
