@@ -14,6 +14,8 @@ export interface SegmentedControlProps<T> {
   value: T;
   onChange: (value: T) => void;
   className?: string;
+  /** Names the group for assistive tech. */
+  ariaLabel?: string;
 }
 
 export function SegmentedControl<T extends string | number>({
@@ -21,15 +23,17 @@ export function SegmentedControl<T extends string | number>({
   value,
   onChange,
   className,
+  ariaLabel,
 }: SegmentedControlProps<T>) {
   return (
-    <div className={cn("flex rounded-lg border border-[var(--border)] overflow-hidden text-xs bg-[var(--surface)]", className)}>
+    <div role="group" aria-label={ariaLabel} className={cn("flex rounded-lg border border-[var(--border)] overflow-hidden text-xs bg-[var(--surface)]", className)}>
       {options.map((opt, idx) => {
         const active = opt.value === value;
         return (
           <button
             key={String(opt.value)}
             type="button"
+            aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
               "flex-1 flex items-center justify-center gap-1 py-1.5 px-1.5 border-0 outline-none transition-colors cursor-pointer select-none font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
