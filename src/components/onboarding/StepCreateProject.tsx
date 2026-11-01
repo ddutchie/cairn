@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { MicroLabel } from "@/components/ui/labels";
 import { WORKSPACE_ICONS, ProjectIcon } from "@/lib/workspace-icons";
 import { Shell } from "./shared";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   name: string;
@@ -42,15 +43,14 @@ export function StepCreateProject({
       >
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <button
-              type="button"
+            <IconButton
+              label="Go back to previous step"
               onClick={onBack}
               disabled={submitting}
-              aria-label="Go back to previous step"
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-tertiary)]"
+              className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-tertiary)]"
             >
               <ArrowLeft size={13} />
-            </button>
+            </IconButton>
             <h2 className="text-sm font-medium text-[var(--text-primary)]">Create your first project</h2>
           </div>
           <p className="text-xs text-[var(--text-tertiary)]">
@@ -61,22 +61,18 @@ export function StepCreateProject({
         {/* Icon picker */}
         <div className="flex flex-wrap gap-2">
           {WORKSPACE_ICONS.map(({ name: iconName }) => (
-            <button
+            <IconButton
+              label={`Use ${iconName} icon`}
               key={iconName}
-              type="button"
               onClick={() => onIconChange(iconName)}
               disabled={submitting}
-              aria-label={`Use ${iconName} icon`}
               aria-pressed={icon === iconName}
-              className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-[var(--text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed",
-                icon === iconName
+              className={cn("w-8 h-8 text-[var(--text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed", icon === iconName
                   ? "bg-[var(--accent-dim)] ring-1 ring-[var(--accent)] text-[var(--accent)]"
-                  : "bg-[var(--surface-2)] hover:bg-[var(--surface-3)]"
-              )}
+                  : "bg-[var(--surface-2)] hover:bg-[var(--surface-3)]")}
             >
               <ProjectIcon name={iconName} size={14} />
-            </button>
+            </IconButton>
           ))}
         </div>
 

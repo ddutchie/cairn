@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { MDPreviewPanel } from "./MDPreviewPanel";
 
 /**
@@ -12,14 +13,14 @@ describe("MDPreviewPanel — size toggle", () => {
   afterEach(cleanup);
 
   it("defaults to medium and exposes S/M/L controls", () => {
-    render(<MDPreviewPanel text="hello" onDismiss={() => {}} />);
+    render(<MDPreviewPanel text="hello" onDismiss={() => {}} />, { wrapper: TooltipProvider });
     expect(screen.getByLabelText("S preview")).toBeInTheDocument();
     expect(screen.getByLabelText("M preview")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("L preview")).toBeInTheDocument();
   });
 
   it("switching to S selects it and shrinks the type scale; L is full size", () => {
-    const { container } = render(<MDPreviewPanel text="hello" onDismiss={() => {}} />);
+    const { container } = render(<MDPreviewPanel text="hello" onDismiss={() => {}} />, { wrapper: TooltipProvider });
     const panel = () => container.querySelector("[data-md-preview-portal]") as HTMLElement;
 
     fireEvent.click(screen.getByLabelText("S preview"));

@@ -41,6 +41,7 @@ import { EMPTY_BOARD_FILTER, cardMatchesFilter, assigneesOf, isFilterActive, typ
 import { BoardFilterMenu, BoardViewsMenu } from "./board-filter-menus";
 import { RunningSessionsContext } from "./card-agent-badge";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
+import { IconButton } from "@/components/ui/icon-button";
 
 /**
  * Collision detection for the board.
@@ -575,13 +576,13 @@ export function KanbanBoard() {
                     <span className="text-xs text-[var(--text-tertiary)]">
                       {matchCount} match{matchCount === 1 ? "" : "es"}
                     </span>
-                    <button
+                    <IconButton
+                      label="Clear filters"
                       onClick={() => setFilter(EMPTY_BOARD_FILTER)}
-                      className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                      aria-label="Clear filters"
+                      className="size-auto p-1 hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                     >
                       <X size={13} />
-                    </button>
+                    </IconButton>
                   </>
                 );
               })()}

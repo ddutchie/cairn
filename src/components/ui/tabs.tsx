@@ -3,6 +3,7 @@
 import React, { useRef } from "react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "./tooltip";
 
 export interface TabOption<T extends string> {
   value: T;
@@ -72,27 +73,27 @@ export function Tabs<T extends string>({
       {options.map((opt, i) => {
         const active = opt.value === value;
         return (
-          <button
-            key={opt.value}
-            ref={(el) => { btnRefs.current[i] = el; }}
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            title={opt.title}
-            onClick={() => { if (!active) onChange(opt.value); }}
-            onKeyDown={(e) => onKeyDown(e, i)}
-            className={cn(
-              "font-medium rounded-md transition-colors flex items-center gap-1.5",
-              size === "md" && "px-3 py-1.5 text-xs",
-              size === "xs" && "px-2 py-0.5 text-2xs",
-              active
-                ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-            )}
-          >
-            {opt.icon}
-            {opt.label}
-          </button>
+          <Tooltip key={opt.value} content={opt.title} disabled={!opt.title}>
+            <button
+              ref={(el) => { btnRefs.current[i] = el; }}
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              onClick={() => { if (!active) onChange(opt.value); }}
+              onKeyDown={(e) => onKeyDown(e, i)}
+              className={cn(
+                "font-medium rounded-md transition-colors flex items-center gap-1.5",
+                size === "md" && "px-3 py-1.5 text-xs",
+                size === "xs" && "px-2 py-0.5 text-2xs",
+                active
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              )}
+            >
+              {opt.icon}
+              {opt.label}
+            </button>
+          </Tooltip>
         );
       })}
     </div>

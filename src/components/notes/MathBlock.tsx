@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Code2, Sigma } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface MathBlockProps {
   /** The rendered KaTeX React subtree (from ReactMarkdown children) */
@@ -22,26 +23,27 @@ export function MathBlock({ renderedChildren, latex }: MathBlockProps) {
   return (
     <div className="relative my-4" data-math-block="true" style={{ overflow: "visible" }}>
       {/* Toggle button — always softly visible, full opacity on hover */}
-      <button
-        onClick={() => setShowSource((v) => !v)}
-        title={showSource ? "Show rendered math" : "Show LaTeX source"}
-        className="absolute top-1 right-0 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono transition-opacity"
-        style={{
-          background: "color-mix(in srgb, var(--surface-3) 90%, transparent)",
-          color: "var(--text-secondary)",
-          border: "1px solid var(--border)",
-          opacity: 0.5,
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.5")}
-      >
-        {showSource ? (
-          <Sigma size={11} strokeWidth={1.8} />
-        ) : (
-          <Code2 size={11} strokeWidth={1.8} />
-        )}
-        {showSource ? "render" : "source"}
-      </button>
+      <Tooltip content={showSource ? "Show rendered math" : "Show LaTeX source"}>
+        <button
+          onClick={() => setShowSource((v) => !v)}
+          className="absolute top-1 right-0 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono transition-opacity"
+          style={{
+            background: "color-mix(in srgb, var(--surface-3) 90%, transparent)",
+            color: "var(--text-secondary)",
+            border: "1px solid var(--border)",
+            opacity: 0.5,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.5")}
+        >
+          {showSource ? (
+            <Sigma size={11} strokeWidth={1.8} />
+          ) : (
+            <Code2 size={11} strokeWidth={1.8} />
+          )}
+          {showSource ? "render" : "source"}
+        </button>
+      </Tooltip>
 
       {showSource ? (
         /* LaTeX source view */

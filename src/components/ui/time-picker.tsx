@@ -6,6 +6,7 @@ import { Clock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { useClickOutside } from "@/hooks/useClickOutside";
+import { IconButton } from "./icon-button";
 
 interface TimePickerProps {
   /** "HH:MM" (24-hour). */
@@ -112,14 +113,13 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
         <span className="flex-1 truncate">{value ? friendly(...parse24(value)) : placeholder}</span>
       </button>
       {value && (
-        <button
-          type="button"
-          aria-label="Clear time"
+        <IconButton
+          label="Clear time"
           onClick={handleClear}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+          className="size-auto absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >
           <X size={10} />
-        </button>
+        </IconButton>
       )}
 
       {open && createPortal(

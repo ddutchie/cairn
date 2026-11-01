@@ -12,6 +12,7 @@ import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { kindLabel, SessionRow, SessionTypeIcon } from "./SessionRow";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
@@ -320,7 +321,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
             placeholder="Search conversations"
             className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
           />
-          {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"><X size={11} /></button>}
+          {query && <IconButton label="Clear search" onClick={() => setQuery("")} className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={11} /></IconButton>}
         </div>
         <div
           ref={listboxRef}
@@ -535,7 +536,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
                 placeholder="Search sessions"
                 className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
               />
-              {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear session search" className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><X size={11} /></button>}
+              {query && <IconButton label="Clear session search" onClick={() => setQuery("")} className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"><X size={11} /></IconButton>}
             </div>
           </div>
           <div

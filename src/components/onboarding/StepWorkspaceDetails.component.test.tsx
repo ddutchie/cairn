@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
 
@@ -31,7 +32,7 @@ function renderStep(overrides: Partial<Props> = {}) {
     onSubmit: vi.fn((event) => event.preventDefault()),
     ...overrides,
   };
-  render(<StepWorkspaceDetails {...props} />);
+  render(<StepWorkspaceDetails {...props} />, { wrapper: TooltipProvider });
   return props;
 }
 

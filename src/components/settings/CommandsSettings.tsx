@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BrowseCommandsModal } from "./tools/BrowseCommandsModal";
 import type { CustomSlashCommand, SlashCommandScope } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 const SCOPE_LABEL: Record<SlashCommandScope, string> = {
   chat: "Chat",
@@ -254,17 +255,16 @@ function CreateCommandForm({
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3.5 space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-[var(--text-primary)]">New command</span>
-        <button
-          type="button"
+        <IconButton
+          label="Close"
           onClick={() => {
             reset();
             setOpen(false);
           }}
-          title="Close"
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+          className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >
           <X size={13} />
-        </button>
+        </IconButton>
       </div>
 
       <label className="block">
@@ -463,22 +463,20 @@ function CommandRow({
         {SCOPE_LABEL[command.scope]}
       </span>
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          type="button"
+        <IconButton
+          label="Edit"
           onClick={() => setEditing(true)}
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-          title="Edit"
+          className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >
           <Pencil size={12} />
-        </button>
-        <button
-          type="button"
+        </IconButton>
+        <IconButton
+          label="Delete"
           onClick={onDelete}
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)]"
-          title="Delete"
+          className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--danger)]"
         >
           <X size={12} />
-        </button>
+        </IconButton>
       </div>
     </div>
   );

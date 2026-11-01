@@ -12,6 +12,7 @@ import { SettingsGroup, SettingsRow } from "./shared";
 import { AccentPicker } from "@/components/ui/accent-picker";
 import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
 import { FONT_PRESETS } from "../../../shared/ui/fonts";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const FONT_SCALE_OPTIONS: { value: FontScale; label: string; description: string }[] = [
   { value: 1,   label: "XS", description: "100%" },
@@ -81,38 +82,38 @@ export function GeneralSettings() {
       <SettingsRow label="Font size" description="Scale the UI text up or down">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
           {FONT_SCALE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setFontScale(opt.value)}
-              title={opt.description}
-              className={cn(
-                "flex items-center justify-center w-8 py-1.5 rounded-md text-xs font-medium transition-colors",
-                fontScale === opt.value
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1 border border-[var(--border)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
-              )}
-            >
-              {opt.label}
-            </button>
+            <Tooltip key={opt.value} content={opt.description} disabled={!opt.description}>
+              <button
+                onClick={() => setFontScale(opt.value)}
+                className={cn(
+                  "flex items-center justify-center w-8 py-1.5 rounded-md text-xs font-medium transition-colors",
+                  fontScale === opt.value
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1 border border-[var(--border)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
+                )}
+              >
+                {opt.label}
+              </button>
+            </Tooltip>
           ))}
         </div>
       </SettingsRow>
       <SettingsRow label="Note font" description="Font used for note text (editor, preview, and PDF export)">
         <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
           {FONT_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => setFontFamily(preset.id as FontFamilyId)}
-              title={preset.description}
-              className={cn(
-                "flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                fontFamily === preset.id
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1 border border-[var(--border)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
-              )}
-            >
-              {preset.name}
-            </button>
+            <Tooltip key={preset.id} content={preset.description} disabled={!preset.description}>
+              <button
+                onClick={() => setFontFamily(preset.id as FontFamilyId)}
+                className={cn(
+                  "flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                  fontFamily === preset.id
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1 border border-[var(--border)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
+                )}
+              >
+                {preset.name}
+              </button>
+            </Tooltip>
           ))}
         </div>
       </SettingsRow>

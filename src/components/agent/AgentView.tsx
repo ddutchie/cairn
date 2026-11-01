@@ -26,6 +26,7 @@ import { Bot, FolderOpen, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProjectSettingsModal } from "./ProjectSettingsModal";
 import { useResizableDivider } from "@/hooks/useResizableDivider";
+import { IconButton } from "@/components/ui/icon-button";
 
 const MIN_TREE_WIDTH = 160;
 const DEFAULT_TREE_WIDTH = 220;
@@ -197,14 +198,13 @@ export function AgentView() {
                 Architecture
               </button>
             )}
-            <button
+            <IconButton
+              label="Project settings"
               onClick={() => setProjectSettingsOpen(true)}
-              className="ml-auto p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors flex items-center justify-center"
-              title="Project settings"
-              aria-label="Project settings"
+              className="size-auto ml-auto p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]"
             >
               <Settings size={14} />
-            </button>
+            </IconButton>
           </div>
 
           {/* Editor content — editor + contextual architecture sidebar (desktop) */}

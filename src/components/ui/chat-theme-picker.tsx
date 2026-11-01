@@ -35,6 +35,7 @@ import {
   type ChatThemePreset,
 } from "../../../shared/ui/chat-themes";
 import { manifestToChatThemes } from "../../../shared/ui/chat-themes";
+import { Tooltip } from "./tooltip";
 
 function useCommunityThemes(): { themes: ChatThemePreset[]; loaded: boolean } {
   const [extras, setExtras] = useState<ChatThemePreset[]>([]);
@@ -123,20 +124,21 @@ export function ChatThemePicker({
         {all.map((theme) => {
           const activeItem = chatTheme === theme.id;
           return (
-            <button
-              key={theme.id}
-              type="button"
-              onClick={() => select(theme.id)}
-              title={theme.name}
-              aria-label={theme.name}
-              aria-pressed={activeItem}
-              className={cn(
-                "relative transition-transform hover:scale-105 focus:outline-none rounded-[8px]",
-                activeItem && "ring-2 ring-[var(--accent)]"
-              )}
-            >
-              <ThemePreview theme={theme} />
-            </button>
+            <Tooltip key={theme.id} content={theme.name}>
+              {/* eslint-disable-next-line cairn/icon-button-label -- theme preview swatch, not an icon */}
+              <button
+                type="button"
+                onClick={() => select(theme.id)}
+                aria-label={theme.name}
+                aria-pressed={activeItem}
+                className={cn(
+                  "relative transition-transform hover:scale-105 focus:outline-none rounded-[8px]",
+                  activeItem && "ring-2 ring-[var(--accent)]"
+                )}
+              >
+                <ThemePreview theme={theme} />
+              </button>
+            </Tooltip>
           );
         })}
         {!loaded && (

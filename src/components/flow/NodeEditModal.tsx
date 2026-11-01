@@ -12,6 +12,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { flowClient } from "@/lib/ipc/flow";
 import { errorMessage, hasElectron } from "@/lib/ipc/client";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface NodeEditModalProps {
   nodeId: string;
@@ -290,16 +291,17 @@ function UrlEditor({
             autoFocus
             className="flex-1 text-xs bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none min-w-0"
           />
-          <button
-            type="button"
-            onClick={fetchMeta}
-            disabled={fetching || !url}
-            title="Fetch title & description from URL"
-            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] disabled:opacity-40 transition-colors shrink-0"
-          >
-            {fetching ? <Spinner size={12} /> : <DownloadCloud size={12} />}
-            {fetching ? "" : "Fetch"}
-          </button>
+          <Tooltip content="Fetch title & description from URL">
+            <button
+              type="button"
+              onClick={fetchMeta}
+              disabled={fetching || !url}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] disabled:opacity-40 transition-colors shrink-0"
+            >
+              {fetching ? <Spinner size={12} /> : <DownloadCloud size={12} />}
+              {fetching ? "" : "Fetch"}
+            </button>
+          </Tooltip>
         </div>
         {fetchError && (
           <p className="text-xs text-[var(--danger)]">{fetchError}</p>
@@ -347,17 +349,17 @@ function GroupEditor({
         <label className="text-xs font-medium text-[var(--text-tertiary)]">Colour</label>
         <div className="flex items-center gap-2">
           {GROUP_COLORS.map((c) => (
-            <button
-              key={c.value}
-              title={c.label}
-              aria-label={`Set color to ${c.label}`}
-              onClick={() => onColorChange(c.value)}
-              className={cn(
-                "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
-                color === c.value ? "border-[var(--text-primary)] scale-110" : "border-transparent"
-              )}
-              style={{ background: c.swatch }}
-            />
+            <Tooltip key={c.value} content={c.label} disabled={!c.label}>
+              <button
+                aria-label={`Set color to ${c.label}`}
+                onClick={() => onColorChange(c.value)}
+                className={cn(
+                  "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
+                  color === c.value ? "border-[var(--text-primary)] scale-110" : "border-transparent"
+                )}
+                style={{ background: c.swatch }}
+              />
+            </Tooltip>
           ))}
         </div>
       </div>

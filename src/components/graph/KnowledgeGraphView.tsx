@@ -25,6 +25,7 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { EmptyState as EmptyStateView } from "@/components/ui/empty-state";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 import { neighbourhoodGraph, NEIGHBOURHOOD_HOPS, type NeighbourhoodHops } from "./neighbourhood";
+import { IconButton } from "@/components/ui/icon-button";
 
 // Edge-type legend. Mirrors the tokens in shared/ui/graph.ts `edgeStyle()`:
 // structural note links = success, wikilinks = accent, semantic = a neutral
@@ -358,15 +359,13 @@ export function KnowledgeGraphView() {
                 </Tooltip>
               ))}
             </div>
-            <Tooltip content="Show the whole graph (Esc)">
-              <button
-                onClick={() => setFocusNodeId(null)}
-                aria-label="Exit neighbourhood"
-                className="p-0.5 rounded hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] transition-colors"
-              >
-                <X size={12} />
-              </button>
-            </Tooltip>
+            <IconButton
+              label="Exit neighbourhood" tooltip="Show the whole graph (Esc)" tooltipSide="top"
+              onClick={() => setFocusNodeId(null)}
+              className="size-auto p-0.5 hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-current"
+            >
+              <X size={12} />
+            </IconButton>
           </div>
         )}
 

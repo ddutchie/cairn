@@ -22,6 +22,7 @@ import {
   type DueFilter,
 } from "@/lib/board-filters";
 import type { Tag } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 const DUE_OPTIONS: { value: DueFilter; label: string }[] = [
   { value: "overdue", label: "Overdue" },
@@ -190,13 +191,13 @@ export function BoardViewsMenu({
               {sameFilter(v.filter, filter) && <Check size={12} />}
             </span>
             <span className={cn("flex-1 truncate", sameFilter(v.filter, filter) && "text-[var(--text-primary)]")}>{v.name}</span>
-            <button
+            <IconButton
+              label={`Delete view ${v.name}`}
               onClick={(e) => { e.stopPropagation(); e.preventDefault(); deleteBoardView(projectId, v.id); }}
-              className="opacity-0 group-hover:opacity-100 group-data-[highlighted]:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)]"
-              aria-label={`Delete view ${v.name}`}
+              className="size-auto opacity-0 group-hover:opacity-100 group-data-[highlighted]:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--danger)]"
             >
               <Trash2 size={11} />
-            </button>
+            </IconButton>
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />

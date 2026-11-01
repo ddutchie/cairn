@@ -7,6 +7,7 @@ import type { Note } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NoteListItem } from "./NoteListItem";
 import type { FolderNode } from "./buildFolderTree";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface FolderTreeNodeProps {
   node: FolderNode;
@@ -95,21 +96,20 @@ export const FolderTreeNode = memo(function FolderTreeNode({
             className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0"
           />
         )}
-        <button
+        <IconButton
+          label={`Move ${node.name} to another project`}
           onClick={(e) => { e.stopPropagation(); onMoveFolderToProject(node.path); }}
-          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
-          title={`Move ${node.name} to another project`}
-          aria-label={`Move ${node.name} to another project`}
+          className="size-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
         >
           <FolderInput size={10} />
-        </button>
-        <button
+        </IconButton>
+        <IconButton
+          label={`New note in ${node.name}`}
           onClick={(e) => { e.stopPropagation(); onCreateInFolder(node.path); }}
-          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
-          title={`New note in ${node.name}`}
+          className="size-auto opacity-0 group-hover:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all"
         >
           <Plus size={10} />
-        </button>
+        </IconButton>
       </div>
 
       {!isCollapsed && (

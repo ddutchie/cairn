@@ -17,6 +17,7 @@ import { formatUsd } from "../../../shared/chat/provider-credits";
 import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals, type UsageRecentRow, type UsageThreadGroup } from "@/types/usage";
 import { modelLogoUrl, prewarmModelCatalog, getModelCatalogVersion, subscribeModelCatalog } from "@/lib/models-dev";
 import { providerLogoUrl, endpointLogoSlug } from "../../../shared/models/model-catalog";
+import { IconButton } from "@/components/ui/icon-button";
 
 const MODEL_PALETTE = [
   "var(--accent)",
@@ -339,24 +340,25 @@ export function UsageView() {
             value={rangeIdx}
             onChange={setRangeIdx}
           />
-          <button
-            onClick={() => setIncludeEstimated((v) => !v)}
-            aria-pressed={includeEstimated}
-            title={
-              includeEstimated
-                ? "Estimates shown — calls whose cost is estimated from models.dev pricing show a ~ figure"
-                : "Estimates hidden — estimated costs are shown as —; all calls and token stats stay visible"
-            }
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs whitespace-nowrap shrink-0 transition-colors",
-              includeEstimated
-                ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
-                : "border-[var(--border)] text-[var(--text-tertiary)]"
-            )}
+          <Tooltip
+            content={includeEstimated
+              ? "Estimates shown — calls whose cost is estimated from models.dev pricing show a ~ figure"
+              : "Estimates hidden — estimated costs are shown as —; all calls and token stats stay visible"}
           >
-            <Percent size={12} />
-            Estimates
-          </button>
+            <button
+              onClick={() => setIncludeEstimated((v) => !v)}
+              aria-pressed={includeEstimated}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs whitespace-nowrap shrink-0 transition-colors",
+                includeEstimated
+                  ? "border-transparent bg-[var(--accent-dim)] text-[var(--accent)]"
+                  : "border-[var(--border)] text-[var(--text-tertiary)]"
+              )}
+            >
+              <Percent size={12} />
+              Estimates
+            </button>
+          </Tooltip>
           <Tooltip
             content={clearConfirm.armed ? "Click again to delete all recorded usage" : "Clear recorded usage data"}
             side="bottom"
@@ -381,14 +383,13 @@ export function UsageView() {
               {clearConfirm.armed && <span className="text-2xs font-medium">Confirm</span>}
             </button>
           </Tooltip>
-          <Tooltip content="Reload data" side="bottom">
-            <button aria-label="Reload data"
-              onClick={refresh}
-              className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <RefreshSpin size={11} spinning={loading} />
-            </button>
-          </Tooltip>
+          <IconButton
+            label="Reload data"
+            onClick={refresh}
+            className="size-auto gap-1 px-1.5 py-1 border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+          >
+            <RefreshSpin size={11} spinning={loading} />
+          </IconButton>
         </div>
       </div>
 

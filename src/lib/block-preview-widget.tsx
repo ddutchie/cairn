@@ -29,6 +29,7 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactNode } from "react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 /** Shared container class; styled by blockWidgetTheme (flow-root + no margin). */
 export const BLOCK_WIDGET_CLASS = "cm-lp-block";
@@ -52,7 +53,8 @@ export abstract class BlockPreviewWidget extends WidgetType {
     // Render asynchronously (flushSync is illegal here — CM calls toDOM from
     // inside React commits). Correct height comes from re-measuring once the
     // content has actually laid out.
-    this.root.render(this.render());
+    // Its own root, so it needs its own provider for IconButton tooltips.
+    this.root.render(<TooltipProvider>{this.render()}</TooltipProvider>);
     // Re-measure once the content lays out: CM measures the widget's height when
     // the block is laid out, which can be before React has painted the (async)
     // content. The ResizeObserver fires on first observe and on every later size

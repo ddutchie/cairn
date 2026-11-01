@@ -5,6 +5,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { parseWikilinks } from "@/lib/wikilink-parser";
 import { revealNote, revealCard } from "@/lib/events";
+import { Tooltip } from "@/components/ui/tooltip";
 
 /**
  * Lightweight description preview for collapsed kanban cards.
@@ -101,20 +102,20 @@ function CardDescriptionPreviewImpl({ content, projectId, workspaceId }: { conte
         }
         const isNote = seg.noteId != null;
         return (
-          <button
-            key={seg.key}
-            type="button"
-            title={isNote ? `Open note: ${seg.title}` : `Open task: ${seg.title}`}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (seg.noteId) revealNote(setView, seg.noteId);
-              else if (seg.cardId) revealCard(setView, seg.cardId);
-            }}
-            className="inline-flex items-center px-1 rounded font-medium text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] transition-colors"
-          >
-            {seg.title}
-          </button>
+          <Tooltip key={seg.key} content={isNote ? `Open note: ${seg.title}` : `Open task: ${seg.title}`}>
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (seg.noteId) revealNote(setView, seg.noteId);
+                else if (seg.cardId) revealCard(setView, seg.cardId);
+              }}
+              className="inline-flex items-center px-1 rounded font-medium text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] transition-colors"
+            >
+              {seg.title}
+            </button>
+          </Tooltip>
         );
       })}
     </p>

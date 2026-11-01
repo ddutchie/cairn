@@ -3,6 +3,7 @@
 import React from "react";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // Shared UI primitives used across the Project Overview sections.
 
@@ -50,19 +51,20 @@ export function CollapsibleSection({
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={!collapsed}
-          aria-controls={bodyId}
-          title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-          className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
-        >
-          <ChevronDown size={11} className={cn("text-[var(--text-tertiary)] transition-transform", collapsed && "-rotate-90")} />
-          <span className="group-hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5">
-            {icon}{title}
-          </span>
-        </button>
+        <Tooltip content={collapsed ? `Expand ${title}` : `Collapse ${title}`}>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+            aria-controls={bodyId}
+            className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+          >
+            <ChevronDown size={11} className={cn("text-[var(--text-tertiary)] transition-transform", collapsed && "-rotate-90")} />
+            <span className="group-hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5">
+              {icon}{title}
+            </span>
+          </button>
+        </Tooltip>
         {action && (
           <button onClick={action.onClick}
             className="text-sm text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">

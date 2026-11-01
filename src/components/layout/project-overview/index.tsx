@@ -37,6 +37,7 @@ import { TiltCard } from "./tilt-card";
 import { TaskFlowPanel, PriorityPanel, NotesSummaryPanel } from "./overview-panels";
 import type { FocusFilter } from "./focus";
 import { HeaderToolIcons } from "./header-tool-icons";
+import { Tooltip } from "@/components/ui/tooltip";
 
 
 export function ProjectOverview() {
@@ -545,7 +546,7 @@ export function ProjectOverview() {
                 </button>
               );
             })}
-            <span className="ml-auto text-xs text-[var(--text-tertiary)] font-mono hidden sm:inline" aria-live="polite">
+            <span className="ml-auto text-xs text-[var(--text-tertiary)] tabular-nums hidden sm:inline" aria-live="polite">
               {focus === "all" ? "Showing all" : `Filtered: ${focusLabel[focus]}`} · {filteredQueue.length || focusCounts[focus]} items
             </span>
           </div>
@@ -889,23 +890,24 @@ export function ProjectOverview() {
                     >
                       <MessageSquare size={11} /> Chat
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setSessionKind("coding")}
-                      aria-pressed={sessionKind === "coding"}
-                      disabled={!project.codeDirectory}
-                      title={project.codeDirectory ? "Coding agent — has code directory" : "No code directory — chat only"}
-                      className={cn(
-                        "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors",
-                        !project.codeDirectory
-                          ? "bg-transparent text-[var(--text-tertiary)] border-transparent opacity-60 cursor-not-allowed"
-                          : sessionKind === "coding"
-                            ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)]"
-                            : "bg-transparent text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]",
-                      )}
-                    >
-                      <Code2 size={11} /> Coding agent
-                    </button>
+                    <Tooltip content={project.codeDirectory ? "Coding agent — has code directory" : "No code directory — chat only"}>
+                      <button
+                        type="button"
+                        onClick={() => setSessionKind("coding")}
+                        aria-pressed={sessionKind === "coding"}
+                        disabled={!project.codeDirectory}
+                        className={cn(
+                          "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors",
+                          !project.codeDirectory
+                            ? "bg-transparent text-[var(--text-tertiary)] border-transparent opacity-60 cursor-not-allowed"
+                            : sessionKind === "coding"
+                              ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)]"
+                              : "bg-transparent text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]",
+                        )}
+                      >
+                        <Code2 size={11} /> Coding agent
+                      </button>
+                    </Tooltip>
                   </div>
                   <span className="hidden sm:inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)] ml-1">
                     <span className="w-1 h-1 rounded-full bg-[var(--success)]" /> {project.name} · {instrumentDone}/{instrumentTotal}

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-dot";
 import type { ProjectSettings } from "@/types";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface ProjectSettingsSectionProps {
   showHeader?: boolean;
@@ -168,9 +169,11 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
             </Button>
           )}
           {codeDirInput && (
-            <Button variant="ghost" size="icon" onClick={clearCodeDir} title="Clear code directory" aria-label="Clear code directory" className="flex-shrink-0">
-              <X size={13} />
-            </Button>
+            <Tooltip content="Clear code directory">
+              <Button variant="ghost" size="icon" onClick={clearCodeDir} aria-label="Clear code directory" className="flex-shrink-0">
+                <X size={13} />
+              </Button>
+            </Tooltip>
           )}
         </div>
       </SettingsGroup>

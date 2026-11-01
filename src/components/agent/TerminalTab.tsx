@@ -2,8 +2,8 @@
 
 import { X, MessageSquare, CircleDot } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Tooltip } from "@/components/ui/tooltip";
 import type { TerminalSession } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 function sanitizeAriaId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -67,15 +67,13 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
         )}
       </button>
 
-      <Tooltip content="Close session" side="bottom">
-        <button
-          aria-label={`Close ${session.taskTitle}`}
-          onClick={onClose}
-          className="flex items-center justify-center h-full px-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-r border-[var(--border)]"
-        >
-          <X size={10} />
-        </button>
-      </Tooltip>
+      <IconButton
+        label={`Close ${session.taskTitle}`} tooltip="Close session"
+        onClick={onClose}
+        className="w-auto h-full px-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] border-r border-[var(--border)]"
+      >
+        <X size={10} />
+      </IconButton>
     </div>
   );
 }

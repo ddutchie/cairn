@@ -6,9 +6,9 @@ import {
 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { useCairnStore } from "@/store";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface EmbeddingsConfig {
   enabled: boolean;
@@ -295,24 +295,22 @@ export function EmbeddingsSettings() {
               </div>
               <div className="flex items-center gap-1">
                 {status.running ? (
-                  <Tooltip content="Stop worker">
-                    <button aria-label="Stop worker"
-                      onClick={handleStop}
-                      className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
-                    >
-                      <Power className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
+                  <IconButton
+                    label="Stop worker" tooltipSide="top"
+                    onClick={handleStop}
+                    className="size-auto p-1.5 hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                  </IconButton>
                 ) : (
-                  <Tooltip content="Refresh">
-                    <button aria-label="Refresh"
-                      onClick={refreshQuiet}
-                      disabled={startingWorker}
-                      className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)] disabled:opacity-50"
-                    >
-                      <RefreshSpin spinning={startingWorker} className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
+                  <IconButton
+                    label="Refresh" tooltipSide="top"
+                    onClick={refreshQuiet}
+                    disabled={startingWorker}
+                    className="size-auto p-1.5 hover:bg-[var(--surface-3)] text-[var(--text-tertiary)] disabled:opacity-50"
+                  >
+                    <RefreshSpin spinning={startingWorker} className="w-3.5 h-3.5" />
+                  </IconButton>
                 )}
               </div>
             </div>
@@ -348,24 +346,22 @@ export function EmbeddingsSettings() {
                             <CheckCircle className="w-4 h-4 text-[var(--success)]" />
                           )}
                           {!isDefault && (
-                            <Tooltip content="Set as default">
-                              <button aria-label="Set as default"
-                                onClick={() => void handleSetDefault(model.id)}
-                                className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
-                              >
-                                <Star className="w-3.5 h-3.5" />
-                              </button>
-                            </Tooltip>
+                            <IconButton
+                              label="Set as default" tooltipSide="top"
+                              onClick={() => void handleSetDefault(model.id)}
+                              className="size-auto p-1.5 hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
+                            >
+                              <Star className="w-3.5 h-3.5" />
+                            </IconButton>
                           )}
                           {!isActive && (
-                            <Tooltip content="Delete from cache">
-                              <button aria-label="Delete from cache"
-                                onClick={() => void handleRemove(model.id)}
-                                className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </Tooltip>
+                            <IconButton
+                              label="Delete from cache" tooltipSide="top"
+                              onClick={() => void handleRemove(model.id)}
+                              className="size-auto p-1.5 hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </IconButton>
                           )}
                         </>
                       ) : isDownloading ? (

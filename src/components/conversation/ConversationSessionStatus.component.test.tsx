@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConversationSessionStatus } from "./ConversationSessionStatus";
 import { useCairnStore } from "@/store";
 import { makeSessionProjection, type GoalSummary, type SessionProjection } from "../../../shared/agent/session-projection";
@@ -71,13 +72,13 @@ afterEach(() => {
 describe("ConversationSessionStatus", () => {
   it("renders nothing when there is no goal and no jobs", () => {
     mockSession(null);
-    const { container } = render(<ConversationSessionStatus sessionId={SESSION} />);
+    const { container } = render(<ConversationSessionStatus sessionId={SESSION} />, { wrapper: TooltipProvider });
     expect(container.textContent).toBe("");
   });
 
   it("shows the goal chip from the initial session:goal snapshot", async () => {
     mockSession(goal());
-    render(<ConversationSessionStatus sessionId={SESSION} />);
+    render(<ConversationSessionStatus sessionId={SESSION} />, { wrapper: TooltipProvider });
     expect(await screen.findByText("Ship the widget")).toBeTruthy();
     expect(screen.getByText("ACTIVE")).toBeTruthy();
     expect(goalMock).toHaveBeenCalledWith(SESSION);
@@ -85,7 +86,7 @@ describe("ConversationSessionStatus", () => {
 
   it("shows the goal chip from a live goal projection", async () => {
     mockSession(null);
-    render(<ConversationSessionStatus sessionId={SESSION} />);
+    render(<ConversationSessionStatus sessionId={SESSION} />, { wrapper: TooltipProvider });
     expect(screen.queryByText("Ship the widget")).toBeNull();
     emit(makeSessionProjection(SESSION, "goal", { goal: goal() }));
     expect(await screen.findByText("Ship the widget")).toBeTruthy();
@@ -93,7 +94,7 @@ describe("ConversationSessionStatus", () => {
 
   it("ignores goal projections for other sessions", async () => {
     mockSession(null);
-    render(<ConversationSessionStatus sessionId={SESSION} />);
+    render(<ConversationSessionStatus sessionId={SESSION} />, { wrapper: TooltipProvider });
     emit(makeSessionProjection("chat-other", "goal", { goal: goal() }));
     await waitFor(() => expect(projectionCbs.length).toBeGreaterThan(0));
     // Let any stray state update flush; the chip must stay hidden.
@@ -103,7 +104,7 @@ describe("ConversationSessionStatus", () => {
 
   it("hides the chip when the goal clears (null projection)", async () => {
     mockSession(goal());
-    render(<ConversationSessionStatus sessionId={SESSION} />);
+    render(<ConversationSessionStatus sessionId={SESSION} />, { wrapper: TooltipProvider });
     expect(await screen.findByText("Ship the widget")).toBeTruthy();
     emit(makeSessionProjection(SESSION, "goal", { goal: null }));
     await waitFor(() => expect(screen.queryByText("Ship the widget")).toBeNull());
@@ -111,7 +112,7 @@ describe("ConversationSessionStatus", () => {
 
   it("fills the jobs dock from a jobs projection (owned + unowned, never foreign)", async () => {
     mockSession(null);
-    render(<ConversationSessionStatus sessionId={SESSION} />);
+    render(<ConversationSessionStatus sessionId={SESSION} />, { wrapper: TooltipProvider });
     emit(makeSessionProjection(SESSION, "jobs", {
       ownerSession: SESSION,
       jobs: [
@@ -122,14 +123,14 @@ describe("ConversationSessionStatus", () => {
     }));
     expect(await screen.findByText(/owned job/)).toBeTruthy();
     // The dock starts collapsed (summary only) — expand to see the rows.
-    fireEvent.click(screen.getByTitle("Expand jobs"));
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText(/unowned job/)).toBeTruthy();
     expect(screen.queryByText(/foreign job/)).toBeNull();
   });
 
   it("ignores jobs projections for other sessions", async () => {
     mockSession(null);
-    render(<ConversationSessionStatus sessionId={SESSION} />);
+    render(<ConversationSessionStatus sessionId={SESSION} />, { wrapper: TooltipProvider });
     emit(makeSessionProjection("chat-other", "jobs", {
       jobs: [{ id: "j9", kind: "bash", label: "other session job", status: "running", startedAt: now }],
     }));

@@ -16,6 +16,7 @@ import type { Automation, AutomationRun } from "@/store/slices/automations";
 import { RUN_TIME, STATUS_COLOR, scheduleLabel, runScratchArtifacts, type ArtifactRef } from "./automation-format";
 import { automationsClient } from "@/lib/ipc/automations";
 import { errorMessage } from "@/lib/ipc/client";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface AutomationDetailDialogProps {
   automation: Automation | null;
@@ -199,15 +200,13 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
                         </button>
                       </Tooltip>
                     )}
-                    <Tooltip content={logFor === r.id ? "Hide run log" : "Show what happened in this run"}>
-                      <button aria-label={logFor === r.id ? "Hide run log" : "Show what happened in this run"}
-                        type="button"
-                        onClick={() => void toggleLog(r.id)}
-                        className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
-                      >
-                        <Activity size={11} />
-                      </button>
-                    </Tooltip>
+                    <IconButton
+                      label={logFor === r.id ? "Hide run log" : "Show what happened in this run"} tooltipSide="top"
+                      onClick={() => void toggleLog(r.id)}
+                      className="size-auto text-[var(--text-tertiary)] hover:text-[var(--accent)]"
+                    >
+                      <Activity size={11} />
+                    </IconButton>
                   </div>
                   {(r.status === "done" || r.status === "exhausted") && r.finishedAt && (
                     <div className="text-[var(--text-tertiary)] mt-0.5">Finished {formatRelative(r.finishedAt, RUN_TIME)}</div>

@@ -8,6 +8,7 @@ import { DialogClose } from "@/components/ui/dialog";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { FolderNode } from "./buildFolderTree";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface FolderPickerDialogProps {
   folderTree: FolderNode[];
@@ -95,13 +96,13 @@ export function FolderPickerDialog({ folderTree, mode, currentFolder = "", onSel
                 <Folder size={12} className="shrink-0" />
                 <span className="font-medium">Root</span>
               </button>
-              <button
+              <IconButton
+                label="New folder in root"
                 onClick={(e) => openAdd("", e)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
-                title="New folder in root"
+                className="size-auto opacity-0 group-hover:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
               >
                 <FolderPlus size={11} />
-              </button>
+              </IconButton>
             </div>
 
             {addingUnder === "" && inlineInput}
@@ -159,12 +160,13 @@ function FolderPickerNode({
         style={{ paddingLeft: `${12 + indent}px`, paddingRight: "12px", paddingTop: "7px", paddingBottom: "7px" }}
       >
         {node.children.length > 0 ? (
-          <button
+          <IconButton
+            label={open ? `Collapse ${node.name}` : `Expand ${node.name}`}
             onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-            className="shrink-0 text-[var(--text-tertiary)]"
+            className="size-auto text-[var(--text-tertiary)]"
           >
             {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-          </button>
+          </IconButton>
         ) : (
           <span className="w-[10px] shrink-0" />
         )}
@@ -177,13 +179,13 @@ function FolderPickerNode({
             : <Folder size={12} className="shrink-0" />}
           <span className="truncate">{node.name}</span>
         </button>
-        <button
+        <IconButton
+          label={`New folder in ${node.name}`}
           onClick={(e) => onOpenAdd(node.path, e)}
-          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all shrink-0"
-          title={`New folder in ${node.name}`}
+          className="size-auto opacity-0 group-hover:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all"
         >
           <FolderPlus size={11} />
-        </button>
+        </IconButton>
       </div>
 
       {addingUnder === node.path && inlineInput}

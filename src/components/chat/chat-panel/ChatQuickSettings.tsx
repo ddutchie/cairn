@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { IconButton } from "@/components/ui/icon-button";
 import { Toggle } from "@/components/ui/toggle";
 import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const MAX_STEPS_PRESETS = [10, 20, 30, 50, 1000] as const;
 const TEMPERATURE_PRESETS = [0.1, 0.3, 0.5, 0.7, 1.0] as const;
@@ -108,19 +109,20 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
               </span>
             </div>
             <div className="flex gap-1">
-              <button
-                onClick={() => setAIConfig({ temperature: undefined })}
-                disabled={disabled}
-                title="Auto — no temperature is sent; the model uses its own default."
-                className={cn(
-                  "flex-1 px-1 py-0.5 text-2xs rounded border transition-colors disabled:opacity-50",
-                  temperatureAuto
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
-                )}
-              >
-                Auto
-              </button>
+              <Tooltip content="Auto — no temperature is sent; the model uses its own default.">
+                <button
+                  onClick={() => setAIConfig({ temperature: undefined })}
+                  disabled={disabled}
+                  className={cn(
+                    "flex-1 px-1 py-0.5 text-2xs rounded border transition-colors disabled:opacity-50",
+                    temperatureAuto
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
+                  )}
+                >
+                  Auto
+                </button>
+              </Tooltip>
               {TEMPERATURE_PRESETS.map((n) => (
                 <button
                   key={n}

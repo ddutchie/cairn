@@ -9,7 +9,6 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus } from "@/lib/utils";
 import { isView } from "@/lib/views";
-import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject, modKey, buildViewShortcutMap } from "../sidebar-utils";
@@ -25,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
+import { IconButton } from "@/components/ui/icon-button";
 
 export function DockSidebar() {
   const {
@@ -119,11 +119,9 @@ export function DockSidebar() {
       >
         {/* collapsed dock */}
         <div aria-hidden={!collapsed} inert={!collapsed ? true : undefined} className={cn("flex flex-col items-center gap-1 w-full flex-1 min-h-0 transition-opacity duration-300", collapsed ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-x-0 top-3")}>
-          <Tooltip content="Expand sidebar" side="right">
-            <button aria-label="Expand sidebar" onClick={toggleSidebar} className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
-              <Layers size={16} />
-            </button>
-          </Tooltip>
+          <IconButton label="Expand sidebar" tooltipSide="right" onClick={toggleSidebar} className="size-auto p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
+            <Layers size={16} />
+          </IconButton>
           {(() => {
             const activeProject = projects.find((p) => p.id === activeProjectId);
             const label = activeProject?.name ?? "Switch project";
@@ -132,16 +130,14 @@ export function DockSidebar() {
             if (!activeProjectId) {
               return (
                 <DropdownMenu>
-                  <Tooltip content="Switch project" side="right">
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        aria-label="Switch project"
-                        className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-                      >
-                        <Layers size={15} />
-                      </button>
-                    </DropdownMenuTrigger>
-                  </Tooltip>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton
+                      label="Switch project" tooltipSide="right"
+                      className="size-auto p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                    >
+                      <Layers size={15} />
+                    </IconButton>
+                  </DropdownMenuTrigger>
                   <DropdownMenuContent side="right" align="start" className="w-56 max-h-64 overflow-y-auto">
                     {projects.map((p) => (
                       <DropdownMenuItem
@@ -172,16 +168,14 @@ export function DockSidebar() {
             }
             return (
               <DropdownMenu>
-                <Tooltip content={label} side="right">
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      aria-label={label}
-                      className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-                    >
-                      <SidebarMiniRadar projectId={activeProjectId!} size={20} bare />
-                    </button>
-                  </DropdownMenuTrigger>
-                </Tooltip>
+                <DropdownMenuTrigger asChild>
+                  <IconButton
+                    label={label} tooltipSide="right"
+                    className="size-auto p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+                  >
+                    <SidebarMiniRadar projectId={activeProjectId!} size={20} bare />
+                  </IconButton>
+                </DropdownMenuTrigger>
                 <DropdownMenuContent side="right" align="start" className="w-56 max-h-64 overflow-y-auto">
                   {projects.map((p) => (
                     <DropdownMenuItem
@@ -211,26 +205,26 @@ export function DockSidebar() {
             );
           })()}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content={`Search (${mod}K)`} side="right"><button aria-label="Search" onClick={toggleSearch} className={cn("p-2 rounded-md", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Search size={15} /></button></Tooltip>
+          <IconButton label="Search" tooltip={`Search (${mod}K)`} tooltipSide="right" onClick={toggleSearch} className={cn("size-auto p-2", searchOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Search size={15} /></IconButton>
           {!hiddenViews.has("chat") && (
-            <Tooltip content={`Chat (${mod}/)`} side="right"><button aria-label="Chat" onClick={toggleChat} className={cn("p-2 rounded-md", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><MessageSquare size={15} /></button></Tooltip>
+            <IconButton label="Chat" tooltip={`Chat (${mod}/)`} tooltipSide="right" onClick={toggleChat} className={cn("size-auto p-2", chatOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><MessageSquare size={15} /></IconButton>
           )}
           <div className="w-5 h-px bg-[var(--border)] my-1" />
-          <Tooltip content={`Overview (${shortcutMap.get("overview") ?? ""})`} side="right"><button aria-label="Overview" onClick={() => setView("overview")} className={cn("p-2 rounded-md", isView(activeView, "overview") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={15} /></button></Tooltip>
-          <Tooltip content={`Notes (${shortcutMap.get("notes") ?? ""})`} side="right"><button aria-label="Notes" onClick={() => setView("notes")} className={cn("p-2 rounded-md", isView(activeView, "notes") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={15} /></button></Tooltip>
-          {!hiddenViews.has("board") && <Tooltip content={`Board (${shortcutMap.get("board") ?? ""})`} side="right"><button aria-label="Board" onClick={() => setView("board")} className={cn("p-2 rounded-md", isView(activeView, "board") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={15} /></button></Tooltip>}
-          {!hiddenViews.has("calendar") && <Tooltip content={`Calendar (${shortcutMap.get("calendar") ?? ""})`} side="right"><button aria-label="Calendar" onClick={openCalendar} className={cn("p-2 rounded-md", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>}
-          {!hiddenViews.has("flow") && <Tooltip content={`Flow (${shortcutMap.get("flow") ?? ""})`} side="right"><button aria-label="Flow" onClick={() => setView("flow")} className={cn("p-2 rounded-md", isView(activeView, "flow") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={15} /></button></Tooltip>}
-          {!hiddenViews.has("agent") && <Tooltip content={`Agent (${shortcutMap.get("agent") ?? ""})`} side="right"><button aria-label="Agent" onClick={() => setView("agent")} className={cn("p-2 rounded-md", isView(activeView, "agent") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={15} /></button></Tooltip>}
+          <IconButton label="Overview" tooltip={`Overview (${shortcutMap.get("overview") ?? ""})`} tooltipSide="right" onClick={() => setView("overview")} className={cn("size-auto p-2", isView(activeView, "overview") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={15} /></IconButton>
+          <IconButton label="Notes" tooltip={`Notes (${shortcutMap.get("notes") ?? ""})`} tooltipSide="right" onClick={() => setView("notes")} className={cn("size-auto p-2", isView(activeView, "notes") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={15} /></IconButton>
+          {!hiddenViews.has("board") && <IconButton label="Board" tooltip={`Board (${shortcutMap.get("board") ?? ""})`} tooltipSide="right" onClick={() => setView("board")} className={cn("size-auto p-2", isView(activeView, "board") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={15} /></IconButton>}
+          {!hiddenViews.has("calendar") && <IconButton label="Calendar" tooltip={`Calendar (${shortcutMap.get("calendar") ?? ""})`} tooltipSide="right" onClick={openCalendar} className={cn("size-auto p-2", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></IconButton>}
+          {!hiddenViews.has("flow") && <IconButton label="Flow" tooltip={`Flow (${shortcutMap.get("flow") ?? ""})`} tooltipSide="right" onClick={() => setView("flow")} className={cn("size-auto p-2", isView(activeView, "flow") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={15} /></IconButton>}
+          {!hiddenViews.has("agent") && <IconButton label="Agent" tooltip={`Agent (${shortcutMap.get("agent") ?? ""})`} tooltipSide="right" onClick={() => setView("agent")} className={cn("size-auto p-2", isView(activeView, "agent") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={15} /></IconButton>}
           <div className="flex-1" aria-hidden="true" />
           <div className="mt-auto w-full flex flex-col items-center gap-1 pt-2 border-t border-[var(--border)]">
-            <Tooltip content="Automations" side="right"><button aria-label="Automations" onClick={() => setView("automations")} className={cn("p-2 rounded-md", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Zap size={15} /></button></Tooltip>
-            {hiddenViews.has("calendar") && <Tooltip content="Calendar" side="right"><button aria-label="Calendar" onClick={() => setView("calendar-all")} className={cn("p-2 rounded-md", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>}
-            {!hiddenViews.has("graph") && <Tooltip content="Knowledge Graph" side="right"><button aria-label="Knowledge Graph" onClick={() => setView("graph")} className={cn("p-2 rounded-md", isView(activeView, "graph") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={15} /></button></Tooltip>}
-            {!hiddenViews.has("insights") && <Tooltip content="Insights" side="right"><button aria-label="Insights" onClick={() => setView("insights")} className={cn("p-2 rounded-md", isView(activeView, "insights") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={15} /></button></Tooltip>}
-            {!hiddenViews.has("usage") && <Tooltip content="Usage" side="right"><button aria-label="Usage" onClick={() => setView("usage")} className={cn("p-2 rounded-md", isView(activeView, "usage") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={15} /></button></Tooltip>}
+            <IconButton label="Automations" tooltipSide="right" onClick={() => setView("automations")} className={cn("size-auto p-2", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Zap size={15} /></IconButton>
+            {hiddenViews.has("calendar") && <IconButton label="Calendar" tooltipSide="right" onClick={() => setView("calendar-all")} className={cn("size-auto p-2", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></IconButton>}
+            {!hiddenViews.has("graph") && <IconButton label="Knowledge Graph" tooltipSide="right" onClick={() => setView("graph")} className={cn("size-auto p-2", isView(activeView, "graph") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={15} /></IconButton>}
+            {!hiddenViews.has("insights") && <IconButton label="Insights" tooltipSide="right" onClick={() => setView("insights")} className={cn("size-auto p-2", isView(activeView, "insights") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={15} /></IconButton>}
+            {!hiddenViews.has("usage") && <IconButton label="Usage" tooltipSide="right" onClick={() => setView("usage")} className={cn("size-auto p-2", isView(activeView, "usage") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={15} /></IconButton>}
             <div className="w-5 h-px bg-[var(--border)] my-1" />
-            <Tooltip content="Settings" side="right"><button aria-label="Settings" onClick={() => setView("settings")} className={cn("p-2 rounded-md", isView(activeView, "settings") ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Settings size={15} /></button></Tooltip>
+            <IconButton label="Settings" tooltipSide="right" onClick={() => setView("settings")} className={cn("size-auto p-2", isView(activeView, "settings") ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Settings size={15} /></IconButton>
           </div>
         </div>
 
@@ -243,11 +237,9 @@ export function DockSidebar() {
               <div className="text-xs font-semibold truncate">{workspace?.name ?? "Workspace"}</div>
               <div className="text-2xs text-[var(--text-tertiary)]">{projects.length} projects · local</div>
             </div>
-            <Tooltip content="Collapse sidebar" side="right">
-              <button aria-label="Collapse sidebar" onClick={toggleSidebar} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
-                <ChevronLeft size={13} />
-              </button>
-            </Tooltip>
+            <IconButton label="Collapse sidebar" tooltipSide="right" onClick={toggleSidebar} className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
+              <ChevronLeft size={13} />
+            </IconButton>
           </div>
 
           {/* Current project card. Its title row is the project switcher, so the

@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { InlineDiff } from "@/components/agent/git/InlineDiff";
 import type { ContextPanel } from "@/types";
 import { useResizableDivider } from "@/hooks/useResizableDivider";
+import { IconButton } from "@/components/ui/icon-button";
 
 const MIN_PREVIEW_WIDTH = 360;
 const MAX_PREVIEW_WIDTH = 900;
@@ -164,13 +165,13 @@ export function PreviewPane() {
             </>
           )}
 
-          <button
+          <IconButton
+            label="Close preview"
             onClick={() => setActivePreviewItem(null)}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors flex items-center justify-center"
-            title="Close preview"
+            className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]"
           >
             <X size={13} />
-          </button>
+          </IconButton>
         </div>
       </div>
 

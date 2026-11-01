@@ -31,6 +31,7 @@ import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import { excerptFor } from "@/lib/note-text";
 import { useNoteBody } from "@/hooks/useNoteBody";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface NoteEditorProps {
   note: Note;
@@ -691,20 +692,21 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             {/* Live Preview toggle — only meaningful while editing. On = inline
                 widgets + marker hiding; off = raw Markdown. */}
             {mode === "edit" && (
-              <button
-                onClick={() => { setLivePreviewOn(!livePreviewOn); setTimeout(() => editorRef.current?.focus(), 50); }}
-                title={livePreviewOn ? "Live preview on — click to edit raw Markdown" : "Live preview off — click to render inline"}
-                aria-pressed={livePreviewOn}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors",
-                  livePreviewOn
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-                )}
-              >
-                <Code size={11} />
-                Live preview
-              </button>
+              <Tooltip content={livePreviewOn ? "Live preview on — click to edit raw Markdown" : "Live preview off — click to render inline"}>
+                <button
+                  onClick={() => { setLivePreviewOn(!livePreviewOn); setTimeout(() => editorRef.current?.focus(), 50); }}
+                  aria-pressed={livePreviewOn}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors",
+                    livePreviewOn
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                  )}
+                >
+                  <Code size={11} />
+                  Live preview
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>
@@ -742,45 +744,33 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
 
           {mode === "read" && <NoteExportMenu noteId={note.id} title={note.title} proseRef={proseRef} fontFamilyId={fontFamilyId} />}
           <div className="flex items-center gap-1">
-          <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
-            <button
-              onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
-              className={cn(
-                "p-1.5 rounded-md transition-colors",
-                note.isPinned
-                  ? "text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-              )}
-            >
-              {note.isPinned ? <PinOff size={13} /> : <Pin size={13} />}
-            </button>
-          </Tooltip>
-          <Tooltip content={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}>
-            <button aria-label={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}
-              onClick={() => setShowSemanticPanel((v) => !v)}
-              className={cn(
-                "p-1.5 rounded-md transition-colors",
-                showSemanticPanel
-                  ? "text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-              )}
-            >
-              <Sparkles size={13} />
-            </button>
-          </Tooltip>
-          <Tooltip content={notesFullscreen ? "Exit distraction-free (⌘.)" : "Distraction-free mode (⌘.)"}>
-            <button
-              onClick={() => toggleNotesFullscreen()}
-              className={cn(
-                "p-1.5 rounded-md transition-colors",
-                notesFullscreen
-                  ? "text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-              )}
-            >
-              {notesFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            </button>
-          </Tooltip>
+          <IconButton
+            label={note.isPinned ? "Unpin note" : "Pin note"} tooltipSide="top"
+            onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
+            className={cn("size-auto p-1.5", note.isPinned
+                ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}
+          >
+            {note.isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+          </IconButton>
+          <IconButton
+            label={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"} tooltipSide="top"
+            onClick={() => setShowSemanticPanel((v) => !v)}
+            className={cn("size-auto p-1.5", showSemanticPanel
+                ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}
+          >
+            <Sparkles size={13} />
+          </IconButton>
+          <IconButton
+            label={notesFullscreen ? "Exit distraction-free (⌘.)" : "Distraction-free mode (⌘.)"} tooltipSide="top"
+            onClick={() => toggleNotesFullscreen()}
+            className={cn("size-auto p-1.5", notesFullscreen
+                ? "text-[var(--accent)] bg-[var(--accent-dim)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}
+          >
+            {notesFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </IconButton>
           </div>
           <span className="text-sm text-[var(--text-tertiary)] flex items-center gap-1 whitespace-nowrap">
             <Calendar size={10} />

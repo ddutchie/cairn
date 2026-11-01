@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import type { NewFeature } from "@/lib/new-features-registry";
 
@@ -65,19 +66,19 @@ beforeEach(() => {
 
 describe("NewFeatureModal", () => {
   it("renders the latest unseen feature on mount", () => {
-    render(<NewFeatureModal />);
+    render(<NewFeatureModal />, { wrapper: TooltipProvider });
     expect(screen.getByRole("heading", { name: /What's New in Cairn/i })).toBeInTheDocument();
     expect(screen.getByText(LATEST.title)).toBeInTheDocument();
   });
 
   it("does not render when the latest feature is already seen", () => {
     seenFeatures = [LATEST.id];
-    render(<NewFeatureModal />);
+    render(<NewFeatureModal />, { wrapper: TooltipProvider });
     expect(screen.queryByRole("heading", { name: /What's New in Cairn/i })).not.toBeInTheDocument();
   });
 
   it("shows a single-feature footer with a 'Done' action (no pagination)", () => {
-    render(<NewFeatureModal />);
+    render(<NewFeatureModal />, { wrapper: TooltipProvider });
     // The latest registry version has exactly one feature → Done, no dots/Skip All.
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Skip All/i })).not.toBeInTheDocument();
@@ -87,7 +88,7 @@ describe("NewFeatureModal", () => {
   it("marks the displayed feature seen and calls onClose when Done is clicked", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
-    render(<NewFeatureModal onClose={onClose} />);
+    render(<NewFeatureModal onClose={onClose} />, { wrapper: TooltipProvider });
 
     await user.click(screen.getByRole("button", { name: "Done" }));
 
@@ -98,12 +99,12 @@ describe("NewFeatureModal", () => {
   describe("forceOpen (Settings entrypoint)", () => {
     it("renders even when everything has been seen", () => {
       seenFeatures = FIXTURE_REGISTRY.map((f) => f.id);
-      render(<NewFeatureModal forceOpen />);
+      render(<NewFeatureModal forceOpen />, { wrapper: TooltipProvider });
       expect(screen.getByRole("heading", { name: /What's New in Cairn/i })).toBeInTheDocument();
     });
 
     it("shows pagination + Skip All when the full registry has multiple features", () => {
-      render(<NewFeatureModal forceOpen />);
+      render(<NewFeatureModal forceOpen />, { wrapper: TooltipProvider });
       // The full registry has many features → dots, Skip All, and Next.
       expect(screen.getByRole("button", { name: "Go to feature 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Skip All/i })).toBeInTheDocument();
@@ -112,7 +113,7 @@ describe("NewFeatureModal", () => {
 
     it("advances to the next feature and disables Prev only on the first slide", async () => {
       const user = userEvent.setup();
-      render(<NewFeatureModal forceOpen />);
+      render(<NewFeatureModal forceOpen />, { wrapper: TooltipProvider });
 
       const first = FIXTURE_REGISTRY[0];
       const second = FIXTURE_REGISTRY[1];
@@ -130,7 +131,7 @@ describe("NewFeatureModal", () => {
 
     it("jumps to a feature via its pagination dot", async () => {
       const user = userEvent.setup();
-      render(<NewFeatureModal forceOpen />);
+      render(<NewFeatureModal forceOpen />, { wrapper: TooltipProvider });
 
       // Dot index 3 → 4th registry feature.
       await user.click(screen.getByRole("button", { name: "Go to feature 4" }));
@@ -140,7 +141,7 @@ describe("NewFeatureModal", () => {
     it("marks every displayed feature seen when Skip All is clicked", async () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
-      render(<NewFeatureModal forceOpen onClose={onClose} />);
+      render(<NewFeatureModal forceOpen onClose={onClose} />, { wrapper: TooltipProvider });
 
       await user.click(screen.getByRole("button", { name: /Skip All/i }));
 

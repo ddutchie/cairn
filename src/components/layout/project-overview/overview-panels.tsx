@@ -218,7 +218,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
                       <span className="block text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent)] truncate">{note.title}</span>
                       <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || "Empty note"}</span>
                     </button>
-                    <span className="text-xs font-mono text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
+                    <span className="text-xs tabular-nums text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
                   </li>
                 ))}
               </ul>
@@ -241,7 +241,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
                       <span className="block text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] truncate">{note.title}</span>
                       <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || "Empty note"}</span>
                     </button>
-                    <span className="text-xs font-mono text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
+                    <span className="text-xs tabular-nums text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
                   </li>
                 ))}
               </ul>

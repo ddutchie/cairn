@@ -18,6 +18,7 @@ import { Maximize2 } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { getIsDark } from "@/lib/utils";
 import { useIsDark } from "@/hooks/useIsDark";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   chart: string;
@@ -268,7 +269,7 @@ export function MermaidDiagram({ chart }: Props) {
   if (error) {
     return (
       <div className="rounded-md border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-3 py-2 my-3">
-        <p className="text-xs font-mono text-[var(--danger)] font-medium mb-1">Mermaid error</p>
+        <p className="text-xs text-[var(--danger)] font-medium mb-1">Mermaid error</p>
         <p className="text-xs text-[var(--text-secondary)] font-mono whitespace-pre-wrap">{error}</p>
       </div>
     );
@@ -282,14 +283,13 @@ export function MermaidDiagram({ chart }: Props) {
           className="flex justify-center overflow-x-auto [&_svg]:max-w-full"
         />
         {/* Expand button — visible on hover */}
-        <button
+        <IconButton
+          label="View full screen"
           onClick={handleExpand}
-          className="absolute top-2 right-2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-          aria-label="View full screen"
-          title="View full screen"
+          className="size-auto absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >
           <Maximize2 size={12} />
-        </button>
+        </IconButton>
       </div>
       {expanded && (
         <DiagramModal chart={chart} onClose={() => setExpanded(false)} />

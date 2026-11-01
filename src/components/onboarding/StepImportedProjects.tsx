@@ -4,6 +4,7 @@ import { ArrowLeft, FolderCheck, FileText, Undo2 } from "lucide-react";
 import { Shell } from "./shared";
 import { useConfirmAction } from "@/components/ui/confirm-button";
 import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface ImportedProject {
   id: string;
@@ -34,14 +35,13 @@ export function StepImportedProjects({ projects, busy = false, error = null, onB
       <div className="w-full max-w-sm bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 flex flex-col gap-5">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <button
-              type="button"
+            <IconButton
+              label="Go back to previous step"
               onClick={onBack}
-              aria-label="Go back to previous step"
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+              className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
             >
               <ArrowLeft size={13} />
-            </button>
+            </IconButton>
             <h2 className="text-sm font-medium text-[var(--text-primary)]">
               {projects.length === 1 ? "Found 1 project" : `Found ${projects.length} projects`}
             </h2>

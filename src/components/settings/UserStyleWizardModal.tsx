@@ -27,6 +27,7 @@ import { Select } from "@/components/ui/select";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { cn } from "@/lib/utils";
 import type { UserStylePersona, UserStyleRow } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Sample {
   context: string;
@@ -533,9 +534,9 @@ export function UserStyleWizardModal({
                   <div key={i} className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium text-[var(--text-tertiary)]">{s.context}</span>
-                      <button aria-label="Remove sample" onClick={() => setSamples((prev) => prev.filter((_, j) => j !== i))} className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors">
+                      <IconButton label="Remove sample" onClick={() => setSamples((prev) => prev.filter((_, j) => j !== i))} className="size-auto text-[var(--text-tertiary)] hover:text-[var(--danger)]">
                         <Trash2 size={11} />
-                      </button>
+                      </IconButton>
                     </div>
                     <p className="text-2xs text-[var(--text-secondary)] mt-1 whitespace-pre-wrap line-clamp-3">{s.text}</p>
                   </div>

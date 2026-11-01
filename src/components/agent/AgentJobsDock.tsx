@@ -17,6 +17,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { JobSummary } from "@/../shared/agent/session-projection";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface AgentJobsDockProps {
   jobs: JobSummary[];
@@ -88,13 +89,14 @@ export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockPro
                   {job.detail && <span className="text-[var(--text-tertiary)]"> · {job.detail}</span>}
                 </span>
                 {!settled && live && (
-                  <button
-                    onClick={() => void onKill(job.id)}
-                    title={`Stop ${job.label}`}
-                    className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
-                  >
-                    <X size={12} /> Stop
-                  </button>
+                  <Tooltip content={`Stop ${job.label}`}>
+                    <button
+                      onClick={() => void onKill(job.id)}
+                      className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
+                    >
+                      <X size={12} /> Stop
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             );
@@ -103,23 +105,25 @@ export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockPro
         </div>
       )}
 
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-2)] transition-colors text-left"
-        title={expanded ? "Collapse jobs" : "Expand jobs"}
-      >
-        <span
-          className={cn(
-            "text-xs font-medium flex-1 truncate",
-            live && running.length > 0 ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]",
-          )}
+      <Tooltip content={expanded ? "Collapse jobs" : "Expand jobs"}>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-2)] transition-colors text-left"
         >
-          {summary}
-        </span>
-        {expanded
-          ? <ChevronDown size={10} className="text-[var(--text-tertiary)] shrink-0" />
-          : <ChevronUp size={10} className="text-[var(--text-tertiary)] shrink-0" />}
-      </button>
+          <span
+            className={cn(
+              "text-xs font-medium flex-1 truncate",
+              live && running.length > 0 ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]",
+            )}
+          >
+            {summary}
+          </span>
+          {expanded
+            ? <ChevronDown size={10} className="text-[var(--text-tertiary)] shrink-0" />
+            : <ChevronUp size={10} className="text-[var(--text-tertiary)] shrink-0" />}
+        </button>
+      </Tooltip>
     </div>
   );
 }

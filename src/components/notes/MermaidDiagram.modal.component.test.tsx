@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import { MermaidDiagram } from "./MermaidDiagram";
 
@@ -22,7 +23,7 @@ vi.mock("mermaid", () => ({
 
 async function openModal() {
   const user = userEvent.setup();
-  render(<MermaidDiagram chart="graph TD; A-->B" />);
+  render(<MermaidDiagram chart="graph TD; A-->B" />, { wrapper: TooltipProvider });
   // Inline render is async (dynamic import); the expand button mounts with it.
   const expand = await screen.findByRole("button", { name: "View full screen" });
   await user.click(expand);

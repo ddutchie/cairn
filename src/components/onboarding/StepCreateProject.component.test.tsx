@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import { StepCreateProject } from "./StepCreateProject";
 
@@ -29,7 +30,7 @@ function renderStep(overrides: Partial<Props> = {}) {
     onSkip: vi.fn(),
     ...overrides,
   };
-  const utils = render(<StepCreateProject {...props} />);
+  const utils = render(<StepCreateProject {...props} />, { wrapper: TooltipProvider });
   return { props, ...utils };
 }
 

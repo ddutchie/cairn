@@ -13,6 +13,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import { StepAppearance } from "./StepAppearance";
 import { FONT_PRESETS } from "../../../shared/ui/fonts";
@@ -28,7 +29,7 @@ function renderStep(overrides: Partial<React.ComponentProps<typeof StepAppearanc
     onNext: vi.fn(),
     ...overrides,
   };
-  render(<StepAppearance {...props} />);
+  render(<StepAppearance {...props} />, { wrapper: TooltipProvider });
   return props;
 }
 

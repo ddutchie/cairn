@@ -11,6 +11,7 @@ import type { TokenBreakdown } from "@/types";
 import { cacheHitColor } from "@/lib/cache-metrics";
 // The ring glyph is ContextRingGlyph; the popover, cache, cost and account-balance sections below are specific to this view.
 import { ContextRingGlyph, type ContextRingCategory } from "./ContextRingGlyph";
+import { IconButton } from "@/components/ui/icon-button";
 
 /** Provider remaining-balance (account-level), the desktop CreditInfo shape. */
 interface ProviderBalance {
@@ -240,9 +241,9 @@ export function ContextRing({
           <div className="flex items-center justify-between mb-2">
             <span className="font-semibold text-[var(--text-primary)] text-sm">Context Usage</span>
             <Popover.Close asChild>
-              <button aria-label="Close" className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1 rounded hover:bg-[var(--surface-2)] focus:outline-none cursor-pointer">
+              <IconButton label="Close" className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)] p-1 hover:bg-[var(--surface-2)] cursor-pointer">
                 <X size={12} />
-              </button>
+              </IconButton>
             </Popover.Close>
           </div>
 

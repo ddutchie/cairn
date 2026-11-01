@@ -57,6 +57,7 @@ import {
   NODE_TYPES, EDGE_TYPES, DEFAULT_EDGE_OPTIONS, CONNECTION_LINE_STYLE,
   flowNodeToRF, flowEdgeToRF, defaultData, ADD_NODE_MENU, computeGroupAssignments,
 } from "./flow-utils";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -819,14 +820,15 @@ function IdeaFlowCanvas() {
 
         <Panel position="top-right">
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleAutoLayout}
-              title="Auto-arrange nodes"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-elev-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] transition-colors"
-            >
-              <LayoutDashboard size={13} />
-              Arrange
-            </button>
+            <Tooltip content="Auto-arrange nodes">
+              <button
+                onClick={handleAutoLayout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-elev-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] transition-colors"
+              >
+                <LayoutDashboard size={13} />
+                Arrange
+              </button>
+            </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="accent" size="sm">

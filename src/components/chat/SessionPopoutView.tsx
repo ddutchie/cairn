@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { ArrowLeftFromLine, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { Tooltip } from "@/components/ui/tooltip";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
 import type { ConversationMessage } from "@/lib/conversation/message";
 import { type ChatPopoutPayload, type SessionPopoutProfile } from "../../../shared/agent/chat-popout";
@@ -14,6 +13,7 @@ import { useSessionConversation } from "@/hooks/useSessionConversation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { SessionRow } from "@/components/agent/SessionRow";
+import { IconButton } from "@/components/ui/icon-button";
 
 type Props = ChatPopoutPayload & { onPopIn: () => void };
 
@@ -266,11 +266,9 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
         <aside className="flex flex-col w-60 flex-shrink-0 border-r border-[var(--border)] bg-[var(--surface)] min-h-0">
           <div className="flex items-center justify-between h-9 px-3 border-b border-[var(--border)] flex-shrink-0">
             <span className="text-xs font-medium text-[var(--text-secondary)] truncate">{workspaceName ?? "Sessions"}</span>
-            <Tooltip content="Hide session browser" side="bottom">
-              <button onClick={() => setBrowserOpen(false)} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Hide session browser">
-                <PanelLeftClose size={13} />
-              </button>
-            </Tooltip>
+            <IconButton label="Hide session browser" onClick={() => setBrowserOpen(false)} className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+              <PanelLeftClose size={13} />
+            </IconButton>
           </div>
           <div
             ref={popoutListboxRef}
@@ -436,19 +434,15 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     centered={profile === "chat"}
       title={(
        <div className="flex items-center gap-1.5 min-w-0">
-         <Tooltip content={browserOpen ? "Hide session browser" : "Show session browser"} side="bottom">
-            <button ref={browserTriggerRef} data-popout-trigger onClick={onToggleBrowser} className="p-1 -ml-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label={browserOpen ? "Hide session browser" : "Show session browser"}>
-             {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
-           </button>
-         </Tooltip>
+         <IconButton label={browserOpen ? "Hide session browser" : "Show session browser"} ref={browserTriggerRef} data-popout-trigger onClick={onToggleBrowser} className="size-auto p-1 -ml-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+           {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
+         </IconButton>
          <span className="text-xs font-medium text-[var(--text-secondary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
        </div>
      )}
     contextLimit={aiConfig.contextLimit ?? 128000}
     actions={(
-      <Tooltip content="Return session to main window" side="bottom">
-        <button onClick={onPopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Return session to main window"><ArrowLeftFromLine size={11} /></button>
-      </Tooltip>
+      <IconButton label="Return session to main window" onClick={onPopIn} className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><ArrowLeftFromLine size={11} /></IconButton>
     )}
     projection={{ pendingQuestions, questionCallId: pendingQuestionCallId }}
     onAnswerQuestions={sessionConversation.answerQuestions}

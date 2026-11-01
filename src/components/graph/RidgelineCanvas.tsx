@@ -341,7 +341,7 @@ export function RidgelineCanvas({ nodes, onNodeClick, mode, view, onViewChange, 
       {/* Tooltip */}
       {hoveredBucket && hoveredBucket.tasks.length > 0 && (
         <CanvasCallout x={tooltipPos.x} y={tooltipPos.y} containerW={dims.width}>
-          <p className="text-xs font-mono text-[var(--text-tertiary)] mb-1.5">
+          <p className="text-xs tabular-nums text-[var(--text-tertiary)] mb-1.5">
             {d3.timeFormat(bucketMs < DAY_MS ? "%b %d %H:%M" : "%b %d")(new Date(hoveredBucket.bucketMs))}
           </p>
           <div className="space-y-1">

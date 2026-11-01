@@ -18,6 +18,7 @@ import {
   extractHeadings,
   extractWikiLinks,
 } from "./toc-utils";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // Re-export so existing import sites (note-editor, tests) don't break
 export { headingSlug, extractHeadings, extractWikiLinks };
@@ -127,28 +128,28 @@ export function TableOfContents({ markdown, scrollContainerRef, notes = [] }: Pr
             </p>
             <nav className="flex flex-col gap-0.5">
               {wikiLinks.map((wl, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => {
-                    if (wl.noteId) {
-                      window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: wl.noteId } }));
-                    }
-                  }}
-                  title={wl.noteId ? `Open: ${wl.title}` : `Note not found: ${wl.title}`}
-                  className={cn(
-                    "flex items-center gap-1.5 w-full text-left text-sm leading-snug truncate rounded px-1 py-0.5 transition-colors",
-                    wl.noteId
-                      ? "text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] cursor-pointer"
-                      : "text-[var(--text-tertiary)] opacity-50 cursor-default"
-                  )}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                  </svg>
-                  <span className="truncate">{wl.title}</span>
-                </button>
+                <Tooltip key={i} content={wl.noteId ? `Open: ${wl.title}` : `Note not found: ${wl.title}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (wl.noteId) {
+                        window.dispatchEvent(new CustomEvent("cairn:select-note", { detail: { noteId: wl.noteId } }));
+                      }
+                    }}
+                    className={cn(
+                      "flex items-center gap-1.5 w-full text-left text-sm leading-snug truncate rounded px-1 py-0.5 transition-colors",
+                      wl.noteId
+                        ? "text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] cursor-pointer"
+                        : "text-[var(--text-tertiary)] opacity-50 cursor-default"
+                    )}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                    <span className="truncate">{wl.title}</span>
+                  </button>
+                </Tooltip>
               ))}
             </nav>
           </div>

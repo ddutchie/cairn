@@ -6,6 +6,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { isView } from "@/lib/views";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface TutorialStep {
   selector: string;
@@ -344,12 +345,13 @@ export function AppTutorial() {
             <Sparkles size={13} className="animate-pulse" />
             <span className="text-xs">Quick tour</span>
           </div>
-          <button aria-label="End tour"
+          <IconButton
+            label="End tour"
             onClick={handleFinish}
-            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+            className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
           >
             <X size={12} />
-          </button>
+          </IconButton>
         </div>
 
         {/* Content text */}

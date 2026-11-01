@@ -251,23 +251,23 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                     disabled={busy[entry.id] !== undefined}
                     className="flex-1 min-w-0 text-xs px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                   />
-                  <button
+                  <IconButton
+                    label="Send message to subagent"
                     onClick={() => void sendMessage(entry.id)}
                     disabled={!(drafts[entry.id] ?? "").trim() || busy[entry.id] !== undefined}
-                    className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] disabled:opacity-40 transition-colors"
-                    aria-label="Send message to subagent"
+                    className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--accent)] disabled:opacity-40"
                   >
                     {busy[entry.id] === "send" ? <Spinner size={11} /> : <SendHorizonal size={11} />}
-                  </button>
+                  </IconButton>
                   {(entry.activity === "running" || entry.live) && (
-                    <button
+                    <IconButton
+                      label="Stop subagent turn"
                       onClick={() => void stopChild(entry.id)}
                       disabled={busy[entry.id] !== undefined}
-                      className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] disabled:opacity-40 transition-colors"
-                      aria-label="Stop subagent turn"
+                      className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--danger)] disabled:opacity-40"
                     >
                       {busy[entry.id] === "stop" ? <Spinner size={11} /> : <Square size={11} />}
-                    </button>
+                    </IconButton>
                   )}
                 </div>
               )}

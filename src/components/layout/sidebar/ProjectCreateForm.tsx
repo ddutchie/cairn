@@ -3,7 +3,7 @@
 import React, { useRef, useEffect } from "react";
 import { Check, X } from "lucide-react";
 import { ProjectIcon } from "@/lib/workspace-icons";
-import { Tooltip } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface ProjectCreateFormProps {
   value: string;
@@ -31,16 +31,12 @@ export function ProjectCreateForm({ value, onChange, onCommit, onCancel }: Proje
         placeholder="Project name"
         className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
       />
-      <Tooltip content="Confirm">
-        <button aria-label="Confirm" onClick={onCommit} className="p-0.5 text-[var(--success)] hover:opacity-80">
-          <Check size={11} />
-        </button>
-      </Tooltip>
-      <Tooltip content="Cancel">
-        <button aria-label="Cancel" onClick={onCancel} className="p-0.5 text-[var(--text-tertiary)] hover:opacity-80">
-          <X size={11} />
-        </button>
-      </Tooltip>
+      <IconButton label="Confirm" tooltipSide="top" onClick={onCommit} className="size-auto p-0.5 text-[var(--success)] hover:opacity-80">
+        <Check size={11} />
+      </IconButton>
+      <IconButton label="Cancel" tooltipSide="top" onClick={onCancel} className="size-auto p-0.5 text-[var(--text-tertiary)] hover:opacity-80">
+        <X size={11} />
+      </IconButton>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type { Note, Tag } from "@/types";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
 import { linksToTitle } from "@/lib/wikilink-parser";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface SemanticHit {
   noteId: string;
@@ -340,15 +341,15 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
   return (
     <div className="flex items-center gap-1.5 mt-2.5 max-w-4xl mx-auto flex-wrap relative">
       {shownAssigned.map((tag) => (
-        <button
-          key={tag.id}
-          onClick={() => onToggleTag(tag.id)}
-          className="group flex items-center gap-0.5"
-          title={`Remove tag "${tag.name}"`}
-        >
-          <Badge color={tag.color} size="xs">{tag.name}</Badge>
-          <X size={9} className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] transition-opacity -ml-1" />
-        </button>
+        <Tooltip key={tag.id} content={`Remove tag "${tag.name}"`}>
+          <button
+            onClick={() => onToggleTag(tag.id)}
+            className="group flex items-center gap-0.5"
+          >
+            <Badge color={tag.color} size="xs">{tag.name}</Badge>
+            <X size={9} className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] transition-opacity -ml-1" />
+          </button>
+        </Tooltip>
       ))}
       {assignedTags.length > 5 && (
         <OverflowPill

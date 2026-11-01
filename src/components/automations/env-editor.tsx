@@ -9,6 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn, id } from "@/lib/utils";
 import { automationsClient } from "@/lib/ipc/automations";
 import { errorMessage, hasElectron } from "@/lib/ipc/client";
+import { IconButton } from "@/components/ui/icon-button";
 
 /**
  * Env-var editor for an automation's scripts.
@@ -211,25 +212,21 @@ export function EnvEditor({
                 </button>
               </Tooltip>
               {row.secret && (
-                <Tooltip content={reveal ? "Hide secret values" : "Reveal secret values"}>
-                  <button
-                    type="button"
-                    onClick={() => setReveal((v) => !v)}
-                    className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
-                  >
-                    {reveal ? <EyeOff size={12} /> : <Eye size={12} />}
-                  </button>
-                </Tooltip>
-              )}
-              <Tooltip content="Remove">
-                <button aria-label="Remove"
-                  type="button"
-                  onClick={() => removeRow(row.key)}
-                  className="text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0"
+                <IconButton
+                  label={reveal ? "Hide secret values" : "Reveal secret values"} tooltipSide="top"
+                  onClick={() => setReveal((v) => !v)}
+                  className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                 >
-                  <Trash2 size={12} />
-                </button>
-              </Tooltip>
+                  {reveal ? <EyeOff size={12} /> : <Eye size={12} />}
+                </IconButton>
+              )}
+              <IconButton
+                label="Remove" tooltipSide="top"
+                onClick={() => removeRow(row.key)}
+                className="size-auto text-[var(--text-tertiary)] hover:text-[var(--danger)]"
+              >
+                <Trash2 size={12} />
+              </IconButton>
             </div>
           ))}
           {rows.some((r) => r.removed) && (

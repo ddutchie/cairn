@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { getModelInfo } from "@/lib/models-dev";
 import type { ReasoningEffort } from "@/store/slices/ui";
+import { IconButton } from "./icon-button";
 
 export interface ReasoningEffortPickerProps {
   /** Which config this pill drives — chat (aiConfig) or the coding agent. */
@@ -82,22 +83,23 @@ export function ReasoningEffortPicker({
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Tooltip content="Reasoning effort" side="top">
         <Popover.Trigger asChild>
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label="Reasoning effort"
-            title={`Reasoning effort: ${active.label}`}
-            className={cn(
-              "flex items-center gap-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors",
-              "hover:bg-[var(--surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-50",
-              triggerPad,
-              className,
-            )}
-          >
-            <Gauge size={11} className="shrink-0 text-[var(--text-tertiary)]" />
-            <span className="max-w-[6rem] truncate">{active.label}</span>
-            <ChevronDown size={11} className="text-[var(--text-tertiary)] shrink-0" />
-          </button>
+          <Tooltip content={`Reasoning effort: ${active.label}`}>
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label="Reasoning effort"
+              className={cn(
+                "flex items-center gap-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors",
+                "hover:bg-[var(--surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-50",
+                triggerPad,
+                className,
+              )}
+            >
+              <Gauge size={11} className="shrink-0 text-[var(--text-tertiary)]" />
+              <span className="max-w-[6rem] truncate">{active.label}</span>
+              <ChevronDown size={11} className="text-[var(--text-tertiary)] shrink-0" />
+            </button>
+          </Tooltip>
         </Popover.Trigger>
       </Tooltip>
 
@@ -112,13 +114,13 @@ export function ReasoningEffortPicker({
             <div className="text-xs font-medium text-[var(--text-tertiary)]">
               {target === "ai" ? "Chat" : "Agent"} · reasoning effort
             </div>
-            <button aria-label="Close"
-              type="button"
+            <IconButton
+              label="Close"
               onClick={() => setOpen(false)}
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+              className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
             >
               <X size={13} />
-            </button>
+            </IconButton>
           </div>
 
           <div className="flex flex-col gap-0.5">

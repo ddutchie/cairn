@@ -171,7 +171,7 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
         {transcript.map((item, i) => {
           if (item.role === "step") {
             return (
-              <div key={i} className="flex items-center gap-2 text-xs text-[var(--text-tertiary)] font-mono pl-1">
+              <div key={i} className="flex items-center gap-2 text-xs text-[var(--text-tertiary)] pl-1">
                 <Spinner size={11} className="opacity-50" /> {item.text}
               </div>
             );

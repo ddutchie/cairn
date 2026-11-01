@@ -9,6 +9,7 @@ import { humanizeConnectorTool } from "@/lib/humanize-tool";
 import { prettyToolOutput, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { prettifyToolLabel } from "@/lib/utils";
 import { extractExternalRefs, type ExternalRef } from "../../../shared/chat/external-ref";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const MAX_DETAIL_LENGTH = 8_000;
 
@@ -46,21 +47,22 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
   // ToolCallBody): status icon, small connector logo, "Connector · action".
   return (
     <div data-testid={testId} className="max-w-xl">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        title={`${connector.label || connector.name} via ${transport}`}
-        onClick={() => setExpanded((value) => !value)}
-        className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit max-w-full text-left hover:border-[var(--accent)] cursor-pointer"
-      >
-        {ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}
-        <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={14} className="shrink-0" />
-        <span data-testid="connector-tool-summary" className="min-w-0 truncate text-xs text-[var(--text-secondary)]">
-          <span className="font-medium text-[var(--text-primary)]">{connector.label || connector.name}</span>
-          {" · "}{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!ok && " failed"}
-        </span>
-        {expanded ? <ChevronDown size={9} className="shrink-0 text-[var(--text-tertiary)]" /> : <ChevronRight size={9} className="shrink-0 text-[var(--text-tertiary)]" />}
-      </button>
+      <Tooltip content={`${connector.label || connector.name} via ${transport}`}>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit max-w-full text-left hover:border-[var(--accent)] cursor-pointer"
+        >
+          {ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}
+          <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={14} className="shrink-0" />
+          <span data-testid="connector-tool-summary" className="min-w-0 truncate text-xs text-[var(--text-secondary)]">
+            <span className="font-medium text-[var(--text-primary)]">{connector.label || connector.name}</span>
+            {" · "}{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!ok && " failed"}
+          </span>
+          {expanded ? <ChevronDown size={9} className="shrink-0 text-[var(--text-tertiary)]" /> : <ChevronRight size={9} className="shrink-0 text-[var(--text-tertiary)]" />}
+        </button>
+      </Tooltip>
       {expanded && (
         <div className="mt-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
           <p className="text-2xs text-[var(--text-tertiary)]">Tool: {toolLabel} · via {transport}</p>

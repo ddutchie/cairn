@@ -344,7 +344,7 @@ export function MatrixCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                     <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                       style={{ background: isNote ? "var(--info)" : "var(--success)" }} />
                     <span className="truncate flex-1">{node.title}</span>
-                    <span className="ml-auto text-2xs text-[var(--text-tertiary)] font-mono flex-shrink-0">
+                    <span className="ml-auto text-2xs text-[var(--text-tertiary)] flex-shrink-0">
                       {isNote ? "note" : "task"}
                     </span>
                   </button>

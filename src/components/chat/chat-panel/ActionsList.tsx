@@ -9,6 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import type { SuggestedAction } from "@/types";
 import { wikilinkAlreadyExists } from "@/components/graph/graph-ai-utils";
 import { describeSuggestedAction, normalizeSuggestedAction } from "./suggested-action-text";
+import { IconButton } from "@/components/ui/icon-button";
 
 function actionIcon(type: SuggestedAction["type"]) {
   switch (type) {
@@ -47,13 +48,13 @@ function ActionCard({ action, label, state, onApply, onDismiss }: ActionCardProp
           {label}
         </span>
 
-        <button
+        <IconButton
+          label="Why?"
           onClick={() => setExpanded((v) => !v)}
-          className="shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-          title="Why?"
+          className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
         >
           {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-        </button>
+        </IconButton>
 
         {state === "done" ? (
           <Check size={11} className="text-[var(--success)] shrink-0" />
@@ -68,13 +69,13 @@ function ActionCard({ action, label, state, onApply, onDismiss }: ActionCardProp
         )}
 
         {state !== "done" && (
-          <button
+          <IconButton
+            label="Dismiss"
             onClick={onDismiss}
-            className="shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            title="Dismiss"
+            className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
           >
             <X size={10} />
-          </button>
+          </IconButton>
         )}
       </div>
 

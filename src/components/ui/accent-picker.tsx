@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown";
 import { cn } from "@/lib/utils";
 import { ACCENT_PRESETS, resolveAccentPreset } from "../../../shared/ui/accents";
+import { Tooltip } from "./tooltip";
 
 function useIsLightTheme(): boolean {
   const theme = useCairnStore((s) => s.theme);
@@ -75,24 +76,24 @@ export function AccentPicker({
           const active = accentColor === preset.id;
           const swatch = swatchFor(preset.id);
           return (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => setAccentColor(preset.id)}
-              title={preset.name}
-              aria-label={preset.name}
-              aria-pressed={active}
-              className={cn(
-                "relative h-5 w-5 rounded-full transition-transform hover:scale-110 focus:outline-none",
-                !active && "ring-1 ring-[var(--border)]"
-              )}
-              style={{
-                backgroundColor: swatch,
-                ...(active
-                  ? { boxShadow: `0 0 0 1.5px var(--surface-2), 0 0 0 3px ${swatch}` }
-                  : {}),
-              }}
-            />
+            <Tooltip key={preset.id} content={preset.name} disabled={!preset.name}>
+              <button
+                type="button"
+                onClick={() => setAccentColor(preset.id)}
+                aria-label={preset.name}
+                aria-pressed={active}
+                className={cn(
+                  "relative h-5 w-5 rounded-full transition-transform hover:scale-110 focus:outline-none",
+                  !active && "ring-1 ring-[var(--border)]"
+                )}
+                style={{
+                  backgroundColor: swatch,
+                  ...(active
+                    ? { boxShadow: `0 0 0 1.5px var(--surface-2), 0 0 0 3px ${swatch}` }
+                    : {}),
+                }}
+              />
+            </Tooltip>
           );
         })}
       </div>

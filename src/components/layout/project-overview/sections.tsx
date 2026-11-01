@@ -15,6 +15,7 @@ import type { AtRiskCard, RiskReason } from "../../../../shared/overview/deliver
 import type { AutomationRunWithAutomation } from "@/store/slices/automations";
 import { SectionHeader } from "./primitives";
 import { STATUS_COLOR, runScratchArtifacts } from "@/components/automations/automation-format";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // ── Delivery: shipped / at-risk ─────────────────────────────────────────────
 
@@ -142,17 +143,17 @@ export function RecentAutomationRunsFeed({
             {artifacts.length > 0 && (
               <div className="flex gap-1 flex-shrink-0">
                 {artifacts.slice(0, 2).map((art) => (
-                  <button
-                    key={art.id}
-                    onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
-                    title={`Open ${art.type === "note" ? "note" : "task"}`}
-                    className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-32"
-                  >
-                    {art.type === "note"
-                      ? <FileText size={10} className="shrink-0" />
-                      : <Kanban size={10} className="shrink-0" />}
-                    <span className="truncate">{art.title}</span>
-                  </button>
+                  <Tooltip key={art.id} content={`Open ${art.type === "note" ? "note" : "task"}`}>
+                    <button
+                      onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
+                      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-32"
+                    >
+                      {art.type === "note"
+                        ? <FileText size={10} className="shrink-0" />
+                        : <Kanban size={10} className="shrink-0" />}
+                      <span className="truncate">{art.title}</span>
+                    </button>
+                  </Tooltip>
                 ))}
                 {artifacts.length > 2 && (
                   <OverflowPill count={artifacts.length - 2} names={artifacts.slice(2).map((a) => a.title)} />

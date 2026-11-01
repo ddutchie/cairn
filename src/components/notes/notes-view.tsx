@@ -33,6 +33,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { excerptFor } from "@/lib/note-text";
 import { useResizableDivider } from "@/hooks/useResizableDivider";
+import { IconButton } from "@/components/ui/icon-button";
 
 // ── NotesView orchestrator ──────────────────────────────────────────────────
 
@@ -578,13 +579,13 @@ export function NotesView() {
               placeholder="Filter notes..."
               className="w-full pl-7 pr-7 py-1.5 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]" />
             {filter && (
-              <button
+              <IconButton
+                label="Clear filter"
                 onClick={() => setFilter("")}
-                aria-label="Clear filter"
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
+                className="size-auto absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]"
               >
                 <X size={12} />
-              </button>
+              </IconButton>
             )}
           </div>
           {projectTags.length > 0 && (

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import React, { useState } from "react";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import { Tabs } from "./tabs";
 
@@ -31,7 +32,7 @@ function renderTabs(initial: Value = "chat") {
       />
     );
   }
-  render(<Harness />);
+  render(<Harness />, { wrapper: TooltipProvider });
   return { onChange };
 }
 

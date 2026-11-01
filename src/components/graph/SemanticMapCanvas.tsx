@@ -12,6 +12,8 @@ import { truncateName } from "./analyticsUtils";
 import { useScopeSets } from "./analyticsHooks";
 import { useContainerDims, useFontScale, useRelativePointer } from "@/lib/viz/hooks";
 import { CanvasCallout } from "./AnalyticsShared";
+import { IconButton } from "@/components/ui/icon-button";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface Props {
   nodes: GraphNode[];
@@ -390,19 +392,20 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
 
       {/* Recompute control */}
       <div className="absolute top-3 right-3 flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5">
-        <button
-          onClick={() => setPan({ x: 0, y: 0 })}
-          className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded text-xs"
-          title="Reset view"
-        >⟲</button>
-        <button
+        <Tooltip content="Reset view">
+          <button
+            onClick={() => setPan({ x: 0, y: 0 })}
+            className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded text-xs"
+          >⟲</button>
+        </Tooltip>
+        <IconButton
+          label="Recompute projections"
           onClick={handleRecompute}
           disabled={recomputing}
-          title="Recompute projections"
-          className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] rounded disabled:opacity-50"
+          className="w-7 h-7 text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] disabled:opacity-50"
         >
           <RefreshSpin size={12} spinning={recomputing} />
-        </button>
+        </IconButton>
       </div>
 
       {/* Header — model + count */}

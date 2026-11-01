@@ -6,6 +6,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { reportIpcError } from "@/lib/ipc/client";
 import { toolsClient } from "@/lib/ipc/tools";
 import { subscribeMcpAuthRequired, useMcpAuthRequired } from "@/lib/mcp-auth-required";
+import { IconButton } from "@/components/ui/icon-button";
+import { Tooltip } from "@/components/ui/tooltip";
 
 /**
  * One chip per MCP server that needs sign-in. Chat-time connects never open the
@@ -45,24 +47,24 @@ export function McpSignInChips() {
           className="inline-flex items-center gap-1 rounded-full border border-[var(--warning)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
           style={{ background: "color-mix(in srgb, var(--warning) 12%, transparent)" }}
         >
-          <button
-            type="button"
-            onClick={() => void signIn(id)}
-            disabled={busy[id]}
-            title={`${name} isn't signed in. Click to sign in.`}
-            className="inline-flex items-center gap-1 hover:text-[var(--text-primary)] disabled:opacity-60"
-          >
-            {busy[id] ? <Spinner size={11} /> : <LogIn size={11} />}
-            {name} not signed in · Sign in
-          </button>
-          <button
-            type="button"
+          <Tooltip content={`${name} isn't signed in. Click to sign in.`}>
+            <button
+              type="button"
+              onClick={() => void signIn(id)}
+              disabled={busy[id]}
+              className="inline-flex items-center gap-1 hover:text-[var(--text-primary)] disabled:opacity-60"
+            >
+              {busy[id] ? <Spinner size={11} /> : <LogIn size={11} />}
+              {name} not signed in · Sign in
+            </button>
+          </Tooltip>
+          <IconButton
+            label={`Dismiss ${name} sign-in prompt`}
             onClick={() => remove(id)}
-            aria-label={`Dismiss ${name} sign-in prompt`}
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+            className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
           >
             <X size={11} />
-          </button>
+          </IconButton>
         </span>
       ))}
     </>

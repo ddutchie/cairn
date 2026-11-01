@@ -28,6 +28,7 @@ import {
   searchSettings,
   type SettingsPage,
 } from "./settings-index";
+import { IconButton } from "@/components/ui/icon-button";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 
@@ -113,9 +114,9 @@ export function SettingsView() {
               className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] [&::-webkit-search-cancel-button]:hidden"
             />
             {query && (
-              <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); searchRef.current?.focus(); }} className="rounded p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+              <IconButton label="Clear search" onClick={() => { setQuery(""); searchRef.current?.focus(); }} className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
                 <X size={11} />
-              </button>
+              </IconButton>
             )}
           </div>
         </div>

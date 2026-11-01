@@ -18,6 +18,7 @@ import {
   applyNoteHits,
   type SearchFilterType,
 } from "./search-utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface ResultRowProps {
   result: SearchResult;
@@ -323,9 +324,9 @@ export function SearchPanel() {
             className="flex-1 bg-transparent text-base font-medium tracking-tight text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] placeholder:font-normal focus:outline-none"
           />
           {query && (
-            <button onClick={() => setQuery("")} className="w-7 h-7 rounded-full bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] transition-colors flex-shrink-0" aria-label="Clear">
+            <IconButton label="Clear" onClick={() => setQuery("")} className="w-7 h-7 rounded-full bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)]">
               <X size={12} />
-            </button>
+            </IconButton>
           )}
           <Tooltip content={embeddingsReady ? (semanticMode ? "Semantic search on — vectors" : "Enable semantic search") : "Enable embeddings in Settings to use semantic search"}>
             <span className={cn(!embeddingsReady && "cursor-not-allowed")}>

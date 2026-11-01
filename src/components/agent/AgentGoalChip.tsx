@@ -14,6 +14,7 @@ import { useState } from "react";
 import { Target, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GoalSummary } from "../../../shared/agent/session-projection";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface AgentGoalChipProps {
   goal: GoalSummary | null;
@@ -46,23 +47,24 @@ export function AgentGoalChip({ goal }: AgentGoalChipProps) {
           {": "}{goal.blockedReason.message}
         </div>
       )}
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-2)] transition-colors text-left"
-        title={goal.blockedReason ? "Toggle blocker detail" : "Current session goal"}
-      >
-        <Target size={12} className="text-[var(--accent)] shrink-0" />
-        <span className="text-xs font-medium text-[var(--text-secondary)] flex-1 truncate">
-          {goal.objective}
-          <span className="text-[var(--text-tertiary)] font-normal">{rounds}</span>
-        </span>
-        <span className={cn("text-2xs font-semibold px-1.5 py-0.5 rounded-full shrink-0", phaseStyle(goal.phase))}>
-          {goal.phase.toUpperCase()}
-        </span>
-        {goal.blockedReason && (expanded
-          ? <ChevronDown size={10} className="text-[var(--text-tertiary)] shrink-0" />
-          : <ChevronUp size={10} className="text-[var(--text-tertiary)] shrink-0" />)}
-      </button>
+      <Tooltip content={goal.blockedReason ? "Toggle blocker detail" : "Current session goal"}>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-2)] transition-colors text-left"
+        >
+          <Target size={12} className="text-[var(--accent)] shrink-0" />
+          <span className="text-xs font-medium text-[var(--text-secondary)] flex-1 truncate">
+            {goal.objective}
+            <span className="text-[var(--text-tertiary)] font-normal">{rounds}</span>
+          </span>
+          <span className={cn("text-2xs font-semibold px-1.5 py-0.5 rounded-full shrink-0", phaseStyle(goal.phase))}>
+            {goal.phase.toUpperCase()}
+          </span>
+          {goal.blockedReason && (expanded
+            ? <ChevronDown size={10} className="text-[var(--text-tertiary)] shrink-0" />
+            : <ChevronUp size={10} className="text-[var(--text-tertiary)] shrink-0" />)}
+        </button>
+      </Tooltip>
     </div>
   );
 }

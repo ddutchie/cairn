@@ -24,6 +24,7 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { useFontScale } from "@/lib/viz/hooks";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface ModuleNode {
   id: string;
@@ -298,15 +299,16 @@ export function ModuleMap({ cwd }: Props) {
               <div className="text-xs text-[var(--text-tertiary)] flex-1 min-w-0 truncate">
                 {heuristicSummary}
               </div>
-              <button
-                onClick={explainWithAI}
-                disabled={aiLoading}
-                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] transition-colors flex-shrink-0 disabled:opacity-60"
-                title="Summarise this architecture with AI"
-              >
-                <Sparkles size={12} className={aiLoading ? "animate-pulse" : ""} />
-                {aiLoading ? "Explaining…" : "Explain with AI"}
-              </button>
+              <Tooltip content="Summarise this architecture with AI">
+                <button
+                  onClick={explainWithAI}
+                  disabled={aiLoading}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] transition-colors flex-shrink-0 disabled:opacity-60"
+                >
+                  <Sparkles size={12} className={aiLoading ? "animate-pulse" : ""} />
+                  {aiLoading ? "Explaining…" : "Explain with AI"}
+                </button>
+              </Tooltip>
             </div>
           )}
           {aiError && <div className="text-xs text-[var(--danger)] mt-1">{aiError}</div>}

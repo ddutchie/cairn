@@ -24,6 +24,7 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { FileEditorInner } from "./FileEditorInner";
 import { ImageViewer } from "./ImageViewer";
 import { modKey } from "@/components/layout/sidebar-utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 // ── AgentEditor ───────────────────────────────────────────────────────────────
 
@@ -177,28 +178,23 @@ export function AgentEditor() {
               )}
               {/* Preview toggle for md files */}
               {isActive && isMarkdown(filePath) && (
-                <Tooltip content={inPreview ? "Edit" : "Preview"} side="bottom">
-                  <button aria-label={inPreview ? "Edit" : "Preview"}
-                    onClick={(e) => { e.stopPropagation(); togglePreview(filePath); }}
-                    className={cn(
-                      "p-0.5 rounded transition-colors",
-                      inPreview
-                        ? "text-[var(--accent)]"
-                        : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] opacity-0 group-hover:opacity-100"
-                    )}
-                  >
-                    <Eye size={10} />
-                  </button>
-                </Tooltip>
-              )}
-              <Tooltip content="Close" side="bottom">
-                <button aria-label="Close"
-                  onClick={(e) => handleClose(e, filePath)}
-                  className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] opacity-0 group-hover:opacity-100 transition-opacity"
+                <IconButton
+                  label={inPreview ? "Edit" : "Preview"}
+                  onClick={(e) => { e.stopPropagation(); togglePreview(filePath); }}
+                  className={cn("size-auto p-0.5", inPreview
+                      ? "text-[var(--accent)]"
+                      : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] opacity-0 group-hover:opacity-100")}
                 >
-                  <X size={10} />
-                </button>
-              </Tooltip>
+                  <Eye size={10} />
+                </IconButton>
+              )}
+              <IconButton
+                label="Close"
+                onClick={(e) => handleClose(e, filePath)}
+                className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X size={10} />
+              </IconButton>
             </div>
           );
         })}

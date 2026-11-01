@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import { ConnectorToolCard, type ConnectorMeta, type ConnectorToolCall } from "./ConnectorToolCard";
 
@@ -17,11 +18,11 @@ const connector: ConnectorMeta = {
 };
 
 function renderCard(toolCall: ConnectorToolCall, meta: ConnectorMeta = connector) {
-  render(<ConnectorToolCard toolCall={toolCall} connector={meta} />);
+  render(<ConnectorToolCard toolCall={toolCall} connector={meta} />, { wrapper: TooltipProvider });
 }
 
 describe("connector-inbound", () => {
-  it("shows the branded connector label and the action inline, collapsed by default", () => {
+  it("shows the branded connector label and the action inline, collapsed by default", async () => {
     renderCard({ tool: "mcp__lin1__search_issues", args: { query: "sync" } });
     const card = screen.getByTestId("connector-message-card");
     expect(card).toBeTruthy();
@@ -29,7 +30,8 @@ describe("connector-inbound", () => {
     expect(screen.getByText("Linear")).toBeTruthy();
     // …and what the call did, without expanding.
     expect(screen.getByTestId("connector-tool-summary").textContent).toBe("Linear · Search issues sync");
-    expect(screen.getByRole("button").getAttribute("title")).toBe("Linear via MCP");
+    act(() => screen.getByRole("button").focus());
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Linear via MCP");
     // Collapsed: details (arguments/result) are not in the DOM yet.
     expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Arguments")).toBeNull();
@@ -40,12 +42,13 @@ describe("connector-inbound", () => {
     expect(screen.getByTestId("connector-tool-summary").textContent).toBe("Linear · Create issue Bug");
   });
 
-  it("labels an HTTP service connector as such", () => {
+  it("labels an HTTP service connector as such", async () => {
     renderCard(
       { tool: "send_message" },
       { name: "slack-svc", kind: "service", label: "Slack" },
     );
-    expect(screen.getByRole("button").getAttribute("title")).toBe("Slack via HTTP service");
+    act(() => screen.getByRole("button").focus());
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Slack via HTTP service");
   });
 
   it("marks a failed call on the chip", () => {

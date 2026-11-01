@@ -7,6 +7,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { cn } from "@/lib/utils";
 import { modKey } from "@/components/layout/sidebar-utils";
 import type { PendingQuestion, PendingQuestionOption } from "@/lib/conversation/message";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface QuestionFormProps {
   questions: PendingQuestion[];
@@ -148,36 +149,39 @@ function PlanReviewCard({ question, disabled, onDecide, onDismiss }: PlanReviewC
           className="w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50 transition-colors leading-relaxed"
         />
         <div className="flex items-center gap-2 justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={doDismiss}
-            disabled={disabled || busy}
-            data-testid="plan-review-discuss"
-            title="Chat about the plan instead of choosing an option"
-          >
-            Chat about it
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={doKeepPlanning}
-            disabled={disabled || busy}
-            data-testid="plan-review-keep"
-            title={(keepDesc && optionDescription(keepDesc)) || "Reject the plan and keep planning"}
-          >
-            {feedback.trim() ? "Send feedback" : "Refuse"}
-          </Button>
-          <Button
-            variant="accent"
-            size="sm"
-            onClick={doApprove}
-            disabled={disabled || busy}
-            data-testid="plan-review-approve"
-            title={(approveDesc && optionDescription(approveDesc)) || "Approve the plan and leave plan mode"}
-          >
-            {approveLabel}
-          </Button>
+          <Tooltip content="Chat about the plan instead of choosing an option">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={doDismiss}
+              disabled={disabled || busy}
+              data-testid="plan-review-discuss"
+            >
+              Chat about it
+            </Button>
+          </Tooltip>
+          <Tooltip content={(keepDesc && optionDescription(keepDesc)) || "Reject the plan and keep planning"}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={doKeepPlanning}
+              disabled={disabled || busy}
+              data-testid="plan-review-keep"
+            >
+              {feedback.trim() ? "Send feedback" : "Refuse"}
+            </Button>
+          </Tooltip>
+          <Tooltip content={(approveDesc && optionDescription(approveDesc)) || "Approve the plan and leave plan mode"}>
+            <Button
+              variant="accent"
+              size="sm"
+              onClick={doApprove}
+              disabled={disabled || busy}
+              data-testid="plan-review-approve"
+            >
+              {approveLabel}
+            </Button>
+          </Tooltip>
         </div>
       </div>
     </section>
@@ -324,22 +328,22 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
                     const label = optionLabel(opt);
                     const desc = optionDescription(opt);
                     return (
-                      <button
-                        key={`${q.id}-${questionIndex}-${label}-${optionIndex}`}
-                        type="button"
-                        title={desc}
-                        onClick={() => toggleOption(label)}
-                        disabled={disabled || submitted}
-                        className={cn(
-                          "px-2.5 py-1 rounded-md border text-xs transition-colors",
-                          chosen.includes(label)
-                            ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)]"
-                            : "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)] hover:border-[var(--accent)]",
-                          (disabled || submitted) && "opacity-50 cursor-not-allowed",
-                        )}
-                      >
-                        {label}
-                      </button>
+                      <Tooltip key={`${q.id}-${questionIndex}-${label}-${optionIndex}`} content={desc} disabled={!desc}>
+                        <button
+                          type="button"
+                          onClick={() => toggleOption(label)}
+                          disabled={disabled || submitted}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md border text-xs transition-colors",
+                            chosen.includes(label)
+                              ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)]"
+                              : "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)] hover:border-[var(--accent)]",
+                            (disabled || submitted) && "opacity-50 cursor-not-allowed",
+                          )}
+                        >
+                          {label}
+                        </button>
+                      </Tooltip>
                     );
                   })}
                 </div>

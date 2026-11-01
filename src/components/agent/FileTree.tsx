@@ -25,6 +25,7 @@ import { modKey } from "@/components/layout/sidebar-utils";
 import { useShallow } from "zustand/react/shallow";
 import type { Project } from "@/types";
 import type { DirEntry, FileSearchResult } from "../../../shared/types/coding-agent";
+import { IconButton } from "@/components/ui/icon-button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -323,12 +324,13 @@ export function FileTree({ project }: FileTreeProps) {
             placeholder="Search files…"
             className="flex-1 min-w-0 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
           />
-          <button aria-label="Close search"
+          <IconButton
+            label="Close search"
             onClick={() => { setSearchActive(false); setSearchQuery(""); setSearchResults([]); }}
-            className="flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
           >
             <X size={11} />
-          </button>
+          </IconButton>
         </div>
       ) : (
         <div className="flex items-center gap-1.5 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
@@ -336,22 +338,21 @@ export function FileTree({ project }: FileTreeProps) {
           <span className="text-xs font-medium text-[var(--text-tertiary)] truncate flex-1">
             {codeDirectory.split("/").pop() ?? "Files"}
           </span>
-          <button
+          <IconButton
+            label="Refresh file tree" tooltip="Refresh"
             onClick={refresh}
             disabled={refreshing}
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
-            title="Refresh"
-            aria-label="Refresh file tree"
+            className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-50"
           >
             <RefreshSpin size={11} spinning={refreshing} />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            label={`Search files (${mod}\u21e7F)`}
             onClick={() => { setSearchActive(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            title={`Search files (${mod}\u21e7F)`}
+            className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
           >
             <Search size={11} />
-          </button>
+          </IconButton>
         </div>
       )}
 

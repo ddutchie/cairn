@@ -18,9 +18,9 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { Tooltip } from "@/components/ui/tooltip";
 import { FileDiff, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
 import type { ViewMode } from "./DiffFile";
+import { IconButton } from "@/components/ui/icon-button";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -143,16 +143,15 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
       {files.length > 1 && (() => {
         const allCollapsed = files.every((f, i) => collapsed.has(diffFileKey(f, i)));
         return (
-          <Tooltip content={allCollapsed ? "Expand all" : "Collapse all"} side="bottom">
-            <button
-              onClick={allCollapsed ? expandAll : collapseAll}
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0"
-            >
-              {allCollapsed
-                ? <ChevronRight size={13} />
-                : <ChevronDown size={13} />}
-            </button>
-          </Tooltip>
+          <IconButton
+            label={allCollapsed ? "Expand all" : "Collapse all"}
+            onClick={allCollapsed ? expandAll : collapseAll}
+            className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+          >
+            {allCollapsed
+              ? <ChevronRight size={13} />
+              : <ChevronDown size={13} />}
+          </IconButton>
         );
       })()}
 
@@ -165,29 +164,24 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
       {/* Copy */}
       {diffText && (
-        <Tooltip content={copied ? "Copied!" : "Copy patch"} side="bottom">
-          <button
-            onClick={handleCopy}
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            {copied ? <Check size={11} /> : <Copy size={11} />}
-          </button>
-        </Tooltip>
+        <IconButton
+          label={copied ? "Copied!" : "Copy patch"}
+          onClick={handleCopy}
+          className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+        >
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+        </IconButton>
       )}
 
       {/* Refresh */}
-      <Tooltip content="Refresh" side="bottom">
-        <button aria-label="Refresh"
-          onClick={fetchDiff}
-          disabled={loading}
-          className={cn(
-            "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors",
-            loading && "opacity-50 cursor-default"
-          )}
-        >
-          <RefreshSpin size={11} spinning={loading} />
-        </button>
-      </Tooltip>
+      <IconButton
+        label="Refresh"
+        onClick={fetchDiff}
+        disabled={loading}
+        className={cn("size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]", loading && "opacity-50 cursor-default")}
+      >
+        <RefreshSpin size={11} spinning={loading} />
+      </IconButton>
     </div>
   );
 
