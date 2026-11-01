@@ -165,7 +165,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
       {/* Copy */}
       {diffText && (
         <IconButton
-          label={copied ? "Copied!" : "Copy patch"}
+          label={copied ? "Copied" : "Copy patch"} tooltip={copied ? "Copied!" : "Copy patch"}
           onClick={handleCopy}
           className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >

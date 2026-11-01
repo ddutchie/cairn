@@ -9,6 +9,7 @@ describe("describeCron", () => {
     ["0 10 * * 6,0", "Weekends at 10:00"],
     ["0 10 * * 0-6", "Daily at 10:00"],
     ["0 9 * * 1-3", "Monday–Wednesday at 09:00"],
+    ["0 9 * * 0-2", "Sunday–Tuesday at 09:00"],
     ["15 7 * * *", "Daily at 07:15"],
     ["0 9 1 * *", "Monthly on day 1 at 09:00"],
     ["*/15 * * * *", "Every 15 minutes"],
@@ -22,6 +23,9 @@ describe("describeCron", () => {
     expect(describeCron("0 9 1-7 * 1")).toBeNull();
     expect(describeCron("0 9 * 1 *")).toBeNull();
     expect(describeCron("@daily")).toBeNull();
+    // Steps that don't divide the hour or day aren't fixed intervals.
+    expect(describeCron("*/40 * * * *")).toBeNull();
+    expect(describeCron("0 */5 * * *")).toBeNull();
   });
 });
 

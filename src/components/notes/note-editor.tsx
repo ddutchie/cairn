@@ -763,7 +763,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             <Sparkles size={13} />
           </IconButton>
           <IconButton
-            label={notesFullscreen ? "Exit distraction-free (⌘.)" : "Distraction-free mode (⌘.)"} tooltipSide="top"
+            label={notesFullscreen ? "Exit distraction-free mode" : "Distraction-free mode"} shortcut="⌘." tooltipSide="top"
             onClick={() => toggleNotesFullscreen()}
             className={cn("size-auto p-1.5", notesFullscreen
                 ? "text-[var(--accent)] bg-[var(--accent-dim)]"

@@ -40,8 +40,16 @@ function retheme(): void {
   const theme = terminalTheme();
   for (const ref of live) {
     const terminal = ref.deref();
-    if (!terminal || !terminal.element?.isConnected) { live.delete(ref); continue; }
-    terminal.options.theme = theme;
+    if (!terminal) { live.delete(ref); continue; }
+    // Detached terminals stay registered: TerminalManager keeps them across
+    // navigation and SessionMount reattaches them, so they must pick up a
+    // theme change made while they were off screen. Only a terminal that has
+    // been garbage-collected or disposed drops out.
+    try {
+      terminal.options.theme = theme;
+    } catch {
+      live.delete(ref);
+    }
   }
 }
 

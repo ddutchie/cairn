@@ -75,6 +75,7 @@ export function QuickSettings() {
         <DropdownMenuLabel>Theme</DropdownMenuLabel>
         <div className="px-1 pb-2">
           <SegmentedControl
+            ariaLabel="Theme"
             options={THEMES}
             value={theme}
             onChange={setTheme}
@@ -120,6 +121,7 @@ export function QuickSettings() {
         <DropdownMenuLabel className="mt-2">Font size</DropdownMenuLabel>
         <div className="px-1 pb-2">
           <SegmentedControl
+            ariaLabel="Font size"
             options={FONT_SCALES}
             value={fontScale}
             onChange={setFontScale}
@@ -131,6 +133,7 @@ export function QuickSettings() {
         <DropdownMenuLabel className="mt-2">Note font</DropdownMenuLabel>
         <div className="px-1 pb-1">
           <SegmentedControl
+            ariaLabel="Note font"
             options={NOTE_FONTS}
             value={fontFamily}
             onChange={setFontFamily}

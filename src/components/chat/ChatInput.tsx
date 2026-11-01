@@ -346,7 +346,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                   />
                 )}
                 <IconButton
-                  label="Remove image"
+                  label={`Remove ${img.kind === "pdf" ? "PDF" : "image"} ${img.name}`}
                   onClick={() => onRemoveImage?.(i)}
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[var(--danger)] text-[var(--surface)] opacity-0 group-hover:opacity-100 transition-opacity"
                 >

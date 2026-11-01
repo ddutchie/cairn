@@ -12,6 +12,8 @@ export type UsageMetric = "tokens" | "cost" | "requests";
 interface Props {
   series: UsageDayBucket[];
   metric: UsageMetric;
+  /** True when the selected range is All, so there's no longer one to suggest. */
+  allTime?: boolean;
 }
 
 const PAD_L = 52;
@@ -28,7 +30,7 @@ function niceCeil(v: number): number {
   return n * p;
 }
 
-export function UsageChart({ series, metric }: Props) {
+export function UsageChart({ series, metric, allTime = false }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const { width: w } = useContainerDims(wrapRef as React.RefObject<HTMLDivElement | null>);
   const fontScale = useFontScale();
@@ -94,7 +96,11 @@ export function UsageChart({ series, metric }: Props) {
       onMouseLeave={() => setHover(null)}
     >
       {series.length === 0 ? (
-        <EmptyState overlay title="No usage in this range" description="Try a longer range above." />
+        <EmptyState
+          overlay
+          title={allTime ? "No usage yet" : "No usage in this range"}
+          description={allTime ? "Usage appears here after the first AI call." : "Try a longer range above."}
+        />
       ) : (
         <svg width={w} height={HEIGHT} className="block">
           {yTicks.map((t) => (

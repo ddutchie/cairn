@@ -90,7 +90,7 @@ export function TagsSettings() {
                 {noteCount} note{noteCount !== 1 ? "s" : ""} · {cardCount} card{cardCount !== 1 ? "s" : ""}
               </span>
               <IconButton
-                label="Delete tag"
+                label={`Delete tag ${tag.name}`}
                 onClick={() => deleteTag(tag.id)}
                 className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--danger)]"
               >
