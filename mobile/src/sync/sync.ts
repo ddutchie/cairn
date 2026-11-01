@@ -53,10 +53,10 @@ export async function syncNow(): Promise<SyncResult> {
   if (!workspaceId) {
     return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "No sync source selected." };
   }
-  // The dev demo workspace is local-only: never drain or publish its oplog to
+  // The sample workspace is local-only: never drain or publish its oplog to
   // the shared iCloud folder (pull-to-refresh and focus syncs still call this).
   if (isDemoSource(workspaceId)) {
-    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Demo data isn't synced." };
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Sample data stays on this phone." };
   }
   const engine = getEngine();
 

@@ -280,18 +280,20 @@ export function OnboardingGuide({
             {scanning ? "Checking…" : "Refresh"}
           </Text>
         </PressableScale>
-        {__DEV__ && (
-          // Dev builds only: skip iCloud (e.g. on a simulator) with seeded data.
-          <PressableScale
-            style={s.demo}
-            onPress={() => {
-              openDemoWorkspace();
-              onConnected(DEMO_WORKSPACE_ID);
-            }}
-          >
-            <Text style={[s.demoText, { color: t.textTertiary }]}>Skip — use demo data (dev)</Text>
-          </PressableScale>
-        )}
+        {/* No desktop yet (or reviewing the app): explore a local sample
+            workspace. It never syncs; a real workspace can be connected later
+            from the workspace menu once the desktop publishes. */}
+        <PressableScale
+          style={s.demo}
+          accessibilityRole="button"
+          accessibilityHint="Opens sample data that stays on this phone"
+          onPress={() => {
+            openDemoWorkspace();
+            onConnected(DEMO_WORKSPACE_ID);
+          }}
+        >
+          <Text style={[s.demoText, { color: t.accent }]}>Explore with sample data</Text>
+        </PressableScale>
       </View>
     </View>
   );
@@ -421,7 +423,7 @@ function makeStyles(_t: Theme) {
       borderWidth: StyleSheet.hairlineWidth,
     },
     refreshText: { ...typeScale.control },
-    demo: { marginTop: 12, paddingVertical: 6, paddingHorizontal: 12 },
-    demoText: { ...typeScale.caption },
+    demo: { marginTop: 12, paddingVertical: 8, paddingHorizontal: 12 },
+    demoText: { ...typeScale.label },
   });
 }

@@ -88,6 +88,6 @@ function withActiveMerged(found: SyncSource[]): SyncSource[] {
   return mergeSwitcherSources(
     found,
     active ? { workspaceId: active, name: getActiveSourceName() } : null,
-    __DEV__ ? [{ workspaceId: DEMO_WORKSPACE_ID, name: "Demo" }] : [],
+    __DEV__ ? [{ workspaceId: DEMO_WORKSPACE_ID, name: "Sample workspace" }] : [],
   );
 }

@@ -1,11 +1,13 @@
 /**
- * DEV-ONLY demo workspace. Lets the app run without a desktop-published iCloud
- * source — e.g. on a simulator, where iCloud Drive doesn't sync — so layouts
- * (iPhone Duo, iPad) can be exercised against realistic data.
+ * Sample workspace. Lets someone without a desktop-published iCloud source
+ * (a first-time user, an App Review reviewer, a simulator where iCloud Drive
+ * doesn't sync) explore the app against realistic data, and lets layouts
+ * (iPhone Duo, iPad) be exercised in development.
  *
- * The demo is an ordinary local source DB under a reserved workspace id. Auto-
- * sync is skipped while it is active (see app/_layout.tsx), so nothing is ever
- * published to the shared sync folder. Only reachable from `__DEV__` builds.
+ * It is an ordinary local source DB under a reserved workspace id. Auto-sync is
+ * skipped while it is active (see app/_layout.tsx and sync.ts), so nothing is
+ * ever published to the shared sync folder. Reachable from onboarding in every
+ * build; the id keeps its old "dev-" name so existing dev installs reuse it.
  */
 
 import { getDb, setActiveSource } from "@/db";
@@ -48,55 +50,54 @@ const TAGS: { name: string; color: string }[] = [
 // One line per paragraph: notes render single newlines as line breaks
 // (remark-breaks on desktop, markdown-it `breaks` here), so hard-wrapping
 // would show as ragged lines.
-const LONG_NOTE = `# Foldable layout research
+const LONG_NOTE = `# Getting started with Cairn
 
-The iPhone Duo folds from a phone-sized screen into a near-square canvas. Apps get a live size-class change when it opens, so layouts must adapt **without a relaunch** and keep whatever the user was looking at.
+This is a **sample workspace** that lives only on this phone. Edit, add and delete anything here — none of it syncs. When you're ready, connect your own workspace from the desktop app and switch to it from the workspace menu at the top of Projects.
 
-## Principles
+## What's here
 
-- One tree, two layouts: stacked when compact, columns when regular.
-- Selection lives in state, not in the navigation stack.
-- Never lock orientation on a device whose shape changes.
+- **Projects** hold notes and a task board. Open one to see both.
+- **Calendar** shows tasks with due dates across every project.
+- **Graph** maps how notes link to each other with [[wikilinks]].
+- **Chat** can read and update your notes and tasks once an AI provider is set up in Settings → AI.
 
-## Checklist
+## Try it
 
-- [x] Upgrade to Expo SDK 58
-- [ ] Split view for Projects
-- [ ] Sidebar-adaptable tab bar
-- [ ] Readable line length in the editor
+- [x] Open this note
+- [ ] Tap the pencil to edit it, then Save
+- [ ] Move a task on the board by dragging it
+- [ ] Ask Chat to summarise this note
 
-## Notes
+## Phone and computer
 
-Wide screens make long lines hard to read. Cap the editor around 70 characters per line and centre it, the way Notes and Mail do on iPad.
+Cairn keeps the phone and the desktop app in step through a shared iCloud folder.
 
-| Device | Folded | Unfolded |
-| --- | --- | --- |
-| iPhone Duo | compact | regular |
-| iPad | regular | regular |
+| Where | What you do |
+| --- | --- |
+| Desktop | Settings → Sync, choose iCloud Drive › Cairn › sync |
+| Phone | Pick the workspace when it appears |
 
-> A layout that only works at one width is a layout that breaks when you fold.
+> Your notes stay in your iCloud and on your devices. Cairn has no server of its own.
 `;
 
 const PROJECTS: SeedProject[] = [
   {
-    name: "Cairn Mobile",
-    description: "Foldable + iPad support for the mobile app",
-    icon: "📱",
+    name: "Welcome to Cairn",
+    description: "A quick tour — this sample stays on this phone",
+    icon: "👋",
     priority: "high",
     notes: [
-      { title: "Foldable layout research", folder: "Research", tags: ["research", "mobile"], content: LONG_NOTE },
-      { title: "Split view spike", folder: "Research", tags: ["mobile"], content: "# Split view spike\n\nCompare `expo-router/unstable-split-view` with `@expo/ui` `NavigationSplitView`.\n\n- Routes keep working inside columns?\n- Fold/unfold keeps selection?\n" },
-      { title: "Sidebar sketches", tags: ["design"], content: "# Sidebar sketches\n\nProjects, Calendar, Graph, Chat and Search as sidebar sections when wide." },
-      { title: "Release checklist", content: "# Release checklist\n\n- [ ] Changelog\n- [ ] TestFlight\n- [ ] Screenshots for Duo + iPad" },
+      { title: "Getting started with Cairn", folder: "Start here", tags: ["idea"], content: LONG_NOTE },
+      { title: "Linking notes", folder: "Start here", tags: ["research"], content: "# Linking notes\n\nType `[[` in a note to link another one, like [[Getting started with Cairn]]. Linked notes show up together in the Graph tab.\n" },
+      { title: "Quick capture", tags: ["mobile"], content: "# Quick capture\n\nLong-press the Cairn icon, or add the Quick capture widget, to jot a thought, to-do or link in one tap." },
     ],
     cards: [
-      { title: "Unlock orientation on iPhone", column: "todo", priority: "high", tags: ["mobile"] },
-      { title: "Projects split view", column: "in_progress", priority: "high", dueInDays: 3, tags: ["mobile", "design"], description: "Sidebar → project → note/card, stacked when folded." },
-      { title: "Chat two-column layout", column: "backlog", priority: "medium", tags: ["mobile"] },
-      { title: "Readable width for note editor", column: "todo", priority: "medium", dueInDays: 7, tags: ["design"] },
-      { title: "Board shows more columns when wide", column: "backlog", priority: "low" },
-      { title: "Upgrade to Expo SDK 58 stable", column: "done", priority: "medium" },
-      { title: "Fold/unfold keeps editor state", column: "review", priority: "urgent", dueInDays: 1, tags: ["bug"] },
+      { title: "Edit the getting-started note", column: "todo", priority: "high", tags: ["mobile"] },
+      { title: "Drag this task to Done", column: "in_progress", priority: "medium", dueInDays: 1, description: "Press and hold a task, then drag it to another column." },
+      { title: "Try asking Chat about your notes", column: "todo", priority: "medium", dueInDays: 3, tags: ["idea"] },
+      { title: "Connect the desktop app", column: "backlog", priority: "low", description: "Desktop: Settings → Sync, choose iCloud Drive › Cairn › sync." },
+      { title: "Open the sample workspace", column: "done", priority: "low" },
+      { title: "Fix the leaky tap", column: "review", priority: "urgent", dueInDays: 2, tags: ["bug"] },
     ],
   },
   {
@@ -173,13 +174,13 @@ export function openDemoWorkspace(): void {
 export function seedChat(): void {
   if (hasChatHistory()) return;
   const db = getDb();
-  const note = db.getFirstSync<{ id: string }>("SELECT id FROM notes WHERE title = ?", "Foldable layout research");
-  const card = db.getFirstSync<{ id: string }>("SELECT id FROM task_cards WHERE title = ?", "Projects split view");
-  saveChatMessage({ role: "user", content: "Summarise the foldable research and update the split view task." });
+  const note = db.getFirstSync<{ id: string }>("SELECT id FROM notes WHERE title = ?", "Getting started with Cairn");
+  const card = db.getFirstSync<{ id: string }>("SELECT id FROM task_cards WHERE title = ?", "Try asking Chat about your notes");
+  saveChatMessage({ role: "user", content: "What should I try first, and can you note that I asked?" });
   saveChatMessage({
     role: "assistant",
     content:
-      "The research note argues for one tree with two layouts, keeping selection in state so folding never loses your place. I added that to the **Projects split view** task.",
+      "Start with the **Getting started** note: edit it, then drag a task across the board. I added a note to the **Try asking Chat about your notes** task. This is a sample reply — set up an AI provider in Settings → AI to chat for real.",
     tools: [
       ...(note ? [{ tool: "get_item", ok: true, ref: { kind: "note" as const, id: note.id } }] : []),
       ...(card ? [{ tool: "update_tasks", ok: true, ref: { kind: "card" as const, id: card.id } }] : []),
@@ -195,8 +196,8 @@ function seedWorkspace(): void {
     db.runSync(
       "INSERT INTO workspaces (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
       DEMO_WORKSPACE_ID,
-      "Demo",
-      "Local demo data (dev builds only)",
+      "Sample workspace",
+      "Sample data on this phone only — never synced",
       now,
       now,
     );
