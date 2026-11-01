@@ -16,6 +16,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Select } from "@/components/ui/select";
 import { cn, formatRelative, PRIORITY_COLORS } from "@/lib/utils";
 import type { TaskCard, BoardColumn, Project, Priority } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 const PRIORITY_OPTIONS: Priority[] = ["low", "medium", "high", "urgent"];
 
@@ -137,13 +138,13 @@ export function CardDetailSidebar({
                   {blockerCol && (
                     <span className="text-[var(--text-tertiary)] shrink-0">{blockerCol.name}</span>
                   )}
-                  <button
+                  <IconButton
+                    label="Remove blocker"
                     onClick={() => onRemoveBlocker(card.id, blocker.id)}
-                    className="ml-0.5 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
-                    title="Remove blocker"
+                    className="size-auto ml-0.5 text-[var(--text-tertiary)] hover:text-[var(--danger)]"
                   >
                     <X size={9} />
-                  </button>
+                  </IconButton>
                 </div>
               );
             })}

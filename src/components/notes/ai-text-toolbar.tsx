@@ -154,14 +154,13 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
             ))}
             <div className="flex-1" />
             <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
-            <Tooltip content="Dismiss" side="bottom">
-              <button aria-label="Dismiss"
-                onClick={onDismiss}
-                className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
-              >
-                <X size={11} />
-              </button>
-            </Tooltip>
+            <IconButton
+              label="Dismiss"
+              onClick={onDismiss}
+              className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)]"
+            >
+              <X size={11} />
+            </IconButton>
           </>
         )}
       </div>
@@ -232,6 +231,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
 // Exported so note-editor.tsx can call it directly with the CodeMirror view.
 
 import type { EditorView } from "@codemirror/view";
+import { IconButton } from "@/components/ui/icon-button";
 
 /**
  * Apply a FormatAction to the current CodeMirror selection.

@@ -43,6 +43,7 @@ import { ModuleMap } from "./ModuleMap";
 import type {
   CodebaseGraph, CodebaseOverview, CodebaseOverviewFile, CodebaseRelationEdge, CodebaseRelations, CodebaseSymbol,
 } from "../../../shared/types/codebase";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface ArchitectureViewProps {
   cwd: string;
@@ -273,66 +274,71 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
         <div className="ml-auto flex items-center gap-2 flex-shrink-0">
           {/* Map / Matrix / Graph / List view toggle */}
           <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
-            <button
-              onClick={() => setView("map")}
-              className={cn(
-                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors",
-                view === "map"
-                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
-              )}
-              title="Module map (overview)"
-            >
-              <LayoutGrid size={12} /> Map
-            </button>
-            <button
-              onClick={() => setView("matrix")}
-              className={cn(
-                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
-                view === "matrix"
-                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
-              )}
-              title="Dependency matrix"
-            >
-              <Grid3x3 size={12} /> Matrix
-            </button>
-            <button
-              onClick={() => setView("graph")}
-              className={cn(
-                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
-                view === "graph"
-                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
-              )}
-              title="Dependency graph"
-            >
-              <Share2 size={12} /> Graph
-            </button>
-            <button
-              onClick={() => setView("list")}
-              className={cn(
-                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
-                view === "list"
-                  ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
-              )}
-              title="File list"
-            >
-              <List size={12} /> List
-            </button>
+            <Tooltip content="Module map (overview)">
+              <button
+                onClick={() => setView("map")}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors",
+                  view === "map"
+                    ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+                )}
+              >
+                <LayoutGrid size={12} /> Map
+              </button>
+            </Tooltip>
+            <Tooltip content="Dependency matrix">
+              <button
+                onClick={() => setView("matrix")}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
+                  view === "matrix"
+                    ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+                )}
+              >
+                <Grid3x3 size={12} /> Matrix
+              </button>
+            </Tooltip>
+            <Tooltip content="Dependency graph">
+              <button
+                onClick={() => setView("graph")}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
+                  view === "graph"
+                    ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+                )}
+              >
+                <Share2 size={12} /> Graph
+              </button>
+            </Tooltip>
+            <Tooltip content="File list">
+              <button
+                onClick={() => setView("list")}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
+                  view === "list"
+                    ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+                )}
+              >
+                <List size={12} /> List
+              </button>
+            </Tooltip>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={reindex}
-            disabled={reindexing || loading}
-            className="gap-1.5"
-            title="Rebuild the codebase index"
-          >
-            <RefreshSpin size={13} spinning={reindexing} />
-            {reindexing ? "Indexing…" : "Reindex"}
-          </Button>
+          <Tooltip content="Rebuild the codebase index">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={reindex}
+              disabled={reindexing || loading}
+              className="gap-1.5"
+            >
+              <RefreshSpin size={13} spinning={reindexing} />
+              {reindexing ? "Indexing…" : "Reindex"}
+            </Button>
+          </Tooltip>
         </div>
       </div>
 

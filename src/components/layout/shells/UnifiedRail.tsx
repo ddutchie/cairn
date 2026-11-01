@@ -28,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { revealCard } from "@/lib/events";
+import { IconButton } from "@/components/ui/icon-button";
 
 export function UnifiedRail() {
   const [platform, setPlatform] = useState<"darwin" | "win32" | "linux" | null>(null);
@@ -144,9 +145,9 @@ export function UnifiedRail() {
 
       {/* Right zone: chat, quicksettings, running, sync, bell, new */}
       <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        <button onClick={toggleSearch} className="sm:hidden p-1.5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]" aria-label="Search">
+        <IconButton label="Search" onClick={toggleSearch} className="size-auto sm:hidden p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
           <Search size={14} />
-        </button>
+        </IconButton>
 
         {!hiddenViews.has("chat") && (
           <Tooltip side="bottom" content={`AI Chat (${mod}/)`}>
@@ -166,31 +167,24 @@ export function UnifiedRail() {
         <QuickSettings />
 
         {runningAutomationCount > 0 && (
-          <Tooltip side="bottom" content={`${runningAutomationCount} automation${runningAutomationCount === 1 ? "" : "s"} running`}>
-            <button
-              onClick={() => setView("automations")}
-              className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
-              aria-label="Automations running"
-            >
-              <Spinner size={14} />
-            </button>
-          </Tooltip>
+          <IconButton
+            label="Automations running" tooltip={`${runningAutomationCount} automation${runningAutomationCount === 1 ? "" : "s"} running`}
+            onClick={() => setView("automations")}
+            className="w-7 h-7 text-[var(--accent)] hover:bg-[var(--surface-2)]"
+          >
+            <Spinner size={14} />
+          </IconButton>
         )}
 
-        <Tooltip side="bottom" content={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}>
-          <button
-            onClick={() => setNotificationOpen(!notificationOpen)}
-            data-notification-toggle
-            className={cn(
-              "relative flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-              notificationUnreadCount > 0 ? "text-[var(--accent)] hover:bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-            )}
-            aria-label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
-            aria-expanded={notificationOpen}
-          >
-            <Bell size={14} className={cn(notificationUnreadCount > 0 && "animate-bell-wobble fill-[var(--accent)]")} />
-          </button>
-        </Tooltip>
+        <IconButton
+          label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
+          onClick={() => setNotificationOpen(!notificationOpen)}
+          data-notification-toggle
+          className={cn("relative w-7 h-7", notificationUnreadCount > 0 ? "text-[var(--accent)] hover:bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}
+          aria-expanded={notificationOpen}
+        >
+          <Bell size={14} className={cn(notificationUnreadCount > 0 && "animate-bell-wobble fill-[var(--accent)]")} />
+        </IconButton>
 
         <SyncStatusIndicator />
 

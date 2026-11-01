@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { WORKSPACE_ICONS, WorkspaceIcon } from "@/lib/workspace-icons";
 import { Shell } from "./shared";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   chosenFolder: string | null;
@@ -68,13 +69,13 @@ export function StepWorkspaceDetails({
         <div>
           <div className="flex items-center gap-2 mb-1">
             {showBack && (
-              <button aria-label="Back"
-                type="button"
+              <IconButton
+                label="Back"
                 onClick={onBack}
-                className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
               >
                 <ArrowLeft size={13} />
-              </button>
+              </IconButton>
             )}
             <h2 className="text-sm font-medium text-[var(--text-primary)]">Name your workspace</h2>
           </div>
@@ -138,19 +139,16 @@ export function StepWorkspaceDetails({
         {/* Icon picker */}
         <div className="flex flex-wrap gap-2">
           {WORKSPACE_ICONS.map(({ name: iconName }) => (
-            <button aria-label={iconName}
+            <IconButton
+              label={iconName}
               key={iconName}
-              type="button"
               onClick={() => onIconChange(iconName)}
-              className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-[var(--text-secondary)]",
-                icon === iconName
+              className={cn("w-8 h-8 text-[var(--text-secondary)]", icon === iconName
                   ? "bg-[var(--accent-dim)] ring-1 ring-[var(--accent)] text-[var(--accent)]"
-                  : "bg-[var(--surface-2)] hover:bg-[var(--surface-3)]"
-              )}
+                  : "bg-[var(--surface-2)] hover:bg-[var(--surface-3)]")}
             >
               <WorkspaceIcon name={iconName} size={14} />
-            </button>
+            </IconButton>
           ))}
         </div>
 

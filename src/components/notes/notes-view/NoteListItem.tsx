@@ -19,6 +19,7 @@ import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator,
 } from "@/components/ui/context-menu";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface NoteListItemProps {
   note: Note; isActive: boolean; indent?: number;
@@ -67,10 +68,13 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button aria-label="Note actions" onClick={(e) => e.stopPropagation()}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all">
+              <IconButton
+                label="Note actions"
+                onClick={(e) => e.stopPropagation()}
+                className="size-auto opacity-0 group-hover:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-all"
+              >
                 <MoreHorizontal size={11} />
-              </button>
+              </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin(); }}>

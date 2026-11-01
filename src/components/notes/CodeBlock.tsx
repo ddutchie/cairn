@@ -20,6 +20,7 @@ import { useIsDark } from "@/hooks/useIsDark";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { SYNTAX_COLORS } from "@/lib/syntax-palette";
 import { ensureLanguage, isLanguageReady, highlightCode, onLanguageReady } from "@/lib/lazy-lowlight";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // ── Token colour map ──────────────────────────────────────────────────────────
 //
@@ -191,18 +192,19 @@ export function CodeBlock({ code, language }: Props) {
         >
           {displayLang}
         </span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors"
-          style={{
-            color: copied ? (isDark ? "#98c379" : "#16a34a") : (isDark ? "#5c6370" : "#9ca3af"),
-          }}
-          title="Copy code"
-          aria-label="Copy code"
-        >
-          {copied ? <Check size={11} /> : <Copy size={11} />}
-          <span className="text-xs font-sans">{copied ? "Copied" : "Copy"}</span>
-        </button>
+        <Tooltip content="Copy code">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors"
+            style={{
+              color: copied ? (isDark ? "#98c379" : "#16a34a") : (isDark ? "#5c6370" : "#9ca3af"),
+            }}
+            aria-label="Copy code"
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+            <span className="text-xs font-sans">{copied ? "Copied" : "Copy"}</span>
+          </button>
+        </Tooltip>
       </div>
 
       {/* Code body — padding via style not className so .prose-cairn pre reset can't override it */}

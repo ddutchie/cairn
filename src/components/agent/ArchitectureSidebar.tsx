@@ -29,6 +29,8 @@ import {
 import { CairnEvents } from "@/lib/events";
 import { MicroLabel, SectionLabel } from "@/components/ui/labels";
 import type { CodebaseRelationEdge, CodebaseRelations, CodebaseSymbol } from "../../../shared/types/codebase";
+import { IconButton } from "@/components/ui/icon-button";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const KIND_COLOR: Record<string, string> = {
   class: "var(--accent)",
@@ -110,14 +112,15 @@ export function ArchitectureSidebar() {
 
   if (collapsed) {
     return (
-      <button
-        onClick={() => setCollapsed(false)}
-        className="w-8 flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface-2)] flex flex-col items-center pt-2 gap-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-        title="Show architecture panel"
-      >
-        <ChevronLeft size={14} />
-        <Boxes size={14} />
-      </button>
+      <Tooltip content="Show architecture panel">
+        <button
+          onClick={() => setCollapsed(false)}
+          className="w-8 flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface-2)] flex flex-col items-center pt-2 gap-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <ChevronLeft size={14} />
+          <Boxes size={14} />
+        </button>
+      </Tooltip>
     );
   }
 
@@ -129,13 +132,13 @@ export function ArchitectureSidebar() {
         <SectionLabel className="flex-1 truncate">
           Architecture
         </SectionLabel>
-        <button
+        <IconButton
+          label="Hide panel"
           onClick={() => setCollapsed(true)}
-          className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title="Hide panel"
+          className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
         >
           <ChevronRight size={14} />
-        </button>
+        </IconButton>
       </div>
 
       {/* File name */}

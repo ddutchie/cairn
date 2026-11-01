@@ -5,11 +5,11 @@ import { Flag } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tooltip } from "@/components/ui/tooltip";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Toggle } from "@/components/ui/toggle";
 import type { ConversationMessage } from "@/lib/conversation/message";
 import { buildIssueUrl, ISSUE_REPO, ISSUE_TITLE_MAX, type IssueEnv, type IssueSetup } from "../../../shared/chat/issue-report";
+import { IconButton } from "@/components/ui/icon-button";
 
 function platformName(): string {
   if (typeof navigator === "undefined") return "unknown";
@@ -102,16 +102,13 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
 
   return (
     <>
-      <Tooltip content="Report an issue">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Report an issue with this reply"
-          className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
-        >
-          <Flag size={10} />
-        </button>
-      </Tooltip>
+      <IconButton
+        label="Report an issue with this reply" tooltip="Report an issue" tooltipSide="top"
+        onClick={() => setOpen(true)}
+        className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]"
+      >
+        <Flag size={10} />
+      </IconButton>
       <ModalShell
         open={open}
         onClose={() => setOpen(false)}

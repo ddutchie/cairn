@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { RegistryFetchResult, RegistryCommandEntry, CustomSlashCommand } from "@/types";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const SCOPE_LABEL: Record<string, string> = {
   chat: "Chat",
@@ -222,33 +223,34 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
                       <Check size={13} /> Installed
                     </span>
                   ) : (
-                    <Button
-                      size="sm"
-                      variant={updatable ? "outline" : "default"}
-                      disabled={busy || !activeWorkspaceId}
-                      title={updatable && armedUpdateId === entry.id ? "Click again — your local edits will be replaced by the community version" : undefined}
-                      onClick={() => {
-                        if (updatable && armedUpdateId !== entry.id) {
-                          if (armedTimer.current) clearTimeout(armedTimer.current);
-                          setArmedUpdateId(entry.id);
-                          armedTimer.current = setTimeout(() => {
-                            armedTimer.current = null;
-                            setArmedUpdateId(null);
-                          }, 4000);
-                          return;
-                        }
-                        void runInstall(entry);
-                      }}
-                    >
-                      {busy ? (
-                        <Spinner size={12} />
-                      ) : updatable ? (
-                        <ArrowUpCircle size={12} />
-                      ) : (
-                        <Download size={12} />
-                      )}
-                      {updatable ? (armedUpdateId === entry.id ? "Confirm update" : "Update") : "Install"}
-                    </Button>
+                    <Tooltip content="Click again — your local edits will be replaced by the community version" disabled={!(updatable && armedUpdateId === entry.id)}>
+                      <Button
+                        size="sm"
+                        variant={updatable ? "outline" : "default"}
+                        disabled={busy || !activeWorkspaceId}
+                        onClick={() => {
+                          if (updatable && armedUpdateId !== entry.id) {
+                            if (armedTimer.current) clearTimeout(armedTimer.current);
+                            setArmedUpdateId(entry.id);
+                            armedTimer.current = setTimeout(() => {
+                              armedTimer.current = null;
+                              setArmedUpdateId(null);
+                            }, 4000);
+                            return;
+                          }
+                          void runInstall(entry);
+                        }}
+                      >
+                        {busy ? (
+                          <Spinner size={12} />
+                        ) : updatable ? (
+                          <ArrowUpCircle size={12} />
+                        ) : (
+                          <Download size={12} />
+                        )}
+                        {updatable ? (armedUpdateId === entry.id ? "Confirm update" : "Update") : "Install"}
+                      </Button>
+                    </Tooltip>
                   )}
                 </div>
               </div>

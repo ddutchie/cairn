@@ -17,6 +17,8 @@ import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-sche
 import { Button } from "@/components/ui/button";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
+import { IconButton } from "@/components/ui/icon-button";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // ── Local servers (BYO inference) ───────────────────────────────────────────
 // Cairn no longer ships an inference engine. Run Ollama, LM Studio, or
@@ -469,24 +471,25 @@ export function AISettings() {
           >
             <div className="flex flex-col gap-1.5 w-full min-w-52">
               {/* None — no personality layer */}
-              <button
-                type="button"
-                className={cn(
-                  "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors text-left",
-                  !aiConfig.personalityId
-                    ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
-                    : "border-[var(--border)] hover:bg-[var(--surface-2)]",
-                )}
-                onClick={() => setPersonality(null)}
-                title="No personality layer"
-                aria-label="Select none — no personality layer"
-              >
-                <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                <span className="text-xs text-[var(--text-secondary)] flex-1">None</span>
-                <span className={cn("text-2xs shrink-0", !aiConfig.personalityId ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
-                  {!aiConfig.personalityId ? "Active" : "Inactive"}
-                </span>
-              </button>
+              <Tooltip content="No personality layer">
+                <button
+                  type="button"
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors text-left",
+                    !aiConfig.personalityId
+                      ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
+                      : "border-[var(--border)] hover:bg-[var(--surface-2)]",
+                  )}
+                  onClick={() => setPersonality(null)}
+                  aria-label="Select none — no personality layer"
+                >
+                  <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
+                  <span className="text-xs text-[var(--text-secondary)] flex-1">None</span>
+                  <span className={cn("text-2xs shrink-0", !aiConfig.personalityId ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                    {!aiConfig.personalityId ? "Active" : "Inactive"}
+                  </span>
+                </button>
+              </Tooltip>
               {aiConfig.installedPersonalities.map((p) => {
                 const isActive = p.id === aiConfig.personalityId;
                 return (
@@ -499,37 +502,36 @@ export function AISettings() {
                         : "border-[var(--border)]",
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setPersonality(isActive ? null : p.id)}
-                      title={isActive ? "Click to switch to None" : "Set as active"}
-                      aria-label={`${isActive ? "Deactivate" : "Activate"} ${p.name}`}
-                      className={cn(
-                        "flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors text-left flex-1 min-w-0",
-                        !isActive && "hover:bg-[var(--surface-2)]",
-                      )}
-                    >
-                      <StatusDot
-                        size="md"
-                        color={p.brandColor ?? "var(--text-tertiary)"}
-                      />
-                      <span className="text-xs text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
-                      {p.source === "custom" && (
-                        <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
-                      )}
-                      <span className={cn("text-2xs shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
-                        {isActive ? "Active" : "Inactive"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
+                    <Tooltip content={isActive ? "Click to switch to None" : "Set as active"}>
+                      <button
+                        type="button"
+                        onClick={() => setPersonality(isActive ? null : p.id)}
+                        aria-label={`${isActive ? "Deactivate" : "Activate"} ${p.name}`}
+                        className={cn(
+                          "flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors text-left flex-1 min-w-0",
+                          !isActive && "hover:bg-[var(--surface-2)]",
+                        )}
+                      >
+                        <StatusDot
+                          size="md"
+                          color={p.brandColor ?? "var(--text-tertiary)"}
+                        />
+                        <span className="text-xs text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
+                        {p.source === "custom" && (
+                          <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
+                        )}
+                        <span className={cn("text-2xs shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                          {isActive ? "Active" : "Inactive"}
+                        </span>
+                      </button>
+                    </Tooltip>
+                    <IconButton
+                      label={`Remove ${p.name}`} tooltip="Remove"
                       onClick={() => removePersonality(p.id)}
-                      className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0 mr-2"
-                      title="Remove"
-                      aria-label={`Remove ${p.name}`}
+                      className="size-auto text-[var(--text-tertiary)] hover:text-[var(--danger)] mr-2"
                     >
                       <Trash2 size={12} />
-                    </button>
+                    </IconButton>
                   </div>
                 );
               })}

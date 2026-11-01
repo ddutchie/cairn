@@ -13,13 +13,26 @@ interface TooltipProps {
   delayDuration?: number;
   /** Suppress the tooltip (e.g. while the trigger's own menu is open). */
   disabled?: boolean;
+  /** Classes for the wrapper a disabled trigger gets (e.g. `flex-1`). */
+  wrapperClassName?: string;
 }
 
-export function Tooltip({ content, children, side = "top", delayDuration = 400, disabled = false }: TooltipProps) {
+export function Tooltip({ content, children, side = "top", delayDuration = 400, disabled = false, wrapperClassName }: TooltipProps) {
   const [open, setOpen] = React.useState(false);
+  // A disabled button gets no pointer events, so the tooltip would never open
+  // (unlike native `title=`). Hover a wrapper instead, which is often where
+  // the hint matters most: it says why the control is disabled.
+  const triggerDisabled =
+    React.isValidElement<{ disabled?: boolean }>(children) && Boolean(children.props.disabled);
   return (
     <RadixTooltip.Root delayDuration={delayDuration} open={open && !disabled} onOpenChange={setOpen}>
-      <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
+      <RadixTooltip.Trigger asChild>
+        {triggerDisabled ? (
+          <span className={cn("inline-flex [&>:disabled]:pointer-events-none", wrapperClassName)}>{children}</span>
+        ) : (
+          children
+        )}
+      </RadixTooltip.Trigger>
       <RadixTooltip.Portal>
         <RadixTooltip.Content
           side={side}

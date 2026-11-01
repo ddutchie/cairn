@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Link2, ExternalLink } from "lucide-react";
 import { FlowNodeShell, FLOW_HANDLE_CLASS } from "./flow-node-shell";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface UrlNodeData {
   url: string;
@@ -32,14 +33,13 @@ export const UrlNode = memo(function UrlNode({ data, selected, isConnectable }: 
             <span className="text-xs text-[var(--text-tertiary)] truncate" title={d.url}>{hostname || "URL"}</span>
           </div>
           {d.url && (
-            <button
+            <IconButton
+              label="Open link"
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-              title="Open link"
-              aria-label="Open link"
+              className="size-auto nodrag p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)]"
             >
               <ExternalLink size={11} />
-            </button>
+            </IconButton>
           )}
         </div>
         {d.title && (

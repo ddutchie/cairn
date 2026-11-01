@@ -168,6 +168,16 @@ Branch `design/ui-pass-phase-4`, stacked on Phase 3.
 
 "View board" and "Open insights" use the standard `Button`, trailing arrows are gone, and the selected chips (Focus filter, Chat / Coding agent) use the accent tint. The floating composer stays as it is (confirmed 2026-11-01).
 
+### Phase 6: Cross-cutting cleanup ✅
+
+Branch `design/ui-pass-phase-6`, cut from Phase 4 and based on `main` once #272 merged. Closes the remaining rows of "Cross-cutting findings".
+
+- ✅ **Raw icon buttons → `IconButton`.** 147 icon-only `<button>`s in 79 files are now `IconButton` (18 → 165 uses; raw `<button>` 504 → 357). A one-off TypeScript-AST codemod moved `aria-label` / `title` / the wrapping `<Tooltip>` content into `label` (and `tooltip` when the hint said more than the name), kept `side` as `tooltipSide`, and dropped the wrapper. A wrapper around a `…Trigger asChild` button goes too, so menu buttons don't get two tooltips. Sizes are kept by letting the button hug its icon: `size-auto` plus the original padding (icons are in px and padding in rem, so no fixed `w-*`/`h-*` matches at every font scale), and `IconButton` only draws a border where one shows (outline, active). Radius goes to the one `rounded-md`; colour and hover classes are kept. CodeMirror block widgets render in their own React root, so `BlockPreviewWidget` now wraps them in a `TooltipProvider`.
+- ✅ **Tooltip split.** 58 `title=` hints on buttons, tabs and pickers are now `Tooltip` (an optional hint passes `disabled` when empty). `title=` stays only where it shows truncated text in full: file paths, session and heading names, image names, matrix cells, the timeline's gesture hint and the external-ref chip.
+- ✅ **Lint rule.** `cairn/icon-button-label` now reports every icon-only `<button>` (including a conditional between two icons), labelled or not, and points to `IconButton`. Five deliberate exceptions carry `eslint-disable-next-line … -- <why>`: chat send and stop (accent/danger glow), the board column's dnd-kit drag handle, the round connector logo chips on the Overview, and the chat theme swatches. `AGENTS.md` "Primitives" says so.
+- ✅ **Review.** Against Phase 4 the audit shows no layout shifts: the remaining differences are the monospace changes below and render noise (graph force layout, a spinner, sub-pixel text).
+- ✅ **Monospace.** Dates (session rows, recent notes, the timeline and table canvases, ridgeline hover) use `tabular-nums` instead, and status words (git file status, "Mermaid error", the Overview filter line, tool-builder steps, matrix item type, commit subjects) use the body font. Code, paths, kbd, ids and numeric counts keep `font-mono` (249 → 237).
+
 ## Before/after review
 
 Each phase is captured against the branch it stacks on:
@@ -189,5 +199,6 @@ npm run screenshots:compare                  # → design-audit/compare.html
 | 3 | `design/ui-pass-phase-2` (Phase 1) | Phase 2: chat and session switcher, plus popover migrations | Medium |
 | 4 | `design/ui-pass-phase-3` (Phase 2) | Phase 3: Settings IA (deep links and `settingsSection` callers) | Medium |
 | 5 | `design/ui-pass-phase-4` (Phase 3) | Phases 4–5: discoverability, copy sweep and Overview | Low per item |
+| 6 | `design/ui-pass-phase-6` (main, after #272 merged) | Phase 6: icon buttons on `IconButton`, `title=` → `Tooltip`, stricter lint rule, monospace trim | Low, review with `compare.html` |
 
 Settings IA (PR 5) is a headline change for the release and earns a What's New entry in `scripts/features.config.js`. The rest goes in the changelog only.

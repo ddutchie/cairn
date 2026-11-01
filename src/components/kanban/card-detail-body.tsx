@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from "react";
 import { Tag as TagIcon, FileText, Link, ExternalLink, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip } from "@/components/ui/tooltip";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -14,6 +13,7 @@ import { SpawnAgentModal } from "@/components/agent/SpawnAgentModal";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { CardDetailSidebar } from "./card-detail-sidebar";
 import { computeDoneColumnIds, computeCandidateBlockers } from "./card-detail-utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface CardDetailBodyProps {
   cardId: string;
@@ -218,16 +218,12 @@ export function CardDetailBody({
               <div key={note.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] group">
                 <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
                 <span className="text-xs text-[var(--text-secondary)] flex-1 truncate" title={note.title}>{note.title}</span>
-                <Tooltip content="Open note">
-                  <button onClick={() => { revealNote(setView, note.id); onClose?.(); }} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
-                    <ExternalLink size={11} aria-hidden="true" />
-                  </button>
-                </Tooltip>
-                <Tooltip content="Unlink note">
-                  <button onClick={() => unlinkNoteFromCard(note.id, cardId)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all" aria-label="Unlink note">
-                    <X size={11} aria-hidden="true" />
-                  </button>
-                </Tooltip>
+                <IconButton label="Open note" tooltipSide="top" onClick={() => { revealNote(setView, note.id); onClose?.(); }} className="size-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all">
+                  <ExternalLink size={11} aria-hidden="true" />
+                </IconButton>
+                <IconButton label="Unlink note" tooltipSide="top" onClick={() => unlinkNoteFromCard(note.id, cardId)} className="size-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-all">
+                  <X size={11} aria-hidden="true" />
+                </IconButton>
               </div>
             ))}
             {mentionedNotes.length > 0 && (
@@ -238,16 +234,12 @@ export function CardDetailBody({
                     <div key={note.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-dashed border-[var(--border)] group">
                       <FileText size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
                       <span className="text-xs text-[var(--text-secondary)] flex-1 truncate" title={note.title}>{note.title}</span>
-                      <Tooltip content="Link note to this card">
-                        <button onClick={() => linkNoteToCard(note.id, cardId)} className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label={`Link note ${note.title}`}>
-                          <Link size={11} aria-hidden="true" />
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Open note">
-                        <button onClick={() => { revealNote(setView, note.id); onClose?.(); }} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all" aria-label="Open note">
-                          <ExternalLink size={11} aria-hidden="true" />
-                        </button>
-                      </Tooltip>
+                      <IconButton label={`Link note ${note.title}`} tooltip="Link note to this card" tooltipSide="top" onClick={() => linkNoteToCard(note.id, cardId)} className="size-auto text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all">
+                        <Link size={11} aria-hidden="true" />
+                      </IconButton>
+                      <IconButton label="Open note" tooltipSide="top" onClick={() => { revealNote(setView, note.id); onClose?.(); }} className="size-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-all">
+                        <ExternalLink size={11} aria-hidden="true" />
+                      </IconButton>
                     </div>
                   ))}
                 </div>

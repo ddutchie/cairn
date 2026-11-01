@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Tooltip } from "@/components/ui/tooltip";
 import { ReportIssueControl } from "@/components/conversation/ReportIssueControl";
 import { Check, Copy, FileCode, FileText, Link2, FolderOpen, Info, Kanban, RotateCcw, Search } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
@@ -21,6 +20,7 @@ import { ConversationToolCall } from "./ConversationToolCall";
 import { ConversationSubagentBlock } from "./ConversationSubagentBlock";
 import { messageStatsSegments } from "../../../shared/chat/message-stats";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface ConversationMessageBubbleProps {
   message: ConversationMessage;
@@ -176,36 +176,29 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
           // Per-turn throughput/latency sits in the same row as Copy / Report,
           // behind an info button; only when derivable (no zero/NaN lines).
           const statsSegments = !isUser && !message.isStreaming ? messageStatsSegments(message.stats) : [];
-          const iconBtn = "p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors";
+          const iconBtn = "size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]";
           return (
             <div className={cn("flex items-center gap-1.5", isUser ? "flex-row-reverse" : "")}>
               <div className={cn(
                 "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 transition-opacity",
                 statsOpen && statsSegments.length > 0 && "opacity-100",
               )}>
-                <Tooltip content={copied ? "Copied" : "Copy"}>
-                  <button onClick={() => copy(message.content)} aria-label="Copy" className={iconBtn}>
-                    {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
-                  </button>
-                </Tooltip>
+                <IconButton label="Copy" tooltip={copied ? "Copied" : "Copy"} tooltipSide="top" onClick={() => copy(message.content)} className={iconBtn}>
+                  {copied ? <Check size={10} className="text-[var(--success)]" /> : <Copy size={10} />}
+                </IconButton>
                 {!isUser && !message.isStreaming && <ReportIssueControl message={message} />}
                 {statsSegments.length > 0 && (
-                  <Tooltip content={statsOpen ? "Hide stats" : "Message stats"}>
-                    <button
-                      type="button"
-                      onClick={() => setStatsOpen((v) => !v)}
-                      aria-label="Message speed & token stats"
-                      aria-expanded={statsOpen}
-                      className={cn(iconBtn, statsOpen && "text-[var(--accent)] bg-[var(--accent-dim)]")}
-                    >
-                      <Info size={10} />
-                    </button>
-                  </Tooltip>
+                  <IconButton
+                    label="Message speed & token stats" tooltip={statsOpen ? "Hide stats" : "Message stats"} tooltipSide="top"
+                    onClick={() => setStatsOpen((v) => !v)}
+                    aria-expanded={statsOpen}
+                    className={cn(iconBtn, statsOpen && "text-[var(--accent)] bg-[var(--accent-dim)]")}
+                  >
+                    <Info size={10} />
+                  </IconButton>
                 )}
                 {isUser && onRetry && (
-                  <Tooltip content="Retry">
-                    <button onClick={() => onRetry(message.content)} aria-label="Retry" className={iconBtn}><RotateCcw size={10} /></button>
-                  </Tooltip>
+                  <IconButton label="Retry" tooltipSide="top" onClick={() => onRetry(message.content)} className={iconBtn}><RotateCcw size={10} /></IconButton>
                 )}
                 {statsOpen && statsSegments.length > 0 && (
                   <div className="ml-1 flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)] font-mono tabular-nums">

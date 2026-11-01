@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { NoteMarkdownPreview } from "./NoteMarkdownPreview";
 import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface MDPreviewPanelProps {
   text: string;
@@ -74,13 +75,13 @@ export function MDPreviewPanel({ text, onDismiss, label = "Preview" }: MDPreview
               </button>
             ))}
           </div>
-          <button
+          <IconButton
+            label="Close preview"
             onClick={onDismiss}
-            aria-label="Close preview"
-            className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
+            className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)]"
           >
             <X size={11} />
-          </button>
+          </IconButton>
         </div>
       </div>
       <div style={{ maxHeight: SIZE_MAX_HEIGHT[size] }} className="overflow-y-auto">

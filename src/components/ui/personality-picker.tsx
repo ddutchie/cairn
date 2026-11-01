@@ -21,6 +21,7 @@ import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-sche
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
+import { IconButton } from "./icon-button";
 
 export interface PersonalityPickerProps {
   disabled?: boolean;
@@ -96,24 +97,25 @@ export function PersonalityPicker({
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Tooltip content="Chat personality" side="top">
           <Popover.Trigger asChild>
-            <button
-              type="button"
-              disabled={disabled}
-              aria-label="Chat personality"
-              title={active ? `${active.name} personality` : "No personality selected"}
-              className={cn(
-                "flex items-center gap-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors",
-                "hover:bg-[var(--surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-50",
-                triggerPad,
-                className,
-              )}
-            >
-              <Sparkles size={11} className={cn("shrink-0", active?.brandColor ? "" : "text-[var(--text-tertiary)]")} style={active?.brandColor ? { color: active.brandColor } : undefined} />
-              <span className="max-w-[7rem] truncate">
-                {active ? active.name : "None"}
-              </span>
-              <ChevronDown size={11} className="text-[var(--text-tertiary)] shrink-0" />
-            </button>
+            <Tooltip content={active ? `${active.name} personality` : "No personality selected"}>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label="Chat personality"
+                className={cn(
+                  "flex items-center gap-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)] transition-colors",
+                  "hover:bg-[var(--surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-50",
+                  triggerPad,
+                  className,
+                )}
+              >
+                <Sparkles size={11} className={cn("shrink-0", active?.brandColor ? "" : "text-[var(--text-tertiary)]")} style={active?.brandColor ? { color: active.brandColor } : undefined} />
+                <span className="max-w-[7rem] truncate">
+                  {active ? active.name : "None"}
+                </span>
+                <ChevronDown size={11} className="text-[var(--text-tertiary)] shrink-0" />
+              </button>
+            </Tooltip>
           </Popover.Trigger>
         </Tooltip>
 
@@ -128,13 +130,13 @@ export function PersonalityPicker({
               <div className="text-xs font-medium text-[var(--text-tertiary)]">
                 Chat · personality
               </div>
-              <button aria-label="Close"
-                type="button"
+              <IconButton
+                label="Close"
                 onClick={() => setOpen(false)}
-                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
               >
                 <X size={13} />
-              </button>
+              </IconButton>
             </div>
 
             {/* None — the base Cairn assistant, no personality layer */}
@@ -198,15 +200,13 @@ export function PersonalityPicker({
                             </span>
                           </span>
                         </button>
-                        <button
-                          type="button"
+                        <IconButton
+                          label={`Remove ${p.name}`}
                           onClick={() => removePersonality(p.id)}
-                          title={`Remove ${p.name}`}
-                          aria-label={`Remove ${p.name}`}
-                          className="text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-[var(--danger)] transition-opacity mt-0.5 flex-shrink-0"
+                          className="size-auto text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-[var(--danger)] transition-opacity mt-0.5"
                         >
                           <Trash2 size={11} />
-                        </button>
+                        </IconButton>
                       </div>
                     );
                   })

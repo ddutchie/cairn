@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { NEW_FEATURES_REGISTRY, getUnseenLatestFeatures } from "@/lib/new-features-registry";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   forceOpen?: boolean;
@@ -124,14 +125,14 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
               </button>
             )}
             {featuresToShow.length > 1 && (
-              <button
+              <IconButton
+                label="Previous feature"
                 onClick={handlePrev}
                 disabled={activeIdx === 0}
-                aria-label="Previous feature"
-                className="p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="size-auto p-2 border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={14} />
-              </button>
+              </IconButton>
             )}
             <Button variant="accent" size="sm" onClick={handleNext}>
               <span>{isLast ? "Done" : "Next Feature"}</span>

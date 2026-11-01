@@ -24,6 +24,7 @@ import { KanbanCard } from "./card";
 import type { BoardColumn, TaskCard } from "@/types";
 import { COLUMN_COLORS } from "@/lib/constants";
 import { parseWipLimit, isAtWipLimit } from "./column-utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface NewCardData {
   title: string;
@@ -233,6 +234,7 @@ function KanbanColumnImpl({
         {/* Column header */}
         <div className="group flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)]">
           {/* Drag handle */}
+          {/* eslint-disable-next-line cairn/icon-button-label -- dnd-kit drag handle: spreads its own listeners and ARIA */}
           <button
             {...attributes}
             {...listeners}
@@ -264,16 +266,17 @@ function KanbanColumnImpl({
               {column.name}
             </span>
           )}
-          <button
-            onClick={() => { setLimitValue(String(column.cardLimit ?? "")); setLimitDialogOpen(true); }}
-            className={cn(
-              "text-sm flex-shrink-0 font-mono hover:text-[var(--accent)] transition-colors cursor-pointer",
-              atLimit ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]"
-            )}
-            title="Set WIP limit"
-          >
-            {column.cardLimit ? `${cards.length}/${column.cardLimit}` : cards.length}
-          </button>
+          <Tooltip content="Set WIP limit">
+            <button
+              onClick={() => { setLimitValue(String(column.cardLimit ?? "")); setLimitDialogOpen(true); }}
+              className={cn(
+                "text-sm flex-shrink-0 font-mono hover:text-[var(--accent)] transition-colors cursor-pointer",
+                atLimit ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]"
+              )}
+            >
+              {column.cardLimit ? `${cards.length}/${column.cardLimit}` : cards.length}
+            </button>
+          </Tooltip>
           <Tooltip content={atLimit ? "WIP limit reached" : "Add card"}>
             <Button
               variant="ghost" size="icon"
@@ -286,9 +289,9 @@ function KanbanColumnImpl({
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button aria-label="Column actions" className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-all">
+              <IconButton label="Column actions" className="size-auto opacity-0 group-hover:opacity-100 p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-all">
                 <MoreHorizontal size={12} />
-              </button>
+              </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-36">
               <DropdownMenuItem
@@ -372,14 +375,13 @@ function KanbanColumnImpl({
                         className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] opacity-60"
                       >
                         <span className="flex-1 text-sm text-[var(--text-secondary)] truncate" title={card.title}>{card.title}</span>
-                        <Tooltip content="Restore card">
-                          <button aria-label="Restore card"
-                            onClick={() => onRestoreCard(card.id)}
-                            className="flex-shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
-                          >
-                            <ArchiveRestore size={11} />
-                          </button>
-                        </Tooltip>
+                        <IconButton
+                          label="Restore card" tooltipSide="top"
+                          onClick={() => onRestoreCard(card.id)}
+                          className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)]"
+                        >
+                          <ArchiveRestore size={11} />
+                        </IconButton>
                       </div>
                       </ContextMenuTrigger>
                       <ContextMenuContent>

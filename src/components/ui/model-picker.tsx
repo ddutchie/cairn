@@ -28,6 +28,7 @@ import {
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown";
+import { IconButton } from "./icon-button";
 
 /**
  * A single-line, truncated label that shows the app Tooltip with the full text
@@ -186,14 +187,13 @@ export function ModelPicker({
             triggerPad,
           )}
         />
-        <Tooltip content="Done" side="top">
-          <button aria-label="Done"
-            onClick={() => setCustom(false)}
-            className="flex items-center justify-center px-1.5 rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] transition-colors"
-          >
-            <Check size={12} />
-          </button>
-        </Tooltip>
+        <IconButton
+          label="Done" tooltipSide="top"
+          onClick={() => setCustom(false)}
+          className="size-auto px-1.5 border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)]"
+        >
+          <Check size={12} />
+        </IconButton>
       </div>
     );
   }
@@ -370,26 +370,17 @@ function ModelRow({
     >
       <div className="flex flex-col min-w-0 flex-1 gap-0.5">
         <div className="flex items-center gap-1.5 min-w-0">
-          <button
-            type="button"
-            aria-label={favorite ? "Unfavorite model" : "Favorite model"}
-            title={favorite ? "Unfavorite" : "Favorite"}
-            // Radix Menu.Item triggers selection on pointerup / click. Stop those
-            // events at the star so tapping it only toggles the favorite instead of
-            // selecting the model and closing the menu. (Don't preventDefault on
-            // pointerdown — that would suppress the follow-up click in some engines.)
+          <IconButton
+            label={favorite ? "Unfavorite model" : "Favorite model"} tooltip={favorite ? "Unfavorite" : "Favorite"}
             onPointerDown={(e) => e.stopPropagation()}
             onPointerUp={(e) => e.stopPropagation()}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
-            className={cn(
-              "flex-shrink-0 flex items-center justify-center rounded p-0.5 -ml-0.5 transition-colors",
-              favorite
+            className={cn("size-auto p-0.5 -ml-0.5", favorite
                 ? "text-[var(--accent)] hover:text-[var(--text-tertiary)]"
-                : "text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 hover:text-[var(--accent)]",
-            )}
+                : "text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 hover:text-[var(--accent)]")}
           >
             <Star size={12} className={favorite ? "fill-current" : ""} />
-          </button>
+          </IconButton>
           {active && <Check size={12} className="flex-shrink-0" />}
           {logo && (
             <img

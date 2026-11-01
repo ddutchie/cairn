@@ -9,6 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useConfirmAction } from "@/components/ui/confirm-button";
 import { markdownToText } from "../../../shared/notes/text";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface ArchiveViewProps {
   projectId: string;
@@ -168,40 +169,33 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                   </div>
                   {/* Action row */}
                   <div className="flex items-center justify-end gap-0.5 px-2 py-1.5 border-t border-[var(--border)]">
-                    <Tooltip content="Restore to board">
-                      <button
-                        onClick={() => restoreCard(card.id)}
-                        aria-label={`Restore "${card.title}" to board`}
-                        className="p-1 rounded hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
-                      >
-                        <ArchiveRestore size={12} aria-hidden="true" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip content={armedDeleteId === card.id ? `Click again to permanently delete "${card.title}"` : "Delete permanently"}>
-                      <button
-                        onClick={() => {
-                          if (armedDeleteId === card.id) {
-                            fireDeleteOne(card.id);
-                          } else {
-                            if (armedTimer.current) clearTimeout(armedTimer.current);
-                            setArmedDeleteId(card.id);
-                            armedTimer.current = setTimeout(() => {
-                              armedTimer.current = null;
-                              setArmedDeleteId(null);
-                            }, 4000);
-                          }
-                        }}
-                        aria-label={armedDeleteId === card.id ? `Confirm delete "${card.title}" permanently` : `Delete "${card.title}" permanently`}
-                        className={cn(
-                          "p-1 rounded transition-colors",
-                          armedDeleteId === card.id
-                            ? "bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] text-[var(--danger)]"
-                            : "hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--danger)]"
-                        )}
-                      >
-                        <Trash2 size={12} aria-hidden="true" />
-                      </button>
-                    </Tooltip>
+                    <IconButton
+                      label={`Restore "${card.title}" to board`} tooltip="Restore to board" tooltipSide="top"
+                      onClick={() => restoreCard(card.id)}
+                      className="size-auto p-1 hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--accent)]"
+                    >
+                      <ArchiveRestore size={12} aria-hidden="true" />
+                    </IconButton>
+                    <IconButton
+                      label={armedDeleteId === card.id ? `Confirm delete "${card.title}" permanently` : `Delete "${card.title}" permanently`} tooltip={armedDeleteId === card.id ? `Click again to permanently delete "${card.title}"` : "Delete permanently"} tooltipSide="top"
+                      onClick={() => {
+                        if (armedDeleteId === card.id) {
+                          fireDeleteOne(card.id);
+                        } else {
+                          if (armedTimer.current) clearTimeout(armedTimer.current);
+                          setArmedDeleteId(card.id);
+                          armedTimer.current = setTimeout(() => {
+                            armedTimer.current = null;
+                            setArmedDeleteId(null);
+                          }, 4000);
+                        }
+                      }}
+                      className={cn("size-auto p-1", armedDeleteId === card.id
+                          ? "bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] text-[var(--danger)]"
+                          : "hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--text-tertiary)] hover:text-[var(--danger)]")}
+                    >
+                      <Trash2 size={12} aria-hidden="true" />
+                    </IconButton>
                   </div>
                 </div>
               );

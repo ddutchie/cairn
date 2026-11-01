@@ -13,10 +13,10 @@ import { ProjectIcon, WORKSPACE_ICONS } from "@/lib/workspace-icons";
 import { cn } from "@/lib/utils";
 import { PRIORITY_OPTIONS, PROJECT_STATUS_OPTIONS, STATUS_CSS_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { DialogClose } from "@/components/ui/dialog";
 import type { Project, ProjectStatus, Priority } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 export function ProjectSettingsButton({ project }: { project: Project }) {
   const { updateProject, setSettingsSection, setView } = useCairnStore(useShallow((s) => ({
@@ -72,16 +72,14 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
 
   return (
     <>
-      <Tooltip content="Project settings" side="bottom">
-        <button
-          onClick={() => setOpen(true)}
-          className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-          aria-label="Project settings"
-          aria-expanded={open}
-        >
-          <Settings2 size={14} />
-        </button>
-      </Tooltip>
+      <IconButton
+        label="Project settings"
+        onClick={() => setOpen(true)}
+        className="size-auto p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+        aria-expanded={open}
+      >
+        <Settings2 size={14} />
+      </IconButton>
 
       <ModalShell
         open={open}
@@ -112,19 +110,16 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
               <label className="text-sm text-[var(--text-tertiary)] block mb-1.5">Icon</label>
               <div className="flex flex-wrap gap-1.5">
                 {WORKSPACE_ICONS.map(({ name: iconName }) => (
-                  <button aria-label={iconName}
+                  <IconButton
+                    label={iconName}
                     key={iconName}
-                    type="button"
                     onClick={() => setEditIcon(iconName)}
-                    className={cn(
-                      "w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
-                      editIcon === iconName
+                    className={cn("w-7 h-7", editIcon === iconName
                         ? "bg-[var(--accent-dim)] ring-1 ring-[var(--accent)] text-[var(--accent)]"
-                        : "bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-3,var(--surface-2))]"
-                    )}
+                        : "bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-3,var(--surface-2))]")}
                   >
                     <ProjectIcon name={iconName} size={13} />
-                  </button>
+                  </IconButton>
                 ))}
               </div>
             </div>
@@ -194,14 +189,13 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
                 className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:text-[var(--text-primary)] transition-colors"
               />
               {typeof window !== "undefined" && window.electron && (
-                <button
+                <IconButton
+                  label="Browse code directory" tooltip="Browse"
                   onClick={() => void handlePickCodeDir()}
-                  className="flex-shrink-0 p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
-                  title="Browse"
-                  aria-label="Browse code directory"
+                  className="size-auto p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)]"
                 >
                   <FolderOpen size={12} />
-                </button>
+                </IconButton>
               )}
             </div>
           </div>

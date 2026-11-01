@@ -142,10 +142,10 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                             style={{ background: PRIORITY_COLOR[priority] }}
                           />
 
-                          {/* Due date — fixed-width monospace for alignment */}
+                          {/* Due date — fixed width, right-aligned */}
                           <span
                             className={cn(
-                              "text-sm font-mono w-[52px] flex-shrink-0 text-right",
+                              "text-sm tabular-nums w-[52px] flex-shrink-0 text-right",
                               isOverdue
                                 ? "text-[var(--danger)]"
                                 : isToday

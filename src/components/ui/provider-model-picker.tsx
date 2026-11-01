@@ -196,21 +196,21 @@ export function ProviderModelPicker({
                 {REASONING_OPTIONS.map((o) => {
                   const selected = o.value === (config.reasoningEffort ?? "auto");
                   return (
-                    <button
-                      key={o.value}
-                      type="button"
-                      aria-pressed={selected}
-                      title={o.hint}
-                      onClick={() => setEffort(o.value)}
-                      className={cn(
-                        "flex-1 rounded px-1.5 py-1 text-2xs transition-colors",
-                        selected
-                          ? "bg-[var(--surface)] text-[var(--accent)] shadow-elev-1"
-                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-                      )}
-                    >
-                      {o.label}
-                    </button>
+                    <Tooltip key={o.value} content={o.hint} disabled={!o.hint}>
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setEffort(o.value)}
+                        className={cn(
+                          "flex-1 rounded px-1.5 py-1 text-2xs transition-colors",
+                          selected
+                            ? "bg-[var(--surface)] text-[var(--accent)] shadow-elev-1"
+                            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                        )}
+                      >
+                        {o.label}
+                      </button>
+                    </Tooltip>
                   );
                 })}
               </div>

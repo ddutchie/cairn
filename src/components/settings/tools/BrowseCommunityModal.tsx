@@ -25,6 +25,7 @@ import type {
 import { headerNeedsSecret } from "@/store/slices/tools";
 import { toolsClient } from "@/lib/ipc/tools";
 import { ConnectorLogo } from "./ConnectorLogo";
+import { IconButton } from "@/components/ui/icon-button";
 
 type Kind = "mcp" | "service";
 interface CardEntry {
@@ -275,14 +276,13 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
             <Spinner size={11} /> Waiting for browser…
           </span>
         )}
-        <button
-          type="button"
+        <IconButton
+          label="Dismiss"
           onClick={() => { setJustInstalled(null); setConnecting(false); setConnectError(null); }}
-          className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-          aria-label="Dismiss"
+          className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
         >
           <X size={12} />
-        </button>
+        </IconButton>
       </div>
       {justInstalled.oauth && !justInstalled.connected && (
         <p className="text-[var(--text-tertiary)] mt-1">

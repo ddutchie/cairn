@@ -7,6 +7,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import type { ChatThread } from "@/types";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export interface PinnedChatThread {
   thread: ChatThread;
@@ -92,25 +93,25 @@ export function RunningChatPins() {
         const project = projects.find((p) => p.id === thread.projectId);
         const scope = [workspace?.name, project?.name].filter(Boolean).join(" / ");
         return (
-          <button
-            key={thread.id}
-            onClick={() => jump(thread)}
-            title={scope ? `${title} — ${scope}` : title}
-            className="flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left"
-          >
-            {running ? (
-              <Spinner size={11} className="shrink-0 text-[var(--accent)]" />
-            ) : (
-              <MessageSquareText size={13} className="shrink-0 text-[var(--text-tertiary)]" />
-            )}
-            <span className="flex-1 min-w-0">
-              <span className="block truncate">{title}</span>
-              {scope && <span className="block truncate text-2xs text-[var(--text-tertiary)]">{scope}</span>}
-            </span>
-            {unread && !running && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-label="Unread replies" />
-            )}
-          </button>
+          <Tooltip key={thread.id} content={scope ? `${title} — ${scope}` : title} disabled={!(scope ? `${title} — ${scope}` : title)}>
+            <button
+              onClick={() => jump(thread)}
+              className="flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-left"
+            >
+              {running ? (
+                <Spinner size={11} className="shrink-0 text-[var(--accent)]" />
+              ) : (
+                <MessageSquareText size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+              )}
+              <span className="flex-1 min-w-0">
+                <span className="block truncate">{title}</span>
+                {scope && <span className="block truncate text-2xs text-[var(--text-tertiary)]">{scope}</span>}
+              </span>
+              {unread && !running && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-label="Unread replies" />
+              )}
+            </button>
+          </Tooltip>
         );
       })}
       <div className="my-1.5 border-t border-[var(--border-subtle)]" />

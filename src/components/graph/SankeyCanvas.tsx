@@ -9,6 +9,7 @@ import { PRIORITY_COLOR, PRIORITY_WEIGHT, truncateName } from "./analyticsUtils"
 import { useScopeSets } from "./analyticsHooks";
 import { useContainerDims, useFontScale } from "@/lib/viz/hooks";
 import { CanvasEmptyState } from "./AnalyticsShared";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   nodes: GraphNode[];
@@ -172,10 +173,13 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
                 {panelTasks.length} task{panelTasks.length !== 1 ? "s" : ""}
               </p>
             </div>
-            <button aria-label="Close" className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-              onClick={() => setSelectedCol(null)}>
+            <IconButton
+              label="Close"
+              className="w-6 h-6 hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              onClick={() => setSelectedCol(null)}
+            >
               <X size={12} />
-            </button>
+            </IconButton>
           </div>
           <div className="flex-1 overflow-y-auto py-2">
             {panelTasks.length === 0

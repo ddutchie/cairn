@@ -9,6 +9,7 @@ import {
 import { cn, formatDateCompact } from "@/lib/utils";
 import type { SessionKind } from "@/types";
 import type { SessionSummary } from "@/lib/session-registry";
+import { IconButton } from "@/components/ui/icon-button";
 
 export function kindLabel(kind: SessionKind): string {
   if (kind === "chat") return "Chat";
@@ -105,7 +106,7 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
             <SessionTypeIcon kind={session.kind} size={13} />
           </span>
           <span className="min-w-0 flex-1 truncate">{session.title}</span>
-          <span className="ml-auto flex-shrink-0 text-2xs font-mono text-[var(--text-tertiary)] group-hover:opacity-0 transition-opacity">
+          <span className="ml-auto flex-shrink-0 text-2xs tabular-nums text-[var(--text-tertiary)] group-hover:opacity-0 transition-opacity">
             {formatDateCompact(session.updatedAt)}
           </span>
           {session.mode === "plan" && <span className="flex-shrink-0 text-2xs text-[var(--warning)]">plan</span>}
@@ -118,18 +119,17 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
           )}
         </div>
         {onRemove && session.kind !== "terminal" && (
-          <button
-            type="button"
+          <IconButton
+            label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
             tabIndex={-1}
-            aria-label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
             onClick={(e) => {
               e.stopPropagation();
               onRemove(e);
             }}
-            className="absolute right-1 top-1/2 -translate-y-1/2 grid place-items-center w-6 h-6 rounded opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] focus-visible:text-[var(--danger)] transition-opacity duration-150"
+            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] focus-visible:text-[var(--danger)] transition-opacity duration-150"
           >
             <Trash2 size={12} />
-          </button>
+          </IconButton>
         )}
       </div>
     );
@@ -177,18 +177,17 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
           )}
         </div>
        {onRemove && session.kind !== "terminal" && (
-        <button
-          type="button"
+        <IconButton
+          label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
           tabIndex={-1}
-          aria-label={`Delete ${kindLabel(session.kind).toLowerCase()} session`}
           onClick={(e) => {
             e.stopPropagation();
             onRemove(e);
           }}
-          className="flex-shrink-0 grid place-items-center w-7 h-7 rounded opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] focus-visible:text-[var(--danger)] transition-opacity duration-150"
+          className="w-7 h-7 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] focus-visible:text-[var(--danger)] transition-opacity duration-150"
         >
           <Trash2 size={12} />
-        </button>
+        </IconButton>
       )}
     </div>
   );

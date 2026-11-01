@@ -23,8 +23,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
-import { Tooltip } from "@/components/ui/tooltip";
 import { SyncStatusIndicator } from "./sync-status-indicator";
+import { IconButton } from "@/components/ui/icon-button";
 
 export function TitleBar() {
   // Start as null on both server and client so SSR output matches the initial
@@ -81,40 +81,30 @@ export function TitleBar() {
       {/* Right zone: running-automations icon + notification bell + live sync status (no-drag so they're clickable) */}
       <div className="flex items-center gap-1 pr-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {runningAutomationCount > 0 && (
-          <Tooltip side="bottom" content={`${runningAutomationCount} automation${runningAutomationCount === 1 ? "" : "s"} running`}>
-            <button
-              onClick={() => setView("automations")}
-              className="flex items-center justify-center w-7 h-7 rounded-md text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
-              aria-label="Automations running"
-            >
-              <Spinner size={14} />
-            </button>
-          </Tooltip>
-        )}
-        <Tooltip
-          side="bottom"
-          content={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
-        >
-          <button
-            onClick={() => setNotificationOpen(!notificationOpen)}
-            data-notification-toggle
-            className={cn(
-              "relative flex items-center justify-center w-7 h-7 rounded-md transition-colors",
-              notificationUnreadCount > 0
-                ? "text-[var(--accent)] hover:bg-[var(--surface-2)]"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-            )}
-            aria-label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
-            aria-expanded={notificationOpen}
+          <IconButton
+            label="Automations running" tooltip={`${runningAutomationCount} automation${runningAutomationCount === 1 ? "" : "s"} running`}
+            onClick={() => setView("automations")}
+            className="w-7 h-7 text-[var(--accent)] hover:bg-[var(--surface-2)]"
           >
-            <Bell
-              size={14}
-              className={cn(
-                notificationUnreadCount > 0 && "animate-bell-wobble fill-[var(--accent)]"
-              )}
-            />
-          </button>
-        </Tooltip>
+            <Spinner size={14} />
+          </IconButton>
+        )}
+        <IconButton
+          label={notificationUnreadCount > 0 ? `Notifications — ${notificationUnreadCount} unread` : "Notifications"}
+          onClick={() => setNotificationOpen(!notificationOpen)}
+          data-notification-toggle
+          className={cn("relative w-7 h-7", notificationUnreadCount > 0
+              ? "text-[var(--accent)] hover:bg-[var(--surface-2)]"
+              : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}
+          aria-expanded={notificationOpen}
+        >
+          <Bell
+            size={14}
+            className={cn(
+              notificationUnreadCount > 0 && "animate-bell-wobble fill-[var(--accent)]"
+            )}
+          />
+        </IconButton>
         <SyncStatusIndicator />
       </div>
 

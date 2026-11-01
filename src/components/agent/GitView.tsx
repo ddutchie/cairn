@@ -28,6 +28,7 @@ import { discardMessage, readPrTemplate } from "./git/git-actions";
 import { useTwoStepConfirm } from "@/hooks/useTwoStepConfirm";
 import { gitClient } from "@/lib/ipc/git";
 import { errorMessage, requireElectron } from "@/lib/ipc/client";
+import { IconButton } from "@/components/ui/icon-button";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -449,14 +450,13 @@ export function GitView({ cwd }: GitViewProps) {
               </button>
             </Tooltip>
           )}
-          <Tooltip content="Refresh git status and recent commits">
-            <button aria-label="Refresh git status and recent commits"
-              onClick={refresh}
-              className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
-            >
-              <RefreshSpin size={12} spinning={loading} />
-            </button>
-          </Tooltip>
+          <IconButton
+            label="Refresh git status and recent commits" tooltipSide="top"
+            onClick={refresh}
+            className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] cursor-pointer"
+          >
+            <RefreshSpin size={12} spinning={loading} />
+          </IconButton>
         </div>
       )}
 
@@ -507,9 +507,9 @@ export function GitView({ cwd }: GitViewProps) {
           >
             Open
           </button>
-          <button aria-label="Dismiss" onClick={() => setPrUrl(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <IconButton label="Dismiss" onClick={() => setPrUrl(null)} className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
-          </button>
+          </IconButton>
         </div>
       )}
 
@@ -518,9 +518,9 @@ export function GitView({ cwd }: GitViewProps) {
         <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border-b border-[var(--border)] flex-shrink-0">
           <X size={11} className="text-[var(--danger)] flex-shrink-0" />
           <span className="text-xs text-[var(--danger)] flex-1">{error}</span>
-          <button aria-label="Dismiss error" onClick={dismissError} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <IconButton label="Dismiss error" onClick={dismissError} className="size-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
-          </button>
+          </IconButton>
         </div>
       )}
 
@@ -739,7 +739,7 @@ export function GitView({ cwd }: GitViewProps) {
                 <div key={entry.hash} className="flex items-start gap-3 px-4 py-2 hover:bg-[var(--surface-2)] transition-colors">
                   <GitCommit size={10} className="mt-1 text-[var(--text-tertiary)] flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs text-[var(--text-primary)] truncate font-mono">{entry.subject}</div>
+                    <div className="text-xs text-[var(--text-primary)] truncate">{entry.subject}</div>
                     <div className="flex items-center gap-2 text-2xs text-[var(--text-tertiary)] mt-0.5">
                       <span className="font-mono">{entry.hash}</span>
                       <span>{entry.author}</span>

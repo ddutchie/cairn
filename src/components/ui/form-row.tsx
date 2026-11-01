@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { Toggle as UiToggle, type ToggleProps } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { Tooltip } from "./tooltip";
 
 /**
  * Buttons and links keep their own text as their accessible name; anything
@@ -207,23 +208,24 @@ export function StepperSettingsRow({
     <SettingsRow label={label} description={description} controlClassName="min-w-0 @sm:self-auto">
       <div role="group" aria-label={label} className="inline-flex flex-wrap items-center justify-end gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
         {onAuto && (
-          <button
-            type="button"
-            onClick={onAuto}
-            disabled={autoState === "loading"}
-            aria-pressed={autoOn}
-            title={
-              autoState === "detected" && autoValue
-                ? `Detected ${autoValue.toLocaleString()} from models.dev`
-                : autoState === "not_found"
-                  ? "Not found in models.dev, so a safe default applies"
-                  : "Detect from models.dev"
-            }
-            className={cn(segment(autoOn), "inline-flex items-center gap-1", autoState === "loading" && "opacity-60 cursor-wait")}
+          <Tooltip
+            content={autoState === "detected" && autoValue
+              ? `Detected ${autoValue.toLocaleString()} from models.dev`
+              : autoState === "not_found"
+                ? "Not found in models.dev, so a safe default applies"
+                : "Detect from models.dev"}
           >
-            {autoState === "loading" && <Spinner size={10} />}
-            Auto
-          </button>
+            <button
+              type="button"
+              onClick={onAuto}
+              disabled={autoState === "loading"}
+              aria-pressed={autoOn}
+              className={cn(segment(autoOn), "inline-flex items-center gap-1", autoState === "loading" && "opacity-60 cursor-wait")}
+            >
+              {autoState === "loading" && <Spinner size={10} />}
+              Auto
+            </button>
+          </Tooltip>
         )}
         {presets.map((n) => (
           <button key={n} type="button" onClick={() => onChange(n)} aria-pressed={presetOn(n)} className={segment(presetOn(n))}>

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import userEvent from "@testing-library/user-event";
 import { SettingsRow, StepperSettingsRow } from "./form-row";
 import { Button } from "./button";
@@ -28,7 +29,7 @@ describe("SettingsRow labelling", () => {
 describe("StepperSettingsRow", () => {
   function setup(value: number, extra: Partial<React.ComponentProps<typeof StepperSettingsRow>> = {}) {
     const onChange = vi.fn();
-    render(<StepperSettingsRow label="Max steps" value={value} onChange={onChange} presets={[10, 30]} min={1} max={100} {...extra} />);
+    render(<StepperSettingsRow label="Max steps" value={value} onChange={onChange} presets={[10, 30]} min={1} max={100} {...extra} />, { wrapper: TooltipProvider });
     return { onChange, user: userEvent.setup() };
   }
 

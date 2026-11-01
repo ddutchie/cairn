@@ -46,6 +46,7 @@ import {
 import { resolveDateDrop } from "./calendar-dnd";
 import type { CalendarCell } from "./calendar-utils";
 import type { TaskCard } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 type CalendarLayout = "month" | "week";
 
@@ -187,22 +188,20 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
       {/* Toolbar */}
       <div className="min-h-9 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-3">
         <div className="flex items-center gap-0.5">
-          <button
-            type="button"
+          <IconButton
+            label={layout === "month" ? "Previous month" : "Previous week"}
             onClick={() => step(-1)}
-            aria-label={layout === "month" ? "Previous month" : "Previous week"}
-            className="p-1 rounded text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            className="size-auto p-1 text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
           >
             <ChevronLeft size={14} />
-          </button>
-          <button
-            type="button"
+          </IconButton>
+          <IconButton
+            label={layout === "month" ? "Next month" : "Next week"}
             onClick={() => step(1)}
-            aria-label={layout === "month" ? "Next month" : "Next week"}
-            className="p-1 rounded text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            className="size-auto p-1 text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
           >
             <ChevronRight size={14} />
-          </button>
+          </IconButton>
         </div>
         <button
           type="button"

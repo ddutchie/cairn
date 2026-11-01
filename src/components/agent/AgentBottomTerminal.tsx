@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal as TerminalIcon, X, Plus, Bot } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface AgentBottomTerminalProps {
   cwd: string;
@@ -327,23 +328,24 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
             <span className={cn("text-xs", tab.exited && "opacity-50")}>
               {tab.label}
             </span>
-            <button aria-label="Close terminal"
+            <IconButton
+              label="Close terminal"
               onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--surface-3)] transition-all"
+              className="size-auto opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--surface-3)] transition-all text-current"
             >
               <X size={9} />
-            </button>
+            </IconButton>
           </div>
         ))}
 
         {/* New tab button */}
-        <button
+        <IconButton
+          label="New terminal"
           onClick={spawnShell}
-          className="flex items-center justify-center w-8 h-full flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-          title="New terminal"
+          className="w-8 h-full text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
         >
           <Plus size={11} />
-        </button>
+        </IconButton>
       </div>
 
       {/* Terminal containers — all mounted, inactive ones hidden via CSS */}

@@ -206,7 +206,7 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
                 )}
 
                 {/* Updated */}
-                <td className="px-3 py-2 text-[var(--text-tertiary)] font-mono text-sm">{updated}</td>
+                <td className="px-3 py-2 text-[var(--text-tertiary)] tabular-nums text-sm">{updated}</td>
               </tr>
             );
           })}

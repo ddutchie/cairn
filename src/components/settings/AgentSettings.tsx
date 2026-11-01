@@ -19,6 +19,7 @@ import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // ── Agent form ────────────────────────────────────────────────────────────────
 
@@ -572,15 +573,16 @@ export function AgentSettings() {
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 {!agent.isDefault && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => setDefaultAgent(agent.id)}
-                    title="Set as default"
-                    className="text-[var(--text-tertiary)] hover:text-[var(--accent)]"
-                  >
-                    <Star size={11} />
-                  </Button>
+                  <Tooltip content="Set as default">
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => setDefaultAgent(agent.id)}
+                      className="text-[var(--text-tertiary)] hover:text-[var(--accent)]"
+                    >
+                      <Star size={11} />
+                    </Button>
+                  </Tooltip>
                 )}
                 <Button
                   variant="ghost"

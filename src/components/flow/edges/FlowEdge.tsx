@@ -9,6 +9,7 @@ import {
   type EdgeProps,
 } from "@xyflow/react";
 import { X } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 
 export function FlowEdge({
   id,
@@ -69,7 +70,8 @@ export function FlowEdge({
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
         >
-          <button
+          <IconButton
+            label="Delete connection"
             onClick={onDelete}
             style={{
               display: "flex",
@@ -84,11 +86,9 @@ export function FlowEdge({
               cursor: "pointer",
               padding: 0,
             }}
-            title="Delete connection"
-            aria-label="Delete connection"
           >
             <X size={8} strokeWidth={2.5} />
-          </button>
+          </IconButton>
         </div>
       </EdgeLabelRenderer>
     </>

@@ -45,6 +45,7 @@ import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalog
 import { AgentPermissionSelect } from "./AgentPermissionSelect";
 import type { SessionProjection } from "../../../shared/agent/session-projection";
 import { useSessionConversation } from "@/hooks/useSessionConversation";
+import { IconButton } from "@/components/ui/icon-button";
 
 // ── Cairn tool ref extraction ─────────────────────────────────────────────────
 
@@ -697,7 +698,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           <SubagentCatalogAction parentSessionId={session.sessionId} />
           {session.mode === "plan" && <span className="flex items-center gap-1 text-2xs font-semibold px-1.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"><MapIcon size={9} /> PLAN</span>}
           {session.planNoteId && <Tooltip content="Open plan note" side="left"><button onClick={() => revealNote(setView, session.planNoteId!)} className="flex items-center gap-1 text-2xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded-full border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors"><FileText size={9} /> PRD</button></Tooltip>}
-          <Tooltip content="Clear conversation" side="left"><button aria-label="Clear conversation" onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><Trash2 size={12} /></button></Tooltip>
+          <IconButton label="Clear conversation" tooltipSide="left" onClick={handleClear} className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"><Trash2 size={12} /></IconButton>
         </>
       )}
       composerBefore={(

@@ -7,6 +7,7 @@ import { cn, PRIORITY_COLORS } from "@/lib/utils";
 import { FlowNodeShell, FLOW_HANDLE_CLASS } from "./flow-node-shell";
 import { useCairnStore } from "@/store";
 import { revealCard } from "@/lib/events";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface TaskRefNodeData {
   cardId?: string;
@@ -37,14 +38,13 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
             <span className="text-xs font-medium text-[var(--text-tertiary)]">Task</span>
           </div>
           {hasCard && (
-            <button
+            <IconButton
+              label="Open board"
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-              title="Open board"
-              aria-label="Open board"
+              className="size-auto nodrag p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)]"
             >
               <ExternalLink size={11} />
-            </button>
+            </IconButton>
           )}
         </div>
         {hasCard ? (

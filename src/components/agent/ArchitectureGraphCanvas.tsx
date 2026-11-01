@@ -17,6 +17,7 @@ import { useContainerDims, useFontScale, useThemeRepaint } from "@/lib/viz/hooks
 import { resolveCssVar, withAlpha } from "@/lib/viz/color";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface ArchGraphNode {
   id: string;
@@ -375,7 +376,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
   }, []);
 
   const ZOOM_BTN =
-    "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-elev-1";
+    "w-7 h-7 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] shadow-elev-1";
 
   return (
     <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden">
@@ -394,15 +395,15 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
 
       {/* Zoom controls */}
       <div className="absolute bottom-3 right-3 flex flex-col gap-1.5">
-        <button className={ZOOM_BTN} onClick={() => zoomBy(1.3)} title="Zoom in" aria-label="Zoom in">
+        <IconButton label="Zoom in" className={ZOOM_BTN} onClick={() => zoomBy(1.3)}>
           <ZoomIn size={14} />
-        </button>
-        <button className={ZOOM_BTN} onClick={() => zoomBy(1 / 1.3)} title="Zoom out" aria-label="Zoom out">
+        </IconButton>
+        <IconButton label="Zoom out" className={ZOOM_BTN} onClick={() => zoomBy(1 / 1.3)}>
           <ZoomOut size={14} />
-        </button>
-        <button className={ZOOM_BTN} onClick={() => { userInteractedRef.current = false; zoomFit(true); }} title="Fit to view" aria-label="Fit to view">
+        </IconButton>
+        <IconButton label="Fit to view" className={ZOOM_BTN} onClick={() => { userInteractedRef.current = false; zoomFit(true); }}>
           <Maximize2 size={14} />
-        </button>
+        </IconButton>
       </div>
 
       {/* Hover tooltip */}

@@ -24,6 +24,7 @@ import {
 } from "@/lib/models-dev";
 import { opencodeSlugForBaseUrl, type WireProtocol } from "../../../shared/models/model-catalog";
 import type { ProbeProtocol, ProtocolAvailability } from "../../../shared/chat/protocol-probe";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const PROTOCOL_LABEL: Record<WireProtocol, string> = {
   completions: "Chat Completions",
@@ -196,37 +197,38 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
         <div className="flex flex-col gap-1.5 items-end w-64">
           <div className="flex gap-1.5 w-full">
             <DropdownMenu>
-              <DropdownMenuTrigger asChild disabled={providers.length === 0 || formOpen}>
-                <button
-                  disabled={formOpen}
-                  title={formOpen ? "Finish or cancel the open provider form first" : undefined}
-                  className={cn(
-                    "flex-1 flex items-center justify-between gap-2 pl-2.5 pr-2 py-1.5 text-xs rounded-md",
-                    "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)]",
-                    "hover:border-[var(--muted)] focus:outline-none focus:border-[var(--accent)] transition-colors cursor-pointer",
-                    (providers.length === 0 || formOpen) && "opacity-50 cursor-not-allowed",
-                  )}
-                >
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    {active ? (
-                      (() => {
-                        const lp = logoPropsFor(active);
-                        return lp ? (
-                          <ConnectorLogo iconSvg={lp.iconSvg} kind="service" color={lp.brandColor} size={12} />
-                        ) : (
-                          <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
-                        );
-                      })()
-                    ) : (
-                      <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+              <Tooltip content="Finish or cancel the open provider form first" disabled={!formOpen} wrapperClassName="flex-1 min-w-0">
+                <DropdownMenuTrigger asChild disabled={providers.length === 0 || formOpen}>
+                  <button
+                    disabled={formOpen}
+                    className={cn(
+                      "flex-1 flex items-center justify-between gap-2 pl-2.5 pr-2 py-1.5 text-xs rounded-md",
+                      "bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)]",
+                      "hover:border-[var(--muted)] focus:outline-none focus:border-[var(--accent)] transition-colors cursor-pointer",
+                      (providers.length === 0 || formOpen) && "opacity-50 cursor-not-allowed",
                     )}
-                    <span className="truncate">
-                      {active ? active.name : "No saved providers"}
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      {active ? (
+                        (() => {
+                          const lp = logoPropsFor(active);
+                          return lp ? (
+                            <ConnectorLogo iconSvg={lp.iconSvg} kind="service" color={lp.brandColor} size={12} />
+                          ) : (
+                            <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                          );
+                        })()
+                      ) : (
+                        <Server size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                      )}
+                      <span className="truncate">
+                        {active ? active.name : "No saved providers"}
+                      </span>
                     </span>
-                  </span>
-                  <ChevronDown size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
-                </button>
-              </DropdownMenuTrigger>
+                    <ChevronDown size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
+                  </button>
+                </DropdownMenuTrigger>
+              </Tooltip>
               <DropdownMenuContent align="start" className="w-[220px] max-h-64 overflow-y-auto">
                 {providers.map((p) => (
                   <DropdownMenuItem
@@ -254,18 +256,19 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <button
-              onClick={() => setEditing("new")}
-              disabled={formOpen}
-              aria-label="Add provider"
-              title={formOpen ? "Finish or cancel the open provider form first" : "Add a provider"}
-              className={cn(
-                "px-2 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer",
-                formOpen && "opacity-50 cursor-not-allowed hover:border-[var(--border)] hover:text-[var(--text-tertiary)]",
-              )}
-            >
-              <Plus size={11} /> Add
-            </button>
+            <Tooltip content={formOpen ? "Finish or cancel the open provider form first" : "Add a provider"}>
+              <button
+                onClick={() => setEditing("new")}
+                disabled={formOpen}
+                aria-label="Add provider"
+                className={cn(
+                  "px-2 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer",
+                  formOpen && "opacity-50 cursor-not-allowed hover:border-[var(--border)] hover:text-[var(--text-tertiary)]",
+                )}
+              >
+                <Plus size={11} /> Add
+              </button>
+            </Tooltip>
           </div>
 
           {active && !formOpen && (

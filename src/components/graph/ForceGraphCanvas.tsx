@@ -6,7 +6,6 @@ import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
 import { createCssVarReader, createAlphaCache, tokenToCssVar } from "@/lib/viz/color";
 import { useFontScale, useThemeRepaint, useContainerDims } from "@/lib/viz/hooks";
-import { Tooltip } from "@/components/ui/tooltip";
 import {
   nodeTypeToken,
   nodeRadius,
@@ -23,6 +22,7 @@ import {
   recallLayout,
   type ForceLayoutClient,
 } from "./force-layout-client";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   graph: KnowledgeGraph;
@@ -191,7 +191,7 @@ function dprFor(nodeCount: number): number {
 }
 
 const ZOOM_BTN_CLASS =
-  "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-elev-1";
+  "w-7 h-7 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] shadow-elev-1";
 
 function ForceGraphCanvasImpl({
   graph,
@@ -842,33 +842,27 @@ function ForceGraphCanvasImpl({
 
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-1">
-        <Tooltip content="Zoom in" side="left">
-          <button
-            onClick={(e) => { e.stopPropagation(); zoomBy(1.4); }}
-            aria-label="Zoom in"
-            className={ZOOM_BTN_CLASS}
-          >
-            <ZoomIn size={13} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Zoom out" side="left">
-          <button
-            onClick={(e) => { e.stopPropagation(); zoomBy(1 / 1.4); }}
-            aria-label="Zoom out"
-            className={ZOOM_BTN_CLASS}
-          >
-            <ZoomOut size={13} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Fit all" side="left">
-          <button
-            onClick={(e) => { e.stopPropagation(); zoomFit(true); }}
-            aria-label="Fit all"
-            className={ZOOM_BTN_CLASS}
-          >
-            <Maximize2 size={13} />
-          </button>
-        </Tooltip>
+        <IconButton
+          label="Zoom in" tooltipSide="left"
+          onClick={(e) => { e.stopPropagation(); zoomBy(1.4); }}
+          className={ZOOM_BTN_CLASS}
+        >
+          <ZoomIn size={13} />
+        </IconButton>
+        <IconButton
+          label="Zoom out" tooltipSide="left"
+          onClick={(e) => { e.stopPropagation(); zoomBy(1 / 1.4); }}
+          className={ZOOM_BTN_CLASS}
+        >
+          <ZoomOut size={13} />
+        </IconButton>
+        <IconButton
+          label="Fit all" tooltipSide="left"
+          onClick={(e) => { e.stopPropagation(); zoomFit(true); }}
+          className={ZOOM_BTN_CLASS}
+        >
+          <Maximize2 size={13} />
+        </IconButton>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { type HeaderRow, looksSecret, inputCls, labelCls } from "./helpers";
+import { IconButton } from "@/components/ui/icon-button";
 
 /**
  * Secret-aware header editor. Header values that look like a secret placeholder
@@ -38,13 +39,13 @@ export function HeaderEditor({
             placeholder={row.isSecret ? "secret value" : "value"}
             className={cn(inputCls, "flex-1", row.isSecret && "font-mono")}
           />
-          <button
+          <IconButton
+            label="Remove header"
             onClick={() => onChange(rows.filter((_, j) => j !== i))}
-            aria-label="Remove header"
-            className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors p-1"
+            className="size-auto text-[var(--text-tertiary)] hover:text-[var(--danger)] p-1"
           >
             <Trash2 size={13} />
-          </button>
+          </IconButton>
         </div>
       ))}
       <Button variant="ghost" size="xs" onClick={() => onChange([...rows, { name: "", value: "", isSecret: false }])}>

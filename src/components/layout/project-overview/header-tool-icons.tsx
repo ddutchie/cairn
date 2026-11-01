@@ -60,6 +60,7 @@ export function HeaderToolIcons({ projectId, workspaceId }: { projectId: string;
           const meta = connectorMap[it.connectorKey];
           return (
             <Tooltip key={it.key} content={it.name}>
+              {/* eslint-disable-next-line cairn/icon-button-label -- round connector logo chips, not icon buttons */}
               <button aria-label={it.name}
                 type="button"
                 onClick={() => toggle(it.kind, it.id, !attached)}

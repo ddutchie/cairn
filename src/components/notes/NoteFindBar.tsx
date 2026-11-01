@@ -5,9 +5,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, X, CaseSensitive, WholeWord } from "lucide-react";
 import type { EditorView } from "@codemirror/view";
 import { cn } from "@/lib/utils";
-import { Tooltip } from "@/components/ui/tooltip";
 import { findMatches } from "../../../shared/notes/search";
 import { setFind } from "./note-find-extension";
+import { IconButton } from "@/components/ui/icon-button";
 
 const HL = "cairn-find";
 const HL_CURRENT = "cairn-find-current";
@@ -184,36 +184,35 @@ export function NoteFindBar({ initialQuery, requestId, mode, content, getView, g
       <span className="min-w-[4.5ch] px-1 text-center text-xs tabular-nums text-[var(--text-tertiary)]" aria-live="polite">
         {!query ? "" : count === 0 ? "No results" : `${Math.min(current, count - 1) + 1}/${count}`}
       </span>
-      <Tooltip content="Match case">
-        <button
-          type="button"
-          aria-label="Match case"
-          aria-pressed={caseSensitive}
-          onClick={() => { setCaseSensitive((v) => !v); setCurrent(0); scrollNext.current = true; }}
-          className={cn("p-1 rounded hover:bg-[var(--surface-2)]", caseSensitive ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}
-        ><CaseSensitive size={14} /></button>
-      </Tooltip>
-      <Tooltip content="Whole word">
-        <button
-          type="button"
-          aria-label="Whole word"
-          aria-pressed={wholeWord}
-          onClick={() => { setWholeWord((v) => !v); setCurrent(0); scrollNext.current = true; }}
-          className={cn("p-1 rounded hover:bg-[var(--surface-2)]", wholeWord ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}
-        ><WholeWord size={14} /></button>
-      </Tooltip>
-      <Tooltip content="Previous (⇧↵)">
-        <button type="button" aria-label="Previous match" onClick={() => step(-1)} disabled={count === 0}
-          className="p-1 rounded text-[var(--text-secondary)] hover:bg-[var(--surface-2)] disabled:opacity-40"><ChevronUp size={14} /></button>
-      </Tooltip>
-      <Tooltip content="Next (↵)">
-        <button type="button" aria-label="Next match" onClick={() => step(1)} disabled={count === 0}
-          className="p-1 rounded text-[var(--text-secondary)] hover:bg-[var(--surface-2)] disabled:opacity-40"><ChevronDown size={14} /></button>
-      </Tooltip>
-      <Tooltip content="Close (Esc)">
-        <button type="button" aria-label="Close find" onClick={onClose}
-          className="p-1 rounded text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]"><X size={14} /></button>
-      </Tooltip>
+      <IconButton
+        label="Match case" tooltipSide="top"
+        aria-pressed={caseSensitive}
+        onClick={() => { setCaseSensitive((v) => !v); setCurrent(0); scrollNext.current = true; }}
+        className={cn("size-auto p-1 hover:bg-[var(--surface-2)]", caseSensitive ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}
+      ><CaseSensitive size={14} /></IconButton>
+      <IconButton
+        label="Whole word" tooltipSide="top"
+        aria-pressed={wholeWord}
+        onClick={() => { setWholeWord((v) => !v); setCurrent(0); scrollNext.current = true; }}
+        className={cn("size-auto p-1 hover:bg-[var(--surface-2)]", wholeWord ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)]")}
+      ><WholeWord size={14} /></IconButton>
+      <IconButton
+        label="Previous match" tooltip="Previous (⇧↵)" tooltipSide="top"
+        onClick={() => step(-1)}
+        disabled={count === 0}
+        className="size-auto p-1 text-[var(--text-secondary)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+      ><ChevronUp size={14} /></IconButton>
+      <IconButton
+        label="Next match" tooltip="Next (↵)" tooltipSide="top"
+        onClick={() => step(1)}
+        disabled={count === 0}
+        className="size-auto p-1 text-[var(--text-secondary)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+      ><ChevronDown size={14} /></IconButton>
+      <IconButton
+        label="Close find" tooltip="Close (Esc)" tooltipSide="top"
+        onClick={onClose}
+        className="size-auto p-1 text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]"
+      ><X size={14} /></IconButton>
     </div>
   );
 }

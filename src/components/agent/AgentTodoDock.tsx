@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SessionTodo } from "@/types";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface AgentTodoDockProps {
   todos: SessionTodo[];
@@ -82,34 +83,35 @@ export function AgentTodoDock({ todos, live = true }: AgentTodoDockProps) {
       )}
 
       {/* Summary / toggle row — always visible */}
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-2)] transition-colors text-left"
-        title={expanded ? "Collapse todos" : "Expand todos"}
-      >
-        <span
-          className={cn(
-            "text-xs font-medium flex-1 truncate",
-            live ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]",
-          )}
-        >
-          {summary}
-        </span>
-        <span
-          className={cn(
-            "h-1 w-8 rounded-full bg-[var(--border)] overflow-hidden shrink-0",
-            total > 0 && "relative",
-          )}
+      <Tooltip content={expanded ? "Collapse todos" : "Expand todos"}>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-2)] transition-colors text-left"
         >
           <span
-            className="absolute inset-y-0 left-0 bg-[var(--accent)] rounded-full transition-all duration-500"
-            style={{ width: `${total > 0 ? (done / total) * 100 : 0}%` }}
-          />
-        </span>
-        {expanded
-          ? <ChevronDown size={10} className="text-[var(--text-tertiary)] shrink-0" />
-          : <ChevronUp   size={10} className="text-[var(--text-tertiary)] shrink-0" />}
-      </button>
+            className={cn(
+              "text-xs font-medium flex-1 truncate",
+              live ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]",
+            )}
+          >
+            {summary}
+          </span>
+          <span
+            className={cn(
+              "h-1 w-8 rounded-full bg-[var(--border)] overflow-hidden shrink-0",
+              total > 0 && "relative",
+            )}
+          >
+            <span
+              className="absolute inset-y-0 left-0 bg-[var(--accent)] rounded-full transition-all duration-500"
+              style={{ width: `${total > 0 ? (done / total) * 100 : 0}%` }}
+            />
+          </span>
+          {expanded
+            ? <ChevronDown size={10} className="text-[var(--text-tertiary)] shrink-0" />
+            : <ChevronUp   size={10} className="text-[var(--text-tertiary)] shrink-0" />}
+        </button>
+      </Tooltip>
     </div>
   );
 }

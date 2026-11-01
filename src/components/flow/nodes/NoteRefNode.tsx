@@ -6,6 +6,7 @@ import { FileText, ExternalLink } from "lucide-react";
 import { FlowNodeShell, FLOW_HANDLE_CLASS } from "./flow-node-shell";
 import { useCairnStore } from "@/store";
 import { revealNote } from "@/lib/events";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface NoteRefNodeData {
   noteId?: string;
@@ -37,14 +38,13 @@ export const NoteRefNode = memo(function NoteRefNode({ data, selected, isConnect
             <span className="text-xs font-medium text-[var(--text-tertiary)]">Note</span>
           </div>
           {hasNote && (
-            <button
+            <IconButton
+              label="Open note"
               onClick={handleOpen}
-              className="nodrag p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-              title="Open note"
-              aria-label="Open note"
+              className="size-auto nodrag p-0.5 text-[var(--text-tertiary)] hover:text-[var(--accent)]"
             >
               <ExternalLink size={11} />
-            </button>
+            </IconButton>
           )}
         </div>
         {hasNote ? (

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // Minimal stub of engine's TrajectoryTimeline — same interaction contract
 // (drag horizontal → onRangeChange, wheel → zoom, click span → onRecordSelect)
@@ -121,25 +122,25 @@ export function ChatTimeline({ spans, range, onRangeChange, onSpanSelect, totalD
           {[0, 1, 2].map((lane) => (
             <div key={lane} className="flex-1 relative rounded bg-[var(--surface)] border border-[var(--border-subtle)] overflow-hidden">
               {spans.filter((s) => s.lane === lane).map((s) => (
-                <button
-                  key={`${lane}-${s.index}-${s.label}`}
-                  data-span
-                  onClick={(e) => handleSpanClick(s, e)}
-                  onMouseEnter={() => setHover(s)}
-                  onMouseLeave={() => setHover((h) => (h?.index === s.index && h.lane === lane && h.label === s.label ? null : h))}
-                  className={cn(
-                    "absolute top-0.5 bottom-0.5 rounded text-[0.5rem] flex items-center justify-center overflow-hidden transition-colors",
-                    s.isError ? "bg-[var(--danger)]/20 border border-[var(--danger)]/40" :
-                    lane === 0 ? "bg-[var(--accent)]/15 border border-[var(--accent)]/30" :
-                    lane === 1 ? "bg-[var(--text-primary)]/10 border border-[var(--text-primary)]/20" :
-                    "bg-[var(--success)]/15 border border-[var(--success)]/30",
-                    hover?.index === s.index && hover.lane === lane && hover.label === s.label && "ring-1 ring-[var(--accent)]"
-                  )}
-                  style={{ left: `${s.start * 100}%`, width: `${Math.max(1, (s.end - s.start) * 100)}%` }}
-                  title={s.label}
-                >
-                  <span className="truncate px-1">{s.label}</span>
-                </button>
+                <Tooltip key={`${lane}-${s.index}-${s.label}`} content={s.label} disabled={!s.label}>
+                  <button
+                    data-span
+                    onClick={(e) => handleSpanClick(s, e)}
+                    onMouseEnter={() => setHover(s)}
+                    onMouseLeave={() => setHover((h) => (h?.index === s.index && h.lane === lane && h.label === s.label ? null : h))}
+                    className={cn(
+                      "absolute top-0.5 bottom-0.5 rounded text-[0.5rem] flex items-center justify-center overflow-hidden transition-colors",
+                      s.isError ? "bg-[var(--danger)]/20 border border-[var(--danger)]/40" :
+                      lane === 0 ? "bg-[var(--accent)]/15 border border-[var(--accent)]/30" :
+                      lane === 1 ? "bg-[var(--text-primary)]/10 border border-[var(--text-primary)]/20" :
+                      "bg-[var(--success)]/15 border border-[var(--success)]/30",
+                      hover?.index === s.index && hover.lane === lane && hover.label === s.label && "ring-1 ring-[var(--accent)]"
+                    )}
+                    style={{ left: `${s.start * 100}%`, width: `${Math.max(1, (s.end - s.start) * 100)}%` }}
+                  >
+                    <span className="truncate px-1">{s.label}</span>
+                  </button>
+                </Tooltip>
               ))}
             </div>
           ))}

@@ -4,6 +4,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "./button";
 import { CountBadge } from "./count-badge";
+import { Tooltip } from "./tooltip";
 
 export interface ViewTab<T extends string> {
   value: T;
@@ -70,28 +71,28 @@ export function ViewTabs<T extends string>({
         {tabs.map((tab) => {
           const active = tab.value === value;
           return (
-            <button
-              key={tab.value}
-              type="button"
-              role="tab"
-              id={panelId ? viewTabId(panelId, tab.value) : undefined}
-              aria-selected={active}
-              aria-controls={active ? panelId : undefined}
-              tabIndex={active ? 0 : -1}
-              title={tab.title}
-              onClick={() => onChange(tab.value)}
-              className={cn(
-                "flex flex-shrink-0 items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                FOCUS_RING,
-                active
-                  ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
-              )}
-            >
-              {tab.icon}
-              {tab.label}
-              {tab.count !== undefined && <CountBadge count={tab.count} className="ml-0.5 px-1.5 py-0.5 text-2xs" />}
-            </button>
+            <Tooltip key={tab.value} content={tab.title} disabled={!tab.title}>
+              <button
+                type="button"
+                role="tab"
+                id={panelId ? viewTabId(panelId, tab.value) : undefined}
+                aria-selected={active}
+                aria-controls={active ? panelId : undefined}
+                tabIndex={active ? 0 : -1}
+                onClick={() => onChange(tab.value)}
+                className={cn(
+                  "flex flex-shrink-0 items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                  FOCUS_RING,
+                  active
+                    ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
+                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+                {tab.count !== undefined && <CountBadge count={tab.count} className="ml-0.5 px-1.5 py-0.5 text-2xs" />}
+              </button>
+            </Tooltip>
           );
         })}
       </div>

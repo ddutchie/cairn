@@ -4,6 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Download, X, AlertCircle } from "lucide-react";
 import type { ErrorToast } from "@/hooks/useIpcErrorToasts";
+import { IconButton } from "@/components/ui/icon-button";
 
 /**
  * Auto-updater banner — shown when an update is available or downloaded.
@@ -33,9 +34,9 @@ export function UpdateBanner({
           Restart &amp; install
         </Button>
       )}
-      <button aria-label="Dismiss" onClick={onDismiss} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+      <IconButton label="Dismiss" onClick={onDismiss} className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
         <X size={12} />
-      </button>
+      </IconButton>
     </div>
   );
 }
@@ -66,12 +67,13 @@ export function ErrorToasts({
         >
           <AlertCircle size={13} className="text-[var(--danger)] shrink-0 mt-0.5" />
           <span className="text-xs text-[var(--text-secondary)] flex-1 leading-relaxed">{toast.message}</span>
-          <button aria-label="Dismiss"
+          <IconButton
+            label="Dismiss"
             onClick={() => onDismiss(toast.id)}
-            className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors shrink-0"
+            className="size-auto p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
           >
             <X size={11} />
-          </button>
+          </IconButton>
         </div>
       ))}
     </div>

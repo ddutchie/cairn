@@ -11,6 +11,7 @@ import { CairnEvents } from "@/lib/events";
 import { extractWikiLinks } from "@/components/notes/toc-utils";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { useNoteBody } from "@/hooks/useNoteBody";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   node: GraphNode | null;
@@ -212,12 +213,13 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
             <span className="text-xs text-[var(--text-tertiary)] truncate">in {project.name}</span>
           )}
         </div>
-        <button aria-label="Close"
+        <IconButton
+          label="Close"
           onClick={onClose}
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+          className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
         >
           <X size={14} />
-        </button>
+        </IconButton>
       </div>
 
       {/* Body */}

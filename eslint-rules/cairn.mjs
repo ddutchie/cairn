@@ -1,14 +1,12 @@
 /**
  * Cairn's own lint rules.
  *
- * `icon-button-label`: a plain `<button>` whose only content is an icon
- * component has no accessible name unless it carries one. Use `IconButton`
- * (its required `label` is the tooltip and the name), or give the button an
- * `aria-label`. Buttons that spread props are skipped, since the name may
- * arrive through the spread.
+ * `icon-button-label`: every icon-only `<button>` should be an `IconButton`:
+ * its required `label` is the tooltip and the accessible name, and it brings
+ * the shared shape and focus ring. Deliberate exceptions (the chat send/stop
+ * glow, a drag handle that spreads listeners, a round logo chip) carry an
+ * `eslint-disable-next-line cairn/icon-button-label -- <why>` comment.
  */
-
-const NAME_ATTRS = new Set(["aria-label", "aria-labelledby", "title"]);
 
 function isIcon(el) {
   if (!el || el.type !== "JSXElement") return false;
@@ -40,10 +38,11 @@ function isIconOnly(node) {
 
 const iconButtonLabel = {
   meta: {
-    type: "problem",
-    docs: { description: "Require an accessible name on icon-only buttons" },
+    type: "suggestion",
+    docs: { description: "Use IconButton for icon-only buttons" },
     messages: {
-      missing: "Icon-only button has no accessible name. Use IconButton (ui/icon-button) with a label, or add aria-label.",
+      useIconButton:
+        "Icon-only button: use IconButton (ui/icon-button), whose required label is the tooltip and the accessible name. For a deliberate exception, disable this rule on the line and say why.",
     },
     schema: [],
   },
@@ -52,9 +51,7 @@ const iconButtonLabel = {
       JSXElement(node) {
         const open = node.openingElement;
         if (open.name.type !== "JSXIdentifier" || open.name.name !== "button") return;
-        if (open.attributes.some((a) => a.type === "JSXSpreadAttribute")) return;
-        if (open.attributes.some((a) => a.type === "JSXAttribute" && NAME_ATTRS.has(a.name.name))) return;
-        if (isIconOnly(node)) context.report({ node: open, messageId: "missing" });
+        if (isIconOnly(node)) context.report({ node: open, messageId: "useIconButton" });
       },
     };
   },

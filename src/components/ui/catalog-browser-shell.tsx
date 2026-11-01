@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "./tooltip";
 
 /** Shared search-input styling for catalog browsers. */
 export const CATALOG_SEARCH_INPUT_CLS =
@@ -128,16 +129,17 @@ export function CatalogBrowserShell({
               onChange={(e) => onQueryChange(e.target.value)}
             />
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRefresh}
-            disabled={refreshing}
-            title="Refresh from the registry"
-          >
-            {refreshing ? <Spinner size={13} /> : <RefreshCw size={13} />}
-            Refresh
-          </Button>
+          <Tooltip content="Refresh from the registry">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? <Spinner size={13} /> : <RefreshCw size={13} />}
+              Refresh
+            </Button>
+          </Tooltip>
         </div>
 
         {categories.length > 0 && (

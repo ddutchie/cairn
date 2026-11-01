@@ -7,6 +7,7 @@ import { applyTheme, applyFontScale, applyFontFamily } from "@/store/slices/ui";
 import { FONT_PRESETS, resolveFontPreset } from "../../../shared/ui/fonts";
 import { AccentPicker } from "@/components/ui/accent-picker";
 import { Shell, NavRow, FONT_OPTS } from "./shared";
+import { Tooltip } from "@/components/ui/tooltip";
 
 interface Props {
   theme: Theme;
@@ -112,24 +113,24 @@ export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, on
           <p className="text-xs font-medium text-[var(--text-secondary)] mb-2.5">Note font</p>
           <div className="grid grid-cols-3 gap-2">
             {FONT_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                aria-pressed={fontFamily === preset.id}
-                onClick={() => handleFontFamily(preset.id as FontFamilyId)}
-                title={preset.description}
-                className={cn(
-                  "flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all",
-                  fontFamily === preset.id
-                    ? "border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--accent)]"
-                    : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                )}
-              >
-                <span style={{ fontFamily: preset.cssFamily, fontSize: "1.15rem", lineHeight: 1, fontWeight: 600 }}>
-                  Ag
-                </span>
-                <span className="text-2xs font-medium">{preset.name}</span>
-              </button>
+              <Tooltip key={preset.id} content={preset.description} disabled={!preset.description}>
+                <button
+                  type="button"
+                  aria-pressed={fontFamily === preset.id}
+                  onClick={() => handleFontFamily(preset.id as FontFamilyId)}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all",
+                    fontFamily === preset.id
+                      ? "border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--accent)]"
+                      : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
+                  )}
+                >
+                  <span style={{ fontFamily: preset.cssFamily, fontSize: "1.15rem", lineHeight: 1, fontWeight: 600 }}>
+                    Ag
+                  </span>
+                  <span className="text-2xs font-medium">{preset.name}</span>
+                </button>
+              </Tooltip>
             ))}
           </div>
 

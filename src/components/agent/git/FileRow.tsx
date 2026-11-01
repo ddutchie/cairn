@@ -9,6 +9,7 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { statusLabel, statusColor } from "./git-helpers";
 import { InlineDiff } from "./InlineDiff";
+import { IconButton } from "@/components/ui/icon-button";
 
 /** One changed file: hover stage/unstage + discard actions, name, +/- stat, status chip, and an expandable inline diff. */
 export function FileRow({
@@ -53,17 +54,16 @@ export function FileRow({
               {actionLabel}
             </button>
           </Tooltip>
-          <Tooltip content={discardArmed ? "Click again to discard all changes in this file" : "Discard all changes in this file"}>
-            <button aria-label={discardArmed ? "Click again to discard all changes in this file" : "Discard all changes in this file"}
-              onClick={onDiscard}
-              className="w-4 h-4 rounded flex items-center justify-center text-[var(--danger)] hover:scale-110 transition-transform cursor-pointer"
-              style={{ backgroundColor: discardArmed
-                ? `color-mix(in srgb, var(--danger) 35%, transparent)`
-                : `color-mix(in srgb, var(--danger) 15%, transparent)` }}
-            >
-              <RotateCcw size={10} />
-            </button>
-          </Tooltip>
+          <IconButton
+            label={discardArmed ? "Click again to discard all changes in this file" : "Discard all changes in this file"} tooltipSide="top"
+            onClick={onDiscard}
+            className="w-4 h-4 text-[var(--danger)] hover:scale-110 transition-transform cursor-pointer"
+            style={{ backgroundColor: discardArmed
+              ? `color-mix(in srgb, var(--danger) 35%, transparent)`
+              : `color-mix(in srgb, var(--danger) 15%, transparent)` }}
+          >
+            <RotateCcw size={10} />
+          </IconButton>
         </div>
         <File size={9} className="text-[var(--text-tertiary)] flex-shrink-0 opacity-50" />
         <span className="text-xs text-[var(--text-primary)] font-mono truncate flex-1">{path}</span>
@@ -77,7 +77,7 @@ export function FileRow({
           <RefreshSpin size={10} className="text-[var(--text-tertiary)]" />
         )}
         <span
-          className="text-2xs font-mono px-1.5 py-0.5 rounded flex-shrink-0"
+          className="text-2xs px-1.5 py-0.5 rounded flex-shrink-0"
           style={{ color: statusColor(status), backgroundColor: `color-mix(in srgb, ${statusColor(status)} 10%, transparent)` }}
         >
           {statusLabel(status)}

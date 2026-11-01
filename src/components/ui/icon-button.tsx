@@ -28,6 +28,8 @@ export interface IconButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLBut
  * Icon-only button. Every icon button needs a label, so it's a required prop
  * here rather than an easily forgotten `aria-label`: the same text drives the
  * tooltip. One shape (rounded-md) for every icon button in the app.
+ * `size` gives a fixed box; where the button should hug its icon (rows, chips,
+ * inline actions) pass `size-auto` and the padding in `className` instead.
  */
 export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
   (
@@ -41,17 +43,17 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         aria-label={label}
         aria-pressed={pressed}
         className={cn(
-          "grid place-items-center flex-shrink-0 rounded-md border transition-colors",
+          "grid place-items-center flex-shrink-0 rounded-md transition-colors",
           "disabled:opacity-40 disabled:pointer-events-none",
           FOCUS_RING,
           size === "sm" ? "w-6 h-6" : "w-7 h-7",
           active
-            ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)]"
+            ? "border bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)]"
             : pressed
-              ? "bg-[var(--accent-dim)] text-[var(--accent)] border-transparent"
+              ? "bg-[var(--accent-dim)] text-[var(--accent)]"
               : variant === "outline"
-              ? "bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] hover:border-[var(--muted)]"
-              : "border-transparent text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
+              ? "border bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] hover:border-[var(--muted)]"
+              : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
           className,
         )}
         {...props}

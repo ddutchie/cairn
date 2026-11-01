@@ -4,10 +4,10 @@ import { NotebookPen } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { revealNote } from "@/lib/events";
-import { Tooltip } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
 import { buildReview } from "../../../../shared/overview/review";
 import type { Project } from "@/types";
+import { IconButton } from "@/components/ui/icon-button";
 
 /** Folder the generated reviews land in, so they don't clutter the notes root. */
 export const REVIEWS_FOLDER = "Reviews";
@@ -43,16 +43,14 @@ export function ReviewButton({ project }: { project: Project }) {
 
   return (
     <DropdownMenu>
-      <Tooltip content="Weekly review / daily brief" side="bottom">
-        <DropdownMenuTrigger asChild>
-          <button
-            className="p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-            aria-label="Generate review note"
-          >
-            <NotebookPen size={14} />
-          </button>
-        </DropdownMenuTrigger>
-      </Tooltip>
+      <DropdownMenuTrigger asChild>
+        <IconButton
+          label="Generate review note" tooltip="Weekly review / daily brief"
+          className="size-auto p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
+        >
+          <NotebookPen size={14} />
+        </IconButton>
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => generate(7)}>Weekly review note</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => generate(1)}>Daily brief note</DropdownMenuItem>

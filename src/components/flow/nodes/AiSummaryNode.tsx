@@ -10,6 +10,7 @@ import { useCairnStore } from "@/store";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { flowClient } from "@/lib/ipc/flow";
 import { errorMessage, hasElectron } from "@/lib/ipc/client";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export interface AiSummaryNodeData {
   content?: string;
@@ -67,24 +68,25 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
               AI Summary
             </span>
           </div>
-          <button
-            className={cn(
-              "nodrag flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors",
-              status === "loading" || !aiEnabled
-                ? "text-[var(--text-tertiary)] cursor-not-allowed opacity-40"
-                : "text-[var(--accent)] hover:bg-[var(--accent)]/10 cursor-pointer"
-            )}
-            onClick={handleGenerate}
-            disabled={status === "loading" || !aiEnabled}
-            title={!aiEnabled ? "AI features are disabled — enable in Settings → AI" : hasContent ? "Re-generate summary from connected nodes" : "Generate summary from connected nodes"}
-          >
-            {status === "loading" ? (
-              <Spinner size={10} />
-            ) : (
-              <RefreshCw size={10} />
-            )}
-            {status === "loading" ? "Generating…" : hasContent ? "Regenerate" : "Generate"}
-          </button>
+          <Tooltip content={!aiEnabled ? "AI features are disabled — enable in Settings → AI" : hasContent ? "Re-generate summary from connected nodes" : "Generate summary from connected nodes"}>
+            <button
+              className={cn(
+                "nodrag flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors",
+                status === "loading" || !aiEnabled
+                  ? "text-[var(--text-tertiary)] cursor-not-allowed opacity-40"
+                  : "text-[var(--accent)] hover:bg-[var(--accent)]/10 cursor-pointer"
+              )}
+              onClick={handleGenerate}
+              disabled={status === "loading" || !aiEnabled}
+            >
+              {status === "loading" ? (
+                <Spinner size={10} />
+              ) : (
+                <RefreshCw size={10} />
+              )}
+              {status === "loading" ? "Generating…" : hasContent ? "Regenerate" : "Generate"}
+            </button>
+          </Tooltip>
         </div>
 
         {/* Content */}
