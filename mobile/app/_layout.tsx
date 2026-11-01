@@ -20,6 +20,7 @@ import { ToastProvider } from "@/components/Toast";
 import { OnboardingGuide } from "@/components/OnboardingGuide";
 import { useTheme, type as typeScale } from "@/theme";
 import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
+import { clearWorkspaceDrafts } from "@/notes/note-draft";
 
 // Render errors anywhere under the root stack land on a recoverable screen
 // instead of white-screening the app.
@@ -121,7 +122,9 @@ export default function RootLayout() {
           style: "destructive",
           onPress: () => {
             try {
+              const ws = getActiveSource();
               resetActiveSource();
+              if (ws) clearWorkspaceDrafts(ws);
               setBoot({ ready: true, error: null });
               setHasSource(false);
             } catch (e) {

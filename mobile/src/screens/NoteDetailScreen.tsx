@@ -26,6 +26,7 @@ import { GlassBar, glassActive } from "@/components/GlassBar";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE, ICON_EXPORT, ICON_PDF } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
 import { toast } from "@/components/Toast";
+import { getActiveSource } from "@/db";
 import { loadNoteDraft, saveNoteDraft, clearNoteDraft, draftDiffers } from "@/notes/note-draft";
 import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
 import { exportNoteToPdf } from "@/notes/note-pdf";
@@ -83,14 +84,18 @@ export function NoteDetailScreen({
 
   // An unsaved draft from an earlier visit (back-swipe, app killed in the
   // background) reopens the editor with it, so typing is never silently lost.
+  // Drafts are keyed by the source workspace, so resetting it clears them.
+  const [draftWs] = useState(() => getActiveSource() ?? "");
   const [restoredDraft] = useState(() => {
     if (!note) return null;
-    const d = loadNoteDraft(note.id);
+    const d = loadNoteDraft(draftWs, note.id);
     return d && draftDiffers(d, note) ? d : null;
   });
   const [editing, setEditing] = useState(restoredDraft != null);
   const [title, setTitle] = useState(restoredDraft?.title ?? note?.title ?? "");
   const [body, setBody] = useState(restoredDraft?.body ?? note?.content ?? "");
+  // Set by "Discard" so the leave guard turns off before navigation repeats.
+  const [discarding, setDiscarding] = useState(false);
   const dirty = editing && note != null && (title !== (note.title ?? "") || body !== (note.content ?? ""));
 
   useEffect(() => {
@@ -98,38 +103,46 @@ export function NoteDetailScreen({
   }, [restoredDraft]);
 
   // Keep the draft current while editing: debounced on typing, and flushed
-  // straight away when the app leaves the foreground (iOS may kill it there).
-  const latest = useRef({ dirty, title, body, noteId: note?.id });
+  // straight away when the app leaves the foreground (iOS may kill it there)
+  // or the editor unmounts (a split-view preview closing skips the route guard).
+  const latest = useRef({ dirty, discarding, title, body, noteId: note?.id });
   useEffect(() => {
-    latest.current = { dirty, title, body, noteId: note?.id };
-  }, [dirty, title, body, note?.id]);
+    latest.current = { dirty, discarding, title, body, noteId: note?.id };
+  }, [dirty, discarding, title, body, note?.id]);
   useEffect(() => {
     if (!note) return;
     if (!dirty) {
-      clearNoteDraft(note.id);
+      clearNoteDraft(draftWs, note.id);
       return;
     }
-    const timer = setTimeout(() => saveNoteDraft(note.id, { title, body }), 500);
+    const timer = setTimeout(() => saveNoteDraft(draftWs, note.id, { title, body }), 500);
     return () => clearTimeout(timer);
-  }, [dirty, title, body, note]);
+  }, [draftWs, dirty, title, body, note]);
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (s) => {
+    const flush = () => {
       const cur = latest.current;
-      if (s !== "active" && cur.dirty && cur.noteId) saveNoteDraft(cur.noteId, { title: cur.title, body: cur.body });
+      if (cur.dirty && !cur.discarding && cur.noteId) saveNoteDraft(draftWs, cur.noteId, { title: cur.title, body: cur.body });
+    };
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") flush();
     });
-    return () => sub.remove();
-  }, []);
+    return () => {
+      sub.remove();
+      flush();
+    };
+  }, [draftWs]);
 
   // Leaving the route (back button or swipe) with unsaved edits asks first. In a
   // split-view column the note isn't its own route, so only the draft covers it.
-  usePreventRemove(dirty && noteId == null, ({ repeat }) => {
+  usePreventRemove(dirty && !discarding && noteId == null, ({ repeat }) => {
     Alert.alert("Discard changes?", "Your edits to this note haven't been saved.", [
       { text: "Keep editing", style: "cancel" },
       {
         text: "Discard",
         style: "destructive",
         onPress: () => {
-          if (note) clearNoteDraft(note.id);
+          if (note) clearNoteDraft(draftWs, note.id);
+          setDiscarding(true);
           repeat();
         },
       },
@@ -266,7 +279,7 @@ export function NoteDetailScreen({
 
   const onSave = () => {
     updateNote(note.id, title.trim() || "Untitled", body);
-    clearNoteDraft(note.id);
+    clearNoteDraft(draftWs, note.id);
     setNote(getNote(note.id));
     setEditing(false);
     haptics.success(); // note saved
@@ -275,7 +288,7 @@ export function NoteDetailScreen({
     reindexNote(note.id).catch(() => {});
   };
   const onCancel = () => {
-    clearNoteDraft(note.id);
+    clearNoteDraft(draftWs, note.id);
     setTitle(note.title ?? "");
     setBody(note.content ?? "");
     setEditing(false);
