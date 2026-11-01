@@ -24,12 +24,14 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 interface CellProps {
   photo: LibraryPhoto;
   slot: number;
+  /** 1-based grid position, for VoiceOver. */
+  position: number;
   order: number;
   lifted: boolean;
   onPress: (photo: LibraryPhoto) => void;
 }
 
-const PhotoCell = memo(function PhotoCell({ photo, slot, order, lifted, onPress }: CellProps) {
+const PhotoCell = memo(function PhotoCell({ photo, slot, position, order, lifted, onPress }: CellProps) {
   const selected = order > 0;
   const progress = useDerivedValue(() => withSpring(selected ? 1 : 0, SPRING.badge));
   const badgeStyle = useAnimatedStyle(() => ({
@@ -40,7 +42,7 @@ const PhotoCell = memo(function PhotoCell({ photo, slot, order, lifted, onPress 
   return (
     <Pressable
       accessibilityRole="imagebutton"
-      accessibilityLabel="Photo"
+      accessibilityLabel={`Photo ${position}`}
       accessibilityState={{ selected }}
       onPress={() => onPress(photo)}
       style={{ width: slot, height: slot, opacity: lifted ? 0 : 1 }}
@@ -122,8 +124,8 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, { width: number; height: nu
             data={photos}
             numColumns={GRID.columns}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <PhotoCell photo={item} slot={slot} order={selected.indexOf(item.id) + 1} lifted={lifting && selected.includes(item.id)} onPress={onTogglePhoto} />
+            renderItem={({ item, index }) => (
+              <PhotoCell photo={item} slot={slot} position={index + 1} order={selected.indexOf(item.id) + 1} lifted={lifting && selected.includes(item.id)} onPress={onTogglePhoto} />
             )}
             extraData={`${selected.join()}|${lifting}`}
             keyboardShouldPersistTaps="always"

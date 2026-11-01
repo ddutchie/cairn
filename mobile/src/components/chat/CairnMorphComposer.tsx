@@ -14,13 +14,13 @@ import { Glass } from "./attachment-panel/glass";
 import { COMPOSER, COMPOSER_STRIP_HEIGHT, DURATION, GUTTER } from "./attachment-panel/constants";
 import type { Attachment } from "@/chat/agent";
 
-function Thumbnail({ url, hidden, onRemove }: { url: string; hidden: boolean; onRemove: () => void }) {
+function Thumbnail({ url, position, hidden, onRemove }: { url: string; position: number; hidden: boolean; onRemove: () => void }) {
   // expo-image handles ph://, file://, content:// and data: URIs — pass as object for data URIs to ensure correct parsing
   const source = { uri: url } as const;
   return (
     <Animated.View exiting={FadeOut.duration(DURATION.crossfade)} layout={LinearTransition.duration(DURATION.attach)} style={[styles.thumb, hidden && styles.thumbHidden]}>
       <Image source={source} contentFit="cover" cachePolicy="memory-disk" style={StyleSheet.absoluteFill} />
-      <Pressable accessibilityRole="button" accessibilityLabel="Remove attachment" hitSlop={10} onPress={onRemove} style={styles.remove}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Remove attachment ${position}`} hitSlop={10} onPress={onRemove} style={styles.remove}>
         <X size={11} color="#fff" />
       </Pressable>
     </Animated.View>
@@ -126,7 +126,7 @@ export const CairnMorphComposer = forwardRef<TextInputInstance, CairnMorphCompos
             <Animated.View style={[styles.strip, stripStyle]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" keyboardDismissMode="none" style={styles.stripScroll} contentContainerStyle={styles.stripContent}>
                 {retained.map((a, i) => (
-                  <Thumbnail key={`${a.url}-${i}`} url={a.url} hidden={pendingIds.includes(a.url)} onRemove={() => onRemove(i)} />
+                  <Thumbnail key={`${a.url}-${i}`} url={a.url} position={i + 1} hidden={pendingIds.includes(a.url)} onRemove={() => onRemove(i)} />
                 ))}
               </ScrollView>
             </Animated.View>

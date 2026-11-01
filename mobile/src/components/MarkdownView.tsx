@@ -469,6 +469,7 @@ function makeRules(
         <Text style={textStyle}>
           {segments.map((seg, i) => {
             if (seg.kind === "text") return <Text key={i}>{seg.text}</Text>;
+            const next = segments[i + 1];
             return (
               <Text key={i}>
                 <Pressable
@@ -476,7 +477,7 @@ function makeRules(
                   hitSlop={8}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: seg.checked, disabled: !interactive }}
-                  accessibilityLabel="Task"
+                  accessibilityLabel={taskLabel(next?.kind === "text" ? next.text : "")}
                   onPress={
                     interactive
                       ? () => onChangeContent?.(toggleCheckboxInSource(source, seg.taskIndex))
@@ -618,7 +619,7 @@ function makeRules(
               hitSlop={8}
               accessibilityRole="checkbox"
               accessibilityState={{ checked, disabled: !interactive }}
-              accessibilityLabel="Task"
+              accessibilityLabel={taskLabel(nodeText(node))}
               onPress={() => onChangeContent?.(toggleCheckboxInSource(source, index))}
               style={{ paddingTop: 2, paddingRight: 8 }}
             >
@@ -730,6 +731,12 @@ function makeRules(
 }
 
 /** Flatten an AST node's text content (for heading slugging). */
+/** VoiceOver name for a task checkbox: its text, so each one is identifiable. */
+function taskLabel(text: string): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t ? `Task: ${t}` : "Task";
+}
+
 function nodeText(node: ASTNode): string {
   if (node.content) return node.content;
   const kids = (node.children ?? []) as ASTNode[];
