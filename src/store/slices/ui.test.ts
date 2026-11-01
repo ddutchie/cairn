@@ -339,6 +339,19 @@ describe("ensureSavedProviderForConnection", () => {
     expect(get().aiConfig.model).toBe("qwen3:8b");
   });
 
+  it("adds without selecting when asked for \"none\" (Settings → Models)", () => {
+    const { get } = setup();
+    get().aiConfig = { ...get().aiConfig, activeProviderId: "keep", model: "kept-model" };
+    const id = get().addSavedProvider(
+      { name: "Ollama (local)", baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b", apiKey: "", apiMode: "completions" },
+      "none",
+    );
+    expect(get().aiConfig.savedProviders.map((p: { id: string }) => p.id)).toContain(id);
+    expect(get().aiConfig.activeProviderId).toBe("keep");
+    expect(get().aiConfig.model).toBe("kept-model");
+    expect(get().agentConfig.activeProviderId).toBeUndefined();
+  });
+
   it("reuses the existing row on normalized baseUrl instead of duplicating", () => {
     const { get } = setup();
     const first = get().ensureSavedProviderForConnection(

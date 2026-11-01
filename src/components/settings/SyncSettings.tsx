@@ -76,8 +76,8 @@ export function SyncSettings() {
 
   return (
     <SettingsGroup
-      title="Device Sync"
-      description="Sync your workspace with the Cairn mobile companion app through a shared cloud folder (iCloud Drive, Dropbox, or Syncthing). Requires the mobile app installed on your phone — there's nothing to sync with otherwise. Offline-first: only append-only oplog files transit the folder, never the database."
+      title="Mobile app sync"
+      description="Syncs with the Cairn mobile app through a shared cloud folder (iCloud Drive, Dropbox or Syncthing). Only change logs pass through the folder, never the database."
     >
       <SettingsRow label="Shared sync folder" description="Pick the same folder your phone syncs with.">
         {connected ? (

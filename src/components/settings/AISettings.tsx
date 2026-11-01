@@ -12,7 +12,6 @@ import { OutputBudgetWarning } from "./OutputBudgetWarning";
 import { effectiveOutputTokens } from "../../../shared/models/model-catalog";
 import { SettingsGroup, SettingsRow, Toggle, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
-import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
 import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
 import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-schema";
 import { Button } from "@/components/ui/button";
@@ -54,7 +53,7 @@ async function probeLocalServer(baseUrl: string): Promise<{ ok: boolean; models:
 // loop ("Maximum update depth exceeded") when no providers are saved yet.
 const NO_PROVIDERS: NonNullable<ReturnType<typeof useCairnStore.getState>["aiConfig"]["savedProviders"]> = [];
 
-function LocalServersCard() {
+export function LocalServersCard() {
   const addSavedProvider = useCairnStore((s) => s.addSavedProvider);
   const savedProviders = useCairnStore((s) => s.aiConfig.savedProviders ?? NO_PROVIDERS);
   const [scanning, setScanning] = useState(false);
@@ -91,7 +90,9 @@ function LocalServersCard() {
         apiKey: "",
         apiMode: "completions",
       },
-      "ai",
+      // Models page: add to the shared list without changing what Chat or the
+      // coding agent currently uses.
+      "none",
     );
   }
 
@@ -100,7 +101,7 @@ function LocalServersCard() {
   return (
     <SettingsRow
       label="Local servers"
-      description="Cairn doesn't bundle an inference engine — run Ollama, LM Studio, or llama.cpp yourself, then add it as a provider. No API key needed for localhost."
+      description="Running Ollama, LM Studio or llama.cpp? Detect it and add it as a provider. No API key needed."
       controlClassName="min-w-0 @sm:self-auto @sm:max-w-[62%]"
     >
       <div className="flex flex-col gap-2 min-w-0 w-full">
@@ -115,7 +116,7 @@ function LocalServersCard() {
         {scanned && found.length === 0 && (
           <p className="text-xs text-[var(--text-tertiary)]">
             Nothing answering on the usual ports. Start Ollama (`ollama serve`), LM Studio (server tab), or
-            `llama-server`, then scan again — or add the endpoint manually below.
+            `llama-server`, then scan again. To enter an endpoint by hand, use Add in the Provider row on the Chat or Coding agent page.
           </p>
         )}
         {found.map((server) => {
@@ -160,8 +161,8 @@ function ChatPreviewSection() {
 
   return (
     <SettingsGroup
-      title="Chat Prompt & Tools"
-      description="SKILL.md files discovered in your workspace are automatically loaded into the chat context. The section assembly below is the shared global context both chat and coding turns send — only the identity section carries the chat prompt. Chat tools have no filesystem access by design."
+      title="Chat prompt and tools"
+      description="What chat sends with every message: workspace SKILL.md files, the shared context sections, and its tools (none of which touch the filesystem)."
     >
       {/* Refresh */}
       <div className="flex items-center justify-end">
@@ -249,7 +250,6 @@ export function AISettings() {
   const contextAuto = aiConfig.contextAuto ?? true;
   const [detectedContext, setDetectedContext] = useState<number | null>(null);
   const [autoState, setAutoState] = useState<"idle" | "loading" | "detected" | "not_found">("idle");
-  const [browsingProviders, setBrowsingProviders] = useState(false);
   const [browsingPersonalities, setBrowsingPersonalities] = useState(false);
   const [creatingPersonality, setCreatingPersonality] = useState(false);
   const [personaName, setPersonaName] = useState("");
@@ -316,7 +316,6 @@ export function AISettings() {
     <StepperSettingsRow
       label="Max steps"
       description="Tool-call rounds the chat can take per message. Increase for complex multi-tool tasks."
-      icon="footprints"
       value={aiConfig.maxSteps ?? 30}
       onChange={(v) => updateAIConfig({ maxSteps: v })}
       presets={[10, 20, 30, 50, 1000]}
@@ -328,44 +327,12 @@ export function AISettings() {
 
   return (
     <div className="space-y-8">
-      {/* ── Inline AI ── */}
+      {/* ── Chat model ── */}
       <SettingsGroup
-        title="Inline AI"
-        description="Control AI features shown in the editor. View visibility (Agent, AI Chat) is managed in General settings."
+        title="Chat model"
+        description="Used by Chat, the editor's AI actions, the PRD writer and summaries. Add providers on the Models page."
       >
-        <SettingsRow
-          label="Enable inline AI"
-          description="Shows AI buttons in the editor — text actions, PRD generator, task spawning, and Idea Flow AI summaries. Does not affect the Agent or Chat views."
-        >
-          <Toggle
-            checked={aiEnabled ?? true}
-            onChange={(v) => updateAIConfig({ aiEnabled: v })}
-            label="Enable inline AI"
-          />
-        </SettingsRow>
-      </SettingsGroup>
-
-      {/* ── General Chat & Inline AI Feature Config ── */}
-      <SettingsGroup
-        title="General Chat & Inline AI"
-        description="Configure endpoints for the main AI Chat panel, in-editor inline text actions, PRD writer, and summaries. Works with cloud APIs and user-run local servers (Ollama, LM Studio)."
-      >
-        <LocalServersCard />
-
           <>
-            {/* Install a preset provider from the cairn-community catalog. */}
-            <SettingsRow
-              label="Community providers"
-              description="Install a ready-made OpenAI-compatible provider (endpoint + default model) and just enter your API key. Added to your saved providers below."
-            >
-              <button
-                onClick={() => setBrowsingProviders(true)}
-                className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download size={12} /> Browse Community
-              </button>
-            </SettingsRow>
-
             <ProviderManager kind="ai" />
 
             {/* Max Steps — applies to all providers */}
@@ -383,7 +350,6 @@ export function AISettings() {
                     ? `"${model}" doesn't support temperature control (per models.dev) — this value is ignored and nothing is sent.`
                     : `Sent to "${model}" when it supports temperature. Lower = more deterministic, higher = more creative. Tap Auto to let the model use its own default.`
               }
-              icon="thermometer"
               value={aiConfig.temperature ?? 0.3}
               onChange={(v) => updateAIConfig({ temperature: v })}
               presets={[0.1, 0.3, 0.5, 0.7, 1.0]}
@@ -408,7 +374,6 @@ export function AISettings() {
                       ? `Manual override. models.dev reports ${detectedContext.toLocaleString()} tokens for "${model}" — tap Auto to use it.`
                       : "Token limit used to render the chat context ring. Tap Auto to detect it from models.dev, or set a value."
               }
-              icon="layers"
               value={aiConfig.contextLimit ?? 128000}
               onChange={(v) => updateAIConfig({ contextLimit: v, contextAuto: false })}
               presets={[8000, 32000, 128000, 200000]}
@@ -442,7 +407,6 @@ export function AISettings() {
                     ? `Manual cap on a single reply. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. "${model}" supports up to ${advertisedMaxOutput.toLocaleString()} tokens (models.dev). Tap Auto for the bounded 32K cap.`
                     : "Manual cap on a single reply's length. Reasoning models count their thinking against this, so too low a value can cut them off before they answer. Tap Auto for the bounded 32K cap."
               }
-              icon="gauge"
               value={aiConfig.maxOutputTokens ?? 8192}
               onChange={(v) => updateAIConfig({ maxOutputTokens: v, maxOutputAuto: false })}
               presets={[4096, 8192, 16384, 32768, 65536]}
@@ -638,10 +602,26 @@ export function AISettings() {
         )}
       </SettingsGroup>
 
+      {/* ── Inline AI ── */}
+      <SettingsGroup
+        title="Inline AI"
+        description="AI actions inside the editor. To hide the Agent or Chat views, use Sidebar & views."
+      >
+        <SettingsRow
+          label="Enable inline AI"
+          description="Text actions, the PRD generator, task spawning and Idea Flow summaries."
+        >
+          <Toggle
+            checked={aiEnabled ?? true}
+            onChange={(v) => updateAIConfig({ aiEnabled: v })}
+            label="Enable inline AI"
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
       {/* ── Chat prompt & tools ── */}
       <ChatPreviewSection />
 
-      {browsingProviders && <BrowseProvidersModal onClose={() => setBrowsingProviders(false)} />}
       {browsingPersonalities && <BrowsePersonalitiesModal onClose={() => setBrowsingPersonalities(false)} />}
     </div>
   );

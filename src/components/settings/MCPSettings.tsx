@@ -15,6 +15,8 @@ import { SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 // Server config + sync status + the tools external agents see, in the same
 // card style as the Chat and Coding Agents tabs.
 
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
 export function McpSettingsTab() {
   const previews = useAgentPreviews();
   const mcpTools = previews.inventory?.mcp ?? [];
@@ -23,8 +25,8 @@ export function McpSettingsTab() {
     <div className="space-y-8">
       <MCPServerSettings />
       <SettingsGroup
-        title="MCP Tools"
-        description="The tools external AI agents (OpenCode, Claude Desktop, etc.) can call through the local MCP server. Chat-only tools are not advertised here."
+        title="MCP tools"
+        description="What those agents can call through Cairn's MCP server. Chat-only tools aren't offered to them."
       >
         {previews.inventory ? (
           <div className="space-y-3">
@@ -82,8 +84,8 @@ export function MCPServerSettings() {
 
   return (
     <SettingsGroup
-      title="MCP Server"
-      description="Cairn runs a local MCP server so AI agents (OpenCode, Claude Desktop, etc.) can read and write your data."
+      title="MCP server"
+      description="Cairn runs a local MCP server. Add the config below to Claude Desktop, OpenCode or another agent so it can read and write this workspace."
     >
       <MCPSyncStatus />
 
@@ -178,7 +180,7 @@ export function MCPSyncStatus() {
       <StatusDot color={hasData ? "var(--success)" : "var(--warning)"} pulse={hasData} />
       {hasData ? (
         <span>
-          SQLite — {counts.workspaces}W · {counts.projects}P · {counts.notes}N · {counts.cards}C
+          Connected: {plural(counts.workspaces, "workspace")}, {plural(counts.projects, "project")}, {plural(counts.notes, "note")}, {plural(counts.cards, "card")}
         </span>
       ) : (
         <span>No data yet — open the Cairn app first</span>

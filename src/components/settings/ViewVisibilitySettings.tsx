@@ -33,8 +33,8 @@ export function ViewVisibilitySettings() {
 
   return (
     <SettingsGroup
-      title="Views"
-      description="Choose which views appear in the sidebar. Overview and Notes are always shown."
+      title="Visible views"
+      description="Overview and Notes are always shown. Hidden views also drop out of the ⌘3–⌘9 shortcuts."
     >
       {/* Always-on rows */}
       {(["Overview", "Notes"] as const).map((label) => (

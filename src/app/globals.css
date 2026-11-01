@@ -820,3 +820,13 @@ html[data-window-resizing] [data-chat-margin] {
   --chat-panel-eff: clamp(240px, var(--chat-panel-width, 320px), calc(100vw - var(--dock-sidebar-width, 0px) - 480px));
 }
 
+
+/* Settings search: briefly tint the row a result jumped to. */
+@keyframes settings-flash {
+  0%, 30% { background-color: var(--accent-dim); }
+  100% { background-color: transparent; }
+}
+[data-settings-flash] { animation: settings-flash 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  [data-settings-flash] { animation: none; background-color: var(--accent-dim); }
+}

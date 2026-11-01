@@ -6,8 +6,7 @@
  * so non-settings surfaces stop forking their own row geometry.
  */
 
-import React, { useState, useRef, useEffect } from "react";
-import { Footprints, Thermometer, Layers, Gauge } from "lucide-react";
+import React, { useRef, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -39,7 +38,7 @@ export function SettingsGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div>
+    <div data-settings-label={title} className="scroll-mt-4 rounded-lg">
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h2>
         {description && (
@@ -69,7 +68,7 @@ export function SettingsRow({
   const id = React.useId();
   const labelsControl = React.isValidElement(children) && !isActionElement(children);
   return (
-    <div className="flex flex-col @sm:flex-row @sm:items-start @sm:justify-between gap-2 @sm:gap-6 py-3 border-b border-[var(--border-subtle)]">
+    <div data-settings-label={label} className="scroll-mt-4 flex flex-col @sm:flex-row @sm:items-start @sm:justify-between gap-2 @sm:gap-6 py-3 border-b border-[var(--border-subtle)]">
       <div className="flex-1 min-w-0">
         <label htmlFor={labelsControl ? id : undefined} className="text-sm text-[var(--text-secondary)] cursor-default">{label}</label>
         {description && (
@@ -120,23 +119,15 @@ export function Toggle({
 
 // ── Stepper settings row ───────────────────────
 
-export type StepperIcon = "footprints" | "thermometer" | "layers" | "gauge";
-
-const ICON_MAP: Record<StepperIcon, React.ComponentType<{ size?: number; className?: string }>> = {
-  footprints: Footprints,
-  thermometer: Thermometer,
-  layers: Layers,
-  gauge: Gauge,
-};
-
 /**
- * A SettingsRow with an icon-prefixed number input and preset quick-buttons.
- * Used for maxSteps, temperature, and contextLimit across AISettings and AgentSettings.
+ * A SettingsRow whose control is one segmented well: optional Auto, preset
+ * values, and a custom number as the last segment. Used for max steps,
+ * temperature, context window and max output across AISettings and
+ * AgentSettings.
  */
 export function StepperSettingsRow({
   label,
   description,
-  icon,
   value,
   onChange,
   presets,
@@ -154,7 +145,6 @@ export function StepperSettingsRow({
 }: {
   label: string;
   description?: string;
-  icon: StepperIcon;
   value: number;
   onChange: (v: number) => void;
   presets: readonly number[];
@@ -180,91 +170,86 @@ export function StepperSettingsRow({
   /** Placeholder shown in the input when the value is suppressed by Auto. */
   suppressedPlaceholder?: string;
 }) {
-  const Icon = ICON_MAP[icon];
-  const [draft, setDraft] = useState(String(value));
-  const blurringRef = useRef(false);
   // When Auto is active and represents "no value", the row shows nothing
   // selected: empty input (placeholder) and no highlighted preset.
   const suppressed = Boolean(autoSuppressesValue && autoActive);
 
-  useEffect(() => {
-    if (!blurringRef.current) setDraft(String(value));
-  }, [value]);
+  // One control per value: presets, Auto and a custom number share a single
+  // segmented well (same treatment as Theme / Font size), so the row no longer
+  // shows an input and a chip strip that both edit the same number.
+  const autoOn = Boolean(onAuto) && (autoActive ?? (autoState === "detected" && autoValue != null && value === autoValue));
+  const presetOn = (n: number) => !suppressed && !autoOn && value === n;
+  const customOn = !suppressed && !autoOn && !presets.includes(value);
 
-  function commit(raw: string) {
+  // The custom field shows a number only when the value is custom; otherwise
+  // it's an empty "Custom" slot. `draft` is non-null only while typing, and a
+  // blur commits only what was typed, so tabbing through never turns Auto off.
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (customOn ? String(value) : "");
+  // Escape blurs the field to cancel; the blur's commit runs in the same
+  // batch and still sees the old draft, so it checks this flag instead.
+  const cancelledRef = useRef(false);
+
+  function commit() {
+    if (cancelledRef.current) { cancelledRef.current = false; setDraft(null); return; }
+    if (draft === null) return;
+    const raw = draft.trim();
+    setDraft(null);
+    if (raw === "" || raw === (customOn ? String(value) : "")) return;
     const v = step && step < 1 ? parseFloat(raw) : parseInt(raw, 10);
-    if (!isNaN(v)) {
-      const clamped = Math.max(min, Math.min(max, v));
-      onChange(clamped);
-      setDraft(String(clamped));
-    } else {
-      setDraft(String(value));
-    }
+    if (!isNaN(v)) onChange(Math.max(min, Math.min(max, v)));
   }
-
+  const segment = (on: boolean) => cn(
+    "px-2 py-1 rounded-md text-xs transition-colors",
+    on ? "bg-[var(--surface)] text-[var(--text-primary)] font-medium shadow-elev-1" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
+  );
   return (
-    <SettingsRow label={label} description={description}>
-      <div className="flex flex-col gap-1.5 items-end">
-        <div className="relative">
-          <Icon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-          <Input
-            type="number"
-            min={min}
-            max={max}
-            step={step}
-            value={suppressed ? "" : draft}
-            placeholder={suppressed ? suppressedPlaceholder : undefined}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => {
-              blurringRef.current = true;
-              commit(draft);
-              requestAnimationFrame(() => { blurringRef.current = false; });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            }}
-            className={cn("pl-7 pr-3 py-1.5 text-xs", inputWidth)}
-          />
-        </div>
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {onAuto && (
-            <button
-              onClick={onAuto}
-              disabled={autoState === "loading"}
-              title={
-                autoState === "detected" && autoValue
-                  ? `Detected ${autoValue.toLocaleString()} tokens from models.dev`
-                  : autoState === "not_found"
-                    ? "Not found in models.dev — applies a safe default"
-                    : "Detect from models.dev"
-              }
-              className={cn(
-                "px-2 py-1 text-xs rounded border transition-colors inline-flex items-center gap-1",
-                (autoActive ?? (autoState === "detected" && autoValue != null && value === autoValue))
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
-                autoState === "loading" && "opacity-60 cursor-wait",
-              )}
-            >
-              {autoState === "loading" && <Spinner size={10} />}
-              Auto
-            </button>
+    <SettingsRow label={label} description={description} controlClassName="min-w-0 @sm:self-auto">
+      <div role="group" aria-label={label} className="inline-flex flex-wrap items-center justify-end gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
+        {onAuto && (
+          <button
+            type="button"
+            onClick={onAuto}
+            disabled={autoState === "loading"}
+            aria-pressed={autoOn}
+            title={
+              autoState === "detected" && autoValue
+                ? `Detected ${autoValue.toLocaleString()} from models.dev`
+                : autoState === "not_found"
+                  ? "Not found in models.dev, so a safe default applies"
+                  : "Detect from models.dev"
+            }
+            className={cn(segment(autoOn), "inline-flex items-center gap-1", autoState === "loading" && "opacity-60 cursor-wait")}
+          >
+            {autoState === "loading" && <Spinner size={10} />}
+            Auto
+          </button>
+        )}
+        {presets.map((n) => (
+          <button key={n} type="button" onClick={() => onChange(n)} aria-pressed={presetOn(n)} className={segment(presetOn(n))}>
+            {formatPreset ? formatPreset(n) : n}
+          </button>
+        ))}
+        <Input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          aria-label={`${label}, custom value`}
+          value={shown}
+          placeholder={suppressed ? suppressedPlaceholder : "Custom"}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") { cancelledRef.current = true; setDraft(null); (e.target as HTMLInputElement).blur(); }
+          }}
+          className={cn(
+            "h-7 border-transparent bg-transparent px-2 py-1 text-xs text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none",
+            inputWidth === "w-24" ? "w-20" : inputWidth,
+            customOn && "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1",
           )}
-          {presets.map((n) => (
-            <button
-              key={n}
-              onClick={() => onChange(n)}
-              className={cn(
-                "px-2 py-1 text-xs rounded border transition-colors",
-                !suppressed && value === n
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-                  : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"
-              )}
-            >
-              {formatPreset ? formatPreset(n) : n}
-            </button>
-          ))}
-        </div>
+        />
       </div>
     </SettingsRow>
   );

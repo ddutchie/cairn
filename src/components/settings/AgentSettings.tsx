@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import {
-  Plus, Trash2, Star, FolderOpen, Check, BookOpen, Download
+  Plus, Trash2, Star, FolderOpen, Check, BookOpen
 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
@@ -17,7 +17,6 @@ import { effectiveOutputTokens } from "../../../shared/models/model-catalog";
 import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
-import { BrowseProvidersModal } from "./tools/BrowseProvidersModal";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 
@@ -162,8 +161,8 @@ function CodingPreviewSection() {
 
   return (
     <SettingsGroup
-      title="Coding Prompt & Tools"
-      description="The coding agent prompt carries the Mandatory Cairn workflow — board tracking (In Progress → Review/Done), PRD checklist updates, and session summaries. Below are the tools the coding surfaces expose."
+      title="Coding prompt and tools"
+      description="The coding prompt carries Cairn's workflow (board tracking, PRD checklists, session summaries). Below are the tools the coding surfaces expose."
     >
       {/* Refresh */}
       <div className="flex items-center justify-end">
@@ -284,7 +283,6 @@ export function AgentSettings() {
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [browsingProviders, setBrowsingProviders] = useState(false);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
@@ -375,31 +373,11 @@ export function AgentSettings() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Coding Agents</h2>
-        <p className="text-xs text-[var(--text-tertiary)]">
-          Configure the native Cairn coding agent loop and register external coding agent CLIs.
-        </p>
-      </div>
-
       {/* ── Cairn Coding Agent Endpoint ── */}
       <SettingsGroup
-        title="Cairn Coding Agent (Pi)"
-        description="Configure endpoint parameters for the native autonomous coding agent. Coding agents require high-capacity cloud/local models supporting function calling."
+        title="Cairn coding agent"
+        description="Needs a capable model with function calling. Add providers on the Models page."
       >
-        {/* Install a preset provider from the cairn-community catalog. Shares
-            the same saved-providers list as AI Chat. */}
-        <SettingsRow
-          label="Community providers"
-          description="Install a ready-made OpenAI-compatible provider (endpoint + default model) and just enter your API key. Added to your saved providers below."
-        >
-          <button
-            onClick={() => setBrowsingProviders(true)}
-            className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download size={12} /> Browse Community
-          </button>
-        </SettingsRow>
 
         {/* Saved providers switcher (base URL, key, model all live in the form) */}
         <ProviderManager kind="agent" />
@@ -408,7 +386,6 @@ export function AgentSettings() {
         <StepperSettingsRow
           label="Max steps"
           description="Tool-call rounds the agent can take per message. Use ∞ for complex multi-file tasks — but watch API costs."
-          icon="footprints"
           value={maxStepsAgent ?? 30}
           onChange={(v) => updateAgent({ maxSteps: v })}
           presets={[10, 20, 30, 50, 1000]}
@@ -429,7 +406,6 @@ export function AgentSettings() {
                 ? `"${modelAgent}" doesn't support temperature control (per models.dev) — this value is ignored and nothing is sent. Plan mode always uses 0.1 regardless of this setting.`
                 : `Sampling temperature for the agent (0–1). Lower = more deterministic. Plan mode always uses 0.1 regardless of this setting. Tap Auto to let the model use its own default.`
           }
-          icon="thermometer"
           value={temperatureAgent ?? 0.3}
           onChange={(v) => updateAgent({ temperature: v })}
           presets={[0.1, 0.3, 0.5, 0.7, 1.0]}
@@ -454,7 +430,6 @@ export function AgentSettings() {
                   ? `Manual override. models.dev reports ${detectedContextAgent.toLocaleString()} tokens for "${modelAgent}" — tap Auto to use it.`
                   : "Token limit of your model. Used to display the context usage ring in the coding agent — does not truncate or limit API calls. Tap Auto to detect it from models.dev."
           }
-          icon="layers"
           value={contextLimitAgent ?? 128000}
           onChange={(v) => updateAgent({ contextLimit: v, contextAuto: false })}
           presets={[8000, 32000, 128000, 200000]}
@@ -488,7 +463,6 @@ export function AgentSettings() {
                 ? `Manual cap per turn. Reasoning models count their thinking against this, so too low a value can stall them before they act. "${modelAgent}" supports up to ${advertisedMaxOutputAgent.toLocaleString()} tokens (models.dev). Tap Auto for the bounded 32K cap.`
                 : "Manual cap on output tokens per turn. Reasoning models count their thinking against this, so too low a value can stall them. Tap Auto for the bounded 32K cap."
           }
-          icon="gauge"
           value={agentConfig.maxOutputTokens ?? 8192}
           onChange={(v) => updateAgent({ maxOutputTokens: v, maxOutputAuto: false })}
           presets={[4096, 8192, 16384, 32768, 65536]}
@@ -546,12 +520,12 @@ export function AgentSettings() {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-medium text-[var(--text-tertiary)]">
-            Configured CLI Agents
+            External coding CLIs
           </h3>
           {!adding && (
             <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
               <Plus size={12} />
-              Add Agent CLI
+              Add CLI
             </Button>
           )}
         </div>
@@ -566,7 +540,7 @@ export function AgentSettings() {
         {agents.length === 0 && !adding && (
           <EmptyState
             title="No external agents configured yet."
-            description='Click "Add Agent CLI" to register one.'
+            description='Choose "Add CLI" to register one.'
           />
         )}
 
@@ -632,7 +606,6 @@ export function AgentSettings() {
       {/* Coding prompt & tools preview */}
       <CodingPreviewSection />
 
-      {browsingProviders && <BrowseProvidersModal onClose={() => setBrowsingProviders(false)} />}
     </div>
   );
 }

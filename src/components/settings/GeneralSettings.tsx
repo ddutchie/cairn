@@ -9,7 +9,6 @@ import { useCairnStore, type Theme, type FontScale, type FontFamilyId } from "@/
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "./shared";
-import { ViewVisibilitySettings } from "./ViewVisibilitySettings";
 import { AccentPicker } from "@/components/ui/accent-picker";
 import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
 import { FONT_PRESETS } from "../../../shared/ui/fonts";
@@ -34,7 +33,7 @@ export function GeneralSettings() {
 
   return (
     <>
-    <SettingsGroup title="General" description="Basic app preferences">
+    <SettingsGroup title="Workspace and appearance">
       <SettingsRow label="Workspace name" description="Name shown in the sidebar">
         <Input
           defaultValue={workspace?.name ?? "Personal"}
@@ -119,7 +118,6 @@ export function GeneralSettings() {
       </SettingsRow>
       <ChangeWorkspaceRow selectAndInitWorkspace={selectAndInitWorkspace} />
     </SettingsGroup>
-    <ViewVisibilitySettings />
     </>
   );
 }

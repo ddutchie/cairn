@@ -188,8 +188,10 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   return (
     <>
       <SettingsRow
-        label="Saved providers"
-        description="Save named OpenAI-compatible connections (endpoint, key, model) and switch between them. Shared with the coding agent — each picks its own active provider. The active one fills the fields below."
+        label="Provider"
+        description={kind === "agent"
+          ? "Which saved provider the coding agent uses. Saved providers are shared with Chat; add or edit them here."
+          : "Which saved provider Chat uses. Saved providers are shared with the coding agent; add or edit them here."}
       >
         <div className="flex flex-col gap-1.5 items-end w-64">
           <div className="flex gap-1.5 w-full">

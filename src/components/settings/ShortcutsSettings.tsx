@@ -61,7 +61,7 @@ export function ShortcutsSettings() {
   ];
 
   return (
-    <SettingsGroup title="Keyboard Shortcuts">
+    <SettingsGroup title="Keyboard shortcuts">
       <div className="space-y-4">
         {groups.map(({ heading, shortcuts }) => (
           <div key={heading}>

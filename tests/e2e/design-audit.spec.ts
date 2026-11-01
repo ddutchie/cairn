@@ -35,14 +35,15 @@ type Shot = { file: string; view: string; viewport?: { width: number; height: nu
 const DEFAULT_VIEWPORT = { width: 1440, height: 900 };
 const NARROW = { width: 900, height: 800 };
 
-const settingsTab = (label: string) => async (p: Page) => {
-  await p.getByRole("tab", { name: label, exact: true }).first().click();
+// Settings is one grouped rail of pages (no subtabs since Phase 3).
+const settingsPage = (label: string) => async (p: Page) => {
+  await p.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: label, exact: true }).click();
   await p.waitForTimeout(300);
 };
-const settingsSubtab = (section: string, sub: string) => async (p: Page) => {
-  await settingsTab(section)(p);
-  await p.getByRole("tab", { name: sub, exact: true }).last().click();
-  await p.waitForTimeout(300);
+const settingsSearch = (query: string, jump = false) => async (p: Page) => {
+  await p.getByRole("searchbox", { name: "Search settings" }).fill(query);
+  if (jump) await p.keyboard.press("Enter");
+  await p.waitForTimeout(jump ? 700 : 300);
 };
 const openChat = async (p: Page) => {
   await p.evaluate(() => (window as unknown as { __cairnStoreRef: { getState: () => StoreState } }).__cairnStoreRef.getState().toggleChat());
@@ -81,18 +82,24 @@ const SHOTS: Shot[] = [
     await p.evaluate(() => (window as unknown as { __cairnStoreRef: { getState: () => StoreState } }).__cairnStoreRef.getState().toggleSidebar());
     await p.waitForTimeout(400);
   }},
-  { file: "20-settings-general.png", view: "settings", setup: settingsTab("General") },
-  { file: "21-settings-ai-chat.png", view: "settings", setup: settingsSubtab("AI", "Chat") },
-  { file: "22-settings-ai-agents.png", view: "settings", setup: settingsSubtab("AI", "Coding Agents") },
-  { file: "23-settings-ai-mcp.png", view: "settings", setup: settingsSubtab("AI", "MCP") },
-  { file: "24-settings-ext-tools.png", view: "settings", setup: settingsSubtab("Extensions", "Tools") },
-  { file: "25-settings-ext-commands.png", view: "settings", setup: settingsSubtab("Extensions", "Commands") },
-  { file: "26-settings-embeddings.png", view: "settings", setup: settingsTab("Embeddings") },
-  { file: "27-settings-writing-style.png", view: "settings", setup: settingsTab("Writing Style") },
-  { file: "28-settings-sync.png", view: "settings", setup: settingsTab("Device Sync") },
-  { file: "29-settings-system-shortcuts.png", view: "settings", setup: settingsSubtab("System", "Shortcuts") },
-  { file: "30-settings-system-data.png", view: "settings", setup: settingsSubtab("System", "Data") },
-  { file: "31-settings-system-about.png", view: "settings", setup: settingsSubtab("System", "About") },
+  // Filenames predate the Phase 3 restructure; kept so before/after line up.
+  { file: "20-settings-general.png", view: "settings", setup: settingsPage("General") },
+  { file: "21-settings-ai-chat.png", view: "settings", setup: settingsPage("Chat") },
+  { file: "22-settings-ai-agents.png", view: "settings", setup: settingsPage("Coding agent") },
+  { file: "23-settings-ai-mcp.png", view: "settings", setup: settingsPage("Connect other agents") },
+  { file: "24-settings-ext-tools.png", view: "settings", setup: settingsPage("Tools") },
+  { file: "25-settings-ext-commands.png", view: "settings", setup: settingsPage("Commands") },
+  { file: "26-settings-embeddings.png", view: "settings", setup: settingsPage("Embeddings") },
+  { file: "27-settings-writing-style.png", view: "settings", setup: settingsPage("Writing style") },
+  { file: "28-settings-sync.png", view: "settings", setup: settingsPage("Device sync") },
+  { file: "29-settings-system-shortcuts.png", view: "settings", setup: settingsPage("Shortcuts") },
+  { file: "30-settings-system-data.png", view: "settings", setup: settingsPage("Data") },
+  { file: "31-settings-system-about.png", view: "settings", setup: settingsPage("About") },
+  { file: "32-settings-models.png", view: "settings", setup: settingsPage("Models") },
+  { file: "33-settings-views.png", view: "settings", setup: settingsPage("Sidebar & views") },
+  { file: "34-settings-tags.png", view: "settings", setup: settingsPage("Tags") },
+  { file: "35-settings-search.png", view: "settings", setup: settingsSearch("temp") },
+  { file: "36-settings-search-jump.png", view: "settings", setup: settingsSearch("context window", true) },
   // Modals and menus
   { file: "40-task-detail.png", view: "board", setup: async (p) => {
     await p.getByText("Design the mobile companion app", { exact: true }).first().click();
@@ -111,18 +118,18 @@ const SHOTS: Shot[] = [
     await p.waitForTimeout(300);
   }},
   { file: "44-tool-builder.png", view: "settings", setup: async (p) => {
-    await settingsSubtab("Extensions", "Tools")(p);
+    await settingsPage("Tools")(p);
     await p.getByRole("button", { name: "Build with AI" }).first().click();
     await p.waitForTimeout(500);
   }},
   { file: "45-browse-tools.png", view: "settings", setup: async (p) => {
-    await settingsSubtab("Extensions", "Tools")(p);
+    await settingsPage("Tools")(p);
     await p.getByRole("button", { name: "Browse", exact: true }).first().click();
     await p.waitForTimeout(800);
   }},
   { file: "46-browse-providers.png", view: "settings", setup: async (p) => {
-    await settingsSubtab("AI", "Chat")(p);
-    await p.locator("button", { hasText: "Browse Community" }).first().click();
+    await settingsPage("Models")(p);
+    await p.getByRole("button", { name: "Browse community" }).click();
     await p.waitForTimeout(800);
   }},
   // Narrow window (900px): where layouts start to squeeze
@@ -130,7 +137,7 @@ const SHOTS: Shot[] = [
   { file: "61-narrow-board.png", view: "board", viewport: NARROW },
   { file: "62-narrow-notes.png", view: "notes", viewport: NARROW },
   { file: "63-narrow-chat-drawer.png", view: "board", viewport: NARROW, setup: openChat },
-  { file: "64-narrow-settings.png", view: "settings", viewport: NARROW, setup: settingsSubtab("AI", "Chat") },
+  { file: "64-narrow-settings.png", view: "settings", viewport: NARROW, setup: settingsPage("Chat") },
 ];
 
 // ONLY=14,20 limits a run to shots whose filename starts with those prefixes.
@@ -209,6 +216,9 @@ test.describe("design audit", () => {
           console.log(`[audit:${theme}] ${shot.file} setup failed: ${process.env.AUDIT_DEBUG ? (e as Error).message : (e as Error).message.split("\n")[0]}`);
           continue;
         }
+        // Park the pointer on empty title-bar chrome so a hover state left by
+        // the previous shot's click doesn't show up as a diff.
+        await page.mouse.move((shot.viewport ?? DEFAULT_VIEWPORT).width - 1, 1);
         await page.waitForTimeout(300);
         await page.screenshot({ path: path.join(dir, shot.file) });
         console.log(`[audit:${theme}] ${shot.file}`);

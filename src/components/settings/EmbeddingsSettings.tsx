@@ -265,8 +265,8 @@ export function EmbeddingsSettings() {
 
   return (
     <SettingsGroup
-      title="Embeddings (Local Semantic Search)"
-      description="Run a local embedding model in a packaged worker binary so the Knowledge Graph and Notes sidebar can find semantically adjacent content offline."
+      title="Local semantic search"
+      description="A local embedding model lets the Knowledge Graph and Notes sidebar find related content by meaning, offline."
     >
       <SettingsRow
         label="Enable embeddings"
