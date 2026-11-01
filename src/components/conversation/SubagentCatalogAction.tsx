@@ -7,7 +7,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { CountBadge } from "@/components/ui/count-badge";
 import { StatusDot } from "@/components/ui/status-dot";
 import * as Popover from "@radix-ui/react-popover";
-import { Tooltip } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 import type { SessionProjection } from "@/../shared/agent/session-projection";
 
 type SubagentScope = "children" | "descendants";
@@ -168,13 +168,16 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
 
   return (
     <Popover.Root open={open} onOpenChange={(next) => { setOpen(next); if (next) void load(); }}>
-      <Tooltip content={liveCount > 0 ? `${liveCount} subagent${liveCount === 1 ? "" : "s"} running` : "Subagents"} side="left">
-        <Popover.Trigger asChild>
-          <button
-            className="relative p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"
-            aria-label={liveCount > 0 ? `Subagent conversations, ${liveCount} running` : "Subagent conversations"}
+      <Popover.Trigger asChild>
+          <IconButton
+            size="sm"
+            className="relative"
+            pressed={open}
+            tooltipDisabled={open}
+            label={liveCount > 0 ? `Subagent conversations, ${liveCount} running` : "Subagent conversations"}
+            tooltip={liveCount > 0 ? `${liveCount} subagent${liveCount === 1 ? "" : "s"} running` : "Subagents"}
           >
-            <GitBranch size={11} />
+            <GitBranch size={12} />
             {liveCount > 0 && (
               <CountBadge
                 count={liveCount}
@@ -182,9 +185,8 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                 className="absolute -top-0.5 -right-0.5 min-w-3 h-3 px-0.5 text-2xs leading-3"
               />
             )}
-          </button>
-        </Popover.Trigger>
-      </Tooltip>
+          </IconButton>
+      </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={6} className="z-50 w-80 max-h-96 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-2 space-y-2">
           <div className="flex items-center justify-between px-1">

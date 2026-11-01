@@ -8,7 +8,7 @@ import { unwrapSessionPayload } from "@/lib/conversation/session";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.
- * Used by both AgentEmptyState and AgentSessionTab.
+ * Used by AgentEmptyState and the session pane's New menu.
  */
 export function useAgentSessionActions() {
   const {

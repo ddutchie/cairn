@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { useResizeObserver } from "@/lib/viz/hooks";
+import { IconButton } from "@/components/ui/icon-button";
 
 export interface ConversationUsage {
   promptTokens: number;
@@ -46,9 +47,9 @@ export function ConversationHeader({ title, usage, contextLimit, actions, schedu
       {overflows && actions && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] shrink-0 ml-auto" aria-label="More actions">
+            <IconButton size="sm" label="More actions" className="ml-auto">
               <MoreHorizontal size={12} />
-            </button>
+            </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="p-2 flex flex-col gap-1 bg-[var(--surface)] border border-[var(--border)]">
             <div className="flex items-center gap-1 flex-wrap">{actions}</div>

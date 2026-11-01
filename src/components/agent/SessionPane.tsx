@@ -89,7 +89,6 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [mod] = useState(() => modKey());
-  const newMenuRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerOverflows, setHeaderOverflows] = useState(false);
 
@@ -97,28 +96,6 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
   const fetchCodingSessionHistoryForProjects = useCairnStore((s) => s.fetchCodingSessionHistoryForProjects);
   const { handleNewSession } = useAgentSessionActions();
-
-  useEffect(() => {
-    if (!newMenuOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
-        setNewMenuOpen(false);
-      }
-    }
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setNewMenuOpen(false);
-        document.getElementById("unified-new-btn")?.focus();
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [newMenuOpen]);
 
   function handleNewChatThread() {
     if (!activeWorkspaceId) return;
@@ -303,48 +280,32 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
         </div>
 
         {/* Unified new-item button — right-aligned pill */}
-        <div ref={newMenuRef} className="relative flex-shrink-0 ml-auto">
-          <IconButton
-            id="unified-new-btn"
-            label="New session"
-            variant="outline"
-            active={newMenuOpen}
-            tooltipDisabled={newMenuOpen}
-            aria-haspopup="menu"
-            aria-expanded={newMenuOpen}
-            onClick={() => setNewMenuOpen((v) => !v)}
-          >
-            <Plus size={12} strokeWidth={1.75} />
-          </IconButton>
-
-          {newMenuOpen && (
-            <div className="absolute right-0 top-full mt-0.5 w-52 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 overflow-hidden">
-              <button
-                id="new-chat-thread-btn"
-                onClick={handleNewChatThread}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
-              >
-                <MessageSquarePlus size={13} className="text-[var(--accent)] flex-shrink-0" />
-                <div className="text-left">
-                  <p className="font-medium">New chat thread</p>
-                  <p className="text-2xs text-[var(--text-tertiary)]">Start a fresh AI conversation</p>
-                </div>
-              </button>
+        <div className="flex-shrink-0 ml-auto">
+          <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <IconButton id="unified-new-btn" label="New session" variant="outline" active={newMenuOpen} tooltipDisabled={newMenuOpen}>
+                <Plus size={12} strokeWidth={1.75} />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem id="new-chat-thread-btn" onSelect={handleNewChatThread} className="items-start py-2">
+                <MessageSquarePlus size={13} className="mt-0.5 flex-shrink-0 text-[var(--accent)]" />
+                <span>
+                  <span className="block font-medium text-[var(--text-primary)]">New chat thread</span>
+                  <span className="block text-2xs text-[var(--text-tertiary)]">Start a fresh AI conversation</span>
+                </span>
+              </DropdownMenuItem>
               {hasCodeDirectory && (
-                <button
-                  id="new-agent-session-btn"
-                  onClick={handleNewAgentSession}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-t border-[var(--border)]"
-                >
-                  <Code2 size={13} className="text-[var(--accent)] flex-shrink-0" />
-                  <div className="text-left">
-                    <p className="font-medium">New agent session</p>
-                    <p className="text-2xs text-[var(--text-tertiary)]">Cairn Agent coding session</p>
-                  </div>
-                </button>
+                <DropdownMenuItem id="new-agent-session-btn" onSelect={() => void handleNewAgentSession()} className="items-start py-2">
+                  <Code2 size={13} className="mt-0.5 flex-shrink-0 text-[var(--accent)]" />
+                  <span>
+                    <span className="block font-medium text-[var(--text-primary)]">New agent session</span>
+                    <span className="block text-2xs text-[var(--text-tertiary)]">Cairn Agent coding session</span>
+                  </span>
+                </DropdownMenuItem>
               )}
-            </div>
-          )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Header Actions — pop out + expand, collapse to hamburger when clipped */}

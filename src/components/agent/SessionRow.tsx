@@ -144,12 +144,14 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
           onClick={onSelect}
           onKeyDown={handleKeyDown}
           className={cn(
-            "relative overflow-hidden flex flex-1 min-w-0 items-center gap-2 rounded-md border-l-2 px-2 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
+            "relative overflow-hidden flex flex-1 min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] cursor-pointer",
+            // Same selection treatment as the compact rows, Select and Combobox:
+            // an accent-dim fill, no side stripe.
             selected
-              ? "border-l-[var(--accent)] bg-[var(--accent-dim)]"
+              ? "bg-[var(--accent-dim)]"
               : running
-                ? "border-l-[var(--accent)]/60 bg-[var(--accent-dim)]/30"
-                : "border-l-transparent hover:bg-[var(--surface-2)]",
+                ? "bg-[color-mix(in_srgb,var(--accent-dim)_30%,transparent)] hover:bg-[var(--surface-2)]"
+                : "hover:bg-[var(--surface-2)]",
           )}
         >
         <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
@@ -157,7 +159,7 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
             <SessionTypeIcon kind={session.kind} size={13} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
+            <span className={cn("block truncate text-xs", selected ? "text-[var(--accent)] font-medium" : "text-[var(--text-primary)]")}>{session.title}</span>
             <span className="flex items-center gap-1.5 mt-0.5 text-xs text-[var(--text-tertiary)]">
               <span>{kindLabel(session.kind)}</span>
               <span aria-hidden>·</span>

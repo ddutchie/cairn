@@ -295,7 +295,7 @@ function UrlEditor({
             onClick={fetchMeta}
             disabled={fetching || !url}
             title="Fetch title & description from URL"
-            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] disabled:opacity-40 transition-colors shrink-0"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] disabled:opacity-40 transition-colors shrink-0"
           >
             {fetching ? <Spinner size={12} /> : <DownloadCloud size={12} />}
             {fetching ? "" : "Fetch"}

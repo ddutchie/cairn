@@ -5,6 +5,7 @@ import { CheckCircle2, ChevronDown, FileDown, FileText, Moon, Sun } from "lucide
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { prepareNoteHtmlForPdf } from "./note-pdf-export";
 import { resolveFontPreset } from "../../../shared/ui/fonts";
 import type { FontFamilyId } from "@/store/slices/ui-appearance";
@@ -12,9 +13,6 @@ import type { FontFamilyId } from "@/store/slices/ui-appearance";
 type ExportState = "idle" | "exporting" | "done";
 
 const isElectronRenderer = () => typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-
-const menuItem =
-  "w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors";
 
 /**
  * Read-mode export button: PDF (light / dark) or Markdown. Desktop uses the
@@ -68,10 +66,10 @@ export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
   });
 
   return (
-    <div className="relative">
-      <Tooltip content="Export note">
+    <DropdownMenu open={open && state === "idle"} onOpenChange={setOpen}>
+      <Tooltip content="Export note" disabled={open}>
+        <DropdownMenuTrigger asChild>
         <button
-          onClick={() => setOpen((v) => !v)}
           disabled={state === "exporting"}
           className={cn(
             "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors whitespace-nowrap",
@@ -88,24 +86,20 @@ export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
           {state === "done" ? "Saved" : "PDF"}
           {state === "idle" && <ChevronDown size={10} className="opacity-60" />}
         </button>
+        </DropdownMenuTrigger>
       </Tooltip>
-      {open && state === "idle" && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] rounded-md border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 overflow-hidden">
-            <button onClick={() => exportPdf("light")} className={menuItem}>
-              <Sun size={12} /> Light
-            </button>
-            <button onClick={() => exportPdf("dark")} className={menuItem}>
-              <Moon size={12} /> Dark
-            </button>
-            <div className="h-px bg-[var(--border)] my-0.5" />
-            <button onClick={exportMarkdown} className={menuItem}>
-              <FileText size={12} /> Markdown
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+      <DropdownMenuContent align="end" className="min-w-[8rem]">
+        <DropdownMenuItem onSelect={() => void exportPdf("light")}>
+          <Sun size={12} /> PDF, light
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void exportPdf("dark")}>
+          <Moon size={12} /> PDF, dark
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => void exportMarkdown()}>
+          <FileText size={12} /> Markdown
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

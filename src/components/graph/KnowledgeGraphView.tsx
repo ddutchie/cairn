@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
-  GitBranch, Circle, ChevronDown, Search, SlidersHorizontal, Type, Network, Hexagon, Focus, X, Box, Copy, ExternalLink, Info, Link2,
+  GitBranch, Circle, Search, SlidersHorizontal, Type, Network, Hexagon, Focus, X, Box, Copy, ExternalLink, Info, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
@@ -16,6 +16,7 @@ import { ForceGraphCanvas } from "./ForceGraphCanvas";
 import { RadialTreeCanvas } from "./RadialTreeCanvas";
 import { Graph3DCanvas } from "./Graph3DCanvas";
 import { Tooltip } from "@/components/ui/tooltip";
+import { Select } from "@/components/ui/select";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
@@ -77,7 +78,6 @@ export function KnowledgeGraphView() {
     setActiveProject:             s.setActiveProject,
   })));
 
-  const [labelDropdownOpen, setLabelDropdownOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
   const [recomputeSeconds, setRecomputeSeconds] = useState(0);
   const [graphSearch, setGraphSearch] = useState("");
@@ -380,38 +380,16 @@ export function KnowledgeGraphView() {
 
         {/* Label Mode dropdown — force only (sunburst drills in, no label modes) */}
         {graphLayout === "force" && (
-          <div className="relative">
-            <button
-              onClick={() => { setLabelDropdownOpen((v) => !v); }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
-            >
-              <Type size={12} />
-              <span className="capitalize">{labelMode} labels</span>
-              <ChevronDown size={11} />
-            </button>
-            {labelDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-40 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 z-20 py-1">
-                {(["smart", "all", "minimal"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => {
-                      setLabelMode(mode);
-                      setLabelDropdownOpen(false);
-                    }}
-                    className={cn(
-                      "flex items-center justify-between w-full px-3 py-1.5 text-xs transition-colors capitalize",
-                      labelMode === mode
-                        ? "text-[var(--accent)] bg-[var(--accent-dim)] font-medium"
-                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
-                    )}
-                  >
-                    <span>{mode}</span>
-                    {labelMode === mode && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <Select
+            ariaLabel="Label mode"
+            value={labelMode}
+            onChange={setLabelMode}
+            options={[
+              { value: "smart", label: <span className="flex items-center gap-1.5"><Type size={12} />Smart labels</span> },
+              { value: "all", label: <span className="flex items-center gap-1.5"><Type size={12} />All labels</span> },
+              { value: "minimal", label: <span className="flex items-center gap-1.5"><Type size={12} />Minimal labels</span> },
+            ]}
+          />
         )}
 
         {/* Spacing / Breathing room slider */}
@@ -557,7 +535,7 @@ export function KnowledgeGraphView() {
       </div>
 
       {/* Canvas area + detail panel */}
-      <div className="flex flex-1 min-h-0 overflow-hidden" onClick={() => { setLabelDropdownOpen(false); }}>
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Main canvas */}
         <ContextMenu>
         <ContextMenuTrigger asChild>

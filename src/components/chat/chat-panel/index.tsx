@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { type VirtuosoHandle } from "react-virtuoso";
-import { Trash2, ChevronDown, ArrowLeftFromLine, History } from "lucide-react";
+import { Trash2, ArrowLeftFromLine, History } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { chatSessionId } from "../../../../shared/agent/session-identity";
 import { useShallow } from "zustand/react/shallow";
@@ -17,7 +17,7 @@ import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
 
 import type { ChatHistoryEntry } from "@/types";
 
-import { Tooltip } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
@@ -37,7 +37,7 @@ import {
   effectiveTemperatureForModel,
 } from "@/lib/models-dev";
 import { supportsImageInput, resolveMaxOutputTokens } from "../../../../shared/models/model-catalog";
-import { useClickOutside } from "@/hooks/useClickOutside";
+import { Select } from "@/components/ui/select";
 import { supportsPdfInput } from "../../../../shared/models/pdf-attach";
 import { toConversationMessage } from "@/lib/conversation/message";
 import { toLiveConversationMessage, withLiveTurn } from "@/components/conversation/conversation-live";
@@ -169,8 +169,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   // panel activates or a question form appears (followOutput handles streaming).
   const chatVirtuosoRef = useRef<VirtuosoHandle>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
-  const projectRef     = useRef<HTMLDivElement>(null);
-  const [projectOpen, setProjectOpen] = useState(false);
 
   // Warm the models.dev catalog on mount (also feeds image-input gating and the
   // model picker's cost/logo rows). Re-render when the catalog arrives.
@@ -725,8 +723,6 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     }
   }, [threadId, input, prefill, handleSend]);
 
-  // ── Popout mode: close project dropdown on outside click ──
-  useClickOutside(projectRef, () => setProjectOpen(false), popoutMode && projectOpen);
 
   const handlePopIn = useCallback(async () => {
     const state = useCairnStore.getState();
@@ -766,31 +762,15 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           transcriptRef={chatVirtuosoRef}
           centered={isView(activeView, "chat")}
           title={popoutMode ? (
-          <div ref={projectRef} className="relative flex-1">
-            <button
-              onClick={() => setProjectOpen((v) => !v)}
-              className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
-            >
-              {project?.name ?? "Chat"}
-              <ChevronDown size={10} className="text-[var(--text-tertiary)]" />
-            </button>
-            {projectOpen && (
-              <div className="absolute left-0 top-full mt-0.5 w-48 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 overflow-hidden">
-                {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => { if (isLoadingRef.current) return; setActiveProject(p.id); setProjectOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-xs transition-colors ${
-                      p.id === activeProjectId
-                        ? "text-[var(--accent)] bg-[var(--surface-2)]"
-                        : "text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-                    }`}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="flex-1 min-w-0">
+            <Select
+              ariaLabel="Project"
+              value={activeProjectId ?? ""}
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              placeholder="Chat"
+              onChange={(id) => { if (!isLoadingRef.current) setActiveProject(id); }}
+              className="max-w-full border-transparent px-1.5 font-medium text-[var(--text-primary)]"
+            />
           </div>
         ) : (
           <span className="text-xs text-[var(--text-tertiary)] flex-1 truncate">
@@ -803,11 +783,19 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             <>
               {threadId && <SubagentCatalogAction parentSessionId={chatSessionId(threadId)} />}
               {threadId && <ChatQuickSettings disabled={isLoading} />}
-              <Tooltip content={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} side="left">
-                <button onClick={() => setTimelineOpen((v) => !v)} className={cn("p-1 rounded transition-colors", timelineOpen ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]")} aria-pressed={timelineOpen}><History size={11} /></button>
-              </Tooltip>
-              {messages.length > 0 && <Tooltip content="Clear conversation" side="left"><button onClick={handleClear} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] hover:bg-[var(--surface-3)] transition-colors"><Trash2 size={11} /></button></Tooltip>}
-              {popoutMode && <Tooltip content="Return chat to main window" side="left"><button onClick={handlePopIn} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors"><ArrowLeftFromLine size={11} /></button></Tooltip>}
+              <IconButton size="sm" label="Timeline scrubber" tooltip={timelineOpen ? "Hide timeline scrubber" : "Show timeline scrubber"} pressed={timelineOpen} onClick={() => setTimelineOpen((v) => !v)}>
+                <History size={12} />
+              </IconButton>
+              {messages.length > 0 && (
+                <IconButton size="sm" label="Clear conversation" onClick={handleClear} className="hover:text-[var(--danger)]">
+                  <Trash2 size={12} />
+                </IconButton>
+              )}
+              {popoutMode && (
+                <IconButton size="sm" label="Return chat to main window" onClick={handlePopIn}>
+                  <ArrowLeftFromLine size={12} />
+                </IconButton>
+              )}
             </>
           )}
           connectors={connectorMap}

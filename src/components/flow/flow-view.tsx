@@ -30,6 +30,7 @@ import {
 import { revealNote, revealCard } from "@/lib/events";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { IdeaNodeType } from "@/types";
@@ -50,7 +51,6 @@ import {
   makeAutoLayoutCmd,
   makePromoteToTaskCmd,
 } from "@/lib/commands/flow-commands";
-import { useClickOutside } from "@/hooks/useClickOutside";
 import { NodeEditModal } from "./NodeEditModal";
 import { applyDagreLayout } from "@/lib/flow-layout";
 import {
@@ -90,8 +90,6 @@ function IdeaFlowCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading]       = useState(true);
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const addMenuRef = useRef<HTMLDivElement>(null);
 
   // Detect touch device for mobile-specific interactions
   const isTouchDevice = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
@@ -229,7 +227,6 @@ function IdeaFlowCanvas() {
   }, [loadFlow]);
 
   // Close add-menu on outside click
-  useClickOutside(addMenuRef, () => setShowAddMenu(false), showAddMenu);
 
   // ── Connect ───────────────────────────────────────────────────
 
@@ -508,7 +505,6 @@ function IdeaFlowCanvas() {
     if (type !== "group") {
       setEditTarget({ nodeId: created.id, type, data: data as Record<string, unknown> });
     }
-    setShowAddMenu(false);
     historyManager.push(makeAddNodeCmd(rfNode, activeProjectId));
   }
 
@@ -770,7 +766,6 @@ function IdeaFlowCanvas() {
           if (node.type === "group") return;
           setEditTarget({ nodeId: node.id, type: node.type as IdeaNodeType, data: node.data as Record<string, unknown> });
         } : undefined}
-        onPaneClick={() => setShowAddMenu(false)}
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={onEdgeContextMenu}
 
@@ -827,32 +822,27 @@ function IdeaFlowCanvas() {
             <button
               onClick={handleAutoLayout}
               title="Auto-arrange nodes"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-elev-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-elev-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] transition-colors"
             >
               <LayoutDashboard size={13} />
               Arrange
             </button>
-          <div className="relative" ref={addMenuRef}>
-            <Button variant="accent" size="sm" onClick={() => setShowAddMenu((v) => !v)}>
-              <Plus size={13} />
-              Add node
-            </Button>
-
-            {showAddMenu && (
-              <div className="absolute right-0 top-9 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-elev-2 py-1 min-w-[160px]">
-                {addNodeMenu.map(({ type, label, icon: Icon }) => (
-                  <button
-                    key={type}
-                    onClick={() => addNode(type, 120 + Math.random() * 300, 120 + Math.random() * 200)}
-                    className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
-                  >
-                    <Icon size={12} className="text-[var(--text-tertiary)]" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="accent" size="sm">
+                <Plus size={13} />
+                Add node
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[10rem]">
+              {addNodeMenu.map(({ type, label, icon: Icon }) => (
+                <DropdownMenuItem key={type} onSelect={() => void addNode(type, 120 + Math.random() * 300, 120 + Math.random() * 200)}>
+                  <Icon size={12} className="text-[var(--text-tertiary)]" />
+                  {label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           </div>
         </Panel>
       </ReactFlow>
