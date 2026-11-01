@@ -756,7 +756,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             </button>
           </Tooltip>
           <Tooltip content={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}>
-            <button
+            <button aria-label={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}
               onClick={() => setShowSemanticPanel((v) => !v)}
               className={cn(
                 "p-1.5 rounded-md transition-colors",

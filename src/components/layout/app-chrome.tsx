@@ -33,7 +33,7 @@ export function UpdateBanner({
           Restart &amp; install
         </Button>
       )}
-      <button onClick={onDismiss} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+      <button aria-label="Dismiss" onClick={onDismiss} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
         <X size={12} />
       </button>
     </div>
@@ -66,7 +66,7 @@ export function ErrorToasts({
         >
           <AlertCircle size={13} className="text-[var(--danger)] shrink-0 mt-0.5" />
           <span className="text-xs text-[var(--text-secondary)] flex-1 leading-relaxed">{toast.message}</span>
-          <button
+          <button aria-label="Dismiss"
             onClick={() => onDismiss(toast.id)}
             className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors shrink-0"
           >

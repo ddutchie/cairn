@@ -38,6 +38,7 @@ export function DockSidebar() {
     projects: allProjects,
     setActiveProject,
     setView,
+    openCalendar,
     archiveProject,
     toggleSearch,
     toggleChat,
@@ -62,6 +63,7 @@ export function DockSidebar() {
       projects: s.projects,
       setActiveProject: s.setActiveProject,
       setView: s.setView,
+      openCalendar: s.openCalendar,
       archiveProject: s.archiveProject,
       toggleSearch: s.toggleSearch,
       toggleChat: s.toggleChat,
@@ -217,7 +219,7 @@ export function DockSidebar() {
           <Tooltip content={`Overview (${shortcutMap.get("overview") ?? ""})`} side="right"><button aria-label="Overview" onClick={() => setView("overview")} className={cn("p-2 rounded-md", isView(activeView, "overview") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={15} /></button></Tooltip>
           <Tooltip content={`Notes (${shortcutMap.get("notes") ?? ""})`} side="right"><button aria-label="Notes" onClick={() => setView("notes")} className={cn("p-2 rounded-md", isView(activeView, "notes") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={15} /></button></Tooltip>
           {!hiddenViews.has("board") && <Tooltip content={`Board (${shortcutMap.get("board") ?? ""})`} side="right"><button aria-label="Board" onClick={() => setView("board")} className={cn("p-2 rounded-md", isView(activeView, "board") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={15} /></button></Tooltip>}
-          {!hiddenViews.has("calendar") && <Tooltip content={`Calendar (${shortcutMap.get("calendar") ?? ""})`} side="right"><button aria-label="Calendar" onClick={() => setView("calendar")} className={cn("p-2 rounded-md", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>}
+          {!hiddenViews.has("calendar") && <Tooltip content={`Calendar (${shortcutMap.get("calendar") ?? ""})`} side="right"><button aria-label="Calendar" onClick={openCalendar} className={cn("p-2 rounded-md", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>}
           {!hiddenViews.has("flow") && <Tooltip content={`Flow (${shortcutMap.get("flow") ?? ""})`} side="right"><button aria-label="Flow" onClick={() => setView("flow")} className={cn("p-2 rounded-md", isView(activeView, "flow") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={15} /></button></Tooltip>}
           {!hiddenViews.has("agent") && <Tooltip content={`Agent (${shortcutMap.get("agent") ?? ""})`} side="right"><button aria-label="Agent" onClick={() => setView("agent")} className={cn("p-2 rounded-md", isView(activeView, "agent") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={15} /></button></Tooltip>}
           <div className="flex-1" aria-hidden="true" />
@@ -242,7 +244,7 @@ export function DockSidebar() {
               <div className="text-2xs text-[var(--text-tertiary)]">{projects.length} projects · local</div>
             </div>
             <Tooltip content="Collapse sidebar" side="right">
-              <button onClick={toggleSidebar} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
+              <button aria-label="Collapse sidebar" onClick={toggleSidebar} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
                 <ChevronLeft size={13} />
               </button>
             </Tooltip>
@@ -411,7 +413,7 @@ export function DockSidebar() {
                 <button onClick={() => setView("overview")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "overview") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={13} /> Overview<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("overview")}</span></button>
                 <button onClick={() => setView("notes")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "notes") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={13} /> Notes<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("notes")}</span></button>
                 {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "board") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={13} /> Board<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("board")}</span></button>}
-                {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
+                {!hiddenViews.has("calendar") && <button onClick={openCalendar} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
                 {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "flow") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={13} /> Flow<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("flow")}</span></button>}
                 {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "agent") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={13} /> Agent<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("agent")}</span></button>}
               </div>

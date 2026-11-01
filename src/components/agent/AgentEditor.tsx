@@ -178,7 +178,7 @@ export function AgentEditor() {
               {/* Preview toggle for md files */}
               {isActive && isMarkdown(filePath) && (
                 <Tooltip content={inPreview ? "Edit" : "Preview"} side="bottom">
-                  <button
+                  <button aria-label={inPreview ? "Edit" : "Preview"}
                     onClick={(e) => { e.stopPropagation(); togglePreview(filePath); }}
                     className={cn(
                       "p-0.5 rounded transition-colors",
@@ -192,7 +192,7 @@ export function AgentEditor() {
                 </Tooltip>
               )}
               <Tooltip content="Close" side="bottom">
-                <button
+                <button aria-label="Close"
                   onClick={(e) => handleClose(e, filePath)}
                   className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] opacity-0 group-hover:opacity-100 transition-opacity"
                 >

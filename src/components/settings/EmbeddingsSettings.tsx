@@ -296,7 +296,7 @@ export function EmbeddingsSettings() {
               <div className="flex items-center gap-1">
                 {status.running ? (
                   <Tooltip content="Stop worker">
-                    <button
+                    <button aria-label="Stop worker"
                       onClick={handleStop}
                       className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
                     >
@@ -305,7 +305,7 @@ export function EmbeddingsSettings() {
                   </Tooltip>
                 ) : (
                   <Tooltip content="Refresh">
-                    <button
+                    <button aria-label="Refresh"
                       onClick={refreshQuiet}
                       disabled={startingWorker}
                       className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)] disabled:opacity-50"
@@ -349,7 +349,7 @@ export function EmbeddingsSettings() {
                           )}
                           {!isDefault && (
                             <Tooltip content="Set as default">
-                              <button
+                              <button aria-label="Set as default"
                                 onClick={() => void handleSetDefault(model.id)}
                                 className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
                               >
@@ -359,7 +359,7 @@ export function EmbeddingsSettings() {
                           )}
                           {!isActive && (
                             <Tooltip content="Delete from cache">
-                              <button
+                              <button aria-label="Delete from cache"
                                 onClick={() => void handleRemove(model.id)}
                                 className="p-1.5 rounded hover:bg-[var(--surface-3)] text-[var(--text-tertiary)]"
                               >

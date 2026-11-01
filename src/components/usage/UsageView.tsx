@@ -382,7 +382,7 @@ export function UsageView() {
             </button>
           </Tooltip>
           <Tooltip content="Reload data" side="bottom">
-            <button
+            <button aria-label="Reload data"
               onClick={refresh}
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
             >

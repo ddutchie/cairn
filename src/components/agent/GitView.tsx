@@ -450,7 +450,7 @@ export function GitView({ cwd }: GitViewProps) {
             </Tooltip>
           )}
           <Tooltip content="Refresh git status and recent commits">
-            <button
+            <button aria-label="Refresh git status and recent commits"
               onClick={refresh}
               className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
             >
@@ -507,7 +507,7 @@ export function GitView({ cwd }: GitViewProps) {
           >
             Open
           </button>
-          <button onClick={() => setPrUrl(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <button aria-label="Dismiss" onClick={() => setPrUrl(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
           </button>
         </div>
@@ -518,7 +518,7 @@ export function GitView({ cwd }: GitViewProps) {
         <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border-b border-[var(--border)] flex-shrink-0">
           <X size={11} className="text-[var(--danger)] flex-shrink-0" />
           <span className="text-xs text-[var(--danger)] flex-1">{error}</span>
-          <button onClick={dismissError} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <button aria-label="Dismiss error" onClick={dismissError} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
           </button>
         </div>

@@ -112,7 +112,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
               <label className="text-sm text-[var(--text-tertiary)] block mb-1.5">Icon</label>
               <div className="flex flex-wrap gap-1.5">
                 {WORKSPACE_ICONS.map(({ name: iconName }) => (
-                  <button
+                  <button aria-label={iconName}
                     key={iconName}
                     type="button"
                     onClick={() => setEditIcon(iconName)}

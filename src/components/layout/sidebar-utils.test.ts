@@ -24,14 +24,23 @@ describe("buildViewShortcutMap", () => {
     expect(map.get("notes")).toBe("⌘2");
     expect(map.get("board")).toBe("⌘3");
     expect(map.get("agent")).toBe("⌘6");
-    expect(map.get("insights")).toBe("⌘9");
+    expect(map.get("insights")).toBe("⌘8");
+    expect(map.get("automations")).toBe("⌘9");
     expect(map.get("usage")).toBe("");
+  });
+
+  it("gives the all-projects calendar no number while the sidebar's Calendar covers it", () => {
+    const map = buildViewShortcutMap(new Set<string>(), true);
+    expect(map.has("calendar-all")).toBe(false);
+    expect(map.get("graph")).toBe("⌘7");
   });
 
   it("shifts later views down when one is hidden, matching the key handler", () => {
     const map = buildViewShortcutMap(new Set(["calendar"]), true);
     expect(map.has("calendar")).toBe(false);
     expect(map.get("flow")).toBe("⌘4");
+    // The all-projects calendar becomes the sidebar entry, so it takes a number.
+    expect(map.get("calendar-all")).toBe("⌘6");
   });
 });
 

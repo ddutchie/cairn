@@ -58,7 +58,7 @@ type CalendarLayout = "month" | "week";
  *     the workspace-level sidebar entry above Knowledge Graph.
  */
 export function CalendarView({ scope = "project" }: { scope?: "project" | "workspace" }) {
-  const { activeProjectId, cards, columns, projects, calendarProjectIds, setCalendarProjectIds, updateCard, setView } =
+  const { activeProjectId, cards, columns, projects, calendarProjectIds, setCalendarProjectIds, updateCard, setView, setCalendarScope } =
     useCairnStore(
       useShallow((s) => ({
         activeProjectId: s.activeProjectId,
@@ -71,6 +71,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
         setCalendarProjectIds: s.setCalendarProjectIds,
         updateCard: s.updateCard,
         setView: s.setView,
+        setCalendarScope: s.setCalendarScope,
       })),
     );
   const isWorkspace = scope === "workspace";
@@ -222,7 +223,10 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
           size="sm"
           className="ml-2"
           value={isWorkspace ? "workspace" : "project"}
-          onChange={(v) => setView(v === "workspace" ? "calendar-all" : "calendar")}
+          onChange={(v) => {
+            setCalendarScope(v);
+            setView(v === "workspace" ? "calendar-all" : "calendar");
+          }}
           options={[
             { value: "project", label: "This project" },
             { value: "workspace", label: "All projects" },

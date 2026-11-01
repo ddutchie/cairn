@@ -327,7 +327,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
             <span className={cn("text-xs", tab.exited && "opacity-50")}>
               {tab.label}
             </span>
-            <button
+            <button aria-label="Close terminal"
               onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--surface-3)] transition-all"
             >

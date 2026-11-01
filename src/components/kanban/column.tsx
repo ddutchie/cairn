@@ -286,7 +286,7 @@ function KanbanColumnImpl({
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-all">
+              <button aria-label="Column actions" className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-all">
                 <MoreHorizontal size={12} />
               </button>
             </DropdownMenuTrigger>
@@ -373,7 +373,7 @@ function KanbanColumnImpl({
                       >
                         <span className="flex-1 text-sm text-[var(--text-secondary)] truncate" title={card.title}>{card.title}</span>
                         <Tooltip content="Restore card">
-                          <button
+                          <button aria-label="Restore card"
                             onClick={() => onRestoreCard(card.id)}
                             className="flex-shrink-0 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
                           >

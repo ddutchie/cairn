@@ -188,6 +188,9 @@ export const NOTE_EDITOR_MODE_KEY = "noteEditorMode";
 /** localStorage key for whether Live Preview is on within Edit mode. */
 export const NOTE_LIVE_PREVIEW_KEY = "noteLivePreview";
 
+/** localStorage key for the Calendar's last scope ("project" | "workspace"), reopened from the sidebar and shortcut. */
+export const CALENDAR_SCOPE_KEY = "calendarScope";
+
 /** localStorage key for the dock sidebar workspace tools collapsed state (Automations → Notifications). */
 export const DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY = "dockSidebarWorkspaceCollapsed";
 

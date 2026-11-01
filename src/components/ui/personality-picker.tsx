@@ -128,7 +128,7 @@ export function PersonalityPicker({
               <div className="text-xs font-medium text-[var(--text-tertiary)]">
                 Chat · personality
               </div>
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setOpen(false)}
                 className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"

@@ -86,7 +86,7 @@ export function TagsSettings() {
               <span className="text-sm text-[var(--text-tertiary)] tabular-nums whitespace-nowrap">
                 {noteCount} note{noteCount !== 1 ? "s" : ""} · {cardCount} card{cardCount !== 1 ? "s" : ""}
               </span>
-              <button
+              <button aria-label="Delete tag"
                 onClick={() => deleteTag(tag.id)}
                 className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors"
               >

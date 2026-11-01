@@ -222,7 +222,7 @@ export function EnvEditor({
                 </Tooltip>
               )}
               <Tooltip content="Remove">
-                <button
+                <button aria-label="Remove"
                   type="button"
                   onClick={() => removeRow(row.key)}
                   className="text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0"

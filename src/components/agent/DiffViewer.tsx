@@ -177,7 +177,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
       {/* Refresh */}
       <Tooltip content="Refresh" side="bottom">
-        <button
+        <button aria-label="Refresh"
           onClick={fetchDiff}
           disabled={loading}
           className={cn(

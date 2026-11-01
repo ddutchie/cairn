@@ -240,7 +240,7 @@ export function ContextRing({
           <div className="flex items-center justify-between mb-2">
             <span className="font-semibold text-[var(--text-primary)] text-sm">Context Usage</span>
             <Popover.Close asChild>
-              <button className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1 rounded hover:bg-[var(--surface-2)] focus:outline-none cursor-pointer">
+              <button aria-label="Close" className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1 rounded hover:bg-[var(--surface-2)] focus:outline-none cursor-pointer">
                 <X size={12} />
               </button>
             </Popover.Close>

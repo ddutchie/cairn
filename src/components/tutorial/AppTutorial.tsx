@@ -344,7 +344,7 @@ export function AppTutorial() {
             <Sparkles size={13} className="animate-pulse" />
             <span className="text-xs">Quick tour</span>
           </div>
-          <button
+          <button aria-label="End tour"
             onClick={handleFinish}
             className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
           >
