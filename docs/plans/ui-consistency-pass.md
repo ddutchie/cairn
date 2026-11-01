@@ -138,34 +138,18 @@ Branch `design/ui-pass-phase-2`, stacked on Phase 1.
 4. ✅ **Hand-rolled popovers migrated (9).** New session menu (`SessionPane`), note export menu, graph label mode (now a `Select`), Flow "Add node", and the popout chat's project picker (now a `Select`) go to `DropdownMenu`/`Select`. The tag colour picker, sync status panel and note tag picker go to `Popover`. `AgentSessionTab.tsx` was dead code and is deleted. Two intentional exceptions remain: the composer's `@`/`/` autocomplete in `ChatInput` (anchored to the caret, keeps input focus) and `DependencyMatrix`'s hover tooltip.
 5. Also fixed: `var(--border-hover)` was used in three Flow files but never defined (the hover border did nothing); it's now `--muted`.
 
-### Phase 3: Settings information architecture
+### Phase 3: Settings information architecture ✅
 
-Target structure (one rail, no subtabs, one page per task):
+Branch `design/ui-pass-phase-3`, stacked on Phase 2.
 
-```
-Settings
-├─ General         workspace, theme, accent, chat theme, font size, note font, folder
-├─ Sidebar & views view visibility (moved out of General)
-├─ Models          ONE providers block (community, saved, local detection) shared by everything
-├─ Chat            personality, inline AI, steps/temperature/context/output for chat
-├─ Coding agent    the same knobs for the coding agent, opening with "Uses provider: X ▾"
-├─ Tools           MCP servers Cairn uses + custom HTTP services + build with AI
-├─ Commands
-├─ Connect agents  (was AI → MCP) "Let Claude Desktop / OpenCode use Cairn", plain-language status
-├─ Embeddings
-├─ Writing style
-├─ Tags            (currently orphaned)
-├─ Device sync
-├─ Shortcuts
-├─ Data
-└─ About           the identity header lives here only
-```
-
-- Hide the app sidebar (or collapse it to the rail) while in Settings. Remove the per-page "Cairn v3.1.7" header and left-align the content column next to the rail (`max-w-3xl`).
-- Add a filter box at the top of the rail that matches row titles and descriptions and jumps to the row. Each `SettingsRow` gets an `id` for deep links, which the existing `settingsSection` deep-linking extends naturally.
-- Steppers: one control per value (an input with preset chips in a dropdown, *or* a segmented control), never both stacked.
-- Shorten descriptions to one sentence and move the rest into an "ⓘ" tooltip or docs link.
-- Keep the legacy section ids mapped (the existing `initial*Subtab` logic) so deep links don't break.
+- ✅ **One grouped rail, no subtabs.** App: General, Sidebar & views, Tags, Shortcuts. AI: Models, Chat, Coding agent, Writing style, Embeddings. Extensions: Tools, Commands, Connect other agents. Data: Device sync, Data, About. The definitions live in `settings/settings-index.ts`. Section ids stay valid for deep links (`ai` is Chat, `agents` is Coding agent), and the old `extensions`/`system` ids land on Tools and Shortcuts. Deep links now also work while Settings is already open.
+- ✅ **Models page.** Community providers and local-server detection live here, once. Chat and Coding agent each keep a "Provider" row (pick, add or edit a saved provider) and their own behaviour settings. *Changed from the draft:* the saved-provider list isn't fully separated out, because `ProviderManager` couples "which one is active" with add/edit, and splitting that is a store change. The duplicated catalog and detection rows are gone, though.
+- ✅ **Tags** is in the nav (it was only reachable by a legacy deep link). **Sidebar & views** split out of General. **Connect other agents** (was AI → MCP) and Tools → **MCP servers** now say which direction they go, and point at each other. The cryptic "SQLite — 1W · 3P · 38N · 65C" status is written out in words.
+- ✅ **Layout.** A page header (title and one line) replaces the repeated "Cairn v3.1.7" block; the version is on About. The content column is left-aligned next to the rail (`max-w-3xl`). The dock sidebar shows as its rail while in Settings, and expanding it there is a one-visit peek that leaves the saved preference alone. Single-group pages got specific group titles ("Workspace tags", "Your data") so they don't repeat the page title.
+- ✅ **Search.** A box at the top of the rail matches row labels, keywords and page names, best first. Enter or a click opens the page, scrolls to the row, tints it briefly (a static tint with reduced motion) and focuses its control. `settings-index.test.ts` fails if a label is renamed without updating the index. Rows and groups carry `data-settings-label`.
+- ✅ **One control per number.** `StepperSettingsRow` is now a single segmented well: Auto, presets, and a custom field that shows a number only when the value is custom. A blur commits only typed input, so tabbing through no longer turns Auto off. The decorative icons are gone (the `icon` prop was removed). Component tests added.
+- ✅ **Copy.** Settings group titles are sentence case, and the long descriptions (chat model, local servers, coding agent, embeddings, device sync, MCP) are cut to a sentence. The Title Case in buttons elsewhere stays for Phase 4.
+- Audit: shots 32–36 (Models, Sidebar & views, Tags, search results, search jump). The pointer is now parked before each shot, so hover states don't show up as diffs.
 
 ### Phase 4: Discoverability sweep
 

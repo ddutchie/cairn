@@ -3,20 +3,25 @@
 import type { ID } from "../../shared/types/domain";
 
 // ── App UI State (not persisted) ──────────────
-/** Deep-linkable Settings view sections. */
+/** Deep-linkable Settings view sections. "ai" is the Chat page and "agents"
+ *  the Coding agent page; "extensions" and "system" are legacy ids from the
+ *  old tabbed layout and land on Tools and Shortcuts. */
 export type SettingsSection =
   | "general"
+  | "views"
+  | "tags"
+  | "shortcuts"
+  | "models"
   | "ai"
-  | "embeddings"
   | "agents"
+  | "writing-style"
+  | "embeddings"
   | "tools"
   | "commands"
-  | "writing-style"
+  | "mcp"
   | "sync"
   | "data"
   | "about"
-  | "shortcuts"
-  | "tags"
   | "extensions"
   | "system";
 

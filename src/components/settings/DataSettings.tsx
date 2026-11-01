@@ -86,7 +86,7 @@ export function DataSettings({
   }
 
   return (
-    <SettingsGroup title="Data" description="Manage your local Cairn data">
+    <SettingsGroup title="Your data" description="Everything stays on this machine.">
       <div className="grid grid-cols-4 gap-3 mb-2">
         {Object.entries(stats).map(([label, count]) => (
           <div

@@ -74,7 +74,7 @@ export function UserStyleSettings() {
   return (
     <>
       <SettingsGroup
-        title="Writing Style"
+        title="Your writing style"
         description="Your persona and how you write, so AI-drafted content (emails, notes, PRDs, replies) sounds like you. Set up via a short guided session, then chat and the coding agent match your voice automatically."
       >
         {!configured ? (

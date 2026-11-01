@@ -50,7 +50,7 @@ export function AboutSection() {
             className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
           >
             <Play size={13} className="text-[var(--accent)]" />
-            <span>Replay App Tour</span>
+            <span>Replay app tour</span>
           </button>
           <button
             onClick={() => setForceNewFeatures(true)}

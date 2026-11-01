@@ -18,7 +18,7 @@ export function TagsSettings() {
   const [colorPickerId, setColorPickerId] = useState<string | null>(null);
 
   return (
-    <SettingsGroup title="Tags" description="Manage workspace tags used on notes and tasks">
+    <SettingsGroup title="Workspace tags" description="Click a name to rename it, or the dot to change its colour.">
       {workspaceTags.length === 0 && (
         <EmptyState
           icon={Tag}

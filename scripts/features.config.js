@@ -250,6 +250,20 @@ const FEATURES = [
       "Phrases and Exclusions: Use \"exact phrase\" and -word to narrow results.",
     ],
   },
+  {
+    id: "v3.1.8-settings",
+    version: "v3.1.8",
+    title: "Settings, reorganised",
+    category: "App",
+    description:
+      "Settings is one list of pages grouped by what you're trying to do, with search, so you no longer have to hunt through tabs inside tabs.",
+    highlights: [
+      "Search: Type in the box above the list to jump straight to a setting, such as temperature or Ollama.",
+      "One place for providers: Add community or local providers on the new Models page; Chat and the coding agent each choose theirs.",
+      "Clearer names: \"Connect other agents\" lets Claude Desktop or OpenCode use Cairn; Tools is for servers Cairn uses.",
+      "Simpler number settings: Presets, Auto and a custom value now sit in one control.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

@@ -10,5 +10,4 @@ export {
   SettingsRow,
   Toggle,
   StepperSettingsRow,
-  type StepperIcon,
 } from "@/components/ui/form-row";

@@ -184,8 +184,8 @@ export function ToolsSettings() {
       </div>
 
       <SettingsGroup
-        title="MCP Servers"
-        description="Connect the AI to remote MCP servers (SSE or streamable-HTTP). Enable a server here, then attach it per-project from the project Overview."
+        title="MCP servers"
+        description="Servers Cairn's AI can use (SSE or streamable HTTP). Enable one here, then attach it to a project from its Overview. To let other agents use Cairn instead, see Connect other agents."
       >
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-medium text-[var(--text-tertiary)]">Configured servers</h3>
@@ -246,7 +246,7 @@ export function ToolsSettings() {
       </SettingsGroup>
 
       <SettingsGroup
-        title="Custom HTTP Services"
+        title="Custom HTTP services"
         description="Expose any HTTP API to the AI as a single tool. Define the request shape and which response fields to keep."
       >
         <div className="flex items-center justify-between">
