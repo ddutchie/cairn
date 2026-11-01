@@ -302,11 +302,11 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ))}
         </div>
 
-        {/* Unified new-item button — right-aligned pill */}
+        {/* New chat thread / agent session menu */}
         <div ref={newMenuRef} className="relative flex-shrink-0 ml-auto">
           <IconButton
             id="unified-new-btn"
-            label="New session"
+            label="New chat or agent session"
             variant="outline"
             active={newMenuOpen}
             tooltipDisabled={newMenuOpen}

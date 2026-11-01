@@ -13,6 +13,7 @@ const OPTIONS: ComboboxOption<string>[] = [
   { value: "a", label: "Summarize this project", group: "Cairn" },
   { value: "b", label: "Release checklist", group: "Cairn" },
   { value: "c", label: "QR pairing", group: "Mobile", keywords: "auth" },
+  { value: "d e/f", label: "Odd value", group: "Mobile" },
 ];
 
 function setup(value: string | null = "a") {
@@ -28,7 +29,7 @@ describe("Combobox", () => {
     expect(trigger).toHaveTextContent("Summarize this project");
     await user.click(trigger);
     expect(screen.getByRole("combobox")).toHaveFocus();
-    expect(screen.getAllByRole("option")).toHaveLength(3);
+    expect(screen.getAllByRole("option")).toHaveLength(4);
     expect(screen.getByRole("group", { name: "Mobile" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Summarize/ })).toHaveAttribute("aria-selected", "true");
   });
@@ -56,6 +57,14 @@ describe("Combobox", () => {
     expect(screen.getByText("No matches")).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(input).toHaveValue("");
-    expect(screen.getAllByRole("option")).toHaveLength(3);
+    expect(screen.getAllByRole("option")).toHaveLength(4);
+  });
+
+  it("keeps aria-activedescendant a single valid id for values with spaces", async () => {
+    const { user } = setup("d e/f");
+    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    const id = screen.getByRole("combobox").getAttribute("aria-activedescendant") ?? "";
+    expect(id).not.toMatch(/\s/);
+    expect(document.getElementById(id)).toHaveTextContent("Odd value");
   });
 });

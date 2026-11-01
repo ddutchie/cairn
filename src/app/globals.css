@@ -115,7 +115,9 @@
   --font-display: "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   /* Type scale: 2xs 9px · xs 10.5px · sm 12.25px · base 14px (×--font-scale),
      a ~1.17 step. Use these, never arbitrary text-[Nrem] sizes. 2xs is the
-     floor: counts, kbd, timestamps, badge text. */
+     floor for UI text (counts, kbd, timestamps, badge text); only
+     data-density cases go below it (ChatTimeline bars, MatrixCanvas cells
+     that shrink with item count). */
   --text-2xs: 0.643rem;
   --text-2xs--line-height: 0.875rem;
   --shadow-elev-1: var(--elev-1);

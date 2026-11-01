@@ -420,7 +420,7 @@ export function ProjectOverview() {
               />
               <div className="relative flex justify-between items-start gap-4">
                 <div>
-                  <div className="text-xs font-medium tracking-[0.08em]" style={{ color: needsAttention > 0 ? "var(--warning)" : "var(--text-tertiary)" }}>
+                  <div className="text-xs font-medium" style={{ color: needsAttention > 0 ? "var(--warning)" : "var(--text-tertiary)" }}>
                     {progressLabel}
                   </div>
                   <div className="text-[2rem] font-bold tracking-tight leading-none mt-1 flex items-baseline gap-1.5">
@@ -526,7 +526,7 @@ export function ProjectOverview() {
             aria-label="Focus filters"
             aria-controls={overviewContentId}
           >
-            <span className="text-xs font-medium tracking-[0.07em] text-[var(--text-tertiary)] mr-0.5">
+            <span className="text-xs font-medium text-[var(--text-tertiary)] mr-0.5">
               Focus
             </span>
             {(["all", "today", "overdue", "pinned"] as FocusFilter[]).map((k) => {
@@ -570,7 +570,7 @@ export function ProjectOverview() {
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden divide-y @2xl:divide-y-0 @2xl:divide-x divide-[var(--border)] flex flex-col @2xl:flex-row mb-4" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
             <div className="flex-1 p-3.5 relative">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--danger)]" />
-              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">Needs attention</div>
+              <div className="text-xs font-medium text-[var(--text-tertiary)]">Needs attention</div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
                 {needsAttention}
                 <span className="text-sm font-medium text-[var(--text-tertiary)]">/ {openCards.length}</span>
@@ -583,7 +583,7 @@ export function ProjectOverview() {
             </div>
             <div className="flex-1 p-3.5 relative">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--success)]" />
-              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">Completion</div>
+              <div className="text-xs font-medium text-[var(--text-tertiary)]">Completion</div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
                 {instrumentPct}%<span className="text-sm font-medium text-[var(--text-tertiary)]">{instrumentDone}/{instrumentTotal}</span>
               </div>
@@ -593,7 +593,7 @@ export function ProjectOverview() {
             </div>
             <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--info)]" />
-              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">Knowledge</div>
+              <div className="text-xs font-medium text-[var(--text-tertiary)]">Knowledge</div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
                 {notes.length}
                 <span className="text-sm font-medium text-[var(--text-tertiary)]">notes</span>
@@ -604,7 +604,7 @@ export function ProjectOverview() {
             </div>
             <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--warning)]" />
-              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">
+              <div className="text-xs font-medium text-[var(--text-tertiary)]">
                 Bottleneck
               </div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
@@ -686,7 +686,7 @@ export function ProjectOverview() {
                       {tone === "overdue" ? <AlertTriangle size={14} /> : tone === "today" ? <Clock3 size={14} /> : <Diamond size={12} />}
                     </span>
                     <span className="min-w-0 flex-1 text-left">
-                      <span className={cn("text-xs font-medium tracking-[0.06em]", tone === "overdue" ? "text-[var(--danger)]" : tone === "today" ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]")}>
+                      <span className={cn("text-xs font-medium", tone === "overdue" ? "text-[var(--danger)]" : tone === "today" ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]")}>
                         {label}
                       </span>
                       <span className="block text-sm font-semibold text-[var(--text-primary)] truncate">{card.title}</span>
