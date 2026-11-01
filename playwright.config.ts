@@ -23,7 +23,9 @@ export default defineConfig({
   // `npm run screenshots` (playwright.screenshots.config.ts). Matching it here
   // made every CI/release smoke run render the full screenshot set into the
   // runner's ./screenshots, where it was discarded.
-  testIgnore: ["**/electron/**", "**/screenshots.spec.ts"],
+  // Capture tools, not tests: marketing screenshots and the design audit
+  // (`npm run screenshots` / `npm run screenshots:audit`) have their own configs.
+  testIgnore: ["**/electron/**", "**/screenshots.spec.ts", "**/design-audit.spec.ts"],
 
   // Run tests serially — the dev server is shared, parallel runs can race on
   // React hydration timing. Increase if the suite grows and timing is stable.
