@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useCallback } from "react";
-import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Bell, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive } from "lucide-react";
+import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
@@ -10,7 +10,6 @@ import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus } from "@/lib/utils";
 import { isView } from "@/lib/views";
 import { Tooltip } from "@/components/ui/tooltip";
-import { CountBadge } from "@/components/ui/count-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject, modKey, buildViewShortcutMap } from "../sidebar-utils";
@@ -47,9 +46,6 @@ export function DockSidebar() {
     chatOpen,
     searchOpen,
     createProject,
-    notificationUnreadCount,
-    notificationOpen,
-    setNotificationOpen,
     workspaceToolsCollapsed,
     toggleWorkspaceToolsCollapsed,
     conversationsCollapsed,
@@ -74,9 +70,6 @@ export function DockSidebar() {
       chatOpen: s.chatOpen,
       searchOpen: s.searchOpen,
       createProject: s.createProject,
-      notificationUnreadCount: s.notificationUnreadCount,
-      notificationOpen: s.notificationOpen,
-      setNotificationOpen: s.setNotificationOpen,
       workspaceToolsCollapsed: s.workspaceToolsCollapsed,
       toggleWorkspaceToolsCollapsed: s.toggleWorkspaceToolsCollapsed,
       conversationsCollapsed: s.conversationsCollapsed,
@@ -224,22 +217,16 @@ export function DockSidebar() {
           <Tooltip content={`Overview (${shortcutMap.get("overview") ?? ""})`} side="right"><button aria-label="Overview" onClick={() => setView("overview")} className={cn("p-2 rounded-md", isView(activeView, "overview") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={15} /></button></Tooltip>
           <Tooltip content={`Notes (${shortcutMap.get("notes") ?? ""})`} side="right"><button aria-label="Notes" onClick={() => setView("notes")} className={cn("p-2 rounded-md", isView(activeView, "notes") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={15} /></button></Tooltip>
           {!hiddenViews.has("board") && <Tooltip content={`Board (${shortcutMap.get("board") ?? ""})`} side="right"><button aria-label="Board" onClick={() => setView("board")} className={cn("p-2 rounded-md", isView(activeView, "board") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={15} /></button></Tooltip>}
-          {!hiddenViews.has("calendar") && <Tooltip content={`Calendar (${shortcutMap.get("calendar") ?? ""})`} side="right"><button aria-label="Calendar" onClick={() => setView("calendar")} className={cn("p-2 rounded-md", isView(activeView, "calendar") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>}
+          {!hiddenViews.has("calendar") && <Tooltip content={`Calendar (${shortcutMap.get("calendar") ?? ""})`} side="right"><button aria-label="Calendar" onClick={() => setView("calendar")} className={cn("p-2 rounded-md", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>}
           {!hiddenViews.has("flow") && <Tooltip content={`Flow (${shortcutMap.get("flow") ?? ""})`} side="right"><button aria-label="Flow" onClick={() => setView("flow")} className={cn("p-2 rounded-md", isView(activeView, "flow") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={15} /></button></Tooltip>}
           {!hiddenViews.has("agent") && <Tooltip content={`Agent (${shortcutMap.get("agent") ?? ""})`} side="right"><button aria-label="Agent" onClick={() => setView("agent")} className={cn("p-2 rounded-md", isView(activeView, "agent") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={15} /></button></Tooltip>}
           <div className="flex-1" aria-hidden="true" />
           <div className="mt-auto w-full flex flex-col items-center gap-1 pt-2 border-t border-[var(--border)]">
             <Tooltip content="Automations" side="right"><button aria-label="Automations" onClick={() => setView("automations")} className={cn("p-2 rounded-md", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Zap size={15} /></button></Tooltip>
-            <Tooltip content="Calendar" side="right"><button aria-label="Calendar" onClick={() => setView("calendar-all")} className={cn("p-2 rounded-md", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>
+            {hiddenViews.has("calendar") && <Tooltip content="Calendar" side="right"><button aria-label="Calendar" onClick={() => setView("calendar-all")} className={cn("p-2 rounded-md", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></button></Tooltip>}
             {!hiddenViews.has("graph") && <Tooltip content="Knowledge Graph" side="right"><button aria-label="Knowledge Graph" onClick={() => setView("graph")} className={cn("p-2 rounded-md", isView(activeView, "graph") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={15} /></button></Tooltip>}
             {!hiddenViews.has("insights") && <Tooltip content="Insights" side="right"><button aria-label="Insights" onClick={() => setView("insights")} className={cn("p-2 rounded-md", isView(activeView, "insights") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={15} /></button></Tooltip>}
             {!hiddenViews.has("usage") && <Tooltip content="Usage" side="right"><button aria-label="Usage" onClick={() => setView("usage")} className={cn("p-2 rounded-md", isView(activeView, "usage") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={15} /></button></Tooltip>}
-            <Tooltip content="Notifications" side="right">
-              <button onClick={() => setNotificationOpen(!notificationOpen)} className={cn("p-2 rounded-md relative", notificationUnreadCount > 0 ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-                <Bell size={15} />
-                {notificationUnreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--accent)] border border-[var(--surface)]" />}
-              </button>
-            </Tooltip>
             <div className="w-5 h-px bg-[var(--border)] my-1" />
             <Tooltip content="Settings" side="right"><button aria-label="Settings" onClick={() => setView("settings")} className={cn("p-2 rounded-md", isView(activeView, "settings") ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Settings size={15} /></button></Tooltip>
           </div>
@@ -261,20 +248,50 @@ export function DockSidebar() {
             </Tooltip>
           </div>
 
-          {/* current project card — static overview (no dropdown) */}
+          {/* Current project card. Its title row is the project switcher, so the
+              name appears once (it used to repeat in a separate picker below). */}
           {(() => {
+            const projectMenu = (
+          <DropdownMenuContent align="start" side="bottom" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
+            {projects.map((p) => (
+              <DropdownMenuItem
+                key={p.id}
+                onSelect={() => { setActiveProject(p.id); setView("overview"); }}
+                className={cn("flex items-center gap-2 text-xs", p.id === activeProjectId && "text-[var(--accent)]")}
+              >
+                <ProjectIcon name={p.icon} size={12} className="shrink-0" />
+                <span className="truncate flex-1">{p.name}</span>
+                <span className="text-2xs font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => { setCreatingProject(true); setNewProjectName(""); }}
+              className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"
+            >
+              <Plus size={11} /> Create new project
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+            );
             const project = projects.find((p) => p.id === activeProjectId);
             if (!project) {
               if (projects.length === 0) return null;
               return (
                 <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-1">
-                  <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-md bg-[var(--surface)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] shrink-0">
-                      <FolderOpen size={13} />
-                    </span>
-                    <span className="text-xs font-semibold truncate flex-1 text-[var(--text-secondary)]">No active project</span>
-                  </div>
-                  <div className="text-xs leading-none text-[var(--text-tertiary)] mt-1.5 truncate">Select a project below</div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
+                        <span className="w-7 h-7 rounded-md bg-[var(--surface)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] shrink-0">
+                          <FolderOpen size={13} />
+                        </span>
+                        <span className="text-xs font-semibold truncate flex-1 text-[var(--text-secondary)]">No active project</span>
+                        <ChevronDown size={12} className="shrink-0 text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    {projectMenu}
+                  </DropdownMenu>
+                  <div className="text-xs leading-none text-[var(--text-tertiary)] mt-1.5 truncate">Choose a project to work in</div>
                 </div>
               );
             }
@@ -282,10 +299,20 @@ export function DockSidebar() {
               <ContextMenu>
               <ContextMenuTrigger asChild>
               <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-1">
-                <div className="flex items-center gap-2">
-                  <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)] shrink-0" />
-                  <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`Project: ${project.name}. Switch project`}
+                      className="group -mx-1 -my-0.5 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-[var(--surface-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    >
+                      <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)] shrink-0" />
+                      <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
+                      <ChevronDown size={12} className="shrink-0 text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  {projectMenu}
+                </DropdownMenu>
                 <div className="text-xs leading-none text-[var(--text-tertiary)] mt-1.5 truncate">{project.description ?? "No description"}</div>
                 {(() => {
                   const total = activeMetrics?.allCards.length ?? 0;
@@ -358,53 +385,7 @@ export function DockSidebar() {
             );
           })()}
 
-          {/* Project switcher — sidebar section like Views */}
-          {projects.length > 0 && (
-            <div className="px-2 mt-3">
-              <div className="text-2xs font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Project</div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 w-full rounded-lg px-2.5 py-2 bg-[var(--surface-2)] border border-[var(--border)] shadow-elev-1 hover:border-[var(--muted)] hover:bg-[var(--surface-3)] transition-colors text-left group">
-                    {(() => {
-                      const active = projects.find((p) => p.id === activeProjectId);
-                      return (
-                        <>
-                          <ProjectIcon name={active?.icon} size={14} className="text-[var(--accent)] shrink-0" />
-                          <span className="text-xs font-medium truncate flex-1 text-[var(--text-primary)]">{active?.name ?? "Select project"}</span>
-                          <span className="w-6 h-6 rounded-md bg-[var(--surface)] border border-[var(--border)] grid place-items-center group-hover:bg-[var(--surface-2)] group-hover:border-[var(--muted)] transition-colors shrink-0">
-                            <ChevronDown size={12} className="text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] transition-colors" />
-                          </span>
-                        </>
-                      );
-                    })()}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="bottom" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
-                  {projects.map((p) => (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onSelect={() => { setActiveProject(p.id); setView("overview"); }}
-                      className={cn("flex items-center gap-2 text-xs", p.id === activeProjectId && "text-[var(--accent)]")}
-                    >
-                      <ProjectIcon name={p.icon} size={12} className="shrink-0" />
-                      <span className="truncate flex-1">{p.name}</span>
-                      <span className="text-2xs font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
-                      {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={() => { setCreatingProject(true); setNewProjectName(""); }}
-                    className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"
-                  >
-                    <Plus size={11} /> Create new project
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
-
-          {/* Inline project creation — shown when triggered from Project switcher */}
+          {/* Inline project creation — shown when triggered from the project menu */}
           {creatingProject && (
             <div className="mx-2 mt-2 px-2">
               <ProjectCreateForm value={newProjectName} onChange={setNewProjectName} onCommit={commitCreateProject} onCancel={cancelCreateProject} />
@@ -430,7 +411,7 @@ export function DockSidebar() {
                 <button onClick={() => setView("overview")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "overview") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={13} /> Overview<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("overview")}</span></button>
                 <button onClick={() => setView("notes")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "notes") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={13} /> Notes<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("notes")}</span></button>
                 {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "board") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={13} /> Board<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("board")}</span></button>}
-                {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "calendar") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
+                {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
                 {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "flow") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={13} /> Flow<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("flow")}</span></button>}
                 {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "agent") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={13} /> Agent<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("agent")}</span></button>}
               </div>
@@ -466,7 +447,7 @@ export function DockSidebar() {
 
           </nav>
 
-          {/* Workspace tools — collapsible pin (Automations → Notifications), Settings stays pinned */}
+          {/* Workspace tools — collapsible pin (Automations → Usage), Settings stays pinned */}
           <div className="border-t border-[var(--border)] flex-shrink-0 bg-[var(--surface)]">
             {/* Collapsible header */}
             <button
@@ -477,19 +458,12 @@ export function DockSidebar() {
             >
               {workspaceToolsCollapsed ? <ChevronRight size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />}
               <span>Workspace</span>
-              {workspaceToolsCollapsed && notificationUnreadCount > 0 && (
+              {workspaceToolsCollapsed && chatPins.length > 0 && (
                 <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-hidden="true" />
-              )}
-              {workspaceToolsCollapsed && notificationUnreadCount === 0 && chatPins.length > 0 && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-hidden="true" />
-              )}
-              {/* hidden count for a11y when collapsed */}
-              {workspaceToolsCollapsed && notificationUnreadCount > 0 && (
-                <span className="sr-only">{notificationUnreadCount} unread notifications</span>
               )}
             </button>
 
-            {/* Collapsible body: Automations → Notifications */}
+            {/* Collapsible body: Automations → Usage */}
             <div
               id="dock-workspace-tools"
               className={cn(
@@ -505,16 +479,14 @@ export function DockSidebar() {
                     <Zap size={13} /><span>Automations</span>
                   </button>
                   <div className="my-1.5 border-t border-[var(--border-subtle)]" />
+                  {hiddenViews.has("calendar") && (
                   <button onClick={() => setView("calendar-all")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                     <CalendarDays size={13} /><span>Calendar</span><span className="ml-auto text-2xs text-[var(--text-tertiary)]">all</span>
                   </button>
+                  )}
                   {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "graph") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
                   {!hiddenViews.has("insights") && <button onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "insights") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
                   {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "usage") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
-                  <button onClick={() => setNotificationOpen(!notificationOpen)} data-notification-toggle aria-expanded={notificationOpen} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-                    <Bell size={13} /><span>Notifications</span>
-                    <CountBadge count={notificationUnreadCount} tone="accent" className="ml-auto min-w-4 h-4 px-1 text-2xs leading-4" />
-                  </button>
                 </div>
               </div>
             </div>

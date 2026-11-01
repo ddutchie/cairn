@@ -13,7 +13,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, STATUS_COLORS, PRIORITY_COLORS } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { isView } from "@/lib/views";
 import { SyncStatusIndicator } from "../sync-status-indicator";
 import { QuickSettings } from "../QuickSettings";
@@ -121,16 +121,6 @@ export function UnifiedRail() {
           )}
         </nav>
 
-        {project && (
-          <div className="hidden xl:flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-            <span className={cn("text-2xs font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]", STATUS_COLORS[project.status])}>
-              {project.status.replace("_", " ")}
-            </span>
-            <span className={cn("text-2xs font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]", PRIORITY_COLORS[project.priority])}>
-              {project.priority}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Center: omnibox — true window-centered (absolute) so 80px Mac inset doesn't pull it off) */}

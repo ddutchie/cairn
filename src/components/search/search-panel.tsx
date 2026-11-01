@@ -345,9 +345,6 @@ export function SearchPanel() {
               </button>
             </span>
           </Tooltip>
-          <span className="hidden sm:inline-flex items-center gap-1 text-2xs font-mono text-[var(--text-tertiary)] border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-1 rounded-md">
-            ESC
-          </span>
         </div>
 
         <div className="flex flex-col gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]/30">
@@ -357,13 +354,13 @@ export function SearchPanel() {
               <button key={t} aria-pressed={filterType === t} onClick={() => { setFilterType(t); setFocused(0); }}
                 className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-all",
                   filterType === t
-                    ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-elev-1"
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                     : "bg-[var(--surface)] text-[var(--text-tertiary)] border-[var(--border)] hover:text-[var(--text-secondary)] hover:border-[var(--muted)]"
                 )}>
                 {t === "all" ? "All" : t === "notes" ? "Notes" : "Tasks"}
               </button>
             ))}
-            <span className="ml-auto hidden sm:inline-flex text-2xs font-mono text-[var(--text-tertiary)]">
+            <span className="ml-auto hidden sm:inline-flex text-xs tabular-nums text-[var(--text-tertiary)]">
               {filtered.length} {filtered.length === 1 ? "result" : "results"}
             </span>
           </div>
@@ -430,22 +427,16 @@ export function SearchPanel() {
                 <Search size={16} />
               </div>
               <p className="text-sm font-medium text-[var(--text-secondary)] mt-3">Search across projects</p>
-              <p className="text-xs text-[var(--text-tertiary)] mt-1 max-w-[32ch] mx-auto leading-relaxed">Notes, tasks, and semantic matches — filtered by type and project. Start typing.</p>
-              <div className="flex items-center justify-center gap-3 mt-5 text-xs text-[var(--text-tertiary)] font-mono">
-                <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">↑↓</kbd> navigate</span>
-                <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">↵</kbd> open</span>
-                <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">ESC</kbd> close</span>
-              </div>
+              <p className="text-xs text-[var(--text-tertiary)] mt-1 max-w-[32ch] mx-auto leading-relaxed">Start typing to search notes and tasks, by words or by meaning. Narrow it by type or project above.</p>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-4 h-8 border-t border-[var(--border)] bg-[var(--surface-2)]/50 text-2xs font-mono text-[var(--text-tertiary)]">
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" /> {results.length} hits</span>
-          <span className="ml-auto hidden sm:inline-flex items-center gap-2">
-            <span><kbd className="border border-[var(--border)] bg-[var(--surface)] px-1 rounded">↑↓</kbd> nav</span>
-            <span><kbd className="border border-[var(--border)] bg-[var(--surface)] px-1 rounded">↵</kbd> open</span>
-          </span>
+        {/* One place for keyboard hints; the result count lives in the filter row. */}
+        <div className="flex items-center justify-end gap-3 px-4 h-8 border-t border-[var(--border)] bg-[var(--surface-2)]/50 text-2xs text-[var(--text-tertiary)]">
+          <span className="inline-flex items-center gap-1"><kbd className="font-mono border border-[var(--border)] bg-[var(--surface)] px-1 rounded">↑↓</kbd> navigate</span>
+          <span className="inline-flex items-center gap-1"><kbd className="font-mono border border-[var(--border)] bg-[var(--surface)] px-1 rounded">↵</kbd> open</span>
+          <span className="inline-flex items-center gap-1"><kbd className="font-mono border border-[var(--border)] bg-[var(--surface)] px-1 rounded">Esc</kbd> close</span>
         </div>
       </div>
     </div>
