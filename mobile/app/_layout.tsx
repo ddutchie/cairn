@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 // effect import; must stay at the very top.
 import "@/chat/crypto-polyfill";
 import { Stack, ThemeProvider, DarkTheme, DefaultTheme } from "expo-router";
-import { View, Text, ActivityIndicator, StyleSheet, useColorScheme, AppState } from "react-native";
+import { View, Text, ActivityIndicator, StyleSheet, useColorScheme, AppState, Alert, Pressable } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
-import { initDatabase, getActiveSource } from "@/db";
+import { initDatabase, getActiveSource, resetActiveSource } from "@/db";
 import { isDemoSource, seedChat } from "@/dev/demo-seed";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
 import { catchUpIndex } from "@/notes/embeddings";
@@ -18,7 +18,13 @@ import { UpdateBanner } from "@/components/UpdateBanner";
 import { FoldDebugOverlay } from "@/components/FoldDebugOverlay";
 import { ToastProvider } from "@/components/Toast";
 import { OnboardingGuide } from "@/components/OnboardingGuide";
-import { useTheme } from "@/theme";
+import { useTheme, type as typeScale } from "@/theme";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
+import { clearWorkspaceDrafts } from "@/notes/note-draft";
+
+// Render errors anywhere under the root stack land on a recoverable screen
+// instead of white-screening the app.
+export { RouteErrorBoundary as ErrorBoundary };
 
 // Keep the native splash up until the DB is ready, so there's no flash between
 // the splash and the first screen. Fade it out for a smooth handoff.
@@ -31,7 +37,7 @@ export default function RootLayout() {
   // Bootstrap the meta DB and re-open a previously-selected source (if any)
   // during first render. Multi-source: a fresh install has NO active source yet,
   // so we show the OnboardingGuide instead of the app until one is chosen.
-  const [{ ready, error }] = useState<{ ready: boolean; error: string | null }>(() => {
+  const [{ ready, error }, setBoot] = useState<{ ready: boolean; error: string | null }>(() => {
     try {
       initDatabase();
       return { ready: true, error: null };
@@ -103,11 +109,45 @@ export default function RootLayout() {
     if (ready || error) SplashScreen.hideAsync().catch(() => {});
   }, [ready, error]);
 
+  // Escape hatch for a local DB that won't open: drop this phone's copy of the
+  // workspace and reconnect, which re-downloads it from iCloud.
+  const onResetLocal = () => {
+    Alert.alert(
+      "Reset this phone's copy?",
+      "Cairn will delete the workspace stored on this phone and download it again from iCloud. Changes made on this phone that haven't synced yet will be lost.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: () => {
+            try {
+              const ws = getActiveSource();
+              resetActiveSource();
+              if (ws) clearWorkspaceDrafts(ws);
+              setBoot({ ready: true, error: null });
+              setHasSource(false);
+            } catch (e) {
+              Alert.alert("Reset failed", e instanceof Error ? e.message : String(e));
+            }
+          },
+        },
+      ],
+    );
+  };
+
   if (error) {
     return (
       <View style={[styles.center, { backgroundColor: t.background }]}>
         <Text style={[styles.error, { color: t.danger }]}>Database error</Text>
         <Text style={[styles.errorDetail, { color: t.textTertiary }]}>{error}</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onResetLocal}
+          style={[styles.resetButton, { backgroundColor: t.surface2 }]}
+        >
+          <Text style={[typeScale.control, { color: t.textPrimary }]}>Reset this phone&apos;s copy</Text>
+        </Pressable>
       </View>
     );
   }
@@ -230,4 +270,5 @@ const styles = StyleSheet.create({
   loading: { marginTop: 12 },
   error: { fontSize: 18, fontWeight: "600" },
   errorDetail: { marginTop: 8, textAlign: "center" },
+  resetButton: { marginTop: 20, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12 },
 });

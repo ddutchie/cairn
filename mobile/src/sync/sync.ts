@@ -7,9 +7,9 @@
  * Async because iCloud I/O is async.
  */
 
-import { getDb, getEngine, getActiveSource } from "@/db";
+import { getDb, getEngine, getActiveSource, getMeta, setMeta } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "./folder";
-import { writeOwnOplog, readSourceOplog } from "./fs-transport";
+import { writeOwnOplog, readSourceOplog, readOwnOplog } from "./fs-transport";
 import { requestMissingBlobs } from "./blobs";
 import { isDemoSource } from "@/dev/demo-seed";
 
@@ -53,10 +53,10 @@ export async function syncNow(): Promise<SyncResult> {
   if (!workspaceId) {
     return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "No sync source selected." };
   }
-  // The dev demo workspace is local-only: never drain or publish its oplog to
+  // The sample workspace is local-only: never drain or publish its oplog to
   // the shared iCloud folder (pull-to-refresh and focus syncs still call this).
   if (isDemoSource(workspaceId)) {
-    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Demo data isn't synced." };
+    return { drained: 0, peerOpsApplied: 0, peerOpsRead: 0, conflictCopies: 0, connected: false, reason: "Sample data stays on this phone." };
   }
   const engine = getEngine();
 
@@ -71,6 +71,17 @@ export async function syncNow(): Promise<SyncResult> {
   try {
     // 1. Stage local writes into the oplog.
     const drained = engine.drainPending();
+
+    // 1b. After a local reset, this phone's published oplog is the only copy of
+    // edits a peer may not have read yet. Fold it back in before step 2
+    // overwrites it with the fresh database's oplog. Throws (and keeps the flag)
+    // when the file can't be read, so nothing is overwritten until it can.
+    const recoverKey = `oplog_recover.${workspaceId}`;
+    if (getMeta(recoverKey) === "1") {
+      const own = await withTimeout(readOwnOplog(folder, engine.deviceId, workspaceId), ICLOUD_IO_TIMEOUT_MS, "readOwnOplog");
+      if (own.length > 0) engine.applyRemote(own);
+      setMeta(recoverKey, "");
+    }
 
     // 2. Publish our oplog for THIS source (oplog-<deviceId>-<workspaceId>).
     await withTimeout(writeOwnOplog(folder, engine.deviceId, workspaceId, engine.exportOplog()), ICLOUD_IO_TIMEOUT_MS, "writeOwnOplog");

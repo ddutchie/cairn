@@ -18,6 +18,7 @@ import {
   startDownloadingUbiquitousItem,
   PathUtils,
 } from "react-native-cloud-store";
+import * as Crypto from "expo-crypto";
 import type { OplogEntry } from "@cairn/shared/sync/engine";
 import { parseWorkspaceIdFromOplogName } from "@cairn/shared/sync/oplog-name";
 import { isOplogEntry } from "@cairn/shared/sync/oplog-guard";
@@ -143,15 +144,40 @@ export async function listSources(folder: string, selfDeviceId: string): Promise
   return out;
 }
 
-/** Write (replace) this device's oplog file for `workspaceId` into the folder. */
+/** Digest of the last oplog text this process wrote, per file path. */
+const lastWrittenDigest = new Map<string, string>();
+
+/**
+ * Write (replace) this device's oplog file for `workspaceId` into the folder.
+ * Skips the write when the content is unchanged since our last write and the
+ * file is still there: sync runs every 25s while foregrounded, and rewriting
+ * an identical (possibly multi-MB) file made iCloud re-upload it each time.
+ * Returns whether a write happened.
+ */
 export async function writeOwnOplog(
   folder: string,
   deviceId: string,
   workspaceId: string,
   entries: OplogEntry[],
-): Promise<void> {
+): Promise<boolean> {
   const path = PathUtils.join(folder, oplogFileName(deviceId, workspaceId));
-  await writeFile(path, toNdjson(entries), { override: true });
+  const text = toNdjson(entries);
+  const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, text);
+  if (lastWrittenDigest.get(path) === digest && (await exist(path))) return false;
+  await writeFile(path, text, { override: true });
+  lastWrittenDigest.set(path, digest);
+  return true;
+}
+
+/**
+ * Read this device's own published oplog for `workspaceId`, or [] when there
+ * is none. Used once after a local reset, so edits this phone published (and a
+ * peer may not have read yet) come back before the file is overwritten.
+ */
+export async function readOwnOplog(folder: string, deviceId: string, workspaceId: string): Promise<OplogEntry[]> {
+  const path = PathUtils.join(folder, oplogFileName(deviceId, workspaceId));
+  if (!(await exist(path))) return [];
+  return parseNdjson(await readFile(path));
 }
 
 /**

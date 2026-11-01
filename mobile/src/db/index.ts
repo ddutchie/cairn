@@ -171,6 +171,44 @@ export function getEngine(): SyncEngine {
 }
 
 /**
+ * Recovery hatch for a source DB that won't open (corrupt file, a migration
+ * that keeps failing). Deletes the active source's local DB and forgets the
+ * selection, so the next launch shows onboarding and the workspace re-downloads
+ * from the iCloud oplog. Local changes that hadn't synced yet are lost — the
+ * caller must say so before calling this.
+ *
+ * Edits this phone already published live only in its own iCloud oplog file,
+ * which the next sync would overwrite with the new, empty oplog. The
+ * `oplog_recover.<ws>` flag makes that sync read the file back in first.
+ *
+ * Throws (leaving the selection in place) when the file can't be deleted.
+ */
+export function resetActiveSource(): void {
+  const ws = metaGet("active_source");
+  if (ws) {
+    const name = sourceDbName(ws);
+    // Open-then-close guarantees the file exists, so any delete error below is
+    // a real failure rather than "never created".
+    try {
+      (_sources.get(ws)?.db ?? SQLite.openDatabaseSync(name)).closeSync();
+    } catch {
+      /* already closed, or won't open: delete it anyway */
+    }
+    _sources.delete(ws);
+    SQLite.deleteDatabaseSync(name);
+    metaSet(`oplog_recover.${ws}`, "1");
+  }
+  metaDb().runSync("DELETE FROM meta WHERE key = 'active_source'");
+  _activeWorkspaceId = null;
+}
+
+/** Remove every meta key starting with `prefix` (LIKE wildcards in it are escaped). */
+export function deleteMetaPrefix(prefix: string): void {
+  const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
+  metaDb().runSync("DELETE FROM meta WHERE key LIKE ? ESCAPE '\\'", `${escaped}%`);
+}
+
+/**
  * One-time cleanup: the pre-multi-source single DB (`cairn-mobile.db`) is
  * obsolete under one-DB-per-source. Its contents are fully re-derivable from the
  * desktop oplog once a source is picked, so we just delete it (no adoption). The

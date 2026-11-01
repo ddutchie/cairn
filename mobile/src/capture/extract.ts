@@ -1,6 +1,7 @@
 import { queryTerms } from "@cairn/shared/notes/text";
 import { userMessage } from "@/chat/agent";
 import { resolveProvider } from "@/chat/providers";
+import type { ChatProvider } from "@/chat/providers/types";
 import { getMeta } from "@/db";
 import { listWorkspaceIds } from "@/db/embeddings-queries";
 import { getCairnContext, getNote, searchNotes } from "@/db/queries";
@@ -75,8 +76,7 @@ export async function buildCaptureContext(text: string): Promise<CaptureContext>
 }
 
 /** Run the model once and pull the `file_capture` arguments out of the stream. */
-async function askModel(prompt: string, signal: AbortSignal): Promise<unknown> {
-  const provider = await resolveProvider();
+async function askModel(provider: ChatProvider, prompt: string, signal: AbortSignal): Promise<unknown> {
   const stream = provider.stream([userMessage(prompt)], { file_capture: FILE_CAPTURE_TOOL }, signal, { temperature: 0.2 });
   for await (const ev of stream) {
     if ((ev.type === "tool-input-available" || ev.type === "tool-executed") && ev.toolName === "file_capture") {
@@ -107,12 +107,22 @@ export async function captureExtract(text: string, outerSignal?: AbortSignal): P
   // Cancelled while the context was being built: don't spend a provider call on it.
   if (outerSignal?.aborted) return fallbackProposal(clean, ctx);
 
+  // Resolve the provider before the timeout starts: the first request to a new
+  // host shows the AI consent prompt, and reading it mustn't eat the AI budget.
+  let provider: ChatProvider;
+  try {
+    provider = await resolveProvider();
+  } catch {
+    return fallbackProposal(clean, ctx);
+  }
+  if (outerSignal?.aborted) return fallbackProposal(clean, ctx);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CAPTURE_AI_TIMEOUT_MS);
   const onOuterAbort = () => controller.abort();
   outerSignal?.addEventListener("abort", onOuterAbort);
   try {
-    const raw = await askModel(buildCapturePrompt(clean, ctx), controller.signal);
+    const raw = await askModel(provider, buildCapturePrompt(clean, ctx), controller.signal);
     return normalizeProposal(raw, ctx, clean) ?? fallbackProposal(clean, ctx);
   } catch {
     return fallbackProposal(clean, ctx);

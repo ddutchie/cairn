@@ -4,6 +4,7 @@
  * Foreground auto-sync (mirrors the desktop drain/sync loop, adapted to iOS):
  *   - on app launch (initialized from the root layout),
  *   - when the app returns to the foreground (AppState "active"),
+ *   - when it goes to the background with local writes still unsynced,
  *   - on a light interval while active,
  *   - debounced shortly after a local write (create/edit/move).
  *
@@ -172,8 +173,24 @@ export function noteLocalWrite(): void {
   }, WRITE_DEBOUNCE_MS);
 }
 
+function safePendingCount(): number {
+  try {
+    return pendingCount();
+  } catch {
+    return 0; // db not ready yet
+  }
+}
+
 function handleAppState(next: AppStateStatus): void {
   if (next === "active") void requestSync("foreground");
+  // Leaving the app: flush a debounced post-write sync now rather than on the
+  // next launch, so an edit made just before switching away reaches the shared
+  // folder (and the desktop) while iOS still gives us a few seconds.
+  else if (next === "background" && (writeTimer || safePendingCount() > 0)) {
+    if (writeTimer) clearTimeout(writeTimer);
+    writeTimer = null;
+    void requestSync("background");
+  }
 }
 
 /** Start the auto-sync scheduler. Idempotent — safe to call once at app root. */

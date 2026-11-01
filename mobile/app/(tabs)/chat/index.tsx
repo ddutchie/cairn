@@ -94,6 +94,9 @@ function sumUsage(a: ChatUsage, b: ChatUsage): ChatUsage {
   };
 }
 
+/** Messages mounted at once; older ones load a page at a time on request. */
+const CHAT_PAGE_SIZE = 40;
+
 export default function ChatScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -108,6 +111,22 @@ export default function ChatScreen() {
   // share the same result.
   const [initial] = useState(() => loadInitialChat());
   const [messages, setMessages] = useState<UiMessage[]>(initial.uiMessages);
+  // Only the most recent messages are mounted: each bubble is a native markdown
+  // view, and a long thread kept every one alive (memory, composer jank on older
+  // phones). "Show earlier messages" reveals another page.
+  const [visibleCount, setVisibleCount] = useState(CHAT_PAGE_SIZE);
+  const hiddenCount = Math.max(0, messages.length - visibleCount);
+  const visibleMessages = hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
+  // Revealing earlier messages grows the content ABOVE the reader. Remember the
+  // content height and offset at the tap, then shift by the growth so the
+  // message they were looking at stays put.
+  const contentH = useRef(0);
+  const scrollY = useRef(0);
+  const prependAnchor = useRef<{ h: number; y: number } | null>(null);
+  const showEarlier = () => {
+    prependAnchor.current = { h: contentH.current, y: scrollY.current };
+    setVisibleCount((n) => n + CHAT_PAGE_SIZE);
+  };
   // Live text of the in-flight reply. Tokens go here (throttled) instead of
   // through `setMessages`, so only the streaming bubble re-renders per flush.
   const [streamStore] = useState(() => createStreamingStore());
@@ -511,6 +530,7 @@ export default function ChatScreen() {
           clearChatHistory();
           conversation.current = [];
           setMessages([]);
+          setVisibleCount(CHAT_PAGE_SIZE);
           setUsage(null);
           // Drop the on-device session so a new chat gets a fresh context window.
           resetAppleSession();
@@ -748,7 +768,17 @@ export default function ChatScreen() {
             extraContentPadding={confined ? topHalfPadding : extraContentPadding}
             scrollEventThrottle={16}
             onEndVisible={onEndVisible}
-            onContentSizeChange={() => {
+            onScroll={(e) => {
+              scrollY.current = e.nativeEvent.contentOffset.y;
+            }}
+            onContentSizeChange={(_w, h) => {
+              const anchor = prependAnchor.current;
+              contentH.current = h;
+              if (anchor) {
+                prependAnchor.current = null;
+                scrollRef.current?.scrollTo({ y: anchor.y + (h - anchor.h), animated: false });
+                return;
+              }
               // Follow new content only when the user is already near the bottom
               // (e.g. streaming) — never when they've scrolled up to read/expand.
               // No animation while the area is being resized for the fold (it chases
@@ -768,7 +798,18 @@ export default function ChatScreen() {
               // app relaunch forced a native re-layout.
               <StreamingStoreContext.Provider value={streamStore}>
               <View key={resumeKey}>
-                {messages.map((m) => <MessageBubble key={m.id} m={m} />)}
+                {hiddenCount > 0 ? (
+                  <Pressable
+                    onPress={showEarlier}
+                    accessibilityRole="button"
+                    style={styles.earlierButton}
+                  >
+                    <Text style={styles.earlierText}>
+                      Show earlier messages ({hiddenCount})
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {visibleMessages.map((m) => <MessageBubble key={m.id} m={m} />)}
                 {queued.map((q) => (
                   <View key={q.id} style={styles.queuedRow}>
                     <View style={styles.queuedBubble}>
@@ -918,5 +959,7 @@ function makeStyles(t: Theme) {
     queuedMeta: { flexDirection: "row", alignItems: "center", gap: 12, paddingRight: 4 },
     queuedLabel: { ...typeScale.caption, color: t.textTertiary, flexShrink: 1 },
     queuedRemove: { ...typeScale.caption, color: t.textTertiary, fontWeight: "600" },
+    earlierButton: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 14, marginBottom: 8 },
+    earlierText: { ...typeScale.label, color: t.accent },
   });
 }

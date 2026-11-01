@@ -3,6 +3,7 @@ import { Animated, Easing, Image, View, type ImageSourcePropType } from "react-n
 import { ICON_CAIRN } from "@/components/toolbar-icons";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 import { useTheme } from "@/theme";
+import { useMotion } from "@/lib/use-motion";
 
 const SIZE = 22;
 const RING = 34;
@@ -20,9 +21,12 @@ export function SyncRingLogo() {
   const offline = state === "offline";
   const color = offline ? t.textTertiary : pending > 0 ? t.warning : t.success;
 
+  // RN Animated doesn't follow Reduce Motion on its own (Reanimated does), so
+  // the endless spin is gated here: reduced motion shows a still arc instead.
+  const { reduced } = useMotion();
   const [spin] = useState(() => new Animated.Value(0));
   useEffect(() => {
-    if (!syncing) {
+    if (!syncing || reduced) {
       spin.setValue(0);
       return;
     }
@@ -31,7 +35,7 @@ export function SyncRingLogo() {
     );
     loop.start();
     return () => loop.stop();
-  }, [syncing, spin]);
+  }, [syncing, reduced, spin]);
 
   return (
     <View style={{ width: RING, height: RING, alignItems: "center", justifyContent: "center" }}>

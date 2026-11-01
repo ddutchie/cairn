@@ -32,6 +32,7 @@ import {
 import { getActiveSource, getDb } from "@/db";
 import { notifyLocalWrite } from "@/sync/write-signal";
 import { syncFolderPathSync } from "@/sync/folder";
+import { isDemoSource } from "@/dev/demo-seed";
 
 /** Longest edge after downscaling. Plenty for a phone/desktop note, small on disk. */
 const MAX_EDGE = 2000;
@@ -108,6 +109,8 @@ export async function addImageFromSource(source: ImageSource): Promise<string | 
   const workspaceId = getActiveSource();
   const folder = syncFolderPathSync();
   if (!workspaceId) throw new InsertImageError("Pick a workspace before adding images.");
+  // Images publish straight to iCloud; the sample workspace never leaves the phone.
+  if (isDemoSource(workspaceId)) throw new InsertImageError("Images can't be added to the sample workspace.");
   if (!folder) throw new InsertImageError("Images sync through iCloud. Sign in to iCloud to add images.");
 
   const raw =

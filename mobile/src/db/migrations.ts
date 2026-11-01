@@ -218,11 +218,17 @@ export function runMigrations(db: SQLite.SQLiteDatabase): void {
   }
 
   // Existing install: apply any migrations newer than its recorded version.
-  // Migration index i upgrades version (i+1) -> (i+2).
+  // Migration index i upgrades version (i+1) -> (i+2). Each step and its version
+  // stamp commit together, so an interrupted upgrade (app killed mid-ALTER)
+  // rolls back cleanly and re-runs whole on the next launch instead of failing
+  // on a half-applied "duplicate column".
   for (let i = version - 1; i < MIGRATIONS.length; i++) {
     if (i < 0) continue;
-    MIGRATIONS[i](db);
-    version = i + 2;
-    db.execSync(`PRAGMA user_version = ${version}`);
+    const next = i + 2;
+    db.withTransactionSync(() => {
+      MIGRATIONS[i](db);
+      db.execSync(`PRAGMA user_version = ${next}`);
+    });
+    version = next;
   }
 }

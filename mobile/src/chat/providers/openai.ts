@@ -65,6 +65,9 @@ function makeStreamer(config: OpenAIConfig) {
           ...providerHeaders(config.baseUrl),
         },
         body: JSON.stringify(payload),
+        // Never follow a redirect: it could forward notes to a host the user
+        // didn't approve (see ai-consent.ts).
+        redirect: "error",
         signal,
       });
 
