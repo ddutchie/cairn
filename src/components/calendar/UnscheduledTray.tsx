@@ -56,7 +56,7 @@ export function UnscheduledTray({ cards, onOpenCard, groupByProject, projectName
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[0.714rem] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <Inbox size={12} />
@@ -66,7 +66,7 @@ export function UnscheduledTray({ cards, onOpenCard, groupByProject, projectName
       {open && (
         <div className="px-3 pb-2 min-h-[2.25rem]">
           {cards.length === 0 ? (
-            <p className="text-[0.643rem] text-[var(--text-tertiary)] py-1">
+            <p className="text-2xs text-[var(--text-tertiary)] py-1">
               No unscheduled tasks. Drag a task here to clear its due date.
             </p>
           ) : (

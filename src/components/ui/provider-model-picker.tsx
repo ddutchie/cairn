@@ -92,7 +92,7 @@ export function ProviderModelPicker({
     if (activeProvider) fetchModels(activeProvider.baseUrl, activeProvider.apiKey);
   };
 
-  const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-[0.643rem]" : "px-2 py-1 text-[0.714rem]";
+  const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-2xs" : "px-2 py-1 text-xs";
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -128,15 +128,15 @@ export function ProviderModelPicker({
             const t = e.target as Element | null;
             if (t?.closest("[data-radix-popper-content-wrapper]")) e.preventDefault();
           }}
-          className="z-50 w-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-3 space-y-3 animate-fade-in focus:outline-none"
+          className="z-50 w-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-3 space-y-3 animate-fade-in focus:outline-none"
         >
-          <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+          <div className="text-xs font-medium text-[var(--text-tertiary)]">
             {target === "ai" ? "Chat" : "Agent"} · provider &amp; model
           </div>
 
           {/* Provider list — every connected provider in the shared list */}
           <div className="space-y-1">
-            <span className="text-[0.714rem] text-[var(--text-secondary)]">Provider</span>
+            <span className="text-xs text-[var(--text-secondary)]">Provider</span>
             <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto pr-0.5">
               {savedProviders.map((p) => (
                 <ProviderRow
@@ -147,7 +147,7 @@ export function ProviderModelPicker({
                 />
               ))}
               {savedProviders.length === 0 && (
-                <p className="text-[0.643rem] text-[var(--text-tertiary)] px-1">
+                <p className="text-2xs text-[var(--text-tertiary)] px-1">
                   No providers yet — add one in Settings → AI &amp; Chat.
                 </p>
               )}
@@ -157,13 +157,13 @@ export function ProviderModelPicker({
           {/* Model — the active provider's models */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Model</span>
+              <span className="text-xs text-[var(--text-secondary)]">Model</span>
               {activeProvider && (
                 <button
                   type="button"
                   onClick={refreshModels}
                   disabled={modelsLoading}
-                  className="flex items-center gap-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1 text-2xs text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors disabled:opacity-50"
                 >
                   <RefreshSpin size={10} spinning={modelsLoading} />
                   Refresh
@@ -171,7 +171,7 @@ export function ProviderModelPicker({
               )}
             </div>
             {!activeProvider ? (
-              <p className="text-[0.643rem] text-[var(--text-tertiary)] px-1">
+              <p className="text-2xs text-[var(--text-tertiary)] px-1">
                 Select a provider above to load its models.
               </p>
             ) : (
@@ -191,7 +191,7 @@ export function ProviderModelPicker({
               reasoning effort can be set in one place. Reasoning models only. */}
           {reasoningCapable && (
             <div className="space-y-1">
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Thinking</span>
+              <span className="text-xs text-[var(--text-secondary)]">Thinking</span>
               <div role="group" aria-label="Reasoning effort" className="flex gap-0.5 rounded-md bg-[var(--surface-2)] p-0.5">
                 {REASONING_OPTIONS.map((o) => {
                   const selected = o.value === (config.reasoningEffort ?? "auto");
@@ -203,9 +203,9 @@ export function ProviderModelPicker({
                       title={o.hint}
                       onClick={() => setEffort(o.value)}
                       className={cn(
-                        "flex-1 rounded px-1.5 py-1 text-[0.643rem] transition-colors",
+                        "flex-1 rounded px-1.5 py-1 text-2xs transition-colors",
                         selected
-                          ? "bg-[var(--surface)] text-[var(--accent)] shadow-sm"
+                          ? "bg-[var(--surface)] text-[var(--accent)] shadow-elev-1"
                           : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
                       )}
                     >
@@ -228,7 +228,7 @@ function ProviderRow({ label, active, onClick }: { label: string; active: boolea
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-[0.714rem] transition-colors",
+        "flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-xs transition-colors",
         active
           ? "text-[var(--accent)] bg-[var(--accent-dim)]"
           : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]",

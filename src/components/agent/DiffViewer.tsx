@@ -113,7 +113,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
   const toolbar = (
     <div className="flex items-center gap-2 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
       <FolderGit2 size={13} className="text-[var(--text-tertiary)] flex-shrink-0" />
-      <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-1 truncate" title={cwd}>
+      <span className="text-xs text-[var(--text-tertiary)] flex-1 truncate" title={cwd}>
         {files.length > 0
           ? `${files.length} file${files.length !== 1 ? "s" : ""} changed`
           : "Working tree diff"}
@@ -127,7 +127,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
               key={m}
               onClick={() => setMode(m)}
               className={cn(
-                "px-2 py-0.5 text-[0.714rem] transition-colors border-r last:border-r-0 border-[var(--border)]",
+                "px-2 py-0.5 text-xs transition-colors border-r last:border-r-0 border-[var(--border)]",
                 mode === m
                   ? "bg-[var(--accent)] text-[var(--accent-fg)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
@@ -158,7 +158,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
       {/* Timestamp */}
       {lastRefresh && (
-        <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0">
+        <span className="text-xs text-[var(--text-tertiary)] flex-shrink-0">
           {lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
         </span>
       )}

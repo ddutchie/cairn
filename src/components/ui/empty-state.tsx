@@ -74,10 +74,10 @@ export function EmptyState({
           </div>
         )}
         {title && (
-          <p className="text-[0.786rem] font-medium text-[var(--text-secondary)]">{title}</p>
+          <p className="text-sm font-medium text-[var(--text-secondary)]">{title}</p>
         )}
         {description && (
-          <p className="text-[0.714rem] text-[var(--text-tertiary)] max-w-48">{description}</p>
+          <p className="text-xs text-[var(--text-tertiary)] max-w-48">{description}</p>
         )}
         {action}
         {children}

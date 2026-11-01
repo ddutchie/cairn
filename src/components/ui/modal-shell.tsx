@@ -81,7 +81,7 @@ export function ModalShell({
               {title}
             </DialogTitle>
             {subtitle && (
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5">{subtitle}</p>
+              <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{subtitle}</p>
             )}
           </DialogHeader>
         )}

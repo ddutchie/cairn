@@ -86,7 +86,7 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
         <div className="flex items-center gap-2 text-[var(--accent)] font-semibold">
           <Sparkles size={16} className="animate-pulse" />
           <span>What&apos;s New in Cairn</span>
-          <span className="text-[0.714rem] px-2 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_20%,transparent)] ml-2">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_20%,transparent)] ml-2">
             {currentFeature.version}
           </span>
         </div>
@@ -145,7 +145,7 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
         {/* Feature content info */}
         <div className="space-y-3 px-1">
           <div>
-            <span className="text-[0.714rem] font-bold uppercase tracking-wider text-[var(--accent)]">
+            <span className="text-xs font-semibold text-[var(--accent)]">
               {currentFeature.category}
             </span>
             <h2 className="text-base font-bold text-[var(--text-primary)] leading-tight mt-0.5">
@@ -158,8 +158,8 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
 
           {/* Bullet highlights list */}
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-2)] p-4 space-y-3">
-            <h4 className="text-[0.714rem] font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
-              Key Highlights
+            <h4 className="text-xs font-semibold text-[var(--text-tertiary)]">
+              Key highlights
             </h4>
             <ul className="space-y-2.5">
               {currentFeature.highlights.map((h, idx) => {

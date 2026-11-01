@@ -32,7 +32,7 @@ interface ConversationMessageBubbleProps {
 function ContextRefChip({ ref_ }: { ref_: LinkedContextReference }) {
   const icons = { note: <FileText size={9} />, task: <Kanban size={9} />, project: <FolderOpen size={9} />, search_result: <Search size={9} /> };
   return (
-    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)] border border-[var(--border)] text-[0.714rem] text-[var(--text-tertiary)]">
+    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)] border border-[var(--border)] text-xs text-[var(--text-tertiary)]">
       {icons[ref_.type]}{ref_.title}
     </span>
   );
@@ -60,7 +60,7 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
   if (isSystem) {
     return (
       <div className="flex justify-center py-0.5">
-        <span className="text-[0.643rem] italic text-[var(--text-tertiary)] px-2">{message.content}</span>
+        <span className="text-2xs italic text-[var(--text-tertiary)] px-2">{message.content}</span>
       </div>
     );
   }
@@ -100,7 +100,7 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
             {message.images.map((image, index) => image.kind === "pdf" ? (
               <div key={`${image.name}-${index}`} className="max-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] flex items-center gap-2 px-3 py-2" title={image.name}>
                 <FileText size={14} className="text-[var(--danger)] shrink-0" />
-                <span className="text-[0.714rem] text-[var(--text-secondary)] truncate">{image.name}</span>
+                <span className="text-xs text-[var(--text-secondary)] truncate">{image.name}</span>
               </div>
             ) : (
               <img key={`${image.name}-${index}`} src={image.url} alt={image.name} className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--border)] object-cover" />
@@ -208,7 +208,7 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
                   </Tooltip>
                 )}
                 {statsOpen && statsSegments.length > 0 && (
-                  <div className="ml-1 flex items-center gap-1.5 text-[0.607rem] text-[var(--text-tertiary)] font-mono tabular-nums">
+                  <div className="ml-1 flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)] font-mono tabular-nums">
                     {statsSegments.map((seg, k) => (
                       <React.Fragment key={seg}>
                         {k > 0 && <span className="opacity-50">·</span>}

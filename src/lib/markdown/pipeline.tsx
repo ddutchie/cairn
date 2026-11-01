@@ -474,7 +474,7 @@ export function InlineCode({ className, children }: { className?: string; childr
   const text = String(children ?? "").trim();
   const isColor = COLOR_RE.test(text);
   return (
-    <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-[0.786rem] text-[var(--text-primary)]">
+    <code className="px-1 py-0.5 rounded bg-[var(--surface-3)] font-mono text-sm text-[var(--text-primary)]">
       {isColor && (
         <span
           style={{

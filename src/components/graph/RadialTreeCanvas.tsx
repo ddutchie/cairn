@@ -507,7 +507,7 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContex
 
       {tooltip && (
         <div
-          className="pointer-events-none absolute z-20 px-3 py-1.5 rounded-md text-xs bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] shadow-lg max-w-[280px] break-words"
+          className="pointer-events-none absolute z-20 px-3 py-1.5 rounded-md text-xs bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] shadow-elev-2 max-w-[280px] break-words"
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           {tooltip.text}
@@ -519,7 +519,7 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContex
         <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); onBackgroundClick(); zoomTo(root); }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-[var(--accent-dim)] border border-transparent text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors shadow-sm"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-[var(--accent-dim)] border border-transparent text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors shadow-elev-1"
           >
             <ChevronLeft size={13} />
             {focusLabel}

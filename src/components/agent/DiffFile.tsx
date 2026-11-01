@@ -94,7 +94,7 @@ const HL = React.memo(function HL({ content, lang, palette, ready }: { content: 
     return highlightCode(lang, content) as HastNode[] | null;
   }, [content, lang, ready]);
   return (
-    <code className="font-mono text-[0.8rem] whitespace-pre">
+    <code className="font-mono text-sm whitespace-pre">
       {tokens ? tokens.map((n, i) => renderHast(n, palette, String(i))) : content}
     </code>
   );
@@ -135,7 +135,7 @@ export const UnifiedFile = React.memo(function UnifiedFile({ file, palette, chan
           <div key={ci}>
             {!changesOnly && (
               <div
-                className="px-3 py-0.5 text-[0.714rem] text-[var(--text-tertiary)] bg-[var(--surface)] font-mono border-b border-[var(--border-subtle)] sticky z-[9]"
+                className="px-3 py-0.5 text-xs text-[var(--text-tertiary)] bg-[var(--surface)] font-mono border-b border-[var(--border-subtle)] sticky z-[9]"
                 style={{ top: hunkTop }}
               >
                 {chunk.content}
@@ -151,7 +151,7 @@ export const UnifiedFile = React.memo(function UnifiedFile({ file, palette, chan
               return (
                 <div
                   key={li}
-                  className="flex font-mono text-[0.8rem] leading-relaxed"
+                  className="flex font-mono text-sm leading-relaxed"
                   style={{
                     background: isAdd
                       ? "color-mix(in srgb, var(--success, #22c55e) 10%, transparent)"
@@ -220,7 +220,7 @@ export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop 
       {file.chunks.map((chunk, ci) => (
         <div key={ci}>
           <div
-            className="px-3 py-0.5 text-[0.714rem] text-[var(--text-tertiary)] bg-[var(--surface)] font-mono border-b border-[var(--border-subtle)] sticky z-[9]"
+            className="px-3 py-0.5 text-xs text-[var(--text-tertiary)] bg-[var(--surface)] font-mono border-b border-[var(--border-subtle)] sticky z-[9]"
             style={{ top: hunkTop }}
           >
             {chunk.content}
@@ -233,7 +233,7 @@ export const SplitFile = React.memo(function SplitFile({ file, palette, hunkTop 
             const oldColor = row.old?.type === "del" ? palette["hljs-deletion"] : "var(--text-primary)";
             const newColor = row.new?.type === "add" ? palette["hljs-addition"] : "var(--text-primary)";
             return (
-              <div key={ri} className="flex font-mono text-[0.8rem] leading-relaxed">
+              <div key={ri} className="flex font-mono text-sm leading-relaxed">
                 <div className="flex flex-1 min-w-0 border-r border-[var(--border-subtle)]" style={{ background: oldBg }}>
                   <span className="w-9 text-right pr-2 text-[var(--text-tertiary)] select-none flex-shrink-0 border-r border-[var(--border-subtle)]">
                     {row.old ? ln(row.old, "old") : ""}
@@ -297,10 +297,10 @@ export const FileDiff = React.memo(function FileDiff({ file, fileKey, collapsed,
         {collapsed
           ? <ChevronRight size={12} className="flex-shrink-0 text-[var(--text-tertiary)]" />
           : <ChevronDown size={12} className="flex-shrink-0 text-[var(--text-tertiary)]" />}
-        <span className="text-[0.786rem] font-mono font-medium text-[var(--text-secondary)] flex-1 truncate">
+        <span className="text-sm font-mono font-medium text-[var(--text-secondary)] flex-1 truncate">
           {label}
         </span>
-        <span className="flex items-center gap-1.5 flex-shrink-0 text-[0.714rem] font-mono">
+        <span className="flex items-center gap-1.5 flex-shrink-0 text-xs font-mono">
           {additions > 0 && <span style={{ color: palette["hljs-addition"] }}>+{additions}</span>}
           {deletions > 0 && <span style={{ color: palette["hljs-deletion"] }}>-{deletions}</span>}
         </span>

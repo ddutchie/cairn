@@ -179,17 +179,17 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
               <CountBadge
                 count={liveCount}
                 tone="accent"
-                className="absolute -top-0.5 -right-0.5 min-w-3 h-3 px-0.5 text-[0.5625rem] leading-3"
+                className="absolute -top-0.5 -right-0.5 min-w-3 h-3 px-0.5 text-2xs leading-3"
               />
             )}
           </button>
         </Popover.Trigger>
       </Tooltip>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} className="z-50 w-80 max-h-96 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-2 space-y-2">
+        <Popover.Content align="end" sideOffset={6} className="z-50 w-80 max-h-96 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-2 space-y-2">
           <div className="flex items-center justify-between px-1">
-            <p className="text-[0.714rem] font-medium text-[var(--text-secondary)]">Subagents</p>
-            <button onClick={() => void load()} className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+            <p className="text-xs font-medium text-[var(--text-secondary)]">Subagents</p>
+            <button onClick={() => void load()} className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
               {loading ? <Spinner size={10} /> : "Refresh"}
             </button>
           </div>
@@ -206,18 +206,18 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
               ]}
             />
             {scope === "descendants" && (
-              <span className="text-[0.5625rem] text-[var(--text-tertiary)]">full tree</span>
+              <span className="text-2xs text-[var(--text-tertiary)]">full tree</span>
             )}
           </div>
-          {loadError && <p className="px-1 text-[0.643rem] text-[var(--danger)]">{loadError}</p>}
+          {loadError && <p className="px-1 text-2xs text-[var(--danger)]">{loadError}</p>}
           {!parentAvailable && entries.length > 0 && (
-            <p className="px-1 text-[0.643rem] text-[var(--text-tertiary)]">Parent session isn&apos;t live — messaging is unavailable until its next turn.</p>
+            <p className="px-1 text-2xs text-[var(--text-tertiary)]">Parent session isn&apos;t live — messaging is unavailable until its next turn.</p>
           )}
           {entries.map((entry) => {
             if (entry.kind === "diagnostic") {
               return (
                 <div key={entry.id} className="px-2 py-1.5 rounded-md border border-[var(--border)] opacity-60">
-                  <p className="text-[0.643rem] text-[var(--text-tertiary)]">Unreadable child ({entry.reason})</p>
+                  <p className="text-2xs text-[var(--text-tertiary)]">Unreadable child ({entry.reason})</p>
                 </div>
               );
             }
@@ -233,11 +233,11 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
               <div className="flex items-center gap-1.5 min-w-0">
                 {nested && <CornerDownRight size={10} className="text-[var(--text-tertiary)] shrink-0" />}
                 <StatusDot color={entry.activity === "running" ? "var(--success,#22c55e)" : "var(--text-tertiary)"} pulse={entry.activity === "running"} />
-                <span className="text-[0.714rem] font-medium text-[var(--text-primary)] truncate flex-1">{entry.label || `${entry.id.slice(0, 8)}…`}</span>
+                <span className="text-xs font-medium text-[var(--text-primary)] truncate flex-1">{entry.label || `${entry.id.slice(0, 8)}…`}</span>
                 {nested && entry.parentId && (
-                  <span title={`Child of ${entry.parentId}`} className="text-[0.5625rem] text-[var(--text-tertiary)] shrink-0">↳ {entry.parentId.slice(0, 8)}…</span>
+                  <span title={`Child of ${entry.parentId}`} className="text-2xs text-[var(--text-tertiary)] shrink-0">↳ {entry.parentId.slice(0, 8)}…</span>
                 )}
-                <span className="text-[0.5625rem] uppercase tracking-wide text-[var(--text-tertiary)] shrink-0">{entry.mode}</span>
+                <span className="text-xs text-[var(--text-tertiary)] shrink-0">{entry.mode}</span>
               </div>
               {entry.mode === "continuable" && (
                 <div className="flex items-center gap-1">
@@ -247,7 +247,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(entry.id); } }}
                     placeholder={entry.activity === "running" ? "Message the subagent…" : "Resume with a message…"}
                     disabled={busy[entry.id] !== undefined}
-                    className="flex-1 min-w-0 text-[0.714rem] px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
+                    className="flex-1 min-w-0 text-xs px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
                   />
                   <button
                     onClick={() => void sendMessage(entry.id)}
@@ -269,9 +269,9 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
                   )}
                 </div>
               )}
-              {rowErrors[entry.id] && <p className="text-[0.643rem] text-[var(--danger)]">{rowErrors[entry.id]}</p>}
+              {rowErrors[entry.id] && <p className="text-2xs text-[var(--danger)]">{rowErrors[entry.id]}</p>}
               {replies[entry.id] && (
-                <p className="text-[0.714rem] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                <p className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                   {replies[entry.id]}
                   {doneIds[entry.id] ? "" : "▍"}
                 </p>

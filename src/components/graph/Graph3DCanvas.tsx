@@ -532,7 +532,7 @@ export function Graph3DCanvas({ graph, selectedNodeId, onNodeClick, onNodeContex
   }, [ready]);
 
   const btn =
-    "px-2 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
+    "px-2 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-elev-1";
 
   return (
     <div ref={wrapperRef} className="relative w-full h-full">

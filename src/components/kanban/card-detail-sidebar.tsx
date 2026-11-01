@@ -59,7 +59,7 @@ export function CardDetailSidebar({
     <div className="w-44 flex-shrink-0 border-l border-[var(--border)] px-4 py-4 space-y-4 overflow-y-auto">
       {/* Priority */}
       <div>
-        <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
+        <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">
           Priority
         </label>
         <div className="space-y-1">
@@ -83,7 +83,7 @@ export function CardDetailSidebar({
 
       {/* Move to column */}
       <div>
-        <label htmlFor="card-detail-column" className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
+        <label htmlFor="card-detail-column" className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">
           <ArrowRight size={10} className="inline mr-0.5" aria-hidden="true" />Column
         </label>
         <Select
@@ -98,7 +98,7 @@ export function CardDetailSidebar({
 
       {/* Assignee */}
       <div>
-        <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
+        <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">
           <User size={10} className="inline mr-0.5" aria-hidden="true" />Assignee
         </label>
         <input
@@ -112,8 +112,8 @@ export function CardDetailSidebar({
 
       {/* Blocked by */}
       <div>
-        <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-          <Lock size={10} className="inline mr-0.5" aria-hidden="true" />Blocked By
+        <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">
+          <Lock size={10} className="inline mr-0.5" aria-hidden="true" />Blocked by
         </label>
         {blockerCards.length > 0 && (
           <div className="space-y-1 mb-2">
@@ -124,7 +124,7 @@ export function CardDetailSidebar({
                 <div
                   key={blocker.id}
                   className={cn(
-                    "flex items-center gap-1.5 px-2 py-1.5 rounded-md border text-[0.714rem]",
+                    "flex items-center gap-1.5 px-2 py-1.5 rounded-md border text-xs",
                     isResolved
                       ? "border-[var(--border)] bg-[var(--surface-2)] opacity-50"
                       : "border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--warning)_5%,transparent)]"
@@ -168,17 +168,17 @@ export function CardDetailSidebar({
           />
         )}
         {blockerError && (
-          <p className="text-[0.714rem] text-[var(--danger)] mt-1">{blockerError}</p>
+          <p className="text-xs text-[var(--danger)] mt-1">{blockerError}</p>
         )}
         {blockerCards.length === 0 && candidateBlockers.length === 0 && (
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">No other tasks in this project</p>
+          <p className="text-xs text-[var(--text-tertiary)]">No other tasks in this project</p>
         )}
       </div>
 
       {/* Due date */}
       <div>
-        <label className="block text-[0.714rem] font-semibold text-[var(--text-tertiary)] mb-2 uppercase tracking-wider">
-          <Calendar size={10} className="inline mr-0.5" aria-hidden="true" />Due Date
+        <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">
+          <Calendar size={10} className="inline mr-0.5" aria-hidden="true" />Due date
         </label>
         <DatePicker
           value={card.dueDate}
@@ -188,10 +188,10 @@ export function CardDetailSidebar({
 
       {/* Meta */}
       <div className="pt-2 border-t border-[var(--border)] space-y-1">
-        <div className="text-[0.714rem] text-[var(--text-tertiary)]">
+        <div className="text-xs text-[var(--text-tertiary)]">
           Created {formatRelative(card.createdAt)}
         </div>
-        <div className="text-[0.714rem] text-[var(--text-tertiary)]">
+        <div className="text-xs text-[var(--text-tertiary)]">
           Updated {formatRelative(card.updatedAt)}
         </div>
       </div>
@@ -234,7 +234,7 @@ export function CardDetailSidebar({
                   <button
                     key={p.id}
                     onClick={() => onMoveToProject(card.id, p.id)}
-                    className="w-full text-left px-2 py-1 rounded text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors truncate"
+                    className="w-full text-left px-2 py-1 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors truncate"
                   >
                     {p.name}
                   </button>

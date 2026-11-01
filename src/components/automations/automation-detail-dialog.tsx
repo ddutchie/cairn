@@ -156,7 +156,7 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
           </div>
 
           <div>
-            <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] block mb-2">Artifacts</span>
+            <span className="text-xs font-medium text-[var(--text-tertiary)] block mb-2">Artifacts</span>
             {artifacts.length === 0 ? (
               <p className="text-xs text-[var(--text-tertiary)]">No notes or cards created yet.</p>
             ) : (
@@ -178,7 +178,7 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">Run history</span>
+              <span className="text-xs font-medium text-[var(--text-tertiary)]">Run history</span>
               <Button variant="ghost" size="xs" onClick={() => void refresh()} disabled={refreshing}>
                 <RefreshSpin size={11} spinning={refreshing} className="mr-1" /> Refresh
               </Button>
@@ -194,7 +194,7 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
                     <span className="text-[var(--text-tertiary)] ml-auto">{formatRelative(r.startedAt, RUN_TIME)}</span>
                     {r.status === "error" && onRunNow && r.id === runs[0]?.id && (
                       <Tooltip content="Run this automation again now">
-                        <button type="button" onClick={onRunNow} className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors text-[0.714rem]">
+                        <button type="button" onClick={onRunNow} className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors text-xs">
                           Retry
                         </button>
                       </Tooltip>
@@ -264,7 +264,7 @@ function RunLogView({ log }: { log: unknown }) {
                 {t.ok === true && <span className="text-[var(--ok)]">ok</span>}
               </div>
               {t.output && (
-                <pre className="mt-0.5 text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto rounded bg-[var(--surface-2)] p-1.5">{t.output}</pre>
+                <pre className="mt-0.5 text-2xs text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto rounded bg-[var(--surface-2)] p-1.5">{t.output}</pre>
               )}
               {t.error && <div className="text-[var(--danger)]">{t.error}</div>}
             </div>
@@ -280,7 +280,7 @@ function RunLogView({ log }: { log: unknown }) {
       {l.thoughts && (
         <details>
           <summary className="text-[var(--text-tertiary)] cursor-pointer">Thinking</summary>
-          <pre className="text-[0.65rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">{l.thoughts}</pre>
+          <pre className="text-2xs text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">{l.thoughts}</pre>
         </details>
       )}
     </div>
@@ -290,7 +290,7 @@ function RunLogView({ log }: { log: unknown }) {
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-[0.714rem] text-[var(--text-tertiary)]">{label}</div>
+      <div className="text-xs text-[var(--text-tertiary)]">{label}</div>
       <div className="text-[var(--text-primary)] truncate">{value}</div>
     </div>
   );

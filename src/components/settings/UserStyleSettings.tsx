@@ -92,7 +92,7 @@ export function UserStyleSettings() {
                 </Button>
                 <button
                   onClick={() => setWizardMode("paste")}
-                  className="px-3 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-3 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <PenLine size={12} /> Paste a style directly
                 </button>
@@ -103,7 +103,7 @@ export function UserStyleSettings() {
           <>
             {userStyle?.persona && (userStyle.persona.name || userStyle.persona.role) && (
               <SettingsRow label="Persona" description="Who the style guide belongs to.">
-                <div className="text-[0.714rem] text-[var(--text-secondary)] text-right">
+                <div className="text-xs text-[var(--text-secondary)] text-right">
                   {[userStyle.persona.name, userStyle.persona.role].filter(Boolean).join(" · ")}
                 </div>
               </SettingsRow>
@@ -113,7 +113,7 @@ export function UserStyleSettings() {
               label="Status"
               description="Last generated, and how it was produced. The tool returns the cheat sheet by default and the full guide on request."
             >
-              <div className="text-[0.714rem] text-[var(--text-secondary)] text-right">
+              <div className="text-xs text-[var(--text-secondary)] text-right">
                 {userStyle.source === "guided" ? "Guided setup" : userStyle.source === "analyzed" ? "Analysed" : "Manual"} · updated {formatDate(userStyle.updatedAt)}
               </div>
             </SettingsRow>
@@ -122,7 +122,7 @@ export function UserStyleSettings() {
               <SettingsRow label="Cheat sheet" description="Condensed one-page reference — what the tool returns by default.">
                 <button
                   onClick={() => setCheatsheetOpen((v) => !v)}
-                  className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
                 >
                   {cheatsheetOpen ? "Hide" : "Preview"}
                 </button>
@@ -138,7 +138,7 @@ export function UserStyleSettings() {
               <SettingsRow label="Full guide" description="The complete style guide — requested with mode: 'full'.">
                 <button
                   onClick={() => setFullOpen((v) => !v)}
-                  className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
                 >
                   {fullOpen ? "Hide" : "Preview"}
                 </button>
@@ -154,39 +154,39 @@ export function UserStyleSettings() {
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   onClick={() => setWizardMode("guided")}
-                  className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <PenLine size={12} /> Edit / Regenerate
                 </button>
                 <button
                   onClick={() => setWizardMode("paste")}
-                  className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <PenLine size={12} /> Paste style
                 </button>
                 <button
                   onClick={() => void regenerateCheatsheet()}
                   disabled={regenerating || !userStyle?.fullGuide}
-                  className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
                 >
                   {regenerating ? <Spinner size={12} /> : <RefreshCw size={12} />}
                   Regenerate cheat sheet
                 </button>
                 <button
                   onClick={() => void clearUserStyle()}
-                  className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--danger)] hover:border-[var(--danger)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--danger)] hover:border-[var(--danger)] transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 size={12} /> Clear
                 </button>
               </div>
               {regenerateError && (
-                <p className="mt-2 text-[0.65rem] text-[var(--danger)]">{regenerateError}</p>
+                <p className="mt-2 text-2xs text-[var(--danger)]">{regenerateError}</p>
               )}
             </SettingsRow>
           </>
         )}
 
-        <p className="text-[0.65rem] text-[var(--text-tertiary)] leading-relaxed">
+        <p className="text-2xs text-[var(--text-tertiary)] leading-relaxed">
           Chat and the coding agent can call <code className="font-mono">get_user_writing_style</code> to draft in your
           voice. They only fetch it when asked to write for you — it is never injected into every prompt.
         </p>

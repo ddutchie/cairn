@@ -265,7 +265,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
       {browserOpen && (
         <aside className="flex flex-col w-60 flex-shrink-0 border-r border-[var(--border)] bg-[var(--surface)] min-h-0">
           <div className="flex items-center justify-between h-9 px-3 border-b border-[var(--border)] flex-shrink-0">
-            <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate">{workspaceName ?? "Sessions"}</span>
+            <span className="text-xs font-medium text-[var(--text-secondary)] truncate">{workspaceName ?? "Sessions"}</span>
             <Tooltip content="Hide session browser" side="bottom">
               <button onClick={() => setBrowserOpen(false)} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" aria-label="Hide session browser">
                 <PanelLeftClose size={13} />
@@ -283,7 +283,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
             className="flex-1 overflow-y-auto py-1.5 min-h-0"
           >
             {workspaceProjects.length === 0 ? (
-              <p className="px-3 py-4 text-center text-[0.714rem] text-[var(--text-tertiary)]">No projects</p>
+              <p className="px-3 py-4 text-center text-xs text-[var(--text-tertiary)]">No projects</p>
             ) : (() => {
               let seenFirstOption = false;
               return workspaceProjects.map((project) => {
@@ -300,7 +300,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                     >
                       {isOpen ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
                       <span className="truncate font-medium">{project.name}</span>
-                      <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">{sessions.length}</span>
+                      <span className="ml-auto text-xs text-[var(--text-tertiary)]">{sessions.length}</span>
                     </button>
                     {isOpen && (
                       <div
@@ -308,7 +308,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
                         className="ml-2 border-l border-[var(--border)] pl-1.5 space-y-0.5"
                       >
                         {sessions.length === 0 ? (
-                          <p className="px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)]">No sessions</p>
+                          <p className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">No sessions</p>
                         ) : sessions.map((session) => {
                           const selfId = session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId;
                           const selected = selfId === selection.sessionId;
@@ -441,7 +441,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
              {browserOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}
            </button>
          </Tooltip>
-         <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
+         <span className="text-xs font-medium text-[var(--text-secondary)] truncate">{project?.name ?? (profile === "coding" ? "Cairn Agent" : "Chat")}</span>
        </div>
      )}
     contextLimit={aiConfig.contextLimit ?? 128000}

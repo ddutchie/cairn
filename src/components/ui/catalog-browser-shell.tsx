@@ -33,7 +33,7 @@ export function TagChip({ label, active, onClick }: { label: string; active: boo
     <button
       onClick={onClick}
       className={cn(
-        "text-[0.65rem] rounded-full px-2 py-0.5 border transition-colors",
+        "text-2xs rounded-full px-2 py-0.5 border transition-colors",
         active
           ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--text-primary)]"
           : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
@@ -157,7 +157,7 @@ export function CatalogBrowserShell({
 
       {/* Provenance / error banner */}
       {registryError && (
-        <div className="mt-3 flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
+        <div className="mt-3 flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
           <WifiOff size={12} />
           {fromCache
             ? "Showing the cached catalog — couldn't reach the registry."
@@ -165,7 +165,7 @@ export function CatalogBrowserShell({
         </div>
       )}
       {installError && (
-        <div className="mt-3 text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
+        <div className="mt-3 text-xs text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
           {installError}
         </div>
       )}

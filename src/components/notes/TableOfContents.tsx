@@ -95,7 +95,7 @@ export function TableOfContents({ markdown, scrollContainerRef, notes = [] }: Pr
       <div className="sticky top-5 space-y-4">
         {headings.length >= 2 && (
           <div>
-            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
+            <p className="text-xs font-medium text-[var(--text-tertiary)] mb-2 px-1">
               On this page
             </p>
             <nav className="flex flex-col gap-0.5">
@@ -105,11 +105,11 @@ export function TableOfContents({ markdown, scrollContainerRef, notes = [] }: Pr
                   href={`#${h.id}`}
                   onClick={(e) => handleClick(e, h.id)}
                   className={cn(
-                    "text-[0.786rem] leading-snug truncate rounded px-1 py-0.5 transition-colors",
+                    "text-sm leading-snug truncate rounded px-1 py-0.5 transition-colors",
                     "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
                     h.level === 1 && "font-medium",
                     h.level === 2 && "pl-3",
-                    h.level === 3 && "pl-5 text-[0.714rem]",
+                    h.level === 3 && "pl-5 text-xs",
                   )}
                   title={h.text}
                 >
@@ -122,7 +122,7 @@ export function TableOfContents({ markdown, scrollContainerRef, notes = [] }: Pr
 
         {wikiLinks.length > 0 && (
           <div>
-            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-2 px-1">
+            <p className="text-xs font-medium text-[var(--text-tertiary)] mb-2 px-1">
               Links
             </p>
             <nav className="flex flex-col gap-0.5">
@@ -137,7 +137,7 @@ export function TableOfContents({ markdown, scrollContainerRef, notes = [] }: Pr
                   }}
                   title={wl.noteId ? `Open: ${wl.title}` : `Note not found: ${wl.title}`}
                   className={cn(
-                    "flex items-center gap-1.5 w-full text-left text-[0.786rem] leading-snug truncate rounded px-1 py-0.5 transition-colors",
+                    "flex items-center gap-1.5 w-full text-left text-sm leading-snug truncate rounded px-1 py-0.5 transition-colors",
                     wl.noteId
                       ? "text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] cursor-pointer"
                       : "text-[var(--text-tertiary)] opacity-50 cursor-default"

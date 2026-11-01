@@ -156,7 +156,7 @@ export function DockSidebar() {
                       >
                         <ProjectIcon name={p.icon} size={12} className="shrink-0" />
                         <span className="truncate flex-1">{p.name}</span>
-                        <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                        <span className="text-2xs font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
                         {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
                       </DropdownMenuItem>
                     ))}
@@ -196,7 +196,7 @@ export function DockSidebar() {
                     >
                       <ProjectIcon name={p.icon} size={12} className="shrink-0" />
                       <span className="truncate flex-1">{p.name}</span>
-                      <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                      <span className="text-2xs font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
                       {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
                     </DropdownMenuItem>
                   ))}
@@ -252,7 +252,7 @@ export function DockSidebar() {
             <WorkspaceIcon name={workspace?.icon} size={16} className="text-[var(--text-tertiary)]" />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold truncate">{workspace?.name ?? "Workspace"}</div>
-              <div className="text-[0.643rem] text-[var(--text-tertiary)]">{projects.length} projects · local</div>
+              <div className="text-2xs text-[var(--text-tertiary)]">{projects.length} projects · local</div>
             </div>
             <Tooltip content="Collapse sidebar" side="right">
               <button onClick={toggleSidebar} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
@@ -267,26 +267,26 @@ export function DockSidebar() {
             if (!project) {
               if (projects.length === 0) return null;
               return (
-                <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-sm">
+                <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-1">
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-md bg-[var(--surface)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] shrink-0">
                       <FolderOpen size={13} />
                     </span>
                     <span className="text-xs font-semibold truncate flex-1 text-[var(--text-secondary)]">No active project</span>
                   </div>
-                  <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1.5 truncate">Select a project below</div>
+                  <div className="text-xs leading-none text-[var(--text-tertiary)] mt-1.5 truncate">Select a project below</div>
                 </div>
               );
             }
             return (
               <ContextMenu>
               <ContextMenuTrigger asChild>
-              <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-sm">
+              <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-1">
                 <div className="flex items-center gap-2">
                   <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)] shrink-0" />
                   <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
                 </div>
-                <div className="text-[0.688rem] leading-none text-[var(--text-tertiary)] mt-1.5 truncate">{project.description ?? "No description"}</div>
+                <div className="text-xs leading-none text-[var(--text-tertiary)] mt-1.5 truncate">{project.description ?? "No description"}</div>
                 {(() => {
                   const total = activeMetrics?.allCards.length ?? 0;
                   const done = activeMetrics?.doneCards.length ?? 0;
@@ -306,7 +306,7 @@ export function DockSidebar() {
                   if (total === 0) {
                     return (
                       <div className="flex items-center gap-3 mt-2">
-                        <div className="flex-1 min-w-0 text-[0.643rem] text-[var(--text-tertiary)]">No tasks yet</div>
+                        <div className="flex-1 min-w-0 text-2xs text-[var(--text-tertiary)]">No tasks yet</div>
                         <div className="shrink-0">
                           <SidebarMiniRadar projectId={project.id} size={44} bare />
                         </div>
@@ -319,12 +319,12 @@ export function DockSidebar() {
                         <div className="h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
                           <div className="h-full rounded-full bg-[var(--accent)] transition-all duration-500" style={{ width: `${pct}%` }} />
                         </div>
-                        <div className="flex items-center gap-1 mt-1.5 text-[0.643rem] leading-none truncate">
+                        <div className="flex items-center gap-1 mt-1.5 text-2xs leading-none truncate">
                           <span className="font-mono font-semibold text-[var(--text-primary)] tabular-nums">{done} / {total}</span>
                           <span className="text-[var(--text-tertiary)] truncate">· {pct}% · {open} open</span>
                         </div>
                         {bottleneck && (
-                          <div className="mt-1 text-[0.643rem] leading-none italic truncate" style={{ fontFamily: "var(--font-display)", color: "var(--accent)" }}>
+                          <div className="mt-1 text-2xs leading-none italic truncate" style={{ fontFamily: "var(--font-display)", color: "var(--accent)" }}>
                             {bottleneck.name.toLowerCase()} holds {bottleneck.count}
                           </div>
                         )}
@@ -361,10 +361,10 @@ export function DockSidebar() {
           {/* Project switcher — sidebar section like Views */}
           {projects.length > 0 && (
             <div className="px-2 mt-3">
-              <div className="text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Project</div>
+              <div className="text-2xs font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Project</div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 w-full rounded-lg px-2.5 py-2 bg-[var(--surface-2)] border border-[var(--border)] shadow-sm hover:border-[var(--muted)] hover:bg-[var(--surface-3)] transition-colors text-left group">
+                  <button className="flex items-center gap-2 w-full rounded-lg px-2.5 py-2 bg-[var(--surface-2)] border border-[var(--border)] shadow-elev-1 hover:border-[var(--muted)] hover:bg-[var(--surface-3)] transition-colors text-left group">
                     {(() => {
                       const active = projects.find((p) => p.id === activeProjectId);
                       return (
@@ -388,7 +388,7 @@ export function DockSidebar() {
                     >
                       <ProjectIcon name={p.icon} size={12} className="shrink-0" />
                       <span className="truncate flex-1">{p.name}</span>
-                      <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
+                      <span className="text-2xs font-mono text-[var(--text-tertiary)]">{openCounts.get(p.id) ?? 0}</span>
                       {p.id === activeProjectId && <Check size={11} className="text-[var(--accent)] shrink-0" />}
                     </DropdownMenuItem>
                   ))}
@@ -425,14 +425,14 @@ export function DockSidebar() {
           {/* scrollable: Views + Conversations */}
           <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 min-h-0">
             <div>
-              <div className="text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Views</div>
+              <div className="text-2xs font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Views</div>
               <div className="space-y-0.5">
-                <button onClick={() => setView("overview")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "overview") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={13} /> Overview<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("overview")}</span></button>
-                <button onClick={() => setView("notes")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "notes") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={13} /> Notes<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("notes")}</span></button>
-                {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "board") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={13} /> Board<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("board")}</span></button>}
-                {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "calendar") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
-                {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "flow") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={13} /> Flow<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("flow")}</span></button>}
-                {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "agent") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={13} /> Agent<span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)]">{shortcutMap.get("agent")}</span></button>}
+                <button onClick={() => setView("overview")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "overview") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Hash size={13} /> Overview<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("overview")}</span></button>
+                <button onClick={() => setView("notes")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "notes") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><FileText size={13} /> Notes<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("notes")}</span></button>
+                {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "board") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={13} /> Board<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("board")}</span></button>}
+                {!hiddenViews.has("calendar") && <button onClick={() => setView("calendar")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "calendar") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
+                {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "flow") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={13} /> Flow<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("flow")}</span></button>}
+                {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "agent") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={13} /> Agent<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("agent")}</span></button>}
               </div>
             </div>
 
@@ -443,7 +443,7 @@ export function DockSidebar() {
                   onClick={toggleConversationsCollapsed}
                   aria-expanded={!conversationsCollapsed}
                   aria-controls="dock-conversations"
-                  className="flex items-center gap-1.5 w-full px-2 py-1 text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                  className="flex items-center gap-1.5 w-full px-2 py-1 text-2xs font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                 >
                   {conversationsCollapsed ? <ChevronRight size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />}
                   <span>Conversations</span>
@@ -473,7 +473,7 @@ export function DockSidebar() {
               onClick={toggleWorkspaceToolsCollapsed}
               aria-expanded={!workspaceToolsCollapsed}
               aria-controls="dock-workspace-tools"
-              className="flex items-center gap-1.5 w-full px-2.5 py-2 text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+              className="flex items-center gap-1.5 w-full px-2.5 py-2 text-2xs font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
             >
               {workspaceToolsCollapsed ? <ChevronRight size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />}
               <span>Workspace</span>
@@ -506,14 +506,14 @@ export function DockSidebar() {
                   </button>
                   <div className="my-1.5 border-t border-[var(--border-subtle)]" />
                   <button onClick={() => setView("calendar-all")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-                    <CalendarDays size={13} /><span>Calendar</span><span className="ml-auto text-[0.643rem] text-[var(--text-tertiary)]">all</span>
+                    <CalendarDays size={13} /><span>Calendar</span><span className="ml-auto text-2xs text-[var(--text-tertiary)]">all</span>
                   </button>
                   {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "graph") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
                   {!hiddenViews.has("insights") && <button onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "insights") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
                   {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "usage") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
                   <button onClick={() => setNotificationOpen(!notificationOpen)} data-notification-toggle aria-expanded={notificationOpen} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                     <Bell size={13} /><span>Notifications</span>
-                    <CountBadge count={notificationUnreadCount} tone="accent" className="ml-auto min-w-4 h-4 px-1 text-[0.625rem] leading-4" />
+                    <CountBadge count={notificationUnreadCount} tone="accent" className="ml-auto min-w-4 h-4 px-1 text-2xs leading-4" />
                   </button>
                 </div>
               </div>
@@ -598,8 +598,8 @@ function SidebarMiniRadar({ projectId, size: sizeProp, bare }: { projectId: stri
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-        <span className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Health</span>
-        <span className="ml-auto text-[0.643rem] font-mono text-[var(--text-secondary)]">{avg}%</span>
+        <span className="text-2xs font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)]">Health</span>
+        <span className="ml-auto text-2xs font-mono text-[var(--text-secondary)]">{avg}%</span>
       </div>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block mx-auto overflow-visible">
         <polygon points={gridPts} fill="none" stroke="var(--border)" strokeWidth={1} opacity={0.5} />

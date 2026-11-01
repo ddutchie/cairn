@@ -20,6 +20,12 @@
   --accent-dim: color-mix(in srgb, var(--accent) 15%, transparent);
   /* Drawer panel shadow (theme-independent black). */
   --shadow: -12px 0 32px color-mix(in srgb, black 28%, transparent);
+  /* Elevation scale (utilities: shadow-elev-1/2/3). 1 = resting cards and
+     raised controls, 2 = menus/popovers/tooltips, 3 = modals and floating
+     panels. Dark needs denser shadows to read against near-black surfaces. */
+  --elev-1: 0 1px 2px color-mix(in srgb, black 40%, transparent);
+  --elev-2: 0 6px 16px color-mix(in srgb, black 45%, transparent), 0 1px 3px color-mix(in srgb, black 35%, transparent);
+  --elev-3: 0 20px 48px color-mix(in srgb, black 55%, transparent), 0 2px 8px color-mix(in srgb, black 35%, transparent);
   /* Static fallback accent = "Sage Moss" preset (shared/ui/accents.ts,
      DEFAULT_ACCENT_ID). The user's chosen accent is injected at runtime as
      inline --accent* vars on <html> by applyAccent(); these values are what
@@ -70,6 +76,9 @@
   --accent-dim: color-mix(in srgb, var(--accent) 12%, transparent);
   /* Drawer panel shadow (theme-independent black). */
   --shadow: -12px 0 32px color-mix(in srgb, black 28%, transparent);
+  --elev-1: 0 1px 2px color-mix(in srgb, black 6%, transparent);
+  --elev-2: 0 4px 12px color-mix(in srgb, black 10%, transparent), 0 1px 3px color-mix(in srgb, black 6%, transparent);
+  --elev-3: 0 16px 40px color-mix(in srgb, black 18%, transparent), 0 2px 8px color-mix(in srgb, black 8%, transparent);
   --accent-fg: #ffffff;
   --muted: #a09c96;
   --muted-fg: #66635f;
@@ -104,6 +113,16 @@
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
   --font-display: "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  /* Type scale: 2xs 9px · xs 10.5px · sm 12.25px · base 14px (×--font-scale),
+     a ~1.17 step. Use these, never arbitrary text-[Nrem] sizes. 2xs is the
+     floor for UI text (counts, kbd, timestamps, badge text); only
+     data-density cases go below it (ChatTimeline bars, MatrixCanvas cells
+     that shrink with item count). */
+  --text-2xs: 0.643rem;
+  --text-2xs--line-height: 0.875rem;
+  --shadow-elev-1: var(--elev-1);
+  --shadow-elev-2: var(--elev-2);
+  --shadow-elev-3: var(--elev-3);
   /* Note-text font — overridden at runtime by applyFontFamily() (sans/serif/mono
      presets from shared/ui/fonts.ts). Defaults to the UI sans stack so the
      editor + prose match the chrome until the user picks a note font. */

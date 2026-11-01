@@ -244,7 +244,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                     </span>
                     <span className="flex flex-col min-w-0">
                       <span className="truncate">{p.name}</span>
-                      <span className="truncate text-[0.714rem] text-[var(--text-tertiary)] font-mono">
+                      <span className="truncate text-xs text-[var(--text-tertiary)] font-mono">
                         {p.id === activeProviderId ? (activeModel || p.model) : p.model}
                       </span>
                     </span>
@@ -258,7 +258,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
               aria-label="Add provider"
               title={formOpen ? "Finish or cancel the open provider form first" : "Add a provider"}
               className={cn(
-                "px-2 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer",
+                "px-2 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer",
                 formOpen && "opacity-50 cursor-not-allowed hover:border-[var(--border)] hover:text-[var(--text-tertiary)]",
               )}
             >
@@ -270,7 +270,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
             <div className="flex gap-1.5">
               <button
                 onClick={() => setEditing(active.id)}
-                className="px-2 py-1 text-[0.714rem] rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer"
+                className="px-2 py-1 text-xs rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <Pencil size={10} /> Edit
               </button>
@@ -279,7 +279,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
                   persist(secretsClient.delete("llm", active.id, "apiKey"), "Couldn't remove the API key");
                   deleteSavedProvider(active.id);
                 }}
-                className="px-2 py-1 text-[0.714rem] rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--danger)] hover:text-[var(--danger)] transition-colors flex items-center gap-1 cursor-pointer"
+                className="px-2 py-1 text-xs rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--danger)] hover:text-[var(--danger)] transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <Trash2 size={10} /> Delete
               </button>
@@ -419,11 +419,11 @@ function ProviderForm({
       </div>
       <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2">
         <label className="flex flex-col gap-1">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">Name</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI" className={inputCls} />
         </label>
         <div className="flex flex-col gap-1">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">Default model</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Default model</span>
           <ModelPicker
             value={model}
             options={availableModels}
@@ -436,7 +436,7 @@ function ProviderForm({
           />
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">Base URL</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Base URL</span>
           <input
             type="url"
             value={baseUrl}
@@ -446,7 +446,7 @@ function ProviderForm({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">API Key</span>
+          <span className="text-xs text-[var(--text-tertiary)]">API Key</span>
           <input
             type="password"
             value={keyInput}
@@ -454,16 +454,16 @@ function ProviderForm({
             placeholder={hadKey ? "•••••••• stored — type to replace" : "sk-… (optional for local)"}
             className={inputCls}
           />
-          <span className="text-[0.643rem] text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
+          <span className="text-2xs text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
         <div className="flex flex-col gap-1">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">API protocol</span>
+          <span className="text-xs text-[var(--text-tertiary)]">API protocol</span>
           {perModelEndpoint ? (
             <>
               <div className="px-2.5 py-1.5 text-xs w-full rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)]">
                 Automatic — {dictated ? PROTOCOL_LABEL[dictated] : "picked per model"}
               </div>
-              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+              <span className="text-2xs text-[var(--text-tertiary)]">
                 OpenCode serves each model over one API, so Cairn picks it per model{dictated && model.trim() ? ` (${model.trim()} uses ${PROTOCOL_LABEL[dictated]})` : ""}.
               </span>
             </>
@@ -485,7 +485,7 @@ function ProviderForm({
                     <span className="flex items-center justify-between gap-2">
                       <span className="truncate">{label}</span>
                       {tagFor(value) && (
-                        <span className={cn("shrink-0 text-[0.643rem]", availability?.[value] === "available" ? "text-[var(--success)]" : "text-[var(--text-tertiary)]")}>
+                        <span className={cn("shrink-0 text-2xs", availability?.[value] === "available" ? "text-[var(--success)]" : "text-[var(--text-tertiary)]")}>
                           {tagFor(value)}
                         </span>
                       )}
@@ -493,7 +493,7 @@ function ProviderForm({
                   ),
                 }))}
               />
-              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+              <span className="text-2xs text-[var(--text-tertiary)]">
                 {probing
                   ? "Checking which APIs this endpoint offers…"
                   : availability?.[apiMode] === "auth"
@@ -519,12 +519,12 @@ function ProviderForm({
         </div>
       )}
       {saveError && (
-        <p className="text-[0.714rem] text-[var(--danger)]">{saveError}</p>
+        <p className="text-xs text-[var(--danger)]">{saveError}</p>
       )}
       <div className="flex justify-end gap-1.5 pt-0.5">
         <button
           onClick={onCancel}
-          className="px-2.5 py-1 text-[0.714rem] rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer"
+          className="px-2.5 py-1 text-xs rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors flex items-center gap-1 cursor-pointer"
         >
           <X size={11} /> Cancel
         </button>
@@ -532,7 +532,7 @@ function ProviderForm({
           onClick={handleSave}
           disabled={!canSave}
           className={cn(
-            "px-2.5 py-1 text-[0.714rem] rounded border transition-colors flex items-center gap-1",
+            "px-2.5 py-1 text-xs rounded border transition-colors flex items-center gap-1",
             canSave
               ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)] hover:bg-[var(--accent-dim)] cursor-pointer"
               : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50 cursor-not-allowed",

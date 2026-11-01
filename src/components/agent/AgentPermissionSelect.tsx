@@ -106,7 +106,7 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
             label: o.name,
             disabled: o.value === CUSTOM_VALUE,
           }))}
-          className="max-w-44 text-[0.643rem] px-1.5 py-0.5"
+          className="max-w-44 text-2xs px-1.5 py-0.5"
         />
       </span>
     </Tooltip>

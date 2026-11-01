@@ -812,7 +812,7 @@ function IdeaFlowCanvas() {
 
         {nodes.length === 0 && (
           <Panel position="top-center">
-            <div className="px-6 py-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-sm pointer-events-none">
+            <div className="px-6 py-5 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-elev-1 pointer-events-none">
               <EmptyState
                 icon={Lightbulb}
                 title="Your Idea Flow is empty"
@@ -827,7 +827,7 @@ function IdeaFlowCanvas() {
             <button
               onClick={handleAutoLayout}
               title="Auto-arrange nodes"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-elev-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-colors"
             >
               <LayoutDashboard size={13} />
               Arrange
@@ -839,7 +839,7 @@ function IdeaFlowCanvas() {
             </Button>
 
             {showAddMenu && (
-              <div className="absolute right-0 top-9 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl py-1 min-w-[160px]">
+              <div className="absolute right-0 top-9 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-elev-2 py-1 min-w-[160px]">
                 {addNodeMenu.map(({ type, label, icon: Icon }) => (
                   <button
                     key={type}

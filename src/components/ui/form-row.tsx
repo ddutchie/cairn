@@ -12,6 +12,20 @@ import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Toggle as UiToggle, type ToggleProps } from "@/components/ui/toggle";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+
+/**
+ * Buttons and links keep their own text as their accessible name; anything
+ * else gets the row's label (via an injected id). Otherwise a screen reader
+ * announces "Browse Community" as "Community providers, button". The check is
+ * shallow: a button wrapped in another component (e.g. a Tooltip or a
+ * DropdownMenuTrigger) still gets the id.
+ */
+function isActionElement(node: React.ReactNode): boolean {
+  if (!React.isValidElement(node)) return false;
+  return node.type === "button" || node.type === "a" || node.type === Button || node.type === IconButton;
+}
 
 // ── Layout helpers ────────────────────────────
 
@@ -53,17 +67,18 @@ export function SettingsRow({
   controlClassName?: string;
 }) {
   const id = React.useId();
+  const labelsControl = React.isValidElement(children) && !isActionElement(children);
   return (
     <div className="flex flex-col @sm:flex-row @sm:items-start @sm:justify-between gap-2 @sm:gap-6 py-3 border-b border-[var(--border-subtle)]">
       <div className="flex-1 min-w-0">
-        <label htmlFor={id} className="text-sm text-[var(--text-secondary)] cursor-default">{label}</label>
+        <label htmlFor={labelsControl ? id : undefined} className="text-sm text-[var(--text-secondary)] cursor-default">{label}</label>
         {description && (
           <div className="text-xs text-[var(--text-tertiary)] mt-0.5 leading-relaxed">{description}</div>
         )}
       </div>
       <div className={controlClassName ?? "flex-shrink-0 @sm:self-auto"}>
-        {/* Inject id into the first form-control child if it accepts it */}
-        {React.isValidElement(children)
+        {/* Inject id into a single form-control child so the row label names it */}
+        {labelsControl
           ? React.cloneElement(children as React.ReactElement<{ id?: string }>, { id })
           : children}
       </div>
@@ -224,7 +239,7 @@ export function StepperSettingsRow({
                     : "Detect from models.dev"
               }
               className={cn(
-                "px-2 py-1 text-[0.714rem] rounded border transition-colors inline-flex items-center gap-1",
+                "px-2 py-1 text-xs rounded border transition-colors inline-flex items-center gap-1",
                 (autoActive ?? (autoState === "detected" && autoValue != null && value === autoValue))
                   ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]",
@@ -240,7 +255,7 @@ export function StepperSettingsRow({
               key={n}
               onClick={() => onChange(n)}
               className={cn(
-                "px-2 py-1 text-[0.714rem] rounded border transition-colors",
+                "px-2 py-1 text-xs rounded border transition-colors",
                 !suppressed && value === n
                   ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                   : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--muted)] hover:text-[var(--text-secondary)]"

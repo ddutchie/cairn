@@ -496,7 +496,7 @@ export function KanbanBoard() {
               {activeProjectId && (
                 <CountBadge
                   count={columns.reduce((n, col) => n + getColumnCards(col.id).length, 0)}
-                  className="ml-0.5 px-1.5 py-0.5 text-[0.643rem]"
+                  className="ml-0.5 px-1.5 py-0.5 text-2xs"
                 />
               )}
             </button>
@@ -514,7 +514,7 @@ export function KanbanBoard() {
               {activeProjectId && (
                 <CountBadge
                   count={getArchivedProjectCards(activeProjectId).length}
-                  className="ml-0.5 px-1.5 py-0.5 text-[0.643rem]"
+                  className="ml-0.5 px-1.5 py-0.5 text-2xs"
                 />
               )}
             </button>
@@ -718,7 +718,7 @@ function PriorityChip({ p, active, onClick }: { p: Priority; active: boolean; on
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
+        "flex items-center gap-1 px-2 py-1 rounded text-sm capitalize transition-colors border",
         active ? "" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50"
       )}
       style={active ? {

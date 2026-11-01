@@ -33,7 +33,7 @@ function ActionCard({ action, label, state, onApply, onDismiss }: ActionCardProp
 
   return (
     <div className={cn(
-      "rounded-lg border text-[0.714rem] overflow-hidden transition-colors",
+      "rounded-lg border text-xs overflow-hidden transition-colors",
       state === "done"
         ? "border-[var(--success)]/30 bg-[color-mix(in_srgb,var(--success)_6%,transparent)]"
         : "border-[var(--border)] bg-[var(--surface)]"
@@ -61,7 +61,7 @@ function ActionCard({ action, label, state, onApply, onDismiss }: ActionCardProp
           <button
             onClick={onApply}
             disabled={state === "applying"}
-            className="shrink-0 px-2 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] transition-colors disabled:opacity-50 text-[0.643rem] font-medium"
+            className="shrink-0 px-2 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] transition-colors disabled:opacity-50 text-2xs font-medium"
           >
             {state === "applying" ? <Spinner size={9} /> : "Apply"}
           </button>
@@ -79,7 +79,7 @@ function ActionCard({ action, label, state, onApply, onDismiss }: ActionCardProp
       </div>
 
       {expanded && (
-        <div className="px-2.5 pb-2 pt-1.5 text-[0.643rem] text-[var(--text-tertiary)] leading-relaxed border-t border-[var(--border)]">
+        <div className="px-2.5 pb-2 pt-1.5 text-2xs text-[var(--text-tertiary)] leading-relaxed border-t border-[var(--border)]">
           {action.reason}
         </div>
       )}
@@ -227,16 +227,16 @@ export function ActionsList({ actions }: ActionsListProps) {
   return (
     <div className="mt-2 space-y-1.5 w-full">
       <div className="flex items-center justify-between px-0.5">
-        <span className="text-[0.643rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">
+        <span className="text-xs font-medium text-[var(--text-tertiary)]">
           {visible.length} suggested action{visible.length !== 1 ? "s" : ""}
         </span>
         {visible.length > 1 && applyAllState === "idle" && (
-          <button onClick={handleApplyAll} className="text-[0.643rem] text-[var(--accent)] hover:underline">
+          <button onClick={handleApplyAll} className="text-2xs text-[var(--accent)] hover:underline">
             Apply all
           </button>
         )}
         {applyAllState === "done" && (
-          <span className="text-[0.643rem] text-[var(--success)] flex items-center gap-1">
+          <span className="text-2xs text-[var(--success)] flex items-center gap-1">
             <Check size={9} /> All applied
           </span>
         )}

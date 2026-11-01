@@ -319,7 +319,7 @@ export function EmbeddingsSettings() {
           </div>
 
           <div className="px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] space-y-3">
-            <div className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Models</div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">Models</div>
             {models.map((model) => {
               const prog = progressByModel[model.id];
               const isDownloading = model.status === "downloading" || (prog && (prog.status === "downloading" || prog.status === "progress") && (prog.progress ?? 0) < 100);
@@ -386,7 +386,7 @@ export function EmbeddingsSettings() {
 
                   {isDownloading && (
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[0.65rem] text-[var(--text-tertiary)]">
+                      <div className="flex justify-between text-2xs text-[var(--text-tertiary)]">
                         <span>{prog?.file ?? "downloading model files…"}</span>
                         <span className="font-mono">{Math.round(prog?.progress ?? 0)}%</span>
                       </div>
@@ -408,7 +408,7 @@ export function EmbeddingsSettings() {
           </div>
 
           <div className="px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] space-y-2">
-            <div className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Maintenance</div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">Maintenance</div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={handleReindexAll}
@@ -426,12 +426,12 @@ export function EmbeddingsSettings() {
                 Recompute graph clusters (UMAP only)
               </button>
             </div>
-            <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+            <p className="text-xs text-[var(--text-tertiary)]">
               Reindexing embeds every note and stores it for semantic search. Recompute clusters only runs UMAP on existing embeddings — cheap and fast, no model calls.
             </p>
             {reindexProgress && (
               <div className="space-y-1">
-                <div className="flex justify-between text-[0.65rem] text-[var(--text-tertiary)]">
+                <div className="flex justify-between text-2xs text-[var(--text-tertiary)]">
                   <span>Indexing notes…</span>
                   <span className="font-mono">
                     {reindexProgress.done}/{reindexProgress.total}

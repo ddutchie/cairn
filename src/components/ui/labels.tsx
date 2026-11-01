@@ -4,15 +4,15 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Canonical section-header label: uppercase, letter-spaced, tertiary. Use for
- * the headline label above a section/group. Consolidates the ad-hoc
- * `text-[0.714rem] font-semibold uppercase tracking-*` fragments.
+ * Canonical section-header label: sentence case, medium weight, tertiary. Use
+ * for the headline label above a section/group. Cairn labels are not set in
+ * caps; the sidebar's group headers are the one deliberate exception.
  */
 export function SectionLabel({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
       className={cn(
-        "text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]",
+        "text-xs font-medium text-[var(--text-tertiary)]",
         className,
       )}
       {...props}
@@ -21,15 +21,14 @@ export function SectionLabel({ className, ...props }: React.HTMLAttributes<HTMLS
 }
 
 /**
- * Canonical micro field label: the small uppercase caption under/next to
- * fields and rows. Consolidates the ad-hoc `text-[0.643rem] font-medium
- * uppercase tracking-*` fragments.
+ * Canonical micro field label: the small caption under/next to fields and
+ * rows, one step below SectionLabel.
  */
 export function MicroLabel({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
       className={cn(
-        "text-[0.643rem] font-medium uppercase tracking-wide text-[var(--text-tertiary)]",
+        "text-2xs font-medium text-[var(--text-tertiary)]",
         className,
       )}
       {...props}

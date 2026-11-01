@@ -162,7 +162,7 @@ export function NoteFindBar({ initialQuery, requestId, mode, content, getView, g
   return (
     <div
       data-note-find
-      className="absolute top-2 right-4 z-30 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-1.5 py-1 shadow-lg"
+      className="absolute top-2 right-4 z-30 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-1.5 py-1 shadow-elev-2"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <input
@@ -177,11 +177,11 @@ export function NoteFindBar({ initialQuery, requestId, mode, content, getView, g
         aria-label="Find in note"
         spellCheck={false}
         className={cn(
-          "w-44 bg-[var(--surface-2)] rounded px-2 py-1 text-[0.786rem] text-[var(--text-primary)] outline-none border",
+          "w-44 bg-[var(--surface-2)] rounded px-2 py-1 text-sm text-[var(--text-primary)] outline-none border",
           noMatches ? "border-[var(--danger,var(--accent))]" : "border-transparent focus:border-[var(--accent)]",
         )}
       />
-      <span className="min-w-[4.5ch] px-1 text-center text-[0.714rem] tabular-nums text-[var(--text-tertiary)]" aria-live="polite">
+      <span className="min-w-[4.5ch] px-1 text-center text-xs tabular-nums text-[var(--text-tertiary)]" aria-live="polite">
         {!query ? "" : count === 0 ? "No results" : `${Math.min(current, count - 1) + 1}/${count}`}
       </span>
       <Tooltip content="Match case">

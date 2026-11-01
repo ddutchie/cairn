@@ -96,7 +96,7 @@ export function QuickCapture() {
       description="Add a card or note to a project"
       footer={
         <div className="flex items-center justify-between w-full gap-2">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate">
+          <span className="text-xs text-[var(--text-tertiary)] truncate">
             {saved ?? (kind === "task" && column ? `→ ${column.name}` : "↵ save · ⇧↵ save & add another")}
           </span>
           <div className="flex gap-2">
@@ -155,7 +155,7 @@ export function QuickCapture() {
           className="w-full px-3 py-2 text-xs rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] resize-none"
         />
         {kind === "task" && targetProject && !column && (
-          <p className="text-[0.714rem] text-[var(--warning)]">This project has no board columns yet.</p>
+          <p className="text-xs text-[var(--warning)]">This project has no board columns yet.</p>
         )}
       </div>
     </ModalShell>

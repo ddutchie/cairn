@@ -63,13 +63,13 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
   const sorted = [...unread, ...notifications.filter((n) => n.read)];
 
   return (
-    <div ref={wrapRef} className="fixed top-[calc(40px+8px)] right-3 z-50 w-80 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl animate-fade-in flex flex-col overflow-hidden">
+    <div ref={wrapRef} className="fixed top-[calc(40px+8px)] right-3 z-50 w-80 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 animate-fade-in flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-2)]">
         <Bell size={13} className="text-[var(--accent)]" />
         <span className="text-xs font-semibold text-[var(--text-primary)]">Notifications</span>
         {notificationUnreadCount > 0 && (
-          <CountBadge count={notificationUnreadCount} tone="accent" className="text-[0.65rem] px-1.5 py-0.5" />
+          <CountBadge count={notificationUnreadCount} tone="accent" className="text-2xs px-1.5 py-0.5" />
         )}
         <Button variant="ghost" size="xs" className="ml-auto" onClick={() => void markAllNotificationsRead()} disabled={notificationUnreadCount === 0}>
           <CheckCheck size={12} className="mr-1" /> Mark all read
@@ -120,9 +120,9 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-[var(--text-primary)] truncate">{n.title}</span>
                     {targetable && <ExternalLink size={10} className="shrink-0 text-[var(--text-tertiary)]" />}
-                    <span className="text-[0.625rem] text-[var(--text-tertiary)] ml-auto shrink-0">{formatRelative(n.createdAt, { suffix: false, absoluteAfterDays: 30 })}</span>
+                    <span className="text-2xs text-[var(--text-tertiary)] ml-auto shrink-0">{formatRelative(n.createdAt, { suffix: false, absoluteAfterDays: 30 })}</span>
                   </div>
-                  <p className="text-[0.714rem] text-[var(--text-secondary)] mt-0.5 break-words line-clamp-2">{n.body}</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5 break-words line-clamp-2">{n.body}</p>
                 </div>
                 {!n.read && (
                   <Tooltip content="Dismiss">
@@ -144,7 +144,7 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
             <Trash2 size={11} className="mr-1 text-[var(--text-tertiary)]" /> Clear all
           </Button>
         </Tooltip>
-        <button type="button" onClick={onClose} className="text-[0.625rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">Close</button>
+        <button type="button" onClick={onClose} className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">Close</button>
       </div>
     </div>
   );

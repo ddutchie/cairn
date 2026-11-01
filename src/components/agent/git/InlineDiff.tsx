@@ -17,14 +17,14 @@ export function InlineDiff({ rawDiff, loading }: { rawDiff: string; loading: boo
 
   if (loading) {
     return (
-      <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
+      <div className="px-10 py-2 text-2xs text-[var(--text-tertiary)]">
         Loading diff...
       </div>
     );
   }
   if (parsed.length === 0) {
     return (
-      <div className="px-10 py-2 text-[0.65rem] text-[var(--text-tertiary)]">
+      <div className="px-10 py-2 text-2xs text-[var(--text-tertiary)]">
         No diff content
       </div>
     );

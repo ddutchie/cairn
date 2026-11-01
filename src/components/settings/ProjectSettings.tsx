@@ -216,8 +216,8 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
 
         {/* PR template custom box */}
         <div className={cn("space-y-1.5 transition-opacity duration-200", settings.useRepoPrTemplate && "opacity-40 pointer-events-none")}>
-          <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block">
-            Custom PR Description Template
+          <label className="text-xs font-medium text-[var(--text-tertiary)] block">
+            Custom PR description template
           </label>
           <textarea
             value={settings.prTemplate ?? ""}
@@ -227,7 +227,7 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
             rows={6}
             className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none resize-y disabled:bg-[var(--surface-2)] disabled:cursor-not-allowed"
           />
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="text-xs text-[var(--text-tertiary)]">
             When set, this template is used for AI-generated PR descriptions.
           </p>
         </div>
@@ -265,7 +265,7 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
         </Button>
         <div className="flex items-center gap-2">
           {hasChanges && (
-            <span className="text-[0.714rem] text-[var(--text-tertiary)]">Unsaved changes</span>
+            <span className="text-xs text-[var(--text-tertiary)]">Unsaved changes</span>
           )}
           <Button size="sm" onClick={save} disabled={!hasChanges || saving}>
             {saving ? "Saving..." : "Save"}

@@ -51,7 +51,7 @@ export function HeaderToolIcons({ projectId, workspaceId }: { projectId: string;
 
   return (
     <span className="inline-flex items-center gap-1.5 flex-wrap">
-      <span className="inline-flex items-center gap-1 text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--text-tertiary)]">
         <Wrench size={10} /> Tools
       </span>
       <span className="flex items-center gap-1">
@@ -67,7 +67,7 @@ export function HeaderToolIcons({ projectId, workspaceId }: { projectId: string;
                 className={cn(
                   "w-7 h-7 rounded-full grid place-items-center border transition-all",
                   attached
-                    ? "bg-[var(--accent-dim)] border-[var(--accent)] shadow-sm ring-1 ring-[var(--accent)]/30"
+                    ? "bg-[var(--accent-dim)] border-[var(--accent)] shadow-elev-1 ring-1 ring-[var(--accent)]/30"
                     : "bg-[var(--surface)] border-[var(--border)] hover:border-[var(--muted)] hover:bg-[var(--surface-2)]",
                 )}
               >

@@ -41,10 +41,10 @@ export function ProjectHealthRadar({
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 pl-6 md:p-[18px] md:pl-7" style={{ boxShadow: "0 8px 24px color-mix(in srgb, black 28%, transparent)" }}>
       <div className="flex items-center gap-2 mb-3">
-        <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-[0.625rem]">⬢</span>
-        <h2 className="text-[0.813rem] font-semibold tracking-tight">Project health</h2>
+        <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-2xs">⬢</span>
+        <h2 className="text-sm font-semibold tracking-tight">Project health</h2>
         <span className="text-xs font-normal text-[var(--text-tertiary)]">— 6-axis radar</span>
-        <span className="ml-auto text-[0.643rem] font-mono text-[var(--text-tertiary)] hidden sm:inline">0 → 1</span>
+        <span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)] hidden sm:inline">0 → 1</span>
       </div>
 
       <div className="flex flex-col @3xl:flex-row gap-8 items-center @3xl:items-start">
@@ -96,16 +96,16 @@ export function ProjectHealthRadar({
               <div key={ax.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2.5">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: ax.color }} />
-                  <span className="text-[0.714rem] font-semibold text-[var(--text-secondary)] truncate">{ax.label}</span>
+                  <span className="text-xs font-semibold text-[var(--text-secondary)] truncate">{ax.label}</span>
                 </div>
                 <div className="mt-1.5 h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
                   <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(ax.value * 100)}%`, background: ax.color }} />
                 </div>
-                <div className="mt-1 text-[0.643rem] font-mono text-[var(--text-tertiary)] tabular-nums">{Math.round(ax.value * 100)}%</div>
+                <div className="mt-1 text-2xs font-mono text-[var(--text-tertiary)] tabular-nums">{Math.round(ax.value * 100)}%</div>
               </div>
             ))}
           </div>
-          <p className="text-[0.714rem] leading-relaxed text-[var(--text-tertiary)] mt-3">
+          <p className="text-xs leading-relaxed text-[var(--text-tertiary)] mt-3">
             Six balance axes from live project data — completion, momentum, focus, knowledge, flow, calm (inverse urgent load). 100 is healthiest.
           </p>
         </div>

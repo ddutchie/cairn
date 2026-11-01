@@ -116,7 +116,7 @@ export function ProviderGallery({ onPick }: Props) {
   return (
     <div className="flex flex-col gap-3">
       {result?.error && (
-        <div className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
+        <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
           <WifiOff size={12} />
           {result.fromCache
             ? "Showing the cached catalog — couldn't reach the registry."
@@ -124,7 +124,7 @@ export function ProviderGallery({ onPick }: Props) {
         </div>
       )}
       {installError && (
-        <div className="text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
+        <div className="text-xs text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
           {installError}
         </div>
       )}
@@ -162,13 +162,13 @@ export function ProviderGallery({ onPick }: Props) {
                     </div>
                     <span className="text-xs font-semibold text-[var(--text-primary)] leading-tight">{def.name}</span>
                   </div>
-                  <p className="text-[0.65rem] text-[var(--text-tertiary)] leading-snug line-clamp-2 flex-1">{entry.blurb}</p>
+                  <p className="text-2xs text-[var(--text-tertiary)] leading-snug line-clamp-2 flex-1">{entry.blurb}</p>
                   {prompting ? (
                     <div className="mt-2 flex items-center gap-1.5">
                       <input
                         type="password"
                         autoFocus
-                        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-[0.65rem] px-2 py-1 focus:outline-none"
+                        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-2xs px-2 py-1 focus:outline-none"
                         placeholder="sk-…"
                         value={keyValue}
                         onChange={(ev) => setKeyValue(ev.target.value)}
@@ -190,7 +190,7 @@ export function ProviderGallery({ onPick }: Props) {
                       </Button>
                     </div>
                   ) : installed ? (
-                    <div className="mt-2 flex items-center gap-1 text-[0.65rem] text-[var(--success,var(--accent))]">
+                    <div className="mt-2 flex items-center gap-1 text-2xs text-[var(--success,var(--accent))]">
                       <Check size={11} /> Added
                     </div>
                   ) : (
@@ -198,7 +198,7 @@ export function ProviderGallery({ onPick }: Props) {
                       type="button"
                       disabled={busy}
                       onClick={() => onInstallClick(entry)}
-                      className="mt-2 inline-flex items-center gap-1 px-2 py-1 text-[0.65rem] rounded bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-40"
+                      className="mt-2 inline-flex items-center gap-1 px-2 py-1 text-2xs rounded bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-40"
                     >
                       {busy ? <Spinner size={10} /> : <Download size={10} />}
                       {def.needsApiKey ? "Add · key" : "Add"}

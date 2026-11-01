@@ -84,9 +84,9 @@ export function Tabs<T extends string>({
             className={cn(
               "font-medium rounded-md transition-colors flex items-center gap-1.5",
               size === "md" && "px-3 py-1.5 text-xs",
-              size === "xs" && "px-2 py-0.5 text-[0.643rem]",
+              size === "xs" && "px-2 py-0.5 text-2xs",
               active
-                ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1"
                 : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
             )}
           >

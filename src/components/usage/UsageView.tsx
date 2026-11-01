@@ -135,12 +135,12 @@ function Segmented<T extends string | number>({ options, value, onChange }: {
 function StatCard({ label, value, valueClass, valueStyle, delta, deltaStyle }: { label: string; value: string; valueClass?: string; valueStyle?: React.CSSProperties; delta?: string; deltaStyle?: React.CSSProperties }) {
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
-      <div className="text-[0.643rem] uppercase tracking-[0.07em] text-[var(--text-tertiary)]">{label}</div>
+      <div className="text-xs text-[var(--text-tertiary)]">{label}</div>
       <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight truncate ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
       {delta ? (
-        <div className={cn("text-[0.643rem]", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta}</div>
+        <div className={cn("text-2xs", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta}</div>
       ) : (
-        <div className="text-[0.643rem] text-[var(--text-tertiary)]">—</div>
+        <div className="text-2xs text-[var(--text-tertiary)]">—</div>
       )}
     </div>
   );
@@ -160,7 +160,7 @@ function CallRow({ r, includeEstimated, nested = false }: { r: UsageRecentRow; i
                                     style={{ borderLeftColor: modelColor(r.model) }}
             className={cn("border-b border-l-2 border-[var(--border-subtle)] last:border-b-0 hover:bg-[var(--surface-2)]", nested && "bg-[color-mix(in_srgb,var(--surface-2)_40%,transparent)]")}
           >
-            <td className={cn("py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]", nested ? "pl-9 pr-4" : "px-4")}>{fmtDateTime(r.createdAt)}</td>
+            <td className={cn("py-2 whitespace-nowrap text-xs text-[var(--text-secondary)]", nested ? "pl-9 pr-4" : "px-4")}>{fmtDateTime(r.createdAt)}</td>
             <td className="px-4 py-2 whitespace-nowrap">
               <span className="inline-flex items-center gap-1.5">
                 <ModelLogo model={r.model} color={modelColor(r.model)} />
@@ -174,7 +174,7 @@ function CallRow({ r, includeEstimated, nested = false }: { r: UsageRecentRow; i
                 <span className="inline-flex flex-col items-end leading-tight">
                   <span className="font-mono tabular-nums text-[var(--warning)]">{fmtFull(r.cacheReadTokens)}</span>
                   {r.promptTokens > 0 && (
-                    <span className="text-[0.571rem]" style={{ color: cacheHitColor(Math.min(r.cacheReadTokens / r.promptTokens, 1)) }}>
+                    <span className="text-2xs" style={{ color: cacheHitColor(Math.min(r.cacheReadTokens / r.promptTokens, 1)) }}>
                       {Math.round(Math.min(r.cacheReadTokens / r.promptTokens, 1) * 100)}% of input
                     </span>
                   )}
@@ -185,13 +185,13 @@ function CallRow({ r, includeEstimated, nested = false }: { r: UsageRecentRow; i
             </td>
             <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{r.reasoningTokens > 0 ? fmtFull(r.reasoningTokens) : "—"}</td>
             <td className="px-4 py-2 whitespace-nowrap">
-              <span className="inline-flex items-center gap-1.5 text-[0.714rem] text-[var(--text-secondary)]">
+              <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                 <ProviderLogo baseUrl={r.baseUrl} />
                 {r.provider ?? "—"}
               </span>
             </td>
             <td className="px-4 py-2 whitespace-nowrap">
-              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.643rem] font-medium ${SOURCE_TAG_STYLE[r.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>
+              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-2xs font-medium ${SOURCE_TAG_STYLE[r.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>
                 {USAGE_SOURCE_LABELS[r.source] ?? r.source}
               </span>
             </td>
@@ -231,7 +231,7 @@ function ThreadGroupRow({ g, includeEstimated, loadRows }: {
         onClick={onToggle}
         aria-expanded={expanded}
       >
-        <td className="px-4 py-2 whitespace-nowrap text-[0.714rem] text-[var(--text-secondary)]">
+        <td className="px-4 py-2 whitespace-nowrap text-xs text-[var(--text-secondary)]">
           <span className="inline-flex items-center gap-1.5">
             <Chevron size={12} className="text-[var(--text-tertiary)] shrink-0" />
             {fmtDateTime(g.lastAt)}
@@ -239,7 +239,7 @@ function ThreadGroupRow({ g, includeEstimated, loadRows }: {
         </td>
         <td className="px-4 py-2 max-w-[22rem]">
           <div className="truncate font-medium text-[var(--text-primary)]" title={title}>{title}</div>
-          <div className="truncate text-[0.643rem] text-[var(--text-tertiary)]">
+          <div className="truncate text-2xs text-[var(--text-tertiary)]">
             {g.requests} {g.requests === 1 ? "request" : "requests"} · {g.models.join(", ")}
           </div>
         </td>
@@ -249,14 +249,14 @@ function ThreadGroupRow({ g, includeEstimated, loadRows }: {
         <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums text-[var(--text-tertiary)]">{g.reasoningTokens > 0 ? fmtFull(g.reasoningTokens) : "—"}</td>
         <td className="px-4 py-2 whitespace-nowrap text-[var(--text-tertiary)]">—</td>
         <td className="px-4 py-2 whitespace-nowrap">
-          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.643rem] font-medium ${SOURCE_TAG_STYLE[g.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>{label}</span>
+          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-2xs font-medium ${SOURCE_TAG_STYLE[g.source] ?? "bg-[var(--surface-2)] text-[var(--text-secondary)]"}`}>{label}</span>
         </td>
         <td className="px-4 py-2 whitespace-nowrap text-right font-mono tabular-nums font-semibold text-[var(--text-primary)]">
           {cost != null ? `${g.hasEstimated ? "~" : ""}${formatUsd(cost)}` : "—"}
         </td>
       </tr>
       {expanded && rows === undefined && (
-        <tr className="border-b border-[var(--border-subtle)]"><td colSpan={9} className="pl-9 py-2 text-[0.643rem] text-[var(--text-tertiary)]">Loading…</td></tr>
+        <tr className="border-b border-[var(--border-subtle)]"><td colSpan={9} className="pl-9 py-2 text-2xs text-[var(--text-tertiary)]">Loading…</td></tr>
       )}
       {expanded && rows?.map((r) => <CallRow key={r.id} r={r} includeEstimated={includeEstimated} nested />)}
     </>
@@ -311,7 +311,7 @@ export function UsageView() {
       {/* Toolbar — mirrors InsightsView / KnowledgeGraphView chrome */}
       <div className="flex items-center gap-x-2 gap-y-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
         <div className="text-sm font-semibold text-[var(--text-primary)] mr-1">Usage</div>
-        <div className="hidden @lg:block text-[0.714rem] text-[var(--text-tertiary)] mr-2">AI spend across chat, agents &amp; automations</div>
+        <div className="hidden @lg:block text-xs text-[var(--text-tertiary)] mr-2">AI spend across chat, agents &amp; automations</div>
         <div className="ml-auto flex items-center justify-end gap-2 flex-wrap min-w-0">
           <Segmented<UsageMetric>
             options={[
@@ -378,7 +378,7 @@ export function UsageView() {
               )}
             >
               <Trash2 size={11} className={clearConfirm.armed ? "text-[var(--danger)]" : ""} />
-              {clearConfirm.armed && <span className="text-[0.643rem] font-medium">Confirm</span>}
+              {clearConfirm.armed && <span className="text-2xs font-medium">Confirm</span>}
             </button>
           </Tooltip>
           <Tooltip content="Reload data" side="bottom">
@@ -411,11 +411,11 @@ export function UsageView() {
                 <div className="text-xs font-semibold text-[var(--text-primary)]">
                   {metric === "tokens" ? "Token usage" : metric === "cost" ? "Cost" : "Requests"}
                 </div>
-                <div className="text-[0.643rem] text-[var(--text-tertiary)]">
+                <div className="text-2xs text-[var(--text-tertiary)]">
                   {metric === "tokens" ? "daily totals" : metric === "cost" ? (includeEstimated ? "provider-reported + models.dev estimates" : "provider-reported costs") : "LLM calls"}
                 </div>
               </div>
-              <div className="flex items-center gap-4 px-4 pb-1 text-[0.643rem] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+              <div className="flex items-center gap-4 px-4 pb-1 text-2xs text-[var(--text-tertiary)]">
                 {metric === "tokens" ? (
                   <>
                     <span className="inline-flex items-center gap-1.5">
@@ -440,7 +440,7 @@ export function UsageView() {
             <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
               <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
                 <div className="text-xs font-semibold text-[var(--text-primary)]">By model</div>
-                <div className="text-[0.643rem] text-[var(--text-tertiary)]">{rangeLabel}</div>
+                <div className="text-2xs text-[var(--text-tertiary)]">{rangeLabel}</div>
               </div>
               <div className="p-4 flex flex-col gap-3">
                 {byModel.length === 0 ? (
@@ -455,7 +455,7 @@ export function UsageView() {
                             <ModelLogo model={m.model} color={color} />
                             <span className="font-mono truncate">{m.model}</span>
                           </span>
-                          <span className="inline-flex items-center gap-1.5 text-[0.643rem] text-[var(--text-tertiary)] shrink-0">
+                          <span className="inline-flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)] shrink-0">
                             <span className="font-mono text-[var(--text-secondary)]">{fmtCompact(m.promptTokens + m.completionTokens)}</span>
                             <span>·</span>
                             <span className="font-mono">{formatUsd(m.costUsd)}</span>
@@ -483,10 +483,10 @@ export function UsageView() {
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
             <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
               <div className="text-xs font-semibold text-[var(--text-primary)]">Usage history</div>
-              <div className="text-[0.643rem] text-[var(--text-tertiary)]">{items.length === 0 ? "" : `latest ${items.length} threads & calls`}</div>
+              <div className="text-2xs text-[var(--text-tertiary)]">{items.length === 0 ? "" : `latest ${items.length} threads & calls`}</div>
             </div>
             {items.length > 0 && includeEstimated && (
-              <div className="px-4 pb-1 text-[0.643rem] text-[var(--text-tertiary)]">~ = estimated from models.dev pricing</div>
+              <div className="px-4 pb-1 text-2xs text-[var(--text-tertiary)]">~ = estimated from models.dev pricing</div>
             )}
             {items.length === 0 ? (
               <EmptyState
@@ -498,7 +498,7 @@ export function UsageView() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-[var(--border)] text-[0.643rem] uppercase tracking-[0.07em] text-[var(--text-tertiary)]">
+                    <tr className="border-b border-[var(--border)] text-2xs text-[var(--text-tertiary)]">
                       <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Time</th>
                       <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Model</th>
                       <th className="text-right font-medium px-4 py-2 whitespace-nowrap">Input</th>

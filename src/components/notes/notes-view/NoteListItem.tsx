@@ -97,9 +97,9 @@ export const NoteListItem = memo(function NoteListItem({ note, isActive, indent 
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <span className="text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
+        <span className="text-sm text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 60) || "Empty note"}</span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
+          <span className="text-xs text-[var(--text-tertiary)]">{formatRelative(note.updatedAt)}</span>
         </div>
         {tags.length > 0 && (
           <div className="flex flex-wrap items-center gap-1">

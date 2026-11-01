@@ -253,7 +253,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
   // Post-install prompt: ask for the required key (OAuth connect) or confirm.
   // Rendered via the shell's `notice` slot (between banners and the list).
   const justInstalledNotice = justInstalled && (
-    <div className="mt-3 rounded-lg border border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] px-3 py-2 text-[0.714rem]">
+    <div className="mt-3 rounded-lg border border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
         <Check size={13} className="text-[var(--ok)] shrink-0" />
         <span className="text-[var(--text-primary)] font-medium">
@@ -307,7 +307,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
           {entryName(secretPrompt.entry)} needs an API key
         </span>
       </div>
-      <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-3">
+      <p className="text-xs text-[var(--text-tertiary)] mb-3">
         Stored securely in your OS keychain — never written to the app database or sent to the model.
         {entryMeta(secretPrompt.entry).homepage && isSafeExternalUrl(entryMeta(secretPrompt.entry).homepage) && (
           <>
@@ -325,7 +325,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       </p>
       {secretPrompt.names.map((n) => (
         <div key={n} className="mb-2">
-          <label className="text-[0.643rem] uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
+          <label className="text-xs text-[var(--text-tertiary)] block mb-1">
             {n}
           </label>
           <input
@@ -380,7 +380,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       emptyText="No community tools available."
       belowList={<>
         {secretPromptPanel}
-        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+        <p className="mt-4 text-2xs text-[var(--text-tertiary)]">
           Installed tools are added <strong>disabled</strong> — review them under MCP Servers / Custom
           HTTP Services, then enable (and, for OAuth, connect) and attach per-project.
         </p>
@@ -404,29 +404,29 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{name}</span>
-                    <span className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
+                    <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
                       {e.kind === "mcp" ? "MCP" : "HTTP"}
                     </span>
                     {isOAuth(e) && (
-                      <span className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--text-tertiary)]">
+                      <span className="inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)]">
                         <ShieldCheck size={11} /> OAuth
                       </span>
                     )}
                     {secretHeaderNames(e).length > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--text-tertiary)]">
+                      <span className="inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)]">
                         <KeyRound size={11} /> API key
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{meta.blurb}</p>
-                  <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1 truncate font-mono">
+                  <p className="text-2xs text-[var(--text-tertiary)] mt-1 truncate font-mono">
                     {baseUrlOf(e)}
                   </p>
                 </div>
 
                 <div className="shrink-0">
                   {installed !== undefined && !updatable ? (
-                    <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--success,var(--accent))]">
+                    <span className="inline-flex items-center gap-1 text-xs text-[var(--success,var(--accent))]">
                       <Check size={13} /> Installed
                     </span>
                   ) : (

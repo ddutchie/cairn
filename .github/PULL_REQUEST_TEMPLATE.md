@@ -22,7 +22,7 @@
 - [ ] `npm run test:e2e` passes (run before merging UI changes or cutting a release)
 - [ ] If this ships a **major, user-facing feature**: added an entry to `scripts/features.config.js` so it appears in the "What's New" modal (generated JSON — run `node scripts/generate-features.js`)
 - [ ] No hardcoded colours — CSS variables only (`var(--accent)`, `var(--text-primary)`, etc.)
-- [ ] No `text-[Npx]` pixel font classes — rem equivalents only (`text-[0.714rem]`, `text-xs`, etc.)
+- [ ] Type scale and elevation tokens only: `text-2xs`/`xs`/`sm`/`base`, `shadow-elev-1/2/3`; no `text-[Npx]` or arbitrary `text-[Nrem]`
 - [ ] New IPC handlers wrapped in `handle()` and return `IpcResult<T>`
 - [ ] New DB migrations appended (not edited) in `schema.ts`
 - [ ] New SQL goes in `electron/db/queries.ts` — single source of truth (imported by both Electron main process and MCP server); never construct a `Database` instance outside `db/client.ts` (Electron) or `mcp-server.ts` (MCP runtime)

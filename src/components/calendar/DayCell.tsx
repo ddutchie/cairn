@@ -57,7 +57,7 @@ export function DayCell({
       <div className="flex items-center justify-between px-0.5">
         <span
           className={cn(
-            "inline-flex items-center justify-center text-[0.643rem] font-semibold tabular-nums",
+            "inline-flex items-center justify-center text-2xs font-semibold tabular-nums",
             cell.isToday
               ? "h-[1.125rem] min-w-[1.125rem] px-1 rounded-full bg-[var(--accent)] text-[var(--accent-fg)]"
               : cell.inMonth
@@ -80,7 +80,7 @@ export function DayCell({
           <button
             type="button"
             onClick={() => onShowMore(cell, cards)}
-            className="px-1 py-0.5 text-left text-[0.6rem] font-medium text-[var(--text-tertiary)] rounded hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            className="px-1 py-0.5 text-left text-2xs font-medium text-[var(--text-tertiary)] rounded hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             +{overflow} more
           </button>

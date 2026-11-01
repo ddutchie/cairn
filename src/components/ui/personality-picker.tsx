@@ -31,7 +31,7 @@ export interface PersonalityPickerProps {
 }
 
 const inputCls =
-  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-[0.714rem] px-2.5 py-1.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]";
+  "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-xs px-2.5 py-1.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]";
 
 export function PersonalityPicker({
   disabled,
@@ -63,7 +63,7 @@ export function PersonalityPicker({
   const [prompt, setPrompt] = useState("");
 
   const active = personalityList.find((p) => p.id === personalityId) ?? null;
-  const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-[0.643rem]" : "px-2 py-1 text-[0.714rem]";
+  const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-2xs" : "px-2 py-1 text-xs";
 
   const select = (id: string | null) => {
     setPersonality(id);
@@ -122,10 +122,10 @@ export function PersonalityPicker({
             side="bottom"
             align={align}
             sideOffset={6}
-            className="z-50 w-80 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-3 space-y-3 animate-fade-in focus:outline-none"
+            className="z-50 w-80 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-3 space-y-3 animate-fade-in focus:outline-none"
           >
             <div className="flex items-center justify-between">
-              <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+              <div className="text-xs font-medium text-[var(--text-tertiary)]">
                 Chat · personality
               </div>
               <button
@@ -139,12 +139,12 @@ export function PersonalityPicker({
 
             {/* None — the base Cairn assistant, no personality layer */}
             <div className="space-y-1">
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Active</span>
+              <span className="text-xs text-[var(--text-secondary)]">Active</span>
               <button
                 type="button"
                 onClick={() => select(null)}
                 className={cn(
-                  "flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-[0.714rem] transition-colors",
+                  "flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-xs transition-colors",
                   !active
                     ? "text-[var(--accent)] bg-[var(--accent-dim)]"
                     : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]",
@@ -158,10 +158,10 @@ export function PersonalityPicker({
 
             {/* Installed personalities */}
             <div className="space-y-1">
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Installed</span>
+              <span className="text-xs text-[var(--text-secondary)]">Installed</span>
               <div className="flex flex-col gap-0.5 max-h-52 overflow-y-auto pr-0.5">
                 {personalityList.length === 0 ? (
-                  <p className="text-[0.643rem] text-[var(--text-tertiary)] px-1">
+                  <p className="text-2xs text-[var(--text-tertiary)] px-1">
                     None yet — create your own below or browse the community catalog.
                   </p>
                 ) : (
@@ -171,7 +171,7 @@ export function PersonalityPicker({
                       <div
                         key={p.id}
                         className={cn(
-                          "group flex items-start gap-1.5 px-2 py-1.5 rounded-md text-left text-[0.714rem] transition-colors",
+                          "group flex items-start gap-1.5 px-2 py-1.5 rounded-md text-left text-xs transition-colors",
                           isActive
                             ? "bg-[var(--accent-dim)]"
                             : "hover:bg-[var(--surface-2)]",
@@ -190,10 +190,10 @@ export function PersonalityPicker({
                             <span className={cn("flex items-center gap-1.5", isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]")}>
                               <span className="truncate font-medium">{p.name}</span>
                               {p.source === "custom" && (
-                                <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
+                                <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
                               )}
                             </span>
-                            <span className="block text-[0.6rem] text-[var(--text-tertiary)] mt-0.5 line-clamp-2 whitespace-pre-wrap">
+                            <span className="block text-2xs text-[var(--text-tertiary)] mt-0.5 line-clamp-2 whitespace-pre-wrap">
                               {p.prompt}
                             </span>
                           </span>
@@ -217,7 +217,7 @@ export function PersonalityPicker({
             {/* Create your own */}
             {creating ? (
               <div className="space-y-2 border-t border-[var(--border)] pt-2">
-                <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+                <div className="text-xs font-medium text-[var(--text-tertiary)]">
                   New personality
                 </div>
                 <input
@@ -250,7 +250,7 @@ export function PersonalityPicker({
               <button
                 type="button"
                 onClick={() => setCreating(true)}
-                className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-[0.714rem] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
+                className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
               >
                 <Plus size={12} />
                 Create your own
@@ -261,7 +261,7 @@ export function PersonalityPicker({
             <button
               type="button"
               onClick={() => setBrowsing(true)}
-              className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-[0.714rem] text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
+              className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-xs text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
             >
               <Download size={12} />
               Browse Community Personalities…

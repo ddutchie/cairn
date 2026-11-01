@@ -206,13 +206,13 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
         <button
           type="button"
           onClick={() => setAnchor(new Date())}
-          className="px-2 py-0.5 rounded text-[0.714rem] font-medium text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          className="px-2 py-0.5 rounded text-xs font-medium text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
         >
           Today
         </button>
         <span className="text-xs font-medium text-[var(--text-primary)] ml-1">{periodLabel}</span>
         {scopedCards.length === 0 && (
-          <span className="text-[0.643rem] text-[var(--text-tertiary)] ml-1">· no tasks yet</span>
+          <span className="text-2xs text-[var(--text-tertiary)] ml-1">· no tasks yet</span>
         )}
 
         {/* Workspace scope: multi-select project filter (mirrors Insights/Graph). */}
@@ -235,7 +235,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
               onClick={() => setLayout(l)}
               aria-pressed={layout === l}
               className={cn(
-                "px-2 py-0.5 text-[0.714rem] font-medium capitalize transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
+                "px-2 py-0.5 text-xs font-medium capitalize transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
                 layout === l
                   ? "bg-[var(--accent)] text-[var(--surface)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
@@ -271,7 +271,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
         />
         <DragOverlay dropAnimation={null}>
           {draggingCard ? (
-            <div className="rotate-2 opacity-90 w-40 shadow-lg">
+            <div className="rotate-2 opacity-90 w-40 shadow-elev-2">
               <TaskChip card={draggingCard} />
             </div>
           ) : null}

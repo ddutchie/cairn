@@ -109,7 +109,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
         <button
           onClick={toggle}
           className={cn(
-            "flex items-center gap-1 w-full px-2 py-0.5 text-[0.786rem] transition-colors text-left rounded-sm",
+            "flex items-center gap-1 w-full px-2 py-0.5 text-sm transition-colors text-left rounded-sm",
             "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
           )}
           style={{ paddingLeft: `${indent + 8}px` }}
@@ -119,11 +119,11 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
             : <ChevronRight size={10} className="flex-shrink-0 text-[var(--text-tertiary)]" />}
           <FolderOpen size={12} className="flex-shrink-0 text-[var(--text-tertiary)]" />
           <span className="truncate font-medium">{entry.name}</span>
-          {loading && <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)]">…</span>}
+          {loading && <span className="ml-auto text-xs text-[var(--text-tertiary)]">…</span>}
         </button>
         </EntryContextMenu>
         {expanded && loadError && (
-          <p className="px-3 py-1 text-[0.714rem] text-[var(--danger)]" style={{ paddingLeft: `${indent + 20}px` }}>
+          <p className="px-3 py-1 text-xs text-[var(--danger)]" style={{ paddingLeft: `${indent + 20}px` }}>
             {loadError}
           </p>
         )}
@@ -149,7 +149,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
     <button
       onClick={() => onFileClick(entry.path)}
       className={cn(
-        "flex items-center gap-1.5 w-full px-2 py-0.5 text-[0.786rem] transition-colors text-left rounded-sm",
+        "flex items-center gap-1.5 w-full px-2 py-0.5 text-sm transition-colors text-left rounded-sm",
         isActive
           ? "text-[var(--accent)] bg-[var(--accent-dim)]"
           : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
@@ -321,7 +321,7 @@ export function FileTree({ project }: FileTreeProps) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search files…"
-            className="flex-1 min-w-0 bg-transparent text-[0.786rem] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
+            className="flex-1 min-w-0 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
           />
           <button
             onClick={() => { setSearchActive(false); setSearchQuery(""); setSearchResults([]); }}
@@ -333,7 +333,7 @@ export function FileTree({ project }: FileTreeProps) {
       ) : (
         <div className="flex items-center gap-1.5 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
           <FolderOpen size={12} className="text-[var(--text-tertiary)]" />
-          <span className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] truncate flex-1">
+          <span className="text-xs font-medium text-[var(--text-tertiary)] truncate flex-1">
             {codeDirectory.split("/").pop() ?? "Files"}
           </span>
           <button
@@ -360,13 +360,13 @@ export function FileTree({ project }: FileTreeProps) {
         {searchActive ? (
           <>
             {searching && (
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-2">Searching…</p>
+              <p className="text-xs text-[var(--text-tertiary)] px-3 py-2">Searching…</p>
             )}
             {!searching && searchQuery.trim() && searchResults.length === 0 && (
               <EmptyState title="No files found" />
             )}
             {!searching && !searchQuery.trim() && (
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] px-3 py-4 text-center">Type to search files</p>
+              <p className="text-xs text-[var(--text-tertiary)] px-3 py-4 text-center">Type to search files</p>
             )}
             {searchResults.map((result) => (
               <button
@@ -379,11 +379,11 @@ export function FileTree({ project }: FileTreeProps) {
                     : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
                 )}
               >
-                <span className="text-[0.786rem] truncate flex items-center gap-1.5">
+                <span className="text-sm truncate flex items-center gap-1.5">
                   <FileIcon name={result.name} size={11} />
                   {result.name}
                 </span>
-                <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate pl-4">
+                <span className="text-xs text-[var(--text-tertiary)] truncate pl-4">
                   {result.relativePath.split("/").slice(0, -1).join("/") || "."}
                 </span>
               </button>

@@ -63,7 +63,7 @@ export function GeneralSettings() {
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                 theme === opt.value
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border)]"
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1 border border-[var(--border)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
               )}
             >
@@ -89,7 +89,7 @@ export function GeneralSettings() {
               className={cn(
                 "flex items-center justify-center w-8 py-1.5 rounded-md text-xs font-medium transition-colors",
                 fontScale === opt.value
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border)]"
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1 border border-[var(--border)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
               )}
             >
@@ -108,7 +108,7 @@ export function GeneralSettings() {
               className={cn(
                 "flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                 fontFamily === preset.id
-                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm border border-[var(--border)]"
+                  ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1 border border-[var(--border)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]"
               )}
             >

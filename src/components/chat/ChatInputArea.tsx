@@ -148,7 +148,7 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
         {approvalControl ?? (providerModelTarget === "ai" && <ChatApprovalPicker disabled={disabled} />)}
         <McpSignInChips />
         {statusText && (
-          <p className={cn("text-[0.643rem] text-[var(--text-tertiary)] ml-auto shrink-0", isLoading && "text-[var(--text-secondary)]")}>
+          <p className={cn("text-2xs text-[var(--text-tertiary)] ml-auto shrink-0", isLoading && "text-[var(--text-secondary)]")}>
             {statusText}
           </p>
         )}

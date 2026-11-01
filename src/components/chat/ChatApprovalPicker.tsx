@@ -39,7 +39,7 @@ export function ChatApprovalPicker({ disabled }: { disabled?: boolean }) {
           onOpenChange={setMenuOpen}
           onChange={(next) => { if (next !== value) setPolicy(next); }}
           options={CHAT_APPROVAL_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-          className="text-[0.643rem] px-1.5 py-0.5"
+          className="text-2xs px-1.5 py-0.5"
         />
       </span>
     </Tooltip>

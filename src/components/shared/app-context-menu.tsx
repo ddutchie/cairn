@@ -212,7 +212,7 @@ export function AppContextMenu() {
   const hasSelection = menu.selectedText.length > 0;
   const editable = menu.host !== null && !menu.readOnly;
   const kbd = (k: string) => (
-    <span className="ml-auto pl-4 text-[0.643rem] font-mono text-[var(--text-tertiary)]">{mod}{k}</span>
+    <span className="ml-auto pl-4 text-2xs font-mono text-[var(--text-tertiary)]">{mod}{k}</span>
   );
 
   return (

@@ -135,7 +135,7 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                   >
                     <span className="text-xs font-medium text-[var(--text-primary)] leading-snug line-clamp-2">{card.title}</span>
                     {card.description && (
-                      <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-2 whitespace-pre-wrap break-words">
+                      <div className="text-xs text-[var(--text-tertiary)] line-clamp-2 whitespace-pre-wrap break-words">
                         {/* Plain-text preview — the card is clamped to 2 lines, so
                             running the full markdown pipeline (code fences, KaTeX,
                             callouts…) per archived card just to truncate it is pure
@@ -145,13 +145,13 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                     )}
                     <div className="flex items-center gap-1.5 mt-auto pt-1">
                       {col && (
-                        <span className="text-[0.643rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] text-[var(--text-tertiary)]">
+                        <span className="text-2xs px-1.5 py-0.5 rounded bg-[var(--surface-2)] text-[var(--text-tertiary)]">
                           {col.name}
                         </span>
                       )}
                       {card.priority && card.priority !== "medium" && (
                         <span className={cn(
-                          "text-[0.643rem] px-1.5 py-0.5 rounded",
+                          "text-2xs px-1.5 py-0.5 rounded",
                           card.priority === "urgent" && "bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--danger)]",
                           card.priority === "high"   && "bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] text-[var(--warning)]",
                           card.priority === "low"    && "bg-[var(--surface-2)] text-[var(--text-tertiary)]",
@@ -160,7 +160,7 @@ export function ArchiveView({ projectId, filter, onFilterChange, onOpenCard }: A
                         </span>
                       )}
                       {card.archivedAt && (
-                        <span className="text-[0.643rem] text-[var(--text-tertiary)] ml-auto">
+                        <span className="text-2xs text-[var(--text-tertiary)] ml-auto">
                           {new Date(card.archivedAt).toLocaleDateString()}
                         </span>
                       )}

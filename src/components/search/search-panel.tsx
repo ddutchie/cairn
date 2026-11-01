@@ -70,17 +70,17 @@ function ResultRow({ result, focused, onSelect, semanticScore }: ResultRowProps)
       </span>
       <span className="flex-1 min-w-0 text-left">
         <span className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[0.813rem] font-medium text-[var(--text-primary)] truncate tracking-tight">{result.title}</span>
+          <span className="text-sm font-medium text-[var(--text-primary)] truncate tracking-tight">{result.title}</span>
           {semanticScore !== undefined && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_18%,transparent)] text-[0.643rem] font-mono font-semibold text-[var(--accent)]" title={`Semantic: ${semanticScore.toFixed(2)}`}>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] border border-[color-mix(in_srgb,var(--accent)_18%,transparent)] text-2xs font-mono font-semibold text-[var(--accent)]" title={`Semantic: ${semanticScore.toFixed(2)}`}>
               <Sparkles size={9} />{Math.round(semanticScore * 100)}%
             </span>
           )}
         </span>
         <span className="flex items-center gap-1.5 mt-0.5 min-w-0">
-          <span className="text-[0.714rem] px-1.5 py-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] truncate max-w-[14ch]">{result.projectName}</span>
+          <span className="text-xs px-1.5 py-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] truncate max-w-[14ch]">{result.projectName}</span>
           {result.snippet && (
-            <span className={cn("text-[0.714rem] text-[var(--text-tertiary)] flex-1 min-w-0", result.ranges?.length ? "line-clamp-2" : "truncate")}>
+            <span className={cn("text-xs text-[var(--text-tertiary)] flex-1 min-w-0", result.ranges?.length ? "line-clamp-2" : "truncate")}>
               <HighlightedSnippet text={result.snippet} ranges={result.ranges} />
             </span>
           )}
@@ -306,7 +306,7 @@ export function SearchPanel() {
         role="dialog"
         aria-modal="true"
         aria-label="Search notes and tasks"
-        className="relative w-full max-w-[640px] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-[0_24px_64px_color-mix(in_srgb,black_55%,transparent),inset_0_1px_0_color-mix(in_srgb,white_4%,transparent)] overflow-hidden animate-slide-in-up"
+        className="relative w-full max-w-[640px] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-elev-3 overflow-hidden animate-slide-in-up"
       >
         <div className="flex items-center gap-3 px-4 h-[52px] border-b border-[var(--border)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_60%,transparent),transparent)]">
           <span className="w-8 h-8 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] flex-shrink-0">
@@ -320,7 +320,7 @@ export function SearchPanel() {
             onKeyDown={handleKeyDown}
             placeholder={semanticMode && embeddingsReady ? "Search notes and tasks — semantic…" : "Search notes and tasks…"}
             aria-label="Search notes and tasks"
-            className="flex-1 bg-transparent text-[0.938rem] font-medium tracking-tight text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] placeholder:font-normal focus:outline-none"
+            className="flex-1 bg-transparent text-base font-medium tracking-tight text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] placeholder:font-normal focus:outline-none"
           />
           {query && (
             <button onClick={() => setQuery("")} className="w-7 h-7 rounded-full bg-[var(--surface-2)] border border-[var(--border)] grid place-items-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] transition-colors flex-shrink-0" aria-label="Clear">
@@ -334,9 +334,9 @@ export function SearchPanel() {
                 onClick={toggleSemantic}
                 disabled={!embeddingsReady}
                 className={cn(
-                  "flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[0.714rem] font-medium transition-colors",
+                  "flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-xs font-medium transition-colors",
                   semanticMode && embeddingsReady
-                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)] shadow-sm"
+                    ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)] shadow-elev-1"
                     : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:border-[var(--muted)]",
                   !embeddingsReady && "opacity-40 cursor-not-allowed"
                 )}
@@ -345,31 +345,31 @@ export function SearchPanel() {
               </button>
             </span>
           </Tooltip>
-          <span className="hidden sm:inline-flex items-center gap-1 text-[0.643rem] font-mono text-[var(--text-tertiary)] border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-1 rounded-md">
+          <span className="hidden sm:inline-flex items-center gap-1 text-2xs font-mono text-[var(--text-tertiary)] border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-1 rounded-md">
             ESC
           </span>
         </div>
 
         <div className="flex flex-col gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]/30">
           <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Filter by type">
-            <span className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
+            <span className="text-xs font-medium text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
             {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
               <button key={t} aria-pressed={filterType === t} onClick={() => { setFilterType(t); setFocused(0); }}
                 className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-all",
                   filterType === t
-                    ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-sm"
+                    ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-elev-1"
                     : "bg-[var(--surface)] text-[var(--text-tertiary)] border-[var(--border)] hover:text-[var(--text-secondary)] hover:border-[var(--muted)]"
                 )}>
                 {t === "all" ? "All" : t === "notes" ? "Notes" : "Tasks"}
               </button>
             ))}
-            <span className="ml-auto hidden sm:inline-flex text-[0.643rem] font-mono text-[var(--text-tertiary)]">
+            <span className="ml-auto hidden sm:inline-flex text-2xs font-mono text-[var(--text-tertiary)]">
               {filtered.length} {filtered.length === 1 ? "result" : "results"}
             </span>
           </div>
           {workspaceProjects.length > 1 && (
             <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by project">
-              <span className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
+              <span className="text-xs font-medium text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
               {filterProject && (
                 <button aria-pressed={!!filterProject} onClick={() => setFilterProject(null)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
                   <X size={10} />
@@ -399,7 +399,7 @@ export function SearchPanel() {
             <div className="py-2">
               {noteResults.length > 0 && (
                 <>
-                  <div className="px-4 py-2 flex items-center gap-2 text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">
+                  <div className="px-4 py-2 flex items-center gap-2 text-2xs font-medium text-[var(--text-tertiary)]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--info)]" /> Notes <span className="font-mono font-normal text-[var(--text-tertiary)]">· {noteResults.length}</span>
                   </div>
                   <div className="px-2 space-y-0.5 pb-2">
@@ -411,7 +411,7 @@ export function SearchPanel() {
               )}
               {taskResults.length > 0 && (
                 <>
-                  <div className="px-4 py-2 flex items-center gap-2 text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] border-t border-[var(--border)] mt-2 pt-3">
+                  <div className="px-4 py-2 flex items-center gap-2 text-2xs font-medium text-[var(--text-tertiary)] border-t border-[var(--border)] mt-2 pt-3">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" /> Tasks <span className="font-mono font-normal">· {taskResults.length}</span>
                   </div>
                   <div className="px-2 space-y-0.5">
@@ -431,7 +431,7 @@ export function SearchPanel() {
               </div>
               <p className="text-sm font-medium text-[var(--text-secondary)] mt-3">Search across projects</p>
               <p className="text-xs text-[var(--text-tertiary)] mt-1 max-w-[32ch] mx-auto leading-relaxed">Notes, tasks, and semantic matches — filtered by type and project. Start typing.</p>
-              <div className="flex items-center justify-center gap-3 mt-5 text-[0.714rem] text-[var(--text-tertiary)] font-mono">
+              <div className="flex items-center justify-center gap-3 mt-5 text-xs text-[var(--text-tertiary)] font-mono">
                 <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">↑↓</kbd> navigate</span>
                 <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">↵</kbd> open</span>
                 <span className="inline-flex items-center gap-1.5"><kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5">ESC</kbd> close</span>
@@ -440,7 +440,7 @@ export function SearchPanel() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-4 h-8 border-t border-[var(--border)] bg-[var(--surface-2)]/50 text-[0.643rem] font-mono text-[var(--text-tertiary)]">
+        <div className="flex items-center gap-3 px-4 h-8 border-t border-[var(--border)] bg-[var(--surface-2)]/50 text-2xs font-mono text-[var(--text-tertiary)]">
           <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" /> {results.length} hits</span>
           <span className="ml-auto hidden sm:inline-flex items-center gap-2">
             <span><kbd className="border border-[var(--border)] bg-[var(--surface)] px-1 rounded">↑↓</kbd> nav</span>

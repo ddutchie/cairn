@@ -36,7 +36,7 @@ export function McpSettingsTab() {
           </div>
         ) : (
           !previews.loading && (
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
+            <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
               Tools unavailable — the engine may still be starting.
             </p>
           )
@@ -128,12 +128,12 @@ export function MCPConfigBlock({
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)]">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-[var(--text-primary)]">{label}</span>
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">{hint}</span>
+          <span className="text-xs text-[var(--text-tertiary)]">{hint}</span>
         </div>
         {code && (
           <button
             onClick={() => onCopy(code, copyId)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
           >
             {copied === copyId
               ? <><CheckCircle size={11} className="text-[var(--success)]" /> Copied</>
@@ -143,7 +143,7 @@ export function MCPConfigBlock({
         )}
       </div>
       {/* Code */}
-      <pre className="text-[0.786rem] font-mono text-[var(--text-secondary)] leading-relaxed px-4 py-3 overflow-x-auto">
+      <pre className="text-sm font-mono text-[var(--text-secondary)] leading-relaxed px-4 py-3 overflow-x-auto">
         {code ?? "Launch Cairn to resolve path…"}
       </pre>
     </div>

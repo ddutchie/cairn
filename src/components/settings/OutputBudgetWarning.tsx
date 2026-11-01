@@ -14,7 +14,7 @@ export function OutputBudgetWarning({ contextWindow, outputTokens }: { contextWi
   return (
     <div
       role="alert"
-      className="flex items-start gap-2 rounded-md border border-[var(--warning)] px-3 py-2 text-[0.714rem] text-[var(--text-secondary)]"
+      className="flex items-start gap-2 rounded-md border border-[var(--warning)] px-3 py-2 text-xs text-[var(--text-secondary)]"
       style={{ background: "color-mix(in srgb, var(--warning) 10%, transparent)" }}
     >
       <AlertTriangle size={13} className="mt-0.5 shrink-0 text-[var(--warning)]" />

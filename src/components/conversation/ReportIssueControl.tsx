@@ -141,25 +141,25 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
             aria-label="What went wrong"
             className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]"
           />
-          <label className="flex items-center justify-between gap-3 text-[0.786rem] text-[var(--text-secondary)]">
+          <label className="flex items-center justify-between gap-3 text-sm text-[var(--text-secondary)]">
             <span>
               Include this reply
-              <span className="block text-[0.714rem] text-[var(--text-tertiary)]">
+              <span className="block text-xs text-[var(--text-tertiary)]">
                 {reply.length.toLocaleString("en-US")} characters; long replies are trimmed to fit.
               </span>
             </span>
             <Toggle checked={includeReply} onCheckedChange={setIncludeReply} label="Include this reply" />
           </label>
-          <label className="flex items-center justify-between gap-3 text-[0.786rem] text-[var(--text-secondary)]">
+          <label className="flex items-center justify-between gap-3 text-sm text-[var(--text-secondary)]">
             <span>
               Include connected MCP servers, tools and skills
-              <span className="block text-[0.714rem] text-[var(--text-tertiary)]">
+              <span className="block text-xs text-[var(--text-tertiary)]">
                 Names only ({mcpServers.length} MCP server{mcpServers.length === 1 ? "" : "s"}); never URLs, keys or arguments.
               </span>
             </span>
             <Toggle checked={includeSetup} onCheckedChange={setIncludeSetup} label="Include connected MCP servers, tools and skills" />
           </label>
-          <div className="rounded-md border border-[var(--border-subtle)] px-3 py-2 text-[0.714rem] text-[var(--text-tertiary)]">
+          <div className="rounded-md border border-[var(--border-subtle)] px-3 py-2 text-xs text-[var(--text-tertiary)]">
             Always included: Cairn v{env.appVersion}, {env.platform}, {env.surface}
             {env.model ? `, model ${env.model}` : ""}
             {env.contextWindow ? `, ${env.contextWindow.toLocaleString("en-US")} token context` : ""}

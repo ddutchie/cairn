@@ -150,13 +150,13 @@ export function UsageChart({ series, metric }: Props) {
       )}
       {hovered && (
         <div
-          className="pointer-events-none absolute z-10 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 shadow-xl"
+          className="pointer-events-none absolute z-10 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 shadow-elev-2"
           style={{
             left: Math.min(w - 170, Math.max(8, hoverX - 85)),
             top: Math.max(4, outY - 86),
           }}
         >
-          <div className="text-[0.643rem] uppercase tracking-[0.06em] text-[var(--text-tertiary)] mb-1">{fmtDay(hovered.day)}</div>
+          <div className="text-xs text-[var(--text-tertiary)] mb-1">{fmtDay(hovered.day)}</div>
           <div className="flex justify-between gap-6 text-xs">
             <span className="text-[var(--text-secondary)]">Input</span>
             <span className="font-mono font-semibold text-[var(--text-primary)]">{fmtFull(hovered.promptTokens)}</span>

@@ -375,7 +375,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
   }, []);
 
   const ZOOM_BTN =
-    "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
+    "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-elev-1";
 
   return (
     <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden">
@@ -408,7 +408,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
       {/* Hover tooltip */}
       {hoverLabel && (
         <div
-          className="absolute pointer-events-none px-2 py-1 rounded-md text-[0.7rem] font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-md max-w-xs truncate"
+          className="absolute pointer-events-none px-2 py-1 rounded-md text-xs font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-elev-1 max-w-xs truncate"
           style={{ left: tooltipPos.x, top: tooltipPos.y }}
         >
           {hoverLabel}

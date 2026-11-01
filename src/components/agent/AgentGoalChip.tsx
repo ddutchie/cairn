@@ -41,7 +41,7 @@ export function AgentGoalChip({ goal }: AgentGoalChipProps) {
   return (
     <div className="border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
       {expanded && goal.blockedReason && (
-        <div className="px-3 pt-2 pb-1 text-[0.714rem] leading-relaxed text-[var(--text-secondary)]">
+        <div className="px-3 pt-2 pb-1 text-xs leading-relaxed text-[var(--text-secondary)]">
           <span className="font-mono text-[var(--danger)]">{goal.blockedReason.code}</span>
           {": "}{goal.blockedReason.message}
         </div>
@@ -52,11 +52,11 @@ export function AgentGoalChip({ goal }: AgentGoalChipProps) {
         title={goal.blockedReason ? "Toggle blocker detail" : "Current session goal"}
       >
         <Target size={12} className="text-[var(--accent)] shrink-0" />
-        <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] flex-1 truncate">
+        <span className="text-xs font-medium text-[var(--text-secondary)] flex-1 truncate">
           {goal.objective}
           <span className="text-[var(--text-tertiary)] font-normal">{rounds}</span>
         </span>
-        <span className={cn("text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full shrink-0", phaseStyle(goal.phase))}>
+        <span className={cn("text-2xs font-semibold px-1.5 py-0.5 rounded-full shrink-0", phaseStyle(goal.phase))}>
           {goal.phase.toUpperCase()}
         </span>
         {goal.blockedReason && (expanded

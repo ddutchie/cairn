@@ -27,7 +27,7 @@ export function Tooltip({ content, children, side = "top", delayDuration = 400, 
           className={cn(
             "z-50 rounded-md px-2.5 py-1 text-xs font-medium",
             "bg-[var(--surface-3)] text-[var(--text-primary)]",
-            "border border-[var(--border)] shadow-lg",
+            "border border-[var(--border)] shadow-elev-2",
             "animate-fade-in"
           )}
         >

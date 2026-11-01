@@ -62,7 +62,7 @@ export function ErrorToasts({
         <div
           key={toast.id}
           role="alert"
-          className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--background)] shadow-lg max-w-xs pointer-events-auto"
+          className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--background)] shadow-elev-2 max-w-xs pointer-events-auto"
         >
           <AlertCircle size={13} className="text-[var(--danger)] shrink-0 mt-0.5" />
           <span className="text-xs text-[var(--text-secondary)] flex-1 leading-relaxed">{toast.message}</span>

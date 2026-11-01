@@ -23,7 +23,7 @@ export function WeekGrid({ cells, renderCell }: WeekGridProps) {
           <div
             key={cell.key}
             className={cn(
-              "px-1.5 py-1.5 text-[0.6rem] font-semibold uppercase tracking-wider border-b border-r border-[var(--border)]",
+              "px-1.5 py-1.5 text-2xs font-medium border-b border-r border-[var(--border)]",
               cell.isToday
                 ? "text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,var(--surface-2))]"
                 : "text-[var(--text-tertiary)] bg-[var(--surface-2)]",

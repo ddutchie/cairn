@@ -194,7 +194,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     return (
       <div role="listbox" aria-label="Recent sessions" aria-orientation="vertical" className="flex flex-col gap-0.5" tabIndex={-1} onKeyDown={handleListboxKeyDown} ref={listboxRef}>
         {previewSessions.length === 0 ? (
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">No sessions yet</p>
+          <p className="text-xs text-[var(--text-tertiary)]">No sessions yet</p>
         ) : previewSessions.map((session, index) => {
           const selected = active?.id === session.id;
           return (
@@ -291,7 +291,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
           className="flex-1 min-h-0 overflow-y-auto pb-1 space-y-0.5"
         >
           {visibleSessions.length === 0 ? (
-            <p className="px-2 py-2 text-center text-[0.714rem] text-[var(--text-tertiary)]">No conversations yet</p>
+            <p className="px-2 py-2 text-center text-xs text-[var(--text-tertiary)]">No conversations yet</p>
           ) : visibleSessions.map((session, index) => {
             const selected = active?.id === session.id;
             const hasActive = !!active;
@@ -335,7 +335,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         onClick={() => setOpen((value) => !value)}
         className={cn(
           projectNav
-            ? "flex items-center gap-2 w-full rounded-md px-2 py-1 text-[0.714rem] text-[var(--text-tertiary)] text-left transition-colors"
+            ? "flex items-center gap-2 w-full rounded-md px-2 py-1 text-xs text-[var(--text-tertiary)] text-left transition-colors"
             : "group flex w-full min-w-0 items-center justify-between gap-1.5 rounded-md border bg-[var(--surface-2)] px-2 py-1 text-left transition-colors",
           projectNav
             ? open ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "hover:bg-[var(--surface-2)]"
@@ -349,11 +349,11 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
             <SessionTypeIcon kind={currentKind ?? "chat"} size={projectNav ? 12 : 11} />
           </span>
           <span className="min-w-0 flex-1 text-left leading-tight">
-            <span className={cn("block truncate", projectNav ? "" : "text-[0.714rem] font-medium leading-none text-[var(--text-primary)]")}>
+            <span className={cn("block truncate", projectNav ? "" : "text-xs font-medium leading-none text-[var(--text-primary)]")}>
               {projectNav ? "Conversations" : active?.title ?? "Sessions"}
             </span>
             {!projectNav && (
-              <span className="block truncate text-[0.607rem] leading-none text-[var(--text-tertiary)]">
+              <span className="block truncate text-2xs leading-none text-[var(--text-tertiary)]">
                 {active ? kindLabel(active.kind) : "Choose a session"} · {sessions.length} session{sessions.length === 1 ? "" : "s"}
               </span>
             )}
@@ -361,7 +361,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         </span>
         {projectNav ? (
           <>
-            <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] shrink-0">{sessions.length}</span>
+            <span className="ml-auto text-xs text-[var(--text-tertiary)] shrink-0">{sessions.length}</span>
             {open
               ? <ChevronDown size={12} className="text-[var(--text-tertiary)] shrink-0" />
               : <ChevronRight size={12} className="text-[var(--text-tertiary)] shrink-0" />}
@@ -382,7 +382,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         <div className={cn(
           projectNav
             ? "mt-0.5 ml-2 border-l border-[var(--border)] pl-1.5"
-            : "absolute left-0 top-full z-50 mt-1 w-80 min-w-full max-h-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg py-1 animate-fade-in flex flex-col overflow-hidden",
+            : "absolute left-0 top-full z-50 mt-1 w-80 min-w-full max-h-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 py-1 animate-fade-in flex flex-col overflow-hidden",
         )}>
           <div className={projectNav ? "px-1 pb-1" : "sticky top-0 z-10 bg-[var(--surface)] p-1"}>
             <div className={cn("flex items-center gap-1.5", projectNav ? "rounded-md bg-[var(--surface-2)] px-2 py-1" : "rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1")}>
@@ -427,7 +427,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
           {/* The dropdown menu keeps its section label; the inline sidebar tree
               omits it — the "Conversations" header above already names it. */}
           {!projectNav && (
-            <div className="px-2.5 py-1 text-[0.643rem] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
+            <div className="px-2.5 py-1 text-2xs font-medium text-[var(--text-tertiary)]">
               All sessions
             </div>
           )}
@@ -442,7 +442,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
             className={cn("flex-1 min-h-0 overflow-y-auto", projectNav ? "pb-1 space-y-0.5" : "px-1 pb-1 space-y-0.5")}
           >
             {visibleSessions.length === 0 ? (
-              <p className="px-2 py-3 text-center text-[0.714rem] text-[var(--text-tertiary)]">No matching sessions</p>
+              <p className="px-2 py-3 text-center text-xs text-[var(--text-tertiary)]">No matching sessions</p>
             ) : visibleSessions.map((session, index) => {
               const selected = active?.id === session.id;
               const hasActive = !!active;

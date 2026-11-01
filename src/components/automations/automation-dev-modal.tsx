@@ -143,7 +143,7 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
 
   return (
     <div className="w-64 shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
-      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-[var(--border)] text-[0.714rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-tertiary)]">
         <FolderOpen size={11} /> Files
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
@@ -156,7 +156,7 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
             <div
               key={f.path}
               className={cn(
-                "flex items-center gap-1.5 rounded px-1.5 py-1 text-[0.714rem] min-w-0",
+                "flex items-center gap-1.5 rounded px-1.5 py-1 text-xs min-w-0",
                 changed[f.path]
                   ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]"
                   : "text-[var(--text-secondary)]",
@@ -172,7 +172,7 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
           ))
         )}
       </div>
-      <div className="px-2.5 py-1.5 border-t border-[var(--border)] text-[0.65rem] text-[var(--text-tertiary)]">
+      <div className="px-2.5 py-1.5 border-t border-[var(--border)] text-2xs text-[var(--text-tertiary)]">
         {sorted.length} file{sorted.length === 1 ? "" : "s"} · highlights files just written
       </div>
     </div>

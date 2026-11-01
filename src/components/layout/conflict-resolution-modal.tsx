@@ -128,20 +128,20 @@ export function ConflictResolutionModal({ open, onClose }: { open: boolean; onCl
                   <FileText size={13} className="text-[var(--text-tertiary)]" />
                   <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{c.title}</span>
                   {c.deviceId && (
-                    <span className="ml-auto text-[0.65rem] text-[var(--text-tertiary)]">from {c.deviceId}</span>
+                    <span className="ml-auto text-2xs text-[var(--text-tertiary)]">from {c.deviceId}</span>
                   )}
                 </div>
 
                 {editing ? (
                   <div className="p-3 space-y-2">
-                    <div className="flex items-center gap-1.5 text-[0.643rem] uppercase tracking-wide text-[var(--warning)]">
+                    <div className="flex items-center gap-1.5 text-xs text-[var(--warning)]">
                       <Pencil size={11} />
                       Overlapping edits — review the merged result before saving
                     </div>
                     <textarea
                       value={mergeDraft[c.id]}
                       onChange={(e) => setMergeDraft((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                      className="w-full h-48 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[0.714rem] font-mono text-[var(--text-primary)] resize-y focus:outline-none focus:border-[var(--accent)]"
+                      className="w-full h-48 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-xs font-mono text-[var(--text-primary)] resize-y focus:outline-none focus:border-[var(--accent)]"
                     />
                     <div className="flex items-center justify-end gap-2">
                       <Button
@@ -213,10 +213,10 @@ function DiffView({ current, copy, originalDeleted }: { current: string; copy: s
   if (originalDeleted) {
     return (
       <div className="p-3">
-        <div className="text-[0.643rem] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+        <div className="text-xs text-[var(--text-tertiary)] mb-1.5">
           Original was deleted — this is the conflicted copy
         </div>
-        <pre className="text-[0.714rem] text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-56 overflow-y-auto font-mono leading-relaxed">
+        <pre className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap break-words max-h-56 overflow-y-auto font-mono leading-relaxed">
           {copy.trim().length > 0 ? copy : <span className="italic text-[var(--text-tertiary)]">(empty)</span>}
         </pre>
       </div>
@@ -229,7 +229,7 @@ function DiffView({ current, copy, originalDeleted }: { current: string; copy: s
 
   return (
     <div>
-      <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-3 text-[0.643rem] uppercase tracking-wide">
+      <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-3 text-2xs">
         <span className="text-[var(--text-tertiary)]">Current vs conflicted copy</span>
         {identical ? (
           <span className="text-[var(--text-tertiary)]">identical body</span>
@@ -242,11 +242,11 @@ function DiffView({ current, copy, originalDeleted }: { current: string; copy: s
       </div>
       <div className="px-1 pb-2 max-h-64 overflow-y-auto">
         {identical ? (
-          <div className="px-2 py-3 text-[0.714rem] text-[var(--text-tertiary)] italic">
+          <div className="px-2 py-3 text-xs text-[var(--text-tertiary)] italic">
             Both versions have the same body — the conflict is in metadata only.
           </div>
         ) : (
-          <pre className="text-[0.714rem] font-mono leading-relaxed whitespace-pre-wrap break-words m-0">
+          <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-words m-0">
             {rows.map((row, i) => {
               const isAdd = row.op === "add";
               const isRemove = row.op === "remove";

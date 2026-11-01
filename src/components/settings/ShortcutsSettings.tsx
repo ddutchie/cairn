@@ -65,7 +65,7 @@ export function ShortcutsSettings() {
       <div className="space-y-4">
         {groups.map(({ heading, shortcuts }) => (
           <div key={heading}>
-            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5 px-1">
+            <p className="text-xs font-medium text-[var(--text-tertiary)] mb-1.5 px-1">
               {heading}
             </p>
             <div className="border border-[var(--border)] rounded-lg overflow-hidden">
@@ -78,7 +78,7 @@ export function ShortcutsSettings() {
                   )}
                 >
                   <span className="text-xs text-[var(--text-secondary)]">{action}</span>
-                  <kbd className="text-[0.786rem] font-mono bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-0.5 text-[var(--text-tertiary)]">
+                  <kbd className="text-sm font-mono bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-0.5 text-[var(--text-tertiary)]">
                     {key}
                   </kbd>
                 </div>

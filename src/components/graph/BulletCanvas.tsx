@@ -132,7 +132,7 @@ export function BulletCanvas({ nodes, onNodeClick }: Props) {
       </svg>
 
       {/* Legend */}
-      <div className="absolute top-3 right-4 flex items-center gap-3 text-[0.643rem] font-mono text-[var(--text-tertiary)]">
+      <div className="absolute top-3 right-4 flex items-center gap-3 text-2xs font-mono text-[var(--text-tertiary)]">
         <span className="flex items-center gap-1">
           <span className="inline-block w-6 h-2 rounded" style={{ background: "var(--text-primary)", opacity: 0.35 }} /> done
         </span>

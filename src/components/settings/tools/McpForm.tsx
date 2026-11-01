@@ -161,7 +161,7 @@ export function McpForm({
           ))}
         </div>
         {isStdio && (
-          <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="mt-1 text-xs text-[var(--text-tertiary)]">
             Runs as a local child process on this machine (desktop only). No shell — command + args spawn directly.
           </p>
         )}
@@ -183,7 +183,7 @@ export function McpForm({
           <div>
             <label className={labelCls}>Environment</label>
             <HeaderEditor rows={rows} onChange={setRows} />
-            <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+            <p className="mt-1 text-xs text-[var(--text-tertiary)]">
               Values that look like credentials are stored in the OS keychain, never in the database.
             </p>
           </div>
@@ -196,7 +196,7 @@ export function McpForm({
               rows={3}
               className={cn(inputCls, "font-mono")}
             />
-            {claudeError && <p className="mt-1 text-[0.714rem] text-[var(--accent)]">{claudeError}</p>}
+            {claudeError && <p className="mt-1 text-xs text-[var(--accent)]">{claudeError}</p>}
             <div className="mt-1 flex justify-end">
               <Button variant="ghost" size="sm" disabled={!claudeJson.trim()} onClick={applyClaudeImport}>
                 Fill from JSON
@@ -227,7 +227,7 @@ export function McpForm({
               ))}
             </div>
             {authMode === "oauth" && (
-              <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">
                 Sign in via your browser after saving. Tokens are stored in your OS keychain.
               </p>
             )}
@@ -244,7 +244,7 @@ export function McpForm({
                 Requires a pre-registered app (provider doesn&apos;t support dynamic registration)
               </label>
               {oauthClientIdRequired && (
-                <p className="text-[0.714rem] text-[var(--accent)]">
+                <p className="text-xs text-[var(--accent)]">
                   This provider (e.g. Slack) needs the client id + redirect URI of an app you create. Fill both fields below to sign in.
                 </p>
               )}
@@ -255,12 +255,12 @@ export function McpForm({
               <div>
                 <label className={cn(labelCls, oauthClientIdRequired && "text-[var(--accent)]")}>Client ID{oauthClientIdRequired ? " *" : " (optional)"}</label>
                 <input value={oauthClientId} onChange={(e) => setOauthClientId(e.target.value)} placeholder="e.g. 1601185624273.8899143856786" className={cn(inputCls, "font-mono")} />
-                <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">The public client id of the app you created. It is not a secret.</p>
+                <p className="mt-1 text-xs text-[var(--text-tertiary)]">The public client id of the app you created. It is not a secret.</p>
               </div>
               <div>
                 <label className={cn(labelCls, oauthClientIdRequired && "text-[var(--accent)]")}>Redirect URI{oauthClientIdRequired ? " *" : " (optional)"}</label>
                 <input value={oauthRedirectUri} onChange={(e) => setOauthRedirectUri(e.target.value)} placeholder="http://127.0.0.1:48123/callback" className={cn(inputCls, "font-mono")} />
-                <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">Register this exact URL in the app&apos;s OAuth settings; the port must be free.</p>
+                <p className="mt-1 text-xs text-[var(--text-tertiary)]">Register this exact URL in the app&apos;s OAuth settings; the port must be free.</p>
               </div>
             </div>
           ) : (

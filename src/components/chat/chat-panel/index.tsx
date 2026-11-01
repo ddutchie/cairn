@@ -745,7 +745,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             onRangeChange={setTimelineRange}
             onSpanSelect={(idx) => chatVirtuosoRef.current?.scrollToIndex({ index: idx, align: "center", behavior: "smooth" })}
           />
-          {timelineRange && <div className="text-[0.607rem] text-[var(--text-tertiary)] mt-1">Showing {visibleMessages.length} of {messages.length} messages — drag or wheel to zoom, double-click to reset</div>}
+          {timelineRange && <div className="text-2xs text-[var(--text-tertiary)] mt-1">Showing {visibleMessages.length} of {messages.length} messages — drag or wheel to zoom, double-click to reset</div>}
         </div>
       )}
 
@@ -769,18 +769,18 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           <div ref={projectRef} className="relative flex-1">
             <button
               onClick={() => setProjectOpen((v) => !v)}
-              className="flex items-center gap-1.5 text-[0.714rem] font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
+              className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
             >
               {project?.name ?? "Chat"}
               <ChevronDown size={10} className="text-[var(--text-tertiary)]" />
             </button>
             {projectOpen && (
-              <div className="absolute left-0 top-full mt-0.5 w-48 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
+              <div className="absolute left-0 top-full mt-0.5 w-48 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 overflow-hidden">
                 {projects.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => { if (isLoadingRef.current) return; setActiveProject(p.id); setProjectOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-[0.714rem] transition-colors ${
+                    className={`w-full text-left px-3 py-2 text-xs transition-colors ${
                       p.id === activeProjectId
                         ? "text-[var(--accent)] bg-[var(--surface-2)]"
                         : "text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
@@ -793,7 +793,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
             )}
           </div>
         ) : (
-          <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-1 truncate">
+          <span className="text-xs text-[var(--text-tertiary)] flex-1 truncate">
             {isView(activeView, "graph") ? "Graph Assistant" : project?.name ?? workspace?.name ?? "AI Assistant"}
           </span>
         )}

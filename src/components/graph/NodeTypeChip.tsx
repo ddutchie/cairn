@@ -36,7 +36,7 @@ export function NodeTypeChip({ type, active, onClick, tooltip, dotSize = 6, clas
   if (!isToggle) {
     return (
       <span
-        className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] font-medium capitalize", className)}
+        className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium capitalize", className)}
         style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
       >
         {dotSize > 0 && (
@@ -53,7 +53,7 @@ export function NodeTypeChip({ type, active, onClick, tooltip, dotSize = 6, clas
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex items-center gap-1 px-2 py-1 rounded text-[0.786rem] capitalize transition-colors border",
+        "flex items-center gap-1 px-2 py-1 rounded text-sm capitalize transition-colors border",
         active ? "border-transparent" : "border-[var(--border)] text-[var(--text-tertiary)] opacity-50",
         className,
       )}

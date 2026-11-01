@@ -390,7 +390,7 @@ export function KnowledgeGraphView() {
               <ChevronDown size={11} />
             </button>
             {labelDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-40 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg z-20 py-1">
+              <div className="absolute top-full left-0 mt-1 w-40 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 z-20 py-1">
                 {(["smart", "all", "minimal"] as const).map((mode) => (
                   <button
                     key={mode}
@@ -420,7 +420,7 @@ export function KnowledgeGraphView() {
             <Tooltip content="Adjust graph spacing / breathing room">
               <div className="flex items-center gap-1.5 text-[var(--text-secondary)] cursor-help">
                 <SlidersHorizontal size={11} className="text-[var(--text-tertiary)]" />
-                <span className="text-[0.714rem] select-none font-medium whitespace-nowrap">Spacing</span>
+                <span className="text-xs select-none font-medium whitespace-nowrap">Spacing</span>
               </div>
             </Tooltip>
             <input
@@ -435,7 +435,7 @@ export function KnowledgeGraphView() {
                 accentColor: "var(--accent)"
               }}
             />
-            <span className="text-[0.643rem] text-[var(--text-tertiary)] min-w-[24px] text-right font-mono">
+            <span className="text-2xs text-[var(--text-tertiary)] min-w-[24px] text-right font-mono">
               {spacing.toFixed(1)}x
             </span>
           </div>
@@ -447,7 +447,7 @@ export function KnowledgeGraphView() {
             <Tooltip content="Reveal semantic edges by similarity. 0 = all edges; 1.0 = hide (hard links only).">
               <div className="flex items-center gap-1.5 text-[var(--text-secondary)] cursor-help">
                 <Network size={11} className="text-[var(--text-tertiary)]" />
-                <span className="text-[0.714rem] select-none font-medium whitespace-nowrap">Semantic</span>
+                <span className="text-xs select-none font-medium whitespace-nowrap">Semantic</span>
               </div>
             </Tooltip>
             <input
@@ -460,7 +460,7 @@ export function KnowledgeGraphView() {
               className="w-16 h-1 rounded bg-[var(--border)] appearance-none cursor-pointer"
               style={{ accentColor: "var(--accent)" }}
             />
-            <span className="text-[0.643rem] text-[var(--text-tertiary)] min-w-[28px] text-right font-mono">
+            <span className="text-2xs text-[var(--text-tertiary)] min-w-[28px] text-right font-mono">
               {semanticThreshold >= 1 ? "off" : `≥${semanticThreshold.toFixed(2)}`}
             </span>
           </div>
@@ -541,7 +541,7 @@ export function KnowledgeGraphView() {
         )}
 
         {/* Stats + Recompute — pinned to right */}
-        <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
+        <span className="ml-auto flex items-center gap-2 text-sm text-[var(--text-tertiary)]">
           {`${filteredNodes.length} nodes · ${visibleEdgeCount} edges`}
           <Tooltip content={recomputing ? `Recomputing… (${recomputeSeconds}s)` : "Recompute auto-relationships"}>
             <button
@@ -550,7 +550,7 @@ export function KnowledgeGraphView() {
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
             >
               <RefreshSpin size={11} spinning={recomputing} />
-              {recomputing && <span className="text-[0.714rem] tabular-nums">{recomputeSeconds}s</span>}
+              {recomputing && <span className="text-xs tabular-nums">{recomputeSeconds}s</span>}
             </button>
           </Tooltip>
         </span>
@@ -573,7 +573,7 @@ export function KnowledgeGraphView() {
 
           {graphError && (
             <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/80 z-10">
-              <div className="px-4 py-3 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-lg">
+              <div className="px-4 py-3 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-elev-2">
                 <span className="text-xs text-[var(--danger)]">{graphError}</span>
               </div>
             </div>
@@ -640,7 +640,7 @@ export function KnowledgeGraphView() {
                       className="w-2.5 h-2.5 rounded-full"
                       style={{ background: nodeTypeColor(t) }}
                     />
-                    <span className="text-[0.786rem] capitalize text-[var(--text-tertiary)]">{t}</span>
+                    <span className="text-sm capitalize text-[var(--text-tertiary)]">{t}</span>
                   </div>
                 ))}
               </div>
@@ -658,7 +658,7 @@ export function KnowledgeGraphView() {
                           <line x1="0" y1="2" x2="16" y2="2" stroke={color} strokeWidth="1.5" />
                         </svg>
                       )}
-                      <span className="text-[0.786rem] text-[var(--text-tertiary)]">{label}</span>
+                      <span className="text-sm text-[var(--text-tertiary)]">{label}</span>
                     </div>
                   ))}
                 </div>

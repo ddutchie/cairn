@@ -329,7 +329,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
             onClick={() => setActiveId(tab.id)}
           >
             {tab.observed && <Bot size={10} className="text-[var(--accent)]" />}
-            <span className={cn("text-[0.714rem]", tab.exited && "opacity-50")}>
+            <span className={cn("text-xs", tab.exited && "opacity-50")}>
               {tab.label}
             </span>
             <button
@@ -367,7 +367,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
           />
         ))}
         {tabs.length === 0 && (
-          <div className="flex items-center justify-center h-full text-[0.714rem] text-[var(--text-tertiary)]">
+          <div className="flex items-center justify-center h-full text-xs text-[var(--text-tertiary)]">
             No terminal running
           </div>
         )}

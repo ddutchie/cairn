@@ -64,7 +64,7 @@ export function StepImportedProjects({ projects, busy = false, error = null, onB
               <span className="flex-1 min-w-0 text-sm text-[var(--text-primary)] truncate">
                 {p.name}
               </span>
-              <span className="flex items-center gap-1 text-[0.7rem] text-[var(--text-tertiary)] shrink-0 tabular-nums">
+              <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] shrink-0 tabular-nums">
                 <FileText size={11} />
                 {p.noteCount}
               </span>

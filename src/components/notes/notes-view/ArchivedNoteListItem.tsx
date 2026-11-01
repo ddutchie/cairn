@@ -18,7 +18,7 @@ export function ArchivedNoteListItem({ note, onRestore, onDelete }: { note: Note
     <ContextMenu>
       <ContextMenuTrigger asChild>
       <div className="group flex items-center gap-1.5 px-3 py-2">
-        <span className="flex-1 text-[0.786rem] text-[var(--text-tertiary)] truncate">{note.title}</span>
+        <span className="flex-1 text-sm text-[var(--text-tertiary)] truncate">{note.title}</span>
         <Tooltip content="Restore note">
           <button aria-label="Restore note" onClick={(e) => { e.stopPropagation(); onRestore(); }}
             className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-all">

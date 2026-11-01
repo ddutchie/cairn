@@ -109,7 +109,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
           {/* Project identity */}
           <div className="space-y-3">
             <div>
-              <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1.5">Icon</label>
+              <label className="text-sm text-[var(--text-tertiary)] block mb-1.5">Icon</label>
               <div className="flex flex-wrap gap-1.5">
                 {WORKSPACE_ICONS.map(({ name: iconName }) => (
                   <button
@@ -129,7 +129,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
               </div>
             </div>
             <div>
-              <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1">Description</label>
+              <label className="text-sm text-[var(--text-tertiary)] block mb-1">Description</label>
               <textarea
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
@@ -139,7 +139,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
               />
             </div>
             <div>
-              <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1">Status</label>
+              <label className="text-sm text-[var(--text-tertiary)] block mb-1">Status</label>
               <div className="grid grid-cols-2 gap-1">
                 {PROJECT_STATUS_OPTIONS.map((s) => (
                   <button
@@ -160,7 +160,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
               </div>
             </div>
             <div>
-              <label className="text-[0.786rem] text-[var(--text-tertiary)] block mb-1">Priority</label>
+              <label className="text-sm text-[var(--text-tertiary)] block mb-1">Priority</label>
               <div className="grid grid-cols-2 gap-1">
                 {PRIORITY_OPTIONS.map((p) => (
                   <button
@@ -184,7 +184,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
 
           {/* Setup: agent code directory */}
           <div className="space-y-1.5 pt-4 border-t border-[var(--border-subtle)]">
-            <label className="text-[0.786rem] text-[var(--text-tertiary)] block">Code directory (agent sessions)</label>
+            <label className="text-sm text-[var(--text-tertiary)] block">Code directory (agent sessions)</label>
             <div className="flex items-center gap-2">
               <input
                 value={codeDirInput}
@@ -209,7 +209,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
           {/* Tools & connectors */}
           <div className="pt-4 border-t border-[var(--border-subtle)]">
             <div className="flex items-center justify-between">
-              <span className="text-[0.786rem] text-[var(--text-tertiary)]">Tools & connectors</span>
+              <span className="text-sm text-[var(--text-tertiary)]">Tools & connectors</span>
               <Button
                 variant="outline"
                 size="xs"
@@ -218,7 +218,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
                 <Wrench size={11} /> Manage
               </Button>
             </div>
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1.5">
+            <p className="text-xs text-[var(--text-tertiary)] mt-1.5">
               Install and enable MCP servers and HTTP services, and attach them to this project from the Tools section on this page.
             </p>
           </div>

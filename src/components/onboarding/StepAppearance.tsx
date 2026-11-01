@@ -70,7 +70,7 @@ export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, on
               >
                 {opt.icon}
                 <span className="text-xs font-medium">{opt.label}</span>
-                <span className="text-[0.65rem] opacity-60">{opt.desc}</span>
+                <span className="text-2xs opacity-60">{opt.desc}</span>
               </button>
             ))}
           </div>
@@ -101,7 +101,7 @@ export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, on
                 <span style={{ fontSize: `${opt.value * 10}px`, lineHeight: 1, fontWeight: 600 }}>
                   Aa
                 </span>
-                <span className="text-[0.65rem] font-medium">{opt.label}</span>
+                <span className="text-2xs font-medium">{opt.label}</span>
               </button>
             ))}
           </div>
@@ -128,7 +128,7 @@ export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, on
                 <span style={{ fontFamily: preset.cssFamily, fontSize: "1.15rem", lineHeight: 1, fontWeight: 600 }}>
                   Ag
                 </span>
-                <span className="text-[0.65rem] font-medium">{preset.name}</span>
+                <span className="text-2xs font-medium">{preset.name}</span>
               </button>
             ))}
           </div>

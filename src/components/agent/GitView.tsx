@@ -345,7 +345,7 @@ export function GitView({ cwd }: GitViewProps) {
         <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors border border-[var(--border)] bg-[var(--surface-2)] shadow-sm cursor-pointer">
+              <button className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-1 cursor-pointer">
                 <GitBranch size={12} className="text-[var(--accent)]" />
                 <span className="font-mono truncate max-w-[120px]">{status.branch}</span>
                 <ChevronDown size={10} className="text-[var(--text-tertiary)]" />
@@ -359,7 +359,7 @@ export function GitView({ cwd }: GitViewProps) {
                     e.stopPropagation();
                     setNewBranchOpen(true);
                   }}
-                  className="text-[0.65rem] text-[var(--accent)] hover:underline normal-case font-normal cursor-pointer"
+                  className="text-2xs text-[var(--accent)] hover:underline normal-case font-normal cursor-pointer"
                 >
                   New Branch
                 </button>
@@ -399,7 +399,7 @@ export function GitView({ cwd }: GitViewProps) {
           </DropdownMenu>
 
           {(Number(status.ahead) > 0 || Number(status.behind) > 0) && (
-            <div className="flex items-center gap-2 text-[0.65rem] text-[var(--text-tertiary)]">
+            <div className="flex items-center gap-2 text-2xs text-[var(--text-tertiary)]">
               {Number(status.ahead) > 0 && (
                 <span className="flex items-center gap-0.5">
                   <ArrowUp size={10} /> {status.ahead}
@@ -417,7 +417,7 @@ export function GitView({ cwd }: GitViewProps) {
             <button
               onClick={handlePush}
               disabled={pushing || !status || (status.hasUpstream && Number(status.ahead) === 0)}
-              className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors disabled:opacity-50 cursor-pointer"
+              className="px-2 py-0.5 rounded text-2xs font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors disabled:opacity-50 cursor-pointer"
             >
               <ArrowUp size={10} className="inline mr-0.5" />
               {pushing ? "Pushing..." : "Push"}
@@ -427,7 +427,7 @@ export function GitView({ cwd }: GitViewProps) {
             <Tooltip content={prStatus.title || "Open pull request in browser"}>
               <button
                 onClick={() => { if (prStatus.url) window.electron?.openExternal(prStatus.url); }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors cursor-pointer"
               >
                 <GitPullRequest size={10} />
                 <span>
@@ -443,7 +443,7 @@ export function GitView({ cwd }: GitViewProps) {
             <Tooltip content={showPrForm ? "Close pull request creation form" : "Create pull request on GitHub"}>
               <button
                 onClick={() => { setShowPrForm((v) => !v); setPrUrl(null); }}
-                className="px-2 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors cursor-pointer"
+                className="px-2 py-0.5 rounded text-2xs font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors cursor-pointer"
               >
                 {showPrForm ? "Cancel" : "Create PR"}
               </button>
@@ -498,12 +498,12 @@ export function GitView({ cwd }: GitViewProps) {
       {prUrl && (
         <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--success)_8%,transparent)] border-b border-[var(--border)] flex-shrink-0">
           <Check size={11} className="text-[var(--success)] flex-shrink-0" />
-          <span className="text-[0.714rem] text-[var(--text-primary)] flex-1 truncate">
+          <span className="text-xs text-[var(--text-primary)] flex-1 truncate">
             PR created: {prUrl}
           </span>
           <button
             onClick={() => { window.electron?.openExternal(prUrl); }}
-            className="text-[0.65rem] text-[var(--accent)] hover:underline flex-shrink-0 hover:scale-102"
+            className="text-2xs text-[var(--accent)] hover:underline flex-shrink-0 hover:scale-102"
           >
             Open
           </button>
@@ -517,7 +517,7 @@ export function GitView({ cwd }: GitViewProps) {
       {error && (
         <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border-b border-[var(--border)] flex-shrink-0">
           <X size={11} className="text-[var(--danger)] flex-shrink-0" />
-          <span className="text-[0.714rem] text-[var(--danger)] flex-1">{error}</span>
+          <span className="text-xs text-[var(--danger)] flex-1">{error}</span>
           <button onClick={dismissError} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
           </button>
@@ -550,7 +550,7 @@ export function GitView({ cwd }: GitViewProps) {
                   <Tooltip content="Unstage all currently staged changes">
                     <button
                       onClick={() => handleUnstage()}
-                      className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+                      className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
                     >
                       Unstage all
                     </button>
@@ -592,7 +592,7 @@ export function GitView({ cwd }: GitViewProps) {
                     <Tooltip content={armedDiscardKey === "unstaged-all" ? discardMessage(status, status.unstaged.map((f) => f.path)) : "Discard all unstaged changes in modified files"}>
                       <button
                         onClick={() => fireDiscard("unstaged-all", status.unstaged.map((f) => f.path))}
-                        className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
+                        className="text-2xs text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
                       >
                         {armedDiscardKey === "unstaged-all" ? "Confirm discard?" : "Discard all"}
                       </button>
@@ -600,7 +600,7 @@ export function GitView({ cwd }: GitViewProps) {
                     <Tooltip content="Stage all modified files">
                       <button
                         onClick={() => handleStage(status.unstaged.map((f) => f.path))}
-                        className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+                        className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
                       >
                         Stage all
                       </button>
@@ -643,7 +643,7 @@ export function GitView({ cwd }: GitViewProps) {
                     <Tooltip content={armedDiscardKey === "untracked-all" ? discardMessage(status, status.untracked.map((f) => f.path)) : "Permanently delete all untracked files"}>
                       <button
                         onClick={() => fireDiscard("untracked-all", status.untracked.map((f) => f.path))}
-                        className="text-[0.65rem] text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
+                        className="text-2xs text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
                       >
                         {armedDiscardKey === "untracked-all" ? "Confirm delete?" : "Clean all"}
                       </button>
@@ -651,7 +651,7 @@ export function GitView({ cwd }: GitViewProps) {
                     <Tooltip content="Stage all untracked files">
                       <button
                         onClick={() => handleStage(status.untracked.map((f) => f.path))}
-                        className="text-[0.65rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
+                        className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
                       >
                         Stage all
                       </button>
@@ -739,8 +739,8 @@ export function GitView({ cwd }: GitViewProps) {
                 <div key={entry.hash} className="flex items-start gap-3 px-4 py-2 hover:bg-[var(--surface-2)] transition-colors">
                   <GitCommit size={10} className="mt-1 text-[var(--text-tertiary)] flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[0.714rem] text-[var(--text-primary)] truncate font-mono">{entry.subject}</div>
-                    <div className="flex items-center gap-2 text-[0.65rem] text-[var(--text-tertiary)] mt-0.5">
+                    <div className="text-xs text-[var(--text-primary)] truncate font-mono">{entry.subject}</div>
+                    <div className="flex items-center gap-2 text-2xs text-[var(--text-tertiary)] mt-0.5">
                       <span className="font-mono">{entry.hash}</span>
                       <span>{entry.author}</span>
                       <span>{new Date(entry.date).toLocaleDateString()}</span>

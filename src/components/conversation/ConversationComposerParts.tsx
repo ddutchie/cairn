@@ -21,7 +21,7 @@ export function ConversationWorkingStatus({ label, phase = "working" }: Conversa
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface)]">
       <WorkLoader phase={phase} size={16} />
-      <span className="text-[0.714rem] text-[var(--text-secondary)]">{label}</span>
+      <span className="text-xs text-[var(--text-secondary)]">{label}</span>
     </div>
   );
 }
@@ -41,7 +41,7 @@ export function ConversationQueueDock({ items, expanded, onToggle, onRemove, nou
     <div className="border-b border-[var(--border)] bg-[var(--surface)]">
       <button type="button" onClick={onToggle} className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-[var(--surface-2)] transition-colors">
         <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-        <span className="text-[0.714rem] text-[var(--text-secondary)]">
+        <span className="text-xs text-[var(--text-secondary)]">
           {items.length} {noun}{items.length === 1 ? "" : "s"} queued
         </span>
         <ChevronDown size={11} className={cn("ml-auto text-[var(--text-tertiary)] shrink-0 transition-transform", expanded && "rotate-180")} />
@@ -50,13 +50,13 @@ export function ConversationQueueDock({ items, expanded, onToggle, onRemove, nou
         <div className="px-3 pb-2 space-y-2">
           {items.map((item) => (
             <div key={item.id} className="flex items-start gap-2">
-              <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
+              <span className="text-xs text-[var(--text-secondary)] flex-1 min-w-0 line-clamp-2">
                 {item.content || (item.attachments && item.attachments.length > 0 ? "(attachment)" : "")}
                 {item.attachments && item.attachments.length > 0 && item.content
                   ? ` · ${item.attachments.length} attachment${item.attachments.length === 1 ? "" : "s"}`
                   : null}
               </span>
-              <button type="button" onClick={() => onRemove(item.id)} className="text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors">
+              <button type="button" onClick={() => onRemove(item.id)} className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0 transition-colors">
                 Remove
               </button>
             </div>

@@ -307,7 +307,7 @@ export function SyncActivityPanel() {
                 ? "Another device is on an older version"
                 : `${behindPeers.length} devices are on an older version`}
             </div>
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-0.5">
+            <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
               Update Cairn on your other {behindPeers.length === 1 ? "device" : "devices"} so deletions
               sync correctly. Until then, a note you delete here can reappear from the older device.
             </p>
@@ -323,7 +323,7 @@ export function SyncActivityPanel() {
               ? "1 restored note has no file on disk"
               : `${fileFailures.length} restored notes have no file on disk`}
           </div>
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="text-xs text-[var(--text-tertiary)]">
             The note was restored in Cairn, but writing its Markdown file failed. Retry to write it
             again.
           </p>
@@ -332,10 +332,10 @@ export function SyncActivityPanel() {
               <li key={failure.id} className="p-2 rounded-lg bg-[var(--surface-3)]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[0.786rem] text-[var(--text-primary)] truncate">
+                    <div className="text-sm text-[var(--text-primary)] truncate">
                       {failure.title || "Untitled"}
                     </div>
-                    <div className="text-[0.643rem] text-[var(--danger)] break-words">
+                    <div className="text-2xs text-[var(--danger)] break-words">
                       {failure.error}
                     </div>
                   </div>
@@ -365,7 +365,7 @@ export function SyncActivityPanel() {
               ? "1 note was deleted on another device"
               : `${restorableTotal} notes were deleted on another device`}
           </div>
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="text-xs text-[var(--text-tertiary)]">
             Restoring brings the note back everywhere — it won&apos;t be deleted again on the next
             sync.
           </p>
@@ -374,10 +374,10 @@ export function SyncActivityPanel() {
               <li key={note.entity_id} className="p-2 rounded-lg bg-[var(--surface-3)]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[0.786rem] text-[var(--text-primary)] truncate">
+                    <div className="text-sm text-[var(--text-primary)] truncate">
                       {note.title || "Untitled"}
                     </div>
-                    <div className="text-[0.643rem] text-[var(--text-tertiary)]">
+                    <div className="text-2xs text-[var(--text-tertiary)]">
                       deleted{" "}
                       <span title={note.deleted_at ? absoluteTime(note.deleted_at) : undefined}>
                         {note.deleted_at ? formatRelative(note.deleted_at, { absoluteAfterDays: Infinity }) : "recently"}
@@ -399,7 +399,7 @@ export function SyncActivityPanel() {
                   </Button>
                 </div>
                 {errors[note.entity_id] && (
-                  <div className="flex items-start gap-1.5 mt-1.5 text-[0.643rem] text-[var(--danger)]">
+                  <div className="flex items-start gap-1.5 mt-1.5 text-2xs text-[var(--danger)]">
                     <AlertTriangle size={11} className="mt-0.5 shrink-0" />
                     <span>{errors[note.entity_id]}</span>
                   </div>
@@ -409,7 +409,7 @@ export function SyncActivityPanel() {
           </ul>
           {restorableTotal > restorable.length && (
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+              <span className="text-2xs text-[var(--text-tertiary)]">
                 Showing {restorable.length} of {restorableTotal}.
               </span>
               {/* Without this the remaining notes are unreachable — restore is
@@ -417,7 +417,7 @@ export function SyncActivityPanel() {
               <button
                 type="button"
                 onClick={() => setPageSize((n) => n + RESTORABLE_PAGE)}
-                className="text-[0.643rem] font-medium text-[var(--accent)] hover:underline"
+                className="text-2xs font-medium text-[var(--accent)] hover:underline"
               >
                 Show more
               </button>
@@ -467,7 +467,7 @@ export function SyncActivityPanel() {
                   <li key={entry.seq} className="rounded-lg bg-[var(--surface-3)]">
                     <div className="flex items-start gap-2 p-2">
                       <span
-                        className="mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[0.607rem] font-semibold uppercase tracking-wide"
+                        className="mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-2xs font-medium"
                         style={{
                           color: meta.token,
                           background: `color-mix(in srgb, ${meta.token} 14%, transparent)`,
@@ -481,16 +481,16 @@ export function SyncActivityPanel() {
                           <button
                             type="button"
                             onClick={target}
-                            className="block max-w-full text-left text-[0.714rem] text-[var(--text-secondary)] truncate hover:text-[var(--accent)] hover:underline transition-colors"
+                            className="block max-w-full text-left text-xs text-[var(--text-secondary)] truncate hover:text-[var(--accent)] hover:underline transition-colors"
                           >
                             {entry.op === "delete" ? "Deleted" : "Changed"} {rowLabel(entry)}
                           </button>
                         ) : (
-                          <div className="text-[0.714rem] text-[var(--text-secondary)] truncate">
+                          <div className="text-xs text-[var(--text-secondary)] truncate">
                             {entry.op === "delete" ? "Deleted" : "Changed"} {rowLabel(entry)}
                           </div>
                         )}
-                        <div className="text-[0.643rem] text-[var(--text-tertiary)]">
+                        <div className="text-2xs text-[var(--text-tertiary)]">
                           from {deviceLabel(entry.origin, entry.isSelf)} ·{" "}
                           <span title={absoluteTime(entry.at)}>seen {formatRelative(entry.at, { absoluteAfterDays: Infinity })}</span>
                           {copyNote}

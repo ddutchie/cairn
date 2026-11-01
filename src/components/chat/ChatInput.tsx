@@ -333,7 +333,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     title={img.name}
                   >
                     <FileText size={18} className="text-[var(--danger)]" />
-                    <span className="text-[0.5rem] leading-none text-[var(--text-tertiary)] truncate w-full text-center">
+                    <span className="text-2xs leading-none text-[var(--text-tertiary)] truncate w-full text-center">
                       {img.name}
                     </span>
                   </div>
@@ -357,12 +357,12 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
         {/* Autocomplete suggestions */}
         {showSuggestions && trigger && (
-          <div className="absolute bottom-full left-0 right-0 mb-1.5 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl overflow-hidden max-h-56 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="absolute bottom-full left-0 right-0 mb-1.5 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-elev-2 overflow-hidden max-h-56 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
             <div className="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
-              <span className="text-[0.643rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
-                {trigger.type === "command" ? "Slash Commands" : "Mention Note / Task / File"}
+              <span className="text-xs font-medium text-[var(--text-tertiary)]">
+                {trigger.type === "command" ? "Slash commands" : "Mention a note, task or file"}
               </span>
-              <span className="text-[0.571rem] text-[var(--text-tertiary)]">
+              <span className="text-2xs text-[var(--text-tertiary)]">
                 ↑↓ to navigate · Enter to select
               </span>
             </div>
@@ -383,7 +383,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                         )}
                       >
                         <span className="text-xs font-semibold">/{cmd.name}</span>
-                        <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+                        <span className="text-2xs text-[var(--text-tertiary)]">
                           {cmd.description}
                         </span>
                       </button>
@@ -415,7 +415,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                             {item.title}
                           </span>
                         </div>
-                        <span className="text-[0.643rem] text-[var(--text-tertiary)] shrink-0">
+                        <span className="text-2xs text-[var(--text-tertiary)] shrink-0">
                           {item.subtitle}
                         </span>
                       </button>
@@ -429,7 +429,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
           className={cn(
             "relative flex items-end gap-2.5 transition-all duration-300",
             isOverview
-              ? "rounded-2xl border border-[var(--border)] bg-[color-mix(in srgb,var(--surface-2)_85%,transparent)] backdrop-blur-md px-4 py-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-[color-mix(in srgb,var(--accent)_40%,transparent)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]"
+              ? "rounded-2xl border border-[var(--border)] bg-[color-mix(in srgb,var(--surface-2)_85%,transparent)] backdrop-blur-md px-4 py-3 shadow-elev-2 hover:border-[color-mix(in srgb,var(--accent)_40%,transparent)] focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]"
               : "rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent-dim)]"
           )}
         >
@@ -491,7 +491,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                       disabled={disabled || (!value.trim() && (!pendingImages || pendingImages.length === 0))}
                       type="button"
                       className={cn(
-                        "relative flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[color-mix(in_srgb,var(--accent)_10%,transparent)]",
+                        "relative flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-[0_4px_6px_-1px_color-mix(in_srgb,var(--accent)_10%,transparent),0_2px_4px_-2px_color-mix(in_srgb,var(--accent)_10%,transparent)]",
                         isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                       )}
                     >
@@ -500,7 +500,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                         <CountBadge
                           count={queuedCount}
                           tone="surface"
-                          className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 text-[0.571rem] flex items-center justify-center leading-none"
+                          className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 text-2xs flex items-center justify-center leading-none"
                         />
                       )}
                     </button>
@@ -511,7 +511,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     onClick={onStop}
                     type="button"
                     className={cn(
-                      "flex-shrink-0 rounded-lg bg-[var(--danger)] text-[var(--danger-fg)] hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[var(--danger)]/10",
+                      "flex-shrink-0 rounded-lg bg-[var(--danger)] text-[var(--danger-fg)] hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-[0_4px_6px_-1px_color-mix(in_srgb,var(--danger)_10%,transparent),0_2px_4px_-2px_color-mix(in_srgb,var(--danger)_10%,transparent)]",
                       isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                     )}
                   >
@@ -526,7 +526,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                   disabled={disabled || (!value.trim() && (!pendingImages || pendingImages.length === 0))}
                   type="button"
                   className={cn(
-                    "flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-md shadow-[color-mix(in_srgb,var(--accent)_10%,transparent)]",
+                    "flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-[0_4px_6px_-1px_color-mix(in_srgb,var(--accent)_10%,transparent),0_2px_4px_-2px_color-mix(in_srgb,var(--accent)_10%,transparent)]",
                     isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                   )}
                 >

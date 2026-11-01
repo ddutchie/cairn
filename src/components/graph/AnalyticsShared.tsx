@@ -34,7 +34,7 @@ interface CalloutProps {
 export function CanvasCallout({ x, y, containerW, maxW = 220, children }: CalloutProps) {
   return (
     <div
-      className="absolute pointer-events-none z-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg p-2.5 text-[0.786rem]"
+      className="absolute pointer-events-none z-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-2.5 text-sm"
       style={{
         maxWidth: maxW,
         left: Math.min(x + 14, containerW - maxW - 8),

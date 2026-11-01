@@ -224,7 +224,7 @@ export function InsightsView() {
         )}
 
         {/* Right: item count + reset/refresh */}
-        <span className="ml-auto flex items-center gap-2 text-[0.786rem] text-[var(--text-tertiary)]">
+        <span className="ml-auto flex items-center gap-2 text-sm text-[var(--text-tertiary)]">
           {allNodes.length} items
           <Tooltip content={layout === "ridgeline" ? "Reset view to data range" : "Reload data"}>
             <button

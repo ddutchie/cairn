@@ -206,7 +206,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
             <div className="flex justify-start">
               <div className="max-w-[88%] bg-[var(--surface-2)] border border-[var(--border)] rounded-xl rounded-tl-sm px-3 py-2 flex flex-col gap-1.5">
                 {toolCalls.map((tc, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
                     <CheckCircle2 size={10} className="text-[var(--accent)] flex-shrink-0" />
                     <span>{prettifyToolLabel(tc.label)}</span>
                   </div>
@@ -217,7 +217,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
                     <span className="inline-block w-0.5 h-3 bg-[var(--accent)] animate-pulse ml-0.5 align-middle" />
                   </div>
                 ) : (
-                  <div className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)]">
+                  <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
                     {toolCalls.length > 0
                       ? <Wrench size={10} className="animate-pulse flex-shrink-0" />
                       : <Spinner size={10} />}
@@ -239,7 +239,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
           ) : (
             <div className="flex flex-col gap-1.5">
               {waitingForUser && (
-                <p className="text-[0.714rem] text-[var(--accent)] font-medium">Your turn ↓</p>
+                <p className="text-xs text-[var(--accent)] font-medium">Your turn ↓</p>
               )}
               <div className="flex items-end gap-2">
                 <textarea

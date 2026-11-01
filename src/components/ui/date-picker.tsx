@@ -107,7 +107,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
       {open && createPortal(
         <div
           data-dialog-portal
-          className="cairn-datepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-2"
+          className="cairn-datepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-2"
           style={{
             top: `${popoverPos.top}px`,
             left: `${popoverPos.left}px`,
@@ -136,9 +136,9 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
               button_next:     "p-1 rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors",
               weeks:       "space-y-0.5",
               weekdays:    "flex",
-              weekday:     "w-8 text-center text-[0.714rem] font-medium text-[var(--text-tertiary)] py-1",
+              weekday:     "w-8 text-center text-xs font-medium text-[var(--text-tertiary)] py-1",
               week:        "flex",
-              day:         "w-8 h-8 flex items-center justify-center rounded-md text-[0.786rem] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors cursor-pointer",
+              day:         "w-8 h-8 flex items-center justify-center rounded-md text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors cursor-pointer",
               day_button:  "w-full h-full flex items-center justify-center rounded-md",
               selected:    "bg-[var(--accent)] text-[var(--background)] hover:bg-[var(--accent-hover)] hover:text-[var(--background)]",
               today:       "font-semibold text-[var(--accent)]",

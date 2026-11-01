@@ -76,17 +76,17 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           side="bottom"
           align="end"
           sideOffset={6}
-          className="z-50 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-3 space-y-3 animate-fade-in focus:outline-none"
+          className="z-50 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-3 space-y-3 animate-fade-in focus:outline-none"
         >
-          <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+          <div className="text-xs font-medium text-[var(--text-tertiary)]">
             Chat settings
           </div>
 
           {/* Max steps */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Max steps</span>
-              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+              <span className="text-xs text-[var(--text-secondary)]">Max steps</span>
+              <span className="text-2xs text-[var(--text-tertiary)]">
                 {maxSteps === 1000 ? "∞" : maxSteps} tool rounds
               </span>
             </div>
@@ -97,7 +97,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
                   onClick={() => setAIConfig({ maxSteps: n })}
                   disabled={disabled}
                   className={cn(
-                    "flex-1 px-1 py-0.5 text-[0.643rem] rounded border transition-colors disabled:opacity-50",
+                    "flex-1 px-1 py-0.5 text-2xs rounded border transition-colors disabled:opacity-50",
                     maxSteps === n
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
@@ -112,8 +112,8 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           {/* Temperature */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[0.714rem] text-[var(--text-secondary)]">Temperature</span>
-              <span className="text-[0.643rem] text-[var(--text-tertiary)]">
+              <span className="text-xs text-[var(--text-secondary)]">Temperature</span>
+              <span className="text-2xs text-[var(--text-tertiary)]">
                 {temperatureAuto ? "Auto (model default)" : temperature.toFixed(2)}
               </span>
             </div>
@@ -123,7 +123,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
                 disabled={disabled}
                 title="Auto — no temperature is sent; the model uses its own default."
                 className={cn(
-                  "flex-1 px-1 py-0.5 text-[0.643rem] rounded border transition-colors disabled:opacity-50",
+                  "flex-1 px-1 py-0.5 text-2xs rounded border transition-colors disabled:opacity-50",
                   temperatureAuto
                     ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
                     : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
@@ -137,7 +137,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
                   onClick={() => setAIConfig({ temperature: n })}
                   disabled={disabled}
                   className={cn(
-                    "flex-1 px-1 py-0.5 text-[0.643rem] rounded border transition-colors disabled:opacity-50",
+                    "flex-1 px-1 py-0.5 text-2xs rounded border transition-colors disabled:opacity-50",
                     !temperatureAuto && temperature === n
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
@@ -156,7 +156,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
               type="button"
               onClick={() => setThemesOpen((v) => !v)}
               aria-expanded={themesOpen}
-              className="flex w-full items-center justify-between rounded px-0.5 py-0.5 text-[0.714rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              className="flex w-full items-center justify-between rounded px-0.5 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               <span>Chat theme</span>
               <ChevronRight
@@ -170,7 +170,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
           {/* Subagents (cloud only) */}
           {subagentsSupported && (
             <div className="flex items-center justify-between gap-2 pt-1">
-              <span className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-secondary)]">
+              <span className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                 <GitBranch size={11} className="text-[var(--text-tertiary)]" />
                 Subagents
               </span>
@@ -185,7 +185,7 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
 
           <button
             onClick={openFullSettings}
-            className="flex items-center gap-1.5 w-full pt-2 mt-1 border-t border-[var(--border-subtle)] text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
+            className="flex items-center gap-1.5 w-full pt-2 mt-1 border-t border-[var(--border-subtle)] text-2xs text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"
           >
             <ExternalLink size={10} />
             More settings…

@@ -25,7 +25,7 @@ export function MathBlock({ renderedChildren, latex }: MathBlockProps) {
       <button
         onClick={() => setShowSource((v) => !v)}
         title={showSource ? "Show rendered math" : "Show LaTeX source"}
-        className="absolute top-1 right-0 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] font-mono transition-opacity"
+        className="absolute top-1 right-0 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono transition-opacity"
         style={{
           background: "color-mix(in srgb, var(--surface-3) 90%, transparent)",
           color: "var(--text-secondary)",
@@ -46,7 +46,7 @@ export function MathBlock({ renderedChildren, latex }: MathBlockProps) {
       {showSource ? (
         /* LaTeX source view */
         <pre
-          className="overflow-x-auto rounded-md px-4 py-3 font-mono text-[0.786rem] leading-relaxed"
+          className="overflow-x-auto rounded-md px-4 py-3 font-mono text-sm leading-relaxed"
           style={{
             background: "var(--surface-2)",
             color: "var(--text-primary)",

@@ -153,7 +153,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
         <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
           <ArrowLeft size={13} /> Back
         </Button>
-        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] flex items-center gap-1.5">
+        <span className="text-xs font-medium text-[var(--text-tertiary)] flex items-center gap-1.5">
           <Sparkles size={12} className="text-[var(--accent)]" /> Community automations
         </span>
       </div>
@@ -186,7 +186,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
       )}
 
       {result?.error && (
-        <div className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
+        <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
           <WifiOff size={12} />
           {result.fromCache ? "Showing the cached catalog — couldn't reach the registry." : `Couldn't load the registry: ${result.error}`}
         </div>
@@ -220,19 +220,19 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{def.name}</span>
                     {def.schedule && (
-                      <span className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
+                      <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
                         {KIND_LABEL[def.schedule.kind] ?? def.schedule.kind}
                       </span>
                     )}
                     {def.approvalMode === "ask" && (
-                      <span className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
+                      <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
                         Ask
                       </span>
                     )}
-                    {entry.category && <span className="text-[0.65rem] text-[var(--text-tertiary)]">{entry.category}</span>}
+                    {entry.category && <span className="text-2xs text-[var(--text-tertiary)]">{entry.category}</span>}
                   </div>
                   <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{entry.blurb}</p>
-                  <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1">{scheduleSummary(entry)}</p>
+                  <p className="text-2xs text-[var(--text-tertiary)] mt-1">{scheduleSummary(entry)}</p>
                   {entry.definition.requires && entry.definition.requires.length > 0 && (
                     <>
                       <RequirementBadges
@@ -240,7 +240,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
                         statuses={reqStatus}
                       />
                       {!requirementsReady(entry.definition.requires, reqStatus) && (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[color-mix(in_srgb,var(--warning)_35%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-2 py-1.5 text-[0.65rem] text-[var(--text-secondary)]">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[color-mix(in_srgb,var(--warning)_35%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-2 py-1.5 text-2xs text-[var(--text-secondary)]">
                           <span className="inline-flex items-center gap-1">
                             <AlertTriangle size={11} className="text-[var(--warning)]" />
                             {missingSummary(entry.definition.requires, reqStatus)}
@@ -259,7 +259,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
                   <div className="mt-1">
                     <p
                       className={cn(
-                        "text-[0.65rem] text-[var(--text-tertiary)] font-mono whitespace-pre-wrap",
+                        "text-2xs text-[var(--text-tertiary)] font-mono whitespace-pre-wrap",
                         expandedId !== entry.id && "line-clamp-2",
                       )}
                     >
@@ -268,7 +268,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
                     <button
                       type="button"
                       onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-                      className="mt-1 inline-flex items-center gap-1 text-[0.65rem] text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors cursor-pointer"
+                      className="mt-1 inline-flex items-center gap-1 text-2xs text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors cursor-pointer"
                     >
                       {expandedId === entry.id ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
                       {expandedId === entry.id ? "Collapse prompt" : "Show full prompt"}
@@ -287,11 +287,11 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
         )}
       </div>
 
-      <p className="text-[0.65rem] text-[var(--text-tertiary)]">
+      <p className="text-2xs text-[var(--text-tertiary)]">
         Picking a recipe pre-fills the form — you can change the schedule, approval mode, and instructions before saving. Data-only recipes use notes, tasks, tags and boards; connector recipes also use the attached MCP/service tools, which stay gated behind the approval inbox (never auto-approved).
       </p>
 
-      <p className="flex items-center gap-1.5 text-[0.65rem] text-[var(--text-tertiary)]">
+      <p className="flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)]">
         <RefreshCw size={10} />
         {result
           ? result.fromCache
@@ -310,7 +310,7 @@ function RequirementBadges({ requires, statuses }: {
 }) {
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1">
-      <span className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--text-tertiary)]">
+      <span className="inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)]">
         <Plug size={10} /> Needs:
       </span>
       {requires.map((r) => {
@@ -330,7 +330,7 @@ function RequirementBadges({ requires, statuses }: {
         return (
           <Tooltip key={reqKey(r)} content={attached ? "Connected and attached to this project" : "This connector isn't ready for this project yet"}>
             <span
-              className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-px text-[0.65rem]", cls)}
+              className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-px text-2xs", cls)}
             >
             {attached ? <CheckCircle2 size={9} /> : <AlertTriangle size={9} />}
             {label}

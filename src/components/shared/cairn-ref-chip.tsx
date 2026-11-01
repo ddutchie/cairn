@@ -163,8 +163,8 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
       </div>
 
       <div className="flex flex-col min-w-0">
-        <span className="text-[0.643rem] text-[var(--text-tertiary)] leading-none mb-0.5">{actionLabel}</span>
-        <span className="text-[0.714rem] font-medium text-[var(--text-primary)] truncate max-w-[200px] leading-none group-hover:text-[var(--accent)] transition-colors">
+        <span className="text-2xs text-[var(--text-tertiary)] leading-none mb-0.5">{actionLabel}</span>
+        <span className="text-xs font-medium text-[var(--text-primary)] truncate max-w-[200px] leading-none group-hover:text-[var(--accent)] transition-colors">
           {cairnRef.title}
         </span>
       </div>
@@ -219,10 +219,10 @@ export function ExternalRefChip({ toolName, externalRef }: { toolName?: string; 
         <ExternalLink size={10} className="text-[var(--accent)]" />
       </div>
       <div className="flex flex-col min-w-0">
-        <span className="text-[0.714rem] font-medium text-[var(--text-primary)] truncate max-w-[220px] leading-none group-hover:text-[var(--accent)] transition-colors">
+        <span className="text-xs font-medium text-[var(--text-primary)] truncate max-w-[220px] leading-none group-hover:text-[var(--accent)] transition-colors">
           {label}
         </span>
-        <span className="text-[0.643rem] text-[var(--text-tertiary)] leading-none mt-0.5 truncate max-w-[220px]">{sub}</span>
+        <span className="text-2xs text-[var(--text-tertiary)] leading-none mt-0.5 truncate max-w-[220px]">{sub}</span>
       </div>
     </button>
   );

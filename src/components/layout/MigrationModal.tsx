@@ -92,7 +92,7 @@ export function MigrationModal() {
     <div className="fixed inset-0 z-[9999] flex items-center justify-center"
          style={{ background: "color-mix(in srgb, var(--background) 85%, transparent)", backdropFilter: "blur(8px)" }}>
       <div
-        className="w-full max-w-lg rounded-xl border border-[var(--border)] shadow-2xl overflow-hidden"
+        className="w-full max-w-lg rounded-xl border border-[var(--border)] shadow-elev-3 overflow-hidden"
         style={{ background: "var(--surface)" }}
       >
         {/* Header */}
@@ -144,7 +144,7 @@ export function MigrationModal() {
                             style={{ width: `${progress.pct}%`, background: "var(--accent)" }}
                           />
                         </div>
-                        <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">{progress.msg}</p>
+                        <p className="text-xs text-[var(--text-tertiary)] mt-1">{progress.msg}</p>
                       </div>
                     )}
                   </div>

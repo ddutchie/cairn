@@ -219,7 +219,7 @@ export function useNoteMarkdownComponents({
       const isFootnoteRef = (props as Record<string, unknown>)["data-footnote-ref"] === true;
       if (!isFootnoteRef) return <sup>{children}</sup>;
       return (
-        <sup className="text-[0.714rem] leading-none" style={{ color: "var(--accent)", fontFeatureSettings: "'sups' 0" }}>
+        <sup className="text-xs leading-none" style={{ color: "var(--accent)", fontFeatureSettings: "'sups' 0" }}>
           {children}
         </sup>
       );
@@ -301,7 +301,7 @@ export function useNoteMarkdownComponents({
     section({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
       if ((props.className ?? "").includes("footnotes")) {
         return (
-          <section {...props} className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>
+          <section {...props} className="footnotes mt-8 pt-4 text-sm text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>
             {children}
           </section>
         );

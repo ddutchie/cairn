@@ -46,7 +46,7 @@ export function ViewVisibilitySettings() {
             <Lock size={12} className="text-[var(--text-tertiary)]" />
             <div>
               <p className="text-xs font-medium text-[var(--text-secondary)]">{label}</p>
-              <p className="text-[0.714rem] text-[var(--text-tertiary)]">Always visible</p>
+              <p className="text-xs text-[var(--text-tertiary)]">Always visible</p>
             </div>
           </div>
             <Toggle checked disabled onChange={() => {}} label={`${label} — always visible`} />
@@ -65,7 +65,7 @@ export function ViewVisibilitySettings() {
               <span className="text-[var(--text-tertiary)]">{icon}</span>
               <div>
                 <p className="text-xs font-medium text-[var(--text-primary)]">{label}</p>
-                <p className="text-[0.714rem] text-[var(--text-tertiary)]">{description}</p>
+                <p className="text-xs text-[var(--text-tertiary)]">{description}</p>
               </div>
             </div>
             <Toggle checked={visible} onChange={() => toggleViewVisibility(view)} label={`Toggle ${label}`} />

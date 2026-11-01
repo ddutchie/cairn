@@ -105,7 +105,7 @@ Legend: **Fits** means it is on-system. **Drifts** means it is mostly on-system 
 
 ## Plan
 
-Ordered so each phase is shippable on its own and the later phases get cheaper. Every phase ends with `npm run screenshots:audit` and a changelog line in `changelogs/v3.1.8.md` (or whatever is next above `package.json`).
+Ordered so each phase is shippable on its own and the later phases get cheaper. Each phase is a branch cut from the previous phase's branch, with its PR based on that branch, so they merge in order (Phase 0 is ddutchie/cairn#268). Every phase ends with `npm run screenshots:audit` and a changelog line in `changelogs/v3.1.8.md` (or whatever is next above `package.json`).
 
 ### Phase 0: Bugs and harness (small, ship first)
 
@@ -116,16 +116,17 @@ Ordered so each phase is shippable on its own and the later phases get cheaper. 
 5. ✅ Delete `agent/AIChatTab.tsx` (unused).
 6. ✅ Extend the audit spec: onboarding, task detail, card context menu, PRD generator, New menu, tool builder, both community catalogs, and a 900px-wide window (shots 40–64). Also give the Notes "Generate PRD" icon button an `aria-label`.
 
-### Phase 1: Foundations (tokens and primitives, no visual redesign)
+### Phase 1: Foundations (tokens and primitives, no visual redesign) ✅
 
-1. **Type scale.** Add five named sizes to `globals.css` / the Tailwind theme and codemod the 14 arbitrary sizes onto them:
-   `text-2xs` 0.643rem (meta, kbd) · `text-xs` 0.714rem (UI default) · `text-sm` 0.786rem (body, inputs) · `text-base` 0.857rem (section titles) · `text-lg`+ (page titles, unchanged). `0.65`, `0.6`, `0.607`, `0.571` and `0.5625` fold into `2xs`. Nothing should go below 9px at scale 1.
-2. **Elevation.** Three levels as tokens: `--elev-1` (cards, `shadow-sm`), `--elev-2` (menus, popovers, `shadow-lg`) and `--elev-3` (modals, `shadow-2xl`). Remove `shadow-md` and `shadow-xl`.
-3. **Radius by hierarchy.** Chips and kbd use `rounded`. Controls (buttons, inputs, menu items) use `rounded-md`. Containers (cards, menus, popovers) use `rounded-lg`. Modals use `rounded-xl`. `rounded-full` is only for avatars, status dots and toggles. The chat header "+" becomes `rounded-md`.
-4. **One label style.** Pick a single section-label treatment: sentence case, `text-2xs`, `font-medium`, `--text-tertiary`, no tracking. Expose it as `<SectionLabel>` in `ui/labels.tsx` and replace the 100 uppercase variants. *Decision for you: the sidebar's small caps are the most "Cairn" of the four styles, so keeping caps there only is a defensible exception.*
-5. **`<Popover>` primitive.** A Radix Popover wrapper with the same surface as `DropdownMenuContent`, for rich panels (search box plus list). Add **`<Combobox>`** on top of it (trigger, search, listbox, selected check) for pickers with search.
-6. **`<IconButton>`.** Require `label`, render `<Tooltip>`, and give it a visible focus ring. Lint rule (or `grep` gate in CI): no `<button>` with only an icon child and no `aria-label`.
-7. **`SettingsRow` labelling.** The row clones its `id` onto whatever control it wraps and points `<label htmlFor>` at it. For inputs and toggles that's correct. For action buttons ("Browse Community", "Detect local servers", "Export", "Reset") it replaces the button's accessible name with the row title, so a screen reader announces "Community providers, button". Only forward the `id` to form controls, or add an `action` slot that doesn't get labelled.
+Branch `design/ui-pass-phase-1`, stacked on Phase 0. Compare with `npm run screenshots:compare` (see "Before/after review" below).
+
+1. ✅ **Type scale.** `text-2xs` (9px, new token) · `text-xs` (10.5px) · `text-sm` (12.25px) · `text-base` (14px), a ~1.17 step at scale 1. A codemod moved 941 arbitrary sizes in 190 files onto it: 0.5–0.65rem to `2xs`, 0.688–0.75rem to `xs`, 0.786–0.929rem to `sm`, and the 0.938rem search input to `base`. Arbitrary sizes remain only for data-density cases (timeline bars, matrix cells that shrink with item count) and display numerals. *Changed from the draft:* `text-xs` stays Tailwind's 0.75rem rather than being redefined as 0.714rem, so the 484 existing `text-xs` uses don't move. 10px text becomes 10.5px and 11px becomes 12.25px, which keeps the old title/meta hierarchy and lifts it slightly.
+2. ✅ **Elevation.** `--elev-1/2/3`, themed per light/dark (dark needs denser shadows), exposed as `shadow-elev-1/2/3`. All 65 Tailwind shadow uses and the four one-off arbitrary shadows are mapped by role: menus, popovers and tooltips are 2; modals, search and dragged columns are 3. The raw `shadow-black/N` colours are gone.
+3. ◐ **Radius by hierarchy.** Rule recorded in AGENTS.md. The only off-pattern icon button (the round chat header "+") is fixed via `IconButton`. No blanket codemod: the remaining `rounded-full` uses are pills, avatars, dots and toggles, which the rule allows.
+4. ✅ **One label style.** 115 uppercase label strings in 64 files are now sentence case with tracking removed. Bare 9px labels go up to `text-xs` so they keep their weight without caps. `font-semibold` becomes `font-medium`. `SectionLabel` / `MicroLabel` are sentence case. **The sidebar group headers are kept as the one caps exception** (the proposed default, so tell me if you'd rather they go too). Removing caps exposed Title Case source text in nine labels ("Blocked By", "Due Date"…), which are fixed. Title Case in buttons and headings elsewhere ("Save Agent", "Project Settings") is a Phase 4 copy sweep.
+5. ✅ **`Popover` and `Combobox`** in `ui/popover.tsx` and `ui/combobox.tsx`, with component tests. Combobox has the `Select` trigger, the same selected-row treatment, grouped options, search with arrow-key navigation via `aria-activedescendant`, and a first Escape that clears the search before a second one closes. Adoption is Phase 2.
+6. ✅ **`IconButton`** with a required `label` (tooltip and accessible name), one shape, and a shared `FOCUS_RING`, which `Button` now also uses. Adopted across the chat header. The lint gate is still to do.
+7. ✅ **`SettingsRow` labelling.** Buttons, links, `Button` and `IconButton` keep their own text as their name; only form controls are labelled by the row. Component test added.
 
 ### Phase 2: Chat and session switcher (the reported pain)
 
@@ -177,15 +178,26 @@ Settings
 
 The Overview is the most characterful screen; the aim is to keep its voice while quieting the chrome. Let the serif tagline and the task-flow bars carry it, swap the eyebrows for `<SectionLabel>`, use the standard `Button` for "Insights" (no arrow), and stop the bottom composer overlapping the last row.
 
+## Before/after review
+
+Each phase is captured against the branch it stacks on:
+
+```bash
+AUDIT_OUT=before npm run screenshots:audit   # on the base branch, before changes
+AUDIT_OUT=after npm run screenshots:audit    # after changes
+npm run screenshots:compare                  # → design-audit/compare.html
+```
+
+`compare.html` lists every shot grouped by area, with a dot on changed ones. It has light/dark and four modes: side by side, slider, flip (click or Space) and difference (unchanged pixels go black). ↑/↓ steps through shots and 1–4 switch modes.
+
 ## Suggested PR slicing
 
-| PR | Scope | Risk |
-|---|---|---|
-| 1 | Phase 0 (bugs, harness, dead code) | Low |
-| 2 | Phase 1.1–1.3 tokens and codemods (type, elevation, radius) | Medium: wide diff, visual-only; review with screenshots |
-| 3 | Phase 1.4–1.6 primitives (`SectionLabel`, `Popover`, `Combobox`, `IconButton`) | Low |
-| 4 | Phase 2 chat and session switcher, plus popover migrations | Medium |
-| 5 | Phase 3 Settings IA | Medium: deep links and `settingsSection` callers |
-| 6 | Phases 4–5 discoverability and Overview | Low per item |
+| PR | Branch (base) | Scope | Risk |
+|---|---|---|---|
+| ddutchie/cairn#268 | `design/ui-consistency-pass` (main) | Phase 0: bugs, harness, dead code | Low |
+| 2 | `design/ui-pass-phase-1` (Phase 0) | Phase 1: type, elevation and label codemods plus the `Popover`, `Combobox` and `IconButton` primitives. About 200 files, visual-only; review with `compare.html`. | Medium |
+| 3 | `design/ui-pass-phase-2` (Phase 1) | Phase 2: chat and session switcher, plus popover migrations | Medium |
+| 4 | `design/ui-pass-phase-3` (Phase 2) | Phase 3: Settings IA (deep links and `settingsSection` callers) | Medium |
+| 5 | `design/ui-pass-phase-4` (Phase 3) | Phases 4–5: discoverability, copy sweep and Overview | Low per item |
 
 Settings IA (PR 5) is a headline change for the release and earns a What's New entry in `scripts/features.config.js`. The rest goes in the changelog only.

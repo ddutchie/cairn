@@ -42,7 +42,7 @@ export function McpSignInChips() {
       {entries.map(([id, name]) => (
         <span
           key={id}
-          className="inline-flex items-center gap-1 rounded-full border border-[var(--warning)] px-2 py-0.5 text-[0.714rem] text-[var(--text-secondary)]"
+          className="inline-flex items-center gap-1 rounded-full border border-[var(--warning)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
           style={{ background: "color-mix(in srgb, var(--warning) 12%, transparent)" }}
         >
           <button

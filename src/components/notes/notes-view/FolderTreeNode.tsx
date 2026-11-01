@@ -87,7 +87,7 @@ export const FolderTreeNode = memo(function FolderTreeNode({
           ? <Folder size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
           : <FolderOpen size={12} className="text-[var(--accent)] flex-shrink-0" />}
         <Tooltip content={node.name}>
-          <span className="text-[0.786rem] font-medium text-[var(--text-secondary)] flex-1 truncate">{node.name}</span>
+          <span className="text-sm font-medium text-[var(--text-secondary)] flex-1 truncate">{node.name}</span>
         </Tooltip>
         {descendantChangedCount > 0 && (
           <span
@@ -163,7 +163,7 @@ export const FolderTreeNode = memo(function FolderTreeNode({
           {node.notes.length === 0 && node.children.length === 0 && (
             <button
               onClick={() => onCreateInFolder(node.path)}
-              className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
+              className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
               style={{ paddingLeft: `${indent + 24}px` }}
             >
               <Plus size={10} />

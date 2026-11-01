@@ -55,7 +55,7 @@ export function AutomationBudgetControl() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64 p-3">
         <div className="text-xs font-medium text-[var(--text-primary)] mb-1">Daily automation budget</div>
-        <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-2">
+        <p className="text-xs text-[var(--text-tertiary)] mb-2">
           Estimated spend by automations since midnight. When it reaches the budget, scheduled runs are skipped until tomorrow. Manual runs still work.
         </p>
         {budgetUsd !== null && (

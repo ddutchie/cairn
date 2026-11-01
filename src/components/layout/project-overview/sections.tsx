@@ -32,9 +32,9 @@ export function ShippedFeed({ cards, columnName, setView }: {
           <CheckCircle2 size={12} className="text-[var(--success)] flex-shrink-0" />
           <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{c.title}</span>
           {c.archivedAt
-            ? <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0">archived</span>
-            : <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{columnName(c.columnId)}</span>}
-          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(c.completedAt)}</span>
+            ? <span className="text-xs text-[var(--text-tertiary)] flex-shrink-0">archived</span>
+            : <span className="text-xs text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{columnName(c.columnId)}</span>}
+          <span className="text-sm text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(c.completedAt)}</span>
         </button>
       ))}
     </div>
@@ -57,14 +57,14 @@ export function AtRiskFeed({ items, setView }: { items: AtRiskCard<TaskCard>[]; 
           className="flex items-center gap-3 w-full px-2 py-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors group text-left">
           <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{card.title}</span>
           {card.dueDate && (
-            <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">
+            <span className="text-sm text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">
               {parseIsoLocal(card.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
             </span>
           )}
           {reasons.map((r) => (
             <span key={r}
               title={r === "stale" ? `No updates for ${idleDays} days` : r === "blocked" ? "Due soon with an open blocker" : `Due ${card.dueDate}`}
-              className="text-[0.643rem] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0"
+              className="text-2xs font-medium px-1.5 py-0.5 rounded-md flex-shrink-0"
               style={{ color: RISK_COLOR[r], background: `color-mix(in srgb, ${RISK_COLOR[r]} 14%, transparent)` }}>
               {RISK_LABEL[r]}{r === "stale" ? ` · ${idleDays}d` : ""}
             </span>
@@ -82,7 +82,7 @@ export function RecentActivityFeed({ activityByDay }: { activityByDay: ActivityG
     <div className="space-y-4">
       {activityByDay.map(({ label, items }) => (
         <div key={label}>
-          <div className="text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1.5 px-2">{label}</div>
+          <div className="text-xs font-medium text-[var(--text-tertiary)] mb-1.5 px-2">{label}</div>
           <div className="space-y-0.5">
             {items.map((item) => (
               <button key={item.id} onClick={item.onClick}
@@ -93,9 +93,9 @@ export function RecentActivityFeed({ activityByDay }: { activityByDay: ActivityG
                 }
                 <span className="flex-1 text-sm text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors truncate">{item.title}</span>
                 {item.subtitle && (
-                  <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{item.subtitle}</span>
+                  <span className="text-sm text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{item.subtitle}</span>
                 )}
-                <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(item.updatedAt)}</span>
+                <span className="text-sm text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(item.updatedAt)}</span>
               </button>
             ))}
           </div>
@@ -146,7 +146,7 @@ export function RecentAutomationRunsFeed({
                     key={art.id}
                     onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
                     title={`Open ${art.type === "note" ? "note" : "task"}`}
-                    className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-32"
+                    className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-32"
                   >
                     {art.type === "note"
                       ? <FileText size={10} className="shrink-0" />
@@ -160,12 +160,12 @@ export function RecentAutomationRunsFeed({
               </div>
             )}
             {r.error && (
-              <span className="text-[0.714rem] text-[var(--danger)] flex-shrink-0 truncate max-w-40" title={r.error}>{r.error}</span>
+              <span className="text-xs text-[var(--danger)] flex-shrink-0 truncate max-w-40" title={r.error}>{r.error}</span>
             )}
-            <span className={cn("text-[0.714rem] font-medium flex-shrink-0 capitalize", STATUS_COLOR[r.status])}>
+            <span className={cn("text-xs font-medium flex-shrink-0 capitalize", STATUS_COLOR[r.status])}>
               {r.status}
             </span>
-            <span className="text-[0.786rem] text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(ts)}</span>
+            <span className="text-sm text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(ts)}</span>
           </div>
         );
       })}

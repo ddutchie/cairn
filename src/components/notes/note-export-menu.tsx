@@ -92,7 +92,7 @@ export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
       {open && state === "idle" && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] rounded-md border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] rounded-md border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 overflow-hidden">
             <button onClick={() => exportPdf("light")} className={menuItem}>
               <Sun size={12} /> Light
             </button>

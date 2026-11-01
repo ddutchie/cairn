@@ -26,7 +26,7 @@ export function DropdownMenuContent({
       <RadixDropdown.Content
         className={cn(
           "z-50 min-w-[160px] rounded-lg py-1",
-          "bg-[var(--surface)] border border-[var(--border)] shadow-lg",
+          "bg-[var(--surface)] border border-[var(--border)] shadow-elev-2",
           "animate-fade-in",
           className
         )}
@@ -69,7 +69,7 @@ export function DropdownMenuSeparator() {
 
 export function DropdownMenuLabel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] font-medium uppercase tracking-wide", className)}>
+    <div className={cn("px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] font-medium", className)}>
       {children}
     </div>
   );

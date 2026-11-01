@@ -79,7 +79,7 @@ export function SyncStatusIndicator() {
         >
           <Icon size={13} style={{ color: buttonColor }} className={cn(spinning && "animate-spin")} />
           {status.conflicts > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--warning)] text-[var(--background)] text-[0.6rem] font-bold grid place-items-center leading-none border border-[var(--surface)]">
+            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--warning)] text-[var(--background)] text-2xs font-bold grid place-items-center leading-none border border-[var(--surface)]">
               {status.conflicts}
             </span>
           )}
@@ -88,7 +88,7 @@ export function SyncStatusIndicator() {
 
       {open && (
         <div
-          className="absolute right-0 top-[110%] z-50 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-lg p-3 animate-fade-in"
+          className="absolute right-0 top-[110%] z-50 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-3 animate-fade-in"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
           <div className="flex items-center gap-2 mb-2">
@@ -96,7 +96,7 @@ export function SyncStatusIndicator() {
             <span className="text-xs font-semibold text-[var(--text-primary)]">{label}</span>
           </div>
 
-          <dl className="space-y-1 text-[0.714rem] text-[var(--text-tertiary)]">
+          <dl className="space-y-1 text-xs text-[var(--text-tertiary)]">
             <Row label="Last synced" value={formatRelative(status.lastSyncAt, { fallback: "never", absoluteAfterDays: Infinity })} />
             <Row label="Pending changes" value={String(status.pending)} />
             <Row label="Conflicts" value={String(status.conflicts)} highlight={status.conflicts > 0} />
