@@ -117,6 +117,16 @@ export default function ChatScreen() {
   const [visibleCount, setVisibleCount] = useState(CHAT_PAGE_SIZE);
   const hiddenCount = Math.max(0, messages.length - visibleCount);
   const visibleMessages = hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
+  // Revealing earlier messages grows the content ABOVE the reader. Remember the
+  // content height and offset at the tap, then shift by the growth so the
+  // message they were looking at stays put.
+  const contentH = useRef(0);
+  const scrollY = useRef(0);
+  const prependAnchor = useRef<{ h: number; y: number } | null>(null);
+  const showEarlier = () => {
+    prependAnchor.current = { h: contentH.current, y: scrollY.current };
+    setVisibleCount((n) => n + CHAT_PAGE_SIZE);
+  };
   // Live text of the in-flight reply. Tokens go here (throttled) instead of
   // through `setMessages`, so only the streaming bubble re-renders per flush.
   const [streamStore] = useState(() => createStreamingStore());
@@ -758,7 +768,17 @@ export default function ChatScreen() {
             extraContentPadding={confined ? topHalfPadding : extraContentPadding}
             scrollEventThrottle={16}
             onEndVisible={onEndVisible}
-            onContentSizeChange={() => {
+            onScroll={(e) => {
+              scrollY.current = e.nativeEvent.contentOffset.y;
+            }}
+            onContentSizeChange={(_w, h) => {
+              const anchor = prependAnchor.current;
+              contentH.current = h;
+              if (anchor) {
+                prependAnchor.current = null;
+                scrollRef.current?.scrollTo({ y: anchor.y + (h - anchor.h), animated: false });
+                return;
+              }
               // Follow new content only when the user is already near the bottom
               // (e.g. streaming) — never when they've scrolled up to read/expand.
               // No animation while the area is being resized for the fold (it chases
@@ -780,7 +800,7 @@ export default function ChatScreen() {
               <View key={resumeKey}>
                 {hiddenCount > 0 ? (
                   <Pressable
-                    onPress={() => setVisibleCount((n) => n + CHAT_PAGE_SIZE)}
+                    onPress={showEarlier}
                     accessibilityRole="button"
                     style={styles.earlierButton}
                   >
