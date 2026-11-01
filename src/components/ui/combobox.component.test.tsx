@@ -25,7 +25,7 @@ function setup(value: string | null = "a") {
 describe("Combobox", () => {
   it("shows the selected label and lists grouped options when opened", async () => {
     const { user } = setup();
-    const trigger = screen.getByRole("button", { name: "Sessions" });
+    const trigger = screen.getByRole("button", { name: /^Sessions:/ });
     expect(trigger).toHaveTextContent("Summarize this project");
     await user.click(trigger);
     expect(screen.getByRole("combobox")).toHaveFocus();
@@ -36,7 +36,7 @@ describe("Combobox", () => {
 
   it("filters by label and hidden keywords", async () => {
     const { user } = setup();
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    await user.click(screen.getByRole("button", { name: /^Sessions:/ }));
     await user.type(screen.getByRole("combobox"), "auth");
     expect(screen.getAllByRole("option")).toHaveLength(1);
     expect(screen.getByRole("option")).toHaveTextContent("QR pairing");
@@ -44,14 +44,14 @@ describe("Combobox", () => {
 
   it("moves with arrow keys and picks with Enter", async () => {
     const { user, onChange } = setup();
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    await user.click(screen.getByRole("button", { name: /^Sessions:/ }));
     await user.keyboard("{ArrowDown}{Enter}");
     expect(onChange).toHaveBeenCalledWith("b");
   });
 
   it("clears the query on the first Escape and keeps the list open", async () => {
     const { user } = setup();
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    await user.click(screen.getByRole("button", { name: /^Sessions:/ }));
     const input = screen.getByRole("combobox");
     await user.type(input, "zzz");
     expect(screen.getByText("No matches")).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe("Combobox", () => {
 
   it("keeps aria-activedescendant a single valid id for values with spaces", async () => {
     const { user } = setup("d e/f");
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    await user.click(screen.getByRole("button", { name: /^Sessions:/ }));
     const id = screen.getByRole("combobox").getAttribute("aria-activedescendant") ?? "";
     expect(id).not.toMatch(/\s/);
     expect(document.getElementById(id)).toHaveTextContent("Odd value");

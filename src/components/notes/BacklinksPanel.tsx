@@ -369,7 +369,7 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
           Add tag
         </button>
         </PopoverTrigger>
-        <PopoverContent className="w-48 p-2" onOpenAutoFocus={(e) => { e.preventDefault(); inputRef.current?.focus(); }}>
+        <PopoverContent aria-label="Add a tag" className="w-48 p-2" onOpenAutoFocus={(e) => { e.preventDefault(); inputRef.current?.focus(); }}>
             <input
               ref={inputRef}
               value={newTagName}

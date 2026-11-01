@@ -124,7 +124,9 @@ export function KnowledgeGraphView() {
   useEffect(() => {
     if (!focusNodeId) return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
+      // A menu (e.g. the label-mode Select) that consumed this Escape marks it
+      // defaultPrevented; don't also leave neighbourhood mode.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       setFocusNodeId(null);

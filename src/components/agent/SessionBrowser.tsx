@@ -101,13 +101,31 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   const scopedProjectId = projectId ?? activeProjectId;
   const otherGroups = useMemo(() => {
     if (variant !== "dropdown" || !open) return [];
+    // Bucket threads, messages and coding sessions by project in one pass, so
+    // each project's registry only scans its own rows (the registry looks up a
+    // thread's title and message count by scanning the messages it's given).
+    const threadsByProject = new Map<string, typeof chatThreads>();
+    for (const t of chatThreads) if (t.projectId) (threadsByProject.get(t.projectId) ?? threadsByProject.set(t.projectId, []).get(t.projectId)!).push(t);
+    const messagesByThread = new Map<string, typeof chatMessages>();
+    for (const m of chatMessages) (messagesByThread.get(m.threadId) ?? messagesByThread.set(m.threadId, []).get(m.threadId)!).push(m);
+    const codingByProject = new Map<string, typeof codingSessionHistory>();
+    for (const c of codingSessionHistory) (codingByProject.get(c.projectId) ?? codingByProject.set(c.projectId, []).get(c.projectId)!).push(c);
     return projects
       .filter((p) => p.workspaceId === activeWorkspaceId && p.id !== scopedProjectId)
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        sessions: buildSessionRegistry({ chatThreads, chatMessages, codingSessions: codingSessionHistory, terminalSessions, projectId: p.id }),
-      }))
+      .map((p) => {
+        const threads = threadsByProject.get(p.id) ?? [];
+        return {
+          id: p.id,
+          name: p.name,
+          sessions: buildSessionRegistry({
+            chatThreads: threads,
+            chatMessages: threads.flatMap((t) => messagesByThread.get(t.id) ?? []),
+            codingSessions: codingByProject.get(p.id) ?? [],
+            terminalSessions,
+            projectId: p.id,
+          }),
+        };
+      })
       .filter((g) => g.sessions.length > 0);
   }, [variant, open, projects, activeWorkspaceId, scopedProjectId, chatThreads, chatMessages, codingSessionHistory, terminalSessions]);
   const currentProjectName = projects.find((p) => p.id === scopedProjectId)?.name;
@@ -347,7 +365,6 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
             ref={triggerRef}
             id={triggerId}
             type="button"
-            aria-haspopup="listbox"
             aria-expanded={open}
             aria-label={active ? `Session: ${active.title}. Switch session` : "Choose a session"}
             title={active?.title}
@@ -369,6 +386,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
         </PopoverTrigger>
         <span aria-live="polite" aria-atomic="true" className="sr-only">{runningIds.size > 0 ? `${runningIds.size} running` : ""}</span>
         <PopoverContent
+          aria-label="Switch session"
           align="start"
           matchTriggerWidth
           className="flex max-h-96 min-w-[20rem] flex-col overflow-hidden"
