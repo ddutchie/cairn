@@ -15,6 +15,8 @@ import { SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 // Server config + sync status + the tools external agents see, in the same
 // card style as the Chat and Coding Agents tabs.
 
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
 export function McpSettingsTab() {
   const previews = useAgentPreviews();
   const mcpTools = previews.inventory?.mcp ?? [];
@@ -178,7 +180,7 @@ export function MCPSyncStatus() {
       <StatusDot color={hasData ? "var(--success)" : "var(--warning)"} pulse={hasData} />
       {hasData ? (
         <span>
-          Connected: {counts.workspaces} workspace{counts.workspaces === 1 ? "" : "s"}, {counts.projects} projects, {counts.notes} notes, {counts.cards} cards
+          Connected: {plural(counts.workspaces, "workspace")}, {plural(counts.projects, "project")}, {plural(counts.notes, "note")}, {plural(counts.cards, "card")}
         </span>
       ) : (
         <span>No data yet — open the Cairn app first</span>

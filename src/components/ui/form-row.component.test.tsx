@@ -64,6 +64,16 @@ describe("StepperSettingsRow", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("Escape discards what was typed", async () => {
+    const { user, onChange } = setup(30);
+    const input = screen.getByRole("spinbutton", { name: "Max steps, custom value" });
+    await user.click(input);
+    await user.type(input, "500");
+    await user.keyboard("{Escape}");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input).toHaveValue(null);
+  });
+
   it("shows a custom value in the field", () => {
     setup(42);
     expect(screen.getByRole("spinbutton", { name: "Max steps, custom value" })).toHaveValue(42);

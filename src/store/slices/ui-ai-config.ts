@@ -422,7 +422,9 @@ export interface AiConfigSlice {
   // Saved cloud/local API providers — one SHARED list (on aiConfig), with a
   // per-config active selection. add/update/delete mutate the shared list and
   // reconcile both configs; select* choose the active provider for one config.
-  addSavedProvider: (provider: Omit<SavedProvider, "id">, selectFor?: "ai" | "agent" | "both") => string;
+  /** `selectFor: "none"` only adds to the shared list (Settings → Models); the
+   *  Chat and Coding agent pages choose their active provider themselves. */
+  addSavedProvider: (provider: Omit<SavedProvider, "id">, selectFor?: "ai" | "agent" | "both" | "none") => string;
   updateSavedProvider: (id: string, patch: Partial<Omit<SavedProvider, "id">>) => void;
   deleteSavedProvider: (id: string) => void;
   selectSavedProvider: (id: string) => void;
