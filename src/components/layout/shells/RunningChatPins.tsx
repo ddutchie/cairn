@@ -84,7 +84,7 @@ export function RunningChatPins() {
 
   return (
     <div className="px-2 pb-1.5 space-y-0.5">
-      <p className="px-2 pt-1 text-2xs font-medium tracking-[0.08em] text-[var(--text-tertiary)]">
+      <p className="px-2 pt-1 text-2xs font-medium text-[var(--text-tertiary)]">
         Live chats
       </p>
       {pins.map(({ thread, running, unread, title }) => {

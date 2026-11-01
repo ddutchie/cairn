@@ -70,7 +70,7 @@ export function MDPreviewPanel({ text, onDismiss, label = "Preview" }: MDPreview
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
                 )}
               >
-                {s}
+                {s.toUpperCase()}
               </button>
             ))}
           </div>

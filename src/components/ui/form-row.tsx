@@ -16,9 +16,11 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 
 /**
- * Buttons keep their own text as their accessible name. Only form controls
- * (inputs, toggles, selects) are labelled by the row, otherwise a screen
- * reader announces "Browse Community" as "Community providers, button".
+ * Buttons and links keep their own text as their accessible name; anything
+ * else gets the row's label (via an injected id). Otherwise a screen reader
+ * announces "Browse Community" as "Community providers, button". The check is
+ * shallow: a button wrapped in another component (e.g. a Tooltip or a
+ * DropdownMenuTrigger) still gets the id.
  */
 function isActionElement(node: React.ReactNode): boolean {
   if (!React.isValidElement(node)) return false;

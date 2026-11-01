@@ -352,7 +352,7 @@ export function SearchPanel() {
 
         <div className="flex flex-col gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface-2)]/30">
           <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Filter by type">
-            <span className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
+            <span className="text-xs font-medium text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Type</span>
             {(["all", "notes", "tasks"] as FilterType[]).map((t) => (
               <button key={t} aria-pressed={filterType === t} onClick={() => { setFilterType(t); setFocused(0); }}
                 className={cn("px-3 py-1 rounded-full text-xs font-medium border transition-all",
@@ -369,7 +369,7 @@ export function SearchPanel() {
           </div>
           {workspaceProjects.length > 1 && (
             <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by project">
-              <span className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
+              <span className="text-xs font-medium text-[var(--text-tertiary)] w-[52px] shrink-0 select-none">Project</span>
               {filterProject && (
                 <button aria-pressed={!!filterProject} onClick={() => setFilterProject(null)} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]">
                   <X size={10} />
@@ -399,7 +399,7 @@ export function SearchPanel() {
             <div className="py-2">
               {noteResults.length > 0 && (
                 <>
-                  <div className="px-4 py-2 flex items-center gap-2 text-2xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">
+                  <div className="px-4 py-2 flex items-center gap-2 text-2xs font-medium text-[var(--text-tertiary)]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--info)]" /> Notes <span className="font-mono font-normal text-[var(--text-tertiary)]">· {noteResults.length}</span>
                   </div>
                   <div className="px-2 space-y-0.5 pb-2">
@@ -411,7 +411,7 @@ export function SearchPanel() {
               )}
               {taskResults.length > 0 && (
                 <>
-                  <div className="px-4 py-2 flex items-center gap-2 text-2xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] border-t border-[var(--border)] mt-2 pt-3">
+                  <div className="px-4 py-2 flex items-center gap-2 text-2xs font-medium text-[var(--text-tertiary)] border-t border-[var(--border)] mt-2 pt-3">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" /> Tasks <span className="font-mono font-normal">· {taskResults.length}</span>
                   </div>
                   <div className="px-2 space-y-0.5">

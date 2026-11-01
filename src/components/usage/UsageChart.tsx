@@ -156,7 +156,7 @@ export function UsageChart({ series, metric }: Props) {
             top: Math.max(4, outY - 86),
           }}
         >
-          <div className="text-xs tracking-[0.06em] text-[var(--text-tertiary)] mb-1">{fmtDay(hovered.day)}</div>
+          <div className="text-xs text-[var(--text-tertiary)] mb-1">{fmtDay(hovered.day)}</div>
           <div className="flex justify-between gap-6 text-xs">
             <span className="text-[var(--text-secondary)]">Input</span>
             <span className="font-mono font-semibold text-[var(--text-primary)]">{fmtFull(hovered.promptTokens)}</span>

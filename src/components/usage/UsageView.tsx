@@ -135,7 +135,7 @@ function Segmented<T extends string | number>({ options, value, onChange }: {
 function StatCard({ label, value, valueClass, valueStyle, delta, deltaStyle }: { label: string; value: string; valueClass?: string; valueStyle?: React.CSSProperties; delta?: string; deltaStyle?: React.CSSProperties }) {
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
-      <div className="text-xs tracking-[0.07em] text-[var(--text-tertiary)]">{label}</div>
+      <div className="text-xs text-[var(--text-tertiary)]">{label}</div>
       <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight truncate ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
       {delta ? (
         <div className={cn("text-2xs", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta}</div>
@@ -415,7 +415,7 @@ export function UsageView() {
                   {metric === "tokens" ? "daily totals" : metric === "cost" ? (includeEstimated ? "provider-reported + models.dev estimates" : "provider-reported costs") : "LLM calls"}
                 </div>
               </div>
-              <div className="flex items-center gap-4 px-4 pb-1 text-2xs tracking-[0.06em] text-[var(--text-tertiary)]">
+              <div className="flex items-center gap-4 px-4 pb-1 text-2xs text-[var(--text-tertiary)]">
                 {metric === "tokens" ? (
                   <>
                     <span className="inline-flex items-center gap-1.5">
@@ -498,7 +498,7 @@ export function UsageView() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-[var(--border)] text-2xs tracking-[0.07em] text-[var(--text-tertiary)]">
+                    <tr className="border-b border-[var(--border)] text-2xs text-[var(--text-tertiary)]">
                       <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Time</th>
                       <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Model</th>
                       <th className="text-right font-medium px-4 py-2 whitespace-nowrap">Input</th>

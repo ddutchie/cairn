@@ -130,7 +130,7 @@ export function PreviewPane() {
             <GitBranch size={13} className="text-[var(--warning)]" />
           )}
           <span className="text-xs font-medium text-[var(--text-secondary)]">
-            {type === "note" ? "Note Preview" : type === "task" ? "Task Preview" : type === "file" ? "File Preview" : "Diff Preview"}
+            {type === "note" ? "Note preview" : type === "task" ? "Task preview" : type === "file" ? "File preview" : "Diff preview"}
           </span>
         </div>
 

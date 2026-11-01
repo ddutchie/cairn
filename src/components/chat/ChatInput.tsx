@@ -491,7 +491,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                       disabled={disabled || (!value.trim() && (!pendingImages || pendingImages.length === 0))}
                       type="button"
                       className={cn(
-                        "relative flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-elev-1 shadow-[color-mix(in_srgb,var(--accent)_10%,transparent)]",
+                        "relative flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-[0_4px_6px_-1px_color-mix(in_srgb,var(--accent)_10%,transparent),0_2px_4px_-2px_color-mix(in_srgb,var(--accent)_10%,transparent)]",
                         isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                       )}
                     >
@@ -511,7 +511,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     onClick={onStop}
                     type="button"
                     className={cn(
-                      "flex-shrink-0 rounded-lg bg-[var(--danger)] text-[var(--danger-fg)] hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-elev-1 shadow-[var(--danger)]/10",
+                      "flex-shrink-0 rounded-lg bg-[var(--danger)] text-[var(--danger-fg)] hover:bg-[color-mix(in srgb,var(--danger)_90%,black)] flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-[0_4px_6px_-1px_color-mix(in_srgb,var(--danger)_10%,transparent),0_2px_4px_-2px_color-mix(in_srgb,var(--danger)_10%,transparent)]",
                       isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                     )}
                   >
@@ -526,7 +526,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                   disabled={disabled || (!value.trim() && (!pendingImages || pendingImages.length === 0))}
                   type="button"
                   className={cn(
-                    "flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-elev-1 shadow-[color-mix(in_srgb,var(--accent)_10%,transparent)]",
+                    "flex-shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] hover:bg-[color-mix(in_srgb,var(--accent)_90%,var(--background))] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 shadow-[0_4px_6px_-1px_color-mix(in_srgb,var(--accent)_10%,transparent),0_2px_4px_-2px_color-mix(in_srgb,var(--accent)_10%,transparent)]",
                     isOverview ? "w-8 h-8 rounded-xl" : "w-7 h-7"
                   )}
                 >

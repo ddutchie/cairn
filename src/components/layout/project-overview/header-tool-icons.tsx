@@ -51,7 +51,7 @@ export function HeaderToolIcons({ projectId, workspaceId }: { projectId: string;
 
   return (
     <span className="inline-flex items-center gap-1.5 flex-wrap">
-      <span className="inline-flex items-center gap-1 text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--text-tertiary)]">
         <Wrench size={10} /> Tools
       </span>
       <span className="flex items-center gap-1">

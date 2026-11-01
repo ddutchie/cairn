@@ -279,11 +279,11 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           ))}
         </div>
 
-        {/* Unified new-item button — right-aligned pill */}
+        {/* New chat thread / agent session menu */}
         <div className="flex-shrink-0 ml-auto">
           <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <IconButton id="unified-new-btn" label="New session" variant="outline" active={newMenuOpen} tooltipDisabled={newMenuOpen}>
+              <IconButton id="unified-new-btn" label="New chat or agent session" variant="outline" active={newMenuOpen} tooltipDisabled={newMenuOpen}>
                 <Plus size={12} strokeWidth={1.75} />
               </IconButton>
             </DropdownMenuTrigger>

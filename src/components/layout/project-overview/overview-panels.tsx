@@ -145,7 +145,7 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
               <div className="text-[1.35rem] font-bold leading-none tracking-tight" style={{ color: active ? color : "var(--text-tertiary)" }}>
                 {n}
               </div>
-              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] mt-1">{label}</div>
+              <div className="text-xs font-medium text-[var(--text-tertiary)] mt-1">{label}</div>
               <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{n ? `${n} open` : "—"}</div>
             </div>
           );
@@ -202,7 +202,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
       ) : (
         <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-6">
           <div>
-            <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
+            <div className="text-xs font-medium text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
               <Pin size={10} /> Pinned · keeps focus
             </div>
             {pinnedNotes.length === 0 ? (
@@ -225,7 +225,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
             )}
           </div>
           <div>
-            <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
+            <div className="text-xs font-medium text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
               <FileText size={10} /> Recent
             </div>
             {recentNotes.length === 0 ? (

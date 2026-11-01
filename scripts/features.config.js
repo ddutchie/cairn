@@ -48,7 +48,7 @@ const FEATURES = [
     id: "v0.x",
     version: "v0.x",
     title: "Cairn 0.x — The Beginning",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Where Cairn started: notes, boards, tags, and folders, the knowledge graph, task blockers, rich markdown, and the interactive PRD generator.",
     highlights: [
       "Knowledge Graph: Force-directed and radial tree layouts over projects, notes, cards, and tags, with auto-discovered relationships (co-mention, keyword similarity, shared assignee).",
@@ -63,7 +63,7 @@ const FEATURES = [
     id: "v1.x",
     version: "v1.x",
     title: "Cairn 1.x — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "The foundations: wikilinks and backlinks, a plan-then-execute coding agent with skills, Obsidian vault compatibility, on-device local LLMs, and the mobile companion.",
     highlights: [
       "Wikilinks & Backlinks: Link notes with `[[Title]]` and see every note that references the current one in a dedicated backlinks panel.",
@@ -78,7 +78,7 @@ const FEATURES = [
     id: "v2.0.x",
     version: "v2.0.x",
     title: "Cairn 2.0 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Codebase indexing and agent guardrails.",
     highlights: [
       "Semantic Codebase Indexing: Incremental parser mapping functions, classes, and call graph relations for Rust, Go, Python, and JS.",
@@ -90,7 +90,7 @@ const FEATURES = [
     id: "v2.1.x",
     version: "v2.1.x",
     title: "Cairn 2.1 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Local semantic search.",
     highlights: [
       "Semantic Neighbours: A packaged on-device embedding model links notes by meaning; the Knowledge Graph gains a \"semantic\" edge type.",
@@ -102,7 +102,7 @@ const FEATURES = [
     id: "v2.2.x",
     version: "v2.2.x",
     title: "Cairn 2.2 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Reasoning and thinking streams.",
     highlights: [
       "Collapsible Thinking Blocks: Follow the model's reasoning stream. Blocks auto-collapse once generation starts.",
@@ -113,7 +113,7 @@ const FEATURES = [
     id: "v2.3.x",
     version: "v2.3.x",
     title: "Cairn 2.3 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Everything that shipped across the Cairn 2.3 line: polished Git workflows, dynamic chat layouts, guided tours, a calendar view, and external AI tools.",
     highlights: [
       "Polished Git Integrations: A Radix branch switcher, file-level and bulk discarding, and theme-aware action tooltips.",
@@ -128,7 +128,7 @@ const FEATURES = [
     id: "v2.4.x",
     version: "v2.4.x",
     title: "Cairn 2.4 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "The mobile companion, device sync, and codebase architecture: Cairn 2.4 brought your workspace to your phone and made multi-device, shared-folder sync safe.",
     highlights: [
       "Mobile Companion App: An offline-first mobile client for notes, tasks, boards, folders, and AI chat — markdown parity with the desktop, reconciling when connected.",
@@ -141,7 +141,7 @@ const FEATURES = [
     id: "v2.5.x",
     version: "v2.5.x",
     title: "Cairn 2.5 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Everything that shipped across the Cairn 2.5 line: saved AI providers, project merging, accent colors, Obsidian vault import, custom slash commands, and community providers.",
     highlights: [
       "Saved AI Providers: Save several OpenAI-compatible connections and switch between them in a click — keys live in your OS keychain.",
@@ -156,7 +156,7 @@ const FEATURES = [
     id: "v2.6.x",
     version: "v2.6.x",
     title: "Cairn 2.6 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Everything that shipped across the Cairn 2.6 line: heartbeat automations, connector-aware automations, vault import preview, the live preview editor, usage tracking, agent todos, chat personalities, and writing style.",
     highlights: [
       "Heartbeat Automations: Schedule background agent tasks that run while Cairn is open, with approve/deny gates and community recipes.",
@@ -173,7 +173,7 @@ const FEATURES = [
     id: "v2.7.x",
     version: "v2.7.x",
     title: "Cairn 2.7 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Everything that shipped across the Cairn 2.7 line: the Responses API, the automation mini-app, note fonts, and full chat theming.",
     highlights: [
       "Responses API: Chat, the agent, one-shots, compaction, and subagents route through /v1/responses when the provider supports it, with automatic fallback to Chat Completions.",
@@ -186,7 +186,7 @@ const FEATURES = [
     id: "v3.0.x",
     version: "v3.0.x",
     title: "Cairn 3.0 — Highlights",
-    category: "Release Highlights",
+    category: "Release highlights",
     description: "Everything that shipped across the Cairn 3.0 line: one runtime for chat, coding and automations, durable subagents, and focused graph neighbourhoods.",
     highlights: [
       "Unified Runtime: Chat, coding, automations and one-shots share one Cordis/dsh engine, with portable sessions, a calmer shell and the Instrument Overview.",

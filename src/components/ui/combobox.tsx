@@ -111,9 +111,13 @@ export function Combobox<V extends string>({
     if (id) document.getElementById(id)?.scrollIntoView?.({ block: "nearest" });
   }
 
-  const optionId = (v: V) => `${listId}-opt-${v}`;
+  // Values can hold spaces or punctuation; ids used by aria-activedescendant
+  // must be single IDREF tokens.
+  const optionId = (v: V) => `${listId}-opt-${encodeURIComponent(v).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Let an IME finish composing; its Enter confirms text, not an option.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (!enabled.length) return;
