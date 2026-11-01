@@ -49,6 +49,7 @@
       "expo-router",
       "expo-sqlite",
       "expo-image",
+      "expo-background-task",
       [
         "expo-image-picker",
         {

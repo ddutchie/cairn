@@ -1,0 +1,7 @@
+{
+  "name": "background-time",
+  "version": "0.1.0",
+  "description": "Ask iOS for extra running time to finish work after the app is backgrounded (UIApplication.beginBackgroundTask). Local Expo module (iOS only).",
+  "main": "index.ts",
+  "private": true
+}

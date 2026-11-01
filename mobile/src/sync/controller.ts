@@ -9,15 +9,15 @@
  *   - debounced shortly after a local write (create/edit/move).
  *
  * It is the only place syncNow() is scheduled automatically; the Sync tab /
- * header badge can still call requestSync() for a manual override. Background
- * (app-closed) sync is intentionally out of scope — iOS only grants best-effort
- * wakeups and iCloud propagates files on its own schedule anyway.
+ * header badge can still call requestSync() for a manual override. Syncs while
+ * the app is closed are background-sync.ts's job (iOS best-effort wakeups).
  *
  * State + a data-changed signal are exposed via a tiny pub/sub so screens can
  * re-hydrate when inbound peer changes land, and a global banner can surface
  * unresolved conflicts.
  */
 
+import { holdBackgroundTime, withBackgroundTime } from "@modules/background-time";
 import { AppState, type AppStateStatus } from "react-native";
 import { syncNow, pendingCount, type SyncResult } from "./sync";
 import { conflictCount } from "@/db/queries";
@@ -48,6 +48,8 @@ const dataListeners = new Set<DataChangedListener>();
 let started = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
+// iOS background time held from a local write until its sync finishes.
+let writeHold: (() => void) | null = null;
 let appStateSub: { remove: () => void } | null = null;
 let unsubWrite: (() => void) | null = null;
 // The running sync chain (including any queued rerun); callers that arrive
@@ -162,15 +164,28 @@ async function runSyncOnce(): Promise<void> {
  * Signal that a local write just happened. Debounced so a burst of edits (e.g.
  * typing, dragging cards) collapses into a single sync shortly after settling.
  * Also bumps the pending count immediately so the UI reflects the change.
+ *
+ * Background time is taken here, while still foregrounded, and held until the
+ * write's sync finishes: the JS "background" event arrives asynchronously and
+ * can come too late to ask iOS for time, so a write made just before switching
+ * away must not depend on it.
  */
 export function noteLocalWrite(): void {
   refreshCounts();
   emit();
+  writeHold ??= holdBackgroundTime("cairn-sync");
   if (writeTimer) clearTimeout(writeTimer);
-  writeTimer = setTimeout(() => {
-    writeTimer = null;
-    void requestSync("post-write");
-  }, WRITE_DEBOUNCE_MS);
+  writeTimer = setTimeout(() => flushWrite("post-write"), WRITE_DEBOUNCE_MS);
+}
+
+/** Run the debounced post-write sync now, releasing its background time after. */
+function flushWrite(reason: string): void {
+  if (writeTimer) clearTimeout(writeTimer);
+  writeTimer = null;
+  const release = writeHold;
+  writeHold = null;
+  // requestSync never rejects: runSyncOnce folds errors into the snapshot.
+  void requestSync(reason).finally(() => release?.());
 }
 
 function safePendingCount(): number {
@@ -185,11 +200,11 @@ function handleAppState(next: AppStateStatus): void {
   if (next === "active") void requestSync("foreground");
   // Leaving the app: flush a debounced post-write sync now rather than on the
   // next launch, so an edit made just before switching away reaches the shared
-  // folder (and the desktop) while iOS still gives us a few seconds.
-  else if (next === "background" && (writeTimer || safePendingCount() > 0)) {
-    if (writeTimer) clearTimeout(writeTimer);
-    writeTimer = null;
-    void requestSync("background");
+  // folder (and the desktop). A debounced write already holds background time;
+  // older unsynced writes ask for it now, best effort.
+  else if (next === "background") {
+    if (writeTimer) flushWrite("background");
+    else if (safePendingCount() > 0) void withBackgroundTime("cairn-sync", () => requestSync("background"));
   }
 }
 
@@ -216,6 +231,8 @@ export function stopAutoSync(): void {
   pendingRerun = false; // suppress any queued rerun from an in-flight sync
   if (intervalId) clearInterval(intervalId);
   if (writeTimer) clearTimeout(writeTimer);
+  writeHold?.();
+  writeHold = null;
   appStateSub?.remove();
   unsubWrite?.();
   intervalId = null;
