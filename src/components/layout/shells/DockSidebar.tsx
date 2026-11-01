@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Bell, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
@@ -107,24 +107,12 @@ export function DockSidebar() {
   const cancelCreateProject = useCallback(() => { setCreatingProject(false); setNewProjectName(""); }, []);
 
   // collapsed = dock icons only (48px / w-12). expanded = 244px with labels.
-  // Settings shows the rail so its own navigation has the room; expanding it
-  // there is a one-visit peek that leaves the saved preference alone.
-  const inSettings = isView(activeView, "settings");
-  const [settingsPeek, setSettingsPeek] = useState(false);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!inSettings) setSettingsPeek(false);
-  }, [inSettings]);
-  const collapsed = inSettings ? !settingsPeek : sidebarCollapsed;
-  const toggleDock = useCallback(() => {
-    if (inSettings) setSettingsPeek((v) => !v);
-    else toggleSidebar();
-  }, [inSettings, toggleSidebar]);
+  const collapsed = sidebarCollapsed;
 
   return (
     <>
       {!collapsed && (
-        <div className="fixed inset-0 bg-[color-mix(in_srgb,var(--background)_40%,transparent)] z-30 md:hidden" onClick={toggleDock} />
+        <div className="fixed inset-0 bg-[color-mix(in_srgb,var(--background)_40%,transparent)] z-30 md:hidden" onClick={toggleSidebar} />
       )}
       <aside
         data-sidebar
@@ -137,7 +125,7 @@ export function DockSidebar() {
         {/* collapsed dock */}
         <div aria-hidden={!collapsed} inert={!collapsed ? true : undefined} className={cn("flex flex-col items-center gap-1 w-full flex-1 min-h-0 transition-opacity duration-300", collapsed ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-x-0 top-3")}>
           <Tooltip content="Expand sidebar" side="right">
-            <button aria-label="Expand sidebar" onClick={toggleDock} className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
+            <button aria-label="Expand sidebar" onClick={toggleSidebar} className="p-2 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
               <Layers size={16} />
             </button>
           </Tooltip>
@@ -175,7 +163,7 @@ export function DockSidebar() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onSelect={() => {
-                        if (collapsed) toggleDock();
+                        if (collapsed) toggleSidebar();
                         setCreatingProject(true);
                         setNewProjectName("");
                       }}
@@ -215,7 +203,7 @@ export function DockSidebar() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={() => {
-                      if (collapsed) toggleDock();
+                      if (collapsed) toggleSidebar();
                       setCreatingProject(true);
                       setNewProjectName("");
                     }}
@@ -267,7 +255,7 @@ export function DockSidebar() {
               <div className="text-2xs text-[var(--text-tertiary)]">{projects.length} projects · local</div>
             </div>
             <Tooltip content="Collapse sidebar" side="right">
-              <button onClick={toggleDock} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
+              <button onClick={toggleSidebar} className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors">
                 <ChevronLeft size={13} />
               </button>
             </Tooltip>
