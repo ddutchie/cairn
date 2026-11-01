@@ -109,3 +109,4 @@ scripts/runtime-baselines/
 /docs/private/
 /.agents/skills
 skills-lock.json
+design-audit/screens/

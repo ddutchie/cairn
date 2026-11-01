@@ -11,10 +11,29 @@
 import { describe, it, expect } from "vitest";
 import {
   buildShortcutMap,
+  buildViewShortcutMap,
   countOpenCardsByProject,
   dueDateSeverity,
   dueDateDiffDays,
 } from "./sidebar-utils";
+
+describe("buildViewShortcutMap", () => {
+  it("labels Overview ⌘1 and Notes ⌘2, then the numbered views from ⌘3", () => {
+    const map = buildViewShortcutMap(new Set<string>(), true);
+    expect(map.get("overview")).toBe("⌘1");
+    expect(map.get("notes")).toBe("⌘2");
+    expect(map.get("board")).toBe("⌘3");
+    expect(map.get("agent")).toBe("⌘6");
+    expect(map.get("insights")).toBe("⌘9");
+    expect(map.get("usage")).toBe("");
+  });
+
+  it("shifts later views down when one is hidden, matching the key handler", () => {
+    const map = buildViewShortcutMap(new Set(["calendar"]), true);
+    expect(map.has("calendar")).toBe(false);
+    expect(map.get("flow")).toBe("⌘4");
+  });
+});
 
 describe("buildShortcutMap", () => {
   const items = (n: number) => Array.from({ length: n }, (_, i) => ({ view: `v${i}` }));

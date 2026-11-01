@@ -13,7 +13,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { CountBadge } from "@/components/ui/count-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
-import { countOpenCardsByProject, modKey, buildShortcutMap } from "../sidebar-utils";
+import { countOpenCardsByProject, modKey, buildViewShortcutMap } from "../sidebar-utils";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { RunningChatPins, usePinnedChatThreads } from "./RunningChatPins";
 import { ProjectCreateForm } from "../sidebar/ProjectCreateForm";
@@ -89,17 +89,8 @@ export function DockSidebar() {
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
   const activeMetrics = useProjectMetrics(activeProjectId);
   const mod = useMemo(() => modKey(), []);
-  const shortcutMap = useMemo(() => {
-    const visible = [
-      { view: "overview" },
-      { view: "notes" },
-      ...(!hiddenViews.has("board") ? [{ view: "board" }] : []),
-      ...(!hiddenViews.has("calendar") ? [{ view: "calendar" }] : []),
-      ...(!hiddenViews.has("flow") ? [{ view: "flow" }] : []),
-      ...(!hiddenViews.has("agent") ? [{ view: "agent" }] : []),
-    ];
-    return buildShortcutMap(visible);
-  }, [hiddenViews]);
+  // Same ordering as the page.tsx key handler — Overview ⌘1, Notes ⌘2, then ⌘3+.
+  const shortcutMap = useMemo(() => buildViewShortcutMap(hiddenViews as { has(view: string): boolean }), [hiddenViews]);
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");

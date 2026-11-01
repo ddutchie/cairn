@@ -523,7 +523,7 @@ export function NotesView() {
           <div className="flex items-center gap-0.5">
             {aiEnabled && (
               <Tooltip content="Generate PRD with AI">
-                <Button variant="ghost" size="icon" onClick={() => setPrdModalOpen(true)}>
+                <Button variant="ghost" size="icon" aria-label="Generate PRD with AI" onClick={() => setPrdModalOpen(true)}>
                   <Wand2 size={13} />
                 </Button>
               </Tooltip>

@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
+import { isView } from "@/lib/views";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { useSessionNavigation } from "./useSessionNavigation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
@@ -39,6 +40,8 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     terminalSessions,
     activeCodingSessionId,
     chatOpen,
+    sessionPresentation,
+    activeView,
     setView,
     toggleChat,
     deleteThread,
@@ -52,6 +55,8 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     terminalSessions: s.terminalSessions,
     activeCodingSessionId: s.activeCodingSessionId,
     chatOpen: s.chatOpen,
+    sessionPresentation: s.sessionPresentation,
+    activeView: s.activeView,
     setView: s.setView,
     toggleChat: s.toggleChat,
     deleteThread: s.deleteThread,
@@ -87,8 +92,10 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   // screen. `activeChatThreadId` is auto-selected per project on load, so
   // matching on it alone would light up the most-recent chat of every project
   // even when the chat panel is closed or a different session is open. Gate the
-  // chat match on the chat surface actually being the active, open one.
-  const chatSurfaceActive = chatOpen && activeSessionId === "chat";
+  // chat match on the chat surface actually being the active, open one — the
+  // drawer when it's open, or the centred chat view (which ignores `chatOpen`).
+  const chatSurfaceVisible = chatOpen || (sessionPresentation === "center" && isView(activeView, "chat"));
+  const chatSurfaceActive = chatSurfaceVisible && activeSessionId === "chat";
   // The coding pane is on screen when the active tab is the pinned coding
   // session (either the literal id or the "agent" alias).
   const codingSurfaceActive = activeSessionId === "agent" || (activeCodingSessionId !== null && activeSessionId === activeCodingSessionId);

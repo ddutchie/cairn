@@ -29,6 +29,34 @@ export function modKey(isMac = isMacPlatform()): string {
 }
 
 /**
+ * Views reachable by ⌘3…⌘9, in key order (hidden views are skipped, so later
+ * views shift down). Overview (⌘1) and Notes (⌘2) are fixed and not listed.
+ * Shared by the page.tsx key handler and the sidebar labels so they can't drift.
+ */
+export const NUMBERED_VIEWS = ["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations", "usage"] as const;
+export type NumberedView = (typeof NUMBERED_VIEWS)[number];
+
+/** The numbered views that are currently visible, in shortcut order. */
+export function visibleNumberedViews(hidden: { has(view: string): boolean }): NumberedView[] {
+  return NUMBERED_VIEWS.filter((v) => !hidden.has(v));
+}
+
+/**
+ * Shortcut labels for every view the global handler binds: Overview ⌘1,
+ * Notes ⌘2, then the visible numbered views from ⌘3.
+ */
+export function buildViewShortcutMap(
+  hidden: { has(view: string): boolean },
+  isMac = isMacPlatform(),
+): Map<string, string> {
+  const map = buildShortcutMap([{ view: "overview" }, { view: "notes" }], 1, isMac);
+  for (const [view, label] of buildShortcutMap(visibleNumberedViews(hidden).map((view) => ({ view })), 3, isMac)) {
+    map.set(view, label);
+  }
+  return map;
+}
+
+/**
  * Map each visible nav view to its keyboard shortcut label (⌘3, ⌘4, …).
  *
  * Overview is ⌘1 and Notes is ⌘2, so views start at `base` (3). Shortcuts past

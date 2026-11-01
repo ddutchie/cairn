@@ -50,9 +50,13 @@ async function probeLocalServer(baseUrl: string): Promise<{ ok: boolean; models:
   }
 }
 
+// Stable fallback: a fresh `[]` per selector call makes useSyncExternalStore
+// loop ("Maximum update depth exceeded") when no providers are saved yet.
+const NO_PROVIDERS: NonNullable<ReturnType<typeof useCairnStore.getState>["aiConfig"]["savedProviders"]> = [];
+
 function LocalServersCard() {
   const addSavedProvider = useCairnStore((s) => s.addSavedProvider);
-  const savedProviders = useCairnStore((s) => s.aiConfig.savedProviders ?? []);
+  const savedProviders = useCairnStore((s) => s.aiConfig.savedProviders ?? NO_PROVIDERS);
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [found, setFound] = useState<DetectedServer[]>([]);
