@@ -8,11 +8,10 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { Note, Tag } from "@/types";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
 import { linksToTitle } from "@/lib/wikilink-parser";
-import { useClickOutside } from "@/hooks/useClickOutside";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface SemanticHit {
   noteId: string;
@@ -317,17 +316,9 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
   const [pickerOpen, setPickerOpen] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [tagsExpanded, setTagsExpanded] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useClickOutside(pickerRef, () => { setPickerOpen(false); setNewTagName(""); }, pickerOpen);
-
-  useEffect(() => {
-    if (pickerOpen) inputRef.current?.focus();
-  }, [pickerOpen]);
-
-  // Close on Escape regardless of focus (consistent with other overlays).
-  useEscapeKey(() => { setPickerOpen(false); setNewTagName(""); }, pickerOpen);
+  // Popover handles outside click and Escape; closing also clears the search.
+  const setPicker = (open: boolean) => { setPickerOpen(open); if (!open) setNewTagName(""); };
 
   const assignedTags = note.tagIds.map((id) => getTagById(id)).filter(Boolean) as Tag[];
   const unassignedTags = workspaceTags.filter((t) => !note.tagIds.includes(t.id));
@@ -369,17 +360,16 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
         />
       )}
 
-      <div className="relative" ref={pickerRef}>
+      <Popover open={pickerOpen} onOpenChange={setPicker}>
+        <PopoverTrigger asChild>
         <button
-          onClick={() => setPickerOpen((o) => !o)}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] border border-dashed border-[var(--border)] transition-colors"
         >
           <TagIcon size={11} />
           Add tag
         </button>
-
-        {pickerOpen && (
-          <div className="absolute top-full left-0 mt-1 z-20 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-elev-2 p-2 w-48">
+        </PopoverTrigger>
+        <PopoverContent aria-label="Add a tag" className="w-48 p-2" onOpenAutoFocus={(e) => { e.preventDefault(); inputRef.current?.focus(); }}>
             <input
               ref={inputRef}
               value={newTagName}
@@ -417,9 +407,8 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
                 <p className="text-sm text-[var(--text-tertiary)] px-2 py-1">No tags yet</p>
               )}
             </div>
-          </div>
-        )}
-      </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

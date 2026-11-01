@@ -43,7 +43,7 @@ export function FlowNodeShell({
           ? "border-[var(--accent)] shadow-[0_0_0_2px_var(--accent-dim)]"
           : tone === "accent"
             ? "border-[var(--accent)]/30 hover:border-[var(--accent)]/60"
-            : "border-[var(--border)] hover:border-[var(--border-hover)]",
+            : "border-[var(--border)] hover:border-[var(--muted)]",
         className
       )}
     >

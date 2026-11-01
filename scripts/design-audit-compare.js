@@ -13,8 +13,10 @@
  *   AUDIT_OUT=after npm run screenshots:audit
  *   npm run screenshots:compare
  *
- * "Changed" is a byte comparison of the PNGs: Chromium's encoder is
- * deterministic, so identical pixels give identical files.
+ * "Changed" is a pixel comparison done in headless Chromium (Playwright is
+ * already a dev dependency): byte-identical files short-circuit, and PNGs that
+ * differ only in encoding count as unchanged. Each changed shot also records
+ * the bounding box of its changed pixels, which the page outlines.
  */
 
 const fs = require("fs");
@@ -44,6 +46,7 @@ function group(file) {
   return "Narrow window";
 }
 
+async function main() {
 const shots = [];
 for (const theme of THEMES) {
   const before = path.join(root, "before", theme);
@@ -62,9 +65,15 @@ for (const theme of THEMES) {
       before: hasB ? `before/${theme}/${file}` : null,
       after: hasA ? `after/${theme}/${file}` : null,
       status: !hasB ? "new" : !hasA ? "missing" : hash(b) === hash(a) ? "same" : "changed",
+      box: null,
+      _b: b,
+      _a: a,
     });
   }
 }
+
+await pixelDiff(shots.filter((s) => s.status === "changed"));
+for (const s of shots) { delete s._a; delete s._b; }
 
 if (shots.length === 0) {
   console.error("[compare] No screenshots in design-audit/before or design-audit/after. Run `AUDIT_OUT=before npm run screenshots:audit` first.");
@@ -155,6 +164,9 @@ const html = `<!doctype html>
   .diff { position: relative; }
   .diff .top { position: absolute; inset: 0; mix-blend-mode: difference; }
   .diff .top img { border: 0; }
+  .after-wrap { position: relative; overflow: hidden; border-radius: 6px; }
+  .region { position: absolute; border: 2px solid var(--changed); border-radius: 3px; pointer-events: none;
+    box-shadow: 0 0 0 9999px color-mix(in srgb, black 8%, transparent); }
   .empty { padding: 48px; text-align: center; color: var(--text-3); border: 1px dashed var(--border); border-radius: 6px; }
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
@@ -254,8 +266,9 @@ function renderStage() {
     state.mode === "slider" ? "Drag across the image" : "<kbd>↑</kbd><kbd>↓</kbd> next shot · <kbd>1</kbd>–<kbd>4</kbd> mode";
   let body = "";
   if (state.mode === "side" || !s.before || !s.after) {
+    const region = s.box ? '<span class="region" style="left:' + s.box.x + '%;top:' + s.box.y + '%;width:' + s.box.w + '%;height:' + s.box.h + '%"></span>' : "";
     body = '<div class="pair"><figure><figcaption>Before</figcaption>' + img(s.before, "Before: " + s.title) +
-      '</figure><figure><figcaption>After</figcaption>' + img(s.after, "After: " + s.title) + "</figure></div>";
+      '</figure><figure><figcaption>After' + (s.box ? " (changed area outlined)" : "") + '</figcaption><div class="after-wrap">' + img(s.after, "After: " + s.title) + region + "</div></figure></div>";
   } else if (state.mode === "slider") {
     body = '<div class="frame" id="frame" style="--split:' + state.split + '%">' + img(s.before, "Before") +
       '<div class="top">' + img(s.after, "After") + '</div><div class="handle"></div><span class="tag l">Before</span><span class="tag r">After</span></div>';
@@ -312,3 +325,58 @@ const out = path.join(root, "compare.html");
 fs.writeFileSync(out, html);
 const changed = shots.filter((s) => s.status === "changed").length;
 console.log(`[compare] ${shots.length} shots, ${changed} changed → ${out}`);
+}
+
+/**
+ * Downgrades byte-different but pixel-identical shots to "same" and records
+ * the changed region (as % of the image) for the rest. Pixels count as changed
+ * when their summed RGB delta exceeds 24, and a shot needs more than 8 of them,
+ * which ignores antialiasing noise.
+ */
+async function pixelDiff(changed) {
+  if (changed.length === 0) return;
+  let chromium;
+  try {
+    ({ chromium } = require("@playwright/test"));
+  } catch {
+    console.warn("[compare] @playwright/test not available; falling back to byte comparison");
+    return;
+  }
+  let browser;
+  try {
+    browser = await chromium.launch();
+  } catch (err) {
+    console.warn(`[compare] Chromium could not launch (${err.message.split("\n")[0]}); falling back to byte comparison`);
+    return;
+  }
+  const page = await browser.newPage();
+  for (const shot of changed) {
+    const before = fs.readFileSync(shot._b).toString("base64");
+    const after = fs.readFileSync(shot._a).toString("base64");
+    const r = await page.evaluate(async ([b64a, b64b]) => {
+      const load = (src) => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = "data:image/png;base64," + src; });
+      const [ia, ib] = await Promise.all([load(b64a), load(b64b)]);
+      if (ia.width !== ib.width || ia.height !== ib.height) return { n: Infinity, size: true };
+      const w = ia.width, h = ia.height;
+      const read = (img) => { const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d"); x.drawImage(img, 0, 0); return x.getImageData(0, 0, w, h).data; };
+      const da = read(ia), db = read(ib);
+      let n = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const k = (y * w + x) * 4;
+          if (Math.abs(da[k] - db[k]) + Math.abs(da[k + 1] - db[k + 1]) + Math.abs(da[k + 2] - db[k + 2]) > 24) {
+            n++;
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+          }
+        }
+      }
+      return { n, box: n ? { x: (x0 / w) * 100, y: (y0 / h) * 100, w: ((x1 - x0 + 1) / w) * 100, h: ((y1 - y0 + 1) / h) * 100 } : null };
+    }, [before, after]);
+    if (r.size) continue;
+    if (r.n <= 8) shot.status = "same";
+    else shot.box = r.box;
+  }
+  await browser.close();
+}
+
+main().catch((err) => { console.error(err); process.exit(1); });

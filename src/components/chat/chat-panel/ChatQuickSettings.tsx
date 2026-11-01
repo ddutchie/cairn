@@ -6,7 +6,7 @@ import { Settings2, GitBranch, ExternalLink, ChevronRight } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
-import { Tooltip } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 import { Toggle } from "@/components/ui/toggle";
 import { ChatThemePicker } from "@/components/ui/chat-theme-picker";
 
@@ -55,21 +55,11 @@ export function ChatQuickSettings({ disabled }: { disabled?: boolean }) {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Tooltip content="Chat settings — steps, temperature, subagents" side="left">
-        <Popover.Trigger asChild>
-          <button
-            aria-label="Chat settings"
-            className={cn(
-              "flex items-center justify-center p-1 rounded transition-colors",
-              open
-                ? "text-[var(--accent)] bg-[var(--surface-3)]"
-                : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]",
-            )}
-          >
-            <Settings2 size={12} />
-          </button>
-        </Popover.Trigger>
-      </Tooltip>
+      <Popover.Trigger asChild>
+        <IconButton size="sm" label="Chat settings" tooltip="Chat settings: steps, temperature, subagents" pressed={open} tooltipDisabled={open}>
+          <Settings2 size={12} />
+        </IconButton>
+      </Popover.Trigger>
 
       <Popover.Portal>
         <Popover.Content

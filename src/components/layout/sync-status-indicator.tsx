@@ -12,15 +12,14 @@
  * WebkitAppRegion:"no-drag" to stay clickable.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { CloudCheck, CloudOff, RefreshCw, CloudAlert, AlertTriangle } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { useSyncStatus, triggerSyncNow, openConflictModal, type SyncState } from "@/lib/sync-client";
-import { Tooltip } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn, formatRelative } from "@/lib/utils";
-import { useClickOutside } from "@/hooks/useClickOutside";
-import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 function glyph(state: SyncState, conflicts: number, pending: number) {
   if (conflicts > 0) return { Icon: CloudAlert, color: "var(--warning)", label: `${conflicts} sync conflict${conflicts === 1 ? "" : "s"}` };
@@ -38,17 +37,12 @@ export function SyncStatusIndicator() {
   // Bumped on a timer while the popover is open so the "Last synced" relative
   // time stays current between (sparse) status pushes instead of freezing.
   const [, setNowTick] = useState(0);
-  const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const id = setInterval(() => setNowTick((n) => n + 1), 30_000);
     return () => clearInterval(id);
   }, [open]);
-
-  // Close the popover on outside click / Escape.
-  useClickOutside(wrapRef, () => setOpen(false), open);
-  useEscapeKey(() => setOpen(false), open);
 
   // Render only when Device Sync is actually enabled (a folder is connected).
   // With no sync configured there is nothing to show in the title bar.
@@ -69,28 +63,24 @@ export function SyncStatusIndicator() {
   };
 
   return (
-    <div ref={wrapRef} className="relative" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-      <Tooltip side="bottom" content={label}>
-        <button
-          type="button"
-          aria-label={label}
-          onClick={() => setOpen((o) => !o)}
-          className="relative w-7 h-7 grid place-items-center rounded-md border border-transparent text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
-        >
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <IconButton label={label} pressed={open} tooltipDisabled={open} className="relative" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
           <Icon size={13} style={{ color: buttonColor }} className={cn(spinning && "animate-spin")} />
           {status.conflicts > 0 && (
             <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--warning)] text-[var(--background)] text-2xs font-bold grid place-items-center leading-none border border-[var(--surface)]">
               {status.conflicts}
             </span>
           )}
-        </button>
-      </Tooltip>
-
-      {open && (
-        <div
-          className="absolute right-0 top-[110%] z-50 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-3 animate-fade-in"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
+        </IconButton>
+      </PopoverTrigger>
+      <PopoverContent
+        aria-label="Sync status"
+        align="end"
+        className="w-64 p-3"
+        // Over the title bar: opt out of the window drag region so clicks land.
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
           <div className="flex items-center gap-2 mb-2">
             <Icon size={14} style={{ color }} className={cn(spinning && "animate-spin")} />
             <span className="text-xs font-semibold text-[var(--text-primary)]">{label}</span>
@@ -127,9 +117,8 @@ export function SyncStatusIndicator() {
             <RefreshSpin size={12} spinning={busy || status.state === "syncing"} />
             Sync now
           </Button>
-        </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

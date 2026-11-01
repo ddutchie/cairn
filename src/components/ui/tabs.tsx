@@ -24,7 +24,7 @@ interface TabsProps<T extends string> {
  * Single tab-row primitive (pill tabs in a surface-2 well). Replaces the
  * copy-pasted `role="tablist"` rows in settings-view (AI / Extensions /
  * System subtabs) and the subagent scope pills. Session tab chrome
- * (AgentSessionTab / TerminalTab, with close buttons and menus)
+ * (TerminalTab, with close buttons and menus)
  * is structurally different and stays bespoke.
  */
 export function Tabs<T extends string>({

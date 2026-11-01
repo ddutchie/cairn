@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { X, Tag } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { SettingsGroup } from "./shared";
-import { useClickOutside } from "@/hooks/useClickOutside";
-import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TAG_PALETTE } from "@/lib/constants";
 
 
@@ -17,10 +16,6 @@ export function TagsSettings() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [colorPickerId, setColorPickerId] = useState<string | null>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
-
-  useClickOutside(pickerRef, () => setColorPickerId(null), !!colorPickerId);
-  useEscapeKey(() => setColorPickerId(null), !!colorPickerId);
 
   return (
     <SettingsGroup title="Tags" description="Manage workspace tags used on notes and tasks">
@@ -39,34 +34,30 @@ export function TagsSettings() {
           return (
             <div key={tag.id} className="relative flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
               {/* Color swatch — click to open palette */}
-              <button
-                onClick={() => setColorPickerId(colorPickerId === tag.id ? null : tag.id)}
-                aria-label="Change tag color"
-                className="w-3.5 h-3.5 rounded-full flex-shrink-0 ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:ring-2 hover:ring-[var(--accent)] transition-all"
-                style={{ backgroundColor: tag.color }}
-                title="Change color"
-              />
-
-              {/* Color palette popover */}
-              {colorPickerId === tag.id && (
-                <div
-                  ref={pickerRef}
-                  className="absolute left-0 top-full mt-1 z-50 p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-2"
-                >
+              <Popover open={colorPickerId === tag.id} onOpenChange={(open) => setColorPickerId(open ? tag.id : null)}>
+                <PopoverTrigger asChild>
+                  <button
+                    aria-label={`Change color of ${tag.name}`}
+                    className="w-3.5 h-3.5 rounded-full flex-shrink-0 ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:ring-2 hover:ring-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] transition-all"
+                    style={{ backgroundColor: tag.color }}
+                    title="Change color"
+                  />
+                </PopoverTrigger>
+                <PopoverContent aria-label={`Colour for ${tag.name}`} className="p-2">
                   <div className="grid grid-cols-7 gap-1.5">
                     {TAG_PALETTE.map(({ color, name }) => (
                       <button
                         key={color}
                         onClick={() => { updateTag(tag.id, { color }); setColorPickerId(null); }}
-                        className="w-5 h-5 rounded-full ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:scale-110 transition-transform"
+                        className="w-5 h-5 rounded-full ring-1 ring-[color-mix(in_srgb,var(--text-primary)_20%,transparent)] hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] transition-transform"
                         style={{ backgroundColor: color }}
                         title={name}
                         aria-label={`Set color to ${name}`}
                       />
                     ))}
                   </div>
-                </div>
-              )}
+                </PopoverContent>
+              </Popover>
 
               {editingId === tag.id ? (
                 <input

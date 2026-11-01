@@ -10,6 +10,8 @@ import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registr
 import { useSessionNavigation } from "./useSessionNavigation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { kindLabel, SessionRow, SessionTypeIcon } from "./SessionRow";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { FOCUS_RING } from "@/components/ui/button";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
@@ -36,6 +38,8 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     chatMessages,
     activeChatThreadId,
     activeProjectId,
+    activeWorkspaceId,
+    projects,
     codingSessionHistory,
     terminalSessions,
     activeCodingSessionId,
@@ -51,6 +55,8 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     chatMessages: s.chatMessages,
     activeChatThreadId: s.activeChatThreadId,
     activeProjectId: s.activeProjectId,
+    activeWorkspaceId: s.activeWorkspaceId,
+    projects: s.projects,
     codingSessionHistory: s.codingSessionHistory,
     terminalSessions: s.terminalSessions,
     activeCodingSessionId: s.activeCodingSessionId,
@@ -88,6 +94,46 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
   }, [activeProjectId, chatMessages, chatThreads, codingSessionHistory, projectId, terminalSessions]);
 
   const visibleSessions = sessions.filter((session) => matchesQuery(session, query.trim()));
+
+  // The dropdown also lists the workspace's other projects, grouped under their
+  // names, so a thread from another project is one click away instead of
+  // silently missing. Built only while the dropdown is open.
+  const scopedProjectId = projectId ?? activeProjectId;
+  const otherGroups = useMemo(() => {
+    if (variant !== "dropdown" || !open) return [];
+    // Bucket threads, messages and coding sessions by project in one pass, so
+    // each project's registry only scans its own rows (the registry looks up a
+    // thread's title and message count by scanning the messages it's given).
+    const threadsByProject = new Map<string, typeof chatThreads>();
+    for (const t of chatThreads) if (t.projectId) (threadsByProject.get(t.projectId) ?? threadsByProject.set(t.projectId, []).get(t.projectId)!).push(t);
+    const messagesByThread = new Map<string, typeof chatMessages>();
+    for (const m of chatMessages) (messagesByThread.get(m.threadId) ?? messagesByThread.set(m.threadId, []).get(m.threadId)!).push(m);
+    const codingByProject = new Map<string, typeof codingSessionHistory>();
+    for (const c of codingSessionHistory) (codingByProject.get(c.projectId) ?? codingByProject.set(c.projectId, []).get(c.projectId)!).push(c);
+    return projects
+      .filter((p) => p.workspaceId === activeWorkspaceId && p.id !== scopedProjectId)
+      .map((p) => {
+        const threads = threadsByProject.get(p.id) ?? [];
+        return {
+          id: p.id,
+          name: p.name,
+          sessions: buildSessionRegistry({
+            chatThreads: threads,
+            chatMessages: threads.flatMap((t) => messagesByThread.get(t.id) ?? []),
+            codingSessions: codingByProject.get(p.id) ?? [],
+            terminalSessions,
+            projectId: p.id,
+          }),
+        };
+      })
+      .filter((g) => g.sessions.length > 0);
+  }, [variant, open, projects, activeWorkspaceId, scopedProjectId, chatThreads, chatMessages, codingSessionHistory, terminalSessions]);
+  const currentProjectName = projects.find((p) => p.id === scopedProjectId)?.name;
+  const groups = [
+    { id: scopedProjectId ?? "_", name: currentProjectName, sessions: visibleSessions },
+    ...otherGroups.map((g) => ({ ...g, sessions: g.sessions.filter((session) => matchesQuery(session, query.trim())) })),
+  ].filter((g, i) => i === 0 || g.sessions.length > 0);
+  const listedSessions = groups.flatMap((g) => g.sessions);
   // A session is "selected" only when its surface is genuinely the one on
   // screen. `activeChatThreadId` is auto-selected per project on load, so
   // matching on it alone would light up the most-recent chat of every project
@@ -114,7 +160,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     runningIds.has(session.kind === "chat" ? `chat-${session.sourceId}` : session.sourceId);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || variant !== "project") return;
     const close = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
@@ -139,7 +185,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [open]);
+  }, [open, variant]);
 
   // Arrow-key navigation inside the listbox (roving tabindex).
   function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
@@ -212,42 +258,38 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     );
   }
 
+  const triggerId = `${sanitizeAriaId(listboxId)}-trigger`;
+  const sanitizedListboxId = sanitizeAriaId(listboxId);
+
   function removeSession(event: React.SyntheticEvent, session: SessionSummary) {
     event.stopPropagation();
-    const deletedIndex = visibleSessions.findIndex((s) => s.id === session.id);
-    const triggerEl = triggerRef.current;
+    const deletedIndex = listedSessions.findIndex((s) => s.id === session.id);
     const doDelete = session.kind === "chat"
       ? deleteThread(session.sourceId)
       : session.kind === "coding"
         ? deleteCodingSessionFromHistory(session.sourceId)
         : Promise.resolve();
     void Promise.resolve(doDelete as unknown as Promise<unknown>).then(() => {
+      // Looked up by id rather than through refs: this runs from row buttons,
+      // the Delete key and the context menu alike.
       requestAnimationFrame(() => {
-        const container = listboxRef.current;
-        if (!container) {
-          triggerEl?.focus();
-          return;
-        }
-        const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+        const triggerEl = document.getElementById(triggerId);
+        const container = document.getElementById(sanitizedListboxId);
+        const options = container ? Array.from(container.querySelectorAll<HTMLElement>('[role="option"]')) : [];
         if (options.length === 0) {
-          // Focus stays logical: back to search or trigger
-          if (searchInputRef.current && open) searchInputRef.current.focus();
+          // Nothing left to land on: back to the search field, else the trigger.
+          const search = container?.parentElement?.querySelector<HTMLInputElement>("input");
+          if (search) search.focus();
           else triggerEl?.focus();
           return;
         }
-        let nextIndex = deletedIndex;
-        if (nextIndex >= options.length) nextIndex = options.length - 1;
-        if (nextIndex < 0) nextIndex = 0;
-        const toFocus = options[nextIndex];
-        if (toFocus) toFocus.focus();
-        else triggerEl?.focus();
+        const nextIndex = Math.min(Math.max(deletedIndex, 0), options.length - 1);
+        options[nextIndex].focus();
       });
     }).catch(() => undefined);
   }
 
   const projectNav = variant === "project";
-  const currentKind = projectNav ? "chat" : active?.kind;
-  const sanitizedListboxId = sanitizeAriaId(listboxId);
 
   // Inline mode — used when the parent already provides a collapsible header
   // (e.g. DockSidebar Conversations). Render only the search + list, no trigger pill,
@@ -313,10 +355,117 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     );
   }
 
+  if (!projectNav) {
+    // Roving focus enters on the selected row, or the first row when none is.
+    const entryId = active?.id ?? listedSessions[0]?.id;
+    return (
+      <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery(""); }}>
+        <PopoverTrigger asChild>
+          <button
+            ref={triggerRef}
+            id={triggerId}
+            type="button"
+            aria-expanded={open}
+            aria-label={active ? `Session: ${active.title}. Switch session` : "Choose a session"}
+            title={active?.title}
+            className={cn(
+              "flex w-full min-w-0 items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 py-1.5 text-xs text-left transition-colors hover:bg-[var(--surface-2)]",
+              FOCUS_RING,
+              open && "bg-[var(--surface-2)]",
+            )}
+          >
+            <span className="flex-shrink-0 text-[var(--text-tertiary)]">
+              <SessionTypeIcon kind={active?.kind ?? "chat"} size={12} />
+            </span>
+            <span className={cn("min-w-0 flex-1 truncate", active ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]")}>
+              {active?.title ?? "Sessions"}
+            </span>
+            {runningIds.size > 0 && <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--accent)]" aria-hidden />}
+            <ChevronDown size={12} className={cn("flex-shrink-0 text-[var(--text-tertiary)] transition-transform", open && "rotate-180")} />
+          </button>
+        </PopoverTrigger>
+        <span aria-live="polite" aria-atomic="true" className="sr-only">{runningIds.size > 0 ? `${runningIds.size} running` : ""}</span>
+        <PopoverContent
+          aria-label="Switch session"
+          align="start"
+          matchTriggerWidth
+          className="flex max-h-96 min-w-[20rem] flex-col overflow-hidden"
+          onOpenAutoFocus={(e) => { e.preventDefault(); searchInputRef.current?.focus(); }}
+          onEscapeKeyDown={(e) => {
+            // First Escape clears the search; the next one closes.
+            if (!query) return;
+            e.preventDefault();
+            setQuery("");
+          }}
+        >
+          <div className="flex items-center gap-1.5 border-b border-[var(--border)] px-2.5 py-2">
+            <Search size={12} className="flex-shrink-0 text-[var(--text-tertiary)]" />
+            <input
+              ref={searchInputRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
+                  e.preventDefault();
+                  const options = listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+                  if (!options || options.length === 0) return;
+                  if (e.key === "ArrowDown") options[0]?.focus();
+                  else options[options.length - 1]?.focus();
+                }
+              }}
+              aria-label="Search sessions"
+              placeholder="Search sessions"
+              className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+            />
+          </div>
+          <div
+            ref={listboxRef}
+            id={sanitizedListboxId}
+            role="listbox"
+            aria-label="Sessions"
+            aria-orientation="vertical"
+            tabIndex={-1}
+            onKeyDown={handleListboxKeyDown}
+            className="min-h-0 flex-1 overflow-y-auto p-1"
+          >
+            {listedSessions.length === 0 ? (
+              <p className="px-2 py-4 text-center text-xs text-[var(--text-tertiary)]">{query ? "No matching sessions" : "No sessions yet"}</p>
+            ) : groups.map((g) => g.sessions.length === 0 ? null : (
+              <div key={g.id} role="group" aria-label={g.name ?? "This project"} className="space-y-0.5 [&+&]:mt-1">
+                {/* Name the groups only when there's more than one */}
+                {groups.length > 1 && g.name && (
+                  <div className="px-2 pb-1 pt-1.5 text-xs font-medium text-[var(--text-tertiary)] truncate">{g.name}</div>
+                )}
+                {g.sessions.map((session) => {
+                  const selected = active?.id === session.id;
+                  return (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      selected={selected}
+                      running={isRunning(session)}
+                      tabIndex={session.id === entryId ? 0 : -1}
+                      onSelect={() => void selectSession(session)}
+                      onRemove={(event) => removeSession(event, session)}
+                      compact
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
+  // Project variant: an inline expanding tree ("Conversations") rather than a
+  // floating menu.
   return (
     <div
       ref={rootRef}
-      className={cn("relative", projectNav ? "flex-shrink-0 h-auto" : "flex-1 min-w-0")}
+      className="relative flex-shrink-0 h-auto"
       onBlur={(e) => {
         if (!open) return;
         const related = e.relatedTarget as Node | null;
@@ -328,64 +477,34 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
     >
       <button
         ref={triggerRef}
+        id={triggerId}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? sanitizedListboxId : undefined}
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          projectNav
-            ? "flex items-center gap-2 w-full rounded-md px-2 py-1 text-xs text-[var(--text-tertiary)] text-left transition-colors"
-            : "group flex w-full min-w-0 items-center justify-between gap-1.5 rounded-md border bg-[var(--surface-2)] px-2 py-1 text-left transition-colors",
-          projectNav
-            ? open ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "hover:bg-[var(--surface-2)]"
-            : open
-              ? "border-[var(--accent)] text-[var(--text-primary)]"
-              : "border-[var(--border)] text-[var(--text-primary)] hover:border-[var(--muted)]",
+          "flex items-center gap-2 w-full rounded-md px-2 py-1 text-xs text-[var(--text-tertiary)] text-left transition-colors",
+          open ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "hover:bg-[var(--surface-2)]",
         )}
       >
-        <span className={cn("flex items-center gap-1.5 min-w-0 flex-1", projectNav ? "text-[var(--text-tertiary)]" : "text-[var(--accent)]")}>
+        <span className="flex items-center gap-1.5 min-w-0 flex-1 text-[var(--text-tertiary)]">
           <span className="flex-shrink-0">
-            <SessionTypeIcon kind={currentKind ?? "chat"} size={projectNav ? 12 : 11} />
+            <SessionTypeIcon kind="chat" size={12} />
           </span>
-          <span className="min-w-0 flex-1 text-left leading-tight">
-            <span className={cn("block truncate", projectNav ? "" : "text-xs font-medium leading-none text-[var(--text-primary)]")}>
-              {projectNav ? "Conversations" : active?.title ?? "Sessions"}
-            </span>
-            {!projectNav && (
-              <span className="block truncate text-2xs leading-none text-[var(--text-tertiary)]">
-                {active ? kindLabel(active.kind) : "Choose a session"} · {sessions.length} session{sessions.length === 1 ? "" : "s"}
-              </span>
-            )}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-left leading-tight">Conversations</span>
         </span>
-        {projectNav ? (
-          <>
-            <span className="ml-auto text-xs text-[var(--text-tertiary)] shrink-0">{sessions.length}</span>
-            {open
-              ? <ChevronDown size={12} className="text-[var(--text-tertiary)] shrink-0" />
-              : <ChevronRight size={12} className="text-[var(--text-tertiary)] shrink-0" />}
-          </>
-        ) : (
-          <ChevronDown
-            size={12}
-            className={cn(
-              "ml-auto flex-shrink-0 text-[var(--text-tertiary)] transition-transform group-hover:text-[var(--text-secondary)]",
-              open && "rotate-180 text-[var(--text-secondary)]",
-            )}
-          />
-        )}
+        <span className="ml-auto text-xs text-[var(--text-tertiary)] shrink-0">{sessions.length}</span>
+        {open
+          ? <ChevronDown size={12} className="text-[var(--text-tertiary)] shrink-0" />
+          : <ChevronRight size={12} className="text-[var(--text-tertiary)] shrink-0" />}
       </button>
       <span aria-live="polite" aria-atomic="true" className="sr-only">{runningIds.size > 0 ? `${runningIds.size} running` : ""}</span>
 
       {open && (
-        <div className={cn(
-          projectNav
-            ? "mt-0.5 ml-2 border-l border-[var(--border)] pl-1.5"
-            : "absolute left-0 top-full z-50 mt-1 w-80 min-w-full max-h-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 py-1 animate-fade-in flex flex-col overflow-hidden",
-        )}>
-          <div className={projectNav ? "px-1 pb-1" : "sticky top-0 z-10 bg-[var(--surface)] p-1"}>
-            <div className={cn("flex items-center gap-1.5", projectNav ? "rounded-md bg-[var(--surface-2)] px-2 py-1" : "rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1")}>
+        <div className="mt-0.5 ml-2 border-l border-[var(--border)] pl-1.5">
+          <div className="px-1 pb-1">
+            <div className="flex items-center gap-1.5 rounded-md bg-[var(--surface-2)] px-2 py-1">
               <Search size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
               <input
                 ref={searchInputRef}
@@ -411,12 +530,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
                     if (!options || options.length === 0) return;
                     if (e.key === "ArrowDown") options[0]?.focus();
                     else options[options.length - 1]?.focus();
-                    return;
                   }
-                  // Prevent Radix typeahead from hijacking keystrokes when this
-                  // input lives inside a DropdownMenuContent (future portal)
-                  // and keep Search typing in-place.
-                  if (e.key.length === 1 || e.key === "Backspace" || e.key === "Delete") e.stopPropagation();
                 }}
                 placeholder="Search sessions"
                 className="flex-1 min-w-0 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
@@ -424,13 +538,6 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
               {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear session search" className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"><X size={11} /></button>}
             </div>
           </div>
-          {/* The dropdown menu keeps its section label; the inline sidebar tree
-              omits it — the "Conversations" header above already names it. */}
-          {!projectNav && (
-            <div className="px-2.5 py-1 text-2xs font-medium text-[var(--text-tertiary)]">
-              All sessions
-            </div>
-          )}
           <div
             ref={listboxRef}
             id={sanitizedListboxId}
@@ -439,7 +546,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
             aria-orientation="vertical"
             tabIndex={-1}
             onKeyDown={handleListboxKeyDown}
-            className={cn("flex-1 min-h-0 overflow-y-auto", projectNav ? "pb-1 space-y-0.5" : "px-1 pb-1 space-y-0.5")}
+            className="flex-1 min-h-0 overflow-y-auto pb-1 space-y-0.5"
           >
             {visibleSessions.length === 0 ? (
               <p className="px-2 py-3 text-center text-xs text-[var(--text-tertiary)]">No matching sessions</p>
@@ -455,6 +562,7 @@ export function SessionBrowser({ activeSessionId, projectId, variant = "dropdown
                   tabIndex={selected ? 0 : !hasActive && index === 0 ? 0 : -1}
                   onSelect={() => void selectSession(session)}
                   onRemove={(event) => removeSession(event, session)}
+                  compact
                 />
               );
             })}
