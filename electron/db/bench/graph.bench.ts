@@ -13,7 +13,7 @@
  * branches. Sizes are kept modest so a run finishes in about a minute.
  */
 
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { buildGraphFixture, type GraphFixture } from "./graph-fixture";
 import { getKnowledgeGraph, computeAutoRelationships } from "../graph-queries";
 
@@ -34,27 +34,34 @@ function fixture(n: number): GraphFixture {
 
 const opts = { time: 2000, warmupIterations: 2 };
 
+// vitest 5: `bench` is a test-context fixture, not a top-level export.
 for (const n of SIZES) {
   describe(`${n} notes`, () => {
     const f = fixture(n);
     const graph = getKnowledgeGraph(f.db, f.workspaceId);
     let i = 0;
 
-    bench("getKnowledgeGraph (all projects)", () => {
-      getKnowledgeGraph(f.db, f.workspaceId);
-    }, opts);
+    test("getKnowledgeGraph (all projects)", async ({ bench }) => {
+      await bench("getKnowledgeGraph (all projects)", () => {
+        getKnowledgeGraph(f.db, f.workspaceId);
+      }).run(opts);
+    });
 
-    bench("renderer change signature (JSON.stringify)", () => {
-      JSON.stringify(graph);
-    }, opts);
+    test("renderer change signature (JSON.stringify)", async ({ bench }) => {
+      await bench("renderer change signature (JSON.stringify)", () => {
+        JSON.stringify(graph);
+      }).run(opts);
+    });
 
     // computeAutoRelationships rewrites relationship_cache rows, so it runs on
     // its own fixture: the read benches above always see the seeded edge set,
     // whatever the bench order or filter.
     const saveFixture = buildGraphFixture({ notes: n });
-    bench("save path: computeAutoRelationships([note])", () => {
-      // Rotate through notes so the pass isn't just re-reading a warm row.
-      computeAutoRelationships(saveFixture.db, saveFixture.workspaceId, [saveFixture.noteIds[i++ % saveFixture.noteIds.length]]);
-    }, { time: 2000, warmupIterations: 1 });
+    test("save path: computeAutoRelationships([note])", async ({ bench }) => {
+      await bench("save path: computeAutoRelationships([note])", () => {
+        // Rotate through notes so the pass isn't just re-reading a warm row.
+        computeAutoRelationships(saveFixture.db, saveFixture.workspaceId, [saveFixture.noteIds[i++ % saveFixture.noteIds.length]]);
+      }).run({ time: 2000, warmupIterations: 1 });
+    });
   });
 }
