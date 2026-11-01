@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   writeListener: null as (() => void) | null,
   syncNow: vi.fn(),
   pending: 0,
+  backgroundTime: 0,
 }));
 
 vi.mock("react-native", () => ({
@@ -26,6 +27,12 @@ vi.mock("./write-signal", () => ({
   },
 }));
 vi.mock("@/db", () => ({ setActiveSource: () => {}, getActiveSource: () => "ws1" }));
+vi.mock("@modules/background-time", () => ({
+  withBackgroundTime: (_: string, work: () => Promise<unknown>) => {
+    h.backgroundTime++;
+    return work();
+  },
+}));
 vi.mock("@/dev/demo-seed", () => ({ isDemoSource: () => false, openDemoWorkspace: () => {} }));
 
 const { startAutoSync, stopAutoSync } = await import("./controller");
@@ -36,6 +43,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   h.syncNow.mockReset().mockResolvedValue(OK);
   h.pending = 0;
+  h.backgroundTime = 0;
   startAutoSync();
 });
 afterEach(() => {
@@ -62,6 +70,7 @@ describe("sync controller", () => {
     h.appStateListener?.("background");
     await vi.advanceTimersByTimeAsync(0);
     expect(h.syncNow).toHaveBeenCalledTimes(1);
+    expect(h.backgroundTime).toBe(1); // held the app awake for it
     // The debounce was cancelled, so it doesn't fire a second sync later.
     await vi.advanceTimersByTimeAsync(2_000);
     expect(h.syncNow).toHaveBeenCalledTimes(1);

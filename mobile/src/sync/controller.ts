@@ -9,15 +9,15 @@
  *   - debounced shortly after a local write (create/edit/move).
  *
  * It is the only place syncNow() is scheduled automatically; the Sync tab /
- * header badge can still call requestSync() for a manual override. Background
- * (app-closed) sync is intentionally out of scope — iOS only grants best-effort
- * wakeups and iCloud propagates files on its own schedule anyway.
+ * header badge can still call requestSync() for a manual override. Syncs while
+ * the app is closed are background-sync.ts's job (iOS best-effort wakeups).
  *
  * State + a data-changed signal are exposed via a tiny pub/sub so screens can
  * re-hydrate when inbound peer changes land, and a global banner can surface
  * unresolved conflicts.
  */
 
+import { withBackgroundTime } from "@modules/background-time";
 import { AppState, type AppStateStatus } from "react-native";
 import { syncNow, pendingCount, type SyncResult } from "./sync";
 import { conflictCount } from "@/db/queries";
@@ -185,11 +185,12 @@ function handleAppState(next: AppStateStatus): void {
   if (next === "active") void requestSync("foreground");
   // Leaving the app: flush a debounced post-write sync now rather than on the
   // next launch, so an edit made just before switching away reaches the shared
-  // folder (and the desktop) while iOS still gives us a few seconds.
+  // folder (and the desktop). Background time keeps iOS from suspending the app
+  // halfway through the oplog write; it's requested here, synchronously.
   else if (next === "background" && (writeTimer || safePendingCount() > 0)) {
     if (writeTimer) clearTimeout(writeTimer);
     writeTimer = null;
-    void requestSync("background");
+    void withBackgroundTime("cairn-sync", () => requestSync("background"));
   }
 }
 
