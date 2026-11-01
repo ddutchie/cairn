@@ -187,7 +187,7 @@ export function ModelPicker({
           )}
         />
         <Tooltip content="Done" side="top">
-          <button
+          <button aria-label="Done"
             onClick={() => setCustom(false)}
             className="flex items-center justify-center px-1.5 rounded-md border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-3)] transition-colors"
           >

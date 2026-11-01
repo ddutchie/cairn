@@ -458,7 +458,7 @@ export function AISettings() {
             onClick={() => setBrowsingPersonalities(true)}
             className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            <Download size={12} /> Browse Community
+            <Download size={12} /> Browse community
           </button>
         </SettingsRow>
 
@@ -479,7 +479,7 @@ export function AISettings() {
                 )}
                 onClick={() => setPersonality(null)}
                 title="No personality layer"
-                aria-label="Select None — no personality layer"
+                aria-label="Select none — no personality layer"
               >
                 <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
                 <span className="text-xs text-[var(--text-secondary)] flex-1">None</span>

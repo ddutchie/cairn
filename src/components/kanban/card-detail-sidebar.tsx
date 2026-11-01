@@ -203,7 +203,7 @@ export function CardDetailSidebar({
           className="w-full justify-start text-[var(--accent)] hover:bg-[var(--accent-dim)]"
           onClick={onSpawnAgent}
         >
-          <Terminal size={10} /> Spawn Agent
+          <Terminal size={10} /> Spawn agent
         </Button>
         <Button
           variant="ghost" size="xs"

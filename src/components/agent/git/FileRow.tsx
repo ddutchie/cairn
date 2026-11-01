@@ -54,7 +54,7 @@ export function FileRow({
             </button>
           </Tooltip>
           <Tooltip content={discardArmed ? "Click again to discard all changes in this file" : "Discard all changes in this file"}>
-            <button
+            <button aria-label={discardArmed ? "Click again to discard all changes in this file" : "Discard all changes in this file"}
               onClick={onDiscard}
               className="w-4 h-4 rounded flex items-center justify-center text-[var(--danger)] hover:scale-110 transition-transform cursor-pointer"
               style={{ backgroundColor: discardArmed

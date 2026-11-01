@@ -358,7 +358,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       title={
         <span className="flex items-center gap-2">
-          <Download size={16} /> Browse Community Tools
+          <Download size={16} /> Browse community tools
         </span>
       }
       description="Install community-contributed MCP servers and HTTP services."

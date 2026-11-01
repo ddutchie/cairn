@@ -382,7 +382,7 @@ export function UsageView() {
             </button>
           </Tooltip>
           <Tooltip content="Reload data" side="bottom">
-            <button
+            <button aria-label="Reload data"
               onClick={refresh}
               className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors"
             >
@@ -432,7 +432,7 @@ export function UsageView() {
                 )}
               </div>
               <div className="px-2 pb-2">
-                <UsageChart series={overview?.series ?? []} metric={metric} />
+                <UsageChart series={overview?.series ?? []} metric={metric} allTime={range.days == null} />
               </div>
             </div>
 
@@ -444,7 +444,7 @@ export function UsageView() {
               </div>
               <div className="p-4 flex flex-col gap-3">
                 {byModel.length === 0 ? (
-                  <EmptyState title="No usage yet." />
+                  <EmptyState title="No usage yet" description="Model totals appear after the first AI call." />
                 ) : (
                   byModel.slice(0, 6).map((m) => {
                     const color = modelColor(m.model);
@@ -490,8 +490,8 @@ export function UsageView() {
             )}
             {items.length === 0 ? (
               <EmptyState
-                title="No LLM calls recorded yet"
-                description="Send a chat message or run an agent and it will appear here."
+                title="No AI calls yet"
+                description="Send a chat message or run an agent, and each call is listed here."
                 className="py-8"
               />
             ) : (

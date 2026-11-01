@@ -172,7 +172,7 @@ export function SankeyCanvas({ nodes, onNodeClick }: Props) {
                 {panelTasks.length} task{panelTasks.length !== 1 ? "s" : ""}
               </p>
             </div>
-            <button className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            <button aria-label="Close" className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
               onClick={() => setSelectedCol(null)}>
               <X size={12} />
             </button>

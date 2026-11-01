@@ -115,7 +115,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       title={
         <span className="flex items-center gap-2">
-          <Download size={16} /> Browse Community Personalities
+          <Download size={16} /> Browse community personalities
         </span>
       }
       description="Install ready-made tone & style rules for chat. The full prompt is shown — it's appended to the system prompt verbatim."

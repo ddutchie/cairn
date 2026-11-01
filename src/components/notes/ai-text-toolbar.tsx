@@ -155,7 +155,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
             <div className="flex-1" />
             <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
             <Tooltip content="Dismiss" side="bottom">
-              <button
+              <button aria-label="Dismiss"
                 onClick={onDismiss}
                 className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
               >

@@ -200,7 +200,7 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
                       </Tooltip>
                     )}
                     <Tooltip content={logFor === r.id ? "Hide run log" : "Show what happened in this run"}>
-                      <button
+                      <button aria-label={logFor === r.id ? "Hide run log" : "Show what happened in this run"}
                         type="button"
                         onClick={() => void toggleLog(r.id)}
                         className="text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors"

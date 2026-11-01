@@ -138,7 +138,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
         <Button size="sm" onClick={submit} disabled={!valid}>
           <Check size={12} />
-          Save Agent
+          Save agent
         </Button>
       </div>
     </div>
@@ -539,7 +539,7 @@ export function AgentSettings() {
 
         {agents.length === 0 && !adding && (
           <EmptyState
-            title="No external agents configured yet."
+            title="No external agents configured yet"
             description='Choose "Add CLI" to register one.'
           />
         )}

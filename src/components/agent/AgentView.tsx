@@ -38,6 +38,9 @@ type CentreTab = "editor" | "diff" | "git" | "architecture";
 
 export function AgentView() {
   const { activeProjectId, projects, updateProject } = useCairnStore(useShallow((s) => ({ activeProjectId: s.activeProjectId, projects: s.projects, updateProject: s.updateProject })));
+  // The structure panel only has something to show once a file is open; until
+  // then the editor's own empty state says what to do.
+  const hasOpenFile = useCairnStore((s) => s.openEditorFiles.length > 0);
   const project = projects.find((p) => p.id === activeProjectId) ?? null;
   const codeDirectory = project?.codeDirectory ?? null;
 
@@ -197,8 +200,8 @@ export function AgentView() {
             <button
               onClick={() => setProjectSettingsOpen(true)}
               className="ml-auto p-1.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors flex items-center justify-center"
-              title="Project Settings"
-              aria-label="Project Settings"
+              title="Project settings"
+              aria-label="Project settings"
             >
               <Settings size={14} />
             </button>
@@ -209,7 +212,7 @@ export function AgentView() {
             <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
               <AgentEditor />
             </div>
-            {codeDirectory && (
+            {codeDirectory && hasOpenFile && (
               <div className="hidden lg:flex">
                 <ArchitectureSidebar />
               </div>

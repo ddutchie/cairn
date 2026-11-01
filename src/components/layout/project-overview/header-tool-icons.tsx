@@ -60,7 +60,7 @@ export function HeaderToolIcons({ projectId, workspaceId }: { projectId: string;
           const meta = connectorMap[it.connectorKey];
           return (
             <Tooltip key={it.key} content={it.name}>
-              <button
+              <button aria-label={it.name}
                 type="button"
                 onClick={() => toggle(it.kind, it.id, !attached)}
                 aria-pressed={attached}

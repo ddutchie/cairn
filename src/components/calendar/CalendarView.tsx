@@ -26,7 +26,6 @@ import {
 } from "@dnd-kit/core";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn } from "@/lib/utils";
 import { CardDetailModal } from "@/components/kanban/card-detail";
 import { MonthGrid } from "./MonthGrid";
 import { WeekGrid } from "./WeekGrid";
@@ -36,6 +35,7 @@ import { OverdueTray } from "./OverdueTray";
 import { UnscheduledTray } from "./UnscheduledTray";
 import { DayDetailModal } from "./DayDetailModal";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   buildMonthGrid,
   buildWeekGrid,
@@ -58,7 +58,7 @@ type CalendarLayout = "month" | "week";
  *     the workspace-level sidebar entry above Knowledge Graph.
  */
 export function CalendarView({ scope = "project" }: { scope?: "project" | "workspace" }) {
-  const { activeProjectId, cards, columns, projects, calendarProjectIds, setCalendarProjectIds, updateCard } =
+  const { activeProjectId, cards, columns, projects, calendarProjectIds, setCalendarProjectIds, updateCard, setView } =
     useCairnStore(
       useShallow((s) => ({
         activeProjectId: s.activeProjectId,
@@ -70,6 +70,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
         calendarProjectIds: s.calendarProjectIds,
         setCalendarProjectIds: s.setCalendarProjectIds,
         updateCard: s.updateCard,
+        setView: s.setView,
       })),
     );
   const isWorkspace = scope === "workspace";
@@ -184,7 +185,7 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
   return (
     <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-[var(--background)]">
       {/* Toolbar */}
-      <div className="h-9 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex items-center gap-2 px-3">
+      <div className="min-h-9 py-1 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-3">
         <div className="flex items-center gap-0.5">
           <button
             type="button"
@@ -215,6 +216,20 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
           <span className="text-2xs text-[var(--text-tertiary)] ml-1">· no tasks yet</span>
         )}
 
+        {/* One Calendar in the sidebar; the scope lives here. "This project"
+            needs a project, so the switch only shows when one is active. */}
+        {activeProjectId && <SegmentedControl
+          ariaLabel="Calendar scope"
+          size="sm"
+          className="ml-2"
+          value={isWorkspace ? "workspace" : "project"}
+          onChange={(v) => setView(v === "workspace" ? "calendar-all" : "calendar")}
+          options={[
+            { value: "project", label: "This project" },
+            { value: "workspace", label: "All projects" },
+          ]}
+        />}
+
         {/* Workspace scope: multi-select project filter (mirrors Insights/Graph). */}
         {isWorkspace && (
           <div className="ml-2">
@@ -227,24 +242,17 @@ export function CalendarView({ scope = "project" }: { scope?: "project" | "works
         )}
 
         {/* Layout toggle */}
-        <div className="ml-auto flex items-center rounded-md border border-[var(--border)] overflow-hidden">
-          {(["month", "week"] as const).map((l) => (
-            <button
-              key={l}
-              type="button"
-              onClick={() => setLayout(l)}
-              aria-pressed={layout === l}
-              className={cn(
-                "px-2 py-0.5 text-xs font-medium capitalize transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
-                layout === l
-                  ? "bg-[var(--accent)] text-[var(--surface)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]",
-              )}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          ariaLabel="Calendar layout"
+          size="sm"
+          className="ml-auto"
+          value={layout}
+          onChange={setLayout}
+          options={[
+            { value: "month", label: "Month" },
+            { value: "week", label: "Week" },
+          ]}
+        />
       </div>
 
       {/* Grid */}

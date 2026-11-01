@@ -212,7 +212,7 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
             <span className="text-xs text-[var(--text-tertiary)] truncate">in {project.name}</span>
           )}
         </div>
-        <button
+        <button aria-label="Close"
           onClick={onClose}
           className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
         >

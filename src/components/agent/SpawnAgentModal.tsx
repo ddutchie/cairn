@@ -179,7 +179,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
         {sessionType === "coding"
           ? <MessageSquare size={15} />
           : <Terminal size={15} />}
-        {card ? "Spawn Agent" : "New Session"}
+        {card ? "Spawn agent" : "New session"}
       </>}
       footer={<>
         <DialogClose asChild>
@@ -203,6 +203,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               Agent type
             </p>
             <SegmentedControl
+              ariaLabel="Agent type"
               options={[
                 { value: "coding", label: "Cairn Agent", icon: <MessageSquare size={12} /> },
                 { value: "pty", label: "External Agent", icon: <Terminal size={12} /> },

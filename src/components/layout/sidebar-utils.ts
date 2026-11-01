@@ -36,9 +36,13 @@ export function modKey(isMac = isMacPlatform()): string {
 export const NUMBERED_VIEWS = ["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations", "usage"] as const;
 export type NumberedView = (typeof NUMBERED_VIEWS)[number];
 
-/** The numbered views that are currently visible, in shortcut order. */
+/**
+ * The numbered views that are currently visible, in shortcut order. The
+ * sidebar shows one Calendar entry, so the all-projects calendar only takes a
+ * number when it stands in for a hidden project calendar.
+ */
 export function visibleNumberedViews(hidden: { has(view: string): boolean }): NumberedView[] {
-  return NUMBERED_VIEWS.filter((v) => !hidden.has(v));
+  return NUMBERED_VIEWS.filter((v) => !hidden.has(v) && (v !== "calendar-all" || hidden.has("calendar")));
 }
 
 /**

@@ -68,7 +68,7 @@ export function StepWorkspaceDetails({
         <div>
           <div className="flex items-center gap-2 mb-1">
             {showBack && (
-              <button
+              <button aria-label="Back"
                 type="button"
                 onClick={onBack}
                 className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
@@ -138,7 +138,7 @@ export function StepWorkspaceDetails({
         {/* Icon picker */}
         <div className="flex flex-wrap gap-2">
           {WORKSPACE_ICONS.map(({ name: iconName }) => (
-            <button
+            <button aria-label={iconName}
               key={iconName}
               type="button"
               onClick={() => onIconChange(iconName)}

@@ -212,7 +212,7 @@ export function EnvEditor({
               </Tooltip>
               {row.secret && (
                 <Tooltip content={reveal ? "Hide secret values" : "Reveal secret values"}>
-                  <button
+                  <button aria-label={reveal ? "Hide secret values" : "Reveal secret values"}
                     type="button"
                     onClick={() => setReveal((v) => !v)}
                     className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] shrink-0"
@@ -222,7 +222,7 @@ export function EnvEditor({
                 </Tooltip>
               )}
               <Tooltip content="Remove">
-                <button
+                <button aria-label="Remove"
                   type="button"
                   onClick={() => removeRow(row.key)}
                   className="text-[var(--text-tertiary)] hover:text-[var(--danger)] shrink-0"

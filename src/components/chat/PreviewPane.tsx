@@ -158,7 +158,7 @@ export function PreviewPane() {
                 className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
               >
                 <ExternalLink size={11} />
-                Open in Developer View
+                Open in developer view
               </Button>
               <div className="w-px h-3 bg-[var(--border)] my-1" />
             </>
@@ -182,14 +182,14 @@ export function PreviewPane() {
               <NoteEditor note={note} />
             </div>
           ) : (
-            <EmptyState title="Note not found or deleted." />
+            <EmptyState title="Note not found or deleted" />
           )
         )}
         {type === "task" && (
           card ? (
             <CardDetailPanel key={card.id} cardId={card.id} onClose={() => setActivePreviewItem(null)} />
           ) : (
-            <EmptyState title="Task card not found or deleted." />
+            <EmptyState title="Task card not found or deleted" />
           )
         )}
         {type === "file" && <FileContextContent key={`file:${panel.path}`} path={panel.path} />}

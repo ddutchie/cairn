@@ -389,7 +389,7 @@ export function ArchitectureGraphCanvas({ nodes: allNodes, edges: allEdges, root
       </div>
 
       {nodes.length === 0 && (
-        <EmptyState overlay title="No symbol relationships to graph yet." />
+        <EmptyState overlay title="No symbol relationships to graph yet" />
       )}
 
       {/* Zoom controls */}

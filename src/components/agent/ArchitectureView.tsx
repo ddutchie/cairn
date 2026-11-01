@@ -349,7 +349,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
       ) : isEmpty ? (
         <EmptyState
           icon={FileCode}
-          title="This codebase hasn't been indexed yet."
+          title="This codebase hasn't been indexed yet"
           description="Build the index to explore its classes, functions and their call graph here."
           action={
             <Button size="sm" onClick={reindex} disabled={reindexing} className="gap-1.5">

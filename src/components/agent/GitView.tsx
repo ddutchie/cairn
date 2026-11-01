@@ -361,7 +361,7 @@ export function GitView({ cwd }: GitViewProps) {
                   }}
                   className="text-2xs text-[var(--accent)] hover:underline normal-case font-normal cursor-pointer"
                 >
-                  New Branch
+                  New branch
                 </button>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -450,7 +450,7 @@ export function GitView({ cwd }: GitViewProps) {
             </Tooltip>
           )}
           <Tooltip content="Refresh git status and recent commits">
-            <button
+            <button aria-label="Refresh git status and recent commits"
               onClick={refresh}
               className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
             >
@@ -484,7 +484,7 @@ export function GitView({ cwd }: GitViewProps) {
               disabled={generatingPrDesc || !status}
             >
               <Sparkles size={11} className={cn(generatingPrDesc && "animate-pulse")} />
-              {generatingPrDesc ? "Generating..." : "Generate Description"}
+              {generatingPrDesc ? "Generating..." : "Generate description"}
             </Button>
             <div className="flex-1" />
             <Button size="sm" onClick={handleCreatePr} disabled={!prTitle.trim() || creatingPr}>
@@ -507,7 +507,7 @@ export function GitView({ cwd }: GitViewProps) {
           >
             Open
           </button>
-          <button onClick={() => setPrUrl(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <button aria-label="Dismiss" onClick={() => setPrUrl(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
           </button>
         </div>
@@ -518,7 +518,7 @@ export function GitView({ cwd }: GitViewProps) {
         <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border-b border-[var(--border)] flex-shrink-0">
           <X size={11} className="text-[var(--danger)] flex-shrink-0" />
           <span className="text-xs text-[var(--danger)] flex-1">{error}</span>
-          <button onClick={dismissError} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+          <button aria-label="Dismiss error" onClick={dismissError} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
             <X size={11} />
           </button>
         </div>
@@ -754,10 +754,10 @@ export function GitView({ cwd }: GitViewProps) {
       </div>
 
       {/* ── New Branch Dialog ──────────────────────────────────────────────── */}
-      <ModalShell open={newBranchOpen} onClose={() => setNewBranchOpen(false)} size="sm" title="Create New Branch">
+      <ModalShell open={newBranchOpen} onClose={() => setNewBranchOpen(false)} size="sm" title="Create branch">
           <form onSubmit={handleCreateBranch} className="p-4 space-y-4">
             <div className="space-y-2">
-              <label htmlFor="branch-name" className="text-xs text-[var(--text-secondary)]">Branch Name</label>
+              <label htmlFor="branch-name" className="text-xs text-[var(--text-secondary)]">Branch name</label>
               <input
                 id="branch-name"
                 value={newBranchName}

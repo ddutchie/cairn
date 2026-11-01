@@ -62,6 +62,7 @@ export default function Home() {
     toggleChat,
     toggleSidebar,
     setView,
+    openCalendar,
     createNote,
     activeProjectId,
     hiddenViews,
@@ -86,6 +87,7 @@ export default function Home() {
     toggleChat:          s.toggleChat,
     toggleSidebar:       s.toggleSidebar,
     setView:             s.setView,
+    openCalendar:        s.openCalendar,
     createNote:          s.createNote,
     activeProjectId:     s.activeProjectId,
     hiddenViews:         s.hiddenViews,
@@ -364,7 +366,7 @@ export default function Home() {
       else if (mod && /^[3-9]$/.test(key)) {
         const idx = parseInt(key, 10) - 3; // 0-based index into ORDERED_VIEWS
         const view = ORDERED_VIEWS[idx];
-        if (view) { e.preventDefault(); setView(view); }
+        if (view) { e.preventDefault(); if (view === "calendar") openCalendar(); else setView(view); }
       }
       else if (mod && key === "n" && !inInput) {
         e.preventDefault();
@@ -402,7 +404,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("cairn:open-chat", handleOpenChat);
     };
-  }, [toggleSearch, toggleChat, toggleSidebar, setView, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView, lastContentView]);
+  }, [toggleSearch, toggleChat, toggleSidebar, setView, openCalendar, activeProjectId, createNote, chatOpen, hiddenViews, ORDERED_VIEWS, activeView, lastContentView]);
 
   // Auto-activate Cairn Agent tab and auto-open right panel drawer if we switch to Agent view
   useEffect(() => {

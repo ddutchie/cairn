@@ -144,7 +144,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
         const allCollapsed = files.every((f, i) => collapsed.has(diffFileKey(f, i)));
         return (
           <Tooltip content={allCollapsed ? "Expand all" : "Collapse all"} side="bottom">
-            <button
+            <button aria-label={allCollapsed ? "Expand all" : "Collapse all"}
               onClick={allCollapsed ? expandAll : collapseAll}
               className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0"
             >
@@ -166,7 +166,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
       {/* Copy */}
       {diffText && (
         <Tooltip content={copied ? "Copied!" : "Copy patch"} side="bottom">
-          <button
+          <button aria-label={copied ? "Copied" : "Copy patch"}
             onClick={handleCopy}
             className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
           >
@@ -177,7 +177,7 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
 
       {/* Refresh */}
       <Tooltip content="Refresh" side="bottom">
-        <button
+        <button aria-label="Refresh"
           onClick={fetchDiff}
           disabled={loading}
           className={cn(

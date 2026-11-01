@@ -4,6 +4,7 @@ import nextTs from "eslint-config-next/typescript";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
+import cairn from "./eslint-rules/cairn.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,6 +76,15 @@ const eslintConfig = defineConfig([
           message: "Renderer code must not import from electron/* at runtime — use src/store/ipc.ts (see AGENTS.md boundary rules).",
         }],
       }],
+    },
+  },
+  {
+    // Icon-only buttons need an accessible name: use IconButton (its required
+    // label is the tooltip and the name) or add aria-label. See AGENTS.md.
+    files: ["src/**/*.tsx"],
+    plugins: { cairn },
+    rules: {
+      "cairn/icon-button-label": "error",
     },
   },
   globalIgnores([

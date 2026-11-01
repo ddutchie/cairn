@@ -533,7 +533,7 @@ export function UserStyleWizardModal({
                   <div key={i} className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium text-[var(--text-tertiary)]">{s.context}</span>
-                      <button onClick={() => setSamples((prev) => prev.filter((_, j) => j !== i))} className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors">
+                      <button aria-label="Remove sample" onClick={() => setSamples((prev) => prev.filter((_, j) => j !== i))} className="text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors">
                         <Trash2 size={11} />
                       </button>
                     </div>

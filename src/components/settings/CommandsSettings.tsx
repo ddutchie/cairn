@@ -120,7 +120,7 @@ export function CommandsSettings() {
         {workspaceCommands.length === 0 ? (
           <EmptyState
             icon={SlashSquare}
-            title="No custom commands yet."
+            title="No custom commands yet"
             description={<>Add one above — type <span className="font-mono">/</span> in a chat to use it.</>}
             className="py-6"
           />
@@ -181,7 +181,7 @@ export function CommandsSettings() {
             onClick={() => setBrowseOpen(true)}
             className="flex-shrink-0"
           >
-            <Download size={13} /> Browse Community
+            <Download size={13} /> Browse community
           </Button>
         </div>
       </SettingsGroup>

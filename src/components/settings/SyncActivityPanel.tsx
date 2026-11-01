@@ -289,7 +289,7 @@ export function SyncActivityPanel() {
   ) {
     return (
       <EmptyState
-        title="No sync activity recorded yet."
+        title="No sync activity recorded yet"
         description="Once this device exchanges changes with your phone, decisions show up here."
         className="mt-4"
       />

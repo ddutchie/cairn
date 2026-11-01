@@ -181,7 +181,7 @@ export function CatalogBrowserShell({
         ) : !hasEntries ? (
           <EmptyState title={emptyText} className="py-10" />
         ) : !hasResults ? (
-          <EmptyState title="No matches." className="py-10" />
+          <EmptyState title="No matches" className="py-10" />
         ) : (
           children
         )}

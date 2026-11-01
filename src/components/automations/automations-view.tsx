@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, Activity, FileText, Kanban, Sparkles, Plug, Eye, Power, Copy } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, Activity, FileText, Kanban, Sparkles, Plug, Eye, Power, Copy, MoreHorizontal } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
   ContextMenuTrigger, CONTEXT_MENU_DANGER,
@@ -13,6 +13,8 @@ import { revealNote, revealCard } from "@/lib/events";
 import { buildAutomationDevPrompt } from "@/lib/automation-dev-prompt";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
+import { IconButton } from "@/components/ui/icon-button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AutomationDevModal } from "./automation-dev-modal";
@@ -306,13 +308,13 @@ export function AutomationsView() {
         <h1 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
           <Zap size={14} className="text-[var(--accent)]" /> Automations
         </h1>
-        <span className="text-xs text-[var(--text-tertiary)] hidden sm:inline">
-          — background tasks that run while Cairn is open
+        <span className="text-xs text-[var(--text-tertiary)] hidden sm:inline ml-1">
+          Background tasks that run while Cairn is open
         </span>
         <div className="ml-auto flex items-center gap-2">
           <AutomationBudgetControl />
           <Button variant="accent" size="sm" onClick={openCreate}>
-            <Plus size={13} /> New Automation
+            <Plus size={13} /> New automation
           </Button>
         </div>
       </div>
@@ -328,7 +330,7 @@ export function AutomationsView() {
         {automations.length === 0 && (
           <EmptyState
             icon={Zap}
-            title="No automations yet."
+            title="No automations yet"
             description="Create one to run scheduled tasks in the background."
           />
         )}
@@ -351,9 +353,6 @@ export function AutomationsView() {
                     <h3 className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
                       {a.name}
                     </h3>
-                    {!a.enabled && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-tertiary)]">disabled</span>
-                    )}
                     {a.projectId && projectName.has(a.projectId) && (
                       <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] max-w-40 truncate">
                         {projectName.get(a.projectId)}
@@ -372,8 +371,11 @@ export function AutomationsView() {
                     <p className="text-xs text-[var(--text-secondary)] mt-0.5 truncate">{a.description}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-[var(--text-tertiary)]">
-                    <span className="inline-flex items-center gap-1"><Clock size={11} /> {scheduleLabel(a)}</span>
-                    <span>Next: {formatRelative(a.nextRunAt, RUN_TIME)}</span>
+                    <span className="inline-flex items-center gap-1" title={a.scheduleKind === "cron" ? `cron: ${a.scheduleExpr}` : undefined}>
+                      <Clock size={11} /> {scheduleLabel(a)}
+                    </span>
+                    {/* The toggle already shows on/off; the line says what that means. */}
+                    <span>{a.enabled ? `Next: ${formatRelative(a.nextRunAt, RUN_TIME)}` : "Paused"}</span>
                     <span>{a.runCount} run{a.runCount === 1 ? "" : "s"}</span>
                     {isRunning ? (
                       <span className="inline-flex items-center gap-1.5 text-[var(--accent)] animate-pulse">
@@ -390,33 +392,36 @@ export function AutomationsView() {
                   </Tooltip>
                 <div className="flex items-center gap-1 shrink-0">
                   {isRunning && lastRun && (
-                    <Tooltip content="Watch this run live">
-                      <Button variant="ghost" size="icon" onClick={() => { setWatchedAutomation(a); setWatchedRunId(lastRun.id); }}>
-                        <Activity size={13} />
-                      </Button>
-                    </Tooltip>
+                    <IconButton label="Watch this run live" onClick={() => { setWatchedAutomation(a); setWatchedRunId(lastRun.id); }}>
+                      <Activity size={13} />
+                    </IconButton>
                   )}
-                  <Tooltip content="Develop scripts (opens the agent in the automation folder)">
-                    <Button variant="ghost" size="icon" disabled={developing} onClick={() => void develop(a)}>
-                      <Sparkles size={13} />
-                    </Button>
-                  </Tooltip>
-                  <Tooltip content="Run now">
-                    <Button variant="ghost" size="icon" onClick={() => void runNow(a.id)}>
-                      <Play size={13} />
-                    </Button>
-                  </Tooltip>
-                  <Tooltip content="Edit">
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(a)}>
-                      <Pencil size={13} />
-                    </Button>
-                  </Tooltip>
-                  <Tooltip content="Delete">
-                    <Button variant="ghost" size="icon" onClick={() => void deleteAutomation(a.id)}>
-                      <Trash2 size={13} />
-                    </Button>
-                  </Tooltip>
-                  <Toggle checked={a.enabled} onCheckedChange={(checked) => void updateAutomation(a.id, { enabled: checked })} />
+                  <Button variant="ghost" size="sm" disabled={isRunning} onClick={() => void runNow(a.id)}>
+                    <Play size={12} /> Run
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(a)}>
+                    <Pencil size={12} /> Edit
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <IconButton label={`More actions for ${a.name}`} tooltip="More actions">
+                        <MoreHorizontal size={13} />
+                      </IconButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem disabled={developing} onSelect={() => void develop(a)}>
+                        <Sparkles size={12} /> Develop scripts
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => openDetail(a)}>
+                        <Eye size={12} /> View state
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => void deleteAutomation(a.id)} className="text-[var(--danger)] data-[highlighted]:text-[var(--danger)]">
+                        <Trash2 size={12} /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Toggle label={a.enabled ? `Pause ${a.name}` : `Resume ${a.name}`} checked={a.enabled} onCheckedChange={(checked) => void updateAutomation(a.id, { enabled: checked })} />
                 </div>
               </div>
               {artifacts.length > 0 && (
@@ -453,7 +458,7 @@ export function AutomationsView() {
                 <Pencil size={13} /> Edit
               </ContextMenuItem>
               <ContextMenuItem onSelect={() => void updateAutomation(a.id, { enabled: !a.enabled })}>
-                <Power size={13} /> {a.enabled ? "Disable" : "Enable"}
+                <Power size={13} /> {a.enabled ? "Pause" : "Resume"}
               </ContextMenuItem>
               <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(a.name)}>
                 <Copy size={13} /> Copy name

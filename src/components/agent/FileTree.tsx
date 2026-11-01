@@ -323,7 +323,7 @@ export function FileTree({ project }: FileTreeProps) {
             placeholder="Search files…"
             className="flex-1 min-w-0 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
           />
-          <button
+          <button aria-label="Close search"
             onClick={() => { setSearchActive(false); setSearchQuery(""); setSearchResults([]); }}
             className="flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
           >
@@ -402,7 +402,7 @@ export function FileTree({ project }: FileTreeProps) {
             ))}
             {rootEntries.length === 0 && (
               <p className="text-xs text-[var(--text-tertiary)] px-3 py-4 text-center">
-                Directory is empty
+                This folder is empty.
               </p>
             )}
           </>

@@ -33,7 +33,7 @@ describe("MermaidDiagram modal accessible name", () => {
   it("renders a dialog WITH an accessible name", async () => {
     await openModal();
     const dialog = await screen.findByRole("dialog", {
-      name: "Fullscreen Mermaid Diagram",
+      name: "Full-screen Mermaid diagram",
     });
     expect(dialog).toBeInTheDocument();
   });
@@ -41,13 +41,13 @@ describe("MermaidDiagram modal accessible name", () => {
   it("wires the accessible description for assistive tech", async () => {
     await openModal();
     const dialog = await screen.findByRole("dialog", {
-      name: "Fullscreen Mermaid Diagram",
+      name: "Full-screen Mermaid diagram",
     });
     const describedBy = dialog.getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     const description = describedBy
       ? document.getElementById(describedBy)
       : null;
-    expect(description?.textContent).toMatch(/Fullscreen Mermaid Diagram/);
+    expect(description?.textContent).toMatch(/Full-screen Mermaid diagram/);
   });
 });

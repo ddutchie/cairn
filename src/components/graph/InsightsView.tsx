@@ -3,17 +3,18 @@
 import React, { useCallback, useState, useMemo } from "react";
 import {
   Clock, Grid3x3, Table2, Activity, Workflow, Crosshair, BarChart2,
-  Search, Sparkles,
+  Search, Sparkles, Minus, Plus,
 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useLoadGraph } from "@/hooks/useLoadGraph";
 import { filterGraphNodes, EMPTY_GRAPH } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
-import { Tooltip } from "@/components/ui/tooltip";
+import { ViewTabs, viewTabId } from "@/components/ui/view-tabs";
+import { IconButton } from "@/components/ui/icon-button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 import { TimelineCanvas }  from "@/components/graph/TimelineCanvas";
 import { MatrixCanvas }    from "@/components/graph/MatrixCanvas";
@@ -128,36 +129,28 @@ export function InsightsView() {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
+      {/* Canvas tabs — every canvas labelled; count + reload on the right */}
+      <ViewTabs
+        ariaLabel="Insights canvases"
+        panelId="insights-canvas"
+        tabs={LAYOUTS.map(({ key, icon, label, tip }) => ({ value: key, label, icon, title: tip }))}
+        value={layout}
+        onChange={setLayout}
+      >
+        <span className="text-xs text-[var(--text-tertiary)] tabular-nums">{allNodes.length} items</span>
+        <IconButton
+          size="sm"
+          label={layout === "ridgeline" ? "Reset view to data range" : "Reload data"}
+          onClick={layout === "ridgeline"
+            ? () => { if (ridgeDefaultView) setRidgeView(ridgeDefaultView); }
+            : () => { if (activeWorkspaceId) loadGraph(activeWorkspaceId); }}
+        >
+          <RefreshSpin size={12} spinning={graphLoading} />
+        </IconButton>
+      </ViewTabs>
 
-        {/* Layout toggle */}
-        <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
-          {LAYOUTS.map(({ key, icon, label, tip }, idx) => {
-            const isActive = layout === key;
-            return (
-              <React.Fragment key={key}>
-                {idx > 0 && <div className="w-px h-5 bg-[var(--border)]" />}
-                <Tooltip content={tip}>
-                  <button
-                    onClick={() => setLayout(key)}
-                    className={cn(
-                      "flex items-center px-2.5 py-1.5 text-xs transition-colors",
-                      isActive
-                        ? "gap-1.5 bg-[var(--accent-dim)] text-[var(--accent)]"
-                        : "gap-0 text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]"
-                    )}
-                  >
-                    {icon}
-                    <span className={cn("overflow-hidden transition-all duration-200", isActive ? "max-w-16 opacity-100" : "max-w-0 opacity-0")}>
-                      {label}
-                    </span>
-                  </button>
-                </Tooltip>
-              </React.Fragment>
-            );
-          })}
-        </div>
+      {/* Controls for the current canvas */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
 
         {/* Project filter */}
         <ProjectScopePicker
@@ -197,51 +190,42 @@ export function InsightsView() {
         {/* Ridgeline controls */}
         {layout === "ridgeline" && (
           <>
-            <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
-              {(["ridgeline", "overlay", "iso"] as RidgelineMode[]).map((m, idx) => (
-                <React.Fragment key={m}>
-                  {idx > 0 && <div className="w-px h-5 bg-[var(--border)]" />}
-                  <button onClick={() => setRidgeMode(m)}
-                    className={cn("px-2.5 py-1.5 text-xs font-mono transition-colors",
-                      ridgeMode === m ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:bg-[var(--surface-2)]")}
-                  >
-                    {m === "ridgeline" ? "ridge" : m === "overlay" ? "flat" : "3d"}
-                  </button>
-                </React.Fragment>
-              ))}
-            </div>
+            <SegmentedControl
+              ariaLabel="Ridgeline style"
+              value={ridgeMode}
+              onChange={setRidgeMode}
+              options={[
+                { value: "ridgeline", label: "Ridges" },
+                { value: "overlay", label: "Overlaid" },
+                { value: "iso", label: "3D" },
+              ]}
+            />
             <div className="flex items-center gap-1">
-              <button onClick={() => ridgeApplyZoom(1 / 1.08)}
-                className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-sm leading-none">−</button>
+              <span className="mr-1 text-xs text-[var(--text-tertiary)]">Time range</span>
+              <IconButton size="sm" label="Zoom in (shorter range)" onClick={() => ridgeApplyZoom(1 / 1.08)}>
+                <Minus size={12} />
+              </IconButton>
               <input type="range" min={0} max={1} step={0.001} value={ridgeSliderVal}
                 onChange={handleRidgeSlider}
+                aria-label="Time range shown"
                 className="w-24 h-1 accent-[var(--accent)] cursor-pointer" />
-              <button onClick={() => ridgeApplyZoom(1.08)}
-                className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors text-sm leading-none">+</button>
+              <IconButton size="sm" label="Zoom out (longer range)" onClick={() => ridgeApplyZoom(1.08)}>
+                <Plus size={12} />
+              </IconButton>
             </div>
-            <div className="w-px h-5 bg-[var(--border)]" />
           </>
         )}
 
-        {/* Right: item count + reset/refresh */}
-        <span className="ml-auto flex items-center gap-2 text-sm text-[var(--text-tertiary)]">
-          {allNodes.length} items
-          <Tooltip content={layout === "ridgeline" ? "Reset view to data range" : "Reload data"}>
-            <button
-              onClick={layout === "ridgeline"
-                ? () => { if (ridgeDefaultView) setRidgeView(ridgeDefaultView); }
-                : () => { if (activeWorkspaceId) loadGraph(activeWorkspaceId); }}
-              className="flex items-center gap-1 px-1.5 py-1 rounded border border-[var(--border)] text-[var(--text-tertiary)] hover:bg-[var(--surface-2)] transition-colors"
-            >
-              <RefreshSpin size={11} spinning={graphLoading} />
-            </button>
-          </Tooltip>
-        </span>
       </div>
 
       {/* Canvas + detail panel */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <div className="flex flex-1 min-w-0 overflow-hidden relative">
+        <div
+          role="tabpanel"
+          id="insights-canvas"
+          aria-labelledby={viewTabId("insights-canvas", layout)}
+          className="flex flex-1 min-w-0 overflow-hidden relative"
+        >
 
           {/* Blocking overlay only for the first load — later reloads keep the
               current canvases on screen (the toolbar spinner shows progress). */}

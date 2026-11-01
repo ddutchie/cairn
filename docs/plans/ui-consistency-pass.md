@@ -125,7 +125,7 @@ Branch `design/ui-pass-phase-1`, stacked on Phase 0. Compare with `npm run scree
 3. ◐ **Radius by hierarchy.** Rule recorded in AGENTS.md. The only off-pattern icon button (the round chat header "+") is fixed via `IconButton`. No blanket codemod: the remaining `rounded-full` uses are pills, avatars, dots and toggles, which the rule allows.
 4. ✅ **One label style.** 115 uppercase label strings in 64 files are now sentence case with tracking removed. Bare 9px labels go up to `text-xs` so they keep their weight without caps. `font-semibold` becomes `font-medium`. `SectionLabel` / `MicroLabel` are sentence case. **The sidebar group headers stay in caps as the one deliberate exception** (decided 2026-11-01). Removing caps exposed Title Case source text in nine labels ("Blocked By", "Due Date"…), which are fixed. Title Case in buttons and headings elsewhere ("Save Agent", "Project Settings") is a Phase 4 copy sweep.
 5. ✅ **`Popover` and `Combobox`** in `ui/popover.tsx` and `ui/combobox.tsx`, with component tests. Combobox has the `Select` trigger, the same selected-row treatment, grouped options, search with arrow-key navigation via `aria-activedescendant`, and a first Escape that clears the search before a second one closes. Adoption is Phase 2.
-6. ✅ **`IconButton`** with a required `label` (tooltip and accessible name), one shape, and a shared `FOCUS_RING`, which `Button` now also uses. Adopted across the chat header. The lint gate is still to do.
+6. ✅ **`IconButton`** with a required `label` (tooltip and accessible name), one shape, and a shared `FOCUS_RING`, which `Button` now also uses. Adopted across the chat header. Lint gate: `cairn/icon-button-label` (`eslint-rules/cairn.mjs`) fails an icon-only `<button>` with no `aria-label`, `aria-labelledby` or `title`; the 42 it found were given labels.
 7. ✅ **`SettingsRow` labelling.** Buttons, links, `Button` and `IconButton` keep their own text as their name; only form controls are labelled by the row. Component test added.
 
 ### Phase 2: Chat and session switcher (the reported pain) ✅
@@ -151,19 +151,22 @@ Branch `design/ui-pass-phase-3`, stacked on Phase 2.
 - ✅ **Copy.** Settings group titles are sentence case, and the long descriptions (chat model, local servers, coding agent, embeddings, device sync, MCP) are cut to a sentence. The Title Case in buttons elsewhere stays for Phase 4.
 - Audit: shots 32–36 (Models, Sidebar & views, Tags, search results, search jump). The pointer is now parked before each shot, so hover states don't show up as diffs.
 
-### Phase 4: Discoverability sweep
+### Phase 4: Discoverability sweep ✅
 
-- **Insights:** label every canvas tab (icon plus text, overflowing into a "More" menu below 1200px). Make `ridge / flat / 3d` a standard `SegmentedControl` in sentence case, and label the slider.
-- **Automations:** humanise cron ("Weekdays at 08:00", raw expression in a tooltip). Show Run and Edit as labelled ghost buttons with the rest under `⋯`. Drop the "disabled" badge.
-- **Top bar:** replace the bare `active` / `high` pills with a single "Status · Priority" chip with a tooltip, or remove it, since the overview already shows both.
-- **Sidebar:** one Calendar entry with a project/all toggle inside the view. Drop the Notifications nav item, since the bell covers it. Merge the project card and the project picker.
-- **Search:** active chip uses `accent`, one keyboard hint row, one result count.
-- **Agent:** a single first-run empty state ("Open a folder to start" plus a button) instead of three. Theme the terminal background from tokens.
-- **Empty states:** route all of them through `ui/empty-state.tsx` with one voice: what's missing, then the action that fixes it.
+Branch `design/ui-pass-phase-4`, stacked on Phase 3.
 
-### Phase 5: Overview polish
+- ✅ **Insights:** every canvas is labelled in a new `ViewTabs` strip (the Board / Archive header pattern, now a primitive; it scrolls sideways instead of hiding labels). The canvas controls sit in a second row. The ridgeline style is a `SegmentedControl` (Ridges / Overlaid / 3D), and the zoom slider and buttons are labelled. *Changed from the draft:* no "More" overflow menu; the strip scrolls instead.
+- ✅ **Automations:** schedules read "Weekdays at 08:00", "Fridays at 16:00", "Every 6 hours" (`describeCron` / `describeInterval`, tested), with the raw cron in a tooltip. Run and Edit are labelled buttons, and the rest sit under "⋯". The "disabled" badge is gone: the row says "Paused" instead of a next run.
+- ✅ **Top bar:** the unlabelled status/priority pills are removed (the Overview shows both).
+- ✅ **Sidebar:** one Calendar entry, with a This project / All projects switch in the calendar header. The entry and its shortcut reopen the last scope used (`calendarScope`, persisted), and the all-projects calendar only takes a ⌘ number when it stands in for a hidden project calendar. The Notifications items are gone (the bell covers them). The project card's title row is the project switcher.
+- ✅ **Search:** the selected chip uses the accent, keyboard hints appear once, and there's one result count.
+- ✅ **Agent:** the structure panel appears once a file is open, and terminals take their colours from the theme tokens and follow theme and accent changes (`terminalTheme()` in `terminal-registry`).
+- ✅ **Empty states:** titles carry no full stop, and Usage's three share one voice with a next step.
+- ✅ **Copy sweep:** buttons, dialogs and headings are sentence case. Product and feature names are unchanged.
 
-The Overview is the most characterful screen; the aim is to keep its voice while quieting the chrome. Let the serif tagline and the task-flow bars carry it, swap the eyebrows for `<SectionLabel>`, and use the standard `Button` for "Insights" (no arrow). The floating composer stays as it is: it sits over content while scrolling and clears the last row at the bottom (confirmed 2026-11-01). The eyebrows were already converted in Phase 1.
+### Phase 5: Overview polish ✅ (shipped with Phase 4)
+
+"View board" and "Open insights" use the standard `Button`, trailing arrows are gone, and the selected chips (Focus filter, Chat / Coding agent) use the accent tint. The floating composer stays as it is (confirmed 2026-11-01).
 
 ## Before/after review
 

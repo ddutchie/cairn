@@ -57,6 +57,27 @@ describe("createUISlice", () => {
     expect(state.lastContentView).toBe("notes");
   });
 
+  it("openCalendar reopens the calendar in its last scope, and remembers it", () => {
+    let state: any = {};
+    const mockSet = (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      state = { ...state, ...next };
+    };
+    const slice = createUISlice(mockSet, () => state, {} as any);
+    state = { ...state, ...slice };
+
+    state.openCalendar();
+    expect(state.activeView).toBe("calendar");
+
+    // Any route into the all-projects calendar records the scope.
+    storageSet.mockClear();
+    state.setView("calendar-all");
+    expect(storageSet).toHaveBeenCalledWith("calendarScope", "workspace");
+    state.setView("board");
+    state.openCalendar();
+    expect(state.activeView).toBe("calendar-all");
+  });
+
   it("setView does not update lastContentView when entering chat or search mode", () => {
     let state: any = {};
 

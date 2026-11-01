@@ -11,7 +11,7 @@
  * - Height is controlled by the parent via a draggable divider in AgentView.
  */
 
-import { registerTerminal } from "@/lib/terminal-registry";
+import { registerTerminal, terminalTheme } from "@/lib/terminal-registry";
 import { useEffect, useRef, useState } from "react";
 import { Terminal as TerminalIcon, X, Plus, Bot } from "lucide-react";
 import { useCairnStore } from "@/store";
@@ -210,12 +210,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
       fontFamily: resolvedFont,
       cols: observed ? MODEL_PTY_COLS : Math.max(40, Math.floor(container.offsetWidth / 8)),
       rows: Math.max(4,  Math.floor(container.offsetHeight / 17)),
-      theme: {
-        background:          cs.getPropertyValue("--background").trim()   || "#111111",
-        foreground:          cs.getPropertyValue("--text-primary").trim() || "#e5e5e5",
-        cursor:              cs.getPropertyValue("--accent").trim()        || "#6366f1",
-        selectionBackground: cs.getPropertyValue("--accent-dim").trim()   || "#6366f133",
-      },
+      theme: terminalTheme(),
     });
 
     const fitAddon = new FitAddon();
@@ -332,7 +327,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
             <span className={cn("text-xs", tab.exited && "opacity-50")}>
               {tab.label}
             </span>
-            <button
+            <button aria-label="Close terminal"
               onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--surface-3)] transition-all"
             >

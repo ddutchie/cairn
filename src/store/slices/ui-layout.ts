@@ -11,12 +11,14 @@ import type { ContextPanel, ID, AppUIState, SessionPresentation, SettingsSection
 import { storage } from "@/lib/storage";
 import { id as newId } from "@/lib/utils";
 import type { BoardFilter, BoardView } from "@/lib/board-filters";
-import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY } from "@/lib/constants";
+import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
 export type ToggleableView = "board" | "flow" | "calendar" | "calendar-all" | "agent" | "graph" | "insights" | "usage" | "chat";
+
+export type CalendarScope = "project" | "workspace";
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
 export const SEEN_FEATURES_KEY = "seenFeatures";
@@ -131,6 +133,13 @@ export interface LayoutSlice extends AppUIState {
    *  Dedicated to the calendar so it doesn't affect the graph/insights scope. */
   calendarProjectIds: string[];
   setCalendarProjectIds: (ids: string[]) => void;
+  /** The Calendar's last scope, recorded by setView on every route into the
+   *  calendar. The sidebar has one Calendar entry, and it (and its shortcut)
+   *  reopens whichever scope was used last. Persisted. */
+  calendarScope: CalendarScope;
+  setCalendarScope: (scope: CalendarScope) => void;
+  /** Open the Calendar in its last scope. */
+  openCalendar: () => void;
 
   // Seen features for What's New modal
   seenFeatures: string[];
@@ -189,6 +198,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   settingsSection: null,
   notificationOpen: false,
   calendarProjectIds: [],
+  calendarScope: "project",
   seenFeatures: [],  tutorialActive: false,
   tutorialStepIndex: 0,
   workspaceToolsCollapsed: false,
@@ -343,6 +353,12 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   },
 
   setView(view) {
+    // Every route into the calendar (sidebar, shortcut, the scope switch)
+    // records its scope, so openCalendar reopens whichever was used last.
+    if (view === "calendar" || view === "calendar-all") {
+      const scope = view === "calendar-all" ? "workspace" : "project";
+      if (get().calendarScope !== scope) get().setCalendarScope(scope);
+    }
     if (view !== "chat" && view !== "search") {
       const leavingCenter = get().sessionPresentation !== "drawer";
       set({
@@ -407,6 +423,16 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
 
   setCalendarProjectIds(ids) {
     set({ calendarProjectIds: ids });
+  },
+
+  setCalendarScope(scope) {
+    set({ calendarScope: scope });
+    storage.set(CALENDAR_SCOPE_KEY, scope);
+  },
+
+  openCalendar() {
+    const s = get();
+    s.setView(s.calendarScope === "workspace" ? "calendar-all" : "calendar");
   },
 
   setActivePreviewItem(item) {

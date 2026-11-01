@@ -660,7 +660,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
           )}
 
           {/* Mode toggle — Edit / Read. Live Preview is a separate toggle
-              (right) since Raw was just "Edit with Live Preview off". */}
+              (right) since Raw was just "Edit with Live preview off". */}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
               <button
@@ -693,7 +693,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             {mode === "edit" && (
               <button
                 onClick={() => { setLivePreviewOn(!livePreviewOn); setTimeout(() => editorRef.current?.focus(), 50); }}
-                title={livePreviewOn ? "Live Preview on — click to edit raw Markdown" : "Live Preview off — click to render inline"}
+                title={livePreviewOn ? "Live preview on — click to edit raw Markdown" : "Live preview off — click to render inline"}
                 aria-pressed={livePreviewOn}
                 className={cn(
                   "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors",
@@ -703,7 +703,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                 )}
               >
                 <Code size={11} />
-                Live Preview
+                Live preview
               </button>
             )}
           </div>
@@ -743,7 +743,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
           {mode === "read" && <NoteExportMenu noteId={note.id} title={note.title} proseRef={proseRef} fontFamilyId={fontFamilyId} />}
           <div className="flex items-center gap-1">
           <Tooltip content={note.isPinned ? "Unpin note" : "Pin note"}>
-            <button
+            <button aria-label={note.isPinned ? "Unpin note" : "Pin note"}
               onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
               className={cn(
                 "p-1.5 rounded-md transition-colors",
@@ -756,7 +756,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             </button>
           </Tooltip>
           <Tooltip content={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}>
-            <button
+            <button aria-label={showSemanticPanel ? "Hide semantic hubs" : "Show semantic hubs (similar notes)"}
               onClick={() => setShowSemanticPanel((v) => !v)}
               className={cn(
                 "p-1.5 rounded-md transition-colors",
@@ -769,7 +769,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             </button>
           </Tooltip>
           <Tooltip content={notesFullscreen ? "Exit distraction-free (⌘.)" : "Distraction-free mode (⌘.)"}>
-            <button
+            <button aria-label={notesFullscreen ? "Exit distraction-free mode" : "Distraction-free mode"}
               onClick={() => toggleNotesFullscreen()}
               className={cn(
                 "p-1.5 rounded-md transition-colors",
@@ -932,7 +932,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                   </ReactMarkdown>
                 </div>
               ) : (
-                <EmptyState icon={Eye} title="Nothing to preview yet." className="py-8" />
+                <EmptyState icon={Eye} title="Nothing to preview yet" className="py-8" />
               )}
             </div>
           </div>

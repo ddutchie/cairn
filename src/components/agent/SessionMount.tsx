@@ -1,6 +1,6 @@
 "use client";
 
-import { registerTerminal } from "@/lib/terminal-registry";
+import { registerTerminal, terminalTheme } from "@/lib/terminal-registry";
 import { useEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { TerminalManager } from "./TerminalManager";
@@ -63,12 +63,7 @@ export function SessionMount({ session, isActive }: SessionMountProps) {
         fontFamily: resolvedFont,
         cols: Math.max(40, Math.floor(containerRef.current.offsetWidth / 8)),
         rows: Math.max(10, Math.floor(containerRef.current.offsetHeight / 17)),
-        theme: {
-          background: cs.getPropertyValue("--background").trim() || "#111111",
-          foreground: cs.getPropertyValue("--text-primary").trim() || "#e5e5e5",
-          cursor: cs.getPropertyValue("--accent").trim() || "#6366f1",
-          selectionBackground: cs.getPropertyValue("--accent-dim").trim() || "#6366f133",
-        },
+        theme: terminalTheme(),
       });
 
       const fitAddon = new FitAddon();
