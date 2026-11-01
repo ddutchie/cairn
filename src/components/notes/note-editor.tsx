@@ -932,7 +932,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                   </ReactMarkdown>
                 </div>
               ) : (
-                <EmptyState icon={Eye} title="Nothing to preview yet." className="py-8" />
+                <EmptyState icon={Eye} title="Nothing to preview yet" className="py-8" />
               )}
             </div>
           </div>

@@ -120,7 +120,7 @@ export function CommandsSettings() {
         {workspaceCommands.length === 0 ? (
           <EmptyState
             icon={SlashSquare}
-            title="No custom commands yet."
+            title="No custom commands yet"
             description={<>Add one above — type <span className="font-mono">/</span> in a chat to use it.</>}
             className="py-6"
           />

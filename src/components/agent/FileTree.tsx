@@ -402,7 +402,7 @@ export function FileTree({ project }: FileTreeProps) {
             ))}
             {rootEntries.length === 0 && (
               <p className="text-xs text-[var(--text-tertiary)] px-3 py-4 text-center">
-                Directory is empty
+                This folder is empty.
               </p>
             )}
           </>

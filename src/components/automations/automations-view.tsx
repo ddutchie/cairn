@@ -330,7 +330,7 @@ export function AutomationsView() {
         {automations.length === 0 && (
           <EmptyState
             icon={Zap}
-            title="No automations yet."
+            title="No automations yet"
             description="Create one to run scheduled tasks in the background."
           />
         )}

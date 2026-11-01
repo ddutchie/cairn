@@ -444,7 +444,7 @@ export function UsageView() {
               </div>
               <div className="p-4 flex flex-col gap-3">
                 {byModel.length === 0 ? (
-                  <EmptyState title="No usage yet." />
+                  <EmptyState title="No usage yet" description="Model totals appear after the first AI call." />
                 ) : (
                   byModel.slice(0, 6).map((m) => {
                     const color = modelColor(m.model);
@@ -490,8 +490,8 @@ export function UsageView() {
             )}
             {items.length === 0 ? (
               <EmptyState
-                title="No LLM calls recorded yet"
-                description="Send a chat message or run an agent and it will appear here."
+                title="No AI calls yet"
+                description="Send a chat message or run an agent, and each call is listed here."
                 className="py-8"
               />
             ) : (

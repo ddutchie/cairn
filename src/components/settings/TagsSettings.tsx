@@ -22,7 +22,7 @@ export function TagsSettings() {
       {workspaceTags.length === 0 && (
         <EmptyState
           icon={Tag}
-          title="No tags yet."
+          title="No tags yet"
           description="Create tags from the note editor or card detail."
           className="py-6"
         />

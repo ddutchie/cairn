@@ -123,8 +123,8 @@ export function AgentEditor() {
     return (
       <EmptyState
         icon={FileCode}
-        title="Select a file to edit"
-        description="Click a file in the tree on the left"
+        title="No file open"
+        description="Choose a file in the tree on the left to view or edit it."
         className="p-8"
       />
     );

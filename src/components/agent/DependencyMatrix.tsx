@@ -235,7 +235,7 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
 
   if (nodes.length === 0) {
     return (
-      <EmptyState title="No file dependencies to chart yet." />
+      <EmptyState title="No file dependencies to chart yet" />
     );
   }
 

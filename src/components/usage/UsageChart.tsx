@@ -94,7 +94,7 @@ export function UsageChart({ series, metric }: Props) {
       onMouseLeave={() => setHover(null)}
     >
       {series.length === 0 ? (
-        <EmptyState overlay title="No usage in this range yet." />
+        <EmptyState overlay title="No usage in this range" description="Try a longer range above." />
       ) : (
         <svg width={w} height={HEIGHT} className="block">
           {yTicks.map((t) => (

@@ -201,7 +201,7 @@ export function ToolsSettings() {
         {addingMcp && <McpForm onSave={handleSaveMcp} onCancel={() => setAddingMcp(false)} />}
 
         {mcpServers.length === 0 && !addingMcp && (
-          <EmptyState icon={Server} title="No MCP servers configured yet." />
+          <EmptyState icon={Server} title="No MCP servers configured yet" />
         )}
 
         {mcpServers.map((server) =>
@@ -261,7 +261,7 @@ export function ToolsSettings() {
         {addingSvc && <ServiceForm onSave={handleSaveSvc} onCancel={() => setAddingSvc(false)} />}
 
         {customServices.length === 0 && !addingSvc && (
-          <EmptyState icon={Globe} title="No custom services configured yet." />
+          <EmptyState icon={Globe} title="No custom services configured yet" />
         )}
 
         {customServices.map((svc) =>

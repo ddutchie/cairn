@@ -182,14 +182,14 @@ export function PreviewPane() {
               <NoteEditor note={note} />
             </div>
           ) : (
-            <EmptyState title="Note not found or deleted." />
+            <EmptyState title="Note not found or deleted" />
           )
         )}
         {type === "task" && (
           card ? (
             <CardDetailPanel key={card.id} cardId={card.id} onClose={() => setActivePreviewItem(null)} />
           ) : (
-            <EmptyState title="Task card not found or deleted." />
+            <EmptyState title="Task card not found or deleted" />
           )
         )}
         {type === "file" && <FileContextContent key={`file:${panel.path}`} path={panel.path} />}

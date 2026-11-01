@@ -539,7 +539,7 @@ export function AgentSettings() {
 
         {agents.length === 0 && !adding && (
           <EmptyState
-            title="No external agents configured yet."
+            title="No external agents configured yet"
             description='Choose "Add CLI" to register one.'
           />
         )}
