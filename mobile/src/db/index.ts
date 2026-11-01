@@ -176,25 +176,36 @@ export function getEngine(): SyncEngine {
  * selection, so the next launch shows onboarding and the workspace re-downloads
  * from the iCloud oplog. Local changes that hadn't synced yet are lost — the
  * caller must say so before calling this.
+ *
+ * Edits this phone already published live only in its own iCloud oplog file,
+ * which the next sync would overwrite with the new, empty oplog. The
+ * `oplog_recover.<ws>` flag makes that sync read the file back in first.
+ *
+ * Throws (leaving the selection in place) when the file can't be deleted.
  */
 export function resetActiveSource(): void {
   const ws = metaGet("active_source");
   if (ws) {
-    const cached = _sources.get(ws);
+    const name = sourceDbName(ws);
+    // Open-then-close guarantees the file exists, so any delete error below is
+    // a real failure rather than "never created".
     try {
-      cached?.db.closeSync();
+      (_sources.get(ws)?.db ?? SQLite.openDatabaseSync(name)).closeSync();
     } catch {
-      /* already closed */
+      /* already closed, or won't open: delete it anyway */
     }
     _sources.delete(ws);
-    try {
-      SQLite.deleteDatabaseSync(sourceDbName(ws));
-    } catch {
-      /* never created — fine */
-    }
+    SQLite.deleteDatabaseSync(name);
+    metaSet(`oplog_recover.${ws}`, "1");
   }
   metaDb().runSync("DELETE FROM meta WHERE key = 'active_source'");
   _activeWorkspaceId = null;
+}
+
+/** Remove every meta key starting with `prefix` (LIKE wildcards in it are escaped). */
+export function deleteMetaPrefix(prefix: string): void {
+  const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
+  metaDb().runSync("DELETE FROM meta WHERE key LIKE ? ESCAPE '\\'", `${escaped}%`);
 }
 
 /**

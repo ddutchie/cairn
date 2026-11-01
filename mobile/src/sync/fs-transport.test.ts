@@ -23,7 +23,7 @@ vi.mock("expo-crypto", () => ({
   digestStringAsync: async (_: string, text: string) => `${text.length}:${text}`,
 }));
 
-const { writeOwnOplog } = await import("./fs-transport");
+const { writeOwnOplog, readOwnOplog } = await import("./fs-transport");
 
 const entry = (id: string) =>
   ({ id, entity: "notes", entity_id: id, op: "put", payload: {}, hlc: "1", origin: "d" }) as never;
@@ -50,5 +50,16 @@ describe("writeOwnOplog", () => {
     await writeOwnOplog("f", "dev3", "ws", [entry("a")]);
     h.files.clear();
     expect(await writeOwnOplog("f", "dev3", "ws", [entry("a")])).toBe(true);
+  });
+});
+
+describe("readOwnOplog", () => {
+  it("reads back what this device published, and [] when there is no file", async () => {
+    expect(await readOwnOplog("f", "dev4", "ws")).toEqual([]);
+    // Valid entries this time: the reader drops anything the oplog guard rejects.
+    const own = (id: string, counter: number) =>
+      ({ hlc: `000000000001:000${counter}:dev4`, origin: "dev4", entity: "notes", entity_id: id, op: "put", payload: {} }) as never;
+    await writeOwnOplog("f", "dev4", "ws", [own("a", 1), own("b", 2)]);
+    expect((await readOwnOplog("f", "dev4", "ws")).map((e) => e.entity_id)).toEqual(["a", "b"]);
   });
 });

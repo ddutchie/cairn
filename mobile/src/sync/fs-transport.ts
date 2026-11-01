@@ -170,6 +170,17 @@ export async function writeOwnOplog(
 }
 
 /**
+ * Read this device's own published oplog for `workspaceId`, or [] when there
+ * is none. Used once after a local reset, so edits this phone published (and a
+ * peer may not have read yet) come back before the file is overwritten.
+ */
+export async function readOwnOplog(folder: string, deviceId: string, workspaceId: string): Promise<OplogEntry[]> {
+  const path = PathUtils.join(folder, oplogFileName(deviceId, workspaceId));
+  if (!(await exist(path))) return [];
+  return parseNdjson(await readFile(path));
+}
+
+/**
  * Read peer oplog entries for a SINGLE workspace, excluding this device's own
  * writeback file. Reading only `*-<workspaceId>.ndjson` IS the source-isolation
  * boundary: another workspace's files are never opened. Downloads iCloud
