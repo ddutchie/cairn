@@ -523,3 +523,17 @@ describe("repairInterrupted", () => {
     expect(repairInterrupted(msgs)).toEqual(msgs);
   });
 });
+
+describe("runTurn: tools loaded mid-turn", () => {
+  it("runs a tool a previous step added to the toolset", async () => {
+    const h = makeHarness({ profile: { mode: "yolo" } });
+    const late = h.opts().tools.find((t) => t.name === "bash")!;
+    const tools = h.opts().tools.filter((t) => t !== late);
+    const loader = { ...tools[0], name: "loader", parameters: { type: "object", properties: {} }, execute: async (_a: unknown, ctx: { tools?: unknown[] }) => { ctx.tools!.push(late); return { content: "loaded" }; } } as unknown as typeof late;
+    tools.push(loader);
+    h.faux.setResponses([toolUse(call("loader", {}, "c1")), toolUse(call("bash", { command: "ls" }, "c2")), fauxAssistantMessage("done")]);
+    const events = await drive(runTurn(h.opts({ tools })));
+    expect(h.executed.map((e) => e.name)).toContain("bash");
+    expect(types(events).at(-1)).toBe("turn/end");
+  });
+});
