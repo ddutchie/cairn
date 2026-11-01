@@ -47,7 +47,7 @@ Success is a user staying in a single, calm environment from thought → plan �
 - Live dashboards via `window.cairn.query()` bridge; inline Fix with AI; CodeMirror HTML overlay.
 - MCP: 54 tools (context, notes, tasks incl. `list_ready_tasks`/`bulk_update_task_status`/`claim_task`/`add_task_progress`, projects, dashboards, flow, graph, tags, codebase indexing via `codebase_reindex/search_symbols/get_definition/get_references/get_file_symbols`) — the full schema set minus chat-only tools; live list under Settings → AI → MCP.
 - Font scaling (XS–XL, default M via `--font-scale` on `<html>`), dark/light themes, accent presets (Sage Moss default `#8faf6f`), font-family presets, chat themes, onboarding, What's New modal.
-- better-sqlite3 v13+ N-API (single prebuild fanned to `electron-native/`, `pkg-native/`, `vitest-native/`), onnxruntime-node pinned to 1.23.0 for darwin/x64, embeddings + runtime servers.
+- better-sqlite3 v13+ N-API (single prebuild fanned to `electron-native/`, `pkg-native/`, `vitest-native/`), onnxruntime-node pinned to 1.23.2 for darwin/x64, embeddings + runtime servers.
 
 **Constraints (must preserve)**
 - **Local-first only:** No cloud sync, no backend — `.md` + SQLite is source of truth; renderer never touches DB directly — all writes via IPC (`ipc`/`ipcAwait`).
