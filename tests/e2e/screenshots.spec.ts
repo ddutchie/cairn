@@ -137,7 +137,7 @@ const HIDE_NEXT_SCRIPT = `
   }
 
   // 2) Hide any button whose label is Next / Next Feature / Finish / Skip All / Done
-  const NEXT_RE = /^(Next|Next Feature|Finish|Skip All|Done)$/;
+  const NEXT_RE = /^(Next|Next Feature|Finish|Skip All|Done)$/i;
   for (const b of document.querySelectorAll("button")) {
     const t = (b.textContent ?? "").trim();
     if (NEXT_RE.test(t)) {

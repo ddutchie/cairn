@@ -264,7 +264,7 @@ export function PersonalityPicker({
               className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-xs text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
             >
               <Download size={12} />
-              Browse Community Personalities…
+              Browse community personalities…
             </button>
           </Popover.Content>
         </Popover.Portal>

@@ -179,7 +179,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
         {sessionType === "coding"
           ? <MessageSquare size={15} />
           : <Terminal size={15} />}
-        {card ? "Spawn Agent" : "New Session"}
+        {card ? "Spawn agent" : "New session"}
       </>}
       footer={<>
         <DialogClose asChild>

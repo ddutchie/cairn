@@ -660,7 +660,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
           )}
 
           {/* Mode toggle — Edit / Read. Live Preview is a separate toggle
-              (right) since Raw was just "Edit with Live Preview off". */}
+              (right) since Raw was just "Edit with Live preview off". */}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-0.5 bg-[var(--surface-2)] rounded-md p-0.5">
               <button
@@ -693,7 +693,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             {mode === "edit" && (
               <button
                 onClick={() => { setLivePreviewOn(!livePreviewOn); setTimeout(() => editorRef.current?.focus(), 50); }}
-                title={livePreviewOn ? "Live Preview on — click to edit raw Markdown" : "Live Preview off — click to render inline"}
+                title={livePreviewOn ? "Live preview on — click to edit raw Markdown" : "Live preview off — click to render inline"}
                 aria-pressed={livePreviewOn}
                 className={cn(
                   "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors",
@@ -703,7 +703,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                 )}
               >
                 <Code size={11} />
-                Live Preview
+                Live preview
               </button>
             )}
           </div>

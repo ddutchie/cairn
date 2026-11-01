@@ -149,7 +149,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       title={
         <span className="flex items-center gap-2">
-          <Download size={16} /> Browse Community Providers
+          <Download size={16} /> Browse community providers
         </span>
       }
       description="Add a preset OpenAI-compatible AI provider — just enter your API key."

@@ -113,7 +113,7 @@ export function AboutSection() {
             onClick={() => setLicensesOpen((o) => !o)}
             className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
           >
-            <span>Open Source Licenses ({allLicenses.length})</span>
+            <span>Open source licenses ({allLicenses.length})</span>
             <span className="text-[var(--text-tertiary)]">{licensesOpen ? "▲" : "▼"}</span>
           </button>
           {licensesOpen && (

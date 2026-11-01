@@ -181,7 +181,7 @@ export function CommandsSettings() {
             onClick={() => setBrowseOpen(true)}
             className="flex-shrink-0"
           >
-            <Download size={13} /> Browse Community
+            <Download size={13} /> Browse community
           </Button>
         </div>
       </SettingsGroup>

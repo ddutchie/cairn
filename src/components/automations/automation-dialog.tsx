@@ -219,7 +219,7 @@ export function AutomationDialog({
           <span className="text-xs text-[var(--text-secondary)]">Connectors (optional)</span>
           {connectors.length === 0 ? (
             <p className="text-xs text-[var(--text-tertiary)]">
-              No enabled connectors in this workspace. Add one under Settings → Tools → Browse Community, then it can appear here.
+              No enabled connectors in this workspace. Add one under Settings → Tools → Browse community, then it can appear here.
             </p>
           ) : (
             <>

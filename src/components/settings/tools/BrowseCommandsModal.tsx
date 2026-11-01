@@ -150,7 +150,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       title={
         <span className="flex items-center gap-2">
-          <SlashSquare size={16} /> Browse Community Commands
+          <SlashSquare size={16} /> Browse community commands
         </span>
       }
       description="Install community-contributed slash commands into this workspace."

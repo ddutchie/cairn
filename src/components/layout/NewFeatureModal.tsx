@@ -120,7 +120,7 @@ export function NewFeatureModal({ forceOpen = false, onClose }: Props) {
                 onClick={handleClose}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer mr-1"
               >
-                Skip All
+                Skip all
               </button>
             )}
             {featuresToShow.length > 1 && (

@@ -494,20 +494,8 @@ export function ProjectOverview() {
                 </span>
               </div>
               <div className="relative grid grid-cols-2 gap-2 mt-3.5">
-                <button
-                  type="button"
-                  onClick={() => setView("board")}
-                  className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] text-sm font-medium py-2 hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  View board
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView("insights")}
-                  className="rounded-[10px] border border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-fg)] text-sm font-semibold py-2 hover:bg-[var(--accent-hover)] hover:border-[var(--accent-hover)] transition-colors"
-                >
-                  Insights →
-                </button>
+                <Button size="lg" onClick={() => setView("board")}>View board</Button>
+                <Button size="lg" variant="accent" onClick={() => setView("insights")}>Open insights</Button>
               </div>
             </TiltCard>
           </div>
@@ -547,7 +535,7 @@ export function ProjectOverview() {
                   className={cn(
                     "px-3 py-1.5 rounded-full text-sm font-medium border transition-all whitespace-nowrap",
                     active
-                      ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] font-semibold shadow-elev-1"
+                      ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)] font-semibold"
                       : "bg-[var(--surface-2)] text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--muted)] hover:text-[var(--text-primary)]",
                   )}
                   aria-pressed={active}
@@ -633,7 +621,7 @@ export function ProjectOverview() {
                   </span>
                 </span>
                 <button type="button" onClick={() => (focus === "pinned" ? setView("notes") : setView("board"))} className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)]">
-                  {focus === "pinned" ? "Open notes →" : "View board →"}
+                  {focus === "pinned" ? "Open notes" : "View board"}
                 </button>
               </div>
             ) : (
@@ -695,7 +683,7 @@ export function ProjectOverview() {
                       </span>
                     </span>
                     <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] group-hover:bg-[var(--text-primary)] group-hover:text-[var(--background)] flex-shrink-0">
-                      Open →
+                      Open
                     </span>
                     <span className="w-0.5 self-stretch rounded-full flex-shrink-0" style={{ background: prioColor }} aria-hidden="true" />
                   </button>
@@ -855,10 +843,10 @@ export function ProjectOverview() {
               <p className="text-sm text-[var(--text-tertiary)] max-w-sm mx-auto mb-6">Add notes to capture ideas and tasks to track progress.</p>
               <div className="flex justify-center gap-3">
                 <Button variant="accent" size="sm" onClick={() => setView("notes")}>
-                  <FileText size={13} /> New Note
+                  <FileText size={13} /> New note
                 </Button>
                 <Button variant="default" size="sm" onClick={() => setView("board")}>
-                  <Kanban size={13} /> Open Board
+                  <Kanban size={13} /> Open board
                 </Button>
               </div>
             </div>
@@ -895,7 +883,7 @@ export function ProjectOverview() {
                       className={cn(
                         "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors",
                         sessionKind === "chat"
-                          ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-elev-1"
+                          ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)]"
                           : "bg-transparent text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]",
                       )}
                     >
@@ -912,7 +900,7 @@ export function ProjectOverview() {
                         !project.codeDirectory
                           ? "bg-transparent text-[var(--text-tertiary)] border-transparent opacity-60 cursor-not-allowed"
                           : sessionKind === "coding"
-                            ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)] shadow-elev-1"
+                            ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)]"
                             : "bg-transparent text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]",
                       )}
                     >

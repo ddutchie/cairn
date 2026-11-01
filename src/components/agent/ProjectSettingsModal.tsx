@@ -20,7 +20,7 @@ export function ProjectSettingsModal({ open, onClose }: ProjectSettingsModalProp
       onClose={onClose}
       size="lg"
       scrollable
-      title={<><Settings size={15} /> Project Settings</>}
+      title={<><Settings size={15} /> Project settings</>}
     >
       <ProjectSettingsSection key={activeProjectId ?? "none"} showHeader={false} />
     </ModalShell>

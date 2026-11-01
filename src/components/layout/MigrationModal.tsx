@@ -105,7 +105,7 @@ export function MigrationModal() {
             ) : (
               <ArrowRight size={18} className="text-[var(--accent)]" />
             )}
-            Workspace Migration
+            Workspace migration
           </h2>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
             {phase === "pending" && "Your workspace needs to be updated for compatibility."}
@@ -165,7 +165,7 @@ export function MigrationModal() {
         <div className="px-6 py-4 border-t border-[var(--border)] flex justify-end gap-2">
           {phase === "pending" && (
             <Button variant="accent" size="md" onClick={handleRunAll}>
-              Start Migration
+              Start migration
             </Button>
           )}
           {phase === "done" && (

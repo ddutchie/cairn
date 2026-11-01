@@ -361,7 +361,7 @@ export function GitView({ cwd }: GitViewProps) {
                   }}
                   className="text-2xs text-[var(--accent)] hover:underline normal-case font-normal cursor-pointer"
                 >
-                  New Branch
+                  New branch
                 </button>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -484,7 +484,7 @@ export function GitView({ cwd }: GitViewProps) {
               disabled={generatingPrDesc || !status}
             >
               <Sparkles size={11} className={cn(generatingPrDesc && "animate-pulse")} />
-              {generatingPrDesc ? "Generating..." : "Generate Description"}
+              {generatingPrDesc ? "Generating..." : "Generate description"}
             </Button>
             <div className="flex-1" />
             <Button size="sm" onClick={handleCreatePr} disabled={!prTitle.trim() || creatingPr}>
@@ -754,10 +754,10 @@ export function GitView({ cwd }: GitViewProps) {
       </div>
 
       {/* ── New Branch Dialog ──────────────────────────────────────────────── */}
-      <ModalShell open={newBranchOpen} onClose={() => setNewBranchOpen(false)} size="sm" title="Create New Branch">
+      <ModalShell open={newBranchOpen} onClose={() => setNewBranchOpen(false)} size="sm" title="Create branch">
           <form onSubmit={handleCreateBranch} className="p-4 space-y-4">
             <div className="space-y-2">
-              <label htmlFor="branch-name" className="text-xs text-[var(--text-secondary)]">Branch Name</label>
+              <label htmlFor="branch-name" className="text-xs text-[var(--text-secondary)]">Branch name</label>
               <input
                 id="branch-name"
                 value={newBranchName}

@@ -140,14 +140,14 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
     <div className="space-y-8">
       {showHeader && (
         <div>
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Project Settings</h2>
+          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Project settings</h2>
           <p className="text-xs text-[var(--text-tertiary)]">
             Configure per-project settings for {activeProject.name} — PR templates, git defaults, and more.
           </p>
         </div>
       )}
 
-      <SettingsGroup title="Code Directory" description="The local folder this project's coding agent, editor, diff, git and architecture views operate on.">
+      <SettingsGroup title="Code directory" description="The local folder this project's coding agent, editor, diff, git and architecture views operate on.">
         <div className="flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
             <Terminal size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] pointer-events-none" />

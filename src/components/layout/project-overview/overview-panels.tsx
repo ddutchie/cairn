@@ -194,7 +194,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
           </span>
         </h2>
         <button type="button" onClick={() => setView("notes")} className="text-xs font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)]">
-          Open notes →
+          Open notes
         </button>
       </div>
       {notesCount === 0 ? (

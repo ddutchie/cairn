@@ -220,8 +220,8 @@ function DiagramModal({ chart, onClose }: { chart: string; onClose: () => void }
     <ModalShell
       onClose={onClose}
       size="full"
-      title={<span className="sr-only">Fullscreen Mermaid Diagram</span>}
-      description="Fullscreen Mermaid Diagram. Detailed full-screen visualization of the rendered Mermaid chart."
+      title={<span className="sr-only">Full-screen Mermaid diagram</span>}
+      description="Full-screen Mermaid diagram. Detailed full-screen visualization of the rendered Mermaid chart."
       contentClassName="w-[90vw] h-[88vh] max-w-none flex flex-col p-6 animate-slide-in-up"
     >
         {/* Container fills all remaining space; SVG is told to fill it */}

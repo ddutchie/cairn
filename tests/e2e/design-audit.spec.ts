@@ -163,7 +163,7 @@ const SUPPRESS = `
   // What's New modal: close via its Skip All / Done buttons if present
   for (const b of document.querySelectorAll('[role="dialog"] button')) {
     const t = (b.textContent || "").trim();
-    if (t === "Skip All" || t === "Done") { b.click(); break; }
+    if (/^skip all$/i.test(t) || t === "Done") { b.click(); break; }
   }
 })();`;
 

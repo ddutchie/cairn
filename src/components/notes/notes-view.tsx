@@ -776,7 +776,7 @@ export function NotesView() {
               <FileText size={32} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
               <p className="text-sm text-[var(--text-tertiary)]">Select a note or create a new one</p>
               <div className="flex items-center gap-2 mt-4 justify-center">
-                <Button variant="accent" size="sm" onClick={() => handleCreateNote()}><Plus size={13} /> New Note</Button>
+                <Button variant="accent" size="sm" onClick={() => handleCreateNote()}><Plus size={13} /> New note</Button>
                 {aiEnabled && <Button variant="ghost" size="sm" onClick={() => setPrdModalOpen(true)}><Wand2 size={13} /> Generate PRD</Button>}
               </div>
             </div>

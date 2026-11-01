@@ -158,7 +158,7 @@ export function PreviewPane() {
                 className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
               >
                 <ExternalLink size={11} />
-                Open in Developer View
+                Open in developer view
               </Button>
               <div className="w-px h-3 bg-[var(--border)] my-1" />
             </>
