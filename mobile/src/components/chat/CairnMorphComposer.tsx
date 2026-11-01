@@ -20,7 +20,7 @@ function Thumbnail({ url, hidden, onRemove }: { url: string; hidden: boolean; on
   return (
     <Animated.View exiting={FadeOut.duration(DURATION.crossfade)} layout={LinearTransition.duration(DURATION.attach)} style={[styles.thumb, hidden && styles.thumbHidden]}>
       <Image source={source} contentFit="cover" cachePolicy="memory-disk" style={StyleSheet.absoluteFill} />
-      <Pressable accessibilityRole="button" hitSlop={10} onPress={onRemove} style={styles.remove}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Remove attachment" hitSlop={10} onPress={onRemove} style={styles.remove}>
         <X size={11} color="#fff" />
       </Pressable>
     </Animated.View>

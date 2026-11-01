@@ -209,7 +209,7 @@ export function CardDetailScreen({
             </Text>
           </Pressable>
           {dueDate && (
-            <Pressable style={styles.dueClear} onPress={() => setDueDate(null)} hitSlop={8}>
+            <Pressable style={styles.dueClear} onPress={() => setDueDate(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear due date">
               <X size={16} color={t.textTertiary} />
             </Pressable>
           )}

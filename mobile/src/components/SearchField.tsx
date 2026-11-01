@@ -54,7 +54,7 @@ export function SearchField({
       />
       {cycle.visible && hints ? <HintOverlay hint={cycle.hint} hints={hints} color={t.textTertiary} fontSize={typeScale.body.fontSize} style={s.hint} /> : null}
       {value ? (
-        <Pressable onPress={() => onChangeText("")} hitSlop={8}>
+        <Pressable onPress={() => onChangeText("")} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
           <X size={15} color={t.textTertiary} />
         </Pressable>
       ) : null}

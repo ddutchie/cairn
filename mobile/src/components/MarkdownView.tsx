@@ -474,6 +474,9 @@ function makeRules(
                 <Pressable
                   disabled={!interactive}
                   hitSlop={8}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: seg.checked, disabled: !interactive }}
+                  accessibilityLabel="Task"
                   onPress={
                     interactive
                       ? () => onChangeContent?.(toggleCheckboxInSource(source, seg.taskIndex))
@@ -613,6 +616,9 @@ function makeRules(
             <Pressable
               disabled={!interactive}
               hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked, disabled: !interactive }}
+              accessibilityLabel="Task"
               onPress={() => onChangeContent?.(toggleCheckboxInSource(source, index))}
               style={{ paddingTop: 2, paddingRight: 8 }}
             >

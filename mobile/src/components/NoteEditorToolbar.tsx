@@ -270,6 +270,8 @@ export function NoteEditorToolbar({
                     <Pressable
                       key={id}
                       disabled={!hasSelection}
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: !hasSelection, selected: active }}
                       onPress={() => handleAI(id)}
                       style={[styles.aiChip, active && styles.aiChipActive, !hasSelection && styles.disabled]}
                     >
@@ -281,7 +283,7 @@ export function NoteEditorToolbar({
                   );
                 })}
               </ScrollAffordanceRow>
-              <Pressable onPress={handleDismiss} hitSlop={10} style={styles.dismiss}>
+              <Pressable onPress={handleDismiss} hitSlop={10} style={styles.dismiss} accessibilityRole="button" accessibilityLabel="Close AI actions">
                 <X size={16} color={t.textTertiary} />
               </Pressable>
             </>

@@ -40,6 +40,7 @@ const PhotoCell = memo(function PhotoCell({ photo, slot, order, lifted, onPress 
   return (
     <Pressable
       accessibilityRole="imagebutton"
+      accessibilityLabel="Photo"
       accessibilityState={{ selected }}
       onPress={() => onPress(photo)}
       style={{ width: slot, height: slot, opacity: lifted ? 0 : 1 }}
