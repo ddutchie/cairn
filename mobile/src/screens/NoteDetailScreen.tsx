@@ -1,6 +1,6 @@
-import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect, usePreventRemove } from "expo-router";
 import { ScreenChrome, useInColumn } from "@/components/screen-chrome";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -8,6 +8,7 @@ import {
   View,
   Alert,
   Share,
+  AppState,
   type ScrollViewInstance,
 } from "react-native";
 import { Pin, List } from "lucide-react-native";
@@ -24,6 +25,8 @@ import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { GlassBar, glassActive } from "@/components/GlassBar";
 import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE, ICON_EXPORT, ICON_PDF } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
+import { toast } from "@/components/Toast";
+import { loadNoteDraft, saveNoteDraft, clearNoteDraft, draftDiffers } from "@/notes/note-draft";
 import { reindexNote, relatedNotes, type RelatedNote } from "@/notes/embeddings";
 import { exportNoteToPdf } from "@/notes/note-pdf";
 import { haptics, toolbarPress } from "@/haptics";
@@ -78,9 +81,60 @@ export function NoteDetailScreen({
   const railLift = insets.left > 0 || insets.right > 0 ? insets.bottom * 0.5 : insets.bottom;
   const [note, setNote] = useState(() => (id ? getNote(id) : null));
 
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(note?.title ?? "");
-  const [body, setBody] = useState(note?.content ?? "");
+  // An unsaved draft from an earlier visit (back-swipe, app killed in the
+  // background) reopens the editor with it, so typing is never silently lost.
+  const [restoredDraft] = useState(() => {
+    if (!note) return null;
+    const d = loadNoteDraft(note.id);
+    return d && draftDiffers(d, note) ? d : null;
+  });
+  const [editing, setEditing] = useState(restoredDraft != null);
+  const [title, setTitle] = useState(restoredDraft?.title ?? note?.title ?? "");
+  const [body, setBody] = useState(restoredDraft?.body ?? note?.content ?? "");
+  const dirty = editing && note != null && (title !== (note.title ?? "") || body !== (note.content ?? ""));
+
+  useEffect(() => {
+    if (restoredDraft) toast.info("Restored your unsaved edits");
+  }, [restoredDraft]);
+
+  // Keep the draft current while editing: debounced on typing, and flushed
+  // straight away when the app leaves the foreground (iOS may kill it there).
+  const latest = useRef({ dirty, title, body, noteId: note?.id });
+  useEffect(() => {
+    latest.current = { dirty, title, body, noteId: note?.id };
+  }, [dirty, title, body, note?.id]);
+  useEffect(() => {
+    if (!note) return;
+    if (!dirty) {
+      clearNoteDraft(note.id);
+      return;
+    }
+    const timer = setTimeout(() => saveNoteDraft(note.id, { title, body }), 500);
+    return () => clearTimeout(timer);
+  }, [dirty, title, body, note]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      const cur = latest.current;
+      if (s !== "active" && cur.dirty && cur.noteId) saveNoteDraft(cur.noteId, { title: cur.title, body: cur.body });
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Leaving the route (back button or swipe) with unsaved edits asks first. In a
+  // split-view column the note isn't its own route, so only the draft covers it.
+  usePreventRemove(dirty && noteId == null, ({ repeat }) => {
+    Alert.alert("Discard changes?", "Your edits to this note haven't been saved.", [
+      { text: "Keep editing", style: "cancel" },
+      {
+        text: "Discard",
+        style: "destructive",
+        onPress: () => {
+          if (note) clearNoteDraft(note.id);
+          repeat();
+        },
+      },
+    ]);
+  });
 
   // Editing toolbar state.
   const fmt = useNoteFormattingToolbar(body, setBody);
@@ -212,6 +266,7 @@ export function NoteDetailScreen({
 
   const onSave = () => {
     updateNote(note.id, title.trim() || "Untitled", body);
+    clearNoteDraft(note.id);
     setNote(getNote(note.id));
     setEditing(false);
     haptics.success(); // note saved
@@ -220,6 +275,7 @@ export function NoteDetailScreen({
     reindexNote(note.id).catch(() => {});
   };
   const onCancel = () => {
+    clearNoteDraft(note.id);
     setTitle(note.title ?? "");
     setBody(note.content ?? "");
     setEditing(false);
