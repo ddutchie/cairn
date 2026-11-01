@@ -384,8 +384,8 @@ export default function Home() {
         e.preventDefault();
         historyManager.redo().catch((err: unknown) => reportIpcError(err, "Redo failed"));
       }
-      // ⌘⇧. — jump to onboarding appearance step (dev only)
-      else if (process.env.NODE_ENV === "development" && mod && e.shiftKey && key === ".") {
+      // ⌘⇧. — jump to onboarding appearance step (dev only). Match the physical key: with Shift held, `key` is ">".
+      else if (process.env.NODE_ENV === "development" && mod && e.shiftKey && e.code === "Period") {
         e.preventDefault();
         setOnboardingState("dev");
       }
