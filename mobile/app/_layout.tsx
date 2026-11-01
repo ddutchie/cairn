@@ -12,6 +12,8 @@ import * as SplashScreen from "expo-splash-screen";
 import { initDatabase, getActiveSource, resetActiveSource } from "@/db";
 import { isDemoSource, seedChat } from "@/dev/demo-seed";
 import { startAutoSync, onDataChanged } from "@/sync/controller";
+// Also defines the background task at load, before React mounts (see the module).
+import { registerBackgroundSync } from "@/sync/background-sync";
 import { catchUpIndex } from "@/notes/embeddings";
 import { refreshWidgets } from "@/widgets";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -73,7 +75,10 @@ export default function RootLayout() {
     try {
       // The dev demo source is local-only: never publish it to the sync folder.
       if (isDemoSource(getActiveSource())) seedChat();
-      else startAutoSync();
+      else {
+        startAutoSync();
+        void registerBackgroundSync();
+      }
     } catch (e) {
       console.warn("[sync] auto-sync failed to start:", e);
     }
