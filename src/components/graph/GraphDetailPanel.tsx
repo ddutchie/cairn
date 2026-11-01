@@ -209,7 +209,7 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
             {typeLabel}
           </span>
           {project && node.type !== "project" && (
-            <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate">in {project.name}</span>
+            <span className="text-xs text-[var(--text-tertiary)] truncate">in {project.name}</span>
           )}
         </div>
         <button
@@ -325,8 +325,8 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
             <div>
               <div className="flex items-center gap-1.5 mb-1 px-2 text-[var(--text-tertiary)]">
                 <Link2 size={11} />
-                <span className="text-[0.714rem] font-semibold uppercase tracking-wider">Wikilinks</span>
-                <span className="text-[0.643rem] opacity-60">{wikiLinks.length}</span>
+                <span className="text-xs font-medium">Wikilinks</span>
+                <span className="text-2xs opacity-60">{wikiLinks.length}</span>
               </div>
               <div className="space-y-0.5">
                 {wikiLinks.map((link) => (
@@ -348,8 +348,8 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
             <div>
               <div className="flex items-center gap-1.5 mb-1 px-2 text-[var(--text-tertiary)]">
                 <Sparkles size={11} />
-                <span className="text-[0.714rem] font-semibold uppercase tracking-wider">Semantic</span>
-                <span className="text-[0.643rem] opacity-60">{semanticLinks.length}</span>
+                <span className="text-xs font-medium">Semantic</span>
+                <span className="text-2xs opacity-60">{semanticLinks.length}</span>
               </div>
               <div className="space-y-0.5">
                 {(showAllSemantic ? semanticLinks : semanticLinks.slice(0, 10)).map((link) => (
@@ -361,7 +361,7 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
                     <Sparkles size={11} className="text-[var(--text-tertiary)] flex-shrink-0 group-hover:text-[var(--accent)] transition-colors" />
                     <span className="truncate flex-1" title={link.title}>{link.title}</span>
                     {link.weight !== undefined && (
-                      <span className="text-[0.643rem] text-[var(--text-tertiary)] flex-shrink-0">
+                      <span className="text-2xs text-[var(--text-tertiary)] flex-shrink-0">
                         {Math.round(link.weight * 100)}
                       </span>
                     )}
@@ -370,7 +370,7 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
                 {semanticLinks.length > 10 && (
                   <button
                     onClick={() => setShowAllSemantic((v) => !v)}
-                    className="flex items-center gap-0.5 w-full px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors text-left"
+                    className="flex items-center gap-0.5 w-full px-2 py-1 text-2xs text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors text-left"
                   >
                     {showAllSemantic ? "Show less" : `+${semanticLinks.length - 10} more`}
                   </button>
@@ -455,10 +455,10 @@ function CollapsibleLinkSection({
         className="flex items-center gap-2 px-4 py-2 w-full text-left hover:bg-[var(--surface-2)] transition-colors"
       >
         <span className="text-[var(--text-tertiary)]">{icon}</span>
-        <span className="text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
+        <span className="text-xs font-medium text-[var(--text-tertiary)]">
           {label}
         </span>
-        <span className="text-[0.643rem] text-[var(--text-tertiary)] opacity-60">{count}</span>
+        <span className="text-2xs text-[var(--text-tertiary)] opacity-60">{count}</span>
         <span className="ml-auto text-[var(--text-tertiary)]">
           {expanded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
         </span>

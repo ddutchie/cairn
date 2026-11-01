@@ -276,7 +276,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             <button
               onClick={() => setView("map")}
               className={cn(
-                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors",
+                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors",
                 view === "map"
                   ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -288,7 +288,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             <button
               onClick={() => setView("matrix")}
               className={cn(
-                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors border-l border-[var(--border)]",
+                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
                 view === "matrix"
                   ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -300,7 +300,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             <button
               onClick={() => setView("graph")}
               className={cn(
-                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors border-l border-[var(--border)]",
+                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
                 view === "graph"
                   ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -312,7 +312,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             <button
               onClick={() => setView("list")}
               className={cn(
-                "flex items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold transition-colors border-l border-[var(--border)]",
+                "flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors border-l border-[var(--border)]",
                 view === "list"
                   ? "bg-[var(--surface-3)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -405,7 +405,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
             <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
               {/* Spotlight banner when focused on one file */}
               {selectedFileId && (
-                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0 text-[0.7rem]">
+                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0 text-xs">
                   <Share2 size={12} className="text-[var(--accent)]" />
                   <span className="text-[var(--text-secondary)]">
                     Focused on <span className="font-mono">{relPath(graph?.nodes.find((n) => n.id === selectedFileId)?.file_path ?? "", root)}</span> and its direct dependencies
@@ -492,7 +492,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
               {emptyFileCount > 0 && (
                 <button
                   onClick={() => setShowEmpty((v) => !v)}
-                  className="self-start text-[0.7rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                  className="self-start text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                 >
                   {showEmpty
                     ? `Hide ${emptyFileCount} file${emptyFileCount === 1 ? "" : "s"} with no symbols`
@@ -521,14 +521,14 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
                       <span className="text-xs text-[var(--text-primary)] font-mono truncate flex-1">
                         {relPath(file.file_path, root)}
                       </span>
-                      <span className="text-[0.7rem] text-[var(--text-tertiary)] tabular-nums flex-shrink-0">
+                      <span className="text-xs text-[var(--text-tertiary)] tabular-nums flex-shrink-0">
                         {file.symbol_count}
                       </span>
                     </button>
                     {isOpen && (
                       <div className="pb-1">
                         {syms.length === 0 ? (
-                          <div className="pl-11 pr-4 py-1 text-[0.7rem] text-[var(--text-tertiary)]">
+                          <div className="pl-11 pr-4 py-1 text-xs text-[var(--text-tertiary)]">
                             No symbols extracted.
                           </div>
                         ) : (
@@ -545,7 +545,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
                               <span className="text-xs text-[var(--text-secondary)] font-mono truncate flex-1">
                                 {sym.name}
                               </span>
-                              <span className="text-[0.7rem] text-[var(--text-tertiary)] tabular-nums flex-shrink-0">
+                              <span className="text-xs text-[var(--text-tertiary)] tabular-nums flex-shrink-0">
                                 :{sym.line}
                               </span>
                             </button>
@@ -575,13 +575,13 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
                       {selected.name}
                     </span>
                   </div>
-                  <div className="text-[0.7rem] text-[var(--text-tertiary)] font-mono break-all">
+                  <div className="text-xs text-[var(--text-tertiary)] font-mono break-all">
                     {relPath(selected.file_path, root)}:{selected.line}
                   </div>
                 </div>
 
                 {selected.signature && (
-                  <pre className="flex-shrink-0 text-[0.7rem] leading-relaxed font-mono text-[var(--text-secondary)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-2.5 overflow-x-auto whitespace-pre-wrap break-words m-0">
+                  <pre className="flex-shrink-0 text-xs leading-relaxed font-mono text-[var(--text-secondary)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-2.5 overflow-x-auto whitespace-pre-wrap break-words m-0">
                     {selected.signature}
                   </pre>
                 )}
@@ -640,20 +640,20 @@ function SelectedFilePanel({
       {onFocusInGraph && (
         <button
           onClick={onFocusInGraph}
-          className="mb-2 text-[0.7rem] text-[var(--accent)] hover:underline"
+          className="mb-2 text-xs text-[var(--accent)] hover:underline"
         >
           Focus in graph →
         </button>
       )}
       {symbols.length === 0 ? (
-        <div className="text-[0.7rem] text-[var(--text-tertiary)]">No symbols in this file.</div>
+        <div className="text-xs text-[var(--text-tertiary)]">No symbols in this file.</div>
       ) : (
         <div className="flex flex-col">
           {symbols.map((sym) => (
             <div key={sym.id} className="flex items-center gap-2 py-1">
               <KindGlyph kind={sym.kind} />
               <span className="text-xs text-[var(--text-secondary)] font-mono truncate flex-1">{sym.name}</span>
-              <span className="text-[0.65rem] text-[var(--text-tertiary)] tabular-nums">:{sym.line}</span>
+              <span className="text-2xs text-[var(--text-tertiary)] tabular-nums">:{sym.line}</span>
             </div>
           ))}
         </div>
@@ -699,14 +699,14 @@ function RelationList({
         <span className="tabular-nums">({items.length})</span>
       </SectionLabel>
       {items.length === 0 ? (
-        <div className="text-[0.7rem] text-[var(--text-tertiary)]">{empty}</div>
+        <div className="text-xs text-[var(--text-tertiary)]">{empty}</div>
       ) : (
         <div className="flex flex-col gap-0.5">
           {items.map((e, i) => (
             <div key={`${e[field]}-${i}`} className="flex items-center gap-2 text-xs">
               <span className="font-mono text-[var(--text-secondary)] truncate">{e[field]}</span>
               {showFile && e.source_file && (
-                <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono truncate ml-auto">
+                <span className="text-2xs text-[var(--text-tertiary)] font-mono truncate ml-auto">
                   {relPath(e.source_file, root)}
                 </span>
               )}

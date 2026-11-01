@@ -331,7 +331,7 @@ export function AppTutorial() {
       {/* Descriptive floating tooltip card */}
       <div
         ref={tooltipRef}
-        className="absolute w-80 rounded-xl border border-[var(--border)] p-4 shadow-2xl transition-all duration-300 pointer-events-auto flex flex-col gap-3"
+        className="absolute w-80 rounded-xl border border-[var(--border)] p-4 shadow-elev-3 transition-all duration-300 pointer-events-auto flex flex-col gap-3"
         style={{
           top: tooltipPos.top,
           left: tooltipPos.left,
@@ -342,7 +342,7 @@ export function AppTutorial() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[var(--accent)] font-semibold">
             <Sparkles size={13} className="animate-pulse" />
-            <span className="text-[0.714rem] uppercase tracking-wider">Quick Tour</span>
+            <span className="text-xs">Quick tour</span>
           </div>
           <button
             onClick={handleFinish}
@@ -355,14 +355,14 @@ export function AppTutorial() {
         {/* Content text */}
         <div>
           <h3 className="text-xs font-bold text-[var(--text-primary)]">{currentStep.title}</h3>
-          <p className="text-[0.714rem] text-[var(--text-secondary)] leading-relaxed mt-1">
+          <p className="text-xs text-[var(--text-secondary)] leading-relaxed mt-1">
             {currentStep.content}
           </p>
         </div>
 
         {/* Navigation Actions Footer */}
         <div className="flex items-center justify-between mt-1 pt-3 border-t border-[var(--border-subtle)]">
-          <span className="text-[0.65rem] font-medium text-[var(--text-tertiary)]">
+          <span className="text-2xs font-medium text-[var(--text-tertiary)]">
             Step {tutorialStepIndex + 1} of {TUTORIAL_STEPS.length}
           </span>
 
@@ -370,7 +370,7 @@ export function AppTutorial() {
             {tutorialStepIndex > 0 && (
               <button
                 onClick={handleBack}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[0.714rem] font-semibold text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
               >
                 <ChevronLeft size={11} />
                 <span>Back</span>

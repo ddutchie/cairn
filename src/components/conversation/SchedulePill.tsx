@@ -56,7 +56,7 @@ export function SchedulePill({ sessionId, pollKey }: SchedulePillProps) {
       title={title}
       aria-label={`${reminders.length} active reminder${reminders.length === 1 ? "" : "s"}${overdue > 0 ? `, ${overdue} overdue` : ""}`}
       className={cn(
-        "flex items-center gap-1 text-[0.643rem] font-semibold px-1.5 py-0.5 rounded-full shrink-0",
+        "flex items-center gap-1 text-2xs font-semibold px-1.5 py-0.5 rounded-full shrink-0",
         overdue > 0
           ? "bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] text-[var(--danger)]"
           : "bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--accent)]",

@@ -174,7 +174,7 @@ const MarkdownChunk = React.memo(function MarkdownChunk({ content, isUser }: { c
           // Fenced blocks handled by `pre` above — this only runs for inline code
           if (className?.startsWith("language-")) return <>{children}</>;
           return (
-            <code className={`px-1 py-0.5 rounded font-mono text-[0.786rem] break-all ${codeClass}`}>
+            <code className={`px-1 py-0.5 rounded font-mono text-sm break-all ${codeClass}`}>
               {children}
             </code>
           );

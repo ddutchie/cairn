@@ -191,7 +191,7 @@ function dprFor(nodeCount: number): number {
 }
 
 const ZOOM_BTN_CLASS =
-  "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-sm";
+  "w-7 h-7 flex items-center justify-center rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors shadow-elev-1";
 
 function ForceGraphCanvasImpl({
   graph,
@@ -833,7 +833,7 @@ function ForceGraphCanvasImpl({
 
       {hoveredEdgeText && (
         <div
-          className="pointer-events-none absolute z-20 px-3 py-1.5 rounded-md text-xs bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] shadow-lg max-w-[280px] break-words"
+          className="pointer-events-none absolute z-20 px-3 py-1.5 rounded-md text-xs bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] shadow-elev-2 max-w-[280px] break-words"
           style={{ left: tooltipPos.x, top: tooltipPos.y }}
         >
           {hoveredEdgeText}

@@ -260,7 +260,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
           )}
           {recomputeProgress && (
             <div className="mt-4 space-y-1 text-left">
-              <div className="flex justify-between text-[0.65rem] text-[var(--text-tertiary)]">
+              <div className="flex justify-between text-2xs text-[var(--text-tertiary)]">
                 <span>Computing projections…</span>
                 <span className="font-mono">
                   {recomputeProgress.done}/{recomputeProgress.total}
@@ -392,7 +392,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
       <div className="absolute top-3 right-3 flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5">
         <button
           onClick={() => setPan({ x: 0, y: 0 })}
-          className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded text-[0.7rem]"
+          className="w-7 h-7 flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] rounded text-xs"
           title="Reset view"
         >⟲</button>
         <button
@@ -406,13 +406,13 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
       </div>
 
       {/* Header — model + count */}
-      <div className="absolute top-3 left-3 text-[0.65rem] text-[var(--text-tertiary)] font-mono pointer-events-none">
+      <div className="absolute top-3 left-3 text-2xs text-[var(--text-tertiary)] font-mono pointer-events-none">
         {plotted.length} notes · model: {projectionModel || "—"}
       </div>
 
       {recomputeProgress && (
         <div className="absolute bottom-3 left-3 right-3 max-w-md mx-auto bg-[var(--surface)] border border-[var(--border)] rounded-md p-2 space-y-1">
-          <div className="flex justify-between text-[0.65rem] text-[var(--text-tertiary)]">
+          <div className="flex justify-between text-2xs text-[var(--text-tertiary)]">
             <span>Recomputing projections…</span>
             <span className="font-mono">
               {recomputeProgress.done}/{recomputeProgress.total}
@@ -438,10 +438,10 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
         <CanvasCallout x={tooltip.x} y={tooltip.y} containerW={dims.width}>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: tooltip.note.color }} />
-            <span className="text-[0.786rem] font-medium text-[var(--text-primary)]">{tooltip.note.title}</span>
+            <span className="text-sm font-medium text-[var(--text-primary)]">{tooltip.note.title}</span>
           </div>
           {tooltip.note.projectName && (
-            <p className="text-[0.7rem] text-[var(--text-tertiary)] mt-0.5">in {tooltip.note.projectName}</p>
+            <p className="text-xs text-[var(--text-tertiary)] mt-0.5">in {tooltip.note.projectName}</p>
           )}
         </CanvasCallout>
       )}

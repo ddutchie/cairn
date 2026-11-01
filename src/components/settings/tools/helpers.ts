@@ -43,4 +43,4 @@ export function headersToRows(headers?: Record<string, string>): HeaderRow[] {
 export const inputCls =
   "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 focus:outline-none";
 export const labelCls =
-  "text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1";
+  "text-xs font-medium text-[var(--text-tertiary)] block mb-1";

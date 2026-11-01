@@ -46,7 +46,7 @@ interface CardContentProps {
 }
 
 /** Shared state-chip style: compact, never wraps internally. */
-const chip = "inline-flex items-center gap-1 whitespace-nowrap text-[0.714rem] font-medium rounded px-1.5 py-0.5";
+const chip = "inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium rounded px-1.5 py-0.5";
 
 /** "Oct 6", or "Oct 6, 2027" when not in the current year. Full date lives in the title tooltip. */
 function shortDate(iso: string): string {
@@ -76,7 +76,7 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
 
       <div className="pl-2 flex flex-col gap-2">
         {/* Title */}
-        <p className="text-[0.929rem] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
+        <p className="text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
           {card.title}
         </p>
 
@@ -89,7 +89,7 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
           <div
             ref={descRef}
             className={cn(
-              "text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed",
+              "text-sm text-[var(--text-tertiary)] leading-relaxed",
               "[&_.prose-cairn]:!py-0 [&_.prose-cairn_p]:!my-0",
               // Keyboard focus inside the collapsed preview releases the clamp
               // (see CardDescriptionPreview) — the container must grow with it
@@ -111,7 +111,7 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
             type="button"
             onClick={onToggleExpand}
             onPointerDown={(e) => e.stopPropagation()}
-            className="self-start flex items-center gap-0.5 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors -mt-1"
+            className="self-start flex items-center gap-0.5 text-2xs text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors -mt-1"
             aria-label={expanded ? "Collapse description" : "Expand description"}
           >
             {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
@@ -158,13 +158,13 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
         {(card.assignee || card.linkedNoteIds.length > 0) && (
           <div className="flex items-center gap-2 pt-1.5 border-t border-[var(--border-subtle)] min-w-0">
             {card.assignee && (
-              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] min-w-0" title={card.assignee}>
+              <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] min-w-0" title={card.assignee}>
                 <User size={10} className="flex-shrink-0" />
                 <span className="truncate">{card.assignee}</span>
               </span>
             )}
             {card.linkedNoteIds.length > 0 && (
-              <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] ml-auto flex-shrink-0" title={`${card.linkedNoteIds.length} linked note${card.linkedNoteIds.length === 1 ? "" : "s"}`}>
+              <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] ml-auto flex-shrink-0" title={`${card.linkedNoteIds.length} linked note${card.linkedNoteIds.length === 1 ? "" : "s"}`}>
                 <FileText size={11} />
                 {card.linkedNoteIds.length}
               </span>
@@ -246,7 +246,7 @@ export const KanbanCard = React.memo(function KanbanCard({ card, onOpenCard, isD
             "group relative rounded-lg border bg-[var(--surface-2)] p-3 cursor-pointer overflow-hidden",
             "border-[var(--border)] hover:border-[var(--accent)]/40",
             "transition-all duration-150 select-none",
-            "hover:shadow-md hover:shadow-black/20",
+            "hover:shadow-elev-2",
             dimmed && "opacity-40 rotate-1"
           )}
         >

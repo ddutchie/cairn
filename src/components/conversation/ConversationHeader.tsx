@@ -39,7 +39,7 @@ export function ConversationHeader({ title, usage, contextLimit, actions, schedu
 
   return (
     <div ref={ref} className="flex items-center gap-1.5 px-3 h-9 border-b border-[var(--border)] bg-[var(--surface-2)] flex-shrink-0 overflow-hidden min-w-0">
-      <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] truncate flex-1 min-w-0">{title}</span>
+      <span className="text-xs font-medium text-[var(--text-secondary)] truncate flex-1 min-w-0">{title}</span>
       {usage && <span className="shrink-0 flex items-center"><ContextRing {...usage} contextLimit={contextLimit} /></span>}
       {schedule && <SchedulePill sessionId={schedule.sessionId} pollKey={schedule.pollKey} />}
       <span className={`items-center gap-1 shrink-0 flex-nowrap ${overflows ? "hidden" : "flex"}`}>{actions}</span>

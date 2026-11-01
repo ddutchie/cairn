@@ -14,7 +14,8 @@ import * as fs from "fs";
 type Theme = "light" | "dark";
 const THEMES: Theme[] =
   process.env.THEME === "light" ? ["light"] : process.env.THEME === "dark" ? ["dark"] : ["light", "dark"];
-const OUT_DIR = path.resolve(__dirname, "..", "..", "design-audit", "screens");
+// AUDIT_OUT=before|after writes to design-audit/<name>/ for the compare page.
+const OUT_DIR = path.resolve(__dirname, "..", "..", "design-audit", process.env.AUDIT_OUT ?? "screens");
 
 type StoreState = Record<string, unknown> & {
   chatOpen: boolean;

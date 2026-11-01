@@ -233,7 +233,7 @@ export function CreditsBadge({ info, className }: { info: KeyInfo | null; classN
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]",
+        "inline-flex items-center gap-1 text-xs text-[var(--text-tertiary)]",
         className,
       )}
       title={

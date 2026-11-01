@@ -97,7 +97,7 @@ export function ChatTimeline({ spans, range, onRangeChange, onSpanSelect, totalD
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between text-[0.607rem] text-[var(--text-tertiary)]">
+      <div className="flex items-center justify-between text-2xs text-[var(--text-tertiary)]">
         <span>{isFiltered ? `Focused ${Math.round((rangeEnd - rangeStart) * 100)}%` : "Full timeline"} {totalDurationMs ? `· ${Math.round(totalDurationMs)}ms` : ""}</span>
         {isFiltered && (
           <button
@@ -166,12 +166,12 @@ export function ChatTimeline({ spans, range, onRangeChange, onSpanSelect, totalD
           </>
         )}
         {hover && (
-          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-[var(--surface)] border border-[var(--border)] shadow-lg text-[0.643rem] whitespace-nowrap pointer-events-none">
+          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-[var(--surface)] border border-[var(--border)] shadow-elev-2 text-2xs whitespace-nowrap pointer-events-none">
             {hover.label}
           </div>
         )}
       </div>
-      <div className="flex gap-1 text-[0.607rem] text-[var(--text-tertiary)]">
+      <div className="flex gap-1 text-2xs text-[var(--text-tertiary)]">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-[var(--accent)]/30 border border-[var(--accent)]/50" /> Input</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-[var(--text-primary)]/20 border border-[var(--text-primary)]/30" /> Model</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-[var(--success)]/30 border border-[var(--success)]/50" /> Tools</span>

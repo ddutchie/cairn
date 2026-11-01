@@ -36,7 +36,7 @@ export function FlowNodeShell({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-[var(--surface)] shadow-sm transition-shadow",
+        "rounded-xl border bg-[var(--surface)] shadow-elev-1 transition-shadow",
         minWidth,
         maxWidth,
         selected

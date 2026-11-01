@@ -58,8 +58,8 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
       <div className="grid grid-cols-2 gap-3">
         {/* Name */}
         <div className="col-span-2">
-          <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-            Display Name *
+          <label className="text-xs font-medium text-[var(--text-tertiary)] block mb-1">
+            Display name *
           </label>
           <input
             value={name}
@@ -72,8 +72,8 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
 
         {/* Binary path */}
         <div className="col-span-2">
-          <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
-            Binary Path *
+          <label className="text-xs font-medium text-[var(--text-tertiary)] block mb-1">
+            Binary path *
           </label>
           <div className="flex gap-2">
             <input
@@ -91,7 +91,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
 
         {/* Args */}
         <div className="col-span-2">
-          <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
+          <label className="text-xs font-medium text-[var(--text-tertiary)] block mb-1">
             Arguments
             <span className="normal-case font-normal ml-1">
               — use <code className="text-[var(--accent)]">{"{\"{\\\"{prompt}\\\"}\"}"}</code> as placeholder, or leave empty for interactive
@@ -103,7 +103,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
             placeholder="e.g. -p {prompt}  or  --message {prompt}  or  run {prompt}  or  leave empty for interactive"
             className="w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 font-mono focus:outline-none"
           />
-          <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="mt-1 text-xs text-[var(--text-tertiary)]">
             Claude Code: binary <code className="text-[var(--accent)]">claude</code>, args <code className="text-[var(--accent)]">-p {"{prompt}"}</code>.{" "}
             OpenCode: binary <code className="text-[var(--accent)]">opencode</code>, args <code className="text-[var(--accent)]">--prompt {"{prompt}"}</code>.{" "}
             Aider: binary <code className="text-[var(--accent)]">aider</code>, args <code className="text-[var(--accent)]">--message {"{prompt}"}</code>.{" "}
@@ -112,7 +112,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
           </p>
           {/* Live preview */}
           {binaryPath.trim() && (
-            <p className="mt-1 text-[0.714rem] font-mono text-[var(--text-tertiary)] truncate">
+            <p className="mt-1 text-xs font-mono text-[var(--text-tertiary)] truncate">
               <span className="opacity-50">preview: </span>
               {binaryPath.trim()}
               {args.trim() ? ` ${args.trim()}` : ""}
@@ -183,7 +183,7 @@ function CodingPreviewSection() {
       {workspacePath && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
           <FolderOpen size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
-          <span className="text-[0.714rem] font-mono text-[var(--text-tertiary)] truncate">{workspacePath}</span>
+          <span className="text-xs font-mono text-[var(--text-tertiary)] truncate">{workspacePath}</span>
         </div>
       )}
 
@@ -212,8 +212,8 @@ function CodingPreviewSection() {
               <div className="p-2 space-y-1">
                 {skillNames.map((sk) => (
                   <div key={sk.name} className="px-2 py-1.5 rounded hover:bg-[var(--surface-2)]">
-                    <div className="text-[0.714rem] font-mono text-[var(--accent)]">{sk.name}</div>
-                    <div className="text-[0.714rem] text-[var(--text-tertiary)]">{sk.description}</div>
+                    <div className="text-xs font-mono text-[var(--accent)]">{sk.name}</div>
+                    <div className="text-xs text-[var(--text-tertiary)]">{sk.description}</div>
                   </div>
                 ))}
               </div>
@@ -222,7 +222,7 @@ function CodingPreviewSection() {
         </div>
       ) : (
         !loading && (
-          <p className="text-[0.714rem] text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
+          <p className="text-xs text-[var(--text-tertiary)] py-4 text-center border border-dashed border-[var(--border)] rounded-lg">
             Coding prompt unavailable — refresh to retry.
           </p>
         )
@@ -238,7 +238,7 @@ function CodingPreviewSection() {
                 type="button"
                 onClick={() => setActiveSurface(surface)}
                 className={cn(
-                  "px-2 py-0.5 text-[0.714rem] rounded",
+                  "px-2 py-0.5 text-xs rounded",
                   activeSurface === surface
                     ? "bg-[var(--surface)] text-[var(--text-primary)] font-medium"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
@@ -395,7 +395,7 @@ export function AgentSettings() {
         >
           <button
             onClick={() => setBrowsingProviders(true)}
-            className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Download size={12} /> Browse Community
           </button>
@@ -545,7 +545,7 @@ export function AgentSettings() {
       {/* Agent list */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">
+          <h3 className="text-xs font-medium text-[var(--text-tertiary)]">
             Configured CLI Agents
           </h3>
           {!adding && (
@@ -592,7 +592,7 @@ export function AgentSettings() {
                     </Badge>
                   )}
                 </div>
-                <span className="text-[0.714rem] font-mono text-[var(--text-tertiary)] truncate block">
+                <span className="text-xs font-mono text-[var(--text-tertiary)] truncate block">
                   {agent.binaryPath}{agent.args ? ` ${agent.args}` : ""}
                 </span>
               </div>

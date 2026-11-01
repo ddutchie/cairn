@@ -82,7 +82,7 @@ export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockPro
                     (job.status === "killed" || job.status === "failed") && "bg-[var(--danger)]",
                   )}
                 />
-                <span className={cn("text-[0.714rem] leading-relaxed flex-1 truncate", settled ? "text-[var(--text-tertiary)]" : "text-[var(--text-primary)] font-medium")}>
+                <span className={cn("text-xs leading-relaxed flex-1 truncate", settled ? "text-[var(--text-tertiary)]" : "text-[var(--text-primary)] font-medium")}>
                   {job.label}
                   <span className="text-[var(--text-tertiary)]"> · {job.kind} · {job.status} · {formatElapsed(job.startedAt, job.finishedAt)}</span>
                   {job.detail && <span className="text-[var(--text-tertiary)]"> · {job.detail}</span>}
@@ -91,7 +91,7 @@ export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockPro
                   <button
                     onClick={() => void onKill(job.id)}
                     title={`Stop ${job.label}`}
-                    className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
+                    className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--danger)] transition-colors shrink-0"
                   >
                     <X size={12} /> Stop
                   </button>
@@ -99,7 +99,7 @@ export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockPro
               </div>
             );
           })}
-          {killError && <div className="text-[0.714rem] text-[var(--danger)] px-1 py-0.5">{killError}</div>}
+          {killError && <div className="text-xs text-[var(--danger)] px-1 py-0.5">{killError}</div>}
         </div>
       )}
 
@@ -110,7 +110,7 @@ export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockPro
       >
         <span
           className={cn(
-            "text-[0.714rem] font-medium flex-1 truncate",
+            "text-xs font-medium flex-1 truncate",
             live && running.length > 0 ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]",
           )}
         >

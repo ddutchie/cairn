@@ -420,7 +420,7 @@ export function ProjectOverview() {
               />
               <div className="relative flex justify-between items-start gap-4">
                 <div>
-                  <div className="text-[0.643rem] font-semibold tracking-[0.08em] uppercase" style={{ color: needsAttention > 0 ? "var(--warning)" : "var(--text-tertiary)" }}>
+                  <div className="text-xs font-medium tracking-[0.08em]" style={{ color: needsAttention > 0 ? "var(--warning)" : "var(--text-tertiary)" }}>
                     {progressLabel}
                   </div>
                   <div className="text-[2rem] font-bold tracking-tight leading-none mt-1 flex items-baseline gap-1.5">
@@ -497,14 +497,14 @@ export function ProjectOverview() {
                 <button
                   type="button"
                   onClick={() => setView("board")}
-                  className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] text-[0.786rem] font-medium py-2 hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] transition-colors"
+                  className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] text-sm font-medium py-2 hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   View board
                 </button>
                 <button
                   type="button"
                   onClick={() => setView("insights")}
-                  className="rounded-[10px] border border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-fg)] text-[0.786rem] font-semibold py-2 hover:bg-[var(--accent-hover)] hover:border-[var(--accent-hover)] transition-colors"
+                  className="rounded-[10px] border border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-fg)] text-sm font-semibold py-2 hover:bg-[var(--accent-hover)] hover:border-[var(--accent-hover)] transition-colors"
                 >
                   Insights →
                 </button>
@@ -519,14 +519,14 @@ export function ProjectOverview() {
             ref={focusBarRef}
             className={cn(
               "sticky top-2 z-[5] flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] mb-4 flex-wrap transition-shadow",
-              isFocusPinned && "shadow-[0_8px_24px_color-mix(in_srgb,black_32%,transparent),inset_0_1px_0_color-mix(in_srgb,white_4%,transparent)]"
+              isFocusPinned && "shadow-elev-2"
             )}
             style={{ backdropFilter: "blur(8px)" }}
             role="group"
             aria-label="Focus filters"
             aria-controls={overviewContentId}
           >
-            <span className="text-[0.643rem] font-semibold tracking-[0.07em] uppercase text-[var(--text-tertiary)] mr-0.5">
+            <span className="text-xs font-medium tracking-[0.07em] text-[var(--text-tertiary)] mr-0.5">
               Focus
             </span>
             {(["all", "today", "overdue", "pinned"] as FocusFilter[]).map((k) => {
@@ -545,9 +545,9 @@ export function ProjectOverview() {
                   type="button"
                   onClick={() => setFocus(k)}
                   className={cn(
-                    "px-3 py-1.5 rounded-full text-[0.786rem] font-medium border transition-all whitespace-nowrap",
+                    "px-3 py-1.5 rounded-full text-sm font-medium border transition-all whitespace-nowrap",
                     active
-                      ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] font-semibold shadow-sm"
+                      ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] font-semibold shadow-elev-1"
                       : "bg-[var(--surface-2)] text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--muted)] hover:text-[var(--text-primary)]",
                   )}
                   aria-pressed={active}
@@ -557,7 +557,7 @@ export function ProjectOverview() {
                 </button>
               );
             })}
-            <span className="ml-auto text-[0.714rem] text-[var(--text-tertiary)] font-mono hidden sm:inline" aria-live="polite">
+            <span className="ml-auto text-xs text-[var(--text-tertiary)] font-mono hidden sm:inline" aria-live="polite">
               {focus === "all" ? "Showing all" : `Filtered: ${focusLabel[focus]}`} · {filteredQueue.length || focusCounts[focus]} items
             </span>
           </div>
@@ -570,7 +570,7 @@ export function ProjectOverview() {
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden divide-y @2xl:divide-y-0 @2xl:divide-x divide-[var(--border)] flex flex-col @2xl:flex-row mb-4" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
             <div className="flex-1 p-3.5 relative">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--danger)]" />
-              <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Needs attention</div>
+              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">Needs attention</div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
                 {needsAttention}
                 <span className="text-sm font-medium text-[var(--text-tertiary)]">/ {openCards.length}</span>
@@ -583,7 +583,7 @@ export function ProjectOverview() {
             </div>
             <div className="flex-1 p-3.5 relative">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--success)]" />
-              <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Completion</div>
+              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">Completion</div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
                 {instrumentPct}%<span className="text-sm font-medium text-[var(--text-tertiary)]">{instrumentDone}/{instrumentTotal}</span>
               </div>
@@ -593,7 +593,7 @@ export function ProjectOverview() {
             </div>
             <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--info)]" />
-              <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">Knowledge</div>
+              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">Knowledge</div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
                 {notes.length}
                 <span className="text-sm font-medium text-[var(--text-tertiary)]">notes</span>
@@ -604,7 +604,7 @@ export function ProjectOverview() {
             </div>
             <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--warning)]" />
-              <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)]">
+              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)]">
                 Bottleneck
               </div>
               <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
@@ -620,7 +620,7 @@ export function ProjectOverview() {
           {/* ── attention queue — filtered by Focus, honest empty states ── */}
           <div className="grid grid-cols-1 @2xl:grid-cols-3 gap-3 mb-4" role="list" aria-label="Needs attention">
             {(focus === "pinned" ? [] : filteredQueue).length === 0 ? (
-              <div className="@2xl:col-span-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] shadow-sm p-4 flex items-center gap-3">
+              <div className="@2xl:col-span-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] shadow-elev-1 p-4 flex items-center gap-3">
                 <span className="w-8 h-8 rounded-full grid place-items-center bg-[var(--success)]/15 text-[var(--success)] border border-[var(--success)]/20">
                   <Kanban size={14} />
                 </span>
@@ -653,7 +653,7 @@ export function ProjectOverview() {
                         : tone === "today"
                           ? "border-[var(--warning)]/25 hover:border-[var(--warning)]/40"
                           : "border-[var(--border)] hover:border-[var(--border)]",
-                      "bg-[var(--surface)] hover:translate-y-[-1px] hover:shadow-[0_10px_22px_color-mix(in_srgb,black_32%,transparent)]",
+                      "bg-[var(--surface)] hover:translate-y-[-1px] hover:shadow-elev-2",
                     )}
                     style={{
                       background:
@@ -686,7 +686,7 @@ export function ProjectOverview() {
                       {tone === "overdue" ? <AlertTriangle size={14} /> : tone === "today" ? <Clock3 size={14} /> : <Diamond size={12} />}
                     </span>
                     <span className="min-w-0 flex-1 text-left">
-                      <span className={cn("text-[0.643rem] font-semibold tracking-[0.06em] uppercase", tone === "overdue" ? "text-[var(--danger)]" : tone === "today" ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]")}>
+                      <span className={cn("text-xs font-medium tracking-[0.06em]", tone === "overdue" ? "text-[var(--danger)]" : tone === "today" ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]")}>
                         {label}
                       </span>
                       <span className="block text-sm font-semibold text-[var(--text-primary)] truncate">{card.title}</span>
@@ -741,7 +741,7 @@ export function ProjectOverview() {
                 icon={<CheckCircle2 size={12} />}
                 collapsed={isCollapsed("shipped")}
                 onToggle={() => toggleSection("shipped")}
-                collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{metrics.shippedCards.length} done in 7 days</span>}
+                collapsedView={<span className="text-xs text-[var(--text-secondary)]">{metrics.shippedCards.length} done in 7 days</span>}
               >
                 <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                   {metrics.shippedCards.length === 0 ? (
@@ -762,7 +762,7 @@ export function ProjectOverview() {
                 icon={<AlertTriangle size={12} />}
                 collapsed={isCollapsed("atRisk")}
                 onToggle={() => toggleSection("atRisk")}
-                collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{metrics.atRisk.length} need attention</span>}
+                collapsedView={<span className="text-xs text-[var(--text-secondary)]">{metrics.atRisk.length} need attention</span>}
               >
                 <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                   {metrics.atRisk.length === 0 ? (
@@ -781,13 +781,13 @@ export function ProjectOverview() {
           <div className="mb-3.5">
             <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)", borderLeft: "2px solid color-mix(in srgb, var(--accent) 60%, transparent)" }}>
               <div className="flex items-center justify-between gap-3 mb-3">
-                <h2 className="text-[0.813rem] font-semibold flex items-center gap-2">
+                <h2 className="text-sm font-semibold flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
                     <Activity size={10} />
                   </span>
                   Activity log <span className="font-normal text-[var(--text-tertiary)] text-xs">· full history · trace MCP / LLM</span>
                 </h2>
-                <span className="text-[0.643rem] text-[var(--text-tertiary)] font-mono tabular-nums">
+                <span className="text-2xs text-[var(--text-tertiary)] font-mono tabular-nums">
                   {activityByDay.reduce((n, g) => n + g.items.length, 0)} events
                 </span>
               </div>
@@ -809,7 +809,7 @@ export function ProjectOverview() {
               collapsed={isCollapsed("runs")}
               onToggle={() => toggleSection("runs")}
               action={{ label: "All automations", onClick: () => setView("automations") }}
-              collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">{recentProjectRuns.length} runs · last 5</span>}
+              collapsedView={<span className="text-xs text-[var(--text-secondary)]">{recentProjectRuns.length} runs · last 5</span>}
             >
               <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                 {recentProjectRuns.length === 0 ? (
@@ -817,7 +817,7 @@ export function ProjectOverview() {
                 ) : (
                   <RecentAutomationRunsFeed runs={recentProjectRuns.slice(0, 5)} setView={setView} />
                 )}
-                <p className="text-[0.643rem] text-[var(--text-tertiary)] mt-3">Status pills are labeled + color — distinguishable without hue alone.</p>
+                <p className="text-2xs text-[var(--text-tertiary)] mt-3">Status pills are labeled + color — distinguishable without hue alone.</p>
               </div>
             </CollapsibleSection>
 
@@ -827,7 +827,7 @@ export function ProjectOverview() {
               collapsed={isCollapsed("sessions")}
               onToggle={() => toggleSection("sessions")}
               action={{ label: "Open sessions", onClick: () => { if (activeChatThreadId) openSession(activeChatThreadId, "chat", "center"); else setSessionPresentation("center"); setView("chat"); } }}
-              collapsedView={<span className="text-[0.714rem] text-[var(--text-secondary)]">Resume where you left</span>}
+              collapsedView={<span className="text-xs text-[var(--text-secondary)]">Resume where you left</span>}
             >
               <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
                 <SessionBrowser variant="preview" limit={4} activeSessionId={activeSessionId} />
@@ -893,9 +893,9 @@ export function ProjectOverview() {
                       onClick={() => setSessionKind("chat")}
                       aria-pressed={sessionKind === "chat"}
                       className={cn(
-                        "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[0.714rem] font-semibold border transition-colors",
+                        "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors",
                         sessionKind === "chat"
-                          ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-sm"
+                          ? "bg-[var(--text-primary)] text-[var(--background)] border-[var(--text-primary)] shadow-elev-1"
                           : "bg-transparent text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]",
                       )}
                     >
@@ -908,21 +908,21 @@ export function ProjectOverview() {
                       disabled={!project.codeDirectory}
                       title={project.codeDirectory ? "Coding agent — has code directory" : "No code directory — chat only"}
                       className={cn(
-                        "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[0.714rem] font-semibold border transition-colors",
+                        "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors",
                         !project.codeDirectory
                           ? "bg-transparent text-[var(--text-tertiary)] border-transparent opacity-60 cursor-not-allowed"
                           : sessionKind === "coding"
-                            ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)] shadow-sm"
+                            ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)] shadow-elev-1"
                             : "bg-transparent text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)]",
                       )}
                     >
                       <Code2 size={11} /> Coding agent
                     </button>
                   </div>
-                  <span className="hidden sm:inline-flex items-center gap-1 text-[0.643rem] text-[var(--text-tertiary)] ml-1">
+                  <span className="hidden sm:inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)] ml-1">
                     <span className="w-1 h-1 rounded-full bg-[var(--success)]" /> {project.name} · {instrumentDone}/{instrumentTotal}
                   </span>
-                  <span className="ml-auto hidden md:inline text-[0.643rem] text-[var(--text-tertiary)]">⌘/ · Shift+Enter</span>
+                  <span className="ml-auto hidden md:inline text-2xs text-[var(--text-tertiary)]">⌘/ · Shift+Enter</span>
                 </div>
                 <div className="p-1.5 md:p-2">
                   <ChatInputArea

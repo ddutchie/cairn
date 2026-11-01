@@ -319,7 +319,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
               placeholder="0 9 * * 1-5"
               className="font-mono"
             />
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">
               minute hour day-of-month month day-of-week (0=Sun). For other cases use the friendly modes above.
             </p>
           </div>
@@ -328,7 +328,7 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
 
       <div className="flex items-center gap-1.5 text-xs">
         <Clock size={11} className="text-[var(--text-tertiary)] shrink-0" />
-        <code className="font-mono text-[0.714rem] text-[var(--text-tertiary)]">{derived.expr}</code>
+        <code className="font-mono text-xs text-[var(--text-tertiary)]">{derived.expr}</code>
         {preview.text && (
           <span className={cn("ml-auto", preview.ok ? "text-[var(--ok)]" : "text-[var(--danger)]")}>
             {preview.text}

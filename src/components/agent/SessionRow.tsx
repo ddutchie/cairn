@@ -105,10 +105,10 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
             <SessionTypeIcon kind={session.kind} size={13} />
           </span>
           <span className="min-w-0 flex-1 truncate">{session.title}</span>
-          <span className="ml-auto flex-shrink-0 text-[0.643rem] font-mono text-[var(--text-tertiary)] group-hover:opacity-0 transition-opacity">
+          <span className="ml-auto flex-shrink-0 text-2xs font-mono text-[var(--text-tertiary)] group-hover:opacity-0 transition-opacity">
             {formatDateCompact(session.updatedAt)}
           </span>
-          {session.mode === "plan" && <span className="flex-shrink-0 text-[0.643rem] text-[var(--warning)]">plan</span>}
+          {session.mode === "plan" && <span className="flex-shrink-0 text-2xs text-[var(--warning)]">plan</span>}
           {running && (
             <>
               <span className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-[color-mix(in_srgb,var(--border)_60%,transparent)]" aria-hidden />
@@ -158,7 +158,7 @@ export function SessionRow({ session, selected, running, onSelect, onRemove: onR
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs text-[var(--text-primary)]">{session.title}</span>
-            <span className="flex items-center gap-1.5 mt-0.5 text-[0.714rem] text-[var(--text-tertiary)]">
+            <span className="flex items-center gap-1.5 mt-0.5 text-xs text-[var(--text-tertiary)]">
               <span>{kindLabel(session.kind)}</span>
               <span aria-hidden>·</span>
               <span>{formatDateCompact(session.updatedAt)}</span>

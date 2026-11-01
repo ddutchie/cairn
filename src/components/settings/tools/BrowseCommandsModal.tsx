@@ -170,7 +170,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
       hasResults={filtered.length > 0}
       emptyText="No community commands available."
       belowList={
-        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+        <p className="mt-4 text-2xs text-[var(--text-tertiary)]">
           Installed commands are added to this workspace and appear when you type{" "}
           <span className="font-mono">/</span> in a chat or agent input. Manage them under{" "}
           <strong>Your commands</strong>.
@@ -203,22 +203,22 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
                     <span className="text-sm font-semibold text-[var(--text-primary)] font-mono">
                       /{entry.definition.name}
                     </span>
-                    <span className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
+                    <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
                       {SCOPE_LABEL[entry.definition.scope] ?? entry.definition.scope}
                     </span>
                     {entry.category && (
-                      <span className="text-[0.65rem] text-[var(--text-tertiary)]">{entry.category}</span>
+                      <span className="text-2xs text-[var(--text-tertiary)]">{entry.category}</span>
                     )}
                   </div>
                   <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{entry.blurb}</p>
-                  <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1 font-mono line-clamp-2">
+                  <p className="text-2xs text-[var(--text-tertiary)] mt-1 font-mono line-clamp-2">
                     {entry.definition.insertText}
                   </p>
                 </div>
 
                 <div className="shrink-0">
                   {installed !== undefined && !updatable ? (
-                    <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--success,var(--accent))]">
+                    <span className="inline-flex items-center gap-1 text-xs text-[var(--success,var(--accent))]">
                       <Check size={13} /> Installed
                     </span>
                   ) : (

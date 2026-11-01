@@ -34,7 +34,7 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <CheckSquare size={12} className="text-[var(--text-tertiary)] shrink-0" />
-            <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">Task</span>
+            <span className="text-xs font-medium text-[var(--text-tertiary)]">Task</span>
           </div>
           {hasCard && (
             <button
@@ -55,23 +55,23 @@ export const TaskRefNode = memo(function TaskRefNode({ data, selected, isConnect
             <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
               {d.resolvedPriority && (
                 <span className={cn(
-                  "text-[0.714rem] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
+                  "text-xs font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]",
                   PRIORITY_COLORS[d.resolvedPriority as keyof typeof PRIORITY_COLORS]
                 )}>
                   {d.resolvedPriority}
                 </span>
               )}
               {d.resolvedColumnName && (
-                <span className="text-[0.714rem] text-[var(--text-tertiary)] px-1.5 py-0.5 rounded-full border border-[var(--border)]">
+                <span className="text-xs text-[var(--text-tertiary)] px-1.5 py-0.5 rounded-full border border-[var(--border)]">
                   {d.resolvedColumnName}
                 </span>
               )}
             </div>
           </>
         ) : isDangling ? (
-          <p className="mt-1 text-[0.786rem] text-[var(--danger)] italic">Linked task not found</p>
+          <p className="mt-1 text-sm text-[var(--danger)] italic">Linked task not found</p>
         ) : (
-          <p className="mt-1 text-[0.786rem] text-[var(--text-tertiary)] italic">No task linked</p>
+          <p className="mt-1 text-sm text-[var(--text-tertiary)] italic">No task linked</p>
         )}
       </div>
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} className={FLOW_HANDLE_CLASS} />

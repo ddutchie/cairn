@@ -234,11 +234,11 @@ export function ContextRing({
           side="bottom"
           align="end"
           sideOffset={8}
-          className="z-50 w-72 rounded-xl bg-[var(--surface-3)] border border-[var(--border)] p-4 shadow-2xl text-xs text-[var(--text-secondary)] select-none focus:outline-none animate-fade-in"
+          className="z-50 w-72 rounded-xl bg-[var(--surface-3)] border border-[var(--border)] p-4 shadow-elev-2 text-xs text-[var(--text-secondary)] select-none focus:outline-none animate-fade-in"
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-[var(--text-primary)] text-[0.85rem]">Context Usage</span>
+            <span className="font-semibold text-[var(--text-primary)] text-sm">Context Usage</span>
             <Popover.Close asChild>
               <button className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1 rounded hover:bg-[var(--surface-2)] focus:outline-none cursor-pointer">
                 <X size={12} />
@@ -247,7 +247,7 @@ export function ContextRing({
           </div>
 
           {/* Info row */}
-          <div className="flex items-center justify-between text-[0.714rem]">
+          <div className="flex items-center justify-between text-xs">
             <span className="font-medium text-[var(--text-primary)]">{pctLabel} Full</span>
             <span className="text-[var(--text-tertiary)]">
               ~{formatTokenCount(promptTokens)} / {formatTokenCount(contextLimit)} Tokens
@@ -275,7 +275,7 @@ export function ContextRing({
             {categories.map((c) => {
               if (c.count === 0 && (c.label === "Rules" || c.label === "MCP" || c.label === "Subagent definitions" || c.label === "Skills")) return null;
               return (
-                <div key={c.label} className="flex items-center justify-between text-[0.714rem]">
+                <div key={c.label} className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-sm opacity-90" style={{ backgroundColor: c.color }} />
                     <span className="text-[var(--text-secondary)]">{c.label}</span>
@@ -291,13 +291,13 @@ export function ContextRing({
           {/* Output breakdown — only shown after the first turn completes */}
           {typeof completionTokens === "number" && completionTokens > 0 && (
             <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1.5">
-              <div className="text-[0.714rem] font-semibold text-[var(--text-primary)] mb-1">Output</div>
-              <div className="flex items-center justify-between text-[0.714rem]">
+              <div className="text-xs font-semibold text-[var(--text-primary)] mb-1">Output</div>
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-[var(--text-secondary)]">Answer</span>
                 <span className="font-mono text-[var(--text-primary)] font-medium">{formatTokenCount(answerTokens)}</span>
               </div>
               {thinkingTokens > 0 && (
-                <div className="flex items-center justify-between text-[0.714rem]">
+                <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5 text-[var(--text-secondary)]">
                     <div className="w-2.5 h-2.5 rounded-sm opacity-90" style={{ backgroundColor: "var(--accent)" }} />
                     Thinking
@@ -305,7 +305,7 @@ export function ContextRing({
                   <span className="font-mono text-[var(--text-primary)] font-medium">{formatTokenCount(thinkingTokens)}</span>
                 </div>
               )}
-              <div className="flex items-center justify-between text-[0.714rem]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-[var(--text-tertiary)]">Total</span>
                 <span className="font-mono text-[var(--text-tertiary)]">{formatTokenCount(completionTokens)}</span>
               </div>
@@ -317,7 +317,7 @@ export function ContextRing({
               whenever the provider reported any cached tokens this turn. */}
           {hasCache && (
             <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1.5">
-              <div className="flex items-center justify-between text-[0.714rem]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-[var(--text-secondary)]">
                   <div className="w-2.5 h-2.5 rounded-sm opacity-90" style={{ backgroundColor: "var(--warning)" }} />
                   Prompt cache
@@ -328,7 +328,7 @@ export function ContextRing({
                 </span>
               </div>
               {cacheRead > 0 && promptTokens > 0 && (
-                <div className="flex items-center justify-between text-[0.714rem]">
+                <div className="flex items-center justify-between text-xs">
                   <span className="text-[var(--text-tertiary)]">% of input cached</span>
                   <span className="font-mono font-medium" style={{ color: cacheHitColor(Math.min(cacheRead / promptTokens, 1)) }}>
                     {Math.round(Math.min(cacheRead / promptTokens, 1) * 100)}%
@@ -342,7 +342,7 @@ export function ContextRing({
               (including $0 from a quota diff, which means "cost was checked but
               is below the provider's reported precision"). */}
           {typeof costUsd === "number" && costUsd >= 0 && (
-            <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-[0.714rem]">
+            <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs">
               <span className="text-[var(--text-secondary)]">Cost</span>
               <span className="font-mono text-[var(--text-primary)] font-semibold">
                 {costUsd === 0 ? "<$0.01" : formatUsd(costUsd)}
@@ -353,7 +353,7 @@ export function ContextRing({
           {/* Balance — account-level provider remaining credits. Hidden when the
               provider exposes none, when offline, or on subagent rings. */}
           {showBalance && balance && (balance.remaining != null || balance.usage != null || balance.isFreeTier === true) && (
-            <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-[0.714rem]">
+            <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs">
               <span className="text-[var(--text-secondary)]">Balance</span>
               <span className="font-mono text-[var(--text-primary)] font-semibold">
                 {formatBalance(balance)}

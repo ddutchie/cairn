@@ -184,7 +184,7 @@ export function ChatThemePicker({
         {community.length > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[0.643rem] text-[var(--text-tertiary)] px-2 py-1">
+            <DropdownMenuLabel className="text-2xs text-[var(--text-tertiary)] px-2 py-1">
               Community
             </DropdownMenuLabel>
             {community.map((theme) => {

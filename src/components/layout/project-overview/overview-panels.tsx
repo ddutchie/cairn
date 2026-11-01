@@ -27,8 +27,8 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
       activeShadow="0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
     >
       <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
-          <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-[0.625rem] leading-none">
+        <h2 className="text-sm font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
+          <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-2xs leading-none">
             ▦
           </span>
           Task flow{" "}
@@ -71,7 +71,7 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
                   )}
                 >
                   <span
-                    className="h-full rounded-full flex items-center justify-end pr-1.5 text-[0.643rem] font-bold text-white min-w-[22px]"
+                    className="h-full rounded-full flex items-center justify-end pr-1.5 text-2xs font-bold text-white min-w-[22px]"
                     style={{
                       width: `${Math.max(pct, count > 0 ? 8 : 0)}%`,
                       background: color,
@@ -88,7 +88,7 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
           })}
         </div>
       )}
-      <div className="flex flex-wrap gap-3 mt-3 text-[0.643rem] text-[var(--text-tertiary)]">
+      <div className="flex flex-wrap gap-3 mt-3 text-2xs text-[var(--text-tertiary)]">
         <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.backlog }} /> Backlog</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.todo }} /> Todo</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.in_progress }} /> In Progress</span>
@@ -113,7 +113,7 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
       activeShadow="0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
     >
       <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-[0.813rem] font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
+        <h2 className="text-sm font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
           <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
             <AlertTriangle size={10} />
           </span>
@@ -145,8 +145,8 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
               <div className="text-[1.35rem] font-bold leading-none tracking-tight" style={{ color: active ? color : "var(--text-tertiary)" }}>
                 {n}
               </div>
-              <div className="text-[0.625rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mt-1">{label}</div>
-              <div className="text-[0.688rem] text-[var(--text-tertiary)] mt-0.5">{n ? `${n} open` : "—"}</div>
+              <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] mt-1">{label}</div>
+              <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{n ? `${n} open` : "—"}</div>
             </div>
           );
         })}
@@ -184,7 +184,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
       activeShadow="0 12px 28px color-mix(in srgb, black 18%, transparent)"
     >
       <div className="flex items-center justify-between gap-3 mb-4">
-        <h2 className="text-[0.813rem] font-semibold flex items-center gap-2">
+        <h2 className="text-sm font-semibold flex items-center gap-2">
           <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
             <FileText size={10} />
           </span>
@@ -202,7 +202,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
       ) : (
         <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-6">
           <div>
-            <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
+            <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
               <Pin size={10} /> Pinned · keeps focus
             </div>
             {pinnedNotes.length === 0 ? (
@@ -225,7 +225,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
             )}
           </div>
           <div>
-            <div className="text-[0.643rem] font-semibold tracking-[0.06em] uppercase text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
+            <div className="text-xs font-medium tracking-[0.06em] text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
               <FileText size={10} /> Recent
             </div>
             {recentNotes.length === 0 ? (

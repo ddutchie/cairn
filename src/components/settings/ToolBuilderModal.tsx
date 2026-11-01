@@ -171,7 +171,7 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
         {transcript.map((item, i) => {
           if (item.role === "step") {
             return (
-              <div key={i} className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)] font-mono pl-1">
+              <div key={i} className="flex items-center gap-2 text-xs text-[var(--text-tertiary)] font-mono pl-1">
                 <Spinner size={11} className="opacity-50" /> {item.text}
               </div>
             );
@@ -192,13 +192,13 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
         })}
 
         {probeHost && (
-          <div className="flex items-center gap-2 text-[0.714rem] text-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] rounded px-3 py-1.5">
+          <div className="flex items-center gap-2 text-xs text-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] rounded px-3 py-1.5">
             <ShieldAlert size={12} /> Probing host: <span className="font-mono">{probeHost}</span>
           </div>
         )}
 
         {error && (
-          <div className="text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
+          <div className="text-xs text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
             {error}
           </div>
         )}
@@ -238,7 +238,7 @@ function SecretInput({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+        className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
       >
         <KeyRound size={12} /> Add an API key for authenticated probes (optional)
       </button>
@@ -249,7 +249,7 @@ function SecretInput({
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 space-y-2">
-      <div className="flex items-center gap-1.5 text-[0.714rem] font-medium text-[var(--text-secondary)]">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
         <KeyRound size={12} className="text-[var(--accent)]" /> API key (optional)
         {value && sent && (
           <span className="flex items-center gap-1 text-[var(--success)] ml-auto">
@@ -263,7 +263,7 @@ function SecretInput({
           onChange={(e) => onHeaderChange(e.target.value)}
           placeholder="Header name"
           disabled={disabled}
-          className={cn(inputCls, "w-[40%] font-mono text-[0.714rem]")}
+          className={cn(inputCls, "w-[40%] font-mono text-xs")}
         />
         <input
           type="password"
@@ -272,10 +272,10 @@ function SecretInput({
           placeholder="Paste your key"
           autoComplete="off"
           disabled={disabled}
-          className={cn(inputCls, "flex-1 text-[0.714rem]")}
+          className={cn(inputCls, "flex-1 text-xs")}
         />
       </div>
-      <p className="text-[0.65rem] text-[var(--text-tertiary)] leading-snug">
+      <p className="text-2xs text-[var(--text-tertiary)] leading-snug">
         Used only to authenticate live probes during this session. The AI never sees the value — it writes a{" "}
         <span className="font-mono">&lt;API_KEY&gt;</span> placeholder in the{" "}
         <span className="font-mono">{placeholderHeader}</span> header, and the real key is stored in your OS
@@ -293,20 +293,20 @@ function ProposalCard({ proposal }: { proposal: Proposal }) {
       <div className="flex items-center gap-2">
         <span className="text-[var(--accent)]">{isMcp ? <Server size={15} /> : <Globe size={15} />}</span>
         <span className="text-sm font-semibold text-[var(--text-primary)]">{String(c.name ?? "Untitled")}</span>
-        <span className="text-[0.65rem] px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)]">
+        <span className="text-2xs px-1.5 py-0.5 rounded-full bg-[var(--accent-dim)] text-[var(--accent)]">
           {isMcp ? "MCP server" : "service"} · saved disabled
         </span>
       </div>
-      <div className="text-[0.714rem] text-[var(--text-tertiary)] font-mono break-all">
+      <div className="text-xs text-[var(--text-tertiary)] font-mono break-all">
         {isMcp ? String(c.baseUrl ?? "") : `${String(c.method ?? "GET")} ${String(c.apiUrl ?? "")}`}
       </div>
       {Array.isArray(c.responseKeys) && c.responseKeys.length > 0 && (
-        <div className="text-[0.714rem] text-[var(--text-secondary)]">
+        <div className="text-xs text-[var(--text-secondary)]">
           <span className="text-[var(--text-tertiary)]">Response keys: </span>
           <span className="font-mono">{(c.responseKeys as string[]).join(", ")}</span>
         </div>
       )}
-      <p className="text-[0.714rem] text-[var(--text-tertiary)] pt-1">
+      <p className="text-xs text-[var(--text-tertiary)] pt-1">
         Saved disabled. Review it under the matching section, fill any required secret, then enable and attach it to a project.
       </p>
     </div>

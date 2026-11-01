@@ -161,7 +161,7 @@ export function AgentEditor() {
               }}
               title={filePath}
               className={cn(
-                "group flex items-center gap-1.5 px-3 py-1.5 text-[0.714rem] cursor-pointer select-none flex-shrink-0 border-r border-[var(--border)] transition-colors",
+                "group flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer select-none flex-shrink-0 border-r border-[var(--border)] transition-colors",
                 isActive
                   ? "bg-[var(--background)] text-[var(--text-primary)] border-b-2 border-b-[var(--accent)]"
                   : "bg-[var(--surface)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"
@@ -211,7 +211,7 @@ export function AgentEditor() {
                 onClick={() => {
                   document.dispatchEvent(new CustomEvent("agent-editor-save", { detail: activeFile }));
                 }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.714rem] text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
               >
                 <Save size={11} />
                 {savingFiles.has(activeFile) ? "Saving…" : "Save"}

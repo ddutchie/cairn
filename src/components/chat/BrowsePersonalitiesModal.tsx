@@ -135,7 +135,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
       hasResults={filtered.length > 0}
       emptyText="No community personalities available."
       belowList={
-        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+        <p className="mt-4 text-2xs text-[var(--text-tertiary)]">
           Added personalities join your installed list. Select one in the personality
           picker next to the model selector in chat — &quot;None&quot; means no personality.
         </p>
@@ -162,17 +162,17 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-[var(--text-primary)]">{def.name}</span>
                       {entry.category && (
-                        <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
+                        <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 py-px">
                           {entry.category}
                         </span>
                       )}
-                      <span className="text-[0.65rem] text-[var(--text-tertiary)]">by {entry.author}</span>
+                      <span className="text-2xs text-[var(--text-tertiary)]">by {entry.author}</span>
                       {entry.homepage && isSafeExternalUrl(entry.homepage) && (
                         <a
                           href={entry.homepage}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-0.5 text-[0.6rem] text-[var(--accent)] underline"
+                          className="inline-flex items-center gap-0.5 text-2xs text-[var(--accent)] underline"
                         >
                           source <ExternalLink size={9} />
                         </a>
@@ -180,15 +180,15 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
                     </div>
                     <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{entry.blurb}</p>
                     {def.description && (
-                      <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-0.5">{def.description}</p>
+                      <p className="text-2xs text-[var(--text-tertiary)] mt-0.5">{def.description}</p>
                     )}
                     {/* Full prompt — transparency: this text is appended verbatim
                         to the chat system prompt. */}
                     <div className="mt-2 rounded-md bg-[var(--surface-2)] border border-[var(--border)] px-2.5 py-2">
-                      <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
+                      <p className="text-xs font-medium text-[var(--text-tertiary)] mb-1">
                         System prompt layer
                       </p>
-                      <p className="text-[0.65rem] text-[var(--text-secondary)] whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto">
+                      <p className="text-2xs text-[var(--text-secondary)] whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto">
                         {def.prompt}
                       </p>
                     </div>
@@ -196,7 +196,7 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
 
                   <div className="shrink-0">
                     {installed ? (
-                      <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--success,var(--accent))]">
+                      <span className="inline-flex items-center gap-1 text-xs text-[var(--success,var(--accent))]">
                         <Check size={13} /> Added
                       </span>
                     ) : (

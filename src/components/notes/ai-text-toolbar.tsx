@@ -122,7 +122,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
   return (
     <div
       data-ai-toolbar
-      className="border-b border-[var(--border)] animate-fade-in shadow-md shadow-black/10"
+      className="border-b border-[var(--border)] animate-fade-in shadow-elev-1"
       style={{ background: "var(--surface-2)" }}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -141,7 +141,7 @@ export function AITextToolbar({ onAction, onFormat, loading, onDismiss, hasSelec
                 onClick={() => handleAction(action.id)}
                 disabled={!hasSelection}
                 className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-[0.786rem] transition-colors whitespace-nowrap",
+                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors whitespace-nowrap",
                   hasSelection
                     ? "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)]"
                     : "text-[var(--text-tertiary)] opacity-40 cursor-not-allowed",

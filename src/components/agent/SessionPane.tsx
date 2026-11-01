@@ -17,7 +17,7 @@ import { Plus, MessageSquarePlus, Code2, ExternalLink, ArrowLeftFromLine, Maximi
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { isView } from "@/lib/views";
-import { Tooltip } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 import { modKey } from "@/components/layout/sidebar-utils";
 import {
   DropdownMenu,
@@ -304,46 +304,42 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
         {/* Unified new-item button — right-aligned pill */}
         <div ref={newMenuRef} className="relative flex-shrink-0 ml-auto">
-          <Tooltip content="New…" side="bottom">
-            <button
-              id="unified-new-btn"
-              aria-haspopup="menu"
-              aria-expanded={newMenuOpen}
-              onClick={() => setNewMenuOpen((v) => !v)}
-              className={cn(
-                "w-7 h-7 rounded-full grid place-items-center border transition-colors",
-                newMenuOpen
-                  ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)] shadow-sm"
-                  : "bg-[var(--surface-2)] text-[var(--text-tertiary)] border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] hover:bg-[var(--surface-3)]"
-              )}
-            >
-              <Plus size={12} strokeWidth={1.75} />
-            </button>
-          </Tooltip>
+          <IconButton
+            id="unified-new-btn"
+            label="New session"
+            variant="outline"
+            active={newMenuOpen}
+            tooltipDisabled={newMenuOpen}
+            aria-haspopup="menu"
+            aria-expanded={newMenuOpen}
+            onClick={() => setNewMenuOpen((v) => !v)}
+          >
+            <Plus size={12} strokeWidth={1.75} />
+          </IconButton>
 
           {newMenuOpen && (
-            <div className="absolute right-0 top-full mt-0.5 w-52 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
+            <div className="absolute right-0 top-full mt-0.5 w-52 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 overflow-hidden">
               <button
                 id="new-chat-thread-btn"
                 onClick={handleNewChatThread}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[0.714rem] text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
               >
                 <MessageSquarePlus size={13} className="text-[var(--accent)] flex-shrink-0" />
                 <div className="text-left">
                   <p className="font-medium">New chat thread</p>
-                  <p className="text-[0.643rem] text-[var(--text-tertiary)]">Start a fresh AI conversation</p>
+                  <p className="text-2xs text-[var(--text-tertiary)]">Start a fresh AI conversation</p>
                 </div>
               </button>
               {hasCodeDirectory && (
                 <button
                   id="new-agent-session-btn"
                   onClick={handleNewAgentSession}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[0.714rem] text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-t border-[var(--border)]"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors border-t border-[var(--border)]"
                 >
                   <Code2 size={13} className="text-[var(--accent)] flex-shrink-0" />
                   <div className="text-left">
                     <p className="font-medium">New agent session</p>
-                    <p className="text-[0.643rem] text-[var(--text-tertiary)]">Cairn Agent coding session</p>
+                    <p className="text-2xs text-[var(--text-tertiary)]">Cairn Agent coding session</p>
                   </div>
                 </button>
               )}
@@ -354,47 +350,39 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
         {/* Header Actions — pop out + expand, collapse to hamburger when clipped */}
         <div className={cn("flex items-center gap-1 shrink-0", headerOverflows && "hidden")}>
           {(activeSessionId === "chat" || activeSessionId === "agent" || persistentSession?.sessionId === activeSessionId) && !chatPoppedOut && (
-            <Tooltip content="Pop out session window" side="bottom">
-              <button
-                onClick={handlePopOut}
-                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
-              >
-                <ExternalLink size={11} />
-              </button>
-            </Tooltip>
+            <IconButton label="Pop out session window" onClick={handlePopOut}>
+              <ExternalLink size={12} />
+            </IconButton>
           )}
 
           {isRightPanel ? (
-            <Tooltip content="Expand to central view" side="bottom">
-              <button
-                // setView("chat") also flips the presentation to center (single
-                // store update — no intermediate drawer/center flash).
-                onClick={() => setView("chat")}
-                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
-              >
-                <Maximize2 size={11} />
-              </button>
-            </Tooltip>
+            <IconButton
+              label="Expand to central view"
+              // setView("chat") also flips the presentation to center (single
+              // store update — no intermediate drawer/center flash).
+              onClick={() => setView("chat")}
+            >
+              <Maximize2 size={12} />
+            </IconButton>
           ) : (
-            <Tooltip content={`Collapse to sidebar (${mod}/)`} side="bottom">
-              <button
-                // setView() back to the content view also restores the drawer
-                // presentation — one update, no stuck-overlay state.
-                onClick={() => setView(lastContentView)}
-                className="w-7 h-7 rounded-md grid place-items-center border border-transparent text-[var(--text-tertiary)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] hover:border-[var(--border)] transition-colors"
-              >
-                <Minimize2 size={11} />
-              </button>
-            </Tooltip>
+            <IconButton
+              label="Collapse to sidebar"
+              shortcut={`${mod}/`}
+              // setView() back to the content view also restores the drawer
+              // presentation — one update, no stuck-overlay state.
+              onClick={() => setView(lastContentView)}
+            >
+              <Minimize2 size={12} />
+            </IconButton>
           )}
         </div>
 
         {headerOverflows && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)] shrink-0" aria-label="More actions">
+              <IconButton label="More actions" variant="outline">
                 <MoreHorizontal size={12} />
-              </button>
+              </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               {(activeSessionId === "chat" || activeSessionId === "agent" || persistentSession?.sessionId === activeSessionId) && !chatPoppedOut && (
@@ -415,15 +403,9 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
           </DropdownMenu>
         )}
 
-        <Tooltip content={`Collapse panel (${mod}/)`} side="bottom">
-          <button
-            onClick={handleClosePanel}
-            aria-label="Collapse panel"
-            className="w-7 h-7 rounded-md grid place-items-center border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-3)] hover:border-[var(--muted)] transition-colors shrink-0"
-          >
-            <ChevronRight size={12} />
-          </button>
-        </Tooltip>
+        <IconButton label="Collapse panel" shortcut={`${mod}/`} variant="outline" onClick={handleClosePanel}>
+          <ChevronRight size={12} />
+        </IconButton>
       </div>
 
       {/* Session content — CSS-hidden instead of unmounted */}
@@ -443,7 +425,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
               <p className="text-xs text-[var(--text-secondary)]">Session is in a pop-out window</p>
               <button
                 onClick={handlePopIn}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.714rem] text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"
               >
                 <ArrowLeftFromLine size={11} />
                 Pop in
@@ -469,7 +451,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
                 <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center px-6">
                   <ExternalLink size={20} className="text-[var(--text-tertiary)]" />
                   <p className="text-xs text-[var(--text-secondary)]">Session is in a pop-out window</p>
-                  <button onClick={handlePopIn} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.714rem] text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"><ArrowLeftFromLine size={11} /> Pop in</button>
+                  <button onClick={handlePopIn} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-[var(--text-primary)] bg-[var(--surface-3)] hover:bg-[var(--surface-4)] transition-colors"><ArrowLeftFromLine size={11} /> Pop in</button>
                 </div>
               ) : <AgentChatPane session={persistentSession} isActive={pinnedIsActive} />}
             </div>

@@ -273,7 +273,7 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, in
           },
           section({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             if ((props.className ?? "").includes("footnotes")) {
-              return <section {...props} className="footnotes mt-8 pt-4 text-[0.786rem] text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>{children}</section>;
+              return <section {...props} className="footnotes mt-8 pt-4 text-sm text-[var(--text-secondary)]" style={{ borderTop: "1px solid var(--border)" }}>{children}</section>;
             }
             return <section {...props}>{children}</section>;
           },

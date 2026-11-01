@@ -169,7 +169,7 @@ export function ModelPicker({
 
   useEffect(() => { prewarmModelCatalog(); }, []);
 
-  const triggerPad = size === "md" ? "px-2.5 py-1.5 text-xs" : "px-2 py-1 text-[0.714rem]";
+  const triggerPad = size === "md" ? "px-2.5 py-1.5 text-xs" : "px-2 py-1 text-xs";
 
   if (custom) {
     return (
@@ -229,7 +229,7 @@ export function ModelPicker({
                     </Tooltip>
                   )}
                 </div>
-                <div className="flex items-center justify-between gap-2 text-[0.607rem] text-[var(--text-tertiary)]">
+                <div className="flex items-center justify-between gap-2 text-2xs text-[var(--text-tertiary)]">
                   <CapabilityChips info={triggerInfo} />
                   {triggerCost && <span className="tabular-nums">{triggerCost}</span>}
                 </div>
@@ -282,17 +282,17 @@ export function ModelPicker({
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           {errored && (
-            <div className="px-2.5 py-1.5 text-[0.643rem] text-[var(--danger)]">
+            <div className="px-2.5 py-1.5 text-2xs text-[var(--danger)]">
               Couldn&apos;t load models — check the endpoint.
             </div>
           )}
           {options.length === 0 && !errored && (
-            <div className="px-2.5 py-1.5 text-[0.643rem] text-[var(--text-tertiary)]">
+            <div className="px-2.5 py-1.5 text-2xs text-[var(--text-tertiary)]">
               No models — Refresh or add a custom one.
             </div>
           )}
           {noMatches && (
-            <div className="px-2.5 py-1.5 text-[0.643rem] text-[var(--text-tertiary)]">
+            <div className="px-2.5 py-1.5 text-2xs text-[var(--text-tertiary)]">
               No models match &ldquo;{query.trim()}&rdquo;.
             </div>
           )}
@@ -409,7 +409,7 @@ function ModelRow({
             </Tooltip>
           )}
         </div>
-        <div className="flex items-center justify-between gap-2 pl-5 text-[0.607rem] text-[var(--text-tertiary)]">
+        <div className="flex items-center justify-between gap-2 pl-5 text-2xs text-[var(--text-tertiary)]">
           <CapabilityChips info={info} />
           {cost && <span className="tabular-nums">{cost}</span>}
         </div>

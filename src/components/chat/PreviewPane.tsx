@@ -31,7 +31,7 @@ function FileContextContent({ path }: { path: string }) {
   }, [path]);
   if (error) return <div className="flex items-center justify-center flex-1 p-6 text-center text-xs text-[var(--danger)]">Unable to read file: {error}</div>;
   if (content === null) return <div className="flex items-center justify-center flex-1 text-xs text-[var(--text-tertiary)]">Loading file…</div>;
-  return <pre className="flex-1 overflow-auto p-4 text-[0.714rem] leading-5 font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">{content}</pre>;
+  return <pre className="flex-1 overflow-auto p-4 text-xs leading-5 font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">{content}</pre>;
 }
 
 function DiffContextContent({ path }: { path?: string }) {
@@ -48,7 +48,7 @@ function DiffContextContent({ path }: { path?: string }) {
   }, [path, project?.codeDirectory]);
   if (!project?.codeDirectory) return <div className="flex items-center justify-center flex-1 p-6 text-center text-xs text-[var(--text-tertiary)]">No code directory connected.</div>;
   if (!result) return <div className="flex items-center justify-center flex-1 text-xs text-[var(--text-tertiary)]">Loading diff…</div>;
-  if (!result.diff.startsWith("diff ")) return <pre className="flex-1 overflow-auto p-4 text-[0.714rem] leading-5 font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">{result.diff || "No changes."}</pre>;
+  if (!result.diff.startsWith("diff ")) return <pre className="flex-1 overflow-auto p-4 text-xs leading-5 font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words">{result.diff || "No changes."}</pre>;
   return <div className="flex-1 overflow-auto"><InlineDiff rawDiff={result.diff} loading={false} /></div>;
 }
 
@@ -129,7 +129,7 @@ export function PreviewPane() {
           ) : (
             <GitBranch size={13} className="text-[var(--warning)]" />
           )}
-          <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+          <span className="text-xs font-medium text-[var(--text-secondary)]">
             {type === "note" ? "Note Preview" : type === "task" ? "Task Preview" : type === "file" ? "File Preview" : "Diff Preview"}
           </span>
         </div>
@@ -141,7 +141,7 @@ export function PreviewPane() {
                 variant="ghost"
                 size="xs"
                 onClick={handleGoToSection}
-                className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
               >
                 <ExternalLink size={11} />
                 Go to {type === "note" ? "Notes" : "Board"}
@@ -155,7 +155,7 @@ export function PreviewPane() {
                 variant="ghost"
                 size="xs"
                 onClick={handleOpenDeveloper}
-                className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
               >
                 <ExternalLink size={11} />
                 Open in Developer View

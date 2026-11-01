@@ -118,7 +118,7 @@ export function WikilinkPicker({
     <div
       data-wikilink-picker
       data-dialog-portal
-      className="fixed z-[9999] w-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl py-1 overflow-y-auto"
+      className="fixed z-[9999] w-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 py-1 overflow-y-auto"
       style={{ top, left, maxHeight: PICKER_HEIGHT }}
     >
       {filtered.length === 0 ? (
@@ -147,7 +147,7 @@ export function WikilinkPicker({
                 <span className="flex-1 min-w-0">
                   <span className="block text-xs font-medium truncate">{note.title}</span>
                   {projectName && (
-                    <span className="block text-[0.714rem] text-[var(--text-tertiary)] truncate">
+                    <span className="block text-xs text-[var(--text-tertiary)] truncate">
                       {projectName}
                     </span>
                   )}

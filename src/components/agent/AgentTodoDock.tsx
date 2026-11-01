@@ -66,7 +66,7 @@ export function AgentTodoDock({ todos, live = true }: AgentTodoDockProps) {
               </span>
               <span
                 className={cn(
-                  "text-[0.714rem] leading-relaxed",
+                  "text-xs leading-relaxed",
                   todo.status === "completed" || todo.status === "cancelled"
                     ? "line-through text-[var(--text-tertiary)]"
                     : todo.status === "in_progress"
@@ -89,7 +89,7 @@ export function AgentTodoDock({ todos, live = true }: AgentTodoDockProps) {
       >
         <span
           className={cn(
-            "text-[0.714rem] font-medium flex-1 truncate",
+            "text-xs font-medium flex-1 truncate",
             live ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]",
           )}
         >

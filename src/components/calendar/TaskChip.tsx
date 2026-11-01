@@ -38,7 +38,7 @@ export const TaskChip = forwardRef<HTMLButtonElement, TaskChipProps>(function Ta
       {...rest}
       {...dragProps}
       className={cn(
-        "group w-full flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-[0.643rem] leading-tight transition-colors",
+        "group w-full flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-2xs leading-tight transition-colors",
         "border",
         dragging && "opacity-40",
         overdue

@@ -107,7 +107,7 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                 <div key={month} className="space-y-1.5">
                   {/* Month header */}
                   <div className="flex items-center gap-3 mb-3">
-                    <span className="text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-widest">
+                    <span className="text-xs font-medium text-[var(--text-tertiary)]">
                       {month}
                     </span>
                     <div className="flex-1 h-px bg-[var(--border)]" />
@@ -145,7 +145,7 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                           {/* Due date — fixed-width monospace for alignment */}
                           <span
                             className={cn(
-                              "text-[0.786rem] font-mono w-[52px] flex-shrink-0 text-right",
+                              "text-sm font-mono w-[52px] flex-shrink-0 text-right",
                               isOverdue
                                 ? "text-[var(--danger)]"
                                 : isToday
@@ -163,14 +163,14 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
 
                           {/* Project pill */}
                           {node.projectId && (
-                            <span className="text-[0.714rem] text-[var(--text-tertiary)] bg-[var(--surface-3)] px-1.5 py-0.5 rounded flex-shrink-0">
+                            <span className="text-xs text-[var(--text-tertiary)] bg-[var(--surface-3)] px-1.5 py-0.5 rounded flex-shrink-0">
                               {projectName(node.projectId)}
                             </span>
                           )}
 
                           {/* Assignee */}
                           {card?.assignee && (
-                            <span className="text-[0.714rem] text-[var(--text-tertiary)] flex-shrink-0">
+                            <span className="text-xs text-[var(--text-tertiary)] flex-shrink-0">
                               {card.assignee}
                             </span>
                           )}
@@ -191,11 +191,11 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
       {undatedCards.length > 0 && (
         <div className="max-w-2xl mx-auto mb-10">
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-[0.714rem] font-semibold text-[var(--text-tertiary)] uppercase tracking-widest">
+            <span className="text-xs font-medium text-[var(--text-tertiary)]">
               No due date
             </span>
             <div className="flex-1 h-px bg-[var(--border)]" />
-            <span className="text-[0.714rem] text-[var(--text-tertiary)]">{undatedCards.length}</span>
+            <span className="text-xs text-[var(--text-tertiary)]">{undatedCards.length}</span>
           </div>
           <div className="space-y-1.5">
             {undatedCards.map((node) => {
@@ -221,7 +221,7 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
                   <span className="w-[52px] flex-shrink-0" />
                   <span className="flex-1 text-xs text-[var(--text-secondary)] truncate">{node.title}</span>
                   {node.projectId && (
-                    <span className="text-[0.714rem] text-[var(--text-tertiary)] bg-[var(--surface-3)] px-1.5 py-0.5 rounded flex-shrink-0">
+                    <span className="text-xs text-[var(--text-tertiary)] bg-[var(--surface-3)] px-1.5 py-0.5 rounded flex-shrink-0">
                       {projectName(node.projectId)}
                     </span>
                   )}
@@ -238,7 +238,7 @@ export function TimelineCanvas({ nodes, onNodeClick, selectedNodeId }: Props) {
 function TodayMarker() {
   return (
     <div className="flex items-center gap-3 py-1 my-1">
-      <span className="text-[0.714rem] font-semibold text-[var(--warning)] uppercase tracking-widest flex-shrink-0">
+      <span className="text-xs font-medium text-[var(--warning)] flex-shrink-0">
         Today
       </span>
       <div className="flex-1 h-px" style={{ background: "var(--warning)", opacity: 0.4 }} />

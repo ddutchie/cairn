@@ -78,7 +78,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
   // Expanded body prefers the raw trace; summary-only reasoning uses the summary.
   const bodyText = text || collapsedText;
   const preview = expanded ? null : (
-    <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate max-w-[280px]">
+    <span className="text-xs text-[var(--text-tertiary)] truncate max-w-[280px]">
       {collapsedText.slice(0, 120).trim()}{collapsedText.length > 120 ? "…" : ""}
     </span>
   );
@@ -92,7 +92,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
         aria-expanded={expanded}
       >
         <Brain size={11} className="text-[var(--accent)] shrink-0" />
-        <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] flex-shrink-0">
+        <span className="text-xs font-medium text-[var(--text-secondary)] flex-shrink-0">
           {thinking ? "Thinking…" : "Thought process"}
         </span>
         {!expanded && preview}
@@ -104,7 +104,7 @@ export const ThinkingPanel = React.memo(function ThinkingPanel({
       {expanded && (
         <div
           ref={bodyRef}
-          className="px-3 py-2 border-t text-[0.786rem] leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto overscroll-contain"
+          className="px-3 py-2 border-t text-sm leading-relaxed text-[var(--text-tertiary)] max-h-[300px] overflow-y-auto overscroll-contain"
           style={{ borderTopColor: "color-mix(in srgb, var(--border) 50%, transparent)" }}
         >
           <MarkdownContent content={bodyText} />

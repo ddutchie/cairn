@@ -144,7 +144,7 @@ export function ArchitectureSidebar() {
           <div className="text-xs font-mono text-[var(--text-secondary)] truncate" title={filePath}>
             {baseName(filePath)}
           </div>
-          <div className="text-[0.65rem] text-[var(--text-tertiary)]">
+          <div className="text-2xs text-[var(--text-tertiary)]">
             {symbols.length} symbol{symbols.length === 1 ? "" : "s"}
           </div>
         </div>
@@ -153,13 +153,13 @@ export function ArchitectureSidebar() {
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
         {!filePath ? (
-          <div className="p-4 text-center text-[0.7rem] text-[var(--text-tertiary)]">
+          <div className="p-4 text-center text-xs text-[var(--text-tertiary)]">
             Open a file to see its structure.
           </div>
         ) : loading ? (
-          <div className="p-4 text-center text-[0.7rem] text-[var(--text-tertiary)]">Loading…</div>
+          <div className="p-4 text-center text-xs text-[var(--text-tertiary)]">Loading…</div>
         ) : notIndexed ? (
-          <div className="p-4 text-center text-[0.7rem] text-[var(--text-tertiary)]">
+          <div className="p-4 text-center text-xs text-[var(--text-tertiary)]">
             No indexed symbols for this file. Reindex from the Architecture tab.
           </div>
         ) : (
@@ -179,12 +179,12 @@ export function ArchitectureSidebar() {
                   )}
                   <KindGlyph kind={sym.kind} />
                   <span className="text-xs text-[var(--text-secondary)] font-mono truncate flex-1">{sym.name}</span>
-                  <span className="text-[0.65rem] text-[var(--text-tertiary)] tabular-nums">:{sym.line}</span>
+                  <span className="text-2xs text-[var(--text-tertiary)] tabular-nums">:{sym.line}</span>
                 </button>
                 {isOpen && (
                   <div className="px-3 pb-2 pl-7 flex flex-col gap-2">
                     {sym.signature && (
-                      <pre className="text-[0.65rem] font-mono text-[var(--text-tertiary)] whitespace-pre-wrap break-words m-0">
+                      <pre className="text-2xs font-mono text-[var(--text-tertiary)] whitespace-pre-wrap break-words m-0">
                         {sym.signature}
                       </pre>
                     )}
@@ -222,7 +222,7 @@ function RelBlock({
   const names = Array.from(new Set(edges.map((e) => e[field])));
   if (names.length === 0) {
     return (
-      <div className="text-[0.65rem] text-[var(--text-tertiary)] flex items-center gap-1">
+      <div className="text-2xs text-[var(--text-tertiary)] flex items-center gap-1">
         {icon} {label}: <span className="opacity-70">none</span>
       </div>
     );
@@ -233,7 +233,7 @@ function RelBlock({
         {icon} {label} ({names.length})
       </MicroLabel>
       {names.map((n) => (
-        <div key={n} className="text-[0.7rem] font-mono text-[var(--text-secondary)] truncate pl-3">
+        <div key={n} className="text-xs font-mono text-[var(--text-secondary)] truncate pl-3">
           {n}
         </div>
       ))}

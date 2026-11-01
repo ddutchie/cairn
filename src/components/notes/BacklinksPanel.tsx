@@ -182,20 +182,20 @@ export function BacklinksPanel({
             ? `${semanticCount} similar + ${total - semanticCount} backlink${(total - semanticCount) !== 1 ? "s" : ""}`
             : `${total} backlink${total !== 1 ? "s" : ""}`}
         </span>
-        {semanticLoading && <span className="text-[0.714rem] animate-pulse">…</span>}
+        {semanticLoading && <span className="text-xs animate-pulse">…</span>}
         <ChevronDown size={11} className={cn("transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <div className="px-6 pb-3 space-y-1">
           {semanticEnabled && (semanticLoading || semanticHits.length > 0 || (semanticHits.length === 0 && linkedNotes.length === 0 && linkedCards.length === 0 && wikilinkBacklinks.length === 0)) && (
             <>
-              <div className="flex items-center gap-1.5 mt-1 mb-0.5 text-[0.714rem] text-[var(--accent)]">
+              <div className="flex items-center gap-1.5 mt-1 mb-0.5 text-xs text-[var(--accent)]">
                 <Sparkles size={10} />
-                <span className="uppercase tracking-wider font-medium">Semantic</span>
+                <span className=" font-medium">Semantic</span>
                 {semanticLoading && <span className="text-[var(--text-tertiary)] animate-pulse">searching…</span>}
               </div>
               {!semanticLoading && semanticHits.length === 0 && (
-                <div className="px-2 py-1 text-[0.714rem] text-[var(--text-tertiary)]">
+                <div className="px-2 py-1 text-xs text-[var(--text-tertiary)]">
                   No similar notes found. Reindex from Settings → Embeddings to refresh.
                 </div>
               )}
@@ -209,7 +209,7 @@ export function BacklinksPanel({
                   <div className="flex-1 min-w-0">
                     <div className="truncate">{hit.title || "Untitled"}</div>
                     {hit.sectionTitle && (
-                      <div className="truncate text-[0.65rem] text-[var(--accent)] opacity-70 mt-0.5">
+                      <div className="truncate text-2xs text-[var(--accent)] opacity-70 mt-0.5">
                         {hit.sectionTitle}
                       </div>
                     )}
@@ -220,14 +220,14 @@ export function BacklinksPanel({
                           style={{ width: `${Math.round(hit.score * 100)}%` }}
                         />
                       </div>
-                      <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono">{hit.score.toFixed(2)}</span>
+                      <span className="text-2xs text-[var(--text-tertiary)] font-mono">{hit.score.toFixed(2)}</span>
                     </div>
                   </div>
                 </button>
               ))}
               {activeSectionTitle && (sectionLoading || sectionHits.length > 0) && (
                 <>
-                  <div className="flex items-center gap-1.5 mt-2 mb-0.5 text-[0.714rem] text-[var(--accent)] opacity-80">
+                  <div className="flex items-center gap-1.5 mt-2 mb-0.5 text-xs text-[var(--accent)] opacity-80">
                     <span className="truncate">Related to &ldquo;{activeSectionTitle}&rdquo;</span>
                     {sectionLoading && <span className="animate-pulse">…</span>}
                   </div>
@@ -241,12 +241,12 @@ export function BacklinksPanel({
                       <div className="flex-1 min-w-0">
                         <div className="truncate">{hit.title || "Untitled"}</div>
                         {hit.sectionTitle && (
-                          <div className="truncate text-[0.65rem] text-[var(--accent)] opacity-60 mt-0.5">
+                          <div className="truncate text-2xs text-[var(--accent)] opacity-60 mt-0.5">
                             {hit.sectionTitle}
                           </div>
                         )}
                       </div>
-                      <span className="text-[0.65rem] text-[var(--text-tertiary)] font-mono flex-shrink-0">{hit.score.toFixed(2)}</span>
+                      <span className="text-2xs text-[var(--text-tertiary)] font-mono flex-shrink-0">{hit.score.toFixed(2)}</span>
                     </button>
                   ))}
                 </>
@@ -264,7 +264,7 @@ export function BacklinksPanel({
             >
               <FileText size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
               <span className="truncate flex-1">{n.title}</span>
-              <span className="text-[0.714rem] text-[var(--text-tertiary)]">note</span>
+              <span className="text-xs text-[var(--text-tertiary)]">note</span>
             </button>
           ))}
           {linkedCards.map((c) => {
@@ -277,7 +277,7 @@ export function BacklinksPanel({
               >
                 <Kanban size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
                 <span className="truncate flex-1">{c.title}</span>
-                <span className="text-[0.714rem] text-[var(--text-tertiary)]">{col?.name ?? "card"}</span>
+                <span className="text-xs text-[var(--text-tertiary)]">{col?.name ?? "card"}</span>
               </button>
             );
           })}
@@ -294,7 +294,7 @@ export function BacklinksPanel({
                 >
                   <Link2 size={11} className="text-[var(--accent)] flex-shrink-0" />
                   <span className="truncate flex-1">{n.title}</span>
-                  <span className="text-[0.714rem] text-[var(--accent)] opacity-70">wikilink</span>
+                  <span className="text-xs text-[var(--accent)] opacity-70">wikilink</span>
                 </button>
               ))}
             </>
@@ -372,14 +372,14 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
       <div className="relative" ref={pickerRef}>
         <button
           onClick={() => setPickerOpen((o) => !o)}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] border border-dashed border-[var(--border)] transition-colors"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] border border-dashed border-[var(--border)] transition-colors"
         >
           <TagIcon size={11} />
           Add tag
         </button>
 
         {pickerOpen && (
-          <div className="absolute top-full left-0 mt-1 z-20 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-lg p-2 w-48">
+          <div className="absolute top-full left-0 mt-1 z-20 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-elev-2 p-2 w-48">
             <input
               ref={inputRef}
               value={newTagName}
@@ -414,7 +414,7 @@ export function NoteTagBar({ note, workspaceTags, onToggleTag, onCreateTag, getT
                 </button>
               )}
               {filteredUnassigned.length === 0 && !newTagName.trim() && (
-                <p className="text-[0.786rem] text-[var(--text-tertiary)] px-2 py-1">No tags yet</p>
+                <p className="text-sm text-[var(--text-tertiary)] px-2 py-1">No tags yet</p>
               )}
             </div>
           </div>

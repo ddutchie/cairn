@@ -125,7 +125,7 @@ export function TimePicker({ value, onChange, placeholder = "Pick a time", class
       {open && createPortal(
         <div
           data-dialog-portal
-          className="cairn-timepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-3"
+          className="cairn-timepicker-popover fixed z-[100] rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-3"
           style={{ top: `${popoverPos.top}px`, left: `${popoverPos.left}px` }}
         >
           <div className="flex items-baseline justify-center gap-1.5 mb-2">
@@ -239,7 +239,7 @@ function WheelColumn<T extends string | number>({ label, options, selected, widt
 
   return (
     <div className="flex flex-col items-center">
-      {label && <div className="text-[0.714rem] text-[var(--text-tertiary)] mb-1">{label}</div>}
+      {label && <div className="text-xs text-[var(--text-tertiary)] mb-1">{label}</div>}
       <div ref={boxRef} className={cn(width, "relative select-none")} style={{ height: ROW_H * VISIBLE_ROWS }}>
         {/* Center selection band */}
         <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-7 rounded-md bg-[var(--accent-dim)]/40" />

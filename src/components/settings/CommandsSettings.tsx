@@ -55,7 +55,7 @@ function RuntimeCommandsGroup() {
             <div className="flex-1 min-w-0">
               <div className="text-xs text-[var(--text-secondary)]">{cmd.description}</div>
             </div>
-            <span className="inline-flex items-center gap-1 text-[0.643rem] uppercase tracking-wider text-[var(--text-tertiary)] whitespace-nowrap pt-0.5">
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--text-tertiary)] whitespace-nowrap pt-0.5">
               <Terminal size={9} /> Runtime
             </span>
           </div>
@@ -154,7 +154,7 @@ export function CommandsSettings() {
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-[var(--text-secondary)]">{cmd.description}</div>
               </div>
-              <span className="text-[0.643rem] uppercase tracking-wider text-[var(--text-tertiary)] whitespace-nowrap pt-0.5">
+              <span className="text-xs text-[var(--text-tertiary)] whitespace-nowrap pt-0.5">
                 {SCOPE_LABEL[cmd.scope]}
               </span>
             </div>
@@ -268,7 +268,7 @@ function CreateCommandForm({
       </div>
 
       <label className="block">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)]">Name</span>
+        <span className="text-xs text-[var(--text-tertiary)]">Name</span>
         <div className="flex items-center gap-1.5 mt-1 rounded-md bg-[var(--surface)] border border-[var(--border)] px-2.5 py-1.5 focus-within:border-[var(--accent)]">
           <span className="text-xs font-mono text-[var(--text-tertiary)]">/</span>
           <input
@@ -280,19 +280,19 @@ function CreateCommandForm({
           />
         </div>
         {duplicate && (
-          <span className="text-[0.643rem] text-[var(--danger)] mt-1 inline-block">
+          <span className="text-2xs text-[var(--danger)] mt-1 inline-block">
             A command named /{cleanName} already exists.
           </span>
         )}
         {reserved && !duplicate && (
-          <span className="text-[0.643rem] text-[var(--danger)] mt-1 inline-block">
+          <span className="text-2xs text-[var(--danger)] mt-1 inline-block">
             /{cleanName} is a reserved built-in command and can&apos;t be overridden.
           </span>
         )}
       </label>
 
       <label className="block">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)]">Description</span>
+        <span className="text-xs text-[var(--text-tertiary)]">Description</span>
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -302,7 +302,7 @@ function CreateCommandForm({
       </label>
 
       <label className="block">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)]">Inserted text</span>
+        <span className="text-xs text-[var(--text-tertiary)]">Inserted text</span>
         <textarea
           value={insertText}
           onChange={(e) => setInsertText(e.target.value)}
@@ -313,7 +313,7 @@ function CreateCommandForm({
       </label>
 
       <label className="block">
-        <span className="text-[0.714rem] text-[var(--text-tertiary)]">Show in</span>
+        <span className="text-xs text-[var(--text-tertiary)]">Show in</span>
         <div className="flex gap-1.5 mt-1">
           {SCOPE_OPTIONS.map((s) => (
             <button
@@ -321,7 +321,7 @@ function CreateCommandForm({
               type="button"
               onClick={() => setScope(s)}
               className={cn(
-                "px-2.5 py-1 rounded-md text-[0.714rem] border transition-colors",
+                "px-2.5 py-1 rounded-md text-xs border transition-colors",
                 scope === s
                   ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)]"
                   : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface)]"
@@ -392,7 +392,7 @@ function CommandRow({
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono font-semibold text-[var(--accent)]">/{command.name}</span>
           {command.source === "community" && (
-            <span className="text-[0.643rem] text-[var(--text-tertiary)]">(community)</span>
+            <span className="text-2xs text-[var(--text-tertiary)]">(community)</span>
           )}
         </div>
         <input
@@ -414,7 +414,7 @@ function CommandRow({
               type="button"
               onClick={() => setScope(s)}
               className={cn(
-                "px-2.5 py-1 rounded-md text-[0.714rem] border transition-colors",
+                "px-2.5 py-1 rounded-md text-xs border transition-colors",
                 scope === s
                   ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)]"
                   : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface)]"
@@ -455,11 +455,11 @@ function CommandRow({
         {command.description && (
           <div className="text-xs text-[var(--text-secondary)]">{command.description}</div>
         )}
-        <div className="text-[0.714rem] text-[var(--text-tertiary)] font-mono truncate mt-0.5">
+        <div className="text-xs text-[var(--text-tertiary)] font-mono truncate mt-0.5">
           {command.insertText}
         </div>
       </div>
-      <span className="text-[0.643rem] uppercase tracking-wider text-[var(--text-tertiary)] whitespace-nowrap pt-0.5">
+      <span className="text-xs text-[var(--text-tertiary)] whitespace-nowrap pt-0.5">
         {SCOPE_LABEL[command.scope]}
       </span>
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -123,10 +123,10 @@ export function UnifiedRail() {
 
         {project && (
           <div className="hidden xl:flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-            <span className={cn("text-[0.643rem] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]", STATUS_COLORS[project.status])}>
+            <span className={cn("text-2xs font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]", STATUS_COLORS[project.status])}>
               {project.status.replace("_", " ")}
             </span>
-            <span className={cn("text-[0.643rem] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]", PRIORITY_COLORS[project.priority])}>
+            <span className={cn("text-2xs font-medium px-1.5 py-0.5 rounded-full border border-[var(--border)]", PRIORITY_COLORS[project.priority])}>
               {project.priority}
             </span>
           </div>
@@ -144,7 +144,7 @@ export function UnifiedRail() {
           <Search size={12} className="shrink-0" />
           <span className="truncate hidden lg:inline">Search notes, tasks, or ask…</span>
           <span className="truncate lg:hidden">Search…</span>
-          <span className="ml-auto hidden lg:inline-flex font-mono text-[0.643rem] px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--surface)]">{`${modKey(isMac)}K`}</span>
+          <span className="ml-auto hidden lg:inline-flex font-mono text-2xs px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--surface)]">{`${modKey(isMac)}K`}</span>
         </button>
       </div>
 

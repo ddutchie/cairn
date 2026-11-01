@@ -352,16 +352,16 @@ export function AutomationsView() {
                       {a.name}
                     </h3>
                     {!a.enabled && (
-                      <span className="text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-tertiary)]">disabled</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-tertiary)]">disabled</span>
                     )}
                     {a.projectId && projectName.has(a.projectId) && (
-                      <span className="text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] max-w-40 truncate">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)] max-w-40 truncate">
                         {projectName.get(a.projectId)}
                       </span>
                     )}
                     {a.requires.length > 0 && (
                       <Tooltip content={`Needs: ${a.requires.map((r) => r.name).join(", ")}`}>
-                        <span className="inline-flex items-center gap-1 text-[0.714rem] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)] cursor-default">
+                        <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)] cursor-default">
                           <Plug size={9} />
                           {a.requires.map((r) => r.name).join(", ")}
                         </span>
@@ -371,7 +371,7 @@ export function AutomationsView() {
                   {a.description && (
                     <p className="text-xs text-[var(--text-secondary)] mt-0.5 truncate">{a.description}</p>
                   )}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[0.714rem] text-[var(--text-tertiary)]">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-[var(--text-tertiary)]">
                     <span className="inline-flex items-center gap-1"><Clock size={11} /> {scheduleLabel(a)}</span>
                     <span>Next: {formatRelative(a.nextRunAt, RUN_TIME)}</span>
                     <span>{a.runCount} run{a.runCount === 1 ? "" : "s"}</span>
@@ -421,12 +421,12 @@ export function AutomationsView() {
               </div>
               {artifacts.length > 0 && (
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[0.714rem] text-[var(--text-tertiary)]">Artifacts:</span>
+                  <span className="text-xs text-[var(--text-tertiary)]">Artifacts:</span>
                   {artifacts.map((art) => (
                     <Tooltip key={art.id} content={`Open ${art.type === "note" ? "note" : "task"}`}>
                       <button
                         onClick={() => (art.type === "note" ? revealNote(setView, art.id) : revealCard(setView, art.id))}
-                        className="inline-flex items-center gap-1 text-[0.714rem] px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-56"
+                        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors max-w-56"
                       >
                         {art.type === "note" ? <FileText size={10} className="shrink-0" /> : <Kanban size={10} className="shrink-0" />}
                         <span className="truncate">{art.title}</span>

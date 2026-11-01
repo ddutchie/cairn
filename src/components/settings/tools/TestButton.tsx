@@ -29,7 +29,7 @@ export function TestButton({ onTest }: { onTest: () => Promise<TestState> }) {
         Test connection
       </Button>
       {state.status === "ok" && (
-        <span className="flex items-center gap-1 text-[0.714rem] text-[var(--success)]">
+        <span className="flex items-center gap-1 text-xs text-[var(--success)]">
           <CheckCircle size={12} /> {state.detail ?? "OK"}
         </span>
       )}
@@ -38,8 +38,8 @@ export function TestButton({ onTest }: { onTest: () => Promise<TestState> }) {
           className={
             state.detail?.includes("\n")
               // Multi-line errors (e.g. an MCP server's stderr) must stay readable.
-              ? "flex items-start gap-1 text-[0.714rem] text-[var(--danger)] whitespace-pre-wrap break-words max-w-[28rem] max-h-32 overflow-auto"
-              : "flex items-center gap-1 text-[0.714rem] text-[var(--danger)] truncate max-w-[16rem]"
+              ? "flex items-start gap-1 text-xs text-[var(--danger)] whitespace-pre-wrap break-words max-w-[28rem] max-h-32 overflow-auto"
+              : "flex items-center gap-1 text-xs text-[var(--danger)] truncate max-w-[16rem]"
           }
           title={state.detail}
         >

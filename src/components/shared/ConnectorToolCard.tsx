@@ -55,7 +55,7 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
       >
         {ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}
         <ConnectorLogo iconSvg={connector.iconSvg} kind={connector.kind} color={connector.brandColor} size={14} className="shrink-0" />
-        <span data-testid="connector-tool-summary" className="min-w-0 truncate text-[0.714rem] text-[var(--text-secondary)]">
+        <span data-testid="connector-tool-summary" className="min-w-0 truncate text-xs text-[var(--text-secondary)]">
           <span className="font-medium text-[var(--text-primary)]">{connector.label || connector.name}</span>
           {" · "}{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!ok && " failed"}
         </span>
@@ -63,7 +63,7 @@ export function ConnectorToolCard({ toolCall, connector, testId = "connector-mes
       </button>
       {expanded && (
         <div className="mt-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
-          <p className="text-[0.643rem] text-[var(--text-tertiary)]">Tool: {toolLabel} · via {transport}</p>
+          <p className="text-2xs text-[var(--text-tertiary)]">Tool: {toolLabel} · via {transport}</p>
           {args && <ToolPayload label="Arguments" value={args} />}
           {output && <ToolPayload label="Result" value={output} />}
           {refs.length > 0 && <ExternalRefs toolName={toolCall.tool} refs={refs} />}
@@ -85,7 +85,7 @@ function ExternalRefs({ toolName, refs }: { toolName: string; refs: ExternalRef[
     <div className="mt-1 flex flex-col items-start gap-1">
       {visible.map((ref) => <ExternalRefChip key={ref.url} toolName={toolName} externalRef={ref} />)}
       {refs.length > 3 && (
-        <button type="button" onClick={() => setShowAll((value) => !value)} className="px-1 text-[0.643rem] text-[var(--accent)] hover:underline">
+        <button type="button" onClick={() => setShowAll((value) => !value)} className="px-1 text-2xs text-[var(--accent)] hover:underline">
           {showAll ? "Show less" : `Show ${refs.length - 3} more`}
         </button>
       )}
@@ -103,7 +103,7 @@ export function ToolPayload({ label, value }: { label: string; value: string }) 
   return (
     <div className="mt-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
       <MicroLabel className="mb-1 block">{label}</MicroLabel>
-      {parsed !== undefined ? <JsonTree value={parsed} /> : <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[0.643rem] leading-5 text-[var(--text-tertiary)]">{value}</pre>}
+      {parsed !== undefined ? <JsonTree value={parsed} /> : <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-2xs leading-5 text-[var(--text-tertiary)]">{value}</pre>}
     </div>
   );
 }
@@ -113,7 +113,7 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (typeof value !== "object") return <span className="break-words text-[var(--text-secondary)]">{typeof value === "string" ? `"${value}"` : String(value)}</span>;
   const entries = Array.isArray(value) ? value.map((item, index) => [String(index), item] as const) : Object.entries(value);
   return (
-    <div className="space-y-0.5 font-mono text-[0.643rem]">
+    <div className="space-y-0.5 font-mono text-2xs">
       {entries.map(([key, child]) => {
         const nested = child !== null && typeof child === "object";
         return nested ? (

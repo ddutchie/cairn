@@ -56,7 +56,7 @@ export function PlanTaskList({ content }: PlanTaskListProps) {
               }
               <span
                 className={cn(
-                  "text-[0.714rem] leading-relaxed",
+                  "text-xs leading-relaxed",
                   task.checked
                     ? "line-through text-[var(--text-tertiary)]"
                     : "text-[var(--text-secondary)]",
@@ -82,7 +82,7 @@ export function PlanTaskList({ content }: PlanTaskListProps) {
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--surface-2)] transition-colors text-left"
       >
-        <span className="text-[0.714rem] font-medium text-[var(--text-secondary)] flex-1">
+        <span className="text-xs font-medium text-[var(--text-secondary)] flex-1">
           {doneCount} of {total} task{total !== 1 ? "s" : ""} completed
         </span>
         {expanded

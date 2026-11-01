@@ -159,7 +159,7 @@ export function AutomationDialog({
           <div className="w-28"><TimePicker value={activeHoursStart || undefined} onChange={setActiveHoursStart} placeholder="Start" /></div>
           <span className="text-xs text-[var(--text-secondary)]">–</span>
           <div className="w-28"><TimePicker value={activeHoursEnd || undefined} onChange={setActiveHoursEnd} placeholder="End" /></div>
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">(optional)</span>
+          <span className="text-xs text-[var(--text-tertiary)]">(optional)</span>
         </div>
         <label className="block space-y-1">
           <span className="text-xs text-[var(--text-secondary)]">Project scope</span>
@@ -196,7 +196,7 @@ export function AutomationDialog({
               { value: "ask", label: "Ask — approve or deny each write" },
             ]}
           />
-          <span className="text-[0.714rem] text-[var(--text-tertiary)]">
+          <span className="text-xs text-[var(--text-tertiary)]">
             {approvalMode === "ask"
               ? "Write actions park in the approval inbox and the run waits for your decision."
               : requires.length > 0
@@ -205,7 +205,7 @@ export function AutomationDialog({
           </span>
         </label>
         {requires.length > 0 && (
-          <div className="rounded-md border border-[color-mix(in_srgb,var(--accent)_35%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] px-3 py-2 text-[0.714rem] text-[var(--text-secondary)] flex items-center gap-2">
+          <div className="rounded-md border border-[color-mix(in_srgb,var(--accent)_35%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] px-3 py-2 text-xs text-[var(--text-secondary)] flex items-center gap-2">
             <Plug size={12} className="text-[var(--accent)] shrink-0" />
             <span>
               This automation needs its attached connectors to run. Runs are offered
@@ -218,7 +218,7 @@ export function AutomationDialog({
         <div className="block space-y-1">
           <span className="text-xs text-[var(--text-secondary)]">Connectors (optional)</span>
           {connectors.length === 0 ? (
-            <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+            <p className="text-xs text-[var(--text-tertiary)]">
               No enabled connectors in this workspace. Add one under Settings → Tools → Browse Community, then it can appear here.
             </p>
           ) : (
@@ -241,14 +241,14 @@ export function AutomationDialog({
                         className="accent-[var(--accent)]"
                       />
                       <span className="text-xs text-[var(--text-primary)] truncate">{c.name}</span>
-                      <span className="text-[0.65rem] uppercase tracking-wide text-[var(--text-tertiary)] ml-auto border border-[var(--border)] rounded px-1 py-px">
+                      <span className="text-2xs text-[var(--text-tertiary)] ml-auto border border-[var(--border)] rounded px-1 py-px">
                         {c.kind === "mcp" ? "MCP" : "HTTP"}
                       </span>
                     </label>
                   );
                 })}
               </div>
-              <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+              <p className="text-xs text-[var(--text-tertiary)]">
                 Selected connectors are offered to the run, but only if they&apos;re enabled and attached to the chosen project (Settings → Tools) will their tools actually appear. External calls always wait for your approval.
               </p>
             </>

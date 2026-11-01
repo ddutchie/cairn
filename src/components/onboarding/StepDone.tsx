@@ -57,12 +57,12 @@ export function StepDone({ onBack, onComplete }: Props) {
             >
               <div className="flex items-center justify-between">
                 {f.icon}
-                <kbd className="text-[0.6rem] px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] font-mono">
+                <kbd className="text-2xs px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] font-mono">
                   {f.shortcut(mod)}
                 </kbd>
               </div>
               <p className="text-xs font-semibold text-[var(--text-primary)]">{f.label}</p>
-              <p className="text-[0.7rem] text-[var(--text-tertiary)] leading-relaxed">{f.desc}</p>
+              <p className="text-xs text-[var(--text-tertiary)] leading-relaxed">{f.desc}</p>
             </div>
           ))}
         </div>
@@ -80,7 +80,7 @@ export function StepDone({ onBack, onComplete }: Props) {
               <HelpCircle size={13} className="text-[var(--accent)]" />
               Start a quick interactive app tour on launch
             </p>
-            <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-0.5">Recommended for new users to learn the workspace</p>
+            <p className="text-2xs text-[var(--text-tertiary)] mt-0.5">Recommended for new users to learn the workspace</p>
           </div>
         </label>
 

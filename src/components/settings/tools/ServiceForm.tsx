@@ -86,7 +86,7 @@ export function ServiceForm({
           ))}
         </div>
         {authMode === "oauth" && (
-          <p className="mt-1 text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="mt-1 text-xs text-[var(--text-tertiary)]">
             Sign in via your browser after saving. Cairn stores the tokens in your OS keychain, refreshes them
             automatically, and adds <span className="font-mono">Authorization: Bearer</span> to each request.
           </p>
@@ -101,21 +101,21 @@ export function ServiceForm({
           <div>
             <label className={labelCls}>Authorization server (optional)</label>
             <input value={oauthServerUrl} onChange={(e) => setOauthServerUrl(e.target.value)} placeholder="Defaults to the API URL's origin" className={cn(inputCls, "font-mono")} />
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">
               Leave empty to auto-discover the OAuth server from the API URL (works for most modern services).
             </p>
           </div>
           <div>
             <label className={labelCls}>Client ID (optional)</label>
             <input value={oauthClientId} onChange={(e) => setOauthClientId(e.target.value)} placeholder="e.g. 1601185624273.8899143856786" className={cn(inputCls, "font-mono")} />
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">
               Required when the provider doesn&apos;t support dynamic registration (e.g. Slack) — the public client id of your app. Not a secret.
             </p>
           </div>
           <div>
             <label className={labelCls}>Redirect URI (optional)</label>
             <input value={oauthRedirectUri} onChange={(e) => setOauthRedirectUri(e.target.value)} placeholder="http://127.0.0.1:48123/callback" className={cn(inputCls, "font-mono")} />
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">
               Register this exact URL in the provider&apos;s app settings when a pre-registered client is required; the port must be free.
             </p>
           </div>
@@ -130,16 +130,16 @@ export function ServiceForm({
           onChange={(e) => setToolDefinition(e.target.value)}
           rows={5}
           placeholder={'{"name":"search","description":"Search the web","parameters":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}}'}
-          className={cn(inputCls, "font-mono text-[0.714rem] resize-y", !toolDefValid && toolDefinition.trim() && "border-[var(--danger)]")}
+          className={cn(inputCls, "font-mono text-xs resize-y", !toolDefValid && toolDefinition.trim() && "border-[var(--danger)]")}
         />
         {!toolDefValid && toolDefinition.trim() && (
-          <p className="text-[0.714rem] text-[var(--danger)] mt-1">Must be valid JSON with a function name.</p>
+          <p className="text-xs text-[var(--danger)] mt-1">Must be valid JSON with a function name.</p>
         )}
       </div>
       <div>
         <label className={labelCls}>Response keys (comma-separated)</label>
         <input value={responseKeys} onChange={(e) => setResponseKeys(e.target.value)} placeholder="results, title, url, snippet" className={cn(inputCls, "font-mono")} />
-        <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">Only these keys are kept from the response (saves tokens). Leave empty to return everything.</p>
+        <p className="text-xs text-[var(--text-tertiary)] mt-1">Only these keys are kept from the response (saves tokens). Leave empty to return everything.</p>
       </div>
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>

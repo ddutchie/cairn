@@ -40,7 +40,7 @@ export function CardAgentBadge({ cardId }: { cardId: string }) {
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); openSession(sessionId, "coding"); }}
         className={cn(
-          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[0.643rem] font-medium flex-shrink-0",
+          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-2xs font-medium flex-shrink-0",
           waiting ? "text-[var(--warning)]" : "text-[var(--accent)]",
         )}
         style={{ background: `color-mix(in srgb, ${waiting ? "var(--warning)" : "var(--accent)"} 14%, transparent)` }}

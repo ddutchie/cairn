@@ -105,7 +105,7 @@ export function AuthButton({
     <div className="flex items-center gap-2">
       {connected ? (
         <>
-          <span className="flex items-center gap-1 text-[0.714rem] text-[var(--success)]">
+          <span className="flex items-center gap-1 text-xs text-[var(--success)]">
             <CheckCircle size={12} /> Connected
           </span>
           <Button variant="outline" size="sm" onClick={() => void signOut()}>
@@ -114,7 +114,7 @@ export function AuthButton({
         </>
       ) : busy ? (
         <>
-          <span className="flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]">
+          <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)]">
             <Spinner size={12} /> Waiting for browser…
           </span>
           <Button variant="ghost" size="sm" onClick={() => void cancel()}>
@@ -127,7 +127,7 @@ export function AuthButton({
         </Button>
       )}
       {error && (
-        <span className="flex items-center gap-1 text-[0.714rem] text-[var(--danger)] truncate max-w-[14rem]" title={error}>
+        <span className="flex items-center gap-1 text-xs text-[var(--danger)] truncate max-w-[14rem]" title={error}>
           <XCircle size={12} /> {error}
         </span>
       )}

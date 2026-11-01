@@ -38,10 +38,10 @@ export function WritingStylePromptChip({ output }: { output?: string }) {
         data-testid="writing-style-prompt-chip"
       >
         <PenLine size={11} className="text-[var(--accent)] shrink-0" />
-        <span className="text-[0.786rem] text-[var(--text-secondary)]">No writing style set up — the AI can&apos;t match your voice yet.</span>
+        <span className="text-sm text-[var(--text-secondary)]">No writing style set up — the AI can&apos;t match your voice yet.</span>
         <button
           onClick={() => setOpen(true)}
-          className="text-[0.714rem] font-medium text-[var(--accent)] hover:underline shrink-0 cursor-pointer"
+          className="text-xs font-medium text-[var(--accent)] hover:underline shrink-0 cursor-pointer"
         >
           Set up writing style
         </button>

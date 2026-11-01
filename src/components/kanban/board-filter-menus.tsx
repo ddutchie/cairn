@@ -31,7 +31,7 @@ const DUE_OPTIONS: { value: DueFilter; label: string }[] = [
 
 const triggerClass = (active: boolean) =>
   cn(
-    "flex items-center gap-1.5 px-2 py-1 rounded text-[0.786rem] border transition-colors",
+    "flex items-center gap-1.5 px-2 py-1 rounded text-sm border transition-colors",
     active
       ? "border-[color-mix(in_srgb,var(--accent)_40%,transparent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]"
       : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",

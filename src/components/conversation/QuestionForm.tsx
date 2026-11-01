@@ -122,14 +122,14 @@ function PlanReviewCard({ question, disabled, onDecide, onDismiss }: PlanReviewC
       className="rounded-xl border border-[color-mix(in_srgb,var(--warning,#f59e0b)_35%,var(--border))] bg-[color-mix(in_srgb,var(--warning,#f59e0b)_5%,var(--surface-2))] overflow-hidden"
     >
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)]">
-        <span className="text-[0.786rem] font-semibold text-[var(--text-primary)] flex-1">
+        <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">
           {question.header?.trim() || "Plan review"}
         </span>
-        <span className="text-[0.643rem] uppercase tracking-wider text-[var(--text-tertiary)]">
+        <span className="text-xs text-[var(--text-tertiary)]">
           {question.question?.trim() || "Approve this plan?"}
         </span>
       </div>
-      <div className="max-h-64 overflow-y-auto px-3 py-2 text-[0.786rem] leading-relaxed text-[var(--text-primary)] bg-[var(--surface)]">
+      <div className="max-h-64 overflow-y-auto px-3 py-2 text-sm leading-relaxed text-[var(--text-primary)] bg-[var(--surface)]">
         <MarkdownContent content={plan} />
       </div>
       <div className="border-t border-[var(--border)] px-3 py-2 flex flex-col gap-2">
@@ -230,7 +230,7 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
         <MessageAvatar role="bot" size="lg" />
         <div className="flex-1 min-w-0">
           {submitted ? (
-            <p className="text-[0.714rem] text-[var(--text-tertiary)] px-1">Plan decision submitted</p>
+            <p className="text-xs text-[var(--text-tertiary)] px-1">Plan decision submitted</p>
           ) : (
             <PlanReviewCard
               question={planReviewQ}
@@ -309,12 +309,12 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
               {/* Head (short label) and body (full question) are BOTH rendered
                   as persistent text — NOT as the textarea placeholder — so
                   the user's context stays visible while typing. */}
-              <label htmlFor={q.id} className="text-[0.786rem] font-semibold text-[var(--text-primary)]">{head}</label>
+              <label htmlFor={q.id} className="text-sm font-semibold text-[var(--text-primary)]">{head}</label>
               {body && body !== head && (
-                <p id={`${q.id}-prompt`} className="text-[0.714rem] text-[var(--text-tertiary)] leading-relaxed">{body}</p>
+                <p id={`${q.id}-prompt`} className="text-xs text-[var(--text-tertiary)] leading-relaxed">{body}</p>
               )}
               {q.detail?.trim() && (
-                <div className="max-h-40 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.714rem] leading-relaxed text-[var(--text-primary)]">
+                <div className="max-h-40 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-xs leading-relaxed text-[var(--text-primary)]">
                   <MarkdownContent content={q.detail} />
                 </div>
               )}
@@ -331,7 +331,7 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
                         onClick={() => toggleOption(label)}
                         disabled={disabled || submitted}
                         className={cn(
-                          "px-2.5 py-1 rounded-md border text-[0.714rem] transition-colors",
+                          "px-2.5 py-1 rounded-md border text-xs transition-colors",
                           chosen.includes(label)
                             ? "bg-[var(--accent)] text-[var(--accent-fg)] border-[var(--accent)]"
                             : "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)] hover:border-[var(--accent)]",
@@ -363,10 +363,10 @@ export function QuestionForm({ questions, onSubmit, onSubmitStructured, disabled
         })}
 
         {submitted ? (
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">Answers submitted</p>
+          <p className="text-xs text-[var(--text-tertiary)]">Answers submitted</p>
         ) : (
           <div className="flex items-center justify-between">
-            <p className="text-[0.714rem] text-[var(--text-tertiary)]">{mod}↩ to submit</p>
+            <p className="text-xs text-[var(--text-tertiary)]">{mod}↩ to submit</p>
             <Button
               variant="accent" size="sm"
               onClick={handleSubmit}

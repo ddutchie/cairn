@@ -63,13 +63,13 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
             <Sparkles size={12} className="text-[var(--accent)]" />
-            <span className="text-[0.714rem] font-semibold text-[var(--accent)] uppercase tracking-wide">
+            <span className="text-xs font-medium text-[var(--accent)]">
               AI Summary
             </span>
           </div>
           <button
             className={cn(
-              "nodrag flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.714rem] font-medium transition-colors",
+              "nodrag flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors",
               status === "loading" || !aiEnabled
                 ? "text-[var(--text-tertiary)] cursor-not-allowed opacity-40"
                 : "text-[var(--accent)] hover:bg-[var(--accent)]/10 cursor-pointer"
@@ -89,15 +89,15 @@ export const AiSummaryNode = memo(function AiSummaryNode({ id, data, selected, i
 
         {/* Content */}
         {status === "error" && errorMsg ? (
-          <p className="text-[0.786rem] text-[var(--danger)] leading-relaxed break-words">
+          <p className="text-sm text-[var(--danger)] leading-relaxed break-words">
             {errorMsg}
           </p>
         ) : hasContent ? (
-          <div className="text-[0.786rem] text-[var(--text-secondary)] leading-relaxed break-words max-h-64 overflow-y-auto nodrag">
+          <div className="text-sm text-[var(--text-secondary)] leading-relaxed break-words max-h-64 overflow-y-auto nodrag">
             <NoteMarkdownPreview content={d.content!} className="!px-0 !py-0 !overflow-visible !h-auto" />
           </div>
         ) : (
-          <p className="text-[0.786rem] text-[var(--text-tertiary)] leading-relaxed italic">
+          <p className="text-sm text-[var(--text-tertiary)] leading-relaxed italic">
             Connect to nodes, then hit Generate.
           </p>
         )}

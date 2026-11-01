@@ -127,13 +127,13 @@ export function RunWatcherModal({
             <TerminalSquare size={13} className={cn("mt-0.5 shrink-0", t.status === "running" ? "text-[var(--accent)]" : t.status === "error" ? "text-[var(--danger)]" : "text-[var(--ok)]")} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className="font-mono text-[0.714rem] text-[var(--text-secondary)]">{t.label}</span>
+                <span className="font-mono text-xs text-[var(--text-secondary)]">{t.label}</span>
                 {t.status === "running" && <Spinner size={10} tone="accent" />}
                 {t.status === "done" && <CheckCircle2 size={10} className="text-[var(--ok)]" />}
                 {t.status === "error" && <XCircle size={10} className="text-[var(--danger)]" />}
               </div>
               {t.output && (
-                <pre className="mt-1 text-[0.714rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-40 overflow-y-auto rounded bg-[var(--surface-2)] p-2">
+                <pre className="mt-1 text-xs text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-40 overflow-y-auto rounded bg-[var(--surface-2)] p-2">
                   {t.output}
                 </pre>
               )}
@@ -147,10 +147,10 @@ export function RunWatcherModal({
             <div className="min-w-0 flex-1">
               {thought && (
                 <details className="mb-1">
-                  <summary className="text-[0.714rem] text-[var(--text-tertiary)] cursor-pointer select-none">
+                  <summary className="text-xs text-[var(--text-tertiary)] cursor-pointer select-none">
                     Thinking
                   </summary>
-                  <pre className="mt-1 text-[0.714rem] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-40 overflow-y-auto rounded bg-[var(--surface-2)] p-2">
+                  <pre className="mt-1 text-xs text-[var(--text-tertiary)] whitespace-pre-wrap font-mono max-h-40 overflow-y-auto rounded bg-[var(--surface-2)] p-2">
                     {thought}
                   </pre>
                 </details>
@@ -168,7 +168,7 @@ export function RunWatcherModal({
             <div className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
               <Bot size={13} className="text-[var(--accent)] shrink-0" />
               <span>
-                The agent wants to run <span className="font-mono text-[0.714rem]">{approval.tool}</span> — this tool requires your approval.
+                The agent wants to run <span className="font-mono text-xs">{approval.tool}</span> — this tool requires your approval.
               </span>
             </div>
             <div className="flex items-center gap-2">

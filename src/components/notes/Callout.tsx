@@ -104,7 +104,7 @@ export function Callout({ type, title, collapsible, defaultOpen = true, children
         onClick={collapsible ? () => setOpen((o) => !o) : undefined}
       >
         <span className="flex-shrink-0">{icon}</span>
-        <span className="text-[0.786rem] font-semibold flex-1">{displayTitle}</span>
+        <span className="text-sm font-semibold flex-1">{displayTitle}</span>
         {collapsible && (
           <ChevronDown
             size={13}

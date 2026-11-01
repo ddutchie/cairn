@@ -53,7 +53,7 @@ export function MDPreviewPanel({ text, onDismiss, label = "Preview" }: MDPreview
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between px-4 py-1.5 border-b border-[var(--border)]" style={{ background: "var(--surface-2)" }}>
-        <span className="text-[0.714rem] font-medium text-[var(--text-tertiary)] uppercase tracking-wide">{label}</span>
+        <span className="text-xs font-medium text-[var(--text-tertiary)]">{label}</span>
         <div className="flex items-center gap-1">
           {/* Size toggle — shrink/grow the preview panel */}
           <div className="flex items-center rounded bg-[var(--surface)] p-0.5" role="group" aria-label="Preview size">
@@ -64,7 +64,7 @@ export function MDPreviewPanel({ text, onDismiss, label = "Preview" }: MDPreview
                 aria-label={`${s.toUpperCase()} preview`}
                 aria-pressed={size === s}
                 className={cn(
-                  "px-1.5 py-0.5 rounded text-[0.65rem] font-medium uppercase transition-colors",
+                  "px-1.5 py-0.5 rounded text-2xs font-medium transition-colors",
                   size === s
                     ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",

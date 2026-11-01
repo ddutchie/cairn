@@ -101,7 +101,7 @@ export function StepWorkspaceDetails({
 
             {!!importPreview?.projects.length && (
               <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] overflow-hidden">
-                <div className="px-3 py-2 text-[0.714rem] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">Import preview</div>
+                <div className="px-3 py-2 text-xs font-medium text-[var(--text-tertiary)]">Import preview</div>
                 <div className="max-h-36 overflow-y-auto border-t border-[var(--border)]">
                   {importPreview.projects.map((project) => {
                     const excluded = !project.root && excludedFolders.has(project.name);
@@ -120,7 +120,7 @@ export function StepWorkspaceDetails({
                         </span>
                         <FolderOpen size={13} className="text-[var(--text-tertiary)]" />
                         <span className={cn("flex-1 text-xs truncate", excluded ? "text-[var(--text-tertiary)] line-through" : "text-[var(--text-primary)]")}>{project.name}{project.root ? " (vault root)" : ""}</span>
-                        <span className="text-[0.714rem] text-[var(--text-tertiary)]">{project.noteCount}</span>
+                        <span className="text-xs text-[var(--text-tertiary)]">{project.noteCount}</span>
                       </button>
                     );
                   })}
@@ -130,7 +130,7 @@ export function StepWorkspaceDetails({
 
             <div className="flex items-start gap-2 rounded-lg border border-[color-mix(in_srgb,var(--warning)_35%,transparent)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] px-3 py-2">
               <ShieldAlert size={14} className="text-[var(--warning)] shrink-0 mt-0.5" />
-              <p className="text-[0.714rem] leading-relaxed text-[var(--text-secondary)]">Cairn adds its own frontmatter to imported notes. Commit the vault to git or make a backup first so you can review or roll back the first-touch changes.</p>
+              <p className="text-xs leading-relaxed text-[var(--text-secondary)]">Cairn adds its own frontmatter to imported notes. Commit the vault to git or make a backup first so you can review or roll back the first-touch changes.</p>
             </div>
           </div>
         )}

@@ -161,10 +161,10 @@ export function BeeswarmCanvas({ nodes, onNodeClick }: Props) {
         {Object.entries(PRIORITY_COLOR).map(([p, color]) => (
           <div key={p} className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full" style={{ background: color }} />
-            <span className="text-[0.643rem] font-mono capitalize text-[var(--text-tertiary)]">{p}</span>
+            <span className="text-2xs font-mono capitalize text-[var(--text-tertiary)]">{p}</span>
           </div>
         ))}
-        <span className="text-[0.643rem] font-mono text-[var(--text-tertiary)] ml-1 opacity-50">
+        <span className="text-2xs font-mono text-[var(--text-tertiary)] ml-1 opacity-50">
           size = priority · solid = due date set
         </span>
       </div>

@@ -199,7 +199,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
 
           {/* Session type toggle */}
           <div>
-            <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1.5">
+            <p className="text-xs font-medium text-[var(--text-tertiary)] mb-1.5">
               Agent type
             </p>
             <SegmentedControl
@@ -211,7 +211,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
               onChange={setSessionType}
             />
             {sessionType === "coding" && (
-              <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-1">
+              <p className="text-xs text-[var(--text-tertiary)] mt-1">
                 Uses {agentConfig.model || "gpt-5.6-luna"} · reads/writes code + Cairn board
               </p>
             )}
@@ -220,7 +220,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
           {/* Task label — only shown when launched from a card */}
           {card && (
             <div>
-              <p className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] mb-1">Task</p>
+              <p className="text-xs font-medium text-[var(--text-tertiary)] mb-1">Task</p>
               <p className="text-sm font-medium text-[var(--text-primary)]">{card.title}</p>
             </div>
           )}
@@ -260,7 +260,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
                 </div>
               ) : (
                 <div>
-                  <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
+                  <label className="text-xs font-medium text-[var(--text-tertiary)] block mb-1">
                     Agent binary
                   </label>
                   <Select
@@ -277,7 +277,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
 
           {/* Prompt textarea */}
           <div>
-            <label className="text-[0.714rem] font-semibold uppercase tracking-widest text-[var(--text-tertiary)] block mb-1">
+            <label className="text-xs font-medium text-[var(--text-tertiary)] block mb-1">
               {sessionType === "coding" ? "Initial prompt (optional)" : "Prompt"}
             </label>
             <textarea

@@ -227,7 +227,7 @@ function KanbanColumnImpl({
             : isHighlighted
             ? "border-[var(--accent)] bg-[var(--accent-dim)]"
             : "border-[var(--border)] bg-[var(--surface)]",
-          isColumnDragging && "shadow-xl"
+          isColumnDragging && "shadow-elev-3"
         )}
       >
         {/* Column header */}
@@ -267,7 +267,7 @@ function KanbanColumnImpl({
           <button
             onClick={() => { setLimitValue(String(column.cardLimit ?? "")); setLimitDialogOpen(true); }}
             className={cn(
-              "text-[0.786rem] flex-shrink-0 font-mono hover:text-[var(--accent)] transition-colors cursor-pointer",
+              "text-sm flex-shrink-0 font-mono hover:text-[var(--accent)] transition-colors cursor-pointer",
               atLimit ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]"
             )}
             title="Set WIP limit"
@@ -346,7 +346,7 @@ function KanbanColumnImpl({
             ))}
             {cards.length === 0 && !isAddingCard && (
               <div
-                className="flex items-center justify-center h-12 rounded-lg border border-dashed border-[var(--border)] text-[0.786rem] text-[var(--text-tertiary)] cursor-pointer hover:border-[var(--accent)]/40 hover:text-[var(--accent)]/60 transition-colors"
+                className="flex items-center justify-center h-12 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--text-tertiary)] cursor-pointer hover:border-[var(--accent)]/40 hover:text-[var(--accent)]/60 transition-colors"
                 onClick={() => setIsAddingCard(true)}
               >
                 Drop here or add card
@@ -371,7 +371,7 @@ function KanbanColumnImpl({
                       <div
                         className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] opacity-60"
                       >
-                        <span className="flex-1 text-[0.786rem] text-[var(--text-secondary)] truncate" title={card.title}>{card.title}</span>
+                        <span className="flex-1 text-sm text-[var(--text-secondary)] truncate" title={card.title}>{card.title}</span>
                         <Tooltip content="Restore card">
                           <button
                             onClick={() => onRestoreCard(card.id)}
@@ -431,7 +431,7 @@ function KanbanColumnImpl({
         ) : (
           <div className="p-2 border-t border-[var(--border)]">
             {atLimit ? (
-              <p className="w-full text-center text-[0.714rem] text-[var(--warning)] py-1">
+              <p className="w-full text-center text-xs text-[var(--warning)] py-1">
                 WIP limit reached ({column.cardLimit})
               </p>
             ) : (

@@ -61,11 +61,11 @@ export function FolderPickerDialog({ folderTree, mode, currentFolder = "", onSel
       <button
         onClick={handleCreate}
         disabled={!newFolderName.trim()}
-        className="text-[0.714rem] text-[var(--accent)] disabled:opacity-30 hover:underline shrink-0"
+        className="text-xs text-[var(--accent)] disabled:opacity-30 hover:underline shrink-0"
       >
         Create & move
       </button>
-      <button onClick={cancelAdd} className="text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
+      <button onClick={cancelAdd} className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
         ✕
       </button>
     </div>

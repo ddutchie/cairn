@@ -23,7 +23,7 @@ export function MonthGrid({ cells, renderCell }: MonthGridProps) {
         {WEEKDAYS.map((d) => (
           <div
             key={d}
-            className="px-1.5 py-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] bg-[var(--surface-2)] border-b border-r border-[var(--border)]"
+            className="px-1.5 py-1.5 text-2xs font-medium text-[var(--text-tertiary)] bg-[var(--surface-2)] border-b border-r border-[var(--border)]"
           >
             {d}
           </div>

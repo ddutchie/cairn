@@ -186,7 +186,7 @@ export function CodeBlock({ code, language }: Props) {
         style={{ background: headerBg, borderBottom: `1px solid ${borderColor}` }}
       >
         <span
-          className="text-[0.714rem] font-sans font-medium tracking-wide uppercase select-none"
+          className="text-xs font-sans font-medium tracking-wide uppercase select-none"
           style={{ color: isDark ? "#5c6370" : "#9ca3af" }}
         >
           {displayLang}
@@ -201,7 +201,7 @@ export function CodeBlock({ code, language }: Props) {
           aria-label="Copy code"
         >
           {copied ? <Check size={11} /> : <Copy size={11} />}
-          <span className="text-[0.714rem] font-sans">{copied ? "Copied" : "Copy"}</span>
+          <span className="text-xs font-sans">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
 

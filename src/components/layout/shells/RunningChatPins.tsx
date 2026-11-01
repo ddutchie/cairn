@@ -84,7 +84,7 @@ export function RunningChatPins() {
 
   return (
     <div className="px-2 pb-1.5 space-y-0.5">
-      <p className="px-2 pt-1 text-[0.571rem] font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)]">
+      <p className="px-2 pt-1 text-2xs font-medium tracking-[0.08em] text-[var(--text-tertiary)]">
         Live chats
       </p>
       {pins.map(({ thread, running, unread, title }) => {
@@ -105,7 +105,7 @@ export function RunningChatPins() {
             )}
             <span className="flex-1 min-w-0">
               <span className="block truncate">{title}</span>
-              {scope && <span className="block truncate text-[0.643rem] text-[var(--text-tertiary)]">{scope}</span>}
+              {scope && <span className="block truncate text-2xs text-[var(--text-tertiary)]">{scope}</span>}
             </span>
             {unread && !running && (
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" aria-label="Unread replies" />

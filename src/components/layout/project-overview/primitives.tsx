@@ -15,12 +15,12 @@ export function SectionHeader({
 }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-1.5 text-[0.714rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
         {icon}{title}
       </div>
       {action && (
         <button onClick={action.onClick}
-          className="text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
+          className="text-sm text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
           {action.label}<ArrowRight size={10} />
         </button>
       )}
@@ -56,7 +56,7 @@ export function CollapsibleSection({
           aria-expanded={!collapsed}
           aria-controls={bodyId}
           title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-          className="flex items-center gap-1 text-[0.714rem] font-semibold text-[var(--text-secondary)] uppercase tracking-wider hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+          className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
         >
           <ChevronDown size={11} className={cn("text-[var(--text-tertiary)] transition-transform", collapsed && "-rotate-90")} />
           <span className="group-hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5">
@@ -65,7 +65,7 @@ export function CollapsibleSection({
         </button>
         {action && (
           <button onClick={action.onClick}
-            className="text-[0.786rem] text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
+            className="text-sm text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
             {action.label}<ArrowRight size={10} />
           </button>
         )}
@@ -92,7 +92,7 @@ export function StatCard({
       </div>
       <div className="min-w-0">
         <div className="text-xl font-bold leading-none" style={{ color: valueColor ?? "var(--text-primary)" }}>{value}</div>
-        <div className="text-[0.786rem] text-[var(--text-tertiary)] mt-1">{label}</div>
+        <div className="text-sm text-[var(--text-tertiary)] mt-1">{label}</div>
       </div>
       <ArrowRight size={11} className="ml-auto text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
     </button>

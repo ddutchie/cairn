@@ -668,7 +668,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
                   mode === "edit"
-                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
                 )}
               >
@@ -680,7 +680,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
                   mode === "read"
-                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-sm"
+                    ? "bg-[var(--surface)] text-[var(--text-primary)] shadow-elev-1"
                     : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
                 )}
               >
@@ -714,13 +714,13 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
           {aiEnabled && (spawnLoading ? (
             <div role="status" className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-2)] border border-[var(--border)]">
               <Spinner size={11} tone="accent" />
-              <span className="text-[0.786rem] text-[var(--text-tertiary)]">
+              <span className="text-sm text-[var(--text-tertiary)]">
                 {spawnToolCalls.length === 0
                   ? "Analysing…"
                   : spawnToolCalls[spawnToolCalls.length - 1].replace("Creating task ", "").replace(/^"|"$/g, "")}
               </span>
               {spawnToolCalls.length > 0 && (
-                <span className="text-[0.714rem] text-[var(--accent)] font-medium">{spawnToolCalls.length}</span>
+                <span className="text-xs text-[var(--accent)] font-medium">{spawnToolCalls.length}</span>
               )}
             </div>
           ) : (
@@ -782,7 +782,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             </button>
           </Tooltip>
           </div>
-          <span className="text-[0.786rem] text-[var(--text-tertiary)] flex items-center gap-1 whitespace-nowrap">
+          <span className="text-sm text-[var(--text-tertiary)] flex items-center gap-1 whitespace-nowrap">
             <Calendar size={10} />
             {formatRelative(note.updatedAt)}
           </span>
@@ -799,7 +799,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
           placeholder="Note title"
           className="w-full bg-transparent text-2xl font-bold text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none tracking-tight max-w-4xl mx-auto block"
         />
-        <div className="max-w-4xl mx-auto mt-1 text-[0.786rem] text-[var(--text-tertiary)]">
+        <div className="max-w-4xl mx-auto mt-1 text-sm text-[var(--text-tertiary)]">
           {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"} · {Math.max(1, Math.ceil(wordCount / 200))} min read
         </div>
         {/* Tag bar */}

@@ -288,20 +288,20 @@ export function ModuleMap({ cwd }: Props) {
             <div className="flex flex-col gap-1.5">
               <div className="text-xs text-[var(--text-secondary)] leading-relaxed">{aiExplain.overview}</div>
               {aiExplain.modules && (
-                <div className="text-[0.7rem] text-[var(--text-tertiary)] font-mono whitespace-pre-wrap leading-relaxed">
+                <div className="text-xs text-[var(--text-tertiary)] font-mono whitespace-pre-wrap leading-relaxed">
                   {aiExplain.modules}
                 </div>
               )}
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <div className="text-[0.7rem] text-[var(--text-tertiary)] flex-1 min-w-0 truncate">
+              <div className="text-xs text-[var(--text-tertiary)] flex-1 min-w-0 truncate">
                 {heuristicSummary}
               </div>
               <button
                 onClick={explainWithAI}
                 disabled={aiLoading}
-                className="flex items-center gap-1 px-2 py-1 rounded-md text-[0.7rem] font-semibold text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] transition-colors flex-shrink-0 disabled:opacity-60"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] transition-colors flex-shrink-0 disabled:opacity-60"
                 title="Summarise this architecture with AI"
               >
                 <Sparkles size={12} className={aiLoading ? "animate-pulse" : ""} />
@@ -309,7 +309,7 @@ export function ModuleMap({ cwd }: Props) {
               </button>
             </div>
           )}
-          {aiError && <div className="text-[0.7rem] text-[var(--danger)] mt-1">{aiError}</div>}
+          {aiError && <div className="text-xs text-[var(--danger)] mt-1">{aiError}</div>}
         </div>
       )}
 

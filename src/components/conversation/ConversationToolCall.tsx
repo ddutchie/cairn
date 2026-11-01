@@ -83,42 +83,42 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
           : risk === "EXTERNAL" ? <Globe2 size={14} className="mt-0.5 text-[var(--warning)] shrink-0" /> : <ShieldAlert size={14} className="mt-0.5 text-[var(--warning)] shrink-0" />}
         <div className="min-w-0 flex-1">
           {connector && (
-            <p data-testid="approval-connector" className="text-[0.643rem] text-[var(--text-tertiary)]">
+            <p data-testid="approval-connector" className="text-2xs text-[var(--text-tertiary)]">
               <span className="font-semibold text-[var(--text-secondary)]">{connector.label || connector.name}</span> via {connector.kind === "mcp" ? "MCP" : "HTTP service"}
             </p>
           )}
-          <p data-testid="approval-title" className="text-[0.786rem] font-medium text-[var(--text-primary)] break-words">
+          <p data-testid="approval-title" className="text-sm font-medium text-[var(--text-primary)] break-words">
             {toolCall.viewTitle ?? <>{summary.pre}{summary.obj ? <> <strong className="font-semibold">{summary.obj}</strong></> : null}</>}
           </p>
           {escalation ? (
             <>
-              <p data-testid="approval-escalation" className="mt-0.5 text-[0.643rem] font-medium text-[var(--warning)]">
+              <p data-testid="approval-escalation" className="mt-0.5 text-2xs font-medium text-[var(--warning)]">
                 Runs outside the sandbox{escalation[1] === "danger-full-access" ? " with full access to your files" : ` (${escalation[1]})`}.
               </p>
-              {escalation[2] && <p className="mt-0.5 text-[0.643rem] text-[var(--text-secondary)] break-words">{escalation[2]}</p>}
+              {escalation[2] && <p className="mt-0.5 text-2xs text-[var(--text-secondary)] break-words">{escalation[2]}</p>}
             </>
           ) : (
-            <p className="mt-0.5 text-[0.643rem] text-[var(--text-tertiary)]">This {scope}.</p>
+            <p className="mt-0.5 text-2xs text-[var(--text-tertiary)]">This {scope}.</p>
           )}
         </div>
-        <span className="text-[0.607rem] font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
+        <span className="text-2xs font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
       </div>
       {connector && (connectorArgs
         ? <div className="max-h-48 overflow-auto"><ToolPayload label="Arguments" value={connectorArgs} /></div>
-        : <p data-testid="approval-no-args" className="mt-1.5 text-[0.643rem] text-[var(--text-tertiary)]">No arguments.</p>)}
-      {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
+        : <p data-testid="approval-no-args" className="mt-1.5 text-2xs text-[var(--text-tertiary)]">No arguments.</p>)}
+      {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-2xs leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
       <div className="mt-2 flex items-center justify-end gap-1.5 min-h-[28px]">
         {pending ? (
-          <span className="flex items-center gap-1.5 text-[0.643rem] text-[var(--text-tertiary)]">
+          <span className="flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)]">
             <Spinner size={10} />
             {pending === "deny" ? "Denied" : pending === "always" ? "Allowed — remembered for this workspace" : pending === "command" ? "Allowed — remembered for this command" : "Allowed — running…"}
           </span>
         ) : (
           <>
-            <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-[0.643rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
-            {command && !escalation && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
-            {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-[0.643rem] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
-            <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-[0.643rem] font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
+            <button data-testid="approval-deny" onClick={() => respond(false)} className="px-2 py-1 text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded">Deny</button>
+            {command && !escalation && <button data-testid="approval-allow-command" onClick={() => respond(true, "command")} className="px-2 py-1 text-2xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow command</button>}
+            {showAlwaysAllow && <button data-testid="approval-allow-always" onClick={() => respond(true, "workspace")} className="px-2 py-1 text-2xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded">Always allow</button>}
+            <button data-testid="approval-allow-once" onClick={() => respond(true)} className="px-2.5 py-1 text-2xs font-semibold text-[var(--accent-fg)] bg-[var(--accent)] hover:opacity-90 rounded">Allow once</button>
           </>
         )}
       </div>
@@ -165,11 +165,11 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
     <div>
       <button type="button" onClick={() => hasOutput && setExpanded((value) => !value)} className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit text-left", hasOutput && "hover:border-[var(--accent)] cursor-pointer", !hasOutput && "cursor-default")}>
         {toolCall.ok ? <CheckCircle size={9} className="shrink-0 text-[var(--accent)]" /> : <XCircle size={9} className="shrink-0 text-[var(--danger)]" />}
-        <span className="text-[0.714rem] text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!toolCall.ok && " failed"}</span>
-        {exitPill && <span className="text-[0.607rem] font-mono text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1">{exitPill}</span>}
+        <span className="text-xs text-[var(--text-secondary)]">{summary.pre}{summary.obj ? <> <strong className="font-medium text-[var(--text-primary)]">{summary.obj}</strong></> : null}{!toolCall.ok && " failed"}</span>
+        {exitPill && <span className="text-2xs font-mono text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1">{exitPill}</span>}
         {hasOutput && (expanded ? <ChevronDown size={9} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={9} className="text-[var(--text-tertiary)]" />)}
       </button>
-      {expanded && <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-[0.643rem] font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-all">{resultBody}</pre>}
+      {expanded && <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-2xs font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-all">{resultBody}</pre>}
       {path && contextType && (
         <button
           type="button"
@@ -177,7 +177,7 @@ function ToolCallBody({ toolCall }: { toolCall: ConversationToolCall }) {
             setActiveContextPanel(contextType === "file" ? { type: "file", path } : { type: "diff", path });
             setSessionPresentation("center");
           }}
-          className="mt-1 text-[0.643rem] text-[var(--accent)] hover:text-[var(--text-primary)] transition-colors"
+          className="mt-1 text-2xs text-[var(--accent)] hover:text-[var(--text-primary)] transition-colors"
         >
           {contextType === "file" ? "Open file" : "View diff"}
         </button>
@@ -192,7 +192,7 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
   // gate, then a sandbox escalation), and the second ask must get fresh
   // buttons rather than inherit the first card's "Allowed — running…" state.
   if (toolCall.confirmRequired) return <ApprovalCard key={toolCall.approvalNonce ?? "ask"} toolCall={toolCall} sessionId={sessionId} connectors={connectors} />;
-  if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-[0.714rem] text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
+  if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-xs text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
   if (toolCall.name === "get_user_writing_style" && writingStyleNeedsSetup(toolCall.output)) return <WritingStylePromptChip output={toolCall.output} />;
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
   if (ref) return <CairnRefChip toolName={toolCall.name} cairnRef={ref} ok={toolCall.ok} />;

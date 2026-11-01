@@ -42,7 +42,8 @@
     "screenshots:update": "playwright test -c playwright.screenshots.config.ts",
     "screenshots:electron": "npm run compile && node --experimental-strip-types scripts/capture-screenshots.ts",
     "screenshots:all": "npm run screenshots && npm run screenshots:electron",
-    "screenshots:audit": "playwright test -c playwright.audit.config.ts"
+    "screenshots:audit": "playwright test -c playwright.audit.config.ts",
+    "screenshots:compare": "node scripts/design-audit-compare.js"
   },
   "main": "dist-electron/main.js",
   "overrides": {

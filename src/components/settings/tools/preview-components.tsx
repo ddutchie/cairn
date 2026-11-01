@@ -28,11 +28,11 @@ export function PromptPreview({ systemPrompt }: { systemPrompt: string }) {
         <div className="flex items-center gap-2">
           <FileCode size={12} className="text-[var(--text-tertiary)]" />
           <span className="text-xs font-medium text-[var(--text-secondary)]">System prompt</span>
-          <span className="text-[0.65rem] text-[var(--text-tertiary)]">({lines.length} lines)</span>
+          <span className="text-2xs text-[var(--text-tertiary)]">({lines.length} lines)</span>
         </div>
         <button
           onClick={copy}
-          className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded hover:bg-[var(--surface-3)]"
+          className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded hover:bg-[var(--surface-3)]"
         >
           {copied
             ? <><CheckCircle size={11} className="text-[var(--success)]" /> Copied</>
@@ -43,7 +43,7 @@ export function PromptPreview({ systemPrompt }: { systemPrompt: string }) {
 
       {/* Content */}
       <div className="relative">
-        <pre className="text-[0.714rem] font-mono text-[var(--text-secondary)] leading-relaxed p-4 overflow-x-auto whitespace-pre-wrap break-words">
+        <pre className="text-xs font-mono text-[var(--text-secondary)] leading-relaxed p-4 overflow-x-auto whitespace-pre-wrap break-words">
           {expanded ? systemPrompt : preview}
         </pre>
         {!expanded && hasMore && (
@@ -55,7 +55,7 @@ export function PromptPreview({ systemPrompt }: { systemPrompt: string }) {
       {hasMore && (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] border-t border-[var(--border)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] border-t border-[var(--border)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] transition-colors"
         >
           {expanded
             ? <><ChevronUp size={12} /> Collapse</>
@@ -79,15 +79,15 @@ export function SectionPreview({ name, text, index }: { name: string; text: stri
         className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-[var(--surface-2)] transition-colors"
         aria-expanded={expanded}
       >
-        <span className="text-[0.65rem] font-mono text-[var(--text-tertiary)] w-5 shrink-0 text-right">{index + 1}</span>
-        <span className="text-[0.714rem] font-mono text-[var(--accent)] shrink-0">{name}</span>
+        <span className="text-2xs font-mono text-[var(--text-tertiary)] w-5 shrink-0 text-right">{index + 1}</span>
+        <span className="text-xs font-mono text-[var(--accent)] shrink-0">{name}</span>
         {text && (
-          <span className="text-[0.714rem] text-[var(--text-tertiary)] truncate flex-1">{expanded ? "" : preview}</span>
+          <span className="text-xs text-[var(--text-tertiary)] truncate flex-1">{expanded ? "" : preview}</span>
         )}
         <ChevronDown size={12} className={`text-[var(--text-tertiary)] shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
       {expanded && (
-        <pre className="text-[0.714rem] font-mono text-[var(--text-secondary)] leading-relaxed px-3 py-2 border-t border-[var(--border)] overflow-x-auto whitespace-pre-wrap break-words">
+        <pre className="text-xs font-mono text-[var(--text-secondary)] leading-relaxed px-3 py-2 border-t border-[var(--border)] overflow-x-auto whitespace-pre-wrap break-words">
           {text || "(empty section)"}
         </pre>
       )}
@@ -119,7 +119,7 @@ export function SharedSectionsList({
   const hidden = sections.filter((s) => isEmptySectionText(s.text));
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2 text-[0.714rem] text-[var(--text-tertiary)]">
+      <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--surface-3)]">
           {visible.length} shared section{visible.length !== 1 ? "s" : ""}
         </span>
@@ -134,12 +134,12 @@ export function SharedSectionsList({
           </span>
         )}
       </div>
-      <p className="text-[0.65rem] text-[var(--text-tertiary)]">
+      <p className="text-2xs text-[var(--text-tertiary)]">
         Global engine assembly — identical for chat and coding agent turns. Only the identity section content differs per surface (shown below).
       </p>
       {visible.map((s) => <SectionPreview key={`${s.index}-${s.name}`} name={s.name} text={s.text} index={s.index} />)}
       {hidden.length > 0 && (
-        <p className="text-[0.65rem] text-[var(--text-tertiary)]">
+        <p className="text-2xs text-[var(--text-tertiary)]">
           Hidden when empty: {hidden.map((s) => s.name).join(", ")}
         </p>
       )}
@@ -163,7 +163,7 @@ export function categoryDot(category: string): string {
 
 export function ToolsLegend() {
   return (
-    <p className="text-[0.714rem] text-[var(--text-tertiary)] mt-2">
+    <p className="text-xs text-[var(--text-tertiary)] mt-2">
       <StatusDot color="var(--accent)" className="inline-block mr-1" />read &nbsp;
       <StatusDot color="var(--warning)" className="inline-block mr-1" />write &nbsp;
       <StatusDot color="var(--danger)" className="inline-block mr-1" />delete &nbsp;
@@ -190,24 +190,24 @@ export function SurfaceToolsPanel({
           <div key={`${t.source}:${t.name}`} className="px-2 py-1.5 rounded hover:bg-[var(--surface-2)]">
             <div className="flex items-center gap-1.5">
               <StatusDot className={categoryDot(t.category)} />
-              <span className="text-[0.714rem] font-mono text-[var(--accent)]">{t.name}</span>
+              <span className="text-xs font-mono text-[var(--accent)]">{t.name}</span>
               {t.source !== "cairn" && (
-                <span className="text-[0.65rem] px-1 py-px rounded bg-[var(--surface-3)] text-[var(--text-tertiary)]">
+                <span className="text-2xs px-1 py-px rounded bg-[var(--surface-3)] text-[var(--text-tertiary)]">
                   {t.source}
                 </span>
               )}
               {t.gated && (
-                <span className="text-[0.65rem] px-1 py-px rounded bg-[var(--surface-3)] text-[var(--warning)]">
+                <span className="text-2xs px-1 py-px rounded bg-[var(--surface-3)] text-[var(--warning)]">
                   approval-gated
                 </span>
               )}
             </div>
-            {t.description && <div className="text-[0.714rem] text-[var(--text-tertiary)] line-clamp-1">{t.description}</div>}
+            {t.description && <div className="text-xs text-[var(--text-tertiary)] line-clamp-1">{t.description}</div>}
           </div>
         ))}
       </div>
       {footnote && (
-        <div className="px-3.5 py-2 border-t border-[var(--border)] text-[0.65rem] text-[var(--text-tertiary)]">
+        <div className="px-3.5 py-2 border-t border-[var(--border)] text-2xs text-[var(--text-tertiary)]">
           {footnote}
         </div>
       )}

@@ -143,7 +143,7 @@ export function EnvEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+        <span className="text-xs font-medium text-[var(--text-tertiary)]">
           Environment {visible.length > 0 && `(${visible.length}${secretCount ? ` · ${secretCount} secret` : ""})`}
         </span>
         <div className="flex items-center gap-1">
@@ -161,7 +161,7 @@ export function EnvEditor({
         </div>
       </div>
 
-      <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+      <p className="text-xs text-[var(--text-tertiary)]">
         Env vars are injected into scripts at run time. Secrets are stored in your OS keychain and never leave the machine.
       </p>
 
@@ -185,7 +185,7 @@ export function EnvEditor({
                 value={row.name}
                 onChange={(e) => updateRow(row.key, { name: e.target.value })}
                 placeholder="VAR_NAME"
-                className="w-40 shrink-0 font-mono text-[0.714rem]"
+                className="w-40 shrink-0 font-mono text-xs"
                 spellCheck={false}
               />
               <Input
@@ -193,7 +193,7 @@ export function EnvEditor({
                 value={row.value}
                 onChange={(e) => updateRow(row.key, { value: e.target.value })}
                 placeholder={row.secret ? (row.set ? "•••••••• (leave blank to keep)" : "Secret value") : "Value"}
-                className="flex-1 min-w-0 text-[0.714rem]"
+                className="flex-1 min-w-0 text-xs"
                 spellCheck={false}
               />
               <Tooltip content={row.secret ? "Secret — stored in OS keychain" : "Not secret — plain value"}>
@@ -201,7 +201,7 @@ export function EnvEditor({
                   type="button"
                   onClick={() => updateRow(row.key, { secret: !row.secret })}
                   className={cn(
-                    "flex items-center gap-1 shrink-0 rounded px-1.5 py-1 text-[0.65rem] uppercase tracking-wide border transition-colors",
+                    "flex items-center gap-1 shrink-0 rounded px-1.5 py-1 text-2xs border transition-colors",
                     row.secret
                       ? "border-[var(--accent)] text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]"
                       : "border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
@@ -236,7 +236,7 @@ export function EnvEditor({
             <button
               type="button"
               onClick={() => setRows((prev) => prev.filter((r) => !r.removed))}
-              className="text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1"
+              className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] inline-flex items-center gap-1"
             >
               <X size={11} /> Undo removals
             </button>

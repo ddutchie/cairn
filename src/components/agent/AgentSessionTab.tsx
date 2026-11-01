@@ -81,16 +81,16 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
       </button>
 
       {dropdownOpen && (
-        <div className="absolute left-0 top-full z-50 mt-0.5 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl overflow-hidden">
+        <div className="absolute left-0 top-full z-50 mt-0.5 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 overflow-hidden">
           <div className="px-3 py-2 border-b border-[var(--border)]">
             <div className="flex items-center gap-1.5">
               <History size={10} className="text-[var(--text-tertiary)]" />
-              <span className="text-[0.643rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Session history</span>
+              <span className="text-xs font-medium text-[var(--text-tertiary)]">Session history</span>
             </div>
           </div>
           <div className="max-h-64 overflow-y-auto">
             {codingSessionHistory.length === 0 ? (
-              <p className="px-3 py-3 text-[0.714rem] text-[var(--text-tertiary)] text-center">No saved sessions</p>
+              <p className="px-3 py-3 text-xs text-[var(--text-tertiary)] text-center">No saved sessions</p>
             ) : (
               codingSessionHistory.map((summary) => (
                 <div
@@ -104,19 +104,19 @@ export function AgentSessionTab({ isActive, onActivate }: AgentSessionTabProps) 
                     onClick={() => handleResumeSession(summary)}
                     className="flex-1 min-w-0 text-left"
                   >
-                    <p className="text-[0.714rem] text-[var(--text-primary)] truncate">{summary.taskTitle}</p>
+                    <p className="text-xs text-[var(--text-primary)] truncate">{summary.taskTitle}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className={cn(
-                        "text-[0.607rem] font-medium px-1 py-0 rounded",
+                        "text-2xs font-medium px-1 py-0 rounded",
                         summary.mode === "plan"
                           ? "bg-[color-mix(in_srgb,var(--warning,#f59e0b)_15%,transparent)] text-[var(--warning,#f59e0b)]"
                           : "bg-[var(--accent-dim)] text-[var(--accent)]"
                       )}>
                         {summary.mode.toUpperCase()}
                       </span>
-                      <span className="text-[0.607rem] text-[var(--text-tertiary)]">{formatDateCompact(summary.updatedAt)}</span>
+                      <span className="text-2xs text-[var(--text-tertiary)]">{formatDateCompact(summary.updatedAt)}</span>
                       {summary.status === "exited" && (
-                        <span className="text-[0.607rem] text-[var(--text-tertiary)]">· exited</span>
+                        <span className="text-2xs text-[var(--text-tertiary)]">· exited</span>
                       )}
                     </div>
                   </button>

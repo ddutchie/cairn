@@ -73,7 +73,7 @@ export function StepAISetup({
           >
             <span
               className={cn(
-                "inline-block h-3.5 w-3.5 rounded-full bg-[var(--surface)] shadow-sm transition-transform",
+                "inline-block h-3.5 w-3.5 rounded-full bg-[var(--surface)] shadow-elev-1 transition-transform",
                 aiEnabled ? "translate-x-4.5" : "translate-x-0.5"
               )}
             />
@@ -101,7 +101,7 @@ export function StepAISetup({
                 <button
                   type="button"
                   onClick={() => setShowAdvanced((v) => !v)}
-                  className="flex items-center gap-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                 >
                   <SlidersHorizontal size={11} />
                   {showAdvanced ? "Hide manual endpoint" : "Manual endpoint / custom model"}
@@ -134,7 +134,7 @@ export function StepAISetup({
                         />
                       </div>
                     ) : (
-                      <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+                      <p className="text-xs text-[var(--text-tertiary)]">
                         No API key needed for local endpoints.
                       </p>
                     )}
@@ -158,7 +158,7 @@ export function StepAISetup({
                             type="button"
                             onClick={() => onModelChange(m)}
                             className={cn(
-                              "px-2 py-0.5 text-[0.714rem] rounded border transition-colors cursor-pointer",
+                              "px-2 py-0.5 text-xs rounded border transition-colors cursor-pointer",
                               model === m
                                 ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                                 : "border-[var(--border)] text-[var(--text-tertiary)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] hover:text-[var(--text-secondary)]"

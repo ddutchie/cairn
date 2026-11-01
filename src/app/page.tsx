@@ -514,7 +514,7 @@ export default function Home() {
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
           {runningAutomationCount} automation{runningAutomationCount === 1 ? "" : "s"} running
-          <span className="ml-auto text-[0.714rem] opacity-80">View →</span>
+          <span className="ml-auto text-xs opacity-80">View →</span>
         </button>
       )}
       <UpdateBanner

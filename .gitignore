@@ -109,4 +109,5 @@ scripts/runtime-baselines/
 /docs/private/
 /.agents/skills
 skills-lock.json
-design-audit/screens/
+design-audit/*/
+design-audit/compare.html

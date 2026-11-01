@@ -107,13 +107,13 @@ function LocalServersCard() {
         <button
           onClick={handleScan}
           disabled={scanning}
-          className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 self-start"
+          className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 self-start"
         >
           <Server size={12} />
           {scanning ? "Scanning localhost…" : scanned ? "Scan again" : "Detect local servers"}
         </button>
         {scanned && found.length === 0 && (
-          <p className="text-[0.714rem] text-[var(--text-tertiary)]">
+          <p className="text-xs text-[var(--text-tertiary)]">
             Nothing answering on the usual ports. Start Ollama (`ollama serve`), LM Studio (server tab), or
             `llama-server`, then scan again — or add the endpoint manually below.
           </p>
@@ -126,18 +126,18 @@ function LocalServersCard() {
               className="flex items-center justify-between gap-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-2"
             >
               <div className="min-w-0">
-                <p className="text-[0.714rem] font-semibold text-[var(--text-primary)]">
+                <p className="text-xs font-semibold text-[var(--text-primary)]">
                   {server.name}
                   <span className="ml-1.5 font-mono font-normal text-[var(--text-tertiary)] break-all">{server.baseUrl}</span>
                 </p>
-                <p className="text-[0.65rem] text-[var(--text-tertiary)] truncate">
+                <p className="text-2xs text-[var(--text-tertiary)] truncate">
                   {server.models.length > 0 ? server.models.join(", ") : "reachable — no models listed yet"}
                 </p>
               </div>
               <button
                 onClick={() => handleAdd(server)}
                 disabled={already}
-                className="shrink-0 px-2.5 py-1 text-[0.714rem] rounded-md border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors cursor-pointer disabled:opacity-40"
+                className="shrink-0 px-2.5 py-1 text-xs rounded-md border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors cursor-pointer disabled:opacity-40"
               >
                 {already ? "Added" : "Add"}
               </button>
@@ -181,7 +181,7 @@ function ChatPreviewSection() {
       {workspacePath && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
           <FolderOpen size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
-          <span className="text-[0.714rem] font-mono text-[var(--text-tertiary)] truncate">{workspacePath}</span>
+          <span className="text-xs font-mono text-[var(--text-tertiary)] truncate">{workspacePath}</span>
         </div>
       )}
 
@@ -199,7 +199,7 @@ function ChatPreviewSection() {
           <PromptPreview systemPrompt={systemPrompt} />
           {/* Skills are a coding-agent capability — chat neither resolves the
               skill tool nor receives the catalog. Listed on Coding Agents. */}
-          <p className="text-[0.65rem] text-[var(--text-tertiary)]">
+          <p className="text-2xs text-[var(--text-tertiary)]">
             Workspace skills load on the coding agent only — see the Coding Agents tab.
           </p>
         </div>
@@ -360,7 +360,7 @@ export function AISettings() {
             >
               <button
                 onClick={() => setBrowsingProviders(true)}
-                className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Download size={12} /> Browse Community
               </button>
@@ -492,7 +492,7 @@ export function AISettings() {
         >
           <button
             onClick={() => setBrowsingPersonalities(true)}
-            className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Download size={12} /> Browse Community
           </button>
@@ -518,8 +518,8 @@ export function AISettings() {
                 aria-label="Select None — no personality layer"
               >
                 <Sparkles size={12} className="text-[var(--text-tertiary)] shrink-0" />
-                <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1">None</span>
-                <span className={cn("text-[0.65rem] shrink-0", !aiConfig.personalityId ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                <span className="text-xs text-[var(--text-secondary)] flex-1">None</span>
+                <span className={cn("text-2xs shrink-0", !aiConfig.personalityId ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
                   {!aiConfig.personalityId ? "Active" : "Inactive"}
                 </span>
               </button>
@@ -549,11 +549,11 @@ export function AISettings() {
                         size="md"
                         color={p.brandColor ?? "var(--text-tertiary)"}
                       />
-                      <span className="text-[0.714rem] text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
+                      <span className="text-xs text-[var(--text-secondary)] flex-1 truncate">{p.name}</span>
                       {p.source === "custom" && (
-                        <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
+                        <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">custom</span>
                       )}
-                      <span className={cn("text-[0.65rem] shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
+                      <span className={cn("text-2xs shrink-0", isActive ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")}>
                         {isActive ? "Active" : "Inactive"}
                       </span>
                     </button>
@@ -579,7 +579,7 @@ export function AISettings() {
         >
           <button
             onClick={() => setCreatingPersonality((v) => !v)}
-            className="px-2.5 py-1.5 text-[0.714rem] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             {creatingPersonality ? <X size={12} /> : <Plus size={12} />}
             {creatingPersonality ? "Cancel" : "New personality"}
@@ -610,7 +610,7 @@ export function AISettings() {
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => { setCreatingPersonality(false); setPersonaName(""); setPersonaDescription(""); setPersonaPrompt(""); }}
-                className="px-2.5 py-1.5 text-[0.714rem] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                className="px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
               >
                 Cancel
               </button>

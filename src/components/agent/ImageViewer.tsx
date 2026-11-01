@@ -36,7 +36,7 @@ export function ImageViewer({ filePath }: ImageViewerProps) {
         />
       )}
       {!src && !error && <p className="text-xs text-[var(--text-tertiary)]">Loading…</p>}
-      <p className="text-[0.714rem] text-[var(--text-tertiary)] font-mono">{filePath.split("/").pop()}</p>
+      <p className="text-xs text-[var(--text-tertiary)] font-mono">{filePath.split("/").pop()}</p>
     </div>
   );
 }

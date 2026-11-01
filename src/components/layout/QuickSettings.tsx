@@ -78,7 +78,7 @@ export function QuickSettings() {
             options={THEMES}
             value={theme}
             onChange={setTheme}
-            className="w-full text-[0.714rem]"
+            className="w-full text-xs"
           />
         </div>
 
@@ -98,7 +98,7 @@ export function QuickSettings() {
           onClick={() => setChatThemesOpen((v) => !v)}
           aria-expanded={chatThemesOpen}
           className={cn(
-            "mt-2 flex w-full items-center justify-between rounded px-1 py-0.5 text-[0.643rem] font-semibold uppercase tracking-wide",
+            "mt-2 flex w-full items-center justify-between rounded px-1 py-0.5 text-2xs font-medium",
             "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors",
           )}
         >
@@ -123,7 +123,7 @@ export function QuickSettings() {
             options={FONT_SCALES}
             value={fontScale}
             onChange={setFontScale}
-            className="w-full text-[0.714rem]"
+            className="w-full text-xs"
           />
         </div>
 
@@ -134,7 +134,7 @@ export function QuickSettings() {
             options={NOTE_FONTS}
             value={fontFamily}
             onChange={setFontFamily}
-            className="w-full text-[0.714rem]"
+            className="w-full text-xs"
           />
         </div>
 

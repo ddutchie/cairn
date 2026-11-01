@@ -13,7 +13,7 @@ export const ContextMenuRadioGroup = RadixContextMenu.RadioGroup;
 
 const surface = cn(
   "z-50 min-w-[160px] rounded-lg p-1",
-  "bg-[var(--surface-2)] border border-[var(--border)] shadow-2xl",
+  "bg-[var(--surface-2)] border border-[var(--border)] shadow-elev-2",
   "animate-fade-in",
 );
 
@@ -132,7 +132,7 @@ export function ContextMenuSeparator() {
 
 export function ContextMenuLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] font-medium uppercase tracking-wide">
+    <div className="px-2.5 py-1.5 text-xs text-[var(--text-tertiary)] font-medium">
       {children}
     </div>
   );

@@ -61,7 +61,7 @@ export function TerminalTab({ session, isActive, onActivate, onClose }: Terminal
           <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">running</span>
         )}
         {session.status === "exited" && (
-          <span className="text-[0.65rem] text-[var(--text-tertiary)]">
+          <span className="text-2xs text-[var(--text-tertiary)]">
             [{session.exitCode}]
           </span>
         )}

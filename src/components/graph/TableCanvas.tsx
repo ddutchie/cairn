@@ -174,10 +174,10 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
                         className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                         style={{ background: tagColor }}
                       />
-                      <span className="text-[0.786rem] text-[var(--text-tertiary)] font-mono">{tagColor}</span>
+                      <span className="text-sm text-[var(--text-tertiary)] font-mono">{tagColor}</span>
                     </div>
                   ) : snippet ? (
-                    <p className="text-[0.786rem] text-[var(--text-tertiary)] truncate mt-0.5">{snippet}</p>
+                    <p className="text-sm text-[var(--text-tertiary)] truncate mt-0.5">{snippet}</p>
                   ) : null}
                 </td>
 
@@ -191,7 +191,7 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
                   <td className="px-3 py-2">
                     {priority ? (
                       <span
-                        className="inline-flex items-center gap-1 text-[0.714rem] capitalize"
+                        className="inline-flex items-center gap-1 text-xs capitalize"
                         style={{
                           color: PRIORITY_COLOR[priority ?? "medium"] ?? PRIORITY_COLOR.medium,
                         }}
@@ -206,7 +206,7 @@ export function TableCanvas({ nodes, onNodeClick, selectedNodeId, search, typeFi
                 )}
 
                 {/* Updated */}
-                <td className="px-3 py-2 text-[var(--text-tertiary)] font-mono text-[0.786rem]">{updated}</td>
+                <td className="px-3 py-2 text-[var(--text-tertiary)] font-mono text-sm">{updated}</td>
               </tr>
             );
           })}

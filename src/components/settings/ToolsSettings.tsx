@@ -146,7 +146,7 @@ export function ToolsSettings() {
   return (
     <>
       {saveError && (
-        <div className="text-[0.714rem] text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
+        <div className="text-xs text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] rounded px-3 py-2">
           {saveError}
         </div>
       )}
@@ -188,7 +188,7 @@ export function ToolsSettings() {
         description="Connect the AI to remote MCP servers (SSE or streamable-HTTP). Enable a server here, then attach it per-project from the project Overview."
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Configured servers</h3>
+          <h3 className="text-xs font-medium text-[var(--text-tertiary)]">Configured servers</h3>
           <div className="flex gap-1">
             {!addingMcp && (
               <Button variant="ghost" size="sm" onClick={() => setAddingMcp(true)}>
@@ -250,7 +250,7 @@ export function ToolsSettings() {
         description="Expose any HTTP API to the AI as a single tool. Define the request shape and which response fields to keep."
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-tertiary)]">Configured services</h3>
+          <h3 className="text-xs font-medium text-[var(--text-tertiary)]">Configured services</h3>
           {!addingSvc && (
             <Button variant="ghost" size="sm" onClick={() => setAddingSvc(true)}>
               <Plus size={12} /> Add service

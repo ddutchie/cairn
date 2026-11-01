@@ -169,7 +169,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
       hasResults={filtered.length > 0}
       emptyText="No community providers available."
       belowList={
-        <p className="mt-4 text-[0.65rem] text-[var(--text-tertiary)]">
+        <p className="mt-4 text-2xs text-[var(--text-tertiary)]">
           Added providers join your shared provider list. Select one in the provider
           switcher above to use it in AI Chat or the coding agent.
         </p>
@@ -207,13 +207,13 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-[var(--text-primary)]">{def.name}</span>
                       {def.needsApiKey && (
-                        <span className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--text-tertiary)]">
+                        <span className="inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)]">
                           <KeyRound size={11} /> API key
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{entry.blurb}</p>
-                    <p className="text-[0.65rem] text-[var(--text-tertiary)] mt-1 truncate font-mono">
+                    <p className="text-2xs text-[var(--text-tertiary)] mt-1 truncate font-mono">
                       {def.baseUrl}
                       {def.defaultModel ? ` · ${def.defaultModel}` : ""}
                     </p>
@@ -223,11 +223,11 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
                     {prompting ? (
                       // The inline key prompt below owns the install action — hide
                       // the redundant top-right button while it's open.
-                      <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--text-tertiary)]">
+                      <span className="inline-flex items-center gap-1 text-xs text-[var(--text-tertiary)]">
                         <KeyRound size={13} /> Enter key
                       </span>
                     ) : installed && !updatable ? (
-                      <span className="inline-flex items-center gap-1 text-[0.714rem] text-[var(--success,var(--accent))]">
+                      <span className="inline-flex items-center gap-1 text-xs text-[var(--success,var(--accent))]">
                         <Check size={13} /> Added
                       </span>
                     ) : (
@@ -253,7 +253,7 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
                 {/* Inline API-key prompt for THIS provider (below its row). */}
                 {prompting && (
                   <div className="border-t border-[var(--border)] bg-[color-mix(in_srgb,var(--accent)_5%,transparent)] px-3 py-3 rounded-b-lg">
-                    <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-2">
+                    <p className="text-xs text-[var(--text-tertiary)] mb-2">
                       Stored securely in your OS keychain — never written to the app database or sent to the model.
                       {def.apiKeyUrl && isSafeExternalUrl(def.apiKeyUrl) && (
                         <>

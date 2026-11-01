@@ -27,7 +27,7 @@ export function FileSection({
       >
         {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <MicroLabel>{label}</MicroLabel>
-        <span className="text-[0.65rem] text-[var(--text-tertiary)] opacity-60">{count}</span>
+        <span className="text-2xs text-[var(--text-tertiary)] opacity-60">{count}</span>
         {action && (
           <div className="ml-auto flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             {action}

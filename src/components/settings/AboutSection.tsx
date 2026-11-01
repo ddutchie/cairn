@@ -85,10 +85,10 @@ export function AboutSection() {
 
         {/* Stack */}
         <div className="space-y-3">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Stack</div>
+          <div className="text-xs font-medium text-[var(--text-tertiary)]">Stack</div>
           {stackByCategory.map(({ category, entries }) => (
             <div key={category} className="space-y-1.5">
-              <div className="text-[0.714rem] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] opacity-60">{category}</div>
+              <div className="text-xs font-medium text-[var(--text-tertiary)] opacity-60">{category}</div>
               <div className="grid grid-cols-2 gap-1.5">
                 {entries.map((entry) => (
                   <div
@@ -97,9 +97,9 @@ export function AboutSection() {
                   >
                     <div>
                       <span className="text-xs font-medium text-[var(--text-primary)]">{entry.label}</span>
-                      <span className="text-[0.714rem] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
+                      <span className="text-xs text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
                     </div>
-                    <span className="text-[0.714rem] text-[var(--text-tertiary)]">{entry.role}</span>
+                    <span className="text-xs text-[var(--text-tertiary)]">{entry.role}</span>
                   </div>
                 ))}
               </div>
@@ -121,10 +121,10 @@ export function AboutSection() {
               {allLicenses.map((entry) => (
                 <div key={entry.name} className="flex items-center justify-between px-4 py-2">
                   <div>
-                    <span className="text-[0.786rem] text-[var(--text-secondary)]">{entry.name}</span>
-                    <span className="text-[0.714rem] text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
+                    <span className="text-sm text-[var(--text-secondary)]">{entry.name}</span>
+                    <span className="text-xs text-[var(--text-tertiary)] ml-1.5">{entry.version}</span>
                   </div>
-                  <span className="text-[0.714rem] font-mono text-[var(--text-tertiary)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">{entry.license}</span>
+                  <span className="text-xs font-mono text-[var(--text-tertiary)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">{entry.license}</span>
                 </div>
               ))}
             </div>

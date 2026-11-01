@@ -70,7 +70,7 @@ export function ReasoningEffortPicker({
 
   // Legacy configs may hold undefined (pre-"auto"); treat that as Auto.
   const active = REASONING_OPTIONS.find((o) => o.value === (effort ?? "auto")) ?? REASONING_OPTIONS[0];
-  const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-[0.643rem]" : "px-2 py-1 text-[0.714rem]";
+  const triggerPad = size === "xs" ? "px-1.5 py-0.5 text-2xs" : "px-2 py-1 text-xs";
 
   const select = (value: ReasoningEffort) => {
     if (target === "ai") setAIConfig({ reasoningEffort: value });
@@ -106,10 +106,10 @@ export function ReasoningEffortPicker({
           side="bottom"
           align={align}
           sideOffset={6}
-          className="z-50 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-xl p-3 space-y-2 animate-fade-in focus:outline-none"
+          className="z-50 w-64 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-elev-2 p-3 space-y-2 animate-fade-in focus:outline-none"
         >
           <div className="flex items-center justify-between">
-            <div className="text-[0.643rem] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+            <div className="text-xs font-medium text-[var(--text-tertiary)]">
               {target === "ai" ? "Chat" : "Agent"} · reasoning effort
             </div>
             <button
@@ -130,7 +130,7 @@ export function ReasoningEffortPicker({
                   type="button"
                   onClick={() => select(o.value)}
                   className={cn(
-                    "flex items-start gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-[0.714rem] transition-colors",
+                    "flex items-start gap-1.5 w-full px-2 py-1.5 rounded-md text-left text-xs transition-colors",
                     isActive
                       ? "text-[var(--accent)] bg-[var(--accent-dim)]"
                       : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]",
@@ -140,10 +140,10 @@ export function ReasoningEffortPicker({
                     <span className="flex items-center gap-1.5">
                       <span className="font-medium">{o.label}</span>
                       {o.value === "auto" && (
-                        <span className="text-[0.6rem] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">default</span>
+                        <span className="text-2xs text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1 leading-3">default</span>
                       )}
                     </span>
-                    <span className="block text-[0.6rem] text-[var(--text-tertiary)] mt-0.5">{o.hint}</span>
+                    <span className="block text-2xs text-[var(--text-tertiary)] mt-0.5">{o.hint}</span>
                   </span>
                   {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0 mt-1.5" />}
                 </button>

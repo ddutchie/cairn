@@ -129,7 +129,7 @@ export function CardDetailBody({
 
         {/* Description */}
         <div>
-          <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">Description</label>
+          <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">Description</label>
           {isEditingDesc ? (
             <textarea
               autoFocus
@@ -176,7 +176,7 @@ export function CardDetailBody({
 
         {/* Tags */}
         <div>
-          <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">
+          <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">
             <TagIcon size={10} className="inline mr-1" />Tags
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -210,8 +210,8 @@ export function CardDetailBody({
 
         {/* Linked notes */}
         <div>
-          <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2 uppercase tracking-wide">
-            <FileText size={10} className="inline mr-1" />Linked Notes
+          <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-2">
+            <FileText size={10} className="inline mr-1" />Linked notes
           </label>
           <div className="space-y-2">
             {linkedNotes.map((note) => note && (
@@ -232,7 +232,7 @@ export function CardDetailBody({
             ))}
             {mentionedNotes.length > 0 && (
               <div className="pt-1">
-                <p className="text-[0.714rem] text-[var(--text-tertiary)] mb-1.5">Mentioned in description</p>
+                <p className="text-xs text-[var(--text-tertiary)] mb-1.5">Mentioned in description</p>
                 <div className="space-y-1.5">
                   {mentionedNotes.map((note) => (
                     <div key={note.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-dashed border-[var(--border)] group">

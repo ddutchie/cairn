@@ -51,7 +51,7 @@ export function TagsSettings() {
               {colorPickerId === tag.id && (
                 <div
                   ref={pickerRef}
-                  className="absolute left-0 top-full mt-1 z-50 p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl"
+                  className="absolute left-0 top-full mt-1 z-50 p-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-2"
                 >
                   <div className="grid grid-cols-7 gap-1.5">
                     {TAG_PALETTE.map(({ color, name }) => (
@@ -92,7 +92,7 @@ export function TagsSettings() {
                   {tag.name}
                 </span>
               )}
-              <span className="text-[0.786rem] text-[var(--text-tertiary)] tabular-nums whitespace-nowrap">
+              <span className="text-sm text-[var(--text-tertiary)] tabular-nums whitespace-nowrap">
                 {noteCount} note{noteCount !== 1 ? "s" : ""} · {cardCount} card{cardCount !== 1 ? "s" : ""}
               </span>
               <button

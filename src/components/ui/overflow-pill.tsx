@@ -33,7 +33,7 @@ function previewNames(names: string[]): string {
  */
 export function OverflowPill({ count, names, onClick, label, tooltip, className }: OverflowPillProps) {
   const pillClasses = cn(
-    "inline-flex items-center rounded border border-[var(--border)] px-1 py-0.5 text-[0.643rem] font-medium text-[var(--text-tertiary)] select-none",
+    "inline-flex items-center rounded border border-[var(--border)] px-1 py-0.5 text-2xs font-medium text-[var(--text-tertiary)] select-none",
     onClick
       ? "cursor-pointer bg-transparent transition-colors hover:text-[var(--text-secondary)] hover:border-[var(--text-tertiary)]"
       : "cursor-default",

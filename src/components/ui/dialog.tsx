@@ -41,7 +41,7 @@ export function DialogContent({
         }}
         className={cn(
           "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50",
-          "bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-2xl",
+          "bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-elev-3",
           "focus:outline-none animate-slide-in-up",
           size === "sm" && "w-full max-w-sm",
           size === "md" && "w-full max-w-lg",

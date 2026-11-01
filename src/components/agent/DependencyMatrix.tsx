@@ -249,7 +249,7 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Depth control */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] flex-shrink-0 text-[0.7rem] text-[var(--text-tertiary)]">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] flex-shrink-0 text-xs text-[var(--text-tertiary)]">
         <span>{n} folders · grouped by directory depth</span>
         <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden ml-1">
           {Array.from({ length: Math.min(4, maxDepth) }, (_, i) => i + 1).map((d) => (
@@ -278,7 +278,7 @@ export function DependencyMatrix({ nodes, edges, root, selectedId, onSelect }: P
         </div>
         {hoverLabel && (
           <div
-            className="absolute pointer-events-none px-2 py-1 rounded-md text-[0.7rem] font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-md max-w-md truncate z-50"
+            className="absolute pointer-events-none px-2 py-1 rounded-md text-xs font-mono bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-elev-1 max-w-md truncate z-50"
             style={{ left: (hover?.x ?? 0) + 14, top: (hover?.y ?? 0) + 14 }}
           >
             {hoverLabel}
