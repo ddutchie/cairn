@@ -171,6 +171,33 @@ export function getEngine(): SyncEngine {
 }
 
 /**
+ * Recovery hatch for a source DB that won't open (corrupt file, a migration
+ * that keeps failing). Deletes the active source's local DB and forgets the
+ * selection, so the next launch shows onboarding and the workspace re-downloads
+ * from the iCloud oplog. Local changes that hadn't synced yet are lost — the
+ * caller must say so before calling this.
+ */
+export function resetActiveSource(): void {
+  const ws = metaGet("active_source");
+  if (ws) {
+    const cached = _sources.get(ws);
+    try {
+      cached?.db.closeSync();
+    } catch {
+      /* already closed */
+    }
+    _sources.delete(ws);
+    try {
+      SQLite.deleteDatabaseSync(sourceDbName(ws));
+    } catch {
+      /* never created — fine */
+    }
+  }
+  metaDb().runSync("DELETE FROM meta WHERE key = 'active_source'");
+  _activeWorkspaceId = null;
+}
+
+/**
  * One-time cleanup: the pre-multi-source single DB (`cairn-mobile.db`) is
  * obsolete under one-DB-per-source. Its contents are fully re-derivable from the
  * desktop oplog once a source is picked, so we just delete it (no adoption). The
