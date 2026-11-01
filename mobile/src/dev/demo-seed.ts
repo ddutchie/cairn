@@ -10,7 +10,7 @@
  * build; the id keeps its old "dev-" name so existing dev installs reuse it.
  */
 
-import { getDb, setActiveSource } from "@/db";
+import { getDb, getMeta, setActiveSource, setMeta } from "@/db";
 import { createNote, createTask, setCardTags, setNoteTags } from "@/db/queries";
 import { hasChatHistory, saveChatMessage } from "@/db/chat-store";
 
@@ -74,7 +74,7 @@ Cairn keeps the phone and the desktop app in step through a shared iCloud folder
 
 | Where | What you do |
 | --- | --- |
-| Desktop | Settings → Sync, choose iCloud Drive › Cairn › sync |
+| Desktop | Settings › Device Sync › Choose folder…, then iCloud Drive › Cairn › sync |
 | Phone | Pick the workspace when it appears |
 
 > Your notes stay in your iCloud and on your devices. Cairn has no server of its own.
@@ -95,7 +95,7 @@ const PROJECTS: SeedProject[] = [
       { title: "Edit the getting-started note", column: "todo", priority: "high", tags: ["mobile"] },
       { title: "Drag this task to Done", column: "in_progress", priority: "medium", dueInDays: 1, description: "Press and hold a task, then drag it to another column." },
       { title: "Try asking Chat about your notes", column: "todo", priority: "medium", dueInDays: 3, tags: ["idea"] },
-      { title: "Connect the desktop app", column: "backlog", priority: "low", description: "Desktop: Settings → Sync, choose iCloud Drive › Cairn › sync." },
+      { title: "Connect the desktop app", column: "backlog", priority: "low", description: "Desktop: Settings › Device Sync › Choose folder…, then iCloud Drive › Cairn › sync." },
       { title: "Open the sample workspace", column: "done", priority: "low" },
       { title: "Fix the leaky tap", column: "review", priority: "urgent", dueInDays: 2, tags: ["bug"] },
     ],
@@ -155,12 +155,20 @@ function isoInDays(days: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+const DEMO_OPENED_KEY = "demo_opened";
+
+/** Whether this phone has a sample workspace (it was opened at least once). */
+export function hasDemoWorkspace(): boolean {
+  return getMeta(DEMO_OPENED_KEY) === "1";
+}
+
 /**
  * Select the demo source, seeding it on first use. Idempotent: an already-
  * seeded demo DB is reused as-is so edits made while testing persist.
  */
 export function openDemoWorkspace(): void {
   setActiveSource(DEMO_WORKSPACE_ID);
+  setMeta(DEMO_OPENED_KEY, "1");
   const db = getDb();
   if (!db.getFirstSync("SELECT id FROM workspaces WHERE id = ?", DEMO_WORKSPACE_ID)) seedWorkspace();
   seedChat();

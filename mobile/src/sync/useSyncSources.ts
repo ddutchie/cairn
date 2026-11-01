@@ -3,7 +3,7 @@ import { getActiveSource, getActiveSourceName, getDeviceId } from "@/db";
 import { getSyncFolderPath, iCloudAvailable } from "@/sync/folder";
 import { listSources, type SyncSource } from "@/sync/fs-transport";
 import { mergeSwitcherSources } from "@/sync/switcher-sources";
-import { DEMO_WORKSPACE_ID } from "@/dev/demo-seed";
+import { DEMO_WORKSPACE_ID, hasDemoWorkspace } from "@/dev/demo-seed";
 
 interface UseSyncSourcesOptions {
   /**
@@ -80,14 +80,15 @@ export function useSyncSources(opts: UseSyncSourcesOptions = {}): UseSyncSources
 
 /**
  * Ensure the active source is present (it may not be in the scan yet) and sort
- * by display name — the header switcher's ordering. Dev builds also list the
- * local demo workspace so switching can be exercised without iCloud.
+ * by display name — the header switcher's ordering. The sample workspace is
+ * listed once it exists on this phone, so it can be reopened after switching
+ * away (dev builds always list it, to exercise switching without iCloud).
  */
 function withActiveMerged(found: SyncSource[]): SyncSource[] {
   const active = getActiveSource();
   return mergeSwitcherSources(
     found,
     active ? { workspaceId: active, name: getActiveSourceName() } : null,
-    __DEV__ ? [{ workspaceId: DEMO_WORKSPACE_ID, name: "Sample workspace" }] : [],
+    __DEV__ || hasDemoWorkspace() ? [{ workspaceId: DEMO_WORKSPACE_ID, name: "Sample workspace" }] : [],
   );
 }
