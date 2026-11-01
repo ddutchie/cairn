@@ -223,7 +223,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
                       <Check size={13} /> Installed
                     </span>
                   ) : (
-                    <Tooltip content={updatable && armedUpdateId === entry.id ? "Click again — your local edits will be replaced by the community version" : undefined} disabled={!(updatable && armedUpdateId === entry.id ? "Click again — your local edits will be replaced by the community version" : undefined)}>
+                    <Tooltip content="Click again — your local edits will be replaced by the community version" disabled={!(updatable && armedUpdateId === entry.id)}>
                       <Button
                         size="sm"
                         variant={updatable ? "outline" : "default"}

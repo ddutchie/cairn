@@ -123,7 +123,7 @@ describe("ConversationSessionStatus", () => {
     }));
     expect(await screen.findByText(/owned job/)).toBeTruthy();
     // The dock starts collapsed (summary only) — expand to see the rows.
-    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    fireEvent.click(screen.getByRole("button", { name: /owned job/, expanded: false }));
     expect(screen.getByText(/unowned job/)).toBeTruthy();
     expect(screen.queryByText(/foreign job/)).toBeNull();
   });

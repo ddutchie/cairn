@@ -197,7 +197,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
         <div className="flex flex-col gap-1.5 items-end w-64">
           <div className="flex gap-1.5 w-full">
             <DropdownMenu>
-              <Tooltip content="Finish or cancel the open provider form first" disabled={!formOpen}>
+              <Tooltip content="Finish or cancel the open provider form first" disabled={!formOpen} wrapperClassName="flex-1 min-w-0">
                 <DropdownMenuTrigger asChild disabled={providers.length === 0 || formOpen}>
                   <button
                     disabled={formOpen}
