@@ -40,4 +40,6 @@ const iconButtonLabel = {
   },
 };
 
-export default { rules: { "icon-button-label": iconButtonLabel } };
+const cairn = { rules: { "icon-button-label": iconButtonLabel } };
+
+export default cairn;
