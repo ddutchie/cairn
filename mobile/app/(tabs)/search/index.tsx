@@ -17,7 +17,6 @@ import { ICON_INFO, ICON_SEMANTIC } from "@/components/toolbar-icons";
 import { WIDE_MIN_WIDTH } from "@/lib/layout";
 import { railToolbar, useTightSideRail } from "@/components/screen-chrome";
 import { isAppleEmbeddingsSupported, appleEmbeddingsUnavailableReason } from "@modules/apple-embeddings";
-import { isNativeSearchScopeAvailable, setNativeSearchScope, setNativeSearchScopeIndex, clearNativeSearchScope, subscribeNativeSearchScope } from "@modules/search-scope";
 import { stripMarkdown } from "@cairn/shared/notes/text";
 import { useTheme, PRIORITY_COLOR, TAB_BAR_BASE, type as typeScale, type Theme } from "@/theme";
 
@@ -27,17 +26,14 @@ const typeFilters: TypeFilter[] = ["all", "notes", "tasks"];
 // Approx height of the native iOS 26 tab-bar search field — the results list
 // clears it at the bottom so the last row isn't hidden behind it.
 const SEARCH_FIELD_H = 52;
-// The All|Notes|Tasks scope bar + its breathing gap below the search field.
-const SCOPE_BAR_H = 40;
-const SCOPE_GAP = 8;
 
 /**
  * Search screen using the native iOS search bar (headerSearchBarOptions).
  * Two independent axes:
  *   - RANKING mode: semantic (meaning-based, on-device) vs keyword. Toggled by
  *     the ✨ header button; defaults ON when the device supports embeddings.
- *   - TYPE filter: All / Notes / Tasks (the scope bar below the search field),
- *     applied in both modes.
+ *   - TYPE filter: All / Notes / Tasks (a segmented control in the header
+ *     title slot), applied in both modes.
  */
 export default function SearchScreen() {
   const router = useRouter();
@@ -60,11 +56,6 @@ export default function SearchScreen() {
   // we read that measured inset from scroll events and pin the scope bar there.
   // Until the first scroll, fall back to safe-area + search-field height.
   const [belowHeader, setBelowHeader] = useState(insets.top + SEARCH_FIELD_H);
-  // The All|Notes|Tasks toggle lives in the native search field (UISearchController
-  // scope bar) when this build has the search-scope module — UIKit owns its
-  // animation and the header-height transitions. Elsewhere (Android, Expo Go,
-  // older builds) we fall back to a JS SegmentedControl overlay.
-  const usingNativeScope = isNativeSearchScopeAvailable();
   // Latest-value refs so the native scope subscription/apply never reads a stale
   // closure. Synced in effects (the react-hooks/refs rule forbids writing refs
   // during render); they're only READ in event handlers, so the one-render lag
@@ -139,7 +130,6 @@ export default function SearchScreen() {
   const setType = (type: TypeFilter) => {
     if (type !== typeFilter) haptics.selection();
     setTypeFilter(type);
-    if (usingNativeScope) setNativeSearchScopeIndex(typeFilters.indexOf(type)).catch(() => {});
     if (debounceRef.current) clearTimeout(debounceRef.current);
     run(query, semanticMode, type);
   };
@@ -198,48 +188,6 @@ export default function SearchScreen() {
       const id = setTimeout(() => searchRef.current?.focus(), 350);
       return () => clearTimeout(id);
     }, []),
-  );
-
-  // Native scope bar: attach the All|Notes|Tasks titles to the search field on
-  // focus and detach on blur. The header config may not have applied the search
-  // controller yet on a fresh mount, so retry next frame if setScope finds
-  // nothing. UIKit animates the scope bar in/out with focus. Wrapped in
-  // useCallback so it only re-runs when focus actually changes (not every
-  // render); mutable values are read through refs to avoid stale closures.
-  const setTypeRef = useRef(setType);
-  useEffect(() => { setTypeRef.current = setType; });
-  useFocusEffect(
-    useCallback(() => {
-      if (!usingNativeScope) return;
-      const sub = subscribeNativeSearchScope((idx) => {
-        const f = typeFilters[idx];
-        if (f && f !== typeFilterRef.current) setTypeRef.current(f);
-      });
-      const apply = () =>
-        setNativeSearchScope(["All", "Notes", "Tasks"], typeFilters.indexOf(typeFilterRef.current));
-      // Retry until the scope bar attaches: the search controller (and the
-      // search bar's focus state, which gates scope visibility) can land a few
-      // frames late on a cold mount / tab switch. ~1s of attempts is plenty.
-      // A rejected apply() counts as a failed attempt too — otherwise the
-      // interval would spin forever on a permanently-broken native binding.
-      let tries = 0;
-      const attempt = () => {
-        void apply()
-          .then((ok) => {
-            if (ok || ++tries >= 6) clearInterval(timer);
-          })
-          .catch(() => {
-            if (++tries >= 6) clearInterval(timer);
-          });
-      };
-      const timer = setInterval(attempt, 150);
-      attempt();
-      return () => {
-        clearInterval(timer);
-        sub?.remove();
-        void clearNativeSearchScope();
-      };
-    }, [usingNativeScope]),
   );
 
   // Navigate to a result, dismissing the keyboard + blurring the native search
@@ -378,11 +326,6 @@ export default function SearchScreen() {
     return { primary: hasQuery ? `No matching ${what}` : `Search ${what} by keyword.` };
   })();
 
-  // Space to clear below the search field for the scope control. When the scope
-  // lives natively in the search field, UIKit's automatic content inset already
-  // includes it; the JS fallback overlay needs explicit room.
-  const scopeClearance = usingNativeScope ? 0 : SCOPE_BAR_H + SCOPE_GAP;
-
   // Shared list scrolling behaviour. `contentInsetAdjustmentBehavior="automatic"`
   // makes the list clear the native search header (top) — including the scope
   // bar when it's native. The top pad in `contentContainerStyle` clears the JS
@@ -405,7 +348,7 @@ export default function SearchScreen() {
     // apply the list padding that clears the scope bar / tab bar / keyboard.
     contentContainerStyle: isListEmpty
       ? styles.listGrow
-      : [styles.list, { paddingTop: 12 + scopeClearance }],
+      : [styles.list, { paddingTop: 12 }],
     // Nothing to scroll when empty — also stops the list being draggable under
     // the header. EXCEPT semantic mode, which needs to stay scrollable when
     // empty so its pull-to-reindex RefreshControl works.
@@ -428,19 +371,29 @@ export default function SearchScreen() {
       <Stack.Screen
         options={{
           title: wideBar ? "" : "Search",
+          // All|Notes|Tasks lives in the header itself. It is an ordinary RN view
+          // (repaints live, like the ✨ toggle) so it keeps working however iOS
+          // presents the search field (header row or the iOS 26+ tab-bar field).
+          headerTitle: () => (
+            <View style={styles.headerScope}>
+              <SegmentedControl
+                values={typeFilters.map(typeLabel)}
+                selectedIndex={typeFilters.indexOf(typeFilter)}
+                onChange={(e) => setType(typeFilters[e.nativeEvent.selectedSegmentIndex] ?? "all")}
+                fontStyle={{ color: t.textSecondary, fontSize: 13, fontWeight: "500" }}
+                activeFontStyle={{ color: t.textPrimary, fontSize: 13, fontWeight: "700" }}
+              />
+            </View>
+          ),
           headerSearchBarOptions: {
             ref: searchRef,
             placeholder,
             autoCapitalize: "none",
             autoFocus: true,
             hideWhenScrolling: false,
-            // Stacked placement (search field in a dedicated row below the nav
-            // bar). iOS 26+/27 UIKit has a bug where the UISearchController
-            // scope bar NEVER renders with integrated/automatic placement on
-            // iPhone — stacked is the layout where the native All|Notes|Tasks
-            // scope bar actually appears (Apple-Music-style, directly below the
-            // search field).
-            placement: "stacked",
+            // iOS 26+ hides the nav bar (title + the ✨ / info buttons) while the
+            // search is active; keep it so the semantic toggle stays reachable.
+            hideNavigationBar: false,
             onChangeText: (e) => onChange(e.nativeEvent.text),
           },
           // Header trailing controls (narrow / Android): an optional info button
@@ -516,25 +469,6 @@ export default function SearchScreen() {
         </Stack.Toolbar>
       ) : null}
 
-      {/* Type filter. With the native scope module this lives IN the search
-          field itself (UISearchController scope bar — UIKit animates it with
-          focus). Fallback (Android / builds without the module): a JS
-          SegmentedControl pinned at `belowHeader`, the measured height the
-          list's automatic content inset uses to clear the search field. */}
-      {!usingNativeScope ? (
-        <View style={[styles.topScope, { top: belowHeader }]}>
-          <SegmentedControl
-            values={typeFilters.map(typeLabel)}
-            selectedIndex={typeFilters.indexOf(typeFilter)}
-            onChange={(e) => setType(typeFilters[e.nativeEvent.selectedSegmentIndex] ?? "all")}
-            tintColor={t.accent}
-            backgroundColor={t.surface2}
-            fontStyle={{ color: t.textSecondary, fontSize: 15, fontWeight: "600" }}
-            activeFontStyle={{ color: t.accentFg, fontSize: 15, fontWeight: "600" }}
-          />
-        </View>
-      ) : null}
-
       <View style={styles.results}>
         {semanticMode ? (
           <FlatList
@@ -601,7 +535,7 @@ export default function SearchScreen() {
             // state). Pinned so it holds position when the keyboard is open.
             <View
               pointerEvents="none"
-              style={[styles.hintOverlay, { paddingTop: belowHeader + scopeClearance }]}
+              style={[styles.hintOverlay, { paddingTop: belowHeader }]}
             >
               <View style={styles.hintBias} />
               <Text style={styles.hint}>{emptyHint.primary}</Text>
@@ -615,7 +549,7 @@ export default function SearchScreen() {
               title={emptyHint.primary}
               subtitle={emptyHint.secondary}
               pinned
-              insetTop={belowHeader + scopeClearance}
+              insetTop={belowHeader}
             />
           )
         ) : null}
@@ -627,21 +561,16 @@ export default function SearchScreen() {
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     // Results list region (underlaps the opaque header; automatic content inset
-    // clears the search field + the native scope bar when present).
+    // clears the search field).
     results: { flex: 1 },
-    // JS fallback All|Notes|Tasks scope bar (native UISegmentedControl) —
-    // absolute, top is set inline to `belowHeader`, shown only when the native
-    // scope module isn't available. zIndex keeps it above the results list
-    // (which is later in the tree).
-    topScope: { position: "absolute", left: 12, right: 12, zIndex: 1 },
+    // Header title slot: the All|Notes|Tasks segmented control.
+    headerScope: { width: 220 },
     // Header ✨ semantic toggle: bare icon, no background — iOS supplies its own
     // toggle chrome. Colour (accent vs tertiary) is the on/off signal.
     semBtn: { alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
     // Bottom pad clears the tab bar with a small buffer. The search field is
     // stacked below the nav bar (never in the tab bar), so there's no tab-bar
-    // search-field reservation. The top pad is applied inline
-    // (`paddingTop: 12 + scopeClearance`) so it's zero extra when the scope bar
-    // is native.
+    // search-field reservation.
     list: {
       padding: 12,
       paddingBottom: 12 + TAB_BAR_BASE + 12,
