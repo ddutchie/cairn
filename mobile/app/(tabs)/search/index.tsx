@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActivityIndicator, Platform, Text, View, FlatList, StyleSheet, RefreshControl, Pressable, Alert, Keyboard, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Stack, useRouter, useFocusEffect, type Href } from "expo-router";
 import type { SearchBarCommands } from "react-native-screens";
 import { searchNotes, searchTasks, listWorkspaceIds, embeddingIndexStats, listUnindexedNotes, listUnindexedCards, type NoteRow, type CardRow, type UnindexedNote } from "@/db/queries";
@@ -74,6 +74,8 @@ export default function SearchScreen() {
   const [tasks, setTasks] = useState<CardRow[]>([]);
   const [hits, setHits] = useState<SemanticHit[]>([]);
   const [reindexing, setReindexing] = useState(false);
+  // True from the keystroke until a semantic query settles, so the empty hint reads "Searching…" rather than "No results".
+  const [searching, setSearching] = useState(false);
   const [stats, setStats] = useState<{ live: number; indexed: number } | null>(null);
   const [unindexed, setUnindexed] = useState<UnindexedNote[]>([]);
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -85,6 +87,7 @@ export default function SearchScreen() {
     const q = text.trim();
     if (q.length === 0) {
       semanticSeq.current++;
+      setSearching(false);
       setNotes([]);
       setTasks([]);
       setHits([]);
@@ -95,6 +98,7 @@ export default function SearchScreen() {
       // per the type filter, merged then ranked ONCE across the combined corpus
       // (finalizeRanking min-max-normalises over all workspaces, not per-DB).
       const seq = ++semanticSeq.current;
+      setSearching(true);
       (async () => {
         const all: SemanticHit[] = [];
         for (const ws of listWorkspaceIds()) {
@@ -103,9 +107,15 @@ export default function SearchScreen() {
         }
         finalizeRanking(all);
         if (seq === semanticSeq.current) setHits(all.slice(0, 30));
-      })().catch((e) => console.warn("[search] semantic search failed:", e));
+      })()
+        .catch((e) => console.warn("[search] semantic search failed:", e))
+        .finally(() => {
+          if (seq === semanticSeq.current) setSearching(false);
+        });
     } else {
       // Keyword mode: run the SQL LIKE queries for the selected type(s).
+      semanticSeq.current++;
+      setSearching(false);
       setNotes(type !== "tasks" ? searchNotes(q) : []);
       setTasks(type !== "notes" ? searchTasks(q) : []);
     }
@@ -124,6 +134,7 @@ export default function SearchScreen() {
 
   const onChange = (text: string) => {
     setQuery(text);
+    if (semanticMode && text.trim()) setSearching(true);
     runDebounced(text, semanticMode, typeFilter);
   };
 
@@ -538,7 +549,14 @@ export default function SearchScreen() {
               style={[styles.hintOverlay, { paddingTop: belowHeader }]}
             >
               <View style={styles.hintBias} />
-              <Text style={styles.hint}>{emptyHint.primary}</Text>
+              {searching && semanticMode ? (
+                <View style={styles.searchingRow}>
+                  <ActivityIndicator color={t.textTertiary} />
+                  <Text style={styles.hint}>Searching…</Text>
+                </View>
+              ) : (
+                <Text style={styles.hint}>{emptyHint.primary}</Text>
+              )}
               {emptyHint.secondary ? <Text style={styles.statHint}>{emptyHint.secondary}</Text> : null}
             </View>
           ) : (
@@ -585,6 +603,7 @@ function makeStyles(t: Theme) {
     hintOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", paddingHorizontal: 32 },
     // Push the hint text down to the same ~25% position as the branded state.
     hintBias: { height: "25%" },
+    searchingRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
     hint: { textAlign: "center", color: t.textTertiary },
     statHint: { ...typeScale.caption, textAlign: "center", color: t.textTertiary, marginTop: 8 },
     headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
