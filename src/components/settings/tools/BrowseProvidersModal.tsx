@@ -30,7 +30,13 @@ const emptyResult: ProvidersFetchResult = {
  * the key is stored in the OS keychain. The provider is NOT auto-selected — the
  * user picks it in the Provider row on the Chat or Coding agent page.
  */
-export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
+interface BrowseProvidersModalProps {
+  onClose: () => void;
+  /** Called after a provider is installed, with the key the user entered (if any). */
+  onInstalled?: (entry: RegistryProviderEntry, apiKey?: string) => void;
+}
+
+export function BrowseProvidersModal({ onClose, onInstalled }: BrowseProvidersModalProps) {
   const { savedProviders, installCommunityProvider } = useCairnStore(
     useShallow((s) => ({
       savedProviders: s.aiConfig.savedProviders,
@@ -123,13 +129,14 @@ export function BrowseProvidersModal({ onClose }: { onClose: () => void }) {
         await installCommunityProvider(entry, apiKey);
         setKeyPrompt(null);
         setKeyValue("");
+        onInstalled?.(entry, apiKey);
       } catch (err) {
         setInstallError(err instanceof Error ? err.message : "Couldn't add the provider.");
       } finally {
         setInstalling(null);
       }
     },
-    [installCommunityProvider]
+    [installCommunityProvider, onInstalled]
   );
 
   const onInstallClick = useCallback(

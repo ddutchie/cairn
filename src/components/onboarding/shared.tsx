@@ -10,22 +10,17 @@ import type { FontScale } from "@/store/slices/ui";
 // ── Step type ─────────────────────────────────────────────────────────────────
 
 export type OnboardingStep =
+  | "welcome"
   | "choose-folder"
   | "workspace-details"
   | "appearance"
-  | "ai-setup"
   | "create-project"
-  | "imported-projects"
   | "done";
 
-/** Steps that show the progress dots. The create-project and imported-projects
- *  steps are mutually exclusive alternatives that occupy the SAME slot, so only
- *  create-project appears here; imported-projects is normalised to it in Shell.
- *
- *  MCP, embeddings, and view-visibility were removed from the required flow
- *  (v2.7.6) — none blocks first use and all live in Settings — so the wizard is
- *  folder → workspace → appearance → AI → land, and these dots reflect that. */
-export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "ai-setup", "create-project", "done"];
+/** Steps that show the progress dots. Folder selection has no dot. The vault
+ *  import review uses the create-project slot. AI and MCP live in Settings, so
+ *  the wizard is welcome → appearance → folder → workspace → project → done. */
+export const PROGRESS_STEPS: OnboardingStep[] = ["appearance", "workspace-details", "create-project", "done"];
 
 // ── Font scale options ────────────────────────────────────────────────────────
 
@@ -95,10 +90,7 @@ export function Shell({
   children: React.ReactNode;
   step: OnboardingStep;
 }) {
-  // imported-projects is the vault-import alternative to create-project; it
-  // shares the same progress slot.
-  const progressStep = step === "imported-projects" ? "create-project" : step;
-  const idx = PROGRESS_STEPS.indexOf(progressStep);
+  const idx = PROGRESS_STEPS.indexOf(step);
   const showProgress = idx >= 0;
   // useState (not useRef) so that NavRow re-renders when the footer mounts.
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);

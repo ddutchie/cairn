@@ -22,6 +22,8 @@ import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
 import { SuggestedPrompts } from "./SuggestedPrompts";
+import { AIProviderModal } from "@/components/chat/AIProviderModal";
+import { isAIProviderReady } from "@/lib/ai-provider-ready";
 import { useCommunityConnectorMap } from "./connector-context";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { getCommandsForScope } from "@/lib/slash-commands";
@@ -154,6 +156,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const connectorMap = useCommunityConnectorMap();
 
   const [input, setInput] = useState("");
+  const [providerDialogOpen, setProviderDialogOpen] = useState(false);
   const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => Promise<void>>(async () => {});
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Each item carries the thread + attachments captured
@@ -529,6 +532,16 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       }
     }
 
+    // No provider yet: every send path comes through here (suggested prompts,
+    // retries, prefilled messages), so ask for one here. The text stays in the
+    // input so it can be sent once a provider is added.
+    const { aiConfig: currentAi } = useCairnStore.getState();
+    if (!isAIProviderReady(currentAi, currentAi.savedProviders)) {
+      setInput(content);
+      setProviderDialogOpen(true);
+      return;
+    }
+
     setInput("");
 
     const attachmentsToSend = attachments.length > 0 ? attachments : undefined;
@@ -816,6 +829,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           composerProps={{ centered: isView(activeView, "chat"), commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: isView(activeView, "chat") ? "overview" : "default", showSparkles: isView(activeView, "chat"), statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length }}
         />
 
+      {providerDialogOpen && <AIProviderModal onClose={() => setProviderDialogOpen(false)} />}
     </div>
   );
 }

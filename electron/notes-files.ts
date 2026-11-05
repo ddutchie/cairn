@@ -122,7 +122,8 @@ export function rollbackImport(
   // Strip Cairn frontmatter from each adopted file (best-effort), leaving the
   // user's own frontmatter and the note body intact.
   for (const n of notes) {
-    const fp = findNoteFilePath(workspacePath, n.project_name, n.id);
+    const fp = adoptedNoteFile(workspacePath, cfg.adopted[n.id]?.path, n.id)
+      ?? findNoteFilePath(workspacePath, n.project_name, n.id);
     if (fp) stripCairnFrontmatterFromFile(fp);
   }
 
@@ -144,6 +145,24 @@ export function rollbackImport(
   writeImportConfig(workspacePath, { ...cfg, adopted, unmanaged: Object.keys(adopted).length === 0 });
 
   return notes.length;
+}
+
+/**
+ * The ledger's recorded file for an adopted note. Loose root notes don't live
+ * under their project's folder, so a lookup by project can't find them. The
+ * ledger is a plain file in the vault, so the path must stay inside the workspace
+ * and the file must still belong to this note before it is rewritten.
+ */
+function adoptedNoteFile(workspacePath: string, relativePath: string | undefined, noteId: string): string | null {
+  if (!relativePath) return null;
+  const root = path.resolve(workspacePath);
+  const fp = path.resolve(root, relativePath);
+  if (!fp.startsWith(root + path.sep)) return null;
+  try {
+    return matter(fs.readFileSync(fp, "utf-8")).data.id === noteId ? fp : null;
+  } catch {
+    return null;
+  }
 }
 
 function countImportableMarkdown(dir: string): { included: number; skipped: number } {

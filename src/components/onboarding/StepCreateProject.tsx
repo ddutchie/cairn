@@ -1,33 +1,34 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/icon-button";
 import { MicroLabel } from "@/components/ui/labels";
 import { WORKSPACE_ICONS, ProjectIcon } from "@/lib/workspace-icons";
 import { Shell } from "./shared";
-import { IconButton } from "@/components/ui/icon-button";
 
 interface Props {
   name: string;
   icon: string;
   submitting: boolean;
-  onBack: () => void;
   onNameChange: (v: string) => void;
   onIconChange: (v: string) => void;
+  /** Shown under the form when creating the project fails. */
+  error?: string | null;
   onSubmit: (e: React.FormEvent) => void;
-  onSkip: () => void;
+  /** Creates the starter project (welcome note and sample cards). */
+  onSample: () => void;
 }
 
 export function StepCreateProject({
   name,
   icon,
   submitting,
-  onBack,
   onNameChange,
   onIconChange,
+  error = null,
   onSubmit,
-  onSkip,
+  onSample,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -43,14 +44,6 @@ export function StepCreateProject({
       >
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <IconButton
-              label="Go back to previous step"
-              onClick={onBack}
-              disabled={submitting}
-              className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-tertiary)]"
-            >
-              <ArrowLeft size={13} />
-            </IconButton>
             <h2 className="text-sm font-medium text-[var(--text-primary)]">Create your first project</h2>
           </div>
           <p className="text-xs text-[var(--text-tertiary)]">
@@ -104,6 +97,12 @@ export function StepCreateProject({
           {submitting ? "Creating…" : "Create project"}
         </button>
 
+        {error && (
+          <p className="text-xs text-[var(--danger)] leading-snug" role="alert">
+            {error}
+          </p>
+        )}
+
         <div className="flex items-center gap-3">
           <div className="flex-1 h-px bg-[var(--border)]" />
           <MicroLabel>or</MicroLabel>
@@ -112,11 +111,11 @@ export function StepCreateProject({
 
         <button
           type="button"
-          onClick={onSkip}
+          onClick={onSample}
           disabled={submitting}
           className="w-full py-2 rounded-lg text-sm font-medium text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-tertiary)]"
         >
-          Skip — I&apos;ll create one later
+          Start with a sample project
         </button>
       </form>
     </Shell>

@@ -1206,6 +1206,46 @@ describe("re-import 3-way conflict handling (v2.6.8)", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 0 });
   });
 
+  it("rollback strips loose root notes, so an explicit re-import adopts them again", () => {
+    seedWorkspaceOnly();
+    writeObsidianFile(tmpDir, "Loose.md", { tags: ["root"] }, "\n# Loose\n\nGamma.");
+    writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", {}, "\n# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const projects = db.prepare("SELECT id FROM projects").all() as Array<{ id: string }>;
+
+    expect(rollbackImport(db, tmpDir, projects.map((p) => p.id))).toBe(2);
+
+    const looseRaw = fs.readFileSync(path.join(tmpDir, "Loose.md"), "utf-8");
+    expect(looseRaw).not.toContain("projectId:");
+    expect(looseRaw).toContain("root");
+    expect(looseRaw).toContain("Gamma");
+
+    setImportUnmanaged(tmpDir, false);
+    syncNotesFromDisk(db, tmpDir);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM notes").get()).toEqual({ n: 2 });
+  });
+
+  it("rollback ignores a ledger path that points outside the workspace", () => {
+    seedWorkspaceOnly();
+    writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", {}, "\n# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const note = db.prepare("SELECT id FROM notes").get() as { id: string };
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-outside-"));
+    const outside = path.join(outsideDir, "outside.md");
+    const outsideBody = `---\nid: ${note.id}\nprojectId: keep\n---\nOutside.`;
+    fs.writeFileSync(outside, outsideBody);
+    const cfgPath = path.join(tmpDir, ".cairn-import.json");
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
+    cfg.adopted[note.id].path = path.relative(tmpDir, outside);
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg));
+    const projects = db.prepare("SELECT id FROM projects").all() as Array<{ id: string }>;
+
+    rollbackImport(db, tmpDir, projects.map((p) => p.id));
+
+    expect(fs.readFileSync(outside, "utf-8")).toBe(outsideBody);
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
   it("partial rollback keeps the vault managed until every adopted project is removed", () => {
     seedWorkspaceOnly();
     writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", { tags: ["personal"] }, "\n# Entry\n\nAlpha.");

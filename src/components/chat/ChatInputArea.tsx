@@ -21,6 +21,10 @@ import { McpSignInChips } from "./McpSignInChips";
 import { ReasoningEffortPicker } from "@/components/ui/reasoning-effort-picker";
 import { readAttachments, type AttachmentItem } from "@/lib/read-attachments";
 import { cn } from "@/lib/utils";
+import { useCairnStore } from "@/store";
+import { AIProviderModal } from "@/components/chat/AIProviderModal";
+
+import { isAIProviderReady } from "@/lib/ai-provider-ready";
 
 export interface ChatInputAreaProps {
   value: string;
@@ -81,6 +85,13 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
   ref,
 ) {
   const [pendingImages, setPendingImages] = useState<AttachmentItem[]>([]);
+  // Onboarding no longer asks for an AI provider. Until this surface has one,
+  // say so here rather than failing on the first send.
+  const providerKind = providerModelTarget ?? "ai";
+  const needsProvider = useCairnStore((s) =>
+    !isAIProviderReady(providerKind === "agent" ? s.agentConfig : s.aiConfig, s.aiConfig.savedProviders),
+  );
+  const [providerOpen, setProviderOpen] = useState(false);
 
   // The draft lives HERE, not in the parent. Callers (chat/agent panes) are
   // large trees; lifting per-keystroke state into them re-rendered the whole
@@ -107,6 +118,11 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
     // attachments: clearing them here would drop them even though nothing was
     // actually submitted.
     if (!draft.trim() && pendingImages.length === 0) return;
+    // No provider yet: ask for one instead of sending into a request that will fail.
+    if (needsProvider) {
+      setProviderOpen(true);
+      return;
+    }
     setPendingImages([]);
     const text = draft;
     setDraft("");
@@ -115,10 +131,23 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
     setSeenValue("");
     onChange("");
     onSubmit(text, pendingImages);
-  }, [onSubmit, onChange, draft, pendingImages]);
+  }, [onSubmit, onChange, draft, pendingImages, needsProvider]);
 
   return (
     <div className={className}>
+      {needsProvider && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+          <span className="text-xs text-[var(--text-tertiary)]">Add an AI provider to start chatting.</span>
+          <button
+            type="button"
+            onClick={() => setProviderOpen(true)}
+            className="shrink-0 text-xs font-medium text-[var(--accent)] hover:underline"
+          >
+            Add a provider
+          </button>
+        </div>
+      )}
+      {providerOpen && <AIProviderModal kind={providerKind} onClose={() => setProviderOpen(false)} />}
       <ChatInput
         ref={ref}
         value={draft}

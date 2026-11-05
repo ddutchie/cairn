@@ -128,6 +128,7 @@ export function UnifiedRail() {
       <div className="hidden sm:flex absolute left-1/2 -translate-x-1/2 items-center" aria-hidden="true">
         <button
           onClick={toggleSearch}
+          data-tutorial="search-bar"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           className="w-[280px] lg:w-[320px] flex items-center gap-2 h-7 px-3 rounded-full border border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:border-[var(--muted)] hover:bg-[var(--surface-3)] transition-colors min-w-0"
           aria-label="Search"
@@ -157,6 +158,7 @@ export function UnifiedRail() {
               onClick={isView(activeView, "chat") ? () => setView(lastContentView) : toggleChat}
               className={cn((chatOpen || isView(activeView, "chat")) && "text-[var(--accent)] bg-[var(--accent-dim)]")}
               aria-label="Chat"
+              data-tutorial="chat-toggle"
             >
               <MessageSquare size={13} />
               <span className="text-xs hidden lg:inline">Chat</span>

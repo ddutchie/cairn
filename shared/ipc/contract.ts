@@ -428,7 +428,7 @@ export interface IpcContract {
   /** Creates the folder, re-initialises on it, then persists it as the workspace. */
   "app:initWorkspace": { args: [req: { workspacePath: string; excludedFolders?: string[] }]; result: { ok: true } };
   "app:rescanWorkspace": {
-    args: [req: { workspaceId?: string; excludedFolders?: string[] }];
+    args: [req: { workspaceId?: string; excludedFolders?: string[]; reimport?: boolean }];
     result: WorkspaceRescanResult;
   };
   /** Removes the projects an import created without tombstoning them to sync peers. */

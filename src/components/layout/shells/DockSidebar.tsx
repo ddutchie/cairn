@@ -215,23 +215,23 @@ export function DockSidebar() {
           {!hiddenViews.has("board") && <IconButton label="Board" tooltip={`Board (${shortcutMap.get("board") ?? ""})`} tooltipSide="right" onClick={() => setView("board")} className={cn("size-auto p-2", isView(activeView, "board") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={15} /></IconButton>}
           {!hiddenViews.has("calendar") && <IconButton label="Calendar" tooltip={`Calendar (${shortcutMap.get("calendar") ?? ""})`} tooltipSide="right" onClick={openCalendar} className={cn("size-auto p-2", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></IconButton>}
           {!hiddenViews.has("flow") && <IconButton label="Flow" tooltip={`Flow (${shortcutMap.get("flow") ?? ""})`} tooltipSide="right" onClick={() => setView("flow")} className={cn("size-auto p-2", isView(activeView, "flow") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={15} /></IconButton>}
-          {!hiddenViews.has("agent") && <IconButton label="Agent" tooltip={`Agent (${shortcutMap.get("agent") ?? ""})`} tooltipSide="right" onClick={() => setView("agent")} className={cn("size-auto p-2", isView(activeView, "agent") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={15} /></IconButton>}
+          {!hiddenViews.has("agent") && <IconButton label="Agent" data-tutorial="agent-view" tooltip={`Agent (${shortcutMap.get("agent") ?? ""})`} tooltipSide="right" onClick={() => setView("agent")} className={cn("size-auto p-2", isView(activeView, "agent") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={15} /></IconButton>}
           <div className="flex-1" aria-hidden="true" />
           <div className="mt-auto w-full flex flex-col items-center gap-1 pt-2 border-t border-[var(--border)]">
-            <IconButton label="Automations" tooltipSide="right" onClick={() => setView("automations")} className={cn("size-auto p-2", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Zap size={15} /></IconButton>
+            <IconButton label="Automations" data-tutorial="automations-view" tooltipSide="right" onClick={() => setView("automations")} className={cn("size-auto p-2", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Zap size={15} /></IconButton>
             {hiddenViews.has("calendar") && <IconButton label="Calendar" tooltipSide="right" onClick={() => setView("calendar-all")} className={cn("size-auto p-2", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></IconButton>}
             {!hiddenViews.has("graph") && <IconButton label="Knowledge Graph" tooltipSide="right" onClick={() => setView("graph")} className={cn("size-auto p-2", isView(activeView, "graph") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={15} /></IconButton>}
-            {!hiddenViews.has("insights") && <IconButton label="Insights" tooltipSide="right" onClick={() => setView("insights")} className={cn("size-auto p-2", isView(activeView, "insights") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={15} /></IconButton>}
+            {!hiddenViews.has("insights") && <IconButton label="Insights" data-tutorial="insights-view" tooltipSide="right" onClick={() => setView("insights")} className={cn("size-auto p-2", isView(activeView, "insights") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={15} /></IconButton>}
             {!hiddenViews.has("usage") && <IconButton label="Usage" tooltipSide="right" onClick={() => setView("usage")} className={cn("size-auto p-2", isView(activeView, "usage") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={15} /></IconButton>}
             <div className="w-5 h-px bg-[var(--border)] my-1" />
-            <IconButton label="Settings" tooltipSide="right" onClick={() => setView("settings")} className={cn("size-auto p-2", isView(activeView, "settings") ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Settings size={15} /></IconButton>
+            <IconButton label="Settings" data-tutorial="settings-view" tooltipSide="right" onClick={() => setView("settings")} className={cn("size-auto p-2", isView(activeView, "settings") ? "text-[var(--text-primary)] bg-[var(--surface-2)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Settings size={15} /></IconButton>
           </div>
         </div>
 
         {/* expanded */}
         <div aria-hidden={collapsed} inert={collapsed ? true : undefined} className={cn("flex flex-col flex-1 min-h-0 w-full transition-opacity duration-300", collapsed ? "opacity-0 pointer-events-none absolute inset-x-0 top-0 h-0 overflow-hidden" : "opacity-100")}>
           {/* workspace header */}
-          <div className="flex items-center gap-2 px-3 h-11 border-b border-[var(--border-subtle)] flex-shrink-0">
+          <div data-tutorial="workspace-switcher" className="flex items-center gap-2 px-3 h-11 border-b border-[var(--border-subtle)] flex-shrink-0">
             <WorkspaceIcon name={workspace?.icon} size={16} className="text-[var(--text-tertiary)]" />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold truncate">{workspace?.name ?? "Workspace"}</div>
@@ -244,6 +244,7 @@ export function DockSidebar() {
 
           {/* Current project card. Its title row is the project switcher, so the
               name appears once (it used to repeat in a separate picker below). */}
+          <div data-tutorial="projects-list">
           {(() => {
             const projectMenu = (
           <DropdownMenuContent align="start" side="bottom" className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 overflow-y-auto">
@@ -292,22 +293,25 @@ export function DockSidebar() {
             return (
               <ContextMenu>
               <ContextMenuTrigger asChild>
-              <div className="mx-2 mt-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-1">
+              <div className="mx-2 mt-2.5 space-y-2">
+                {/* Switcher: its own control, so it reads as a button rather than a title. */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
                       aria-label={`Project: ${project.name}. Switch project`}
-                      className="group -mx-1 -my-0.5 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-[var(--surface-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                      className="group flex w-full items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-left hover:bg-[var(--surface-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                     >
                       <ProjectIcon name={project.icon} size={14} className="text-[var(--accent)] shrink-0" />
-                      <span className="text-xs font-semibold leading-none truncate flex-1">{project.name}</span>
+                      <span className="text-sm font-semibold leading-none truncate flex-1">{project.name}</span>
                       <ChevronDown size={12} className="shrink-0 text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]" />
                     </button>
                   </DropdownMenuTrigger>
                   {projectMenu}
                 </DropdownMenu>
-                <div className="text-xs leading-none text-[var(--text-tertiary)] mt-1.5 truncate">{project.description ?? "No description"}</div>
+                {/* Metrics: read-only, so it no longer looks like part of the dropdown. */}
+                <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-elev-1">
+                <div className="text-xs leading-none text-[var(--text-tertiary)] truncate">{project.description ?? "No description"}</div>
                 {(() => {
                   const total = activeMetrics?.allCards.length ?? 0;
                   const done = activeMetrics?.doneCards.length ?? 0;
@@ -356,6 +360,7 @@ export function DockSidebar() {
                     </div>
                   );
                 })()}
+                </div>
               </div>
               </ContextMenuTrigger>
               <ContextMenuContent>
@@ -378,6 +383,7 @@ export function DockSidebar() {
               </ContextMenu>
             );
           })()}
+          </div>
 
           {/* Inline project creation — shown when triggered from the project menu */}
           {creatingProject && (
@@ -398,7 +404,7 @@ export function DockSidebar() {
           )}
 
           {/* scrollable: Views + Conversations */}
-          <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 min-h-0">
+          <nav data-tutorial="view-tabs" className="flex-1 overflow-y-auto py-3 px-2 space-y-4 min-h-0">
             <div>
               <div className="text-2xs font-semibold tracking-[0.08em] uppercase text-[var(--text-tertiary)] px-2 mb-1.5">Views</div>
               <div className="space-y-0.5">

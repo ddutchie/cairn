@@ -10,11 +10,25 @@ import { IconButton } from "@/components/ui/icon-button";
 
 interface TutorialStep {
   selector: string;
-  view: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "settings" | "agent" | "chat";
+  view: "overview" | "notes" | "board" | "flow" | "graph" | "insights" | "settings" | "agent" | "automations" | "chat";
   title: string;
   content: string;
   placement: "top" | "bottom" | "left" | "right";
   action?: () => void;
+}
+
+/**
+ * The sidebar renders a collapsed and an expanded copy of some controls, and the
+ * hidden copy comes first in the DOM. Pick the first copy the user can see, so the
+ * highlight lands on the control instead of an empty spot.
+ */
+function findTutorialTarget(selector: string): Element | null {
+  for (const el of Array.from(document.querySelectorAll(selector))) {
+    if (el.closest("[inert], [aria-hidden='true']")) continue;
+    if (el.getBoundingClientRect().width === 0) continue;
+    return el;
+  }
+  return null;
 }
 
 const TUTORIAL_STEPS: TutorialStep[] = [
@@ -59,6 +73,41 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     title: "Idea Flow Canvas",
     content: "Visually connect ideas, notes, and task cards in a freeform coordinate graph before building them.",
     placement: "top"
+  },
+  {
+    selector: '[data-tutorial="search-bar"]',
+    view: "overview",
+    title: "Search and ask",
+    content: "Find notes, tasks and projects from anywhere with the search bar. You can also ask the AI a question here, and it answers from your workspace.",
+    placement: "bottom"
+  },
+  {
+    selector: '[data-tutorial="agent-view"]',
+    view: "agent",
+    title: "Agent for code",
+    content: "Work on a project's code. The agent reads and edits files and runs commands in a sandbox, and asks before anything risky.",
+    placement: "right"
+  },
+  {
+    selector: '[data-tutorial="automations-view"]',
+    view: "automations",
+    title: "Automations",
+    content: "Run recurring jobs on a schedule, such as a weekly summary. Each run and its result shows up here.",
+    placement: "right"
+  },
+  {
+    selector: '[data-tutorial="insights-view"]',
+    view: "insights",
+    title: "Insights and graph",
+    content: "See how your notes, tasks and ideas connect. Insights has the charts, and the Knowledge Graph shows the links between items.",
+    placement: "right"
+  },
+  {
+    selector: '[data-tutorial="settings-view"]',
+    view: "settings",
+    title: "Settings",
+    content: "Add AI providers, connect tools and MCP servers, and choose the theme. Most options live here.",
+    placement: "right"
   },
   {
     selector: '[data-tutorial="chat-toggle"]',
@@ -146,11 +195,13 @@ export function AppTutorial() {
     let timeoutId: number;
 
     const checkAvailability = () => {
-      const element = document.querySelector(currentStep.selector);
+      const element = findTutorialTarget(currentStep.selector);
       if (!element) {
-        if (checkAttempts < 6) {
+        // Views mount after a step starts, so wait a few seconds before treating
+        // a target as missing. Skipping too early made the tour fly through steps.
+        if (checkAttempts < 40) {
           checkAttempts++;
-          timeoutId = window.setTimeout(checkAvailability, 50);
+          timeoutId = window.setTimeout(checkAvailability, 100);
         } else {
           const goingBack = tutorialStepIndex < prevIndexRef.current;
           if (goingBack) {
@@ -206,7 +257,7 @@ export function AppTutorial() {
     let checkAttempts = 0;
 
     const update = () => {
-      const element = document.querySelector(currentStep.selector);
+      const element = findTutorialTarget(currentStep.selector);
       if (element) {
         const rect = element.getBoundingClientRect();
         

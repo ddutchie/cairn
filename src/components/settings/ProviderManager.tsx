@@ -313,20 +313,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
           onCancel={() => setEditing(null)}
           onSave={async ({ name, baseUrl, model, rawKey, keyDirty, apiMode }) => {
             if (editing === "new") {
-              // Create first (no key), then store the raw key in the OS keychain
-              // and save the returned reference token — the raw key never lands
-              // in the store, localStorage, or the settings cache.
-              const id = addSavedProvider({ name, baseUrl, model, apiKey: "", apiMode }, kind);
-              if (keyDirty && rawKey) {
-                try {
-                  const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
-                  updateSavedProvider(id, { apiKey: ref ?? "" });
-                } catch (e) {
-                  // Don't leave an orphaned empty-key provider on keychain failure.
-                  deleteSavedProvider(id);
-                  throw e;
-                }
-              }
+              await saveNewProvider({ name, baseUrl, model, rawKey, keyDirty, apiMode }, kind, { addSavedProvider, updateSavedProvider, deleteSavedProvider });
             } else {
               const patch: { name: string; baseUrl: string; model: string; apiKey?: string; apiMode: ApiMode } = { name, baseUrl, model, apiMode };
               if (keyDirty) {
@@ -348,7 +335,37 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   );
 }
 
-function ProviderForm({
+/**
+ * Create a provider from the form: store the row first (no key), then put the raw
+ * key in the OS keychain and keep only the returned reference. The raw key never
+ * lands in the store, localStorage, or the settings cache. Shared by Settings and
+ * the chat's "Add an AI provider" dialog.
+ */
+export async function saveNewProvider(
+  data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean; apiMode: ApiMode },
+  kind: "ai" | "agent",
+  actions: {
+    addSavedProvider: (provider: Omit<SavedProvider, "id">, selectFor?: "ai" | "agent" | "both" | "none") => string;
+    updateSavedProvider: (id: string, patch: Partial<Omit<SavedProvider, "id">>) => void;
+    deleteSavedProvider: (id: string) => void;
+  },
+): Promise<string> {
+  const { name, baseUrl, model, rawKey, keyDirty, apiMode } = data;
+  const id = actions.addSavedProvider({ name, baseUrl, model, apiKey: "", apiMode }, kind);
+  if (keyDirty && rawKey) {
+    try {
+      const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
+      actions.updateSavedProvider(id, { apiKey: ref ?? "" });
+    } catch (e) {
+      // Don't leave an orphaned empty-key provider on keychain failure.
+      actions.deleteSavedProvider(id);
+      throw e;
+    }
+  }
+  return id;
+}
+
+export function ProviderForm({
   initial,
   defaultModel,
   onSave,
@@ -427,19 +444,6 @@ function ProviderForm({
           <span className="text-xs text-[var(--text-tertiary)]">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI" className={inputCls} />
         </label>
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-[var(--text-tertiary)]">Default model</span>
-          <ModelPicker
-            value={model}
-            options={availableModels}
-            loading={modelsLoading}
-            errored={testState === "error"}
-            placeholder={defaultModel}
-            size="md"
-            onChange={setModel}
-            onRefresh={() => fetchModels(baseUrl, keyForFetch)}
-          />
-        </div>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-[var(--text-tertiary)]">Base URL</span>
           <input
@@ -461,6 +465,19 @@ function ProviderForm({
           />
           <span className="text-2xs text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-[var(--text-tertiary)]">Default model</span>
+          <ModelPicker
+            value={model}
+            options={availableModels}
+            loading={modelsLoading}
+            errored={testState === "error"}
+            placeholder={defaultModel}
+            size="md"
+            onChange={setModel}
+            onRefresh={() => fetchModels(baseUrl, keyForFetch)}
+          />
+        </div>
         <div className="flex flex-col gap-1">
           <span className="text-xs text-[var(--text-tertiary)]">API protocol</span>
           {perModelEndpoint ? (

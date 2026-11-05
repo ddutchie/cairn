@@ -1,92 +1,97 @@
 "use client";
 
 import React, { useState } from "react";
-import { FileText, Kanban, Workflow, MessageSquare, Check, HelpCircle } from "lucide-react";
-import { modKey } from "@/components/layout/sidebar-utils";
+import { Check, Trash2 } from "lucide-react";
+import { useConfirmAction } from "@/components/ui/confirm-button";
 import { Shell, NavRow } from "./shared";
 
 interface Props {
-  onBack: () => void;
+  /** Omitted when there is nothing safe to go back to. */
+  onBack?: () => void;
   onComplete: (startTour: boolean) => void;
+  /** False when the user skipped project creation. The demo needs project
+   *  content (board, notes, sidebar), so it is not offered without one. */
+  hasProject: boolean;
+  /** True when the starter project was created in this run. */
+  sampleProject?: boolean;
+  /** Removes the starter project. Two-step confirm lives in this component. */
+  onDeleteSample?: () => void;
 }
 
-const FEATURE_CARDS = [
-  {
-    icon: <FileText size={18} className="text-[var(--accent)]" />,
-    label: "Notes",
-    desc: "Markdown files you own. Formatting toolbar, read mode, AI text actions.",
-    shortcut: (mod: string) => `${mod}2`,
-  },
-  {
-    icon: <Kanban size={18} className="text-[var(--accent)]" />,
-    label: "Board",
-    desc: "Kanban with priority, due dates, WIP limits, and drag-and-drop.",
-    shortcut: (mod: string) => `${mod}3`,
-  },
-  {
-    icon: <MessageSquare size={18} className="text-[var(--accent)]" />,
-    label: "AI Chat",
-    desc: "Chat with your project. Creates tasks, edits notes, generates PRDs.",
-    shortcut: (mod: string) => `${mod}/`,
-  },
-  {
-    icon: <Workflow size={18} className="text-[var(--accent)]" />,
-    label: "Idea Flow",
-    desc: "Freeform canvas. Connect ideas to notes and tasks before you build.",
-    shortcut: (mod: string) => `${mod}4`,
-  },
-];
-
-export function StepDone({ onBack, onComplete }: Props) {
-  const [startTour, setStartTour] = useState(true);
-  const [mod] = useState(() => modKey());
+/** Last step of the first run: confirm setup and choose whether to start the demo. */
+export function StepDone({ onBack, onComplete, hasProject, sampleProject = false, onDeleteSample }: Props) {
+  const [startDemo, setStartDemo] = useState(true);
+  const deleteConfirm = useConfirmAction();
+  const demoOn = hasProject && startDemo;
 
   return (
     <Shell step="done">
       <div className="w-full max-w-md flex flex-col gap-5">
         <div className="text-center">
-          <p className="text-base font-semibold text-[var(--text-primary)] mb-1">You&apos;re all set.</p>
-          <p className="text-xs text-[var(--text-tertiary)]">Here&apos;s what&apos;s waiting for you.</p>
+          <p className="text-base font-semibold text-[var(--text-primary)] mb-1">Ready to start.</p>
+          <p className="text-xs text-[var(--text-tertiary)]">
+            {hasProject ? "Your workspace is set up." : "Your workspace is set up. Add a project whenever you like."}
+          </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          {FEATURE_CARDS.map((f) => (
-            <div
-              key={f.label}
-              className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-2 hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                {f.icon}
-                <kbd className="text-2xs px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] font-mono">
-                  {f.shortcut(mod)}
-                </kbd>
-              </div>
-              <p className="text-xs font-semibold text-[var(--text-primary)]">{f.label}</p>
-              <p className="text-xs text-[var(--text-tertiary)] leading-relaxed">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Start quick app tour checkbox */}
-        <label className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] cursor-pointer hover:border-[color-mix(in_srgb,var(--accent)_30%,transparent)] transition-all select-none">
-          <input
-            type="checkbox"
-            checked={startTour}
-            onChange={(e) => setStartTour(e.target.checked)}
-            className="w-4 h-4 rounded border-[var(--border)] text-[var(--accent)] focus:ring-[var(--accent)] bg-[var(--surface)] cursor-pointer"
-          />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-[var(--text-primary)] flex items-center gap-1.5">
-              <HelpCircle size={13} className="text-[var(--accent)]" />
-              Start a quick interactive app tour on launch
+        {/* Demo toggle (the tour needs a project to point at) */}
+        <div className="flex items-start justify-between gap-4 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <p className="text-xs font-medium text-[var(--text-primary)]">Start the demo</p>
+            <p className="text-2xs text-[var(--text-tertiary)] leading-relaxed">
+              {hasProject
+                ? "A short walkthrough of the sidebar, board, notes, Idea Flow and chat."
+                : "Needs a project. Create one to take the walkthrough."}
             </p>
-            <p className="text-2xs text-[var(--text-tertiary)] mt-0.5">Recommended for new users to learn the workspace</p>
           </div>
-        </label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={demoOn}
+            aria-label="Start the demo"
+            disabled={!hasProject}
+            onClick={() => setStartDemo((v) => !v)}
+            className={demoOn
+              ? "relative mt-0.5 h-5 w-9 shrink-0 rounded-full bg-[var(--accent)] transition-colors disabled:opacity-40"
+              : "relative mt-0.5 h-5 w-9 shrink-0 rounded-full bg-[var(--border)] transition-colors disabled:opacity-40"}
+          >
+            <span
+              className={demoOn
+                ? "absolute top-0.5 left-[18px] h-4 w-4 rounded-full bg-[var(--surface)] transition-all"
+                : "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-[var(--surface)] transition-all"}
+            />
+          </button>
+        </div>
+
+        {sampleProject && onDeleteSample && (
+          <div className="flex flex-col gap-2 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
+            <p className="text-xs font-medium text-[var(--text-primary)]">Remove the sample project?</p>
+            <p className="text-2xs text-[var(--text-tertiary)] leading-relaxed">
+              &ldquo;Getting started&rdquo; holds a welcome note and two cards. Delete it once you have a project of your own.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (deleteConfirm.armed) {
+                  deleteConfirm.fire();
+                  onDeleteSample();
+                } else {
+                  deleteConfirm.arm();
+                }
+              }}
+              className={deleteConfirm.armed
+                ? "self-start inline-flex items-center gap-1.5 text-xs font-medium text-[var(--danger)] hover:underline"
+                : "self-start inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}
+            >
+              <Trash2 size={12} />
+              {deleteConfirm.armed ? "Confirm — delete the sample project" : "Delete sample project"}
+            </button>
+          </div>
+        )}
 
         <NavRow
           onBack={onBack}
-          onNext={() => onComplete(startTour)}
+          onNext={() => onComplete(demoOn)}
           nextLabel="Open Cairn"
           nextIcon={<Check size={13} />}
         />
