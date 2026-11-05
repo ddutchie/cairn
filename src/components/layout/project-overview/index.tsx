@@ -14,7 +14,8 @@ import { FileText, Kanban, Calendar, AlertTriangle, Clock3, Zap, Activity, Diamo
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon } from "@/lib/workspace-icons";
-import { cn, formatDate, STATUS_COLORS, getDueDateStatus, parseIsoLocal, formatRelative } from "@/lib/utils";
+import { cn, formatDate, STATUS_COLORS, getDueDateStatus, parseIsoLocal, formatRelative, plural } from "@/lib/utils";
+import { findBottleneck } from "@/lib/board-bottleneck";
 import { PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { CairnEvents, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
@@ -146,23 +147,7 @@ export function ProjectOverview() {
   const todayCount = dueCards.filter((c) => getDueDateStatus(c.dueDate) === "today").length;
   const needsAttention = overdueCount + todayCount;
 
-  // bottleneck: column with most open cards (excluding done)
-  const bottleneck = useMemo<{ name: string; count: number } | null>(() => {
-    const doneColId = columns.find((c) => c.type === "done")?.id;
-    const openColumns = columns.filter((c) => c.id !== doneColId);
-    let best: { name: string; count: number } | null = null;
-    if (openColumns.length > 0) {
-      let max = -1;
-      for (const col of openColumns) {
-        const count = allCards.filter((c) => c.columnId === col.id).length;
-        if (count > max) {
-          max = count;
-          best = { name: col.name, count };
-        }
-      }
-    }
-    return best;
-  }, [columns, allCards]);
+  const bottleneck = useMemo(() => findBottleneck(columns, allCards), [columns, allCards]);
 
   // attention queue: overdue (by due asc) → today → upcoming (soonest future)
   const overdueCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue"), [dueCards]);
@@ -353,9 +338,9 @@ export function ProjectOverview() {
                   }
                   const recent = activityByDay[0]?.items[0];
                   const ctxLine = (() => {
-                    if (needsAttention > 0) return `${needsAttention} needing attention · ${bottleneck ? `${bottleneck.count} in ${bottleneck.name}` : `${openCards.length} open`} · ${notes.length} notes`;
-                    if (bottleneck) return `${bottleneck.name} is the bottleneck — ${bottleneck.count} of ${openCards.length} open · ${notes.length} notes · ${pinnedNotes.length} pinned`;
-                    if (notes.length) return `${notes.length} notes · ${recent ? `last edit ${formatRelative(recent.updatedAt)}` : "no recent activity"}`;
+                    if (needsAttention > 0) return `${needsAttention} needing attention · ${bottleneck ? `${bottleneck.count} in ${bottleneck.name}` : `${openCards.length} open`} · ${plural(notes.length, "note")}`;
+                    if (bottleneck) return `${bottleneck.name} is the bottleneck — ${bottleneck.count} of ${openCards.length} open · ${plural(notes.length, "note")} · ${pinnedNotes.length} pinned`;
+                    if (notes.length) return `${plural(notes.length, "note")} · ${recent ? `last edit ${formatRelative(recent.updatedAt)}` : "no recent activity"}`;
                     return "Add notes and tasks to see your project context here";
                   })();
                   return <p className="text-sm text-[var(--text-secondary)] mt-2 max-w-[52ch] leading-[1.55] break-words">{ctxLine}</p>;

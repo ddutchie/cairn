@@ -264,6 +264,20 @@ const FEATURES = [
       "Simpler number settings: Presets, Auto and a custom value now sit in one control.",
     ],
   },
+  {
+    id: "v3.1.8-engine",
+    version: "v3.1.8",
+    title: "A new agent engine",
+    category: "AI",
+    description:
+      "Chat, coding sessions and automations now run on Cairn's own engine, with sandboxed shell commands. Your earlier sessions carry over the first time you open them.",
+    highlights: [
+      "Sandboxed commands: On macOS and Linux, the agent's shell commands can only write inside the working folder and temp folders.",
+      "Auto permissions: A model reviews risky actions in coding sessions, and anything unclear still asks you.",
+      "Memory of past work: The AI can search your earlier chats and coding sessions in this workspace.",
+      "Smaller install: Dropping the old runtime removes about 230 packages.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

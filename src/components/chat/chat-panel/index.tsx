@@ -169,7 +169,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     [customCommands, registryCommands]
   );
   // Virtualized transcript handle — used to jump to the newest message when the
-  // panel activates or a question form appears (followOutput handles streaming).
+  // panel activates or a question form appears (ConversationTranscript follows streaming).
   const chatVirtuosoRef = useRef<VirtuosoHandle>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
 
@@ -460,7 +460,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const pendingQuestionCount = pendingQuestions?.length ?? 0;
   // Jump to the newest message when the panel activates or the ask_questions
   // form appears — otherwise it can land out of view if the user had scrolled
-  // up. Streaming follow is handled by Virtuoso's followOutput (only follows
+  // up. Streaming follow is handled by ConversationTranscript (only follows
   // while the user is at the bottom), so this deliberately does NOT depend on
   // messages.length — a new message must not yank a user who scrolled up.
   const chatMessagesLengthRef = useRef(messages.length);

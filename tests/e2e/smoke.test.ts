@@ -368,7 +368,7 @@ test.describe("What's New modal", () => {
 
 // ── Onboarding wizard entry ───────────────────────────────────────────────────
 // The full wizard spans many steps; here we assert the onboarding path is wired
-// (it appears on a fresh install) and the choose-folder entry step renders.
+// (it appears on a fresh install) and its first steps lead to the choose-folder step.
 // Component-level StepCreateProject behaviors (icon persistence, disabled
 // states, aria-pressed) are covered by unit tests (workspace.test.ts) since the
 // renderer has no DOM-unit harness.
@@ -384,8 +384,15 @@ test.describe("Onboarding wizard", () => {
     await p.addInitScript({ content: STORE_ATTACH_SCRIPT });
     try {
       await p.goto("/");
-      // The choose-folder step heading should render instead of the app shell.
-      await expect(p.getByText("Choose a workspace folder")).toBeVisible({ timeout: 20_000 });
+      // First run opens on the welcome panel instead of the app shell.
+      await expect(p.getByText("Welcome to Cairn.")).toBeVisible({ timeout: 20_000 });
+      await p.getByRole("button", { name: "Get started" }).click();
+      await p.getByRole("button", { name: "Continue" }).click();
+      await expect(p.getByText("Choose a workspace folder")).toBeVisible();
+      // Every early step can go back.
+      await p.getByRole("button", { name: "Back" }).click();
+      await p.getByRole("button", { name: "Back" }).click();
+      await expect(p.getByText("Welcome to Cairn.")).toBeVisible();
     } finally {
       await p.context().close();
     }

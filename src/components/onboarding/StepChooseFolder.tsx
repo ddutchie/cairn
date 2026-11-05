@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen } from "lucide-react";
+import { ArrowLeft, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Shell } from "./shared";
 
@@ -8,9 +8,10 @@ interface Props {
   chosenFolder: string | null;
   submitting: boolean;
   onChoose: () => void;
+  onBack?: () => void;
 }
 
-export function StepChooseFolder({ chosenFolder, submitting, onChoose }: Props) {
+export function StepChooseFolder({ chosenFolder, submitting, onChoose, onBack }: Props) {
   return (
     <Shell step="choose-folder">
       <div className="w-full max-w-sm bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 flex flex-col gap-5">
@@ -44,6 +45,17 @@ export function StepChooseFolder({ chosenFolder, submitting, onChoose }: Props) 
           <FolderOpen size={14} />
           {submitting ? "Opening…" : "Choose folder"}
         </Button>
+
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="self-center flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+          >
+            <ArrowLeft size={12} />
+            Back
+          </button>
+        )}
       </div>
     </Shell>
   );

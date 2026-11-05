@@ -45,10 +45,9 @@ interface Props {
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
 /**
- * The wizard is folder → workspace → project → done. Appearance and AI setup
- * moved out of the required flow: theme and font have sensible defaults, and
- * the AI key is added later in Settings → AI (the chat shows a prompt until it
- * is set).
+ * The wizard is welcome → appearance → folder → workspace → project → done. AI
+ * setup is not part of it: the key is added later in Settings → AI, and the chat
+ * shows a prompt until it is set.
  */
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
   const { theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, createWorkspace, updateWorkspace, initWorkspacePath, getWorkspacePath, createProject, createNote, createCard, deleteProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, createWorkspace: s.createWorkspace, updateWorkspace: s.updateWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, createProject: s.createProject, createNote: s.createNote, createCard: s.createCard, deleteProject: s.deleteProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
@@ -259,6 +258,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         chosenFolder={chosenFolder}
         submitting={submitting}
         onChoose={handleChooseFolder}
+        onBack={initialStep === "choose-folder" ? () => setStep("appearance") : undefined}
       />
     );
   }
@@ -298,6 +298,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         onThemeChange={setTheme}
         onFontScaleChange={setFontScale}
         onFontFamilyChange={setFontFamily}
+        onBack={initialStep === "choose-folder" ? () => setStep("welcome") : undefined}
         onNext={() => setStep(initialStep === "choose-folder" ? "choose-folder" : "create-project")}
       />
     );
@@ -337,6 +338,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       hasProject={hasProject}
       sampleProject={sampleProjectId !== null}
       onDeleteSample={handleDeleteSample}
+      hasOtherProjects={importedProjects.length > 0}
       // Going back to the project form after creating a project would create a
       // second one. Back stays for a deleted sample and the vault import review.
       onBack={!hasProject || importedProjects.length > 0 ? () => setStep("create-project") : undefined}

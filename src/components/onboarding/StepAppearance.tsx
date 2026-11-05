@@ -16,6 +16,7 @@ interface Props {
   onThemeChange: (t: Theme) => void;
   onFontScaleChange: (s: FontScale) => void;
   onFontFamilyChange: (id: FontFamilyId) => void;
+  onBack?: () => void;
   onNext: () => void;
 }
 
@@ -25,7 +26,7 @@ const THEME_OPTS: { value: Theme; label: string; icon: React.ReactNode; desc: st
   { value: "dark",   label: "Dark",   icon: <Moon size={16} />,    desc: "Easy on the eyes" },
 ];
 
-export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, onFontScaleChange, onFontFamilyChange, onNext }: Props) {
+export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, onFontScaleChange, onFontFamilyChange, onBack, onNext }: Props) {
   function handleTheme(t: Theme) {
     onThemeChange(t);
     applyTheme(t);
@@ -144,7 +145,7 @@ export function StepAppearance({ theme, fontScale, fontFamily, onThemeChange, on
           </p>
         </div>
 
-        <NavRow onNext={onNext} />
+        <NavRow onBack={onBack} onNext={onNext} />
       </div>
     </Shell>
   );

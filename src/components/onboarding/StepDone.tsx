@@ -14,12 +14,14 @@ interface Props {
   hasProject: boolean;
   /** True when the starter project was created in this run. */
   sampleProject?: boolean;
+  /** True when the workspace holds projects besides the starter one. */
+  hasOtherProjects?: boolean;
   /** Removes the starter project. Two-step confirm lives in this component. */
   onDeleteSample?: () => void;
 }
 
 /** Last step of the first run: confirm setup and choose whether to start the demo. */
-export function StepDone({ onBack, onComplete, hasProject, sampleProject = false, onDeleteSample }: Props) {
+export function StepDone({ onBack, onComplete, hasProject, sampleProject = false, hasOtherProjects = false, onDeleteSample }: Props) {
   const [startDemo, setStartDemo] = useState(true);
   const deleteConfirm = useConfirmAction();
   const demoOn = hasProject && startDemo;
@@ -40,7 +42,7 @@ export function StepDone({ onBack, onComplete, hasProject, sampleProject = false
             <p className="text-xs font-medium text-[var(--text-primary)]">Start the demo</p>
             <p className="text-2xs text-[var(--text-tertiary)] leading-relaxed">
               {hasProject
-                ? "A short walkthrough of the sidebar, board, notes, Idea Flow and chat."
+                ? "A step-by-step walkthrough of the sidebar, board, notes, Idea Flow, chat and agent."
                 : "Needs a project. Create one to take the walkthrough."}
             </p>
           </div>
@@ -63,11 +65,11 @@ export function StepDone({ onBack, onComplete, hasProject, sampleProject = false
           </button>
         </div>
 
-        {sampleProject && onDeleteSample && (
+        {sampleProject && hasOtherProjects && onDeleteSample && (
           <div className="flex flex-col gap-2 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
             <p className="text-xs font-medium text-[var(--text-primary)]">Remove the sample project?</p>
             <p className="text-2xs text-[var(--text-tertiary)] leading-relaxed">
-              &ldquo;Getting started&rdquo; holds a welcome note and two cards. Delete it once you have a project of your own.
+              You have your own projects now, so you may not need &ldquo;Getting started&rdquo;.
             </p>
             <button
               type="button"

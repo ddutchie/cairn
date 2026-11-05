@@ -20,7 +20,7 @@ import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream 
 import { createModelReviewer, createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
 import type { AgentTool } from "./tools";
-import { createAdapter } from "./session/adapter";
+import { createAdapter, failedTurnEnd } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
 import { deriveTitle, foldGoal, foldSchedules, foldState } from "./session/history";
 import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
@@ -269,7 +269,9 @@ export class AgentHost {
       }
     } catch (err) {
       // runTurn reports its own failures as events; this is a host-level fault (e.g. the log write).
-      this.deps.send("session:projection", makeSessionProjection(req.sessionId, "error", { message: err instanceof Error ? err.message : String(err) }));
+      const message = err instanceof Error ? err.message : String(err);
+      this.deps.send("session:projection", makeSessionProjection(req.sessionId, "error", { message }));
+      this.deps.send("session:event", { sessionId: req.sessionId, event: failedTurnEnd(message) });
     } finally {
       req.signal?.removeEventListener("abort", link);
       session.controller = undefined;

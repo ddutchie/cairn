@@ -47,3 +47,8 @@ export function urlTransform(url: string): string {
     ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
     : defaultUrlTransform(url);
 }
+
+/** "1 note", "2 notes". */
+export function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}

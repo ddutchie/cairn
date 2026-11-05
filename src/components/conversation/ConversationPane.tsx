@@ -95,6 +95,7 @@ export function ConversationPane({
         transcriptRef={transcriptRef}
         className="flex-1 min-h-0"
         data={messages}
+        sentCount={messages.filter((message) => message.role === "user").length}
         initialTopMostItemIndex={{ index: "LAST", align: "end" }}
         emptyPlaceholder={() => <>{emptyState ?? <ConversationEmptyState />}</>}
         footer={transcriptFooter ?? renderDefaultFooter}

@@ -7,7 +7,8 @@ import {
 } from "@/components/ui/context-menu";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, getDueDateStatus } from "@/lib/utils";
+import { cn, getDueDateStatus, plural } from "@/lib/utils";
+import { findBottleneck } from "@/lib/board-bottleneck";
 import { isView } from "@/lib/views";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
@@ -235,7 +236,7 @@ export function DockSidebar() {
             <WorkspaceIcon name={workspace?.icon} size={16} className="text-[var(--text-tertiary)]" />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold truncate">{workspace?.name ?? "Workspace"}</div>
-              <div className="text-2xs text-[var(--text-tertiary)]">{projects.length} projects · local</div>
+              <div className="text-2xs text-[var(--text-tertiary)]">{plural(projects.length, "project")} · local</div>
             </div>
             <IconButton label="Collapse sidebar" tooltipSide="right" onClick={toggleSidebar} className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
               <ChevronLeft size={13} />
@@ -317,17 +318,7 @@ export function DockSidebar() {
                   const done = activeMetrics?.doneCards.length ?? 0;
                   const pct = activeMetrics?.completionRate ?? 0;
                   const open = activeMetrics?.openCards.length ?? openCounts.get(project.id) ?? 0;
-                  const bottleneck = (() => {
-                    if (!activeMetrics) return null;
-                    const doneId = activeMetrics.columns.find((c) => c.type === "done")?.id;
-                    let best: { name: string; count: number } | null = null;
-                    let max = -1;
-                    for (const col of activeMetrics.columns.filter((c) => c.id !== doneId)) {
-                      const cnt = activeMetrics.allCards.filter((c) => c.columnId === col.id).length;
-                      if (cnt > max) { max = cnt; best = { name: col.name, count: cnt }; }
-                    }
-                    return best && best.count > 0 ? best : null;
-                  })();
+                  const bottleneck = activeMetrics ? findBottleneck(activeMetrics.columns, activeMetrics.allCards) : null;
                   if (total === 0) {
                     return (
                       <div className="flex items-center gap-3 mt-2">
@@ -506,17 +497,7 @@ export function DockSidebar() {
 function SidebarMiniRadar({ projectId, size: sizeProp, bare }: { projectId: string; size?: number; bare?: boolean }) {
   const metrics = useProjectMetrics(projectId);
   const todayCount = metrics ? metrics.dueCards.filter((c) => getDueDateStatus(c.dueDate) === "today").length : 0;
-  const bottleneck = (() => {
-    if (!metrics) return null;
-    const doneId = metrics.columns.find((c) => c.type === "done")?.id;
-    let best: { name: string; count: number } | null = null;
-    let max = -1;
-    for (const col of metrics.columns.filter((c) => c.id !== doneId)) {
-      const cnt = metrics.allCards.filter((c) => c.columnId === col.id).length;
-      if (cnt > max) { max = cnt; best = { name: col.name, count: cnt }; }
-    }
-    return best;
-  })();
+  const bottleneck = metrics ? findBottleneck(metrics.columns, metrics.allCards) : null;
   const axes = useRadarAxes({
     completionRate: metrics?.completionRate ?? 0,
     openCards: metrics?.openCards ?? { length: 0 } as never,

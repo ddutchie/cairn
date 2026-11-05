@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Check, X, Server, ChevronDown } from "lucide-react";
@@ -13,7 +13,7 @@ import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
 import { Select } from "@/components/ui/select";
 import { ModelPicker } from "@/components/ui/model-picker";
-import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
+import { useEndpointConfig, CreditsBadge, isLocalBaseUrl } from "./endpoint-components";
 import { ConnectorLogo } from "./tools/ConnectorLogo";
 import { endpointLogoSlug } from "../../../shared/models/model-catalog";
 import {
@@ -397,10 +397,28 @@ export function ProviderForm({
   // user types a new one, the raw key.
   const { availableModels, fetchModels, ensureModels, resetModels, modelsLoading, testState, keyInfo } = useEndpointConfig();
   const keyForFetch = keyDirty ? keyInput : (initial?.apiKey ?? "");
+  // A brand new form has no key yet: asking a cloud endpoint now would only earn a
+  // 401, and greet the user with an error before they have typed anything.
+  const canCheckEndpoint = !!initial || !!keyForFetch || isLocalBaseUrl(baseUrl);
+  const hasOpened = useRef(false);
   useEffect(() => {
-    ensureModels(baseUrl, keyForFetch);
+    if (!canCheckEndpoint) return;
+    // On open straight away; after that wait for the user to stop typing.
+    const delay = hasOpened.current ? 600 : 0;
+    hasOpened.current = true;
+    const timer = setTimeout(() => ensureModels(baseUrl, keyForFetch), delay);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [baseUrl, keyForFetch]);
+
+  // The placeholder model rarely exists on the endpoint the user just entered, so
+  // take a real one from its list, unless they chose a model themselves.
+  const modelChosen = useRef(false);
+  useEffect(() => {
+    if (initial || modelChosen.current || availableModels.length === 0 || availableModels.includes(model)) return;
+    setModel(availableModels[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableModels]);
 
   const canSave = name.trim().length > 0 && baseUrl.trim().length > 0 && !saving;
 
@@ -410,7 +428,7 @@ export function ProviderForm({
   useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   const perModelEndpoint = opencodeSlugForBaseUrl(baseUrl) !== null;
   const dictated = perModelEndpoint ? endpointProtocolFor(baseUrl, model) : null;
-  const { availability, probing } = useProtocolAvailability(baseUrl, keyForFetch, model, !perModelEndpoint);
+  const { availability, probing } = useProtocolAvailability(baseUrl, keyForFetch, model, !perModelEndpoint && canCheckEndpoint);
   const tagFor = (p: ProbeProtocol) => (availability ? AVAILABILITY_TAG[availability[p]] : null);
   const selectedOffline = availability && availability[apiMode] !== "available" && availability[apiMode] !== "unknown" && availability[apiMode] !== "auth";
   const better = selectedOffline
@@ -474,7 +492,7 @@ export function ProviderForm({
             errored={testState === "error"}
             placeholder={defaultModel}
             size="md"
-            onChange={setModel}
+            onChange={(value) => { modelChosen.current = true; setModel(value); }}
             onRefresh={() => fetchModels(baseUrl, keyForFetch)}
           />
         </div>

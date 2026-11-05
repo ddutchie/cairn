@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { useCairnStore } from "@/store";
 import type { SuggestedAction, ChatHistoryEntry } from "@/types";
 import { useSessionConversation } from "./useSessionConversation";
+import { isBenignTurnEnd } from "../../shared/agent/turn-end-reason";
 import type { ConversationLiveToolCall, PendingQuestion as ConversationPendingQuestion, PendingQuestionOption as ConversationPendingQuestionOption } from "@/lib/conversation/message";
 
 // These now live in the shared conversation layer so the profile-neutral
@@ -99,25 +100,23 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       onTurnEnd: (reason, snapshot, detail, sessionId) => {
         const turnThreadId = threadForTurn(sessionId);
         if (!turnThreadId) return;
-        // Surface turn failures (blocked / error / max-tokens) — previously swallowed.
-        // `detail` carries the structured failure message (as in AgentChatPane);
-        // `reason` alone only ever said "error" and hid the cause.
-        if (reason && reason !== "completed" && reason !== "aborted") {
-          const msg = detail ? `Turn ended: ${reason} — ${detail}` : `Turn ended: ${reason}`;
-          // Don't add empty assistant bubble if we already have text; surface as system notice
-          if (!snapshot.text.trim()) {
-            addMessage(turnThreadId, "system", msg, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined as never);
-          } else {
-            // Append reason to assistant reasoning so user sees why it stopped
-            addMessage(turnThreadId, "assistant", snapshot.text, snapshot.assistant?.contextRefs as never, snapshot.toolCalls as never, stagedActions(sessionId), snapshot.thought ? `${snapshot.thought}\n\n[${msg}]` : `[${msg}]`, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
-            clearStagedActions(sessionId);
-            return;
-          }
+        // Why a turn ended badly goes in its own notice, after whatever the turn produced.
+        // `detail` carries the failure message; `reason` alone only ever said "error".
+        const failure = reason && !isBenignTurnEnd(reason) ? detail ?? `Turn ended: ${reason}` : undefined;
+        const addFailureNotice = () => {
+          if (failure) addMessage(turnThreadId, "system", failure, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined as never);
+        };
+        // Nothing was produced: only the notice, no empty assistant bubble.
+        if (failure && !snapshot.text.trim() && !snapshot.toolCalls.length && !snapshot.subagents.length) {
+          addFailureNotice();
+          clearStagedActions(sessionId);
+          return;
         }
         const assistant = snapshot.assistant;
         addMessage(turnThreadId, "assistant", snapshot.text, assistant?.contextRefs as never, snapshot.toolCalls as never, stagedActions(sessionId), snapshot.thought, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
         if (assistant?.usage) setThreadUsage(turnThreadId, assistant.usage as never);
         clearStagedActions(sessionId);
+        addFailureNotice();
         if (snapshot.toolCalls.some((tool) => !["suggest_connections", "ask_questions"].includes(tool.tool) && !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")) || snapshot.subagents.some((agent) => (agent.toolCalls ?? []).some((tool) => !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")))) {
           useCairnStore.getState().hydrateFromElectron(true).catch((error) => console.error("[useChatStream] post-write hydrate failed", error));
         }

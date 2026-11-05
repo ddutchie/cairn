@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Search, SearchX, FileText, Kanban, X, ArrowRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { revealNote, revealCard } from "@/lib/events";
+import { CairnEvents, revealNote, revealCard } from "@/lib/events";
 import { requestNoteFind } from "@/lib/note-find";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -287,7 +287,15 @@ export function SearchPanel() {
     } else if (e.key === "Enter") {
       const result = resolveFocusedResult(focused, noteResults, taskResults);
       if (result) handleSelect(result);
+      // Nothing to open: the one thing Enter can still do is ask.
+      else if (query.trim()) askAI();
     }
+  }
+
+  /** Hand the query to the chat, which answers from the workspace. */
+  function askAI() {
+    window.dispatchEvent(CairnEvents.openChat(query.trim(), true));
+    toggleSearch();
   }
 
   useEscapeKey(toggleSearch, searchOpen);
@@ -391,6 +399,19 @@ export function SearchPanel() {
               description="Try a different term or switch project filter"
               className="py-10"
             />
+          )}
+
+          {query.trim() && (
+            <div className="px-2 py-2 border-b border-[var(--border)]">
+              <button
+                type="button"
+                onClick={askAI}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <Sparkles size={13} className="shrink-0 text-[var(--accent)]" />
+                <span className="truncate">Ask AI: {query.trim()}</span>
+              </button>
+            </div>
           )}
 
           {filtered.length > 0 && (

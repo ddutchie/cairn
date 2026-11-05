@@ -265,7 +265,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // Scroll to bottom on new messages / streaming growth, and whenever the
   // Scroll to the very END of the virtualized content when the pane becomes
   // active or the ask_questions form appears. Streaming follow is handled by
-  // Virtuoso's followOutput. Use a scalar (pendingQuestions?.length) rather
+  // ConversationTranscript. Use a scalar (pendingQuestions?.length) rather
   // than the array so React doesn't flag the dependency change.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {

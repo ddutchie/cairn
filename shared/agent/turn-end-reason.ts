@@ -26,10 +26,11 @@ export interface TurnEndReasonLike {
 
 /**
  * True when the turn ended in a way the user should never see an error for:
- * a clean finish, or a cancellation they themselves requested.
+ * a clean finish (`stop` is what the engine reports, `completed` is what older
+ * session logs carry), or a cancellation they themselves requested.
  */
 export function isBenignTurnEnd(kind: string | undefined): boolean {
-  return kind === "completed" || kind === "aborted";
+  return kind === "stop" || kind === "completed" || kind === "aborted";
 }
 
 /**
@@ -45,14 +46,20 @@ export function describeTurnEndReason(reason: TurnEndReasonLike | undefined): st
   if (!kind) return "Agent turn ended abnormally";
 
   switch (kind) {
+    case "stop":
+    case "completed":
+      return "Agent turn finished.";
     case "error": {
       const message = reason?.error?.message?.trim();
       const code = reason?.error?.code;
       if (!message) return "Agent turn failed (no error detail reported)";
-      return code === "UNKNOWN"
-        ? `Agent turn failed — internal error: ${message}`
-        : `Agent turn failed (${code ?? "error"}): ${message}`;
+      if (code === "UNKNOWN") return `Agent turn failed — internal error: ${message}`;
+      return code ? `Agent turn failed (${code}): ${message}` : `Agent turn failed: ${message}`;
     }
+    case "max-steps":
+      return "Agent turn stopped: it reached the step limit. Send another message to continue.";
+    case "overflow":
+      return "Agent turn stopped: the conversation no longer fits this model's context, even after compacting. Start a new session or switch to a model with a larger context.";
     case "blocked":
       return "Agent turn was blocked before it ran — a plugin or approval gate rejected the step.";
     case "max-tokens":
