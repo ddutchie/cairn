@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ConversationMessageBubble } from "./ConversationMessageBubble";
+import { AISettingsLinkContext, ConversationMessageBubble } from "./ConversationMessageBubble";
 import type { ConversationMessage } from "@/lib/conversation/message";
 import { createLiveStreamStore } from "@/lib/conversation/live-stream-store";
 
@@ -45,6 +45,21 @@ describe("ConversationMessageBubble actions row", () => {
     renderBubble({ ...base, role: "user" });
     expect(screen.queryByRole("button", { name: /report an issue/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Message speed & token stats" })).toBeNull();
+  });
+});
+
+describe("ConversationMessageBubble AI settings shortcut", () => {
+  const notice: ConversationMessage = { ...base, role: "system", content: "The provider rejected your API key. Check it in Settings → AI.", stats: undefined };
+
+  it("is offered on a failure that points at AI settings", () => {
+    renderBubble(notice);
+    expect(screen.getByRole("button", { name: "Open AI settings" })).toBeInTheDocument();
+  });
+
+  it("is left out in a pop-out, keeping the notice", () => {
+    render(<TooltipProvider><AISettingsLinkContext.Provider value={false}><ConversationMessageBubble message={notice} sessionId="s1" /></AISettingsLinkContext.Provider></TooltipProvider>);
+    expect(screen.queryByRole("button", { name: "Open AI settings" })).toBeNull();
+    expect(screen.getByText(notice.content)).toBeInTheDocument();
   });
 });
 

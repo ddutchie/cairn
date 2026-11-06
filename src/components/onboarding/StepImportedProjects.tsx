@@ -1,10 +1,9 @@
 "use client";
 
-import { ArrowLeft, FolderCheck, FileText, Undo2 } from "lucide-react";
+import { FolderCheck, FileText, Undo2 } from "lucide-react";
 import { Shell } from "./shared";
 import { useConfirmAction } from "@/components/ui/confirm-button";
 import { cn } from "@/lib/utils";
-import { IconButton } from "@/components/ui/icon-button";
 
 export interface ImportedProject {
   id: string;
@@ -18,30 +17,22 @@ interface Props {
   busy?: boolean;
   /** Rollback failure message to surface on the summary, if any. */
   error?: string | null;
-  onBack: () => void;
   onContinue: () => void;
   /** Undo the import: remove these projects/notes, strip Cairn frontmatter,
    *  and stop managing the vault. Only offered here, immediately after import. */
   onUndo: () => void;
 }
 
-export function StepImportedProjects({ projects, busy = false, error = null, onBack, onContinue, onUndo }: Props) {
+export function StepImportedProjects({ projects, busy = false, error = null, onContinue, onUndo }: Props) {
   const totalNotes = projects.reduce((sum, p) => sum + p.noteCount, 0);
   // Two-step destructive confirm: first click arms it, second click fires it.
   const undoConfirm = useConfirmAction();
 
   return (
-    <Shell step="imported-projects">
+    <Shell step="create-project">
       <div className="w-full max-w-sm bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 flex flex-col gap-5">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <IconButton
-              label="Go back to previous step"
-              onClick={onBack}
-              className="size-auto p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]"
-            >
-              <ArrowLeft size={13} />
-            </IconButton>
             <h2 className="text-sm font-medium text-[var(--text-primary)]">
               {projects.length === 1 ? "Found 1 project" : `Found ${projects.length} projects`}
             </h2>

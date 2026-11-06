@@ -1,5 +1,4 @@
 import type { NewFeature } from "./new-features-registry";
-import { getUnseenLatestFeatures } from "./new-features-registry";
 
 /**
  * Dependencies for {@link completeOnboarding}, injected so the flow can be
@@ -10,19 +9,13 @@ export interface CompleteOnboardingDeps {
   hydrateFromElectron: () => Promise<void>;
   /** Exit the onboarding wizard and show the main app. */
   setOnboardingState: (v: false) => void;
-  /** Defer the interactive tour until the "What's New" modal is dismissed. */
-  setPendingTutorial: (v: boolean) => void;
-  /** Activate the interactive tour immediately. */
+  /** Activate the interactive tour. */
   setTutorialActive: (v: boolean) => void;
-  /**
-   * Reads the feature ids the user has already seen (for tour gating).
-   *
-   * MUST be a getter, not a captured snapshot: `hydrateFromElectron()` can
-   * refresh `seenFeatures` from the backend, so reading a value captured before
-   * the flow started would gate the tour on stale data.
-   */
-  getSeenFeatures: () => string[];
-  /** The "What's New" feature registry (for tour gating). */
+  /** Record a "What's New" card as seen. */
+  markFeatureAsSeen: (id: string) => void;
+  /** Forget that a first run is in progress, so the next launch opens the app. */
+  clearOnboardingInProgress: () => void;
+  /** The "What's New" feature registry. */
   registry: NewFeature[];
 }
 
@@ -35,23 +28,17 @@ export interface CompleteOnboardingDeps {
  * snapshot hydrate; dismissing onboarding first left the user with no projects
  * until they reopened the app (the bug this flow fixes).
  *
- * Tour gating mirrors NewFeatureModal: only unseen features from the newest
- * registry MINOR version defer the tour behind the "What's New" modal;
- * otherwise the tour starts immediately.
+ * Someone finishing onboarding has nothing to compare "What's New" against, so
+ * every current card is marked seen. That also happens after hydration (which
+ * restores `seenFeatures`) and before the wizard exits, so the modal can't flash.
  */
 export async function completeOnboarding(
   startTour: boolean,
   deps: CompleteOnboardingDeps,
 ): Promise<void> {
   await deps.hydrateFromElectron();
+  for (const feature of deps.registry) deps.markFeatureAsSeen(feature.id);
+  deps.clearOnboardingInProgress();
   deps.setOnboardingState(false);
-  if (!startTour) return;
-  // Read seenFeatures AFTER hydration so the gate reflects the refreshed store.
-  const hasUnseenLatest =
-    getUnseenLatestFeatures(deps.registry, deps.getSeenFeatures()).length > 0;
-  if (hasUnseenLatest) {
-    deps.setPendingTutorial(true);
-  } else {
-    deps.setTutorialActive(true);
-  }
+  if (startTour) deps.setTutorialActive(true);
 }

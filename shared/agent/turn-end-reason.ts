@@ -26,10 +26,49 @@ export interface TurnEndReasonLike {
 
 /**
  * True when the turn ended in a way the user should never see an error for:
- * a clean finish, or a cancellation they themselves requested.
+ * a clean finish (`stop` is what the engine reports, `completed` is what older
+ * session logs carry), or a cancellation they themselves requested.
  */
 export function isBenignTurnEnd(kind: string | undefined): boolean {
-  return kind === "completed" || kind === "aborted";
+  return kind === "stop" || kind === "completed" || kind === "aborted";
+}
+
+const AI_SETTINGS = "Settings → AI";
+
+/** True when a failure notice sends the user to AI settings, so the UI can offer a shortcut. */
+export function pointsToAISettings(notice: string): boolean {
+  return notice.includes(AI_SETTINGS);
+}
+
+/** The provider's own words from a raw failure, without its status code or JSON wrapping. */
+function providerDetail(message: string): string {
+  const body = message.replace(/^[^{]*?\b\d{3}\b[:\s-]*/, "").trim();
+  let detail = body;
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; error?: { message?: unknown } | string };
+    const nested = typeof parsed.error === "string" ? parsed.error : parsed.error?.message;
+    const found = parsed.message ?? nested;
+    detail = typeof found === "string" ? found : "";
+  } catch { /* not JSON: keep the text as it is */ }
+  return detail.length > 160 ? `${detail.slice(0, 160)}…` : detail;
+}
+
+/** A sentence saying what to do about a common provider failure, or undefined for anything else. */
+function describeProviderFailure(message: string): string | undefined {
+  if (/^missing api key/i.test(message)) return message;
+  const withDetail = (text: string) => {
+    const detail = providerDetail(message);
+    return detail ? `${text} (${detail})` : text;
+  };
+  const status = /^(?:[a-z ]*error:?\s*)?(?:http\s*)?(?:status code\s*)?(\d{3})\b/i.exec(message)?.[1];
+  if (status === "401") return withDetail(`The provider rejected your API key. Check it in ${AI_SETTINGS}.`);
+  if (status === "403") return withDetail(`The provider refused this request. Check your key and plan in ${AI_SETTINGS}.`);
+  if (status === "404") return withDetail(`The provider couldn't find this model or address. Check them in ${AI_SETTINGS}.`);
+  if (status === "429") return withDetail("The provider is limiting requests, or your account is out of quota. Try again in a moment.");
+  if (/econnrefused|enotfound|eai_again|getaddrinfo|fetch failed|connection error|network error/i.test(message)) {
+    return `Couldn't reach the provider. Check your connection and the address in ${AI_SETTINGS}. For a local provider, make sure its server is running.`;
+  }
+  return undefined;
 }
 
 /**
@@ -45,14 +84,22 @@ export function describeTurnEndReason(reason: TurnEndReasonLike | undefined): st
   if (!kind) return "Agent turn ended abnormally";
 
   switch (kind) {
+    case "stop":
+    case "completed":
+      return "Agent turn finished.";
     case "error": {
       const message = reason?.error?.message?.trim();
       const code = reason?.error?.code;
       if (!message) return "Agent turn failed (no error detail reported)";
-      return code === "UNKNOWN"
-        ? `Agent turn failed — internal error: ${message}`
-        : `Agent turn failed (${code ?? "error"}): ${message}`;
+      const known = describeProviderFailure(message);
+      if (known) return known;
+      if (code === "UNKNOWN") return `Agent turn failed — internal error: ${message}`;
+      return code ? `Agent turn failed (${code}): ${message}` : `Agent turn failed: ${message}`;
     }
+    case "max-steps":
+      return "Agent turn stopped: it reached the step limit. Send another message to continue.";
+    case "overflow":
+      return "Agent turn stopped: the conversation no longer fits this model's context, even after compacting. Start a new session or switch to a model with a larger context.";
     case "blocked":
       return "Agent turn was blocked before it ran — a plugin or approval gate rejected the step.";
     case "max-tokens":

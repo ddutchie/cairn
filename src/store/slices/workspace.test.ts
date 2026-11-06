@@ -137,6 +137,18 @@ describe("createProject — Electron path", () => {
     expect(cols.every((c: any) => c.projectId === proj.id)).toBe(true);
   });
 
+  it("removes the optimistic project and rejects when the save fails", async () => {
+    (globalThis as any).window = {
+      electron: { project: { create: () => Promise.reject(new Error("disk full")) } },
+    };
+
+    const { get } = setup();
+    await expect(get().createProject("ws-1", "Unsaved")).rejects.toThrow("disk full");
+
+    expect(get().projects.some((p: any) => p.name === "Unsaved")).toBe(false);
+    expect(get().columns.some((c: any) => c.name === "Backlog")).toBe(false);
+  });
+
   it("keeps the optimistic placeholders when the server returns no columns", async () => {
     (globalThis as any).window = {
       electron: { project: { create: () => Promise.resolve({ project: {}, columns: [] }) } },

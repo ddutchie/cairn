@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Search, SearchX, FileText, Kanban, X, ArrowRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { revealNote, revealCard } from "@/lib/events";
+import { CairnEvents, revealNote, revealCard } from "@/lib/events";
 import { requestNoteFind } from "@/lib/note-find";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -117,6 +117,11 @@ interface SemanticHit {
   sectionTitle: string;
 }
 
+/** Identifies one search, so results for another query or project filter never count as settled. */
+function searchKey(query: string, projectId: string | null): string {
+  return `${projectId ?? ""}\0${query}`;
+}
+
 export function SearchPanel() {
   const { searchOpen, toggleSearch, searchAll, setView, setActiveProject, projects, activeWorkspaceId, notes } = useCairnStore(useShallow((s) => ({
     searchOpen:        s.searchOpen,
@@ -132,6 +137,9 @@ export function SearchPanel() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [semanticScores, setSemanticScores] = useState<Map<string, number>>(new Map());
   const [focused, setFocused] = useState(0);
+  // The query whose keyword results are all on screen. Differs from `query` while a search is pending.
+  const [settledKey, setSettledKey] = useState("");
+  const enterQueued = useRef(false);
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [filterProject, setFilterProject] = useState<string | null>(null);
   const [semanticMode, setSemanticMode] = useState<boolean>(loadSemanticPref);
@@ -187,10 +195,12 @@ export function SearchPanel() {
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (semanticTimer.current) clearTimeout(semanticTimer.current);
+    enterQueued.current = false;
     if (query.trim().length < 1) {
       queueMicrotask(() => {
         setResults([]);
         setSemanticScores(new Map());
+        setSettledKey("");
       });
       return;
     }
@@ -214,14 +224,19 @@ export function SearchPanel() {
       // Note bodies aren't all in the renderer (loaded lazily): the main
       // process matches bodies; merge those in when they arrive.
       const searchSnippets = window.electron?.note?.searchSnippets;
-      if (!searchSnippets) return;
+      const settled = searchKey(trimmed, filterProject);
+      if (!searchSnippets) { setSettledKey(settled); return; }
       try {
         const hits = await searchSnippets(trimmed, filterProjectRef.current ?? undefined);
         if (cancelled) return;
         // Rank before capping, or best-ranked hits late in store order get cut.
         keyword = applyNoteHits(searchAll(trimmed, new Set(hits.map((h) => h.id)), Infinity), hits).slice(0, SEARCH_RESULT_CAP);
         publish();
-      } catch { /* title-only note matches stay on screen */ }
+        setSettledKey(settled);
+      } catch {
+        // Title-only note matches stay on screen.
+        if (!cancelled) setSettledKey(settled);
+      }
     }, 150);
 
     if (semanticMode && embeddingsReady && activeWorkspaceId) {
@@ -276,6 +291,10 @@ export function SearchPanel() {
     toggleSearch();
   }
 
+  const filtered = filterSearchResults(results, filterType, filterProject);
+  const noteResults = filtered.filter((r) => r.type === "note");
+  const taskResults = filtered.filter((r) => r.type === "card");
+
   function handleKeyDown(e: React.KeyboardEvent) {
     const total = noteResults.length + taskResults.length;
     if (e.key === "ArrowDown") {
@@ -285,19 +304,37 @@ export function SearchPanel() {
       e.preventDefault();
       setFocused((f) => clampFocus(f - 1, total));
     } else if (e.key === "Enter") {
-      const result = resolveFocusedResult(focused, noteResults, taskResults);
-      if (result) handleSelect(result);
+      // Enter confirming IME text isn't a submit.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+      // Results aren't in yet: answer Enter once they are, or it would ask the AI about something it could open.
+      if (query.trim() && settledKey !== searchKey(query.trim(), filterProject)) enterQueued.current = true;
+      else openFocusedOrAsk();
     }
+  }
+
+  function openFocusedOrAsk() {
+    const result = resolveFocusedResult(focused, noteResults, taskResults);
+    if (result) handleSelect(result);
+    // Nothing to open: the one thing Enter can still do is ask.
+    else if (query.trim()) askAI();
+  }
+
+  useEffect(() => {
+    if (!enterQueued.current || settledKey !== searchKey(query.trim(), filterProject)) return;
+    enterQueued.current = false;
+    if (searchOpen) openFocusedOrAsk();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending search settles
+  }, [settledKey]);
+
+  /** Hand the query to the chat, which answers from the workspace. */
+  function askAI() {
+    window.dispatchEvent(CairnEvents.openChat(query.trim(), true));
+    toggleSearch();
   }
 
   useEscapeKey(toggleSearch, searchOpen);
 
   if (!searchOpen) return null;
-
-  const filtered = filterSearchResults(results, filterType, filterProject);
-
-  const noteResults = filtered.filter((r) => r.type === "note");
-  const taskResults = filtered.filter((r) => r.type === "card");
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4">
@@ -391,6 +428,19 @@ export function SearchPanel() {
               description="Try a different term or switch project filter"
               className="py-10"
             />
+          )}
+
+          {query.trim() && (
+            <div className="px-2 py-2 border-b border-[var(--border)]">
+              <button
+                type="button"
+                onClick={askAI}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <Sparkles size={13} className="shrink-0 text-[var(--accent)]" />
+                <span className="truncate">Ask AI: {query.trim()}</span>
+              </button>
+            </div>
           )}
 
           {filtered.length > 0 && (

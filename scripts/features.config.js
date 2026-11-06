@@ -195,64 +195,23 @@ const FEATURES = [
     ],
   },
   {
-    id: "v3.1.0-delivery",
-    version: "v3.1.0",
-    title: "Know What Shipped",
-    category: "Planning",
-    description:
-      "Cards now remember when they were finished, so the Overview can answer what shipped this week, what's slipping, and turn it into a review note in one click.",
+    id: "v3.1.x",
+    version: "v3.1.x",
+    title: "Cairn 3.1 — Highlights",
+    category: "Release highlights",
+    description: "See what shipped and what's at risk, hear from agents when they need you, and connect local tools.",
     highlights: [
-      "Shipped This Week: Everything that reached Done in the last 7 days, archived cards included.",
-      "At Risk: Overdue cards, blocked cards due soon, and work stuck in progress for a week.",
-      "Review Notes: Generate a weekly review or daily brief as a plain markdown note in your project.",
-      "Saved Board Views: Filter by assignee, tags, due date or blocked, and save the combination as a view.",
-    ],
-  },
-  {
-    id: "v3.1.0-attention",
-    version: "v3.1.0",
-    title: "Agents That Tap You on the Shoulder",
-    category: "Agents",
-    description:
-      "Stop babysitting agent sessions and overnight automations: Cairn tells you when something needs you, and keeps automations from failing quietly or overspending.",
-    highlights: [
-      "Agent Notifications: A system notification when a session finishes, fails, or waits for an approval or answer while Cairn is in the background.",
-      "Live Card Status: Cards show when an agent is working on them, and when it needs you.",
-      "Quick Capture: ⌘⇧Space from any app adds a card or note without leaving what you're doing.",
+      "Delivery Views: Shipped This Week, At Risk, generated reviews and saved board views.",
+      "Agent Notifications: System notifications and live card status when a session finishes, fails or waits for you.",
+      "Quick Capture: ⌘⇧Space adds a card or note from any app.",
       "Self-Healing Automations: Retries with backoff, auto-pause after repeated failures, and a daily spend budget.",
+      "Local MCP Servers: Connect stdio servers by command, or paste a Claude Desktop entry.",
+      "Find in Note: ⌘F in any note, and search results that show and jump to the matching line.",
     ],
   },
   {
-    id: "v3.1.6-local-mcp",
-    version: "v3.1.6",
-    title: "Local MCP Servers",
-    category: "Tools",
-    description:
-      "Connect stdio-based MCP servers running on your machine, alongside the existing remote HTTP and SSE connectors.",
-    highlights: [
-      "Command Connectors: Add a local server by command, args, env, and working directory.",
-      "Claude Import: Paste a Claude Desktop mcpServers entry to fill the form.",
-      "Same Gating: Project scope, per-tool toggles, and approval prompts work like remote servers.",
-      "Keychain Secrets: Env values that look like credentials stay in the OS keychain.",
-    ],
-  },
-  {
-    id: "v3.1.6-note-search",
-    version: "v3.1.6",
-    title: "Search That Finds the Line",
-    category: "Notes",
-    description:
-      "Search now shows where it matched, and every note has its own find bar, so a specific phrase inside a note is one keystroke away.",
-    highlights: [
-      "Find in Note: ⌘F opens a find bar in the open note, in Edit and Read mode, with match count and next/previous.",
-      "Match Excerpts: Search results show the matching text with your terms highlighted, best matches first.",
-      "Jump to the Match: Opening a result lands in the note with the find bar already on it.",
-      "Phrases and Exclusions: Use \"exact phrase\" and -word to narrow results.",
-    ],
-  },
-  {
-    id: "v3.1.8-settings",
-    version: "v3.1.8",
+    id: "v3.2.0-settings",
+    version: "v3.2.0",
     title: "Settings, reorganised",
     category: "App",
     description:
@@ -262,6 +221,20 @@ const FEATURES = [
       "One place for providers: Add community or local providers on the new Models page; Chat and the coding agent each choose theirs.",
       "Clearer names: \"Connect other agents\" lets Claude Desktop or OpenCode use Cairn; Tools is for servers Cairn uses.",
       "Simpler number settings: Presets, Auto and a custom value now sit in one control.",
+    ],
+  },
+  {
+    id: "v3.2.0-engine",
+    version: "v3.2.0",
+    title: "A new agent engine",
+    category: "AI",
+    description:
+      "Chat, coding sessions and automations now run on Cairn's own engine, with sandboxed shell commands. Your earlier sessions carry over the first time you open them.",
+    highlights: [
+      "Sandboxed commands: On by default on macOS and Linux. The agent's shell commands can only write inside the working folder and temp folders unless you approve otherwise.",
+      "Auto permissions: A model reviews risky actions in coding sessions, and anything unclear still asks you.",
+      "Memory of past work: The AI can search your earlier chats and coding sessions in this workspace.",
+      "Smaller install: Dropping the old runtime removes about 230 packages.",
     ],
   },
 ];

@@ -32,6 +32,22 @@ describe("buildContextView", () => {
     { type: "turn/end", reason: "stop" },
   ];
 
+  it("ignores a repeated tool result, which would have no call to answer", () => {
+    const toolResult = (t: string): AgentEvent => ({ type: "tool/result", callId: "c1", name: "t", text: t, isError: false });
+    const view = buildContextView(rec(
+      { type: "turn/start", sessionId: "s", profile: "p" },
+      { type: "user/message", content: "q" },
+      { type: "assistant/message", message: callMsg("c1") },
+      toolResult("full output"),
+      { type: "assistant/message", message: fauxAssistantMessage("done") },
+      { type: "turn/end", reason: "stop" },
+      toolResult("shortened"),
+      ...turn("next"),
+    ));
+    expect(view.map((m) => m.role)).toEqual(["user", "assistant", "toolResult", "assistant", "user", "assistant"]);
+    expect(text(view[2])).toBe("full output");
+  });
+
   it("replays a compaction: summary first, then the kept tail, then later turns", () => {
     const view = buildContextView(rec(...turn("one"), ...turn("two"), { type: "compaction", summary: "SUM", keepCount: 2, tokensBefore: 9, trigger: "manual" }, ...turn("three")));
     expect(view.map((m) => m.role)).toEqual(["user", "user", "assistant", "user", "assistant"]);

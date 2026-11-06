@@ -14,7 +14,8 @@ import { FileText, Kanban, Calendar, AlertTriangle, Clock3, Zap, Activity, Diamo
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon } from "@/lib/workspace-icons";
-import { cn, formatDate, STATUS_COLORS, getDueDateStatus, parseIsoLocal, formatRelative } from "@/lib/utils";
+import { cn, formatDate, STATUS_COLORS, getDueDateStatus, parseIsoLocal, formatRelative, plural } from "@/lib/utils";
+import { findBottleneck } from "@/lib/board-bottleneck";
 import { PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { CairnEvents, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
+import { modKey } from "@/components/layout/sidebar-utils";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
 import { ProjectSettingsButton } from "./project-settings";
 import { ReviewButton } from "./review-button";
@@ -146,23 +148,7 @@ export function ProjectOverview() {
   const todayCount = dueCards.filter((c) => getDueDateStatus(c.dueDate) === "today").length;
   const needsAttention = overdueCount + todayCount;
 
-  // bottleneck: column with most open cards (excluding done)
-  const bottleneck = useMemo<{ name: string; count: number } | null>(() => {
-    const doneColId = columns.find((c) => c.type === "done")?.id;
-    const openColumns = columns.filter((c) => c.id !== doneColId);
-    let best: { name: string; count: number } | null = null;
-    if (openColumns.length > 0) {
-      let max = -1;
-      for (const col of openColumns) {
-        const count = allCards.filter((c) => c.columnId === col.id).length;
-        if (count > max) {
-          max = count;
-          best = { name: col.name, count };
-        }
-      }
-    }
-    return best;
-  }, [columns, allCards]);
+  const bottleneck = useMemo(() => findBottleneck(columns, allCards), [columns, allCards]);
 
   // attention queue: overdue (by due asc) → today → upcoming (soonest future)
   const overdueCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue"), [dueCards]);
@@ -353,9 +339,9 @@ export function ProjectOverview() {
                   }
                   const recent = activityByDay[0]?.items[0];
                   const ctxLine = (() => {
-                    if (needsAttention > 0) return `${needsAttention} needing attention · ${bottleneck ? `${bottleneck.count} in ${bottleneck.name}` : `${openCards.length} open`} · ${notes.length} notes`;
-                    if (bottleneck) return `${bottleneck.name} is the bottleneck — ${bottleneck.count} of ${openCards.length} open · ${notes.length} notes · ${pinnedNotes.length} pinned`;
-                    if (notes.length) return `${notes.length} notes · ${recent ? `last edit ${formatRelative(recent.updatedAt)}` : "no recent activity"}`;
+                    if (needsAttention > 0) return `${needsAttention} needing attention · ${bottleneck ? `${bottleneck.count} in ${bottleneck.name}` : `${openCards.length} open`} · ${plural(notes.length, "note")}`;
+                    if (bottleneck) return `${bottleneck.name} is the bottleneck — ${bottleneck.count} of ${openCards.length} open · ${plural(notes.length, "note")} · ${pinnedNotes.length} pinned`;
+                    if (notes.length) return `${plural(notes.length, "note")} · ${recent ? `last edit ${formatRelative(recent.updatedAt)}` : "no recent activity"}`;
                     return "Add notes and tasks to see your project context here";
                   })();
                   return <p className="text-sm text-[var(--text-secondary)] mt-2 max-w-[52ch] leading-[1.55] break-words">{ctxLine}</p>;
@@ -601,7 +587,7 @@ export function ProjectOverview() {
                 <span className="text-sm font-medium text-[var(--text-tertiary)]">{bottleneck ? `in ${bottleneck.name}` : "—"}</span>
               </div>
               <div className="text-xs mt-2 text-[var(--text-tertiary)]">
-                {bottleneck ? `${openCards.length} open total` : "Add columns"}
+                {bottleneck ? `${openCards.length} open total` : "No column stands out"}
               </div>
             </div>
           </div>
@@ -912,7 +898,7 @@ export function ProjectOverview() {
                   <span className="hidden sm:inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)] ml-1">
                     <span className="w-1 h-1 rounded-full bg-[var(--success)]" /> {project.name} · {instrumentDone}/{instrumentTotal}
                   </span>
-                  <span className="ml-auto hidden md:inline text-2xs text-[var(--text-tertiary)]">⌘/ · Shift+Enter</span>
+                  <span className="ml-auto hidden md:inline text-2xs text-[var(--text-tertiary)]">{modKey()}/ · Shift+Enter</span>
                 </div>
                 <div className="p-1.5 md:p-2">
                   <ChatInputArea
@@ -924,7 +910,7 @@ export function ProjectOverview() {
                     variant="overview"
                     showSparkles
                     suggestions={mentionSuggestions}
-                    providerModelTarget="ai"
+                    providerModelTarget={sessionKind === "coding" && project.codeDirectory ? "agent" : "ai"}
                     statusText="Enter to send · mentions with @"
                   />
                 </div>

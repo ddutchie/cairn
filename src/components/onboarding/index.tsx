@@ -3,18 +3,37 @@
 import { useState, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { ipcResult } from "@/store/ipc";
+import { ipcResult, writesDuring } from "@/store/ipc";
 import { DEFAULT_WORKSPACE_ICON, DEFAULT_PROJECT_ICON } from "@/lib/workspace-icons";
+import { clearPendingImport, markOnboardingInProgress, readPendingImport, savePendingImport } from "@/lib/onboarding-progress";
+import { modKey } from "@/components/layout/sidebar-utils";
 import type { OnboardingStep } from "./shared";
 import { StepChooseFolder } from "./StepChooseFolder";
 import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
+import { StepWelcome } from "./StepWelcome";
 import { StepAppearance } from "./StepAppearance";
-import { StepAISetup } from "./StepAISetup";
 import { StepCreateProject } from "./StepCreateProject";
 import { StepImportedProjects, type ImportedProject } from "./StepImportedProjects";
 import { StepDone } from "./StepDone";
 
 type ImportPreview = Awaited<ReturnType<NonNullable<typeof window.electron>["probeWorkspaceFolder"]>>;
+
+/** Seed content for the starter project, so the board, notes and tour have
+ *  something to show on a fresh install. */
+const starterNote = () => `# Welcome to Cairn
+
+Notes are plain Markdown files saved on your disk. Write here, or ask the AI chat (${modKey()}/) to edit them for you.
+
+- Create more notes from the sidebar.
+- Tasks live on the Board. Drag this project's cards between columns.
+`;
+
+const NO_WORKSPACE_MESSAGE = "No workspace is open yet. Restart Cairn and pick your folder again.";
+
+function projectErrorMessage(err: unknown): string {
+  const detail = err instanceof Error ? err.message : "";
+  return detail ? `Couldn't create the project: ${detail}` : "Couldn't create the project. Try again.";
+}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -26,53 +45,106 @@ interface Props {
 
 // ── Onboarding wizard ─────────────────────────────────────────────────────────
 
+/**
+ * The wizard is welcome → appearance → folder → workspace → project → done. AI
+ * setup is not part of it: the key is added later in Settings → AI, and the chat
+ * shows a prompt until it is set.
+ */
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { createWorkspace, initWorkspacePath, getWorkspacePath, theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, aiConfig, setAIConfig, setAgentConfig, ensureSavedProviderForConnection, createProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ createWorkspace: s.createWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, aiConfig: s.aiConfig, setAIConfig: s.setAIConfig, setAgentConfig: s.setAgentConfig, ensureSavedProviderForConnection: s.ensureSavedProviderForConnection, createProject: s.createProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
+  const { theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, createWorkspace, updateWorkspace, initWorkspacePath, getWorkspacePath, createProject, deleteProject, createNote, createCard, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, createWorkspace: s.createWorkspace, updateWorkspace: s.updateWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, createProject: s.createProject, deleteProject: s.deleteProject, createNote: s.createNote, createCard: s.createCard, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
-  const [step, setStep] = useState<OnboardingStep>(initialStep);
+  // First run starts on the welcome panel. The other entry points (existing
+  // workspace, dev shortcut) skip it.
+  const [step, setStep] = useState<OnboardingStep>(initialStep === "choose-folder" ? "welcome" : initialStep);
 
   // ── Workspace ────────────────────────────────────────────────────────────────
   const [chosenFolder, setChosenFolder] = useState<string | null>(null);
   const [wsName, setWsName] = useState("");
   const [wsIcon, setWsIcon] = useState(DEFAULT_WORKSPACE_ICON);
   const [submitting, setSubmitting] = useState(false);
+  // The workspace this wizard created. Undoing an import keeps its record, so
+  // picking the same folder again reuses it rather than adding a second one.
+  const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; folder: string | null } | null>(null);
   // Vault detection (populated by probing the chosen folder).
   const [isObsidianVault, setIsObsidianVault] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [previewReady, setPreviewReady] = useState(false);
   const [excludedFolders, setExcludedFolders] = useState<Set<string>>(new Set());
   // Projects auto-created from the vault by the post-workspace rescan. When
-  // non-empty we show a "found these projects" summary instead of prompting the
-  // user to create their first project.
-  const [importedProjects, setImportedProjects] = useState<ImportedProject[]>([]);
-  // Visible on the imported-projects summary when a rollback/undo fails.
+  // non-empty, the project step shows them for review instead of the form.
+  // Restored on resume, so quitting doesn't lose the review and its Undo.
+  const [importedProjects, setImportedProjects] = useState<ImportedProject[]>(() =>
+    initialStep === "create-project" ? readPendingImport(useCairnStore.getState().projects) : []);
+  // Whether this run picks a folder itself: a first run, or after undoing an import.
+  const [picksFolder, setPicksFolder] = useState(initialStep === "choose-folder");
+  // Visible on the import summary when a rollback/undo fails.
   const [rollbackError, setRollbackError] = useState<string | null>(null);
 
   // ── First project ───────────────────────────────────────────────────────────
   const [projectName, setProjectName] = useState("");
   const [projectIcon, setProjectIcon] = useState(DEFAULT_PROJECT_ICON);
   const [creatingProject, setCreatingProject] = useState(false);
+  // Resuming on the done step means the project was made before the app quit.
+  const [hasProject, setHasProject] = useState(initialStep === "done");
+  // Set when the starter project is created, so the done step can offer to remove it.
+  const [projectError, setProjectError] = useState<string | null>(null);
 
   async function handleCreateProject(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = projectName.trim();
-    if (!trimmed || creatingProject || !activeWorkspaceId) return;
+    if (!trimmed || creatingProject) return;
+    if (!activeWorkspaceId) return setProjectError(NO_WORKSPACE_MESSAGE);
     setCreatingProject(true);
+    setProjectError(null);
     try {
       const proj = await createProject(activeWorkspaceId, trimmed, projectIcon);
       setActiveProject(proj.id);
+      setHasProject(true);
       setStep("done");
+    } catch (err) {
+      setProjectError(projectErrorMessage(err));
     } finally {
       setCreatingProject(false);
     }
   }
 
-  // ── AI ───────────────────────────────────────────────────────────────────────
-  const [aiEnabled, setAiEnabled] = useState(aiConfig.aiEnabled ?? true);
-  const [baseUrl, setBaseUrl]     = useState(aiConfig.baseUrl || "https://api.openai.com");
-  const [apiKey, setApiKey]       = useState(aiConfig.apiKey || "");
-  const [model, setModel]         = useState(aiConfig.model || "gpt-5.6-luna");
+  /** Creates a starter project with a welcome note and a couple of cards, so the
+   *  board, notes and the app tour all have content on a fresh install. */
+  async function handleStarterProject() {
+    if (creatingProject) return;
+    if (!activeWorkspaceId) return setProjectError(NO_WORKSPACE_MESSAGE);
+    setCreatingProject(true);
+    setProjectError(null);
+    try {
+      const proj = await createProject(activeWorkspaceId, "Getting started", DEFAULT_PROJECT_ICON);
+      try {
+        await writesDuring(() => {
+          createNote(proj.id, "Welcome to Cairn", "note", "", starterNote());
+          const columns = useCairnStore.getState().columns
+            .filter((c) => c.projectId === proj.id)
+            .sort((a, b) => a.order - b.order);
+          const backlog = columns.find((c) => c.type === "backlog") ?? columns[0];
+          const todo = columns.find((c) => c.type === "todo") ?? columns[0];
+          if (backlog) createCard(backlog.id, proj.id, "Drag me to Todo");
+          if (todo) createCard(todo.id, proj.id, "Plan the first thing you want to do");
+        });
+      } catch (err) {
+        // Don't leave a half-filled project behind: Try again would add a second one.
+        const removed = await writesDuring(() => deleteProject(proj.id)).then(() => true, () => false);
+        if (removed) throw err;
+        const detail = err instanceof Error ? err.message : "the save failed";
+        throw new Error(`${detail}. Cairn also couldn't remove the partly created project, so an extra "${proj.name}" may appear. You can delete it later.`);
+      }
+      setActiveProject(proj.id);
+      setHasProject(true);
+      setStep("done");
+    } catch (err) {
+      setProjectError(projectErrorMessage(err));
+    } finally {
+      setCreatingProject(false);
+    }
+  }
 
   // Pre-populate folder path when skipping the folder-picker step
   useEffect(() => {
@@ -80,6 +152,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       getWorkspacePath().then((p) => {
         if (!p) return;
         setChosenFolder(p);
+        // Undoing a restored import and picking this folder again reuses its workspace.
+        if (importedProjects.length > 0 && activeWorkspaceId) setCreatedWorkspace({ id: activeWorkspaceId, folder: p });
         void loadImportPreview(p);
       });
     }
@@ -124,28 +198,31 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     setSubmitting(true);
     try {
       // Only write the workspace path if the folder was chosen fresh this session
-      // (i.e. we started at choose-folder and the user picked a new folder)
-      if (chosenFolder && initialStep === "choose-folder") {
+      if (chosenFolder && picksFolder) {
         await initWorkspacePath(chosenFolder, [...excludedFolders]);
       }
-      const ws = await createWorkspace(trimmed, wsIcon);
+      const reuse = createdWorkspace && createdWorkspace.folder === chosenFolder ? createdWorkspace : null;
+      if (reuse) updateWorkspace(reuse.id, { name: trimmed, icon: wsIcon });
+      const ws = reuse ?? await createWorkspace(trimmed, wsIcon);
+      setCreatedWorkspace({ id: ws.id, folder: chosenFolder });
+      markOnboardingInProgress();
       // The workspace record now exists. Re-scan the chosen folder so any
       // existing Obsidian vault folders (or loose root .md files) are turned
       // into projects + notes, attached to the workspace we just created. The
       // initial scan in initWorkspace ran before the workspace existed, so it
-      // couldn't auto-create projects. Capture the created projects so a later
-      // step can show them instead of prompting to create one.
+      // couldn't auto-create projects. Capture the created projects so the
+      // project step can show them for review instead of prompting to create one.
       try {
-        const result = await ipcResult((e) => e.rescanWorkspace(ws.id, [...excludedFolders]));
-        setImportedProjects("data" in result ? result.data.createdProjects : []);
+        const result = await ipcResult((e) => e.rescanWorkspace(ws.id, [...excludedFolders], true));
+        const created = "data" in result ? result.data.createdProjects : [];
+        setImportedProjects(created);
+        if (created.length > 0) savePendingImport(created); else clearPendingImport();
       } catch {
         // Best-effort — onboarding shouldn't block on the rescan.
         setImportedProjects([]);
+        clearPendingImport();
       }
-      // Appearance → AI → land. MCP, embeddings, and view visibility were
-      // removed from the required flow (they live in Settings and none blocks
-      // first use); appearance stays as it's low-friction first-impression.
-      setStep("appearance");
+      setStep("create-project");
     } finally {
       setSubmitting(false);
     }
@@ -165,6 +242,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       // Reset the wizard state so a fresh choose-folder → create-workspace flow
       // starts clean — no stale folder/name/icon or imported-project leftovers.
       setImportedProjects([]);
+      clearPendingImport();
+      setPicksFolder(true);
       setChosenFolder(null);
       setWsName("");
       setWsIcon(DEFAULT_WORKSPACE_ICON);
@@ -177,22 +256,11 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     }
   }
 
-  function handleSaveAI() {
-    setAIConfig({ aiEnabled, provider: "openai", baseUrl, apiKey, model });
-    setAgentConfig({ baseUrl, apiKey, model });
-    // File the connection as a saved provider so the picker shows it by name.
-    // Skip when the user left the prefilled OpenAI default with no key — that would
-    // auto-add an OpenAI provider they never set up.
-    const untouchedDefault = !apiKey.trim() && baseUrl.trim().replace(/\/+$/, "") === "https://api.openai.com";
-    if (aiEnabled && baseUrl.trim() && !untouchedDefault) {
-      ensureSavedProviderForConnection({ baseUrl, model, apiKey }, "ai");
-    }
-    // If the vault scan already created projects, show a summary of them instead
-    // of prompting the user to create their first project.
-    setStep(importedProjects.length > 0 ? "imported-projects" : "create-project");
-  }
-
   // ── Routing ───────────────────────────────────────────────────────────────────
+
+  if (step === "welcome") {
+    return <StepWelcome onNext={() => setStep("appearance")} />;
+  }
 
   if (step === "choose-folder") {
     return (
@@ -200,6 +268,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         chosenFolder={chosenFolder}
         submitting={submitting}
         onChoose={handleChooseFolder}
+        onBack={picksFolder ? () => setStep("appearance") : undefined}
       />
     );
   }
@@ -211,7 +280,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         name={wsName}
         icon={wsIcon}
         submitting={submitting}
-        showBack={step === "workspace-details" && initialStep === "choose-folder"}
+        showBack={picksFolder}
         isObsidianVault={isObsidianVault}
         importPreview={importPreview}
         previewReady={previewReady}
@@ -239,52 +308,36 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         onThemeChange={setTheme}
         onFontScaleChange={setFontScale}
         onFontFamilyChange={setFontFamily}
-        onNext={() => setStep("ai-setup")}
-      />
-    );
-  }
-
-  if (step === "ai-setup") {
-    return (
-      <StepAISetup
-        aiEnabled={aiEnabled}
-        baseUrl={baseUrl}
-        apiKey={apiKey}
-        model={model}
-        onAiEnabledChange={setAiEnabled}
-        onBaseUrlChange={setBaseUrl}
-        onApiKeyChange={setApiKey}
-        onModelChange={setModel}
-        onBack={() => setStep("appearance")}
-        onNext={handleSaveAI}
+        onBack={picksFolder ? () => setStep("welcome") : undefined}
+        onNext={() => setStep(picksFolder ? "choose-folder" : "create-project")}
       />
     );
   }
 
   if (step === "create-project") {
+    // A vault import already created projects: review them here, with no back
+    // step (going back would create a second workspace on resubmit).
+    if (importedProjects.length > 0) {
+      return (
+        <StepImportedProjects
+          projects={importedProjects}
+          busy={submitting}
+          error={rollbackError}
+          onContinue={() => { setHasProject(true); setStep("done"); }}
+          onUndo={handleRollbackImport}
+        />
+      );
+    }
     return (
       <StepCreateProject
         name={projectName}
         icon={projectIcon}
         submitting={creatingProject}
-        onBack={() => setStep("ai-setup")}
         onNameChange={setProjectName}
         onIconChange={setProjectIcon}
+        error={projectError}
         onSubmit={handleCreateProject}
-        onSkip={() => setStep("done")}
-      />
-    );
-  }
-
-  if (step === "imported-projects") {
-    return (
-      <StepImportedProjects
-        projects={importedProjects}
-        busy={submitting}
-        error={rollbackError}
-        onBack={() => setStep("ai-setup")}
-        onContinue={() => setStep("done")}
-        onUndo={handleRollbackImport}
+        onSample={handleStarterProject}
       />
     );
   }
@@ -292,7 +345,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   // step === "done"
   return (
     <StepDone
-      onBack={() => setStep(importedProjects.length > 0 ? "imported-projects" : "create-project")}
+      hasProject={hasProject}
+      // Going back to the project form after creating a project would create a
+      // second one. Back stays for a skipped project and the vault import review.
+      onBack={!hasProject || importedProjects.length > 0 ? () => setStep("create-project") : undefined}
       onComplete={onComplete}
     />
   );

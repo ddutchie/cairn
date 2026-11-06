@@ -38,19 +38,12 @@ import { cn } from "@/lib/utils";
 import { isView } from "@/lib/views";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
+import { clearOnboardingInProgress, isOnboardingInProgress, readPendingImport } from "@/lib/onboarding-progress";
 import { QuickCapture } from "@/components/layout/QuickCapture";
 import { visibleNumberedViews } from "@/components/layout/sidebar-utils";
 import { persist, reportIpcError } from "@/lib/ipc/client";
 
 export default function Home() {
-  const [pendingTutorial, setPendingTutorial] = useState(false);
-
-  const handleNewFeatureModalClose = () => {
-    if (pendingTutorial) {
-      setPendingTutorial(false);
-      useCairnStore.getState().setTutorialActive(true);
-    }
-  };
   const {
     hydrate,
     hydrateFromElectron,
@@ -110,9 +103,9 @@ export default function Home() {
   // "create" = has workspace folder but no workspace record yet
   // "dev" = dev shortcut — skip workspace steps, start at appearance
   // false = fully set up
-  const [onboardingState, setOnboardingState] = useState<"workspace" | "create" | "dev" | false | null>(null);
+  const [onboardingState, setOnboardingState] = useState<"workspace" | "create" | "dev" | "resume" | false | null>(null);
   // Ref so the db:changed closure can read the current value without a stale capture
-  const onboardingStateRef = useRef<"workspace" | "create" | "dev" | false | null>(null);
+  const onboardingStateRef = useRef<"workspace" | "create" | "dev" | "resume" | false | null>(null);
   // Keep ref in sync whenever state changes
   useEffect(() => { onboardingStateRef.current = onboardingState; }, [onboardingState]);
 
@@ -225,7 +218,7 @@ export default function Home() {
           setOnboardingState("workspace");
         } else {
           const ws = useCairnStore.getState().workspaces;
-          setOnboardingState(ws.length === 0 ? "create" : false);
+          setOnboardingState(ws.length === 0 ? "create" : isOnboardingInProgress() ? "resume" : false);
         }
 
         // Restore the last coding session for the active project
@@ -437,11 +430,17 @@ export default function Home() {
 
   // Needs workspace folder setup (migration prompt or new user folder pick)
   // OR needs workspace record created after folder is chosen
-  if (onboardingState === "workspace" || onboardingState === "create" || onboardingState === "dev") {
+  if (onboardingState === "workspace" || onboardingState === "create" || onboardingState === "dev" || onboardingState === "resume") {
+    const { projects: allProjects, activeWorkspaceId: wsId } = useCairnStore.getState();
     const initialStep =
       onboardingState === "workspace" ? "choose-folder" :
       onboardingState === "create"    ? "workspace-details" :
-      "appearance"; // "dev" — skip the workspace steps straight to the config flow
+      // Quit during an import review: go back to it, with its Undo. The project
+      // step shows the review when there is a pending import.
+      onboardingState === "resume" && readPendingImport(allProjects).length > 0 ? "create-project" :
+      // Quit after making a project: only "Open Cairn" is left.
+      onboardingState === "resume" && allProjects.some((p) => p.workspaceId === wsId && !p.archivedAt) ? "done" :
+      "create-project"; // "dev" and "resume" — skip the workspace steps straight to the project step
 
     return (
       <main className="flex flex-col h-dvh w-screen overflow-hidden bg-[var(--background)]">
@@ -452,11 +451,20 @@ export default function Home() {
             onComplete={(startTour) => {
               const state = useCairnStore.getState();
               completeOnboarding(startTour, {
-                hydrateFromElectron,
+                // The wizard creates the project before this runs, and the hydrate can
+                // clear the active project, so select one again when none is set.
+                hydrateFromElectron: async () => {
+                  await hydrateFromElectron();
+                  const st = useCairnStore.getState();
+                  if (!st.activeProjectId) {
+                    const first = st.projects.find((p) => p.workspaceId === st.activeWorkspaceId && !p.archivedAt);
+                    if (first) st.setActiveProject(first.id);
+                  }
+                },
                 setOnboardingState,
-                setPendingTutorial,
                 setTutorialActive: state.setTutorialActive,
-                getSeenFeatures: () => useCairnStore.getState().seenFeatures,
+                markFeatureAsSeen: state.markFeatureAsSeen,
+                clearOnboardingInProgress,
                 registry: NEW_FEATURES_REGISTRY,
               });
             }}
@@ -509,7 +517,8 @@ export default function Home() {
     >
       <UnifiedRail />
       {/* Running automations bar */}
-      {runningAutomationCount > 0 && (
+      {/* Only on the Automations view; the sidebar badge covers the rest of the app. */}
+      {runningAutomationCount > 0 && isView(activeView, "automations") && (
         <button
           onClick={() => setView("automations")}
           className="flex items-center gap-2 px-4 py-1 text-xs text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] border-b border-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] transition-colors text-left"
@@ -546,7 +555,7 @@ export default function Home() {
         <NotificationCenter onClose={() => setNotificationOpen(false)} />
       )}
       <ErrorToasts toasts={toasts} onDismiss={dismiss} />
-      <NewFeatureModal onClose={handleNewFeatureModalClose} />
+      <NewFeatureModal />
       <QuickCapture />
       <AppTutorial />
     </main>

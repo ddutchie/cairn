@@ -20,7 +20,7 @@ import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream 
 import { createModelReviewer, createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
 import type { AgentTool } from "./tools";
-import { createAdapter } from "./session/adapter";
+import { createAdapter, failedTurnEnd } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
 import { deriveTitle, foldGoal, foldSchedules, foldState } from "./session/history";
 import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
@@ -115,6 +115,11 @@ interface Session {
   notices: string[];
 }
 
+/** Another turn is live on this session. It sends its own turn/end. */
+export class SessionBusyError extends Error {
+  constructor() { super("Session is busy — already running."); }
+}
+
 export class AgentHost {
   readonly gate = new Gate();
   private readonly sessions = new Map<string, Session>();
@@ -203,7 +208,7 @@ export class AgentHost {
 
   async prompt(req: PromptRequest): Promise<PromptOutcome> {
     const session = await this.open(req.sessionId, req.cwd, req.parentSession);
-    if (session.running) throw new Error("Session is busy — already running.");
+    if (session.running) throw new SessionBusyError();
     session.running = true;
     session.lastReq = req;
     const notices = session.notices.splice(0);
@@ -269,7 +274,9 @@ export class AgentHost {
       }
     } catch (err) {
       // runTurn reports its own failures as events; this is a host-level fault (e.g. the log write).
-      this.deps.send("session:projection", makeSessionProjection(req.sessionId, "error", { message: err instanceof Error ? err.message : String(err) }));
+      const message = err instanceof Error ? err.message : String(err);
+      this.deps.send("session:projection", makeSessionProjection(req.sessionId, "error", { message }));
+      this.deps.send("session:event", { sessionId: req.sessionId, event: failedTurnEnd(message) });
     } finally {
       req.signal?.removeEventListener("abort", link);
       session.controller = undefined;
@@ -283,7 +290,7 @@ export class AgentHost {
    */
   async compact(sessionId: string, cwd: string, route: ModelRoute): Promise<boolean> {
     const session = await this.open(sessionId, cwd);
-    if (session.running) throw new Error("Session is busy — already running.");
+    if (session.running) throw new SessionBusyError();
     session.running = true;
     try {
       const { model, streamFn } = (this.deps.routeStream ?? createRouteStream)(route);

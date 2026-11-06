@@ -16,10 +16,20 @@ export interface Adapted {
   projections: SessionProjection[];
 }
 
+/**
+ * The `turn/end` for a turn that failed outside the loop (setup, a rejected prompt, a host fault).
+ * The renderer shows its spinner until a `turn/end` arrives, so every such failure must send one.
+ */
+export function failedTurnEnd(message: string, now: () => number = Date.now): RendererEvent {
+  return { type: "turn/end", seq: 0, time: now(), data: { reason: { kind: "error", error: { message } } } };
+}
+
 export function createAdapter(sessionId: string, now: () => number = Date.now, readNote?: (noteId: string) => string | undefined) {
   let seq = 0;
   const args = new Map<string, Record<string, unknown>>();
   const ev = (type: string, data: unknown): RendererEvent => ({ type, seq: ++seq, time: now(), data });
+  // The renderer describes a failed turn from its `turn/end`, so that event carries the failure.
+  let lastError: string | undefined;
 
   // Per-turn throughput from the live stream: TTFT of the turn's first stream, decode time from each
   // stream's first token to its message, and provider-reported output tokens summed over streams.
@@ -47,7 +57,7 @@ export function createAdapter(sessionId: string, now: () => number = Date.now, r
     const events: RendererEvent[] = [];
     const projections: SessionProjection[] = [];
     switch (event.type) {
-      case "turn/start": resetStats(); streamStart = now(); events.push(ev("turn/start", {})); break;
+      case "turn/start": resetStats(); lastError = undefined; streamStart = now(); events.push(ev("turn/start", {})); break;
       case "assistant/delta": delta(); events.push(ev("assistant/chunk", { chunk: { type: "text-delta", text: event.text } })); break;
       case "assistant/thinking": delta(); events.push(ev("assistant/chunk", { chunk: { type: "reasoning-delta", text: event.text } })); break;
       case "assistant/message": {
@@ -114,12 +124,13 @@ export function createAdapter(sessionId: string, now: () => number = Date.now, r
         projections.push(makeSessionProjection(sessionId, "error", { message: event.reason, code: "auto-paused" }));
         break;
       case "error":
+        lastError = event.message;
         projections.push(makeSessionProjection(sessionId, "error", { message: event.message }));
         break;
       case "turn/end": {
         const st = statsChunk();
         if (st) events.push(st);
-        events.push(ev("turn/end", { reason: { kind: event.reason } }));
+        events.push(ev("turn/end", { reason: event.reason === "error" && lastError ? { kind: "error", error: { message: lastError } } : { kind: event.reason } }));
         break;
       }
       // Recorded in the log; the UI learns of them via approval/permissions projections.

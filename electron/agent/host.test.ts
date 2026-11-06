@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { AgentHost, type HostDeps, type PromptRequest } from "./host";
+import { AgentHost, SessionBusyError, type HostDeps, type PromptRequest } from "./host";
 import { presetRules } from "./rules";
 import { goalTools } from "./tools/goal";
 import { scheduleTools } from "./tools/schedule";
@@ -112,7 +112,7 @@ describe("AgentHost", () => {
     const run = t.host.prompt(t.req());
     await until(() => t.host.runningIds().length > 0);
     expect(t.host.runningIds()).toEqual(["s1"]);
-    await expect(t.host.prompt(t.req())).rejects.toThrow(/busy/);
+    await expect(t.host.prompt(t.req())).rejects.toBeInstanceOf(SessionBusyError);
     t.host.abort("s1");
     await run;
     expect(t.of("turn/end").at(-1)!.payload.event.data.reason.kind).toBe("aborted");

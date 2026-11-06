@@ -128,6 +128,7 @@ export function importLegacyLog(text: string): ImportedSession | undefined {
   let head: Obj | undefined;
   let title: string | undefined;
   const toolNames = new Map<string, string>();
+  const answered = new Set<string>();
   const records: SessionRecord[] = [];
   let seq = 0;
   let sessionId = "";
@@ -169,6 +170,9 @@ export function importLegacyLog(text: string): ImportedSession | undefined {
       }
       case "tool/result": {
         const r = toolResult(data);
+        // The old runtime re-logged shortened outputs after a turn. Keep the full first one: a repeat has no call to answer, and strict providers reject it.
+        if (answered.has(r.callId)) break;
+        answered.add(r.callId);
         push(time, { type: "tool/result", callId: r.callId, name: String(data.name ?? toolNames.get(r.callId) ?? "tool"), text: r.text, isError: r.isError });
         break;
       }

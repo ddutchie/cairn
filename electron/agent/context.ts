@@ -78,12 +78,16 @@ export function applyCompaction(messages: readonly Message[], c: Pick<Compaction
  */
 export function buildContextView(records: ReadonlyArray<{ event: AgentEvent; time: number }>, now?: number): Message[] {
   let messages: Message[] = [];
+  const answered = new Set<string>();
   for (const { event, time } of records) {
     switch (event.type) {
       case "turn/start": messages = repairInterrupted(messages, time); break;
       case "user/message": messages.push({ role: "user", content: userContent(event.content, event.images), timestamp: time }); break;
       case "assistant/message": messages.push(event.message); break;
       case "tool/result":
+        // Logs imported before the importer dropped repeats still hold them; providers reject a result with no call to answer.
+        if (answered.has(event.callId)) break;
+        answered.add(event.callId);
         messages.push({ role: "toolResult", toolCallId: event.callId, toolName: event.name, content: [{ type: "text", text: event.text }], isError: event.isError, timestamp: time });
         break;
       case "compaction": messages = applyCompaction(messages, event, time); break;

@@ -30,7 +30,7 @@ import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { errMsg } from "../host-shared/errors";
 import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
-import { answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
+import { rejectPrompt, answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -223,8 +223,7 @@ export function registerSessionRuntimeHandlers(
     const storedProfile = q.getSessionProfile(ctx.db, req.sessionId)?.profile;
     const selected = selectSessionProfile(storedProfile, req.profile);
     if (!selected.profile) {
-      broadcastEvent("session:projection", makeSessionProjection(req.sessionId, "error", { message: "Unknown session profile — cannot route prompt.", code: "unknown-profile" }));
-      broadcastEvent("session:busy", { sessionId: req.sessionId, reason: "unknown-profile", message: "Unknown session profile — cannot route prompt." });
+      rejectPrompt(req.sessionId, "Unknown session profile — cannot route prompt.", "unknown-profile");
       return;
     }
     const profile = selected.profile;
@@ -264,16 +263,14 @@ export function registerSessionRuntimeHandlers(
       for (const a of req.attachments) {
         const problem = validateAttachmentDataUrl(a?.dataUrl);
         if (problem) {
-          broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: problem, code: "invalid-attachment" }));
-          broadcastEvent("session:busy", { sessionId, reason: "invalid-attachment", message: problem });
+          rejectPrompt(sessionId, problem, "invalid-attachment");
           return;
         }
       }
     }
 
     if (req.config?.provider === "localllm") {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Local LLM provider is disabled.", code: "localllm-disabled" }));
-      broadcastEvent("session:busy", { sessionId, reason: "localllm-disabled", message: "Local LLM provider is disabled." });
+      rejectPrompt(sessionId, "Local LLM provider is disabled.", "localllm-disabled");
       return;
     }
 
@@ -412,8 +409,7 @@ export function registerSessionRuntimeHandlers(
     }
 
     if (req.config?.provider === "localllm") {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Local LLM provider is disabled.", code: "localllm-disabled" }));
-      broadcastEvent("session:busy", { sessionId, reason: "localllm-disabled", message: "Local LLM provider is disabled." });
+      rejectPrompt(sessionId, "Local LLM provider is disabled.", "localllm-disabled");
       return;
     }
 

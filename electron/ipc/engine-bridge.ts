@@ -10,7 +10,7 @@ import * as electron from "electron";
 import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
-import { AgentHost, type HostSend } from "../agent/host";
+import { AgentHost, SessionBusyError, type HostSend } from "../agent/host";
 import type { AgentTool } from "../agent/tools";
 import type { SubagentDeps } from "../agent/tools/subagent";
 import type { ModelRoute } from "../agent/provider";
@@ -40,7 +40,8 @@ import { notifyAgentAttention } from "../lib/agent-attention";
 import { routeFromConfig } from "../agent/route";
 import type { AgentLLMConfig } from "../lib/session-runtime-types";
 import type { Mode } from "../../shared/agent/approval-mode";
-import { makeSessionProjection } from "../../shared/agent/session-projection";
+import { makeSessionProjection, type SessionBusyReason } from "../../shared/agent/session-projection";
+import { failedTurnEnd } from "../agent/session/adapter";
 
 export { routeFromConfig };
 
@@ -428,11 +429,30 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
 
 /** Error projection to the run's tap when it has one (automations), else the renderer. */
 function reportPromptError(sessionId: string, err: unknown): void {
-  const busy = err instanceof Error && /busy/.test(err.message);
-  const projection = makeSessionProjection(sessionId, "error", { message: err instanceof Error ? err.message : String(err), code: busy ? "already-running" : undefined });
+  const message = err instanceof Error ? err.message : String(err);
   const tap = sessionTaps.get(sessionId);
-  if (tap) tap("session:projection", projection as never); else broadcastEvent("session:projection", projection);
-  if (busy) broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+  // "Busy" means another turn is live: it will send its own turn/end, so this must not.
+  if (err instanceof SessionBusyError) {
+    const projection = makeSessionProjection(sessionId, "error", { message, code: "already-running" });
+    if (tap) tap("session:projection", projection as never); else broadcastEvent("session:projection", projection);
+    broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+    return;
+  }
+  const projection = makeSessionProjection(sessionId, "error", { message });
+  const event = { sessionId, event: failedTurnEnd(message) };
+  if (tap) { tap("session:projection", projection as never); tap("session:event", event as never); return; }
+  broadcastEvent("session:projection", projection);
+  broadcastEvent("session:event", event);
+}
+
+/**
+ * Refuse a prompt before its turn starts. The renderer already shows a spinner for the
+ * prompt and clears it only on `turn/end`, so a refusal has to end the turn it never ran.
+ */
+export function rejectPrompt(sessionId: string, message: string, code: SessionBusyReason): void {
+  broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message, code }));
+  broadcastEvent("session:busy", { sessionId, reason: code, message });
+  broadcastEvent("session:event", { sessionId, event: failedTurnEnd(message) });
 }
 
 async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
@@ -566,8 +586,7 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
   const { resolveAIConfig } = await import("./chat");
   const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);
   if (!apiKey && !isLocalEndpoint(baseUrl)) {
-    broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Missing API key — configure provider in Settings.", code: "missing-api-key" }));
-    broadcastEvent("session:busy", { sessionId, reason: "missing-api-key" });
+    rejectPrompt(sessionId, "Missing API key. Add one for this provider in Settings → AI.", "missing-api-key");
     return;
   }
   const policy = chatApprovalPolicyFor(req);

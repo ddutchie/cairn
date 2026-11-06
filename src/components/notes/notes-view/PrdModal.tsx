@@ -12,6 +12,8 @@ import { effectiveTemperatureForModel } from "@/lib/models-dev";
 import { MarkdownContent } from "@/components/conversation/MarkdownContent";
 import { QuestionForm } from "@/components/conversation/QuestionForm";
 import { cn, prettifyToolLabel } from "@/lib/utils";
+import { isBenignTurnEnd } from "../../../../shared/agent/turn-end-reason";
+import { reportIpcError } from "@/lib/ipc/client";
 import { createSessionEventFold } from "../../../../shared/agent/session-event-fold";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -141,8 +143,13 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
     const fold = createSessionEventFold({
       onTurnStart: () => { content = ""; },
       onAssistantMessage: (message) => { content = message.text; },
-      onTurnEnd: () => {
-        if (content) setMessages((prev) => [...prev, { role: "assistant", content }]);
+      onTurnEnd: (reason, detail) => {
+        // A prompt refused before it starts ends with no turn/start, so clear the
+        // reply here or the next turn/end would append it again.
+        const reply = content;
+        content = "";
+        if (reply) setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+        if (!isBenignTurnEnd(reason)) reportIpcError(new Error(detail ?? "The AI request failed."));
       },
     });
     const unsub = electron.session.onEvent((e) => {

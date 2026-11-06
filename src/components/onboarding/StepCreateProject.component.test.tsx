@@ -23,11 +23,10 @@ function renderStep(overrides: Partial<Props> = {}) {
     name: "",
     icon: "Folder",
     submitting: false,
-    onBack: vi.fn(),
     onNameChange: vi.fn(),
     onIconChange: vi.fn(),
     onSubmit: vi.fn((e) => e.preventDefault()),
-    onSkip: vi.fn(),
+    onSample: vi.fn(),
     ...overrides,
   };
   const utils = render(<StepCreateProject {...props} />, { wrapper: TooltipProvider });
@@ -39,8 +38,8 @@ describe("StepCreateProject", () => {
     renderStep();
     expect(screen.getByRole("heading", { name: /create your first project/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create project" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Skip/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Go back to previous step" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start with a sample project" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Go back to previous step" })).not.toBeInTheDocument();
   });
 
   it("disables submit when the name is empty", () => {
@@ -82,18 +81,11 @@ describe("StepCreateProject", () => {
     expect(props.onIconChange).toHaveBeenCalledWith("Rocket");
   });
 
-  it("calls onSkip when the skip button is clicked", async () => {
+  it("calls onSample when the sample project button is clicked", async () => {
     const user = userEvent.setup();
     const { props } = renderStep();
-    await user.click(screen.getByRole("button", { name: /Skip/i }));
-    expect(props.onSkip).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls onBack when the back button is clicked", async () => {
-    const user = userEvent.setup();
-    const { props } = renderStep();
-    await user.click(screen.getByRole("button", { name: "Go back to previous step" }));
-    expect(props.onBack).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Start with a sample project" }));
+    expect(props.onSample).toHaveBeenCalledTimes(1);
   });
 
   describe("while submitting", () => {
@@ -103,11 +95,10 @@ describe("StepCreateProject", () => {
       expect(submit).toBeDisabled();
     });
 
-    it("disables back, skip, and every icon button", () => {
+    it("disables the sample button and every icon button", () => {
       renderStep({ name: "My Project", submitting: true });
 
-      expect(screen.getByRole("button", { name: "Go back to previous step" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: /Skip/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Start with a sample project" })).toBeDisabled();
 
       // Every icon picker button is disabled.
       for (const btn of screen.getAllByRole("button", { name: /^Use .+ icon$/ })) {
@@ -119,12 +110,10 @@ describe("StepCreateProject", () => {
       const user = userEvent.setup();
       const { props } = renderStep({ name: "My Project", submitting: true });
 
-      await user.click(screen.getByRole("button", { name: "Go back to previous step" }));
-      await user.click(screen.getByRole("button", { name: /Skip/i }));
+      await user.click(screen.getByRole("button", { name: "Start with a sample project" }));
       await user.click(screen.getByRole("button", { name: "Use Rocket icon" }));
 
-      expect(props.onBack).not.toHaveBeenCalled();
-      expect(props.onSkip).not.toHaveBeenCalled();
+      expect(props.onSample).not.toHaveBeenCalled();
       expect(props.onIconChange).not.toHaveBeenCalled();
     });
   });

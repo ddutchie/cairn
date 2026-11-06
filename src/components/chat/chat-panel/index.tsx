@@ -22,6 +22,8 @@ import type { SuggestionItem } from "../ChatInput";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
 import { SuggestedPrompts } from "./SuggestedPrompts";
+import { AIProviderModal } from "@/components/chat/AIProviderModal";
+import { isAIProviderReady } from "@/lib/ai-provider-ready";
 import { useCommunityConnectorMap } from "./connector-context";
 import { ConversationEmptyState } from "@/components/conversation/ConversationEmptyState";
 import { getCommandsForScope } from "@/lib/slash-commands";
@@ -154,6 +156,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const connectorMap = useCommunityConnectorMap();
 
   const [input, setInput] = useState("");
+  const [providerDialogOpen, setProviderDialogOpen] = useState(false);
   const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => Promise<void>>(async () => {});
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Each item carries the thread + attachments captured
@@ -166,7 +169,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     [customCommands, registryCommands]
   );
   // Virtualized transcript handle — used to jump to the newest message when the
-  // panel activates or a question form appears (followOutput handles streaming).
+  // panel activates or a question form appears (ConversationTranscript follows streaming).
   const chatVirtuosoRef = useRef<VirtuosoHandle>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
 
@@ -457,7 +460,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const pendingQuestionCount = pendingQuestions?.length ?? 0;
   // Jump to the newest message when the panel activates or the ask_questions
   // form appears — otherwise it can land out of view if the user had scrolled
-  // up. Streaming follow is handled by Virtuoso's followOutput (only follows
+  // up. Streaming follow is handled by ConversationTranscript (only follows
   // while the user is at the bottom), so this deliberately does NOT depend on
   // messages.length — a new message must not yank a user who scrolled up.
   const chatMessagesLengthRef = useRef(messages.length);
@@ -527,6 +530,16 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
         }).catch(() => { /* command errors are reported by the runtime layer */ });
         return;
       }
+    }
+
+    // No provider yet: every send path comes through here (suggested prompts,
+    // retries, prefilled messages), so ask for one here. The text stays in the
+    // input so it can be sent once a provider is added.
+    const { aiConfig: currentAi } = useCairnStore.getState();
+    if (!isAIProviderReady(currentAi, currentAi.savedProviders)) {
+      setInput(content);
+      setProviderDialogOpen(true);
+      return;
     }
 
     setInput("");
@@ -697,7 +710,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     handleSend(content);
   }, [handleSend]);
 
-  const shouldAutoSendRef = useRef(false);
+  const autoSendTextRef = useRef<string | null>(null);
 
   // Pre-fill input when opened via cairn:open-chat event
   useEffect(() => {
@@ -705,7 +718,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setInput(prefill.text);
       if (prefill.autoSend) {
-        shouldAutoSendRef.current = true;
+        autoSendTextRef.current = prefill.text;
       }
       onPrefillConsumed?.();
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -713,15 +726,15 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   }, [prefill, onPrefillConsumed]);
 
   useEffect(() => {
-    if (threadId && shouldAutoSendRef.current) {
-      shouldAutoSendRef.current = false;
-      const textToSend = input.trim() || prefill?.text;
+    if (threadId && autoSendTextRef.current !== null) {
+      // Send what was asked for: `input` here still holds whatever it held before the prefill.
+      const textToSend = autoSendTextRef.current.trim();
+      autoSendTextRef.current = null;
       if (textToSend) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         handleSend(textToSend);
       }
     }
-  }, [threadId, input, prefill, handleSend]);
+  }, [threadId, prefill, handleSend]);
 
 
   const handlePopIn = useCallback(async () => {
@@ -816,6 +829,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           composerProps={{ centered: isView(activeView, "chat"), commands: chatCommands, suggestions: mentionSuggestions, allowImages, allowPdf, providerModelTarget: "ai", variant: isView(activeView, "chat") ? "overview" : "default", showSparkles: isView(activeView, "chat"), statusText: isLoading ? "Working… click ◼ to stop" : "Shift+Enter for new line · Enter to send", queueWhileBusy: isLoading, queuedCount: queued.length }}
         />
 
+      {providerDialogOpen && <AIProviderModal onClose={() => setProviderDialogOpen(false)} />}
     </div>
   );
 }

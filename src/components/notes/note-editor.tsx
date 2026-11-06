@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getActiveWikilink } from "@/lib/wikilink-parser";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { cn, formatRelative, urlTransform } from "@/lib/utils";
+import { cn, formatRelative, plural, urlTransform } from "@/lib/utils";
 import { NoteExportMenu } from "./note-export-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,8 @@ import { countWords, toggleCheckboxInSource, diffChangedLines, extractStructured
 import { useNoteMarkdownComponents } from "./note-markdown-components";
 import { storage } from "@/lib/storage";
 import { NOTE_EDITOR_MODE_KEY, NOTE_LIVE_PREVIEW_KEY } from "@/lib/constants";
+import { isBenignTurnEnd } from "../../../shared/agent/turn-end-reason";
+import { reportIpcError } from "@/lib/ipc/client";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import { excerptFor } from "@/lib/note-text";
 import { useNoteBody } from "@/hooks/useNoteBody";
@@ -450,7 +452,16 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
            let content = "";
            const fold = createSessionEventFold({
              onAssistantMessage: (message) => { content = message.text; },
-             onTurnEnd: () => { unsub(); resolve({ content }); },
+             onTurnEnd: (reason, detail) => {
+               unsub();
+               if (!isBenignTurnEnd(reason)) {
+                 // Partial output from a failed turn must not replace the user's text.
+                 reportIpcError(new Error(detail ?? "The AI request failed."));
+                 resolve({ content: "" });
+                 return;
+               }
+               resolve({ content });
+             },
            });
            const unsub = electron.session.onEvent((e) => {
              if (e.sessionId === "chat-ai-text-action") fold(e.event);
@@ -535,6 +546,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
     setSpawnLoading(true);
     setSpawnResult(null);
     setSpawnToolCalls([]);
+    let failed = false;
     try {
       const result = await new Promise<{ content: string }>((resolve) => {
         let content = "";
@@ -546,8 +558,10 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             }
           },
           onAssistantMessage: (message) => { content = message.text; },
-          onTurnEnd: () => {
+          onTurnEnd: (reason, detail) => {
             unsub();
+            failed = !isBenignTurnEnd(reason);
+            if (failed) reportIpcError(new Error(detail ?? "The AI request failed."));
             resolve({ content });
           },
         });
@@ -563,6 +577,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
         });
       });
 
+      if (failed) return;
       // Try to parse task count from the tool result embedded in the response
       const match = result.content?.match(/(\d+)\s+task/i);
       const count = match ? parseInt(match[1], 10) : null;
@@ -737,7 +752,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                 )}
               >
                 {spawnResult ? <CheckCircle2 size={12} /> : <Wand2 size={12} />}
-                {spawnResult ? `${spawnResult.count} tasks added` : "Spawn tasks"}
+                {spawnResult ? `${plural(spawnResult.count, "task")} added` : "Spawn tasks"}
               </button>
             </Tooltip>
           ))}

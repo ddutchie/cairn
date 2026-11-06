@@ -52,7 +52,7 @@ import { markUpdaterQuitRequested } from "../lib/updater-quit";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "../workspace-config";
 import { markMcpNotificationsRead } from "../db/queries";
 import * as q from "../db/queries";
-import { writeNoteFile, deleteNoteFile, importVaultProjects, previewVaultImport, saveImportExclusions, syncNotesFromDisk, rollbackImport } from "../notes-files";
+import { writeNoteFile, deleteNoteFile, importVaultProjects, previewVaultImport, saveImportExclusions, setImportUnmanaged, syncNotesFromDisk, rollbackImport } from "../notes-files";
 import { suppressNextChange } from "../file-watcher";
 import { getProjectName } from "./result-helpers";
 import { broadcastEvent } from "./registry";
@@ -180,8 +180,11 @@ export function registerAppHandlers(
   // discovered projects attach to it — the caller (onboarding) knows the id of
   // the workspace it just created. When omitted, importVaultProjects falls back
   // to the oldest workspace.
-  registerContractHandle("app:rescanWorkspace", (_e, { workspaceId, excludedFolders }: { workspaceId?: string; excludedFolders?: string[] } = {}) => handle(() => {
+  registerContractHandle("app:rescanWorkspace", (_e, { workspaceId, excludedFolders, reimport }: { workspaceId?: string; excludedFolders?: string[]; reimport?: boolean } = {}) => handle(() => {
     if (Array.isArray(excludedFolders)) saveImportExclusions(ctx.workspacePath, excludedFolders);
+    // The user reviewed the preview and asked for this import, which overrides
+    // an earlier "undo import" on this folder. Background scans never pass this.
+    if (reimport) setImportUnmanaged(ctx.workspacePath, false);
     // Snapshot the live project ids BEFORE the scan so we can report exactly
     // which projects the import newly created (for the onboarding summary).
     const beforeIds = new Set(

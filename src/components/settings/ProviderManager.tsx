@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Check, X, Server, ChevronDown } from "lucide-react";
@@ -13,7 +13,7 @@ import { SettingsRow } from "./shared";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown";
 import { Select } from "@/components/ui/select";
 import { ModelPicker } from "@/components/ui/model-picker";
-import { useEndpointConfig, CreditsBadge } from "./endpoint-components";
+import { useEndpointConfig, CreditsBadge, isLocalBaseUrl } from "./endpoint-components";
 import { ConnectorLogo } from "./tools/ConnectorLogo";
 import { endpointLogoSlug } from "../../../shared/models/model-catalog";
 import {
@@ -65,7 +65,8 @@ function useProtocolAvailability(baseUrl: string, apiKey: string, model: string,
         if (!cancelled) setProbing(false);
       }
     }, 800);
-    return () => { cancelled = true; clearTimeout(timer); };
+    // A cancelled probe won't clear this itself, and a disabled check won't start another that would.
+    return () => { cancelled = true; clearTimeout(timer); setProbing(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
   return { availability: result?.key === key ? result.value : null, probing };
@@ -313,20 +314,7 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
           onCancel={() => setEditing(null)}
           onSave={async ({ name, baseUrl, model, rawKey, keyDirty, apiMode }) => {
             if (editing === "new") {
-              // Create first (no key), then store the raw key in the OS keychain
-              // and save the returned reference token — the raw key never lands
-              // in the store, localStorage, or the settings cache.
-              const id = addSavedProvider({ name, baseUrl, model, apiKey: "", apiMode }, kind);
-              if (keyDirty && rawKey) {
-                try {
-                  const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
-                  updateSavedProvider(id, { apiKey: ref ?? "" });
-                } catch (e) {
-                  // Don't leave an orphaned empty-key provider on keychain failure.
-                  deleteSavedProvider(id);
-                  throw e;
-                }
-              }
+              await saveNewProvider({ name, baseUrl, model, rawKey, keyDirty, apiMode }, kind, { addSavedProvider, updateSavedProvider, deleteSavedProvider });
             } else {
               const patch: { name: string; baseUrl: string; model: string; apiKey?: string; apiMode: ApiMode } = { name, baseUrl, model, apiMode };
               if (keyDirty) {
@@ -348,7 +336,37 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   );
 }
 
-function ProviderForm({
+/**
+ * Create a provider from the form: store the row first (no key), then put the raw
+ * key in the OS keychain and keep only the returned reference. The raw key never
+ * lands in the store, localStorage, or the settings cache. Shared by Settings and
+ * the chat's "Add an AI provider" dialog.
+ */
+export async function saveNewProvider(
+  data: { name: string; baseUrl: string; model: string; rawKey: string; keyDirty: boolean; apiMode: ApiMode },
+  kind: "ai" | "agent",
+  actions: {
+    addSavedProvider: (provider: Omit<SavedProvider, "id">, selectFor?: "ai" | "agent" | "both" | "none") => string;
+    updateSavedProvider: (id: string, patch: Partial<Omit<SavedProvider, "id">>) => void;
+    deleteSavedProvider: (id: string) => void;
+  },
+): Promise<string> {
+  const { name, baseUrl, model, rawKey, keyDirty, apiMode } = data;
+  const id = actions.addSavedProvider({ name, baseUrl, model, apiKey: "", apiMode }, kind);
+  if (keyDirty && rawKey) {
+    try {
+      const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
+      actions.updateSavedProvider(id, { apiKey: ref ?? "" });
+    } catch (e) {
+      // Don't leave an orphaned empty-key provider on keychain failure.
+      actions.deleteSavedProvider(id);
+      throw e;
+    }
+  }
+  return id;
+}
+
+export function ProviderForm({
   initial,
   defaultModel,
   onSave,
@@ -380,10 +398,31 @@ function ProviderForm({
   // user types a new one, the raw key.
   const { availableModels, fetchModels, ensureModels, resetModels, modelsLoading, testState, keyInfo } = useEndpointConfig();
   const keyForFetch = keyDirty ? keyInput : (initial?.apiKey ?? "");
+  // A brand new form has no key yet: asking a cloud endpoint now would only earn a
+  // 401, and greet the user with an error before they have typed anything.
+  const canCheckEndpoint = !!initial || !!keyForFetch || isLocalBaseUrl(baseUrl);
+  const hasOpened = useRef(false);
   useEffect(() => {
-    ensureModels(baseUrl, keyForFetch);
+    // The list belongs to the previous endpoint or key: drop it, and any request still
+    // running for it, so the effect below can't pick a model this endpoint doesn't have.
+    if (hasOpened.current) resetModels();
+    if (!canCheckEndpoint) return;
+    // On open straight away; after that wait for the user to stop typing.
+    const delay = hasOpened.current ? 600 : 0;
+    hasOpened.current = true;
+    const timer = setTimeout(() => ensureModels(baseUrl, keyForFetch), delay);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [baseUrl, keyForFetch]);
+
+  // The placeholder model rarely exists on the endpoint the user just entered, so
+  // take a real one from its list, unless they chose a model themselves.
+  const modelChosen = useRef(false);
+  useEffect(() => {
+    if (initial || modelChosen.current || availableModels.length === 0 || availableModels.includes(model)) return;
+    setModel(availableModels[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableModels]);
 
   const canSave = name.trim().length > 0 && baseUrl.trim().length > 0 && !saving;
 
@@ -393,7 +432,7 @@ function ProviderForm({
   useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
   const perModelEndpoint = opencodeSlugForBaseUrl(baseUrl) !== null;
   const dictated = perModelEndpoint ? endpointProtocolFor(baseUrl, model) : null;
-  const { availability, probing } = useProtocolAvailability(baseUrl, keyForFetch, model, !perModelEndpoint);
+  const { availability, probing } = useProtocolAvailability(baseUrl, keyForFetch, model, !perModelEndpoint && canCheckEndpoint);
   const tagFor = (p: ProbeProtocol) => (availability ? AVAILABILITY_TAG[availability[p]] : null);
   const selectedOffline = availability && availability[apiMode] !== "available" && availability[apiMode] !== "unknown" && availability[apiMode] !== "auth";
   const better = selectedOffline
@@ -427,19 +466,6 @@ function ProviderForm({
           <span className="text-xs text-[var(--text-tertiary)]">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI" className={inputCls} />
         </label>
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-[var(--text-tertiary)]">Default model</span>
-          <ModelPicker
-            value={model}
-            options={availableModels}
-            loading={modelsLoading}
-            errored={testState === "error"}
-            placeholder={defaultModel}
-            size="md"
-            onChange={setModel}
-            onRefresh={() => fetchModels(baseUrl, keyForFetch)}
-          />
-        </div>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-[var(--text-tertiary)]">Base URL</span>
           <input
@@ -461,6 +487,19 @@ function ProviderForm({
           />
           <span className="text-2xs text-[var(--text-tertiary)]">Stored in your OS keychain, never synced.</span>
         </label>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-[var(--text-tertiary)]">Default model</span>
+          <ModelPicker
+            value={model}
+            options={availableModels}
+            loading={modelsLoading}
+            errored={testState === "error"}
+            placeholder={defaultModel}
+            size="md"
+            onChange={(value) => { modelChosen.current = true; setModel(value); }}
+            onRefresh={() => fetchModels(baseUrl, keyForFetch)}
+          />
+        </div>
         <div className="flex flex-col gap-1">
           <span className="text-xs text-[var(--text-tertiary)]">API protocol</span>
           {perModelEndpoint ? (

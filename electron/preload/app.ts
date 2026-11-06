@@ -25,8 +25,8 @@ export const appApi = {
   setAccent: (accent: string) => invokeContract("app:setAccent", accent),
   initWorkspace: (workspacePath: string, excludedFolders?: string[]) =>
     invokeContract("app:initWorkspace", { workspacePath, excludedFolders }),
-  rescanWorkspace: (workspaceId?: string, excludedFolders?: string[]) =>
-    invokeContract("app:rescanWorkspace", { workspaceId, excludedFolders }),
+  rescanWorkspace: (workspaceId?: string, excludedFolders?: string[], reimport?: boolean) =>
+    invokeContract("app:rescanWorkspace", { workspaceId, excludedFolders, reimport }),
   rollbackImport: (projectIds: string[]) => invokeContract("app:rollbackImport", { projectIds }),
   probeWorkspaceFolder: (folder: string) => invokeContract("app:probeWorkspaceFolder", { folder }),
   relaunch: () => invokeContract("app:relaunch"),

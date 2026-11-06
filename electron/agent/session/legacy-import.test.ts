@@ -54,6 +54,22 @@ describe("importLegacyLog", () => {
     expect(foldState(out.records).lastEnd).toBe("aborted");
   });
 
+  it("keeps the full first tool result when the old runtime re-logged a shortened one", () => {
+    const result = (seq: number, text: string) => ({ type: "tool/result", seq, time: seq, data: { message: { role: "tool", toolCallId: "c", content: [{ type: "text", text }] } } });
+    const out = importLegacyLog(jsonl(
+      { type: "session", version: 4, id: "s", createdAt: 5 },
+      { type: "turn/start", seq: 1, time: 1, data: { turn: 1 } },
+      user(2, "q"),
+      { type: "tool/call", seq: 3, time: 3, data: { callId: "c", name: "t", arguments: "{}" } },
+      result(4, "full output"),
+      { type: "turn/end", seq: 5, time: 5, data: { reason: { kind: "completed" } } },
+      result(6, "shortened"),
+    ))!;
+    const results = out.records.filter((r) => r.event.type === "tool/result");
+    expect(results).toHaveLength(1);
+    expect(results[0].event).toMatchObject({ callId: "c", text: "full output" });
+  });
+
   it("rejects non-session input and tolerates garbage lines", () => {
     expect(importLegacyLog("{\"type\":\"turn/start\"}")).toBeUndefined();
     expect(importLegacyLog(`${v4}\nnot json`)!.report.skipped).toBe(1);

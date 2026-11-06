@@ -20,18 +20,17 @@ const feat = (id: string, version: string): NewFeature => ({
   highlights: [],
 });
 
-function makeDeps(overrides: Partial<CompleteOnboardingDeps> & { seenFeatures?: string[] } = {}): {
+function makeDeps(overrides: Partial<CompleteOnboardingDeps> = {}): {
   deps: CompleteOnboardingDeps;
 } {
-  const { seenFeatures, ...rest } = overrides;
   const deps: CompleteOnboardingDeps = {
     hydrateFromElectron: vi.fn(async () => {}),
     setOnboardingState: vi.fn(),
-    setPendingTutorial: vi.fn(),
     setTutorialActive: vi.fn(),
-    getSeenFeatures: () => seenFeatures ?? [],
+    markFeatureAsSeen: vi.fn(),
+    clearOnboardingInProgress: vi.fn(),
     registry: [feat("v1.0-a", "v1.0")],
-    ...rest,
+    ...overrides,
   };
   return { deps };
 }
@@ -67,27 +66,33 @@ describe("completeOnboarding", () => {
     const { deps } = makeDeps();
     await completeOnboarding(false, deps);
 
-    expect(deps.setPendingTutorial).not.toHaveBeenCalled();
     expect(deps.setTutorialActive).not.toHaveBeenCalled();
   });
 
-  it("defers the tour when there are unseen latest-version features", async () => {
-    const { deps } = makeDeps({ seenFeatures: [], registry: [feat("v9.9-new", "v9.9")] });
-    await completeOnboarding(true, deps);
-
-    expect(deps.setPendingTutorial).toHaveBeenCalledWith(true);
-    expect(deps.setTutorialActive).not.toHaveBeenCalled();
-  });
-
-  it("starts the tour immediately when the latest feature is already seen", async () => {
-    const { deps } = makeDeps({
-      seenFeatures: ["v9.9-new"],
-      registry: [feat("v9.9-new", "v9.9")],
-    });
+  it("starts the tour when asked", async () => {
+    const { deps } = makeDeps();
     await completeOnboarding(true, deps);
 
     expect(deps.setTutorialActive).toHaveBeenCalledWith(true);
-    expect(deps.setPendingTutorial).not.toHaveBeenCalled();
+  });
+
+  it("marks every What's New card seen before leaving the wizard", async () => {
+    const order: string[] = [];
+    const { deps } = makeDeps({
+      registry: [feat("v9.8-old", "v9.8"), feat("v9.9-new", "v9.9")],
+      markFeatureAsSeen: vi.fn((id: string) => { order.push(id); }),
+      setOnboardingState: vi.fn(() => { order.push("exit"); }),
+    });
+    await completeOnboarding(false, deps);
+
+    expect(order).toEqual(["v9.8-old", "v9.9-new", "exit"]);
+  });
+
+  it("clears the in-progress marker so the next launch opens the app", async () => {
+    const { deps } = makeDeps();
+    await completeOnboarding(false, deps);
+
+    expect(deps.clearOnboardingInProgress).toHaveBeenCalledTimes(1);
   });
 
   it("gates exit AND tour start on hydration when starting the tour", async () => {
@@ -95,8 +100,7 @@ describe("completeOnboarding", () => {
     const hydrateFromElectron = vi.fn(
       () => new Promise<void>((resolve) => { resolveHydrate = resolve; }),
     );
-    // seenFeatures empty + unseen latest → tour is deferred via setPendingTutorial.
-    const { deps } = makeDeps({ hydrateFromElectron, registry: [feat("v9.9-new", "v9.9")] });
+    const { deps } = makeDeps({ hydrateFromElectron });
 
     const done = completeOnboarding(true, deps);
     await Promise.resolve();
@@ -104,12 +108,11 @@ describe("completeOnboarding", () => {
     expect(deps.hydrateFromElectron).toHaveBeenCalledTimes(1);
     // Nothing past the await should have run while hydration is pending.
     expect(deps.setOnboardingState).not.toHaveBeenCalled();
-    expect(deps.setPendingTutorial).not.toHaveBeenCalled();
     expect(deps.setTutorialActive).not.toHaveBeenCalled();
 
     resolveHydrate();
     await done;
     expect(deps.setOnboardingState).toHaveBeenCalledWith(false);
-    expect(deps.setPendingTutorial).toHaveBeenCalledWith(true);
+    expect(deps.setTutorialActive).toHaveBeenCalledWith(true);
   });
 });
