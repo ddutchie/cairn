@@ -33,6 +33,44 @@ export function isBenignTurnEnd(kind: string | undefined): boolean {
   return kind === "stop" || kind === "completed" || kind === "aborted";
 }
 
+const AI_SETTINGS = "Settings → AI";
+
+/** True when a failure notice sends the user to AI settings, so the UI can offer a shortcut. */
+export function pointsToAISettings(notice: string): boolean {
+  return notice.includes(AI_SETTINGS);
+}
+
+/** The provider's own words from a raw failure, without its status code or JSON wrapping. */
+function providerDetail(message: string): string {
+  const body = message.replace(/^[^{]*?\b\d{3}\b[:\s-]*/, "").trim();
+  let detail = body;
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; error?: { message?: unknown } | string };
+    const nested = typeof parsed.error === "string" ? parsed.error : parsed.error?.message;
+    const found = parsed.message ?? nested;
+    detail = typeof found === "string" ? found : "";
+  } catch { /* not JSON: keep the text as it is */ }
+  return detail.length > 160 ? `${detail.slice(0, 160)}…` : detail;
+}
+
+/** A sentence saying what to do about a common provider failure, or undefined for anything else. */
+function describeProviderFailure(message: string): string | undefined {
+  if (/^missing api key/i.test(message)) return message;
+  const withDetail = (text: string) => {
+    const detail = providerDetail(message);
+    return detail ? `${text} (${detail})` : text;
+  };
+  const status = /^(?:[a-z ]*error:?\s*)?(?:http\s*)?(?:status code\s*)?(\d{3})\b/i.exec(message)?.[1];
+  if (status === "401") return withDetail(`The provider rejected your API key. Check it in ${AI_SETTINGS}.`);
+  if (status === "403") return withDetail(`The provider refused this request. Check your key and plan in ${AI_SETTINGS}.`);
+  if (status === "404") return withDetail(`The provider couldn't find this model or address. Check them in ${AI_SETTINGS}.`);
+  if (status === "429") return withDetail("The provider is limiting requests, or your account is out of quota. Try again in a moment.");
+  if (/econnrefused|enotfound|eai_again|getaddrinfo|fetch failed|connection error|network error/i.test(message)) {
+    return `Couldn't reach the provider. Check your connection and the address in ${AI_SETTINGS}. For a local provider, make sure its server is running.`;
+  }
+  return undefined;
+}
+
 /**
  * Render a `turn/end` reason as an actionable sentence.
  *
@@ -53,6 +91,8 @@ export function describeTurnEndReason(reason: TurnEndReasonLike | undefined): st
       const message = reason?.error?.message?.trim();
       const code = reason?.error?.code;
       if (!message) return "Agent turn failed (no error detail reported)";
+      const known = describeProviderFailure(message);
+      if (known) return known;
       if (code === "UNKNOWN") return `Agent turn failed — internal error: ${message}`;
       return code ? `Agent turn failed (${code}): ${message}` : `Agent turn failed: ${message}`;
     }

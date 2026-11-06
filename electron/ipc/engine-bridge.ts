@@ -10,7 +10,7 @@ import * as electron from "electron";
 import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
-import { AgentHost, type HostSend } from "../agent/host";
+import { AgentHost, SessionBusyError, type HostSend } from "../agent/host";
 import type { AgentTool } from "../agent/tools";
 import type { SubagentDeps } from "../agent/tools/subagent";
 import type { ModelRoute } from "../agent/provider";
@@ -432,7 +432,7 @@ function reportPromptError(sessionId: string, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
   const tap = sessionTaps.get(sessionId);
   // "Busy" means another turn is live: it will send its own turn/end, so this must not.
-  if (/busy/.test(message)) {
+  if (err instanceof SessionBusyError) {
     const projection = makeSessionProjection(sessionId, "error", { message, code: "already-running" });
     if (tap) tap("session:projection", projection as never); else broadcastEvent("session:projection", projection);
     broadcastEvent("session:busy", { sessionId, reason: "already-running" });

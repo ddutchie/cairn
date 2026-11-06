@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check, Trash2 } from "lucide-react";
-import { useConfirmAction } from "@/components/ui/confirm-button";
+import { Check } from "lucide-react";
 import { Shell, NavRow } from "./shared";
 
 interface Props {
@@ -12,18 +11,11 @@ interface Props {
   /** False when the user skipped project creation. The demo needs project
    *  content (board, notes, sidebar), so it is not offered without one. */
   hasProject: boolean;
-  /** True when the starter project was created in this run. */
-  sampleProject?: boolean;
-  /** True when the workspace holds projects besides the starter one. */
-  hasOtherProjects?: boolean;
-  /** Removes the starter project. Two-step confirm lives in this component. */
-  onDeleteSample?: () => void;
 }
 
 /** Last step of the first run: confirm setup and choose whether to start the demo. */
-export function StepDone({ onBack, onComplete, hasProject, sampleProject = false, hasOtherProjects = false, onDeleteSample }: Props) {
+export function StepDone({ onBack, onComplete, hasProject }: Props) {
   const [startDemo, setStartDemo] = useState(true);
-  const deleteConfirm = useConfirmAction();
   const demoOn = hasProject && startDemo;
 
   return (
@@ -65,31 +57,6 @@ export function StepDone({ onBack, onComplete, hasProject, sampleProject = false
           </button>
         </div>
 
-        {sampleProject && hasOtherProjects && onDeleteSample && (
-          <div className="flex flex-col gap-2 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
-            <p className="text-xs font-medium text-[var(--text-primary)]">Remove the sample project?</p>
-            <p className="text-2xs text-[var(--text-tertiary)] leading-relaxed">
-              You have your own projects now, so you may not need &ldquo;Getting started&rdquo;.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                if (deleteConfirm.armed) {
-                  deleteConfirm.fire();
-                  onDeleteSample();
-                } else {
-                  deleteConfirm.arm();
-                }
-              }}
-              className={deleteConfirm.armed
-                ? "self-start inline-flex items-center gap-1.5 text-xs font-medium text-[var(--danger)] hover:underline"
-                : "self-start inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}
-            >
-              <Trash2 size={12} />
-              {deleteConfirm.armed ? "Confirm — delete the sample project" : "Delete sample project"}
-            </button>
-          </div>
-        )}
 
         <NavRow
           onBack={onBack}

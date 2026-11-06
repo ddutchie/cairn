@@ -48,25 +48,4 @@ describe("StepDone", () => {
     expect(onComplete).toHaveBeenCalledWith(false);
   });
 
-  it("offers to remove the sample project and only deletes after a second click", async () => {
-    const user = userEvent.setup();
-    const onDeleteSample = vi.fn();
-    render(<StepDone onBack={vi.fn()} onComplete={vi.fn()} hasProject sampleProject hasOtherProjects onDeleteSample={onDeleteSample} />);
-
-    await user.click(screen.getByRole("button", { name: "Delete sample project" }));
-    expect(onDeleteSample).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole("button", { name: /Confirm — delete the sample project/ }));
-    expect(onDeleteSample).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not offer to remove the sample project when it is the only project", () => {
-    render(<StepDone onBack={vi.fn()} onComplete={vi.fn()} hasProject sampleProject onDeleteSample={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: "Delete sample project" })).not.toBeInTheDocument();
-  });
-
-  it("does not show the sample prompt when the project was made by the user", () => {
-    render(<StepDone onBack={vi.fn()} onComplete={vi.fn()} hasProject />);
-    expect(screen.queryByRole("button", { name: "Delete sample project" })).not.toBeInTheDocument();
-  });
 });

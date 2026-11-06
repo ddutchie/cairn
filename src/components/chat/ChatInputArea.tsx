@@ -43,6 +43,8 @@ export interface ChatInputAreaProps {
   allowPdf?: boolean;
   /** Which config the provider · model picker edits ("ai" | "agent"). */
   providerModelTarget?: "ai" | "agent";
+  /** Which config this composer's messages run on, when it shows no picker for it. */
+  providerCheck?: "ai" | "agent";
   /** Approval/permission control for the footer row, after the model pickers.
    *  Defaults to the chat approvals picker when `providerModelTarget` is "ai";
    *  the agent pane passes its permission-preset select so both sit in the same spot. */
@@ -75,6 +77,7 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
     allowImages = false,
     allowPdf = false,
     providerModelTarget,
+    providerCheck,
     approvalControl,
     statusText,
     footerTrailing,
@@ -87,7 +90,7 @@ export const ChatInputArea = React.forwardRef<HTMLTextAreaElement, ChatInputArea
   const [pendingImages, setPendingImages] = useState<AttachmentItem[]>([]);
   // Onboarding no longer asks for an AI provider. Until this surface has one,
   // say so here rather than failing on the first send.
-  const providerKind = providerModelTarget ?? "ai";
+  const providerKind = providerCheck ?? providerModelTarget ?? "ai";
   const needsProvider = useCairnStore((s) =>
     !isAIProviderReady(providerKind === "agent" ? s.agentConfig : s.aiConfig, s.aiConfig.savedProviders),
   );

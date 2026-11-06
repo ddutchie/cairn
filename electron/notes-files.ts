@@ -122,9 +122,9 @@ export function rollbackImport(
   // Strip Cairn frontmatter from each adopted file (best-effort), leaving the
   // user's own frontmatter and the note body intact.
   for (const n of notes) {
-    const fp = adoptedNoteFile(workspacePath, cfg.adopted[n.id]?.path, n.id)
-      ?? findNoteFilePath(workspacePath, n.project_name, n.id);
-    if (fp) stripCairnFrontmatterFromFile(fp);
+    const adoptedFile = adoptedNoteFile(workspacePath, cfg.adopted[n.id]?.path, n.id);
+    const found = adoptedFile ?? findNoteFilePath(workspacePath, n.project_name, n.id);
+    if (found && isPhysicallyInside(workspacePath, found)) stripCairnFrontmatterFromFile(found);
   }
 
   // Delete the projects (cascades to their note rows) under sync-capture
@@ -150,18 +150,26 @@ export function rollbackImport(
 /**
  * The ledger's recorded file for an adopted note. Loose root notes don't live
  * under their project's folder, so a lookup by project can't find them. The
- * ledger is a plain file in the vault, so the path must stay inside the workspace
+ * ledger is a plain file in the vault, so the path must really be inside the workspace
  * and the file must still belong to this note before it is rewritten.
  */
 function adoptedNoteFile(workspacePath: string, relativePath: string | undefined, noteId: string): string | null {
   if (!relativePath) return null;
-  const root = path.resolve(workspacePath);
-  const fp = path.resolve(root, relativePath);
-  if (!fp.startsWith(root + path.sep)) return null;
+  const fp = path.resolve(workspacePath, relativePath);
+  if (!isPhysicallyInside(workspacePath, fp)) return null;
   try {
     return matter(fs.readFileSync(fp, "utf-8")).data.id === noteId ? fp : null;
   } catch {
     return null;
+  }
+}
+
+/** Whether a file really lives under the workspace, once symlinks are resolved. */
+function isPhysicallyInside(workspacePath: string, filePath: string): boolean {
+  try {
+    return fs.realpathSync(filePath).startsWith(fs.realpathSync(workspacePath) + path.sep);
+  } catch {
+    return false;
   }
 }
 

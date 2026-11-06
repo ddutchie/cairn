@@ -21,6 +21,8 @@ import { ConversationSubagentBlock } from "./ConversationSubagentBlock";
 import { messageStatsSegments } from "../../../shared/chat/message-stats";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 import { IconButton } from "@/components/ui/icon-button";
+import { useCairnStore } from "@/store";
+import { pointsToAISettings } from "../../../shared/agent/turn-end-reason";
 
 interface ConversationMessageBubbleProps {
   message: ConversationMessage;
@@ -59,8 +61,9 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
 
   if (isSystem) {
     return (
-      <div className="flex justify-center py-0.5">
+      <div className="flex flex-col items-center gap-1 py-0.5">
         <span className="text-2xs italic text-[var(--text-tertiary)] px-2">{message.content}</span>
+        {pointsToAISettings(message.content ?? "") && <OpenAISettingsButton />}
       </div>
     );
   }
@@ -72,6 +75,7 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
         <div className="flex-1 min-w-0">
           <div className="px-3 py-2 rounded-xl rounded-tl-sm text-xs leading-relaxed bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] border border-[var(--danger)]/20 text-[var(--danger)]">
             {message.content}
+            {pointsToAISettings(message.content ?? "") && <div className="mt-1"><OpenAISettingsButton /></div>}
           </div>
         </div>
       </div>
@@ -229,6 +233,21 @@ function LiveConversationMessageBubble(props: ConversationMessageBubbleProps) {
     [message, content, thought],
   );
   return <ConversationMessageBubbleBody {...props} message={live} />;
+}
+
+/** Shortcut from a provider failure to the settings that fix it. */
+function OpenAISettingsButton() {
+  const setView = useCairnStore((s) => s.setView);
+  const setSettingsSection = useCairnStore((s) => s.setSettingsSection);
+  return (
+    <button
+      type="button"
+      onClick={() => { setSettingsSection("ai"); setView("settings"); }}
+      className="text-2xs text-[var(--accent)] hover:underline"
+    >
+      Open AI settings
+    </button>
+  );
 }
 
 export const ConversationMessageBubble = React.memo(function ConversationMessageBubble(props: ConversationMessageBubbleProps) {

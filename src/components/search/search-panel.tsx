@@ -132,6 +132,9 @@ export function SearchPanel() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [semanticScores, setSemanticScores] = useState<Map<string, number>>(new Map());
   const [focused, setFocused] = useState(0);
+  // The query whose keyword results are all on screen. Differs from `query` while a search is pending.
+  const [settledQuery, setSettledQuery] = useState("");
+  const enterQueued = useRef(false);
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [filterProject, setFilterProject] = useState<string | null>(null);
   const [semanticMode, setSemanticMode] = useState<boolean>(loadSemanticPref);
@@ -187,10 +190,12 @@ export function SearchPanel() {
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (semanticTimer.current) clearTimeout(semanticTimer.current);
+    enterQueued.current = false;
     if (query.trim().length < 1) {
       queueMicrotask(() => {
         setResults([]);
         setSemanticScores(new Map());
+        setSettledQuery("");
       });
       return;
     }
@@ -214,14 +219,18 @@ export function SearchPanel() {
       // Note bodies aren't all in the renderer (loaded lazily): the main
       // process matches bodies; merge those in when they arrive.
       const searchSnippets = window.electron?.note?.searchSnippets;
-      if (!searchSnippets) return;
+      if (!searchSnippets) { setSettledQuery(trimmed); return; }
       try {
         const hits = await searchSnippets(trimmed, filterProjectRef.current ?? undefined);
         if (cancelled) return;
         // Rank before capping, or best-ranked hits late in store order get cut.
         keyword = applyNoteHits(searchAll(trimmed, new Set(hits.map((h) => h.id)), Infinity), hits).slice(0, SEARCH_RESULT_CAP);
         publish();
-      } catch { /* title-only note matches stay on screen */ }
+        setSettledQuery(trimmed);
+      } catch {
+        // Title-only note matches stay on screen.
+        if (!cancelled) setSettledQuery(trimmed);
+      }
     }, 150);
 
     if (semanticMode && embeddingsReady && activeWorkspaceId) {
@@ -276,6 +285,10 @@ export function SearchPanel() {
     toggleSearch();
   }
 
+  const filtered = filterSearchResults(results, filterType, filterProject);
+  const noteResults = filtered.filter((r) => r.type === "note");
+  const taskResults = filtered.filter((r) => r.type === "card");
+
   function handleKeyDown(e: React.KeyboardEvent) {
     const total = noteResults.length + taskResults.length;
     if (e.key === "ArrowDown") {
@@ -285,12 +298,27 @@ export function SearchPanel() {
       e.preventDefault();
       setFocused((f) => clampFocus(f - 1, total));
     } else if (e.key === "Enter") {
-      const result = resolveFocusedResult(focused, noteResults, taskResults);
-      if (result) handleSelect(result);
-      // Nothing to open: the one thing Enter can still do is ask.
-      else if (query.trim()) askAI();
+      // Enter confirming IME text isn't a submit.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+      // Results aren't in yet: answer Enter once they are, or it would ask the AI about something it could open.
+      if (query.trim() && settledQuery !== query.trim()) enterQueued.current = true;
+      else openFocusedOrAsk();
     }
   }
+
+  function openFocusedOrAsk() {
+    const result = resolveFocusedResult(focused, noteResults, taskResults);
+    if (result) handleSelect(result);
+    // Nothing to open: the one thing Enter can still do is ask.
+    else if (query.trim()) askAI();
+  }
+
+  useEffect(() => {
+    if (!enterQueued.current || settledQuery !== query.trim()) return;
+    enterQueued.current = false;
+    if (searchOpen) openFocusedOrAsk();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending search settles
+  }, [settledQuery]);
 
   /** Hand the query to the chat, which answers from the workspace. */
   function askAI() {
@@ -301,11 +329,6 @@ export function SearchPanel() {
   useEscapeKey(toggleSearch, searchOpen);
 
   if (!searchOpen) return null;
-
-  const filtered = filterSearchResults(results, filterType, filterProject);
-
-  const noteResults = filtered.filter((r) => r.type === "note");
-  const taskResults = filtered.filter((r) => r.type === "card");
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4">

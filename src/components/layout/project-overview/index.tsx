@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
+import { modKey } from "@/components/layout/sidebar-utils";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
 import { ProjectSettingsButton } from "./project-settings";
 import { ReviewButton } from "./review-button";
@@ -586,7 +587,7 @@ export function ProjectOverview() {
                 <span className="text-sm font-medium text-[var(--text-tertiary)]">{bottleneck ? `in ${bottleneck.name}` : "—"}</span>
               </div>
               <div className="text-xs mt-2 text-[var(--text-tertiary)]">
-                {bottleneck ? `${openCards.length} open total` : "Add columns"}
+                {bottleneck ? `${openCards.length} open total` : "No column stands out"}
               </div>
             </div>
           </div>
@@ -897,7 +898,7 @@ export function ProjectOverview() {
                   <span className="hidden sm:inline-flex items-center gap-1 text-2xs text-[var(--text-tertiary)] ml-1">
                     <span className="w-1 h-1 rounded-full bg-[var(--success)]" /> {project.name} · {instrumentDone}/{instrumentTotal}
                   </span>
-                  <span className="ml-auto hidden md:inline text-2xs text-[var(--text-tertiary)]">⌘/ · Shift+Enter</span>
+                  <span className="ml-auto hidden md:inline text-2xs text-[var(--text-tertiary)]">{modKey()}/ · Shift+Enter</span>
                 </div>
                 <div className="p-1.5 md:p-2">
                   <ChatInputArea
@@ -910,6 +911,7 @@ export function ProjectOverview() {
                     showSparkles
                     suggestions={mentionSuggestions}
                     providerModelTarget="ai"
+                    providerCheck={sessionKind === "coding" && project.codeDirectory ? "agent" : "ai"}
                     statusText="Enter to send · mentions with @"
                   />
                 </div>

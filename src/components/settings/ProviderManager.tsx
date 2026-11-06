@@ -65,7 +65,8 @@ function useProtocolAvailability(baseUrl: string, apiKey: string, model: string,
         if (!cancelled) setProbing(false);
       }
     }, 800);
-    return () => { cancelled = true; clearTimeout(timer); };
+    // A cancelled probe won't clear this itself, and a disabled check won't start another that would.
+    return () => { cancelled = true; clearTimeout(timer); setProbing(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
   return { availability: result?.key === key ? result.value : null, probing };
@@ -402,6 +403,9 @@ export function ProviderForm({
   const canCheckEndpoint = !!initial || !!keyForFetch || isLocalBaseUrl(baseUrl);
   const hasOpened = useRef(false);
   useEffect(() => {
+    // The list belongs to the previous endpoint or key: drop it, and any request still
+    // running for it, so the effect below can't pick a model this endpoint doesn't have.
+    if (hasOpened.current) resetModels();
     if (!canCheckEndpoint) return;
     // On open straight away; after that wait for the user to stop typing.
     const delay = hasOpened.current ? 600 : 0;

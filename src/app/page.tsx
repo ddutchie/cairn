@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import { isView } from "@/lib/views";
 import { NEW_FEATURES_REGISTRY } from "@/lib/new-features-registry";
 import { completeOnboarding } from "@/lib/complete-onboarding";
-import { clearOnboardingInProgress, isOnboardingInProgress } from "@/lib/onboarding-progress";
+import { clearOnboardingInProgress, isOnboardingInProgress, readPendingImport } from "@/lib/onboarding-progress";
 import { QuickCapture } from "@/components/layout/QuickCapture";
 import { visibleNumberedViews } from "@/components/layout/sidebar-utils";
 import { persist, reportIpcError } from "@/lib/ipc/client";
@@ -435,6 +435,9 @@ export default function Home() {
     const initialStep =
       onboardingState === "workspace" ? "choose-folder" :
       onboardingState === "create"    ? "workspace-details" :
+      // Quit during an import review: go back to it, with its Undo. The project
+      // step shows the review when there is a pending import.
+      onboardingState === "resume" && readPendingImport(allProjects).length > 0 ? "create-project" :
       // Quit after making a project: only "Open Cairn" is left.
       onboardingState === "resume" && allProjects.some((p) => p.workspaceId === wsId && !p.archivedAt) ? "done" :
       "create-project"; // "dev" and "resume" — skip the workspace steps straight to the project step

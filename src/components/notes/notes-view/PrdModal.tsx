@@ -144,7 +144,11 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
       onTurnStart: () => { content = ""; },
       onAssistantMessage: (message) => { content = message.text; },
       onTurnEnd: (reason, detail) => {
-        if (content) setMessages((prev) => [...prev, { role: "assistant", content }]);
+        // A prompt refused before it starts ends with no turn/start, so clear the
+        // reply here or the next turn/end would append it again.
+        const reply = content;
+        content = "";
+        if (reply) setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
         if (!isBenignTurnEnd(reason)) reportIpcError(new Error(detail ?? "The AI request failed."));
       },
     });

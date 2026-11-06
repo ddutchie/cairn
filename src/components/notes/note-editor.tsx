@@ -454,7 +454,12 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
              onAssistantMessage: (message) => { content = message.text; },
              onTurnEnd: (reason, detail) => {
                unsub();
-               if (!isBenignTurnEnd(reason)) reportIpcError(new Error(detail ?? "The AI request failed."));
+               if (!isBenignTurnEnd(reason)) {
+                 // Partial output from a failed turn must not replace the user's text.
+                 reportIpcError(new Error(detail ?? "The AI request failed."));
+                 resolve({ content: "" });
+                 return;
+               }
                resolve({ content });
              },
            });

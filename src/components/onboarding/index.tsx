@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import { ipcResult } from "@/store/ipc";
+import { ipcResult, writesDuring } from "@/store/ipc";
 import { DEFAULT_WORKSPACE_ICON, DEFAULT_PROJECT_ICON } from "@/lib/workspace-icons";
-import { markOnboardingInProgress } from "@/lib/onboarding-progress";
+import { clearPendingImport, markOnboardingInProgress, readPendingImport, savePendingImport } from "@/lib/onboarding-progress";
+import { modKey } from "@/components/layout/sidebar-utils";
 import type { OnboardingStep } from "./shared";
 import { StepChooseFolder } from "./StepChooseFolder";
 import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
@@ -19,9 +20,9 @@ type ImportPreview = Awaited<ReturnType<NonNullable<typeof window.electron>["pro
 
 /** Seed content for the starter project, so the board, notes and tour have
  *  something to show on a fresh install. */
-const STARTER_NOTE = `# Welcome to Cairn
+const starterNote = () => `# Welcome to Cairn
 
-Notes are plain Markdown files saved on your disk. Write here, or ask the AI chat (⌘/) to edit them for you.
+Notes are plain Markdown files saved on your disk. Write here, or ask the AI chat (${modKey()}/) to edit them for you.
 
 - Create more notes from the sidebar.
 - Tasks live on the Board. Drag this project's cards between columns.
@@ -50,7 +51,7 @@ interface Props {
  * shows a prompt until it is set.
  */
 export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props) {
-  const { theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, createWorkspace, updateWorkspace, initWorkspacePath, getWorkspacePath, createProject, createNote, createCard, deleteProject, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, createWorkspace: s.createWorkspace, updateWorkspace: s.updateWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, createProject: s.createProject, createNote: s.createNote, createCard: s.createCard, deleteProject: s.deleteProject, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
+  const { theme, setTheme, fontScale, setFontScale, fontFamily, setFontFamily, createWorkspace, updateWorkspace, initWorkspacePath, getWorkspacePath, createProject, deleteProject, createNote, createCard, setActiveProject, activeWorkspaceId } = useCairnStore(useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme, fontScale: s.fontScale, setFontScale: s.setFontScale, fontFamily: s.fontFamily, setFontFamily: s.setFontFamily, createWorkspace: s.createWorkspace, updateWorkspace: s.updateWorkspace, initWorkspacePath: s.initWorkspacePath, getWorkspacePath: s.getWorkspacePath, createProject: s.createProject, deleteProject: s.deleteProject, createNote: s.createNote, createCard: s.createCard, setActiveProject: s.setActiveProject, activeWorkspaceId: s.activeWorkspaceId })));
 
   // ── Wizard step ──────────────────────────────────────────────────────────────
   // First run starts on the welcome panel. The other entry points (existing
@@ -72,7 +73,11 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   const [excludedFolders, setExcludedFolders] = useState<Set<string>>(new Set());
   // Projects auto-created from the vault by the post-workspace rescan. When
   // non-empty, the project step shows them for review instead of the form.
-  const [importedProjects, setImportedProjects] = useState<ImportedProject[]>([]);
+  // Restored on resume, so quitting doesn't lose the review and its Undo.
+  const [importedProjects, setImportedProjects] = useState<ImportedProject[]>(() =>
+    initialStep === "create-project" ? readPendingImport(useCairnStore.getState().projects) : []);
+  // Whether this run picks a folder itself: a first run, or after undoing an import.
+  const [picksFolder, setPicksFolder] = useState(initialStep === "choose-folder");
   // Visible on the import summary when a rollback/undo fails.
   const [rollbackError, setRollbackError] = useState<string | null>(null);
 
@@ -83,7 +88,6 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   // Resuming on the done step means the project was made before the app quit.
   const [hasProject, setHasProject] = useState(initialStep === "done");
   // Set when the starter project is created, so the done step can offer to remove it.
-  const [sampleProjectId, setSampleProjectId] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
 
   async function handleCreateProject(e: React.FormEvent) {
@@ -114,16 +118,23 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     setProjectError(null);
     try {
       const proj = await createProject(activeWorkspaceId, "Getting started", DEFAULT_PROJECT_ICON);
+      try {
+        await writesDuring(() => {
+          createNote(proj.id, "Welcome to Cairn", "note", "", starterNote());
+          const columns = useCairnStore.getState().columns
+            .filter((c) => c.projectId === proj.id)
+            .sort((a, b) => a.order - b.order);
+          const backlog = columns.find((c) => c.type === "backlog") ?? columns[0];
+          const todo = columns.find((c) => c.type === "todo") ?? columns[0];
+          if (backlog) createCard(backlog.id, proj.id, "Drag me to Todo");
+          if (todo) createCard(todo.id, proj.id, "Plan the first thing you want to do");
+        });
+      } catch (err) {
+        // Don't leave a half-filled project behind: Try again would add a second one.
+        deleteProject(proj.id);
+        throw err;
+      }
       setActiveProject(proj.id);
-      setSampleProjectId(proj.id);
-      createNote(proj.id, "Welcome to Cairn", "note", "", STARTER_NOTE);
-      const columns = useCairnStore.getState().columns
-        .filter((c) => c.projectId === proj.id)
-        .sort((a, b) => a.order - b.order);
-      const backlog = columns.find((c) => c.type === "backlog") ?? columns[0];
-      const todo = columns.find((c) => c.type === "todo") ?? columns[0];
-      if (backlog) createCard(backlog.id, proj.id, "Drag me to Todo");
-      if (todo) createCard(todo.id, proj.id, "Plan the first thing you want to do");
       setHasProject(true);
       setStep("done");
     } catch (err) {
@@ -133,21 +144,14 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     }
   }
 
-  /** Removes the starter project. The tour needs project content, so it is no
-   *  longer offered once the sample is gone. */
-  function handleDeleteSample() {
-    if (!sampleProjectId) return;
-    deleteProject(sampleProjectId);
-    setSampleProjectId(null);
-    setHasProject(false);
-  }
-
   // Pre-populate folder path when skipping the folder-picker step
   useEffect(() => {
     if (initialStep !== "choose-folder") {
       getWorkspacePath().then((p) => {
         if (!p) return;
         setChosenFolder(p);
+        // Undoing a restored import and picking this folder again reuses its workspace.
+        if (importedProjects.length > 0 && activeWorkspaceId) setCreatedWorkspace({ id: activeWorkspaceId, folder: p });
         void loadImportPreview(p);
       });
     }
@@ -192,8 +196,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     setSubmitting(true);
     try {
       // Only write the workspace path if the folder was chosen fresh this session
-      // (i.e. we started at choose-folder and the user picked a new folder)
-      if (chosenFolder && initialStep === "choose-folder") {
+      if (chosenFolder && picksFolder) {
         await initWorkspacePath(chosenFolder, [...excludedFolders]);
       }
       const reuse = createdWorkspace && createdWorkspace.folder === chosenFolder ? createdWorkspace : null;
@@ -209,10 +212,13 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       // project step can show them for review instead of prompting to create one.
       try {
         const result = await ipcResult((e) => e.rescanWorkspace(ws.id, [...excludedFolders], true));
-        setImportedProjects("data" in result ? result.data.createdProjects : []);
+        const created = "data" in result ? result.data.createdProjects : [];
+        setImportedProjects(created);
+        if (created.length > 0) savePendingImport(created); else clearPendingImport();
       } catch {
         // Best-effort — onboarding shouldn't block on the rescan.
         setImportedProjects([]);
+        clearPendingImport();
       }
       setStep("create-project");
     } finally {
@@ -234,6 +240,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
       // Reset the wizard state so a fresh choose-folder → create-workspace flow
       // starts clean — no stale folder/name/icon or imported-project leftovers.
       setImportedProjects([]);
+      clearPendingImport();
+      setPicksFolder(true);
       setChosenFolder(null);
       setWsName("");
       setWsIcon(DEFAULT_WORKSPACE_ICON);
@@ -258,7 +266,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         chosenFolder={chosenFolder}
         submitting={submitting}
         onChoose={handleChooseFolder}
-        onBack={initialStep === "choose-folder" ? () => setStep("appearance") : undefined}
+        onBack={picksFolder ? () => setStep("appearance") : undefined}
       />
     );
   }
@@ -270,7 +278,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         name={wsName}
         icon={wsIcon}
         submitting={submitting}
-        showBack={step === "workspace-details" && initialStep === "choose-folder"}
+        showBack={picksFolder}
         isObsidianVault={isObsidianVault}
         importPreview={importPreview}
         previewReady={previewReady}
@@ -298,8 +306,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         onThemeChange={setTheme}
         onFontScaleChange={setFontScale}
         onFontFamilyChange={setFontFamily}
-        onBack={initialStep === "choose-folder" ? () => setStep("welcome") : undefined}
-        onNext={() => setStep(initialStep === "choose-folder" ? "choose-folder" : "create-project")}
+        onBack={picksFolder ? () => setStep("welcome") : undefined}
+        onNext={() => setStep(picksFolder ? "choose-folder" : "create-project")}
       />
     );
   }
@@ -336,11 +344,8 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   return (
     <StepDone
       hasProject={hasProject}
-      sampleProject={sampleProjectId !== null}
-      onDeleteSample={handleDeleteSample}
-      hasOtherProjects={importedProjects.length > 0}
       // Going back to the project form after creating a project would create a
-      // second one. Back stays for a deleted sample and the vault import review.
+      // second one. Back stays for a skipped project and the vault import review.
       onBack={!hasProject || importedProjects.length > 0 ? () => setStep("create-project") : undefined}
       onComplete={onComplete}
     />

@@ -1243,6 +1243,29 @@ describe("re-import 3-way conflict handling (v2.6.8)", () => {
     rollbackImport(db, tmpDir, projects.map((p) => p.id));
 
     expect(fs.readFileSync(outside, "utf-8")).toBe(outsideBody);
+    const entry = fs.readFileSync(path.join(tmpDir, "Journal", "Entry.md"), "utf-8");
+    expect(entry).not.toContain("projectId:");
+    expect(entry).toContain("Alpha");
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it("rollback leaves a file outside the workspace alone when a symlink leads to it", () => {
+    seedWorkspaceOnly();
+    writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", {}, "\n# Entry\n\nAlpha.");
+    syncNotesFromDisk(db, tmpDir);
+    const note = db.prepare("SELECT id FROM notes").get() as { id: string };
+    const entryPath = path.join(tmpDir, "Journal", "Entry.md");
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "cairn-outside-"));
+    const outside = path.join(outsideDir, "outside.md");
+    const outsideBody = `---\nid: ${note.id}\nprojectId: keep\n---\nOutside.`;
+    fs.writeFileSync(outside, outsideBody);
+    fs.rmSync(entryPath);
+    fs.symlinkSync(outside, entryPath);
+    const projects = db.prepare("SELECT id FROM projects").all() as Array<{ id: string }>;
+
+    rollbackImport(db, tmpDir, projects.map((p) => p.id));
+
+    expect(fs.readFileSync(outside, "utf-8")).toBe(outsideBody);
     fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 

@@ -9,8 +9,6 @@ interface ConversationTranscriptProps<T> {
   /** Changes when the user sends a message, which brings the transcript back to the end. */
   sentCount?: number;
   transcriptRef?: React.RefObject<VirtuosoHandle | null>;
-  /** Where a freshly mounted transcript starts. Defaults to the top; pass `{ index: "LAST", align: "end" }` to open at the newest message and render upward. */
-  initialTopMostItemIndex?: number | { index: number | "LAST"; align?: "start" | "center" | "end" };
   emptyPlaceholder: React.ComponentType<{ context: unknown }>;
   footer?: React.ComponentType<{ context: unknown }>;
   itemContent: (index: number, item: T) => React.ReactNode;
@@ -22,7 +20,6 @@ export function ConversationTranscript<T>({
   data,
   sentCount = 0,
   transcriptRef,
-  initialTopMostItemIndex = 0,
   emptyPlaceholder: EmptyPlaceholder,
   footer: Footer,
   itemContent,
@@ -46,7 +43,10 @@ export function ConversationTranscript<T>({
       frame = requestAnimationFrame(() => { frame = 0; follower.contentChanged(); });
     });
     observer.observe(el, { childList: true, subtree: true, characterData: true });
-    cleanupRef.current = () => { observer.disconnect(); cancelAnimationFrame(frame); follower.detach(); };
+    // The viewport shrinks when the composer grows, which leaves the end out of view.
+    const resize = new ResizeObserver(() => follower.contentChanged());
+    resize.observe(el);
+    cleanupRef.current = () => { observer.disconnect(); resize.disconnect(); cancelAnimationFrame(frame); follower.detach(); };
   }, []);
   useEffect(() => () => cleanupRef.current?.(), []);
 
@@ -61,7 +61,8 @@ export function ConversationTranscript<T>({
       ref={transcriptRef}
       className={className}
       data={data}
-      initialTopMostItemIndex={initialTopMostItemIndex}
+      // A transcript opens at its newest message, which is also where it follows from.
+      initialTopMostItemIndex={{ index: "LAST", align: "end" }}
       // Unmeasured rows are estimated at this height until they render, so the
       // rows above the viewport don't reshuffle the scroll position as they load.
       defaultItemHeight={120}

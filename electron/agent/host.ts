@@ -115,6 +115,11 @@ interface Session {
   notices: string[];
 }
 
+/** Another turn is live on this session. It sends its own turn/end. */
+export class SessionBusyError extends Error {
+  constructor() { super("Session is busy — already running."); }
+}
+
 export class AgentHost {
   readonly gate = new Gate();
   private readonly sessions = new Map<string, Session>();
@@ -203,7 +208,7 @@ export class AgentHost {
 
   async prompt(req: PromptRequest): Promise<PromptOutcome> {
     const session = await this.open(req.sessionId, req.cwd, req.parentSession);
-    if (session.running) throw new Error("Session is busy — already running.");
+    if (session.running) throw new SessionBusyError();
     session.running = true;
     session.lastReq = req;
     const notices = session.notices.splice(0);
@@ -285,7 +290,7 @@ export class AgentHost {
    */
   async compact(sessionId: string, cwd: string, route: ModelRoute): Promise<boolean> {
     const session = await this.open(sessionId, cwd);
-    if (session.running) throw new Error("Session is busy — already running.");
+    if (session.running) throw new SessionBusyError();
     session.running = true;
     try {
       const { model, streamFn } = (this.deps.routeStream ?? createRouteStream)(route);

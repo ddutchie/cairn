@@ -50,7 +50,9 @@ export function StepChooseFolder({ chosenFolder, submitting, onChoose, onBack }:
           <button
             type="button"
             onClick={onBack}
-            className="self-center flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+            // Going back while a folder opens would be undone when it finishes.
+            disabled={submitting}
+            className="self-center flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             <ArrowLeft size={12} />
             Back

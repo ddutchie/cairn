@@ -193,6 +193,8 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   const ensureModels = useCallback((baseUrl: string, apiKey: string) => {
     const cached = readModelCache(baseUrl, apiKey);
     if (cached && cached.length > 0) {
+      fetchGenRef.current += 1; // a request still running for another endpoint must not replace this list
+      setModelsLoading(false);
       setAvailableModels(cached); // instant hydrate from cache — no network
       void fetchKeyInfo(baseUrl, apiKey); // still refresh credits (not cached)
       return;
@@ -204,6 +206,10 @@ export function useEndpointConfig(): UseEndpointConfigResult {
     // Invalidate any in-flight credits lookup so it can't re-populate keyInfo
     // after we've cleared it (e.g. switching to a provider with no credits).
     keyInfoGenRef.current += 1;
+    // Same for a model request. It won't clear its own loading state once superseded.
+    fetchGenRef.current += 1;
+    setModelsLoading(false);
+    setTestState("idle");
     setAvailableModels([]);
     setKeyInfo(null);
   }, []);

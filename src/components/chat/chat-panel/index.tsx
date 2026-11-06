@@ -710,7 +710,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     handleSend(content);
   }, [handleSend]);
 
-  const shouldAutoSendRef = useRef(false);
+  const autoSendTextRef = useRef<string | null>(null);
 
   // Pre-fill input when opened via cairn:open-chat event
   useEffect(() => {
@@ -718,7 +718,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setInput(prefill.text);
       if (prefill.autoSend) {
-        shouldAutoSendRef.current = true;
+        autoSendTextRef.current = prefill.text;
       }
       onPrefillConsumed?.();
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -726,15 +726,15 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   }, [prefill, onPrefillConsumed]);
 
   useEffect(() => {
-    if (threadId && shouldAutoSendRef.current) {
-      shouldAutoSendRef.current = false;
-      const textToSend = input.trim() || prefill?.text;
+    if (threadId && autoSendTextRef.current !== null) {
+      // Send what was asked for: `input` here still holds whatever it held before the prefill.
+      const textToSend = autoSendTextRef.current.trim();
+      autoSendTextRef.current = null;
       if (textToSend) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         handleSend(textToSend);
       }
     }
-  }, [threadId, input, prefill, handleSend]);
+  }, [threadId, prefill, handleSend]);
 
 
   const handlePopIn = useCallback(async () => {

@@ -132,7 +132,13 @@ export const createWorkspaceSlice: StateCreator<
           get().persist();
         }
       } catch (e) {
-        console.error("[cairn:ipc] createProject failed", e);
+        // Nothing was saved: drop the optimistic rows and let the caller report it.
+        set((s) => ({
+          projects: s.projects.filter((p) => p.id !== proj.id),
+          columns: s.columns.filter((c) => c.projectId !== proj.id),
+        }));
+        get().persist();
+        throw e;
       }
     }
 

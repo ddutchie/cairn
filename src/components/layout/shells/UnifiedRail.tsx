@@ -125,7 +125,7 @@ export function UnifiedRail() {
       </div>
 
       {/* Center: omnibox — true window-centered (absolute) so 80px Mac inset doesn't pull it off) */}
-      <div className="hidden sm:flex absolute left-1/2 -translate-x-1/2 items-center" aria-hidden="true">
+      <div className="hidden sm:flex absolute left-1/2 -translate-x-1/2 items-center">
         <button
           onClick={toggleSearch}
           data-tutorial="search-bar"

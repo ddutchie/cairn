@@ -10,6 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 import { cn, getDueDateStatus, plural } from "@/lib/utils";
 import { findBottleneck } from "@/lib/board-bottleneck";
 import { isView } from "@/lib/views";
+import { reportIpcError } from "@/lib/ipc/client";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
 import { countOpenCardsByProject, modKey, buildViewShortcutMap } from "../sidebar-utils";
@@ -96,8 +97,12 @@ export function DockSidebar() {
     if (!activeWorkspaceId || !newProjectName.trim()) { setCreatingProject(false); return; }
     setCreatingProject(false);
     setNewProjectName("");
-    const proj = await createProject(activeWorkspaceId, newProjectName.trim());
-    setActiveProject(proj.id);
+    try {
+      const proj = await createProject(activeWorkspaceId, newProjectName.trim());
+      setActiveProject(proj.id);
+    } catch (err) {
+      reportIpcError(err, "Couldn't create the project");
+    }
   }, [activeWorkspaceId, newProjectName, createProject, setActiveProject]);
 
   const cancelCreateProject = useCallback(() => { setCreatingProject(false); setNewProjectName(""); }, []);
@@ -404,7 +409,7 @@ export function DockSidebar() {
                 {!hiddenViews.has("board") && <button onClick={() => setView("board")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "board") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Kanban size={13} /> Board<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("board")}</span></button>}
                 {!hiddenViews.has("calendar") && <button onClick={openCalendar} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", (isView(activeView, "calendar") || isView(activeView, "calendar-all")) ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={13} /> Calendar<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("calendar")}</span></button>}
                 {!hiddenViews.has("flow") && <button onClick={() => setView("flow")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "flow") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Workflow size={13} /> Flow<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("flow")}</span></button>}
-                {!hiddenViews.has("agent") && <button onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "agent") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={13} /> Agent<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("agent")}</span></button>}
+                {!hiddenViews.has("agent") && <button data-tutorial="agent-view" onClick={() => setView("agent")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs font-medium", isView(activeView, "agent") ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={13} /> Agent<span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)]">{shortcutMap.get("agent")}</span></button>}
               </div>
             </div>
 
@@ -466,7 +471,7 @@ export function DockSidebar() {
                 <div className="px-2 pb-2 space-y-0.5">
                   <RunningChatPins />
                   {/* Automations — prominent, above workspace views */}
-                  <button onClick={() => setView("automations")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                  <button data-tutorial="automations-view" onClick={() => setView("automations")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                     <Zap size={13} /><span>Automations</span>
                   </button>
                   <div className="my-1.5 border-t border-[var(--border-subtle)]" />
@@ -476,7 +481,7 @@ export function DockSidebar() {
                   </button>
                   )}
                   {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "graph") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
-                  {!hiddenViews.has("insights") && <button onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "insights") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
+                  {!hiddenViews.has("insights") && <button data-tutorial="insights-view" onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "insights") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
                   {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "usage") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}
                 </div>
               </div>
@@ -485,7 +490,7 @@ export function DockSidebar() {
             {/* Settings — always visible, outside collapsible */}
             <div className="px-2 pb-2">
               <div className="my-1.5 border-t border-[var(--border-subtle)]" />
-              <button onClick={() => setView("settings")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", isView(activeView, "settings") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Settings size={13} /> Settings</button>
+              <button data-tutorial="settings-view" onClick={() => setView("settings")} className={cn("flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs", isView(activeView, "settings") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}><Settings size={13} /> Settings</button>
             </div>
           </div>
         </div>

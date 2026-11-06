@@ -448,6 +448,6 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     onAnswerQuestions={sessionConversation.answerQuestions}
     showSessionStatus
     placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"}
-    composerProps={{ statusText: "Shift+Enter for new line · Enter to send" }}
+    composerProps={{ statusText: "Shift+Enter for new line · Enter to send", providerCheck: profile === "coding" ? "agent" : "ai" }}
   />;
 }

@@ -88,6 +88,24 @@ function handleResult(result: unknown): void {
   }
 }
 
+let writeCollector: Promise<unknown>[] | null = null;
+
+/**
+ * Runs store actions and waits for the fire-and-forget writes they start.
+ * Rejects if one fails (preload's invoke rejects on { error }), for callers that
+ * can't go on unless the data was really saved.
+ */
+export async function writesDuring(run: () => void): Promise<void> {
+  const writes: Promise<unknown>[] = [];
+  writeCollector = writes;
+  try {
+    run();
+  } finally {
+    writeCollector = null;
+  }
+  await Promise.all(writes);
+}
+
 /**
  * Fire-and-forget IPC call.
  * Checks the response for { error } and dispatches a cairn:ipc-error event.
@@ -96,7 +114,9 @@ export function ipc(
   fn: (e: NonNullable<Window["electron"]>) => Promise<unknown> | undefined
 ): void {
   if (!isElectron() || !window.electron) return;
-  fn(window.electron)
+  const pending = fn(window.electron);
+  if (pending) writeCollector?.push(pending);
+  pending
     ?.then(handleResult)
     ?.catch?.((err: unknown) => {
       console.error("[cairn:ipc]", err);
