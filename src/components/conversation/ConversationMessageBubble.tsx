@@ -235,10 +235,15 @@ function LiveConversationMessageBubble(props: ConversationMessageBubbleProps) {
   return <ConversationMessageBubbleBody {...props} message={live} />;
 }
 
+/** False in a pop-out, which has no settings view to open; the failure notice still says where to go. */
+export const AISettingsLinkContext = React.createContext(true);
+
 /** Shortcut from a provider failure to the settings that fix it. */
 function OpenAISettingsButton() {
+  const available = React.useContext(AISettingsLinkContext);
   const setView = useCairnStore((s) => s.setView);
   const setSettingsSection = useCairnStore((s) => s.setSettingsSection);
+  if (!available) return null;
   return (
     <button
       type="button"

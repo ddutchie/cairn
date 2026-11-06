@@ -5,6 +5,7 @@ import { ArrowLeftFromLine, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { ConversationPane } from "@/components/conversation/ConversationPane";
+import { AISettingsLinkContext } from "@/components/conversation/ConversationMessageBubble";
 import type { ConversationMessage } from "@/lib/conversation/message";
 import { type ChatPopoutPayload, type SessionPopoutProfile } from "../../../shared/agent/chat-popout";
 import { normalizeSessionMessages, applyApprovalProjection } from "@/lib/conversation/session";
@@ -419,7 +420,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
       : { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: workspaceId ?? undefined, cwd: cwd ?? undefined, mode: "execute", config: agentConfig }));
   }
 
-  return <ConversationPane
+  return <AISettingsLinkContext.Provider value={false}><ConversationPane
     className="chat-themed"
     sessionId={sessionId}
     profile={profile}
@@ -449,5 +450,5 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     showSessionStatus
     placeholder={profile === "coding" ? "Ask about your code…" : "Ask about your project…"}
     composerProps={{ statusText: "Shift+Enter for new line · Enter to send", providerCheck: profile === "coding" ? "agent" : "ai" }}
-  />;
+  /></AISettingsLinkContext.Provider>;
 }

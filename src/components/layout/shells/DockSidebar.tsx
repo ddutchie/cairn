@@ -462,6 +462,7 @@ export function DockSidebar() {
             {/* Collapsible body: Automations → Usage */}
             <div
               id="dock-workspace-tools"
+              inert={workspaceToolsCollapsed ? true : undefined}
               className={cn(
                 "grid transition-[grid-template-rows,opacity] duration-200 ease-in-out",
                 workspaceToolsCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"

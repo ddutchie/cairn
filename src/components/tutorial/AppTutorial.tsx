@@ -187,6 +187,12 @@ export function AppTutorial() {
     }
   }
 
+  // Automations and Insights sit in the Workspace group. Open it for this run
+  // without saving that, so a restart brings back the user's own choice.
+  useEffect(() => {
+    if (tutorialActive) useCairnStore.setState({ workspaceToolsCollapsed: false });
+  }, [tutorialActive]);
+
   // Skip steps dynamically if the target elements aren't present in the DOM
   useEffect(() => {
     if (!tutorialActive || !currentStep) return;

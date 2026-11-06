@@ -117,6 +117,11 @@ interface SemanticHit {
   sectionTitle: string;
 }
 
+/** Identifies one search, so results for another query or project filter never count as settled. */
+function searchKey(query: string, projectId: string | null): string {
+  return `${projectId ?? ""}\0${query}`;
+}
+
 export function SearchPanel() {
   const { searchOpen, toggleSearch, searchAll, setView, setActiveProject, projects, activeWorkspaceId, notes } = useCairnStore(useShallow((s) => ({
     searchOpen:        s.searchOpen,
@@ -133,7 +138,7 @@ export function SearchPanel() {
   const [semanticScores, setSemanticScores] = useState<Map<string, number>>(new Map());
   const [focused, setFocused] = useState(0);
   // The query whose keyword results are all on screen. Differs from `query` while a search is pending.
-  const [settledQuery, setSettledQuery] = useState("");
+  const [settledKey, setSettledKey] = useState("");
   const enterQueued = useRef(false);
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [filterProject, setFilterProject] = useState<string | null>(null);
@@ -195,7 +200,7 @@ export function SearchPanel() {
       queueMicrotask(() => {
         setResults([]);
         setSemanticScores(new Map());
-        setSettledQuery("");
+        setSettledKey("");
       });
       return;
     }
@@ -219,17 +224,18 @@ export function SearchPanel() {
       // Note bodies aren't all in the renderer (loaded lazily): the main
       // process matches bodies; merge those in when they arrive.
       const searchSnippets = window.electron?.note?.searchSnippets;
-      if (!searchSnippets) { setSettledQuery(trimmed); return; }
+      const settled = searchKey(trimmed, filterProject);
+      if (!searchSnippets) { setSettledKey(settled); return; }
       try {
         const hits = await searchSnippets(trimmed, filterProjectRef.current ?? undefined);
         if (cancelled) return;
         // Rank before capping, or best-ranked hits late in store order get cut.
         keyword = applyNoteHits(searchAll(trimmed, new Set(hits.map((h) => h.id)), Infinity), hits).slice(0, SEARCH_RESULT_CAP);
         publish();
-        setSettledQuery(trimmed);
+        setSettledKey(settled);
       } catch {
         // Title-only note matches stay on screen.
-        if (!cancelled) setSettledQuery(trimmed);
+        if (!cancelled) setSettledKey(settled);
       }
     }, 150);
 
@@ -301,7 +307,7 @@ export function SearchPanel() {
       // Enter confirming IME text isn't a submit.
       if (e.nativeEvent.isComposing || e.keyCode === 229) return;
       // Results aren't in yet: answer Enter once they are, or it would ask the AI about something it could open.
-      if (query.trim() && settledQuery !== query.trim()) enterQueued.current = true;
+      if (query.trim() && settledKey !== searchKey(query.trim(), filterProject)) enterQueued.current = true;
       else openFocusedOrAsk();
     }
   }
@@ -314,11 +320,11 @@ export function SearchPanel() {
   }
 
   useEffect(() => {
-    if (!enterQueued.current || settledQuery !== query.trim()) return;
+    if (!enterQueued.current || settledKey !== searchKey(query.trim(), filterProject)) return;
     enterQueued.current = false;
     if (searchOpen) openFocusedOrAsk();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending search settles
-  }, [settledQuery]);
+  }, [settledKey]);
 
   /** Hand the query to the chat, which answers from the workspace. */
   function askAI() {

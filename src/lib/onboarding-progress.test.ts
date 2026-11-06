@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearOnboardingInProgress,
   clearPendingImport,
+  isOnboardingInProgress,
+  markOnboardingInProgress,
   readPendingImport,
   savePendingImport,
 } from "./onboarding-progress";
@@ -37,5 +39,26 @@ describe("pending import", () => {
     expect(readPendingImport([{ id: "a" }])).toEqual([]);
     localStorage.setItem("onboardingPendingImport", '{"id":"a"}');
     expect(readPendingImport([{ id: "a" }])).toEqual([]);
+  });
+
+  it("never throws when storage is unavailable", () => {
+    const fail = () => { throw new Error("storage unavailable"); };
+    const spies = [
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(fail),
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(fail),
+      vi.spyOn(Storage.prototype, "removeItem").mockImplementation(fail),
+    ];
+    try {
+      expect(() => {
+        markOnboardingInProgress();
+        savePendingImport([project("a")]);
+        clearPendingImport();
+        clearOnboardingInProgress();
+      }).not.toThrow();
+      expect(isOnboardingInProgress()).toBe(false);
+      expect(readPendingImport([{ id: "a" }])).toEqual([]);
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
   });
 });

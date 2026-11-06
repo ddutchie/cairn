@@ -146,7 +146,7 @@ export function UnifiedRail() {
 
       {/* Right zone: chat, quicksettings, running, sync, bell, new */}
       <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        <IconButton label="Search" onClick={toggleSearch} className="size-auto sm:hidden p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
+        <IconButton label="Search" data-tutorial="search-bar" onClick={toggleSearch} className="size-auto sm:hidden p-1.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]">
           <Search size={14} />
         </IconButton>
 

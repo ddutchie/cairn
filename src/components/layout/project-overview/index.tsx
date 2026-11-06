@@ -910,8 +910,7 @@ export function ProjectOverview() {
                     variant="overview"
                     showSparkles
                     suggestions={mentionSuggestions}
-                    providerModelTarget="ai"
-                    providerCheck={sessionKind === "coding" && project.codeDirectory ? "agent" : "ai"}
+                    providerModelTarget={sessionKind === "coding" && project.codeDirectory ? "agent" : "ai"}
                     statusText="Enter to send · mentions with @"
                   />
                 </div>
