@@ -19,7 +19,8 @@ export function isLocalBaseUrl(baseUrl: string): boolean {
   return (
     baseUrl.includes("localhost") ||
     baseUrl.includes("127.0.0.1") ||
-    baseUrl.includes("0.0.0.0")
+    baseUrl.includes("0.0.0.0") ||
+    baseUrl.includes("[::1]")
   );
 }
 

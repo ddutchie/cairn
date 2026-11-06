@@ -131,8 +131,10 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
         });
       } catch (err) {
         // Don't leave a half-filled project behind: Try again would add a second one.
-        deleteProject(proj.id);
-        throw err;
+        const removed = await writesDuring(() => deleteProject(proj.id)).then(() => true, () => false);
+        if (removed) throw err;
+        const detail = err instanceof Error ? err.message : "the save failed";
+        throw new Error(`${detail}. Cairn also couldn't remove the partly created project, so an extra "${proj.name}" may appear. You can delete it later.`);
       }
       setActiveProject(proj.id);
       setHasProject(true);

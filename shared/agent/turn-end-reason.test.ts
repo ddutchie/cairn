@@ -29,7 +29,7 @@ describe("describeTurnEndReason", () => {
   it("explains the engine's other ends in words", () => {
     expect(describeTurnEndReason({ kind: "max-steps" })).toContain("step limit");
     expect(describeTurnEndReason({ kind: "overflow" })).toContain("context");
-    expect(describeTurnEndReason({ kind: "stop" })).not.toContain("abnormally");
+    expect(describeTurnEndReason({ kind: "stop" })).toBe("Agent turn finished.");
   });
 });
 

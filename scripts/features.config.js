@@ -231,7 +231,7 @@ const FEATURES = [
     description:
       "Chat, coding sessions and automations now run on Cairn's own engine, with sandboxed shell commands. Your earlier sessions carry over the first time you open them.",
     highlights: [
-      "Sandboxed commands: On macOS and Linux, the agent's shell commands can only write inside the working folder and temp folders.",
+      "Sandboxed commands: On by default on macOS and Linux. The agent's shell commands can only write inside the working folder and temp folders unless you approve otherwise.",
       "Auto permissions: A model reviews risky actions in coding sessions, and anything unclear still asks you.",
       "Memory of past work: The AI can search your earlier chats and coding sessions in this workspace.",
       "Smaller install: Dropping the old runtime removes about 230 packages.",
