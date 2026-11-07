@@ -8,6 +8,7 @@ import { drive, makeHarness, makeTools, ofType, toolResults, types } from "./tes
 import { runTurn } from "./loop";
 import { buildContextView } from "./context";
 import { deriveTitle } from "./session/history";
+import { openSession, readSession } from "./session/log";
 import { replayFromRecords } from "./session/replay";
 import { turnsOf } from "./tools/sessions";
 
@@ -101,11 +102,25 @@ describe("hooks in the loop", () => {
     expect(t.h.history).toEqual([]);
     expect(events.find((e) => e.type === "user/message")).toMatchObject({ content: expect.any(String), blocked: true });
 
-    const records = events.map((event, i) => ({ seq: i, time: i, event }));
+    // Through the real log, so a save or load step that dropped `blocked` would fail here.
+    const root = mkdtempSync(path.join(os.tmpdir(), "hooks-log-"));
+    const { writer } = await openSession(root, { id: "blocked" });
+    for (const event of events) await writer.append(event);
+    const records = (await readSession(root, "blocked"))!.records;
+    expect(records.find((r) => r.event.type === "user/message")?.event).toMatchObject({ blocked: true });
     expect(buildContextView(records)).toEqual([]);
     expect(turnsOf(records)).toEqual([]);
     expect(deriveTitle(records)).toBeUndefined();
-    expect(replayFromRecords(records, undefined).messages.map((m) => m.role)).toEqual(["user"]);
+    expect(replayFromRecords(records, undefined).messages.map((m) => [m.role, m.content])).toEqual([["user", "go"]]);
+  });
+
+  it("an empty reply is reported, not sent back to work by a Stop hook", async () => {
+    const thinking = [{ type: "thinking" as const, thinking: "Let me consider this." }];
+    const t = run({ Stop: cmd(`echo keep going >&2; exit 2`) }, [fauxAssistantMessage(thinking), fauxAssistantMessage("never")]);
+    const events = await t.events;
+    expect(ofType(events, "assistant/message")).toHaveLength(1);
+    expect(ofType(events, "error")[0].message).toContain("finished without a reply");
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "error" });
   });
 
   it("a Stop hook sends the model back to work, a limited number of times", async () => {

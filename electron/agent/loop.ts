@@ -233,19 +233,20 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
 
     const calls = final.content.filter((b): b is ToolCall => b.type === "toolCall");
     if (calls.length === 0) {
+      // Reasoning alone leaves the user with a thought process and no answer. Ending as a
+      // failure shows them why, and stops goals and subagents treating it as finished work.
+      // Checked before the Stop hook: an empty reply is a failure, not a finish to review.
+      if (!final.content.some((b) => b.type === "text" && b.text.trim())) {
+        yield { type: "error", message: noReplyNotice(final.stopReason) };
+        yield { type: "turn/end", reason: "error" };
+        return;
+      }
       // A Stop hook can ask for more work; the cap keeps a hook that always objects from looping forever.
       const stop = stopContinuations < MAX_STOP_CONTINUATIONS ? await o.hooks?.stop?.().catch(() => ({} as { continueWith?: string })) : undefined;
       if (stop?.continueWith) {
         stopContinuations++;
         o.history.push({ role: "user", content: `continue: ${stop.continueWith}`, timestamp: Date.now() } satisfies UserMessage);
         continue;
-      }
-      // Reasoning alone leaves the user with a thought process and no answer. Ending as a
-      // failure shows them why, and stops goals and subagents treating it as finished work.
-      if (!final.content.some((b) => b.type === "text" && b.text.trim())) {
-        yield { type: "error", message: noReplyNotice(final.stopReason) };
-        yield { type: "turn/end", reason: "error" };
-        return;
       }
       yield { type: "turn/end", reason: "stop" };
       return;
