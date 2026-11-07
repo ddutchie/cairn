@@ -89,3 +89,34 @@ describe("permission presets", () => {
     expect(() => setEnginePermission("p1", "nope", undefined)).toThrow(/Unknown permission preset/);
   });
 });
+
+describe("destroyEngineSession", () => {
+  it("removes the log, the legacy copy, the profile and the search vectors", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { default: Sqlite } = await import("better-sqlite3");
+    const { applySchema } = await import("../db/schema");
+    const { upsertSessionProfile, getSessionProfile } = await import("../db/workspace-queries");
+    const { upsertSessionChunk } = await import("../db/embeddings-queries");
+    const { destroyEngineSession, hostRoot, legacyRoot } = await import("./engine-bridge");
+    const db = new Sqlite(":memory:");
+    applySchema(db);
+    const id = `del${Date.now()}`;
+    const log = path.join(hostRoot(), id);
+    const legacy = path.join(legacyRoot(), "--proj--", id);
+    const other = path.join(hostRoot(), `${id}x`);
+    for (const dir of [log, legacy, other]) { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "session.cairn.jsonl"), "{}\n"); }
+    upsertSessionProfile(db, { sessionId: id, profile: "coding", workspaceId: "ws" });
+    upsertSessionChunk(db, { sessionId: id, chunkIdx: 0, workspaceId: "ws", model: "m", contentHash: "h", vector: [1, 0] });
+
+    await destroyEngineSession({ db } as never, id);
+
+    expect(fs.existsSync(log)).toBe(false);
+    expect(fs.existsSync(legacy)).toBe(false);
+    expect(fs.existsSync(other)).toBe(true); // only that session
+    expect(getSessionProfile(db, id)).toBeNull();
+    expect(db.prepare("SELECT COUNT(*) AS n FROM session_embeddings WHERE session_id = ?").get(id)).toEqual({ n: 0 });
+    fs.rmSync(other, { recursive: true, force: true });
+    db.close();
+  });
+});

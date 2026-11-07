@@ -13,8 +13,9 @@
 import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
+import { assertSafeId } from "./path-safety";
 import type { ReplayMessage, ReplaySubagent } from "../../shared/agent/session-wire";
-import { engineOwns, getEngineHost, readEnginePermissions, setEnginePermission } from "./engine-bridge";
+import { destroyEngineSession, engineOwns, getEngineHost, readEnginePermissions, setEnginePermission } from "./engine-bridge";
 import { getCachedConfig } from "../lib/config-cache";
 import type { Mode } from "../../shared/agent/approval-mode";
 import type { AgentSessionMessage } from "../../shared/agent/session-wire";
@@ -40,7 +41,14 @@ function toAgentMessages(messages: ReplayMessage[]): AgentSessionMessage[] {
 export function registerSessionHandlers(ctx: DbContext): void {
   registerContractHandle("db:session:list", (_e, { projectId }) => handle(() => q.getCodingSessions(ctx.db, projectId)));
   registerContractHandle("db:session:create", (_e, args) => handle(() => q.createCodingSession(ctx.db, args)));
-  registerContractHandle("db:session:delete", (_e, { id }) => handle(() => q.deleteCodingSession(ctx.db, id)));
+  // Deleting removes the engine session too, not just the Agent view's row: otherwise its log stayed
+  // on disk and searchable from memory.
+  registerContractHandle("db:session:delete", (_e, { id }) => handle(async () => {
+    assertSafeId(id, "sessionId");
+    q.deleteCodingSession(ctx.db, id);
+    q.saveSessionTodos(ctx.db, id, []);
+    await destroyEngineSession(ctx, id);
+  }));
   registerContractHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 
   // ── session:permissions ──────────────────────────────────────────────

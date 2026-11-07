@@ -28,7 +28,8 @@ import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importLegacySession } from "../agent/session/legacy-import";
 import { isLocalEndpoint } from "../lib/llm";
 import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
-import { listSessionIdsForWorkspace } from "../db/workspace-queries";
+import { deleteSessionProfile, listSessionIdsForWorkspace } from "../db/workspace-queries";
+import { deleteSessionEmbeddings } from "../db/embeddings-queries";
 import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../agent/session-search";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
@@ -373,6 +374,20 @@ export function forgetEngineSession(sessionId: string): void {
   jobRegistry?.killAll(sessionId);
   terminalRegistry?.closeAll(sessionId);
   for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
+}
+
+/**
+ * Delete a session for good: its log and its subagents', the retired harness's copy (which would
+ * otherwise be re-imported on the next touch), its profile and its search vectors. Without this a
+ * deleted session stayed on disk and searchable from memory.
+ * `aliases` are other names the legacy copy may go by (a chat's thread id).
+ */
+export async function destroyEngineSession(ctx: DbContext, sessionId: string, aliases: string[] = []): Promise<void> {
+  forgetEngineSession(sessionId);
+  await getEngineHost(ctx).destroy(sessionId).catch(() => undefined);
+  removeLegacySessions((name) => name === sessionId || aliases.includes(name) || name.startsWith(`${sessionId}-`));
+  deleteSessionProfile(ctx.db, sessionId);
+  deleteSessionEmbeddings(ctx.db, sessionId);
 }
 
 /** Quit: stop running turns, their jobs and terminals, and any language servers. */
