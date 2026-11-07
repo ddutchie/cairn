@@ -166,14 +166,16 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
   yield { type: "turn/start", sessionId: o.sessionId, profile: o.profile.id };
   const images = o.images?.length ? [...o.images] : undefined;
   const promptHook = await o.hooks?.userPrompt?.(o.input).catch(() => ({} as { block?: string; context?: string }));
+  if (promptHook?.block) {
+    // Not added to history: a later turn would otherwise send it to the model after all.
+    yield { type: "user/message", content: o.input, ...(images ? { images } : {}), blocked: true };
+    yield { type: "error", message: `Prompt blocked by a hook: ${promptHook.block}` };
+    yield { type: "turn/end", reason: "error" };
+    return;
+  }
   const modelInput = promptHook?.context ? `${o.input}\n\n<hook_context>\n${promptHook.context}\n</hook_context>` : o.input;
   o.history.push({ role: "user", content: userContent(modelInput, images), timestamp: Date.now() } satisfies UserMessage);
   yield { type: "user/message", content: o.input, ...(images ? { images } : {}) };
-  if (promptHook?.block) {
-    yield { type: "error", message: `Prompt blocked by a hook: ${promptHook.block}` };
-    yield { type: "turn/end", reason: "stop" };
-    return;
-  }
   let stopContinuations = 0;
 
   let compactions = 0;
@@ -238,6 +240,13 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
         o.history.push({ role: "user", content: `continue: ${stop.continueWith}`, timestamp: Date.now() } satisfies UserMessage);
         continue;
       }
+      // Reasoning alone leaves the user with a thought process and no answer. Ending as a
+      // failure shows them why, and stops goals and subagents treating it as finished work.
+      if (!final.content.some((b) => b.type === "text" && b.text.trim())) {
+        yield { type: "error", message: noReplyNotice(final.stopReason) };
+        yield { type: "turn/end", reason: "error" };
+        return;
+      }
       yield { type: "turn/end", reason: "stop" };
       return;
     }
@@ -248,6 +257,12 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
   }
   yield { type: "turn/end", reason: "max-steps" };
+}
+
+function noReplyNotice(stopReason: AssistantMessage["stopReason"]): string {
+  return stopReason === "length"
+    ? "The model reached its output limit before it replied. Raise the max output tokens in Settings → AI, or try again."
+    : "The model finished without a reply. Try again, or switch to another model.";
 }
 
 interface TurnState {

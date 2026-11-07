@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 import { createHooks, parseHookConfig, type HookConfig } from "./hooks";
 import { drive, makeHarness, makeTools, ofType, toolResults, types } from "./test-harness";
 import { runTurn } from "./loop";
+import { buildContextView } from "./context";
+import { deriveTitle } from "./session/history";
+import { replayFromRecords } from "./session/replay";
+import { turnsOf } from "./tools/sessions";
 
 const cwd = mkdtempSync(path.join(os.tmpdir(), "hooks-"));
 const config = (hooks: Record<string, unknown>): HookConfig => parseHookConfig(JSON.stringify({ hooks }), cwd);
@@ -88,6 +92,20 @@ describe("hooks in the loop", () => {
     const events = await t.events;
     expect(types(events)).toEqual(["turn/start", "user/message", "error", "turn/end"]);
     expect(toolResults(t.h.history)).toHaveLength(0);
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "error" });
+  });
+
+  it("keeps a blocked prompt away from the model on later turns, including after a restart", async () => {
+    const t = run({ UserPromptSubmit: cmd("echo off limits >&2; exit 2") }, []);
+    const events = await t.events;
+    expect(t.h.history).toEqual([]);
+    expect(events.find((e) => e.type === "user/message")).toMatchObject({ content: expect.any(String), blocked: true });
+
+    const records = events.map((event, i) => ({ seq: i, time: i, event }));
+    expect(buildContextView(records)).toEqual([]);
+    expect(turnsOf(records)).toEqual([]);
+    expect(deriveTitle(records)).toBeUndefined();
+    expect(replayFromRecords(records, undefined).messages.map((m) => m.role)).toEqual(["user"]);
   });
 
   it("a Stop hook sends the model back to work, a limited number of times", async () => {
