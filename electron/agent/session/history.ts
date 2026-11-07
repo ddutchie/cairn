@@ -58,7 +58,7 @@ export function deriveTitle(records: readonly SessionRecord[], max = 60): string
     if (e.type === "session/title") return e.title;
   }
   for (const { event } of records) {
-    if (event.type !== "user/message") continue;
+    if (event.type !== "user/message" || event.blocked) continue;
     const line = event.content.trim().split("\n")[0] ?? "";
     if (line) return line.length > max ? `${line.slice(0, max - 1)}…` : line;
   }

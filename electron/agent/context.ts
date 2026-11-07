@@ -82,7 +82,7 @@ export function buildContextView(records: ReadonlyArray<{ event: AgentEvent; tim
   for (const { event, time } of records) {
     switch (event.type) {
       case "turn/start": messages = repairInterrupted(messages, time); break;
-      case "user/message": messages.push({ role: "user", content: userContent(event.content, event.images), timestamp: time }); break;
+      case "user/message": if (event.blocked) break; messages.push({ role: "user", content: userContent(event.content, event.images), timestamp: time }); break;
       case "assistant/message": messages.push(event.message); break;
       case "tool/result":
         // Logs imported before the importer dropped repeats still hold them; providers reject a result with no call to answer.

@@ -41,6 +41,26 @@ describe("runTurn: basics", () => {
     expect(h.history.map((m) => m.role)).toEqual(["user", "assistant"]);
   });
 
+  it("says so when the model ends with reasoning and no reply", async () => {
+    const thinking = [{ type: "thinking" as const, thinking: "Let me consider this." }];
+    const h = makeHarness();
+    h.faux.setResponses([fauxAssistantMessage(thinking)]);
+    const events = await drive(runTurn(h.opts()));
+    expect(ofType(events, "error").map((e) => e.message)).toEqual(["The model finished without a reply. Try again, or switch to another model."]);
+    expect(events.at(-1)).toEqual({ type: "turn/end", reason: "error" });
+
+    const limited = makeHarness();
+    limited.faux.setResponses([fauxAssistantMessage(thinking, { stopReason: "length" })]);
+    const limitedEvents = await drive(runTurn(limited.opts()));
+    expect(ofType(limitedEvents, "error")[0].message).toContain("Settings → AI");
+  });
+
+  it("adds no notice to a normal reply", async () => {
+    const h = makeHarness();
+    h.faux.setResponses([fauxAssistantMessage("hello there")]);
+    expect(ofType(await drive(runTurn(h.opts())), "error")).toEqual([]);
+  });
+
   it("runs a READ tool without asking and feeds the result back to the model", async () => {
     const h = makeHarness();
     let seen: Message[] = [];

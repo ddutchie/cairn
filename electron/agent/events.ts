@@ -40,7 +40,8 @@ export interface ScheduleEntry {
 
 export type AgentEvent =
   | { type: "turn/start"; sessionId: string; profile: string }
-  | { type: "user/message"; content: string; images?: UserImage[] }
+  /** `blocked`: a hook refused this prompt. It stays in the user's transcript but must never reach a model, directly or through session search. */
+  | { type: "user/message"; content: string; images?: UserImage[]; blocked?: true }
   | { type: "assistant/delta"; text: string }
   | { type: "assistant/thinking"; text: string }
   | { type: "assistant/message"; message: AssistantMessage }
