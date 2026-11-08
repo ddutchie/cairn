@@ -360,7 +360,7 @@ jobs:
       - name: Run Electron E2E suite
         env:
           CAIRN_LIVE: "1"
-          CAIRN_DUMMY_KEY: ${{ secrets.CORDIS_DUMMY_KEY || 'local' }}
+          CAIRN_DUMMY_KEY: "local"
         run: xvfb-run -a npm run test:e2e:electron
 
       - name: Upload Playwright report

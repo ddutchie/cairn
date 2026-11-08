@@ -184,7 +184,7 @@ cairn/
 |------|-----|-------|-------------|
 | Overview | `⌘1` | Project | Project summary — metrics, pinned notes, recent activity |
 | Notes | `⌘2` | Project | Split-pane markdown editor |
-| Extra views | `⌘3`–`⌘9` | Mixed | Walk the visible views in sidebar order (default: Board, Calendar, Idea Flow, Agent, Calendar-all, Knowledge Graph, Insights, Automations, Usage). Hide views in General → Views to compress the range |
+| Extra views | `⌘3`–`⌘9` | Mixed | Walk the visible views in sidebar order (default: Board, Calendar, Idea Flow, Agent, Knowledge Graph, Insights, Automations, Usage; the all-projects calendar shares the Calendar entry). Hide views in Settings → Sidebar & views to compress the range |
 | Board | _(dynamic)_ | Project | Kanban with drag-and-drop |
 | Idea Flow | _(dynamic)_ | Project | Freeform node canvas |
 | Agent | _(dynamic)_ | Project | Coding agent workspace — Cairn native agent (chat UI) or external PTY agent (Claude Code, OpenCode, Aider); file tree, CM6 editor, xterm.js terminal, git diff viewer |

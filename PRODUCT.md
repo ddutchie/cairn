@@ -25,15 +25,15 @@ Success is a user staying in a single, calm environment from thought → plan �
 
 ## Positioning
 
-**Calm & focused craft — the quiet alternative to bloated all-in-ones.** Where Notion/Linear/Obsidian plugins sprawl or demand cloud lock-in, Cairn is deliberately minimal, dark, and focused. Its meaningfully different mechanism is **local-first ownership with agent-native reach**: plain markdown + SQLite stays on your machine and inside your vault, while `window.cairn.query()` dashboards, the Cairn Agent (board-aware, plan-mode, sub-agents), and a standalone MCP binary let any AI agent read and write the same workspace — even while the app is closed (WAL polling).
+**Calm & focused craft — the quiet alternative to bloated all-in-ones.** Where Notion/Linear/Obsidian plugins sprawl or demand cloud lock-in, Cairn is deliberately minimal, dark, and focused. Its meaningfully different mechanism is **local-first ownership with agent-native reach**: plain markdown + SQLite stays on your machine and inside your vault, while the Cairn Agent (board-aware, plan-mode, sub-agents), and a standalone MCP binary let any AI agent read and write the same workspace — even while the app is closed (WAL polling).
 
 ## Operating Context
 
-- **Workflows & views:** Overview (`⌘1`) → Notes (`⌘2`, split write/preview) → extra views on `⌘3`–`⌘9` in sidebar order (default: Board, Calendar, Idea Flow, Agent, Calendar-all, Knowledge Graph, Insights, Automations, Usage; hide views in General settings to compress). Board (drag-drop kanban with archive), Idea Flow (freeform canvas: idea / note_ref / task_ref / group / url / ai_summary nodes + labelled edges), Agent workspace (file tree + CodeMirror editor + xterm PTY + diff), Knowledge Graph (Force + Radial), Insights (seven analytics canvases). Global search (`⌘K` / `⌘⇧F`), AI chat (`⌘/`), interactive PRD generation, AI text actions on selected text, live dashboards (HTML + CodeMirror overlay + "Fix with AI").
+- **Workflows & views:** Overview (`⌘1`) → Notes (`⌘2`, split write/preview) → extra views on `⌘3`–`⌘9` in sidebar order (default: Board, Calendar, Idea Flow, Agent, Knowledge Graph, Insights, Automations, Usage; one Calendar entry covers this project and all projects; hide views in Settings → Sidebar & views to compress). Board (drag-drop kanban with archive), Idea Flow (freeform canvas: idea / note_ref / task_ref / group / url / ai_summary nodes + labelled edges), Agent workspace (file tree + CodeMirror editor + xterm PTY + diff), Knowledge Graph (Force + Radial), Insights (eight analytics canvases). Global search (`⌘K` / `⌘⇧F`), AI chat (`⌘/`), interactive PRD generation, AI text actions on selected text.
 - **Environments:** Electron desktop (macOS arm64 + x64 DMG, Windows NSIS, Linux AppImage). Renderer (`src/`) is Next.js 16 App Router static export; Main process (`electron/`) owns SQLite, file I/O, the agent engine, PTY. Two processes share one WAL SQLite. MCP server (`electron/mcp-server.ts` → `dist-mcp/cairn-mcp`) is a self-contained `@yao-pkg/pkg` binary bundling its own Node + better-sqlite3 — runs independently of the app.
 - **Vault interoperability:** Point a workspace at any existing Obsidian folder. Renders `![[embed]]`, respects custom attachment folders, resolves local media via sequential-fallback, merges frontmatter non-destructively. Chokidar watches external `.md` edits at runtime.
 - **Mobile app:** A separate native app syncs the workspace through Device Sync (a shared cloud folder).
-- **Data shape:** Workspace → Project → Notes (.md + SQLite row) / Dashboards (SQLite only, `type="dashboard"`) / BoardColumns → TaskCards / IdeaFlow → IdeaFlowNodes + IdeaFlowEdges / ChatThreads → ChatMessages.
+- **Data shape:** Workspace → Project → Notes (.md + SQLite row) / BoardColumns → TaskCards / IdeaFlow → IdeaFlowNodes + IdeaFlowEdges / ChatThreads → ChatMessages.
 
 ## Capabilities and Constraints
 
@@ -44,8 +44,7 @@ Success is a user staying in a single, calm environment from thought → plan �
 - AI chat with live project context; AI text actions (Rephrase/Summarize/Expand/Fix Grammar/Change Tone/custom).
 - Idea Flow (XYFlow + Dagre auto-layout), Knowledge Graph, Insights (Ridgeline/Beeswarm/Bullet/Sankey/Timeline/Matrix/Table).
 - Native Cairn Agent on Cairn's own agent engine: board integration, auto-notes, session summary, out-of-scope capture, Plan/Execute toggle, subagents (`subagent`/`delegate`), context ring + 80% auto-compaction + `/compact`, retry, confirmations.
-- Live dashboards via `window.cairn.query()` bridge; inline Fix with AI; CodeMirror HTML overlay.
-- MCP: 54 tools (context, notes, tasks incl. `list_ready_tasks`/`bulk_update_task_status`/`claim_task`/`add_task_progress`, projects, dashboards, flow, graph, tags, codebase indexing via `codebase_reindex/search_symbols/get_definition/get_references/get_file_symbols`) — the full schema set minus chat-only tools; live list under Settings → AI → MCP.
+- MCP: 19 consolidated tools (context, notes via `ensure_note`/`edit_note`/`update_notes`/`search_notes`, tasks via `create_task`/`update_tasks`/`search_tasks`/`task_progress`, projects, idea flow, graph, writing style, codebase via `codebase_reindex`/`codebase_query`) — `TOOL_SCHEMAS` minus chat-only tools; live list under Settings → Connect other agents.
 - Font scaling (XS–XL, default M via `--font-scale` on `<html>`), dark/light themes, accent presets (Sage Moss default `#8faf6f`), font-family presets, chat themes, onboarding, What's New modal.
 - better-sqlite3 v13+ N-API (single prebuild fanned to `electron-native/`, `pkg-native/`, `vitest-native/`), onnxruntime-node pinned to 1.23.2 for darwin/x64, embeddings + runtime servers.
 

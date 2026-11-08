@@ -35,8 +35,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Global search** — Instant full-text search across all notes and tasks (`⌘K` or `⌘⇧F`)
 - **AI chat** — Integrated assistant with live project context; reads and writes your data (`⌘/`)
 - **Interactive PRD generation** — Describe what you want to build; the agent asks clarifying questions then writes and saves a full PRD to your notes
-- **Idea Flow** — Freeform node canvas per project (`⌘4`): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
-- **Live dashboards** — AI-generated interactive HTML dashboards with a live `window.cairn.query()` data bridge; inline "Fix with AI" on runtime errors; editable via built-in CodeMirror overlay
+- **Idea Flow** — Freeform node canvas per project (`⌘5` by default): ideas, note/task refs, groups, URLs, AI summaries — connected with labelled edges
 - **MCP server** — Exposes your workspace to external AI agents (OpenCode, Claude Desktop, etc.) via the Model Context Protocol
 - **Cairn Agent** — Native coding agent (Agent view) with board and notes integration: moves tasks, writes session notes, captures discovered work; delegates to subagents for deep sub-tasks; Plan / Execute mode toggle; interactive tool confirmations with mobile-desktop sync; automatic retry on transient API errors; automatic context compaction for long sessions (`/compact` on demand); context usage ring; works with any OpenAI-compatible endpoint. Runs on Cairn's own agent engine — see [Architecture](#architecture).
 - **Agent workspace** — Three-pane view for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
@@ -199,7 +198,7 @@ The MCP surface is derived from the same schemas the in-app agents use (`electro
 | `⌘/` | Toggle AI chat |
 | `⌘\` | Toggle sidebar |
 | `⌘1` / `⌘2` | Overview / Notes (always) |
-| `⌘3`–`⌘9` | Walk the visible views in sidebar order (default: Board, Calendar, Flow, Agent, Calendar-all, Graph, Insights, …) — hide views in General settings to compress the range |
+| `⌘3`–`⌘9` | Walk the visible views in sidebar order (default: Board, Calendar, Flow, Agent, Graph, Insights, Automations) — hide views in Settings → Sidebar & views to compress the range |
 | `⌘S` | Save file (Agent editor) |
 | `⌘Z` | Undo |
 | `⌘⇧Z` / `⌘Y` | Redo |

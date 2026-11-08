@@ -84,7 +84,7 @@ The What's New modal (`src/components/layout/NewFeatureModal.tsx`) is generated 
 |------|-----|-----------|
 | Overview | `⌘1` | `ProjectOverview` |
 | Notes | `⌘2` | `NotesView` |
-| Extra views | `⌘3`–`⌘9` | Sidebar order over visible views (default: Board `KanbanBoard`, Calendar, Idea Flow `IdeaFlowView`, Agent, Calendar-all, Knowledge Graph `KnowledgeGraphView` — Force + Radial only, Insights `InsightsView` — all analytics canvases, Automations, Usage). Hide views in General settings to compress |
+| Extra views | `⌘3`–`⌘9` | Sidebar order over visible views (`NUMBERED_VIEWS` in `layout/sidebar-utils.ts`; default: Board `KanbanBoard`, Calendar, Idea Flow `IdeaFlowView`, Agent, Knowledge Graph `KnowledgeGraphView` — Force + Radial only, Insights `InsightsView` — all analytics canvases, Automations, Usage). The sidebar's single Calendar entry reopens this-project or all-projects, whichever was used last; `calendar-all` only takes a number when the project calendar is hidden. Hide views in Settings → Sidebar & views to compress |
 | Settings | — | `SettingsView` |
 
 `activeView` union: `"overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings"` (plus `"calendar"`, `"calendar-all"`, `"automations"`, `"usage"` — see `ToggleableView`)
