@@ -796,7 +796,10 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
       window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't confirm the session has stopped — not deleting." } }));
       return false;
     }
-    // Optimistic removal
+    // Optimistic removal, put back if the delete fails so it can be tried again.
+    const before = get();
+    const removed = before.codingSessionHistory.find((h) => h.id === sessionId);
+    const wasActive = before.activeCodingSessionId === sessionId;
     set((s) => ({
       codingSessionHistory: s.codingSessionHistory.filter((h) => h.id !== sessionId),
       activeCodingSessionId: s.activeCodingSessionId === sessionId ? null : s.activeCodingSessionId,
@@ -805,6 +808,14 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
       await window.electron.session.deleteSession(sessionId);
     } catch (err) {
       console.error("[coding-sessions] deleteCodingSessionFromHistory error", err);
+      set((s) => ({
+        codingSessionHistory: removed && !s.codingSessionHistory.some((h) => h.id === sessionId)
+          ? [...s.codingSessionHistory, removed].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          : s.codingSessionHistory,
+        activeCodingSessionId: wasActive && s.activeCodingSessionId === null ? sessionId : s.activeCodingSessionId,
+      }));
+      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't delete the session. It's still in the list, so you can try again." } }));
+      return false;
     }
     return true;
   },

@@ -376,16 +376,23 @@ export function forgetEngineSession(sessionId: string): void {
   for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
 }
 
+/** The retired harness kept per-turn copies as `<session>-<epoch ms>-<suffix>`. */
+const LEGACY_TURN_COPY = /^-\d{10,}-[a-z0-9]+$/;
+
 /**
  * Delete a session for good: its log and its subagents', the retired harness's copy (which would
  * otherwise be re-imported on the next touch), its profile and its search vectors. Without this a
  * deleted session stayed on disk and searchable from memory.
  * `aliases` are other names the legacy copy may go by (a chat's thread id).
+ * Throws when the log can't be removed, before anything else is touched, so the caller can keep
+ * its own record and the delete can be retried.
  */
 export async function destroyEngineSession(ctx: DbContext, sessionId: string, aliases: string[] = []): Promise<void> {
   forgetEngineSession(sessionId);
-  await getEngineHost(ctx).destroy(sessionId).catch(() => undefined);
-  removeLegacySessions((name) => name === sessionId || aliases.includes(name) || name.startsWith(`${sessionId}-`));
+  await getEngineHost(ctx).destroy(sessionId);
+  const names = [sessionId, ...aliases];
+  // Only exact names and per-turn copies: another session's id may also start with `<id>-`.
+  removeLegacySessions((name) => names.some((n) => name === n || (name.startsWith(n) && LEGACY_TURN_COPY.test(name.slice(n.length)))));
   deleteSessionProfile(ctx.db, sessionId);
   deleteSessionEmbeddings(ctx.db, sessionId);
 }

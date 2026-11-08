@@ -51,8 +51,9 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     return { deletedThreads: ids.length, deletedMessages: 0 };
   }));
 
+  // The thread row goes last, so a failed cleanup leaves the chat in place to delete again.
   registerContractHandle("db:chat:deleteThread", (_e, { threadId }) => handle(async () => {
-    q.deleteChatThread(ctx.db, threadId);
     if (isSafeId(threadId)) await destroyEngineThread(ctx, threadId);
+    q.deleteChatThread(ctx.db, threadId);
   }));
 }

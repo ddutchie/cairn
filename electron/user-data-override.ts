@@ -10,7 +10,7 @@ import { mkdirSync } from "node:fs";
 import { app } from "electron";
 
 if (process.env.CAIRN_USER_DATA_DIR) {
-  // setPath throws if the folder doesn't exist yet.
-  mkdirSync(process.env.CAIRN_USER_DATA_DIR, { recursive: true });
+  // setPath throws if the folder doesn't exist yet. Owner-only, like Electron's own profile: it holds session logs.
+  mkdirSync(process.env.CAIRN_USER_DATA_DIR, { recursive: true, mode: 0o700 });
   app.setPath("userData", process.env.CAIRN_USER_DATA_DIR);
 }

@@ -43,11 +43,12 @@ export function registerSessionHandlers(ctx: DbContext): void {
   registerContractHandle("db:session:create", (_e, args) => handle(() => q.createCodingSession(ctx.db, args)));
   // Deleting removes the engine session too, not just the Agent view's row: otherwise its log stayed
   // on disk and searchable from memory.
+  // The Agent view's row goes last, so a failed cleanup leaves the session listed and the delete retryable.
   registerContractHandle("db:session:delete", (_e, { id }) => handle(async () => {
     assertSafeId(id, "sessionId");
-    q.deleteCodingSession(ctx.db, id);
-    q.saveSessionTodos(ctx.db, id, []);
     await destroyEngineSession(ctx, id);
+    q.saveSessionTodos(ctx.db, id, []);
+    q.deleteCodingSession(ctx.db, id);
   }));
   registerContractHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 

@@ -105,7 +105,9 @@ describe("destroyEngineSession", () => {
     const log = path.join(hostRoot(), id);
     const legacy = path.join(legacyRoot(), "--proj--", id);
     const other = path.join(hostRoot(), `${id}x`);
-    for (const dir of [log, legacy, other]) { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "session.cairn.jsonl"), "{}\n"); }
+    const turnCopy = path.join(legacyRoot(), "--proj--", `${id}-1787238116672-9iizn2`);
+    const unrelated = path.join(legacyRoot(), "--proj--", `${id}-other`);
+    for (const dir of [log, legacy, other, turnCopy, unrelated]) { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "session.cairn.jsonl"), "{}\n"); }
     upsertSessionProfile(db, { sessionId: id, profile: "coding", workspaceId: "ws" });
     upsertSessionChunk(db, { sessionId: id, chunkIdx: 0, workspaceId: "ws", model: "m", contentHash: "h", vector: [1, 0] });
 
@@ -113,10 +115,37 @@ describe("destroyEngineSession", () => {
 
     expect(fs.existsSync(log)).toBe(false);
     expect(fs.existsSync(legacy)).toBe(false);
+    expect(fs.existsSync(turnCopy)).toBe(false);
     expect(fs.existsSync(other)).toBe(true); // only that session
+    expect(fs.existsSync(unrelated)).toBe(true); // another id that starts with `<id>-`
     expect(getSessionProfile(db, id)).toBeNull();
     expect(db.prepare("SELECT COUNT(*) AS n FROM session_embeddings WHERE session_id = ?").get(id)).toEqual({ n: 0 });
-    fs.rmSync(other, { recursive: true, force: true });
+    for (const dir of [other, unrelated]) fs.rmSync(dir, { recursive: true, force: true });
     db.close();
+  });
+
+  it("throws and leaves the profile when the log can't be removed", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { default: Sqlite } = await import("better-sqlite3");
+    const { applySchema } = await import("../db/schema");
+    const { upsertSessionProfile, getSessionProfile } = await import("../db/workspace-queries");
+    const { destroyEngineSession, hostRoot } = await import("./engine-bridge");
+    const db = new Sqlite(":memory:");
+    applySchema(db);
+    const id = `stuck${Date.now()}`;
+    const log = path.join(hostRoot(), id);
+    fs.mkdirSync(log, { recursive: true });
+    fs.writeFileSync(path.join(log, "session.cairn.jsonl"), "{}\n");
+    fs.chmodSync(log, 0o500); // its file can't be unlinked
+    upsertSessionProfile(db, { sessionId: id, profile: "coding", workspaceId: "ws" });
+    try {
+      await expect(destroyEngineSession({ db } as never, id)).rejects.toThrow();
+      expect(getSessionProfile(db, id)).not.toBeNull();
+    } finally {
+      fs.chmodSync(log, 0o700);
+      fs.rmSync(log, { recursive: true, force: true });
+      db.close();
+    }
   });
 });
