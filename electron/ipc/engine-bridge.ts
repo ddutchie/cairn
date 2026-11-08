@@ -28,7 +28,8 @@ import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importLegacySession } from "../agent/session/legacy-import";
 import { isLocalEndpoint } from "../lib/llm";
 import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
-import { listSessionIdsForWorkspace } from "../db/workspace-queries";
+import { deleteSessionProfile, listSessionIdsForWorkspace } from "../db/workspace-queries";
+import { deleteSessionEmbeddings } from "../db/embeddings-queries";
 import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../agent/session-search";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
@@ -284,19 +285,30 @@ export function legacyRoot(): string {
 /**
  * Remove retired-harness logs whose directory name matches, so a cleared or deleted session is not
  * re-imported on next touch. Looks one level below each project directory (`<root>/<project>/<id>`).
+ * Best effort unless `strict`, which throws after trying every match if any of them couldn't be removed.
  */
-export function removeLegacySessions(match: (name: string) => boolean): void {
+export function removeLegacySessions(match: (name: string) => boolean, opts: { strict?: boolean } = {}): void {
   const root = legacyRoot();
+  const failed: string[] = [];
+  const describe = (err: unknown) => (err instanceof Error ? err.message : String(err));
+  // A folder that doesn't exist has nothing to remove; one that can't be read might still hold a log.
+  const missing = (err: unknown) => (err as NodeJS.ErrnoException)?.code === "ENOENT";
   let projects: string[];
-  try { projects = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return; }
+  try { projects = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); }
+  catch (err) {
+    if (opts.strict && !missing(err)) throw new Error(`Couldn't read the old session history (${describe(err)})`);
+    return;
+  }
   for (const project of projects) {
     let names: string[];
-    try { names = fs.readdirSync(path.join(root, project)); } catch { continue; }
+    try { names = fs.readdirSync(path.join(root, project)); }
+    catch (err) { if (!missing(err)) failed.push(`${project}: ${describe(err)}`); continue; }
     for (const name of names) {
       if (!match(name)) continue;
-      try { fs.rmSync(path.join(root, project, name), { recursive: true, force: true }); } catch { /* best effort */ }
+      try { fs.rmSync(path.join(root, project, name), { recursive: true, force: true }); } catch (err) { failed.push(`${project}/${name}: ${describe(err)}`); }
     }
   }
+  if (opts.strict && failed.length) throw new Error(`Couldn't remove the old session history (${failed.join("; ")})`);
 }
 
 /** Native session logs live beside the legacy ones; a missing Electron `app` (unit tests) falls back to tmp. */
@@ -373,6 +385,27 @@ export function forgetEngineSession(sessionId: string): void {
   jobRegistry?.killAll(sessionId);
   terminalRegistry?.closeAll(sessionId);
   for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
+}
+
+/** The retired harness kept per-turn copies as `<session>-<epoch ms>-<suffix>`. */
+const LEGACY_TURN_COPY = /^-\d{10,}-[a-z0-9]+$/;
+
+/**
+ * Delete a session for good: its log and its subagents', the retired harness's copy (which would
+ * otherwise be re-imported on the next touch), its profile and its search vectors. Without this a
+ * deleted session stayed on disk and searchable from memory.
+ * `aliases` are other names the legacy copy may go by (a chat's thread id).
+ * Throws when the log or the legacy copy can't be removed, before the profile and vectors go, so the
+ * caller can keep its own record and the delete can be retried.
+ */
+export async function destroyEngineSession(ctx: DbContext, sessionId: string, aliases: string[] = []): Promise<void> {
+  forgetEngineSession(sessionId);
+  await getEngineHost(ctx).destroy(sessionId);
+  const names = [sessionId, ...aliases];
+  // Only exact names and per-turn copies: another session's id may also start with `<id>-`.
+  removeLegacySessions((name) => names.some((n) => name === n || (name.startsWith(n) && LEGACY_TURN_COPY.test(name.slice(n.length)))), { strict: true });
+  deleteSessionProfile(ctx.db, sessionId);
+  deleteSessionEmbeddings(ctx.db, sessionId);
 }
 
 /** Quit: stop running turns, their jobs and terminals, and any language servers. */

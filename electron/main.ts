@@ -13,6 +13,7 @@
  * 9. Start MCP notification poller
  */
 
+import "./user-data-override";
 import { app, BrowserWindow, shell, protocol } from "electron";
 import path from "path";
 import fs from "fs";
@@ -87,14 +88,6 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
   },
 ]);
-
-// Test/QA isolation hook: when CAIRN_USER_DATA_DIR is set (used by the
-// Playwright Electron e2e harness), redirect the userData dir so the app runs
-// against a throwaway profile instead of the developer's real Cairn data. Must
-// run before whenReady resolves (whenReady reads app.getPath("userData") at boot).
-if (process.env.CAIRN_USER_DATA_DIR) {
-  app.setPath("userData", process.env.CAIRN_USER_DATA_DIR);
-}
 
 app.whenReady().then(async () => {
   const outDir = path.join(__dirname, "../out");

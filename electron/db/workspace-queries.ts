@@ -56,6 +56,10 @@ export function getSessionProfile(db: Database.Database, sessionId: string): Ses
   return row ? { sessionId: row.session_id, profile: row.profile, workspaceId: row.workspace_id, projectId: row.project_id, cwd: row.cwd, updatedAt: row.updated_at } : null;
 }
 
+export function deleteSessionProfile(db: Database.Database, sessionId: string): void {
+  db.prepare("DELETE FROM session_profiles WHERE session_id = ?").run(sessionId);
+}
+
 /** Every session (chat, coding, automation) recorded for a workspace. */
 export function listSessionIdsForWorkspace(db: Database.Database, workspaceId: string): string[] {
   return (db.prepare("SELECT session_id FROM session_profiles WHERE workspace_id = ?").all(workspaceId) as Array<{ session_id: string }>).map((r) => r.session_id);

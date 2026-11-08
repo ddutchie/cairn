@@ -89,3 +89,107 @@ describe("permission presets", () => {
     expect(() => setEnginePermission("p1", "nope", undefined)).toThrow(/Unknown permission preset/);
   });
 });
+
+describe("destroyEngineSession", () => {
+  it("removes the log, the legacy copy, the profile and the search vectors", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { default: Sqlite } = await import("better-sqlite3");
+    const { applySchema } = await import("../db/schema");
+    const { upsertSessionProfile, getSessionProfile } = await import("../db/workspace-queries");
+    const { upsertSessionChunk } = await import("../db/embeddings-queries");
+    const { destroyEngineSession, hostRoot, legacyRoot } = await import("./engine-bridge");
+    const db = new Sqlite(":memory:");
+    applySchema(db);
+    const id = `del${Date.now()}`;
+    const log = path.join(hostRoot(), id);
+    const legacy = path.join(legacyRoot(), "--proj--", id);
+    const other = path.join(hostRoot(), `${id}x`);
+    const turnCopy = path.join(legacyRoot(), "--proj--", `${id}-1787238116672-9iizn2`);
+    const unrelated = path.join(legacyRoot(), "--proj--", `${id}-other`);
+    for (const dir of [log, legacy, other, turnCopy, unrelated]) { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "session.cairn.jsonl"), "{}\n"); }
+    upsertSessionProfile(db, { sessionId: id, profile: "coding", workspaceId: "ws" });
+    upsertSessionChunk(db, { sessionId: id, chunkIdx: 0, workspaceId: "ws", model: "m", contentHash: "h", vector: [1, 0] });
+
+    await destroyEngineSession({ db } as never, id);
+
+    expect(fs.existsSync(log)).toBe(false);
+    expect(fs.existsSync(legacy)).toBe(false);
+    expect(fs.existsSync(turnCopy)).toBe(false);
+    expect(fs.existsSync(other)).toBe(true); // only that session
+    expect(fs.existsSync(unrelated)).toBe(true); // another id that starts with `<id>-`
+    expect(getSessionProfile(db, id)).toBeNull();
+    expect(db.prepare("SELECT COUNT(*) AS n FROM session_embeddings WHERE session_id = ?").get(id)).toEqual({ n: 0 });
+    for (const dir of [other, unrelated]) fs.rmSync(dir, { recursive: true, force: true });
+    db.close();
+  });
+
+  it("throws and keeps the profile when the log or the legacy copy can't be removed", async () => {
+    const fs = (await import("node:fs")).default;
+    const path = await import("node:path");
+    const { default: Sqlite } = await import("better-sqlite3");
+    const { applySchema } = await import("../db/schema");
+    const { upsertSessionProfile, getSessionProfile } = await import("../db/workspace-queries");
+    const { AgentHost } = await import("../agent/host");
+    const { destroyEngineSession, legacyRoot } = await import("./engine-bridge");
+    const db = new Sqlite(":memory:");
+    applySchema(db);
+    const id = `stuck${Date.now()}`;
+    upsertSessionProfile(db, { sessionId: id, profile: "coding", workspaceId: "ws" });
+
+    // The engine log can't be removed: nothing else is touched.
+    const destroy = vi.spyOn(AgentHost.prototype, "destroy").mockRejectedValueOnce(new Error("EACCES"));
+    await expect(destroyEngineSession({ db } as never, id)).rejects.toThrow("EACCES");
+    expect(getSessionProfile(db, id)).not.toBeNull();
+    destroy.mockRestore();
+
+    // The legacy copy can't be removed: the error reaches the caller and the profile stays.
+    const legacy = path.join(legacyRoot(), "--proj--", id);
+    fs.mkdirSync(legacy, { recursive: true });
+    const rm = fs.rmSync;
+    const rmSync = vi.spyOn(fs, "rmSync").mockImplementation((p, o) => { if (String(p) === legacy) throw new Error("EBUSY"); return rm(p, o); });
+    try {
+      await expect(destroyEngineSession({ db } as never, id)).rejects.toThrow("EBUSY");
+      expect(getSessionProfile(db, id)).not.toBeNull();
+    } finally {
+      rmSync.mockRestore();
+      fs.rmSync(legacy, { recursive: true, force: true });
+      db.close();
+    }
+  });
+});
+
+describe("removeLegacySessions", () => {
+  const errno = (code: string) => Object.assign(new Error(code), { code });
+
+  it("reports a legacy folder it can't read when strict, and ignores one that doesn't exist", async () => {
+    const fs = (await import("node:fs")).default;
+    const path = await import("node:path");
+    const { removeLegacySessions, legacyRoot } = await import("./engine-bridge");
+    const root = legacyRoot();
+    const project = path.join(root, `--unreadable${Date.now()}--`);
+    fs.mkdirSync(project, { recursive: true });
+    const read = fs.readdirSync;
+    const fail: { path: string; code: string } = { path: root, code: "EACCES" };
+    const readdirSync = vi.spyOn(fs, "readdirSync").mockImplementation(((p: string, o: never) => {
+      if (String(p) === fail.path) throw errno(fail.code);
+      return read(p, o);
+    }) as never);
+    try {
+      // The root folder can't be read.
+      expect(() => removeLegacySessions(() => true, { strict: true })).toThrow("EACCES");
+      expect(() => removeLegacySessions(() => true)).not.toThrow(); // best effort stays quiet
+      // A project folder can't be read.
+      fail.path = project;
+      expect(() => removeLegacySessions(() => false, { strict: true })).toThrow("EACCES");
+      // Missing folders hold nothing, so they aren't failures.
+      fail.code = "ENOENT";
+      expect(() => removeLegacySessions(() => false, { strict: true })).not.toThrow();
+      fail.path = root;
+      expect(() => removeLegacySessions(() => false, { strict: true })).not.toThrow();
+    } finally {
+      readdirSync.mockRestore();
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+});

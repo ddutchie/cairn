@@ -12,15 +12,11 @@ import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { assertSafeId, isSafeId } from "./path-safety";
-import { forgetEngineSession, getEngineHost, removeLegacySessions } from "./engine-bridge";
+import { destroyEngineSession } from "./engine-bridge";
 
-/** Drop a chat thread's engine log (and its subagents') along with the legacy one. */
+/** Drop a chat thread's engine session: its log (and its subagents'), the legacy copy, profile and vectors. */
 async function destroyEngineThread(ctx: DbContext, threadId: string): Promise<void> {
-  const sessionId = `chat-${threadId}`;
-  forgetEngineSession(sessionId);
-  await getEngineHost(ctx).destroy(sessionId).catch(() => undefined);
-  // The retired harness's copy would otherwise be re-imported on the next touch.
-  removeLegacySessions((name) => name === sessionId || name === threadId || name.startsWith(`${sessionId}-`));
+  await destroyEngineSession(ctx, `chat-${threadId}`, [threadId]);
 }
 
 export function registerChatDbHandlers(ctx: DbContext): void {
@@ -55,8 +51,9 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     return { deletedThreads: ids.length, deletedMessages: 0 };
   }));
 
+  // The thread row goes last, so a failed cleanup leaves the chat in place to delete again.
   registerContractHandle("db:chat:deleteThread", (_e, { threadId }) => handle(async () => {
-    q.deleteChatThread(ctx.db, threadId);
     if (isSafeId(threadId)) await destroyEngineThread(ctx, threadId);
+    q.deleteChatThread(ctx.db, threadId);
   }));
 }

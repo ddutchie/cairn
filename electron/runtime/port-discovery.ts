@@ -15,6 +15,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * resolve userData without importing `electron`.
  */
 export function findUserDataDir(): string | null {
+  // Keeps test runs on their throwaway profile; see electron/user-data-override.ts.
+  if (process.env.CAIRN_USER_DATA_DIR) return process.env.CAIRN_USER_DATA_DIR;
   const home = os.homedir();
   const platform = process.platform;
   let base: string;
