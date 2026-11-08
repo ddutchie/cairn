@@ -231,7 +231,7 @@ const FEATURES = [
     description:
       "The sidebar, Settings and every menu and button now follow one design, so things are easier to find and behave the same everywhere.",
     highlights: [
-      "Tidier sidebar: One Calendar entry with a This project / All projects switch; Knowledge Graph, Insights and Automations move up to ⌘7–⌘9.",
+      "Tidier sidebar: One Calendar entry with a This project / All projects switch; Knowledge Graph, Insights and Automations move up to ⌘7–⌘9 (Ctrl+7–Ctrl+9 on Windows and Linux).",
       "Searchable Settings: One list of pages with a search box; providers live on the new Models page.",
       "Plain words: Insights labels every chart, and automations read like \"Weekdays at 08:00\".",
       "Mobile Access retired: The phone-browser companion is gone; use Settings → Device sync with the Cairn mobile app.",

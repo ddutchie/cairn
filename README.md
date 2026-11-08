@@ -40,7 +40,7 @@ Cairn is a desktop app (Electron + Next.js) that combines markdown notes with a 
 - **Cairn Agent** — Native coding agent (Agent view) with board and notes integration: moves tasks, writes session notes, captures discovered work; delegates to subagents for deep sub-tasks; Plan / Execute mode toggle; interactive tool confirmations with mobile-desktop sync; automatic retry on transient API errors; automatic context compaction for long sessions (`/compact` on demand); context usage ring; works with any OpenAI-compatible endpoint. Runs on Cairn's own agent engine — see [Architecture](#architecture).
 - **Agent workspace** — Three-pane view for running external AI coding agents (Claude Code, OpenCode, Aider, or any CLI) connected to project tasks; file tree, multi-file CodeMirror 6 editor, xterm.js terminal, and git diff viewer
 - **Knowledge Graph** — Workspace-wide graph of every note, card, project, and tag; Force-directed and Radial tree layouts; auto-discovered relationships
-- **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table
+- **Insights** — Analytics view: Ridgeline joy plot, Beeswarm, Bullet health bars, Sankey pipeline flow, Timeline, Matrix heatmap, Table, Semantic map (notes plotted by similarity)
 - **Font scaling** — Five-step UI font size preference (XS–XL, default M) in Settings → General
 - **Obsidian Vault Compatibility** — Works side-by-side with Obsidian vaults; renders standard double-bracket embeds (`![[image.png]]`), uploads files to custom attachment folders, resolves local media via sequential-fallback protocol, and merges YAML frontmatter non-destructively
 - **Local-first** — Notes as `.md` files, project data in SQLite; no network required

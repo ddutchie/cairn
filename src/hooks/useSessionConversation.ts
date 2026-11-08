@@ -439,11 +439,11 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     window.electron?.session.respondQuestions(id, callId, answers, nonce); clearQuestionsFor(id); return true;
   };
   const syncRunning = (running: boolean) => setIsLoading(running);
-  const setToolApproval = (callId: string, required: boolean, nonce?: string) => {
+  const setToolApproval = (callId: string, required: boolean, nonce?: string, reason?: string) => {
     const key = transientKey(sessionIdRef.current);
     const t = getTransient(key);
     t.tools = t.tools.map((item) => item.callId === callId
-      ? { ...item, confirmRequired: required, approvalNonce: required ? nonce : undefined }
+      ? { ...item, confirmRequired: required, approvalNonce: required ? nonce : undefined, approvalReason: required ? reason : undefined }
       : item);
     setToolCalls([...t.tools]);
   };

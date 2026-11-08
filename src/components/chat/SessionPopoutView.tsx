@@ -400,8 +400,8 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
       const pending = state.pendingQuestions?.[0];
       if (pending) sessionConversation.setQuestions(pending.questions, pending.callId);
       for (const ask of state.pendingAsks) {
-        sessionConversation.setToolApproval(ask.callId, true, ask.nonce);
-        setMessages((current) => applyApprovalProjection(current, { callId: ask.callId, status: "required", nonce: ask.nonce }));
+        sessionConversation.setToolApproval(ask.callId, true, ask.nonce, ask.reason);
+        setMessages((current) => applyApprovalProjection(current, { callId: ask.callId, status: "required", nonce: ask.nonce, reason: ask.reason }));
       }
     }).catch(() => undefined);
     return () => { cancelled = true; };
