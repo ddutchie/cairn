@@ -158,3 +158,38 @@ describe("destroyEngineSession", () => {
     }
   });
 });
+
+describe("removeLegacySessions", () => {
+  const errno = (code: string) => Object.assign(new Error(code), { code });
+
+  it("reports a legacy folder it can't read when strict, and ignores one that doesn't exist", async () => {
+    const fs = (await import("node:fs")).default;
+    const path = await import("node:path");
+    const { removeLegacySessions, legacyRoot } = await import("./engine-bridge");
+    const root = legacyRoot();
+    const project = path.join(root, `--unreadable${Date.now()}--`);
+    fs.mkdirSync(project, { recursive: true });
+    const read = fs.readdirSync;
+    const fail: { path: string; code: string } = { path: root, code: "EACCES" };
+    const readdirSync = vi.spyOn(fs, "readdirSync").mockImplementation(((p: string, o: never) => {
+      if (String(p) === fail.path) throw errno(fail.code);
+      return read(p, o);
+    }) as never);
+    try {
+      // The root folder can't be read.
+      expect(() => removeLegacySessions(() => true, { strict: true })).toThrow("EACCES");
+      expect(() => removeLegacySessions(() => true)).not.toThrow(); // best effort stays quiet
+      // A project folder can't be read.
+      fail.path = project;
+      expect(() => removeLegacySessions(() => false, { strict: true })).toThrow("EACCES");
+      // Missing folders hold nothing, so they aren't failures.
+      fail.code = "ENOENT";
+      expect(() => removeLegacySessions(() => false, { strict: true })).not.toThrow();
+      fail.path = root;
+      expect(() => removeLegacySessions(() => false, { strict: true })).not.toThrow();
+    } finally {
+      readdirSync.mockRestore();
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+});

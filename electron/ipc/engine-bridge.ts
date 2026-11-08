@@ -289,15 +289,23 @@ export function legacyRoot(): string {
  */
 export function removeLegacySessions(match: (name: string) => boolean, opts: { strict?: boolean } = {}): void {
   const root = legacyRoot();
-  let projects: string[];
-  try { projects = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return; }
   const failed: string[] = [];
+  const describe = (err: unknown) => (err instanceof Error ? err.message : String(err));
+  // A folder that doesn't exist has nothing to remove; one that can't be read might still hold a log.
+  const missing = (err: unknown) => (err as NodeJS.ErrnoException)?.code === "ENOENT";
+  let projects: string[];
+  try { projects = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); }
+  catch (err) {
+    if (opts.strict && !missing(err)) throw new Error(`Couldn't read the old session history (${describe(err)})`);
+    return;
+  }
   for (const project of projects) {
     let names: string[];
-    try { names = fs.readdirSync(path.join(root, project)); } catch { continue; }
+    try { names = fs.readdirSync(path.join(root, project)); }
+    catch (err) { if (!missing(err)) failed.push(`${project}: ${describe(err)}`); continue; }
     for (const name of names) {
       if (!match(name)) continue;
-      try { fs.rmSync(path.join(root, project, name), { recursive: true, force: true }); } catch (err) { failed.push(`${project}/${name}: ${err instanceof Error ? err.message : String(err)}`); }
+      try { fs.rmSync(path.join(root, project, name), { recursive: true, force: true }); } catch (err) { failed.push(`${project}/${name}: ${describe(err)}`); }
     }
   }
   if (opts.strict && failed.length) throw new Error(`Couldn't remove the old session history (${failed.join("; ")})`);
