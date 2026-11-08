@@ -157,6 +157,9 @@ export interface TerminalSessionsSlice {
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
 
+/** Coding sessions with a delete in flight (see deleteCodingSessionFromHistory). */
+const deletingCodingSessions = new Set<string>();
+
 export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], TerminalSessionsSlice> = (
   set,
   get
@@ -783,41 +786,48 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
 
   async deleteCodingSessionFromHistory(sessionId) {
     if (typeof window === "undefined" || !window.electron) return false;
-    // Authoritative running check (UI running-ids poll can be 2s stale).
+    // One delete per session at a time: an overlapping one could put back an entry the other removed.
+    if (deletingCodingSessions.has(sessionId)) return false;
+    deletingCodingSessions.add(sessionId);
     try {
-      const state = await window.electron.session.isRunning(sessionId);
-      if (state?.running) {
-        window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Stop the running session before deleting it." } }));
+      // Authoritative running check (UI running-ids poll can be 2s stale).
+      try {
+        const state = await window.electron.session.isRunning(sessionId);
+        if (state?.running) {
+          window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Stop the running session before deleting it." } }));
+          return false;
+        }
+      } catch (err) {
+        // Fail closed: an unknown running state must not authorize deletion.
+        console.error("[coding-sessions] running check failed", err);
+        window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't confirm the session has stopped — not deleting." } }));
         return false;
       }
-    } catch (err) {
-      // Fail closed: an unknown running state must not authorize deletion.
-      console.error("[coding-sessions] running check failed", err);
-      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't confirm the session has stopped — not deleting." } }));
-      return false;
-    }
-    // Optimistic removal, put back if the delete fails so it can be tried again.
-    const before = get();
-    const removed = before.codingSessionHistory.find((h) => h.id === sessionId);
-    const wasActive = before.activeCodingSessionId === sessionId;
-    set((s) => ({
-      codingSessionHistory: s.codingSessionHistory.filter((h) => h.id !== sessionId),
-      activeCodingSessionId: s.activeCodingSessionId === sessionId ? null : s.activeCodingSessionId,
-    }));
-    try {
-      await window.electron.session.deleteSession(sessionId);
-    } catch (err) {
-      console.error("[coding-sessions] deleteCodingSessionFromHistory error", err);
+      // Optimistic removal, put back if the delete fails so it can be tried again.
+      const before = get();
+      const removed = before.codingSessionHistory.find((h) => h.id === sessionId);
+      const wasActive = before.activeCodingSessionId === sessionId;
       set((s) => ({
-        codingSessionHistory: removed && !s.codingSessionHistory.some((h) => h.id === sessionId)
-          ? [...s.codingSessionHistory, removed].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-          : s.codingSessionHistory,
-        activeCodingSessionId: wasActive && s.activeCodingSessionId === null ? sessionId : s.activeCodingSessionId,
+        codingSessionHistory: s.codingSessionHistory.filter((h) => h.id !== sessionId),
+        activeCodingSessionId: s.activeCodingSessionId === sessionId ? null : s.activeCodingSessionId,
       }));
-      window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't delete the session. It's still in the list, so you can try again." } }));
-      return false;
+      try {
+        await window.electron.session.deleteSession(sessionId);
+      } catch (err) {
+        console.error("[coding-sessions] deleteCodingSessionFromHistory error", err);
+        set((s) => ({
+          codingSessionHistory: removed && !s.codingSessionHistory.some((h) => h.id === sessionId)
+            ? [...s.codingSessionHistory, removed].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+            : s.codingSessionHistory,
+          activeCodingSessionId: wasActive && s.activeCodingSessionId === null ? sessionId : s.activeCodingSessionId,
+        }));
+        window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Couldn't delete the session. It's still in the list, so you can try again." } }));
+        return false;
+      }
+      return true;
+    } finally {
+      deletingCodingSessions.delete(sessionId);
     }
-    return true;
   },
 
   upsertCodingSessionSummary(summary) {

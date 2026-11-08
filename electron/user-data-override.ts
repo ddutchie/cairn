@@ -7,10 +7,12 @@
  * code, so setting the path any later leaves those modules on the real profile.
  */
 import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { app } from "electron";
 
 if (process.env.CAIRN_USER_DATA_DIR) {
-  // setPath throws if the folder doesn't exist yet. Owner-only, like Electron's own profile: it holds session logs.
-  mkdirSync(process.env.CAIRN_USER_DATA_DIR, { recursive: true, mode: 0o700 });
-  app.setPath("userData", process.env.CAIRN_USER_DATA_DIR);
+  // setPath needs an absolute path to a folder that exists. Owner-only, like Electron's own profile: it holds session logs.
+  const dir = resolve(process.env.CAIRN_USER_DATA_DIR);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  app.setPath("userData", dir);
 }

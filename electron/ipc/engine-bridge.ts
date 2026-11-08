@@ -285,19 +285,22 @@ export function legacyRoot(): string {
 /**
  * Remove retired-harness logs whose directory name matches, so a cleared or deleted session is not
  * re-imported on next touch. Looks one level below each project directory (`<root>/<project>/<id>`).
+ * Best effort unless `strict`, which throws after trying every match if any of them couldn't be removed.
  */
-export function removeLegacySessions(match: (name: string) => boolean): void {
+export function removeLegacySessions(match: (name: string) => boolean, opts: { strict?: boolean } = {}): void {
   const root = legacyRoot();
   let projects: string[];
   try { projects = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return; }
+  const failed: string[] = [];
   for (const project of projects) {
     let names: string[];
     try { names = fs.readdirSync(path.join(root, project)); } catch { continue; }
     for (const name of names) {
       if (!match(name)) continue;
-      try { fs.rmSync(path.join(root, project, name), { recursive: true, force: true }); } catch { /* best effort */ }
+      try { fs.rmSync(path.join(root, project, name), { recursive: true, force: true }); } catch (err) { failed.push(`${project}/${name}: ${err instanceof Error ? err.message : String(err)}`); }
     }
   }
+  if (opts.strict && failed.length) throw new Error(`Couldn't remove the old session history (${failed.join("; ")})`);
 }
 
 /** Native session logs live beside the legacy ones; a missing Electron `app` (unit tests) falls back to tmp. */
@@ -384,15 +387,15 @@ const LEGACY_TURN_COPY = /^-\d{10,}-[a-z0-9]+$/;
  * otherwise be re-imported on the next touch), its profile and its search vectors. Without this a
  * deleted session stayed on disk and searchable from memory.
  * `aliases` are other names the legacy copy may go by (a chat's thread id).
- * Throws when the log can't be removed, before anything else is touched, so the caller can keep
- * its own record and the delete can be retried.
+ * Throws when the log or the legacy copy can't be removed, before the profile and vectors go, so the
+ * caller can keep its own record and the delete can be retried.
  */
 export async function destroyEngineSession(ctx: DbContext, sessionId: string, aliases: string[] = []): Promise<void> {
   forgetEngineSession(sessionId);
   await getEngineHost(ctx).destroy(sessionId);
   const names = [sessionId, ...aliases];
   // Only exact names and per-turn copies: another session's id may also start with `<id>-`.
-  removeLegacySessions((name) => names.some((n) => name === n || (name.startsWith(n) && LEGACY_TURN_COPY.test(name.slice(n.length)))));
+  removeLegacySessions((name) => names.some((n) => name === n || (name.startsWith(n) && LEGACY_TURN_COPY.test(name.slice(n.length)))), { strict: true });
   deleteSessionProfile(ctx.db, sessionId);
   deleteSessionEmbeddings(ctx.db, sessionId);
 }

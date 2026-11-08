@@ -124,27 +124,36 @@ describe("destroyEngineSession", () => {
     db.close();
   });
 
-  it("throws and leaves the profile when the log can't be removed", async () => {
-    const fs = await import("node:fs");
+  it("throws and keeps the profile when the log or the legacy copy can't be removed", async () => {
+    const fs = (await import("node:fs")).default;
     const path = await import("node:path");
     const { default: Sqlite } = await import("better-sqlite3");
     const { applySchema } = await import("../db/schema");
     const { upsertSessionProfile, getSessionProfile } = await import("../db/workspace-queries");
-    const { destroyEngineSession, hostRoot } = await import("./engine-bridge");
+    const { AgentHost } = await import("../agent/host");
+    const { destroyEngineSession, legacyRoot } = await import("./engine-bridge");
     const db = new Sqlite(":memory:");
     applySchema(db);
     const id = `stuck${Date.now()}`;
-    const log = path.join(hostRoot(), id);
-    fs.mkdirSync(log, { recursive: true });
-    fs.writeFileSync(path.join(log, "session.cairn.jsonl"), "{}\n");
-    fs.chmodSync(log, 0o500); // its file can't be unlinked
     upsertSessionProfile(db, { sessionId: id, profile: "coding", workspaceId: "ws" });
+
+    // The engine log can't be removed: nothing else is touched.
+    const destroy = vi.spyOn(AgentHost.prototype, "destroy").mockRejectedValueOnce(new Error("EACCES"));
+    await expect(destroyEngineSession({ db } as never, id)).rejects.toThrow("EACCES");
+    expect(getSessionProfile(db, id)).not.toBeNull();
+    destroy.mockRestore();
+
+    // The legacy copy can't be removed: the error reaches the caller and the profile stays.
+    const legacy = path.join(legacyRoot(), "--proj--", id);
+    fs.mkdirSync(legacy, { recursive: true });
+    const rm = fs.rmSync;
+    const rmSync = vi.spyOn(fs, "rmSync").mockImplementation((p, o) => { if (String(p) === legacy) throw new Error("EBUSY"); return rm(p, o); });
     try {
-      await expect(destroyEngineSession({ db } as never, id)).rejects.toThrow();
+      await expect(destroyEngineSession({ db } as never, id)).rejects.toThrow("EBUSY");
       expect(getSessionProfile(db, id)).not.toBeNull();
     } finally {
-      fs.chmodSync(log, 0o700);
-      fs.rmSync(log, { recursive: true, force: true });
+      rmSync.mockRestore();
+      fs.rmSync(legacy, { recursive: true, force: true });
       db.close();
     }
   });
