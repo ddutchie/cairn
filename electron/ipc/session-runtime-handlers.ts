@@ -15,7 +15,7 @@ import { handle } from "./result-helpers";
 import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/tools";
 import { emitSessionChip } from "./engine-commands";
-import { buildAgentSystemPrompt } from "../lib/coding-session-prompt";
+import { approvedPlanContext, buildAgentSystemPrompt } from "../lib/coding-session-prompt";
 import { sandboxPolicyNote } from "../agent/sandbox";
 import { getSandboxMode } from "../agent/host-store";
 import { normaliseBaseUrl } from "../lib/llm";
@@ -375,11 +375,16 @@ export function registerSessionRuntimeHandlers(
     session.role = role;
 
     const systemPrompt = buildAgentSystemPrompt({
-      projectName, cwd, taskTitle, workspaceId, projectId, mode, planContent,
+      projectName, cwd, taskTitle, workspaceId, projectId, mode,
        role, sandboxNote: sandboxPolicyNote(getSandboxMode()),
     });
+    // The approved plan rides with the prompt (once, and again if a compaction folds it away)
+    // instead of sitting in the system prompt, which must not change during a session.
+    const approvedPlan = mode === "execute" && role === "default"
+      ? approvedPlanContext(sessionRow?.planContent?.trim() ? { content: sessionRow.planContent } : { noteId: planContent?.trim() ? planNoteId ?? undefined : undefined })
+      : undefined;
 
-    await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role, attachments: req.attachments, sessionMode: mode });
+    await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role, attachments: req.attachments, sessionMode: mode, standingContext: approvedPlan ? [approvedPlan] : undefined });
   });
 
 
@@ -502,13 +507,15 @@ export function registerSessionRuntimeHandlers(
 
     {
       // The plan the model submitted with exit_plan_mode is stored on the session row; a PRD note is the older route.
-      const approvedPlan = sessionRow?.planContent?.trim() || planContent;
+      // Same choice as session:prompt makes, so later prompts find this text already in the conversation.
+      const approvedPlan = approvedPlanContext(sessionRow?.planContent?.trim() ? { content: sessionRow.planContent } : { noteId: planContent.trim() ? planNoteId ?? undefined : undefined });
       await runEnginePrompt({
         ctx, sessionId, cwd, projectId, workspaceId, llmConfig, role, sessionMode: "execute",
-        systemPrompt: buildAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", planContent: approvedPlan, role, sandboxNote: sandboxPolicyNote(getSandboxMode()) }),
+        systemPrompt: buildAgentSystemPrompt({ projectName, cwd, taskTitle, workspaceId, projectId, mode: "execute", role, sandboxNote: sandboxPolicyNote(getSandboxMode()) }),
+        standingContext: approvedPlan && role === "default" ? [approvedPlan] : undefined,
         prompt: planNoteId
           ? `The plan has been approved. Begin implementation now, following the approved PRD exactly. The PRD note ID is ${planNoteId} — you can re-read it via get_item if needed.`
-          : "The plan has been approved. Begin implementation now, following the approved plan in your instructions exactly.",
+          : "The plan has been approved. Begin implementation now, following the approved plan below exactly.",
       });
       return;
     }

@@ -208,4 +208,13 @@ describe("exit_plan_mode", () => {
     expect(empty.isError).toBe(true);
     expect(plans).toHaveLength(1);
   });
+
+  it("stays registered outside plan mode but refuses to submit a plan", async () => {
+    const { planTools } = await import("./plan");
+    const plans: string[] = [];
+    const [tool] = planTools({ active: () => false, onPlan: (_sid, plan) => plans.push(plan) });
+    const out = await tool.execute({ plan: "## Tasks" }, { sessionId: "s1", callId: "c1", workspaceRoot: "/ws" });
+    expect(out.isError).toBe(true);
+    expect(plans).toEqual([]);
+  });
 });

@@ -1,8 +1,10 @@
 import { fauxAssistantMessage, fauxToolCall, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { applyCompaction, buildContextView, compactHistory, compactionThreshold, estimateTokens, isSummaryMessage, planCompaction, pruneImages, pruneToolResults, userContent } from "./context";
+import { applyCompaction, buildContextView, compactHistory, compactionThreshold, estimateTokens, isSummaryMessage, planCompaction, pruneImages, pruneToolResults, userContent, withContext } from "./context";
 import type { AgentEvent } from "./events";
-import { makeHarness } from "./test-harness";
+import { turnContext } from "./host";
+import { runTurn } from "./loop";
+import { drive, makeHarness } from "./test-harness";
 
 const user = (text: string, timestamp = 1): Message => ({ role: "user", content: text, timestamp });
 const result = (id: string, text: string): ToolResultMessage => ({ role: "toolResult", toolCallId: id, toolName: "t", content: [{ type: "text", text }], isError: false, timestamp: 1 });
@@ -122,5 +124,58 @@ describe("images", () => {
     expect(pruned.map(imageCount)).toEqual([0, 1, 1]);
     expect(JSON.stringify(pruned[0])).toContain("earlier image omitted");
     expect(history.map(imageCount)).toEqual([1, 1, 1]);
+  });
+});
+
+describe("cache-stable request view", () => {
+  const big = "x".repeat(8_000); // ~2k tokens
+  const step = (n: number): Message[] => [callMsg(`c${n}`), result(`c${n}`, big)];
+  const grow = (steps: number): Message[] => [user("q"), ...Array.from({ length: steps }, (_, n) => step(n)).flat()];
+
+  it("leaves the pruned prefix untouched while the history grows within one step", () => {
+    const opts = { protectTokens: 8_000, stepTokens: 8_000 };
+    const changedAt: number[] = [];
+    let previous = pruneToolResults(grow(1), opts);
+    for (let steps = 2; steps <= 16; steps++) {
+      const view = pruneToolResults(grow(steps), opts);
+      // A view that differs from the last one inside the shared prefix costs a cache re-write.
+      if (previous.some((m, i) => text(m) !== text(view[i]))) changedAt.push(steps);
+      previous = view;
+    }
+    // One 2k-token result is added per step and the cut moves 8k tokens at a time: every fourth step.
+    expect(changedAt.length).toBeGreaterThan(0);
+    expect(changedAt.length).toBeLessThanOrEqual(4);
+    const last = pruneToolResults(grow(16), opts);
+    expect(text(last[last.length - 1])).toBe(big);
+    expect(text(last[2])).toMatch(/pruned/);
+  });
+
+  it("drops images a batch at a time, oldest first", () => {
+    const img = (n: number): Message => ({ role: "user", content: userContent(`m${n}`, [{ mediaType: "image/png", data: `I${n}` }]), timestamp: n });
+    const count = (ms: Message[]) => ms.filter((m) => typeof m.content !== "string" && m.content.some((b) => b.type === "image")).length;
+    const history = (n: number) => Array.from({ length: n }, (_, i) => img(i));
+    expect([8, 9, 11, 12, 15, 16].map((n) => count(pruneImages(history(n))))).toEqual([8, 9, 11, 8, 11, 8]);
+    expect(JSON.stringify(pruneImages(history(12))[0])).toContain("earlier image omitted");
+  });
+});
+
+describe("prompt context", () => {
+  it("reaches the model, stays out of the user's text, and replays identically", async () => {
+    const h = makeHarness();
+    h.faux.setResponses([fauxAssistantMessage("ok")]);
+    const events = await drive(runTurn(h.opts({ input: "do it", context: "<session_context>\nplan mode\n</session_context>" })));
+    const logged = events.find((e) => e.type === "user/message")!;
+    expect(logged).toMatchObject({ content: "do it", context: "<session_context>\nplan mode\n</session_context>" });
+    expect(text(h.history[0])).toBe(withContext("do it", "<session_context>\nplan mode\n</session_context>"));
+    const replay = buildContextView(rec(...events.filter((e) => e.type !== "assistant/delta")));
+    expect(replay.map(text)).toEqual(h.history.map(text));
+  });
+
+  it("sends standing context only while the model cannot see it", () => {
+    const plan = "<session_context>\nthe plan\n</session_context>";
+    expect(turnContext([], { standingContext: [plan], context: "mode" })).toBe(`${plan}\n\nmode`);
+    expect(turnContext([user(withContext("go", plan))], { standingContext: [plan] })).toBeUndefined();
+    // A compaction folded the message away: it is sent again.
+    expect(turnContext(applyCompaction([user(withContext("go", plan)), fauxAssistantMessage("ok")], { summary: "S", keepCount: 1 }), { standingContext: [plan] })).toBe(plan);
   });
 });

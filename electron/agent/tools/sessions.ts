@@ -29,7 +29,7 @@ interface Turn { index: number; role: "user" | "assistant"; text: string; time: 
 export function turnsOf(records: readonly SessionRecord[]): Turn[] {
   const out: Turn[] = [];
   for (const { event, time } of records) {
-    if (event.type === "user/message") { if (!event.blocked) out.push({ index: out.length, role: "user", text: event.content, time }); }
+    if (event.type === "user/message") { if (!event.blocked && !event.synthetic) out.push({ index: out.length, role: "user", text: event.content, time }); }
     else if (event.type === "assistant/message") {
       const text = event.message.content.filter((c) => c.type === "text").map((c) => (c as { text: string }).text).join("").trim();
       if (text) out.push({ index: out.length, role: "assistant", text, time });

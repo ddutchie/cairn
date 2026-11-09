@@ -72,6 +72,13 @@ export function foldGoal(records: readonly SessionRecord[]): GoalState | null {
   return goal;
 }
 
+/** Tool groups the session has turned on, in the order it did. */
+export function foldToolGroups(records: readonly SessionRecord[]): string[] {
+  const groups: string[] = [];
+  for (const { event } of records) if (event.type === "tools/enabled" && !groups.includes(event.group)) groups.push(event.group);
+  return groups;
+}
+
 /** Reminders that were added and have neither fired nor been cancelled. */
 export function foldSchedules(records: readonly SessionRecord[]): ScheduleEntry[] {
   const open = new Map<string, ScheduleEntry>();

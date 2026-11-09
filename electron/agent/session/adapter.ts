@@ -149,7 +149,7 @@ export function createAdapter(sessionId: string, now: () => number = Date.now, r
         }));
         break;
       }
-      case "user/message": case "rule/added": case "schedule/changed": break;
+      case "user/message": case "rule/added": case "schedule/changed": case "tools/enabled": break;
     }
     return { events, projections };
   };

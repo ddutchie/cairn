@@ -13,8 +13,6 @@ export interface AgentPromptContext {
   workspaceId?: string;
   projectId?: string;
   mode?: "plan" | "execute";
-  /** In execute mode after plan approval: the full markdown content of the approved PRD */
-  planContent?: string;
   /** Session persona — "automation-dev" gets the automation-builder prompt. */
   role?: "default" | "automation-dev";
   /** How shell commands are confined (see `sandboxPolicyNote`); omitted or empty adds nothing. */
@@ -63,11 +61,21 @@ At run time the automation resolves scripts by NAME from \`scripts/\` and runs t
 Summarise what you built and what changed in \`manifest.json\`. Tell the user to open the Automations view → this automation's details → "Sync from manifest" → "Run now". Date: ${date}`;
 }
 
-function buildExecuteModePrompt(ctx: AgentPromptContext): string {
-  const planSection = ctx.planContent
-    ? `\n\n## Approved implementation plan\nThe user has reviewed and approved the following plan. Follow it closely:\n\n${ctx.planContent}`
-    : "";
+/**
+ * The approved plan, as context for the model. It is sent with a prompt instead of living in the
+ * system prompt: the system prompt would otherwise change the moment a plan is approved, which
+ * re-writes the provider's cache for everything the planning turns read.
+ * `noteId` is the older PRD-note route; the note changes as tasks are checked off, so only a
+ * pointer to it is sent.
+ */
+export function approvedPlanContext(plan: { content?: string; noteId?: string }): string | undefined {
+  const content = plan.content?.trim();
+  if (content) return `## Approved implementation plan\nThe user has reviewed and approved the following plan. Follow it closely:\n\n${content}`;
+  if (plan.noteId) return `## Approved implementation plan\nThe user has approved the PRD in note ${plan.noteId}. Follow it closely; re-read it with \`get_item\` whenever you need it.`;
+  return undefined;
+}
 
+function buildExecuteModePrompt(ctx: AgentPromptContext): string {
   const date = new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
@@ -86,7 +94,7 @@ You are not just a code executor. You are an active participant in the project: 
 ## Context
 **Project:** ${ctx.projectName}${taskLine}
 **Code directory:** ${ctx.cwd}
-**Date:** ${date}${taskSection}${planSection}
+**Date:** ${date}${taskSection}
 
 All file tools are scoped to the code directory above. Use relative paths such as \`src/...\` with \`read\`, \`grep\`, and \`glob\`; do not invent or query another checkout with an absolute path. If an optional tool path is not needed, omit the field entirely rather than sending an empty string. If a path is not under this code directory, it is outside this session's workspace.${ctx.sandboxNote ? `\n\n${ctx.sandboxNote}` : ""}
 
@@ -121,7 +129,7 @@ Before writing your final response to the user:
 3. **Run tests after changes.** Use \`${process.platform === "win32" ? "pwsh" : "bash"}\` to verify your work compiles and tests pass.
 4. **Be concise in your final reply.** Summarise what you did and why — don't repeat file contents back.
 5. **Security.** Never read or write outside the project's code directory.
-6. **Use \`spawn_subagent\` for deep sub-tasks** — e.g. "research all usages of X", "refactor this module end-to-end", "investigate and summarise the bug". The subagent has the same tools. Pass it a fully self-contained prompt.
+6. **Use \`subagent\` for deep sub-tasks** — e.g. "research all usages of X", "refactor this module end-to-end", "investigate and summarise the bug". The subagent has the same tools. Pass it a fully self-contained prompt.
 7. **Write in the user's voice.** When drafting prose for the user (release notes, PRDs, session summaries, replies), call \`get_user_writing_style\` first and match it. If it reports configured:false, write clearly and naturally instead. When the user explicitly asks you to remember a style preference, call \`update_user_writing_style\` (append) — do not invent preferences.
 
 Tone: direct, technical, like a senior engineer pairing with the user.`;

@@ -32,6 +32,7 @@ const SAMPLES: { [T in AgentEvent["type"]]: { visibility: Visibility; event: Ext
   "context/overflow": { visibility: "projection", event: { type: "context/overflow" } },
   "compaction": { visibility: "projection", event: { type: "compaction", summary: "s", keepCount: 2, tokensBefore: 10, trigger: "threshold" } },
   "session/title": { visibility: "projection", event: { type: "session/title", title: "t" } },
+  "tools/enabled": { visibility: "log-only", event: { type: "tools/enabled", group: "extended" } },
   "goal/changed": { visibility: "projection", event: { type: "goal/changed", operation: "create", goal: null } },
   "schedule/changed": { visibility: "log-only", event: { type: "schedule/changed", operation: "add", schedule: {} as never } },
   "error": { visibility: "projection", event: { type: "error", message: "boom" } },

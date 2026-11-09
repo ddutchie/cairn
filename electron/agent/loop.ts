@@ -28,7 +28,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { abortableSleep, DEFAULT_RETRY, isRetryableErrorMessage, retryDelayMs, withJitter, type RetryPolicy } from "../../shared/agent/retry";
 import type { AgentEvent, DecisionSource, UserImage } from "./events";
-import { userContent, type CompactionResult, type CompactionTrigger } from "./context";
+import { userContent, withContext, type CompactionResult, type CompactionTrigger } from "./context";
 import { Gate, type AskInput } from "./gate";
 import type { TurnHooks } from "./hooks";
 import { callSignature, decide, type Decision, type Mode } from "./policy";
@@ -36,6 +36,7 @@ import { repairInterrupted } from "./repair";
 import { createReviewerState, recordVerdict, type Reviewer, type ReviewerState } from "./reviewer";
 import { grantRule, offeredGrants, type GrantKind, type RiskInfo, type RuleStore } from "./rules";
 import type { AgentTool, ToolOutput } from "./tools";
+import { resolveTools, type ToolsInput } from "./toolbox";
 
 export type StreamFn = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 
@@ -56,9 +57,16 @@ export interface TurnOptions {
   /** Provider messages so far. The loop appends to it as the turn progresses. */
   history: Message[];
   input: string;
+  /**
+   * Text only the model sees, appended to this prompt (a mode reminder, an approved plan).
+   * Things that change during a session belong here and not in `systemPrompt`: a changed
+   * system prompt re-writes the provider's cache for the whole conversation.
+   */
+  context?: string;
   /** Images attached to this prompt. */
   images?: readonly UserImage[];
-  tools: readonly AgentTool[];
+  /** A fixed list, or a source the loop reads at the start of every step (see `Toolbox`). */
+  tools: ToolsInput;
   profile: Profile;
   rules: RuleStore;
   gate: Gate;
@@ -102,7 +110,7 @@ export { DEFAULT_RETRY };
  * nothing has been emitted for the attempt, so a user never sees output from an
  * attempt that is then silently replaced.
  */
-async function* streamAssistant(o: TurnOptions): AsyncGenerator<AgentEvent, AssistantMessage> {
+async function* streamAssistant(o: TurnOptions, tools: readonly AgentTool[]): AsyncGenerator<AgentEvent, AssistantMessage> {
   const policy = o.retry ?? DEFAULT_RETRY;
   const sleep = o.sleep ?? abortableSleep;
   for (let attempt = 0; ; attempt++) {
@@ -110,7 +118,7 @@ async function* streamAssistant(o: TurnOptions): AsyncGenerator<AgentEvent, Assi
     const context: Context = {
       systemPrompt: o.systemPrompt,
       messages: o.transformContext ? o.transformContext(o.history) : o.history,
-      tools: o.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+      tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
     };
     const stream = o.streamFn(o.model, context, { sessionId: o.sessionId, ...o.streamOptions, signal: o.signal });
     for await (const ev of stream) {
@@ -157,7 +165,6 @@ function resultMessage(call: ToolCall, text: string, isError: boolean, original?
 
 export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
   const maxSteps = o.maxSteps ?? 50;
-  const toolMap = new Map(o.tools.map((t) => [t.name, t] as const));
   const reviewerState = o.reviewerState ?? createReviewerState();
   const doomAcked = o.doomAcked ?? new Set<string>();
   const recent: string[] = [];
@@ -173,9 +180,10 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
     yield { type: "turn/end", reason: "error" };
     return;
   }
-  const modelInput = promptHook?.context ? `${o.input}\n\n<hook_context>\n${promptHook.context}\n</hook_context>` : o.input;
-  o.history.push({ role: "user", content: userContent(modelInput, images), timestamp: Date.now() } satisfies UserMessage);
-  yield { type: "user/message", content: o.input, ...(images ? { images } : {}) };
+  const context = [promptHook?.context ? `<hook_context>\n${promptHook.context}\n</hook_context>` : "", o.context ?? ""].filter(Boolean).join("\n\n") || undefined;
+  o.history.push({ role: "user", content: userContent(withContext(o.input, context), images), timestamp: Date.now() } satisfies UserMessage);
+  // The context is logged with the prompt, so a replayed history matches the live one.
+  yield { type: "user/message", content: o.input, ...(images ? { images } : {}), ...(context ? { context } : {}) };
   let stopContinuations = 0;
 
   let compactions = 0;
@@ -204,9 +212,12 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
       if (yield* tryCompact("threshold")) lastContextTokens = 0;
     }
 
+    // Read once per step: a tool group enabled during the last step is offered from this one,
+    // and the calls this step makes are checked against exactly what it was sent.
+    const tools = resolveTools(o.tools);
     let final: AssistantMessage;
     try {
-      final = yield* streamAssistant(o);
+      final = yield* streamAssistant(o, tools);
     } catch (err) {
       if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
       yield { type: "error", message: err instanceof Error ? err.message : String(err) };
@@ -245,20 +256,28 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
       const stop = stopContinuations < MAX_STOP_CONTINUATIONS ? await o.hooks?.stop?.().catch(() => ({} as { continueWith?: string })) : undefined;
       if (stop?.continueWith) {
         stopContinuations++;
-        o.history.push({ role: "user", content: `continue: ${stop.continueWith}`, timestamp: Date.now() } satisfies UserMessage);
+        const content = `continue: ${stop.continueWith}`;
+        o.history.push({ role: "user", content, timestamp: Date.now() } satisfies UserMessage);
+        // Logged, so a history rebuilt from the log has this message too: without it a compaction's
+        // tail count lands one message early after a restart.
+        yield { type: "user/message", content, synthetic: true };
         continue;
       }
+      // The reply has text but ran into the output limit: say so instead of ending as if it were whole.
+      if (final.stopReason === "length") yield { type: "error", message: CUT_OFF_NOTICE };
       yield { type: "turn/end", reason: "stop" };
       return;
     }
 
-    const results = yield* runToolCalls(o, calls, toolMap, { recent, doomAcked, reviewerState });
+    const results = yield* runToolCalls(o, calls, tools, { recent, doomAcked, reviewerState });
     o.history.push(...results);
 
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
   }
   yield { type: "turn/end", reason: "max-steps" };
 }
+
+const CUT_OFF_NOTICE = "The reply was cut off at the model's output limit. Ask it to continue, or raise the max output tokens in Settings → AI.";
 
 function noReplyNotice(stopReason: AssistantMessage["stopReason"]): string {
   return stopReason === "length"
@@ -275,12 +294,13 @@ interface TurnState {
 async function* runToolCalls(
   o: TurnOptions,
   calls: ToolCall[],
-  toolMap: Map<string, AgentTool>,
+  tools: readonly AgentTool[],
   state: TurnState,
 ): AsyncGenerator<AgentEvent, ToolResultMessage[]> {
+  const toolMap = new Map(tools.map((t) => [t.name, t] as const));
   // Phase 1: gate every call in order (asks are sequential for now).
   const prepared: Prepared[] = [];
-  for (const call of calls) prepared.push(yield* prepare(o, call, toolMap, state));
+  for (const call of calls) prepared.push(yield* prepare(o, call, tools, toolMap, state));
 
   // Phase 2: run what was approved. Consecutive `parallel` tools overlap.
   const outputs = new Map<string, ToolOutput>();
@@ -319,7 +339,7 @@ async function* runToolCalls(
   return messages;
 }
 
-async function* prepare(o: TurnOptions, call: ToolCall, toolMap: Map<string, AgentTool>, state: TurnState): AsyncGenerator<AgentEvent, Prepared> {
+async function* prepare(o: TurnOptions, call: ToolCall, tools: readonly AgentTool[], toolMap: Map<string, AgentTool>, state: TurnState): AsyncGenerator<AgentEvent, Prepared> {
   const tool = toolMap.get(call.name);
   if (!tool) {
     yield { type: "tool/call", callId: call.id, name: call.name, args: call.arguments, risk: "EXEC" };
@@ -328,7 +348,7 @@ async function* prepare(o: TurnOptions, call: ToolCall, toolMap: Map<string, Age
 
   let args: JsonObject;
   try {
-    args = validateToolCall(o.tools as AgentTool[], call) as JsonObject;
+    args = validateToolCall(tools as AgentTool[], call) as JsonObject;
   } catch (err) {
     yield { type: "tool/call", callId: call.id, name: call.name, args: call.arguments, risk: "EXEC" };
     return { call, tool, refusal: `Invalid arguments: ${err instanceof Error ? err.message : String(err)}` };

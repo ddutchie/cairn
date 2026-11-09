@@ -57,6 +57,9 @@ export function userContent(text: string, images?: readonly UserImage[]): UserMe
   return [{ type: "text", text }, ...images.map((i) => ({ type: "image" as const, data: i.data, mimeType: i.mediaType }))];
 }
 
+/** The prompt as the model sees it: what the user typed, then any model-only context. */
+export const withContext = (text: string, context?: string): string => (context ? `${text}\n\n${context}` : text);
+
 // ── derived view ─────────────────────────────────────────────────────────
 
 export function summaryMessage(summary: string, timestamp: number): Message {
@@ -82,7 +85,7 @@ export function buildContextView(records: ReadonlyArray<{ event: AgentEvent; tim
   for (const { event, time } of records) {
     switch (event.type) {
       case "turn/start": messages = repairInterrupted(messages, time); break;
-      case "user/message": if (event.blocked) break; messages.push({ role: "user", content: userContent(event.content, event.images), timestamp: time }); break;
+      case "user/message": if (event.blocked) break; messages.push({ role: "user", content: userContent(withContext(event.content, event.context), event.images), timestamp: time }); break;
       case "assistant/message": messages.push(event.message); break;
       case "tool/result":
         // Logs imported before the importer dropped repeats still hold them; providers reject a result with no call to answer.
@@ -98,10 +101,17 @@ export function buildContextView(records: ReadonlyArray<{ event: AgentEvent; tim
 }
 
 // ── request-time pruning ─────────────────────────────────────────────────
+//
+// Providers cache a request by its prefix, so a view that rewrites an old message costs a
+// re-write of everything after it. Both pruners therefore measure from the START of the
+// history (positions there never move while it only grows) and advance their cut in large
+// steps: between steps the pruned prefix is byte-identical from one request to the next.
 
 export interface PruneOptions {
-  /** Newest tokens left untouched. */
+  /** Newest tokens always left untouched. */
   protectTokens?: number;
+  /** How far the cut moves each time it moves. Default: half of `protectTokens`. */
+  stepTokens?: number;
   /** Only outputs at least this long are worth replacing. */
   minChars?: number;
 }
@@ -109,37 +119,46 @@ export interface PruneOptions {
 /** Replace old, bulky tool output with a stub. Pure; returns the same objects when nothing changes. */
 export function pruneToolResults(messages: readonly Message[], opts: PruneOptions = {}): Message[] {
   const protect = opts.protectTokens ?? 40_000;
+  const step = Math.max(1, opts.stepTokens ?? Math.floor(protect / 2));
   const minChars = opts.minChars ?? 2_000;
-  let recent = 0;
   const out = messages.slice();
-  for (let i = out.length - 1; i >= 0; i--) {
+  const sizes = messages.map(estimateTokens);
+  const total = sizes.reduce((n, t) => n + t, 0);
+  // Everything that ends at or before `cut` tokens from the start is old enough to stub.
+  const cut = Math.floor((total - protect) / step) * step;
+  let end = 0;
+  for (let i = 0; i < out.length; i++) {
+    end += sizes[i];
+    if (end > cut) break;
     const m = out[i];
-    if (recent >= protect && m.role === "toolResult") {
-      const chars = m.content.reduce((n, b) => n + (b.type === "text" ? b.text.length : 0), 0);
-      const hasImage = m.content.some((b) => b.type === "image");
-      if (chars >= minChars || hasImage) {
-        out[i] = { ...m, content: [{ type: "text", text: `[tool output pruned: ${chars} chars${hasImage ? ", image" : ""}]` }] } satisfies ToolResultMessage;
-      }
+    if (m.role !== "toolResult") continue;
+    const chars = m.content.reduce((n, b) => n + (b.type === "text" ? b.text.length : 0), 0);
+    const hasImage = m.content.some((b) => b.type === "image");
+    if (chars >= minChars || hasImage) {
+      out[i] = { ...m, content: [{ type: "text", text: `[tool output pruned: ${chars} chars${hasImage ? ", image" : ""}; it is no longer in context, so run the tool again if you need it]` }] } satisfies ToolResultMessage;
     }
-    recent += estimateTokens(m);
   }
   return out;
 }
 
 /**
- * Keep the newest `keep` images in the request and stub the rest, so a long
- * conversation doesn't resend every screenshot. Pure; the log keeps them all.
+ * Keep the newest images in the request and stub the rest, so a long conversation doesn't
+ * resend every screenshot. Images are dropped a batch at a time (half of `keep`), so between
+ * `keep` and `keep + batch - 1` stay. Pure; the log keeps them all.
  */
-export function pruneImages(messages: readonly Message[], keep = 8): Message[] {
-  let seen = 0;
+export function pruneImages(messages: readonly Message[], keep = 8, batch = Math.max(1, Math.floor(keep / 2))): Message[] {
+  const hasImages = (m: Message) => m.role !== "assistant" && typeof m.content !== "string" && m.content.some((b) => b.type === "image");
+  let total = 0;
+  for (const m of messages) if (hasImages(m)) total += (m.content as Block[]).filter((b) => b.type === "image").length;
+  let drop = Math.max(0, Math.floor((total - keep) / batch) * batch);
   const out = messages.slice();
-  for (let i = out.length - 1; i >= 0; i--) {
+  for (let i = 0; i < out.length && drop > 0; i++) {
     const m = out[i];
-    if (m.role === "assistant" || typeof m.content === "string") continue;
-    if (!m.content.some((b) => b.type === "image")) continue;
+    if (!hasImages(m) || m.role === "assistant" || typeof m.content === "string") continue;
     const content = m.content.map((b) => {
-      if (b.type !== "image") return b;
-      return ++seen > keep ? { type: "text" as const, text: "[earlier image omitted]" } : b;
+      if (b.type !== "image" || drop <= 0) return b;
+      drop--;
+      return { type: "text" as const, text: "[earlier image omitted]" };
     });
     out[i] = { ...m, content } as Message;
   }
@@ -210,6 +229,12 @@ export interface CompactionResult {
   history: Message[];
 }
 
+/**
+ * Summarize from a rendered transcript, with tool output clipped. Asking for the summary at the
+ * end of the live conversation instead (to read the history from the provider's cache) was tried
+ * and dropped: on a tool-heavy session the clipped transcript was ~14x smaller than the history,
+ * so it is no dearer even against a warm cache, and its summaries kept details the live one lost.
+ */
 export async function summarize(head: readonly Message[], o: CompactorOptions): Promise<string> {
   const prompt = `Summarize this conversation:\n\n<conversation>\n${renderTranscript(head)}\n</conversation>`;
   const stream = o.streamFn(o.model, { systemPrompt: SUMMARY_SYSTEM, messages: [{ role: "user", content: prompt, timestamp: Date.now() }] }, {

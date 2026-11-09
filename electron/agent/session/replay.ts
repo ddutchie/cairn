@@ -94,7 +94,7 @@ export function replayFromRecords(
   for (const { event } of records) {
     switch (event.type) {
       case "turn/start": bubble = undefined; break;
-      case "user/message": messages.push({ id: `u${++n}`, role: "user", content: event.content }); bubble = undefined; break;
+      case "user/message": if (event.synthetic) { bubble = undefined; break; } messages.push({ id: `u${++n}`, role: "user", content: event.content }); bubble = undefined; break;
       case "assistant/message": {
         const b = open();
         for (const part of event.message.content) {
