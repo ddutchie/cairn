@@ -19,7 +19,7 @@ import { runTurn, type Profile, type StreamFn } from "./loop";
 import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream } from "./provider";
 import { createModelReviewer, createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
-import { resolveTools, type ToolsInput } from "./toolbox";
+import type { ToolsInput } from "./toolbox";
 import { createAdapter, failedTurnEnd } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
 import { deriveTitle, foldGoal, foldSchedules, foldState, foldToolGroups } from "./session/history";
@@ -285,10 +285,7 @@ export class AgentHost {
         transformContext: requestView,
         compaction: {
           threshold,
-          compact: (history, trigger) => compactHistory(history, trigger, {
-            model, streamFn: streamFn as StreamFn, signal: controller.signal,
-            live: { systemPrompt: req.systemPrompt, tools: resolveTools(req.tools), view: requestView, streamOptions: { sessionId: req.sessionId, ...streamOptions } },
-          }),
+          compact: (history, trigger) => compactHistory(history, trigger, { model, streamFn: streamFn as StreamFn, signal: controller.signal }),
         },
       });
       for await (const event of events) {
@@ -318,14 +315,7 @@ export class AgentHost {
     session.running = true;
     try {
       const { model, streamFn } = (this.deps.routeStream ?? createRouteStream)(route);
-      // With the last request to copy, the summary is asked for on the conversation's cached prefix.
-      const last = session.lastReq;
-      const sameModel = last && last.route.model === route.model && last.route.baseUrl === route.baseUrl && last.route.api === route.api;
-      const reasoning = sameModel ? reasoningOption(model, last.reasoningEffort) : undefined;
-      const result = await compactHistory(session.history, "manual", {
-        model, streamFn: streamFn as StreamFn, keepRecentTokens: MANUAL_KEEP_RECENT_TOKENS,
-        ...(sameModel ? { live: { systemPrompt: last.systemPrompt, tools: resolveTools(last.tools), view: requestView, streamOptions: { sessionId, ...(reasoning ? { reasoning } : {}), ...(last.temperature !== undefined ? { temperature: last.temperature } : {}) } } } : {}),
-      });
+      const result = await compactHistory(session.history, "manual", { model, streamFn: streamFn as StreamFn, keepRecentTokens: MANUAL_KEEP_RECENT_TOKENS });
       if (!result) return false;
       session.history.splice(0, session.history.length, ...result.history);
       await this.record(session, result.event);

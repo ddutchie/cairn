@@ -4,7 +4,7 @@
  * last `keepCount` messages with a summary, and old bulky tool output is
  * pruned at request time. Nothing here mutates or deletes logged data.
  */
-import type { Api, AssistantMessage, Message, Model, SimpleStreamOptions, Tool, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Message, Model, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { COMPACTION_THRESHOLD_RATIO } from "../../shared/models/model-catalog";
 import type { AgentEvent, UserImage } from "./events";
 import { repairInterrupted } from "./repair";
@@ -135,7 +135,7 @@ export function pruneToolResults(messages: readonly Message[], opts: PruneOption
     const chars = m.content.reduce((n, b) => n + (b.type === "text" ? b.text.length : 0), 0);
     const hasImage = m.content.some((b) => b.type === "image");
     if (chars >= minChars || hasImage) {
-      out[i] = { ...m, content: [{ type: "text", text: `[tool output pruned: ${chars} chars${hasImage ? ", image" : ""}]` }] } satisfies ToolResultMessage;
+      out[i] = { ...m, content: [{ type: "text", text: `[tool output pruned: ${chars} chars${hasImage ? ", image" : ""}; it is no longer in context, so run the tool again if you need it]` }] } satisfies ToolResultMessage;
     }
   }
   return out;
@@ -188,21 +188,14 @@ export function planCompaction(messages: readonly Message[], keepRecentTokens: n
   return { head: messages.slice(0, cut), keepCount: messages.length - cut };
 }
 
-const SUMMARY_FORMAT = `Write a dense, factual summary in markdown with these sections (omit empty ones):
+const SUMMARY_SYSTEM = `You compress a conversation between a user and an AI assistant so the assistant can continue it later.
+Write a dense, factual summary in markdown with these sections (omit empty ones):
 ## Goal — what the user is trying to achieve
 ## Decisions & constraints — choices made, preferences, rules to keep following
 ## Progress — what has been done, including files, notes and tasks touched (with ids/paths)
 ## Open items — unfinished work and the immediate next step
 ## Key facts — names, ids, values the assistant will need again
 If the conversation begins with an earlier summary, merge it into your result instead of repeating it. Never invent details. Do not address the user.`;
-
-const SUMMARY_SYSTEM = `You compress a conversation between a user and an AI assistant so the assistant can continue it later.\n${SUMMARY_FORMAT}`;
-
-/** The same request, asked at the end of the live conversation (see `CompactorOptions.live`). */
-const SUMMARY_REQUEST = `<compaction_request>
-Pause the task here. This conversation is about to be compressed so you can continue it later with less context: reply with a summary of everything above and nothing else. Do not call any tools and do not continue the work.
-${SUMMARY_FORMAT}
-</compaction_request>`;
 
 const RESULT_CLIP = 1_500;
 
@@ -229,19 +222,6 @@ export interface CompactorOptions {
   /** Tokens of recent conversation kept verbatim. Default: a quarter of the message budget, max 20k. */
   keepRecentTokens?: number;
   maxSummaryTokens?: number;
-  /**
-   * The conversation's own request shape. With it the summary is asked for at the end of the
-   * conversation exactly as the last step sent it, so the provider reads the whole history from
-   * its cache instead of being sent a re-rendered transcript at full price. Not used after an
-   * overflow (that request is the one that didn't fit), and any failure falls back to the transcript.
-   */
-  live?: {
-    systemPrompt?: string;
-    tools: readonly Tool[];
-    /** The same view of the history the loop sends (`transformContext`). */
-    view?: (messages: Message[]) => Message[];
-    streamOptions?: Omit<SimpleStreamOptions, "signal" | "maxTokens">;
-  };
 }
 
 export interface CompactionResult {
@@ -249,49 +229,24 @@ export interface CompactionResult {
   history: Message[];
 }
 
-const summaryTokens = (o: CompactorOptions): number => o.maxSummaryTokens ?? Math.min(4_096, o.model.maxTokens || 4_096);
-const textOf = (m: AssistantMessage): string => m.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-
+/**
+ * Summarize from a rendered transcript, with tool output clipped. Asking for the summary at the
+ * end of the live conversation instead (to read the history from the provider's cache) was tried
+ * and dropped: on a tool-heavy session the clipped transcript was ~14x smaller than the history,
+ * so it is no dearer even against a warm cache, and its summaries kept details the live one lost.
+ */
 export async function summarize(head: readonly Message[], o: CompactorOptions): Promise<string> {
   const prompt = `Summarize this conversation:\n\n<conversation>\n${renderTranscript(head)}\n</conversation>`;
   const stream = o.streamFn(o.model, { systemPrompt: SUMMARY_SYSTEM, messages: [{ role: "user", content: prompt, timestamp: Date.now() }] }, {
-    signal: o.signal, maxTokens: summaryTokens(o),
+    signal: o.signal, maxTokens: o.maxSummaryTokens ?? Math.min(4_096, o.model.maxTokens || 4_096),
   });
   for await (const ev of stream) void ev;
   const result: AssistantMessage = await stream.result();
   if (result.stopReason === "aborted") throw new Error("compaction aborted");
   if (result.stopReason === "error") throw new Error(result.errorMessage ?? "compaction request failed");
-  const text = textOf(result);
+  const text = result.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
   if (!text) throw new Error("compaction produced an empty summary");
   return text;
-}
-
-/**
- * Ask for the summary as the next message of the live conversation. Returns undefined when the
- * model didn't produce one (an error, a tool call, a cut-off or empty reply), so the caller can
- * fall back; only an abort throws.
- */
-export async function summarizeLive(history: readonly Message[], o: CompactorOptions): Promise<string | undefined> {
-  const live = o.live;
-  if (!live) return undefined;
-  const messages = [...history];
-  const context = {
-    systemPrompt: live.systemPrompt,
-    messages: [...(live.view ? live.view(messages) : messages), { role: "user" as const, content: SUMMARY_REQUEST, timestamp: Date.now() }],
-    tools: live.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
-  };
-  let result: AssistantMessage;
-  try {
-    const stream = o.streamFn(o.model, context, { ...live.streamOptions, signal: o.signal, maxTokens: summaryTokens(o) });
-    for await (const ev of stream) void ev;
-    result = await stream.result();
-  } catch {
-    if (o.signal?.aborted) throw new Error("compaction aborted");
-    return undefined;
-  }
-  if (result.stopReason === "aborted") throw new Error("compaction aborted");
-  if (result.stopReason !== "stop" || result.content.some((b) => b.type === "toolCall")) return undefined;
-  return textOf(result) || undefined;
 }
 
 /** Compact a history. Returns undefined when there is nothing worth folding. */
@@ -300,8 +255,7 @@ export async function compactHistory(history: readonly Message[], trigger: Compa
   const keepRecent = o.keepRecentTokens ?? Math.min(20_000, Math.floor(budget / 4));
   const plan = planCompaction(history, keepRecent);
   if (!plan) return undefined;
-  // The live request covers the kept tail too, which the summary may then repeat; that is harmless.
-  const summary = (trigger !== "overflow" ? await summarizeLive(history, o) : undefined) ?? await summarize(plan.head, o);
+  const summary = await summarize(plan.head, o);
   const event: CompactionEvent = { type: "compaction", summary, keepCount: plan.keepCount, tokensBefore: estimateAll(history), trigger };
   return { event, history: applyCompaction(history, event) };
 }

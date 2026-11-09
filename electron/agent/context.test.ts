@@ -179,35 +179,3 @@ describe("prompt context", () => {
     expect(turnContext(applyCompaction([user(withContext("go", plan)), fauxAssistantMessage("ok")], { summary: "S", keepCount: 1 }), { standingContext: [plan] })).toBe(plan);
   });
 });
-
-describe("compaction on the cached prefix", () => {
-  const history = (): Message[] => [user("x".repeat(4000)), fauxAssistantMessage("y".repeat(4000)), user("recent"), fauxAssistantMessage("ok")];
-  const tools = [{ name: "t", description: "d", parameters: { type: "object", properties: {} } }] as never;
-
-  it("asks for the summary at the end of the conversation as it was last sent", async () => {
-    const h = makeHarness();
-    const seen: Array<{ system?: string; count: number; tools: number; last: string }> = [];
-    h.faux.setResponses([(ctx) => {
-      const c = ctx as unknown as { systemPrompt?: string; messages: Message[]; tools?: unknown[] };
-      const msgs = c.messages.filter((m) => m.role !== "system");
-      seen.push({ system: c.systemPrompt, count: msgs.length, tools: c.tools?.length ?? 0, last: text(msgs[msgs.length - 1]) });
-      return fauxAssistantMessage("## Goal\nlive");
-    }]);
-    const out = (await compactHistory(history(), "threshold", { model: h.faux.getModel(), streamFn: h.opts().streamFn, keepRecentTokens: 10, live: { systemPrompt: "SYS", tools } }))!;
-    expect(out.event.summary).toBe("## Goal\nlive");
-    expect(seen).toHaveLength(1);
-    expect(seen[0].count).toBe(5);
-    expect(seen[0].last).toContain("compaction_request");
-  });
-
-  it("falls back to the transcript when the model calls a tool instead, and after an overflow", async () => {
-    const h = makeHarness();
-    h.faux.setResponses([fauxAssistantMessage([fauxToolCall("t", {}, { id: "c9" })], { stopReason: "toolUse" }), fauxAssistantMessage("from transcript")]);
-    const opts = { model: h.faux.getModel(), streamFn: h.opts().streamFn, keepRecentTokens: 10, live: { systemPrompt: "SYS", tools } };
-    expect((await compactHistory(history(), "threshold", opts))!.event.summary).toBe("from transcript");
-    let requests = 0;
-    h.faux.setResponses([(ctx) => { requests++; expect((ctx as unknown as { messages: Message[] }).messages.filter((m) => m.role !== "system")).toHaveLength(1); return fauxAssistantMessage("overflow summary"); }]);
-    expect((await compactHistory(history(), "overflow", opts))!.event.summary).toBe("overflow summary");
-    expect(requests).toBe(1);
-  });
-});
