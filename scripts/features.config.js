@@ -210,20 +210,6 @@ const FEATURES = [
     ],
   },
   {
-    id: "v3.2.0-settings",
-    version: "v3.2.0",
-    title: "Settings, reorganised",
-    category: "App",
-    description:
-      "Settings is one list of pages grouped by what you're trying to do, with search, so you no longer have to hunt through tabs inside tabs.",
-    highlights: [
-      "Search: Type in the box above the list to jump straight to a setting, such as temperature or Ollama.",
-      "One place for providers: Add community or local providers on the new Models page; Chat and the coding agent each choose theirs.",
-      "Clearer names: \"Connect other agents\" lets Claude Desktop or OpenCode use Cairn; Tools is for servers Cairn uses.",
-      "Simpler number settings: Presets, Auto and a custom value now sit in one control.",
-    ],
-  },
-  {
     id: "v3.2.0-engine",
     version: "v3.2.0",
     title: "A new agent engine",
@@ -235,6 +221,20 @@ const FEATURES = [
       "Auto permissions: A model reviews risky actions in coding sessions, and anything unclear still asks you.",
       "Memory of past work: The AI can search your earlier chats and coding sessions in this workspace.",
       "Smaller install: Dropping the old runtime removes about 230 packages.",
+    ],
+  },
+  {
+    id: "v3.2.0-look",
+    version: "v3.2.0",
+    title: "A calmer, more consistent Cairn",
+    category: "App",
+    description:
+      "The sidebar, Settings and every menu and button now follow one design, so things are easier to find and behave the same everywhere.",
+    highlights: [
+      "Tidier sidebar: One Calendar entry with a This project / All projects switch; Knowledge Graph, Insights and Automations move up to ⌘7–⌘9 (Ctrl+7–Ctrl+9 on Windows and Linux).",
+      "Searchable Settings: One list of pages with a search box; providers live on the new Models page.",
+      "Plain words: Insights labels every chart, and automations read like \"Weekdays at 08:00\".",
+      "Mobile Access retired: The phone-browser companion is gone; use Settings → Device sync with the Cairn mobile app.",
     ],
   },
 ];

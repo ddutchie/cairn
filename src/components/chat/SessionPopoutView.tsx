@@ -369,16 +369,29 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     const result = profile === "chat" ? await window.electron?.chat.sessionMessages(threadId) : await window.electron?.session.getSessionMessages(sessionId);
     return normalizeSessionMessages(result);
   }, [profile, sessionId, threadId]);
+  // Approvals still waiting on the user. Kept apart from `messages` because an
+  // ask can arrive (live or from isRunning) before history loads, and loading
+  // history replaces the list; each load re-applies whatever is still pending.
+  const pendingApprovalsRef = useRef(new Map<string, Record<string, unknown>>());
+  const trackApproval = useCallback((data: Record<string, unknown>) => {
+    if (typeof data.callId !== "string") return;
+    if (data.status === "required") pendingApprovalsRef.current.set(data.callId, data);
+    else pendingApprovalsRef.current.delete(data.callId);
+    setMessages((current) => applyApprovalProjection(current, data));
+  }, []);
   const handleHistoryLoaded = useCallback((next: ConversationMessage[]) => {
-    setMessages(next);
+    let merged = next;
+    for (const data of pendingApprovalsRef.current.values()) merged = applyApprovalProjection(merged, data);
+    setMessages(merged);
   }, []);
   const sessionConversation = useSessionConversation({
     sessionId,
     acceptUnscopedEvents: profile === "chat",
     adapter: {
-      onTurnEnd: () => { void loadHistory().then(handleHistoryLoaded); },
+      // A finished turn has no open asks (the engine clears them on turn/end).
+      onTurnEnd: () => { pendingApprovalsRef.current.clear(); void loadHistory().then(handleHistoryLoaded); },
       onProjection: (projection) => {
-        if (projection.kind === "approval") setMessages((current) => applyApprovalProjection(current, projection.data as Record<string, unknown>));
+        if (projection.kind === "approval") trackApproval(projection.data as Record<string, unknown>);
       },
     },
   });
@@ -400,8 +413,8 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
       const pending = state.pendingQuestions?.[0];
       if (pending) sessionConversation.setQuestions(pending.questions, pending.callId);
       for (const ask of state.pendingAsks) {
-        sessionConversation.setToolApproval(ask.callId, true, ask.nonce);
-        setMessages((current) => applyApprovalProjection(current, { callId: ask.callId, status: "required", nonce: ask.nonce }));
+        sessionConversation.setToolApproval(ask.callId, true, ask.nonce, ask.reason);
+        trackApproval({ callId: ask.callId, status: "required", nonce: ask.nonce, reason: ask.reason });
       }
     }).catch(() => undefined);
     return () => { cancelled = true; };

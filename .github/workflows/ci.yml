@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       run_electron_e2e:
-        description: "Run the Electron E2E suite (CAIRN_LIVE=1). Requires CAIRN_DUMMY_KEY secret."
+        description: "Run the Electron E2E suite (CAIRN_LIVE=1). Requires a reachable model endpoint."
         required: false
         default: "false"
         type: choice
@@ -311,7 +311,7 @@ jobs:
   # Boots the real desktop app against an isolated throwaway profile and
   # exercises chat / coding-agent / heartbeat end-to-end through IPC and the
   # renderer. Gated behind workflow_dispatch (not run on every PR) because
-  # each turn needs a reachable model endpoint (CAIRN_DUMMY_KEY secret) and
+  # each turn needs a reachable model endpoint (CAIRN_DUMMY_KEY is a placeholder key) and
   # takes minutes, not seconds. See tests/e2e/electron/agent-qa.test.ts and
   # playwright.electron.config.ts.
   e2e-electron:
@@ -360,7 +360,7 @@ jobs:
       - name: Run Electron E2E suite
         env:
           CAIRN_LIVE: "1"
-          CAIRN_DUMMY_KEY: ${{ secrets.CORDIS_DUMMY_KEY || 'local' }}
+          CAIRN_DUMMY_KEY: "local"
         run: xvfb-run -a npm run test:e2e:electron
 
       - name: Upload Playwright report
