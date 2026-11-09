@@ -157,6 +157,19 @@ export function getSandboxMode(): "workspace-write" | "off" {
   }
 }
 
+/**
+ * Experimental: coding sessions load the long tail of tools on demand (see `agent/toolbox.ts`).
+ * On with `agentConfig.stagedTools` or `CAIRN_STAGED_TOOLS=1`; read per prompt.
+ */
+export function isStagedToolsEnabled(): boolean {
+  if (process.env.CAIRN_STAGED_TOOLS === "1") return true;
+  try {
+    return getCachedConfigImpl().agentConfig?.stagedTools === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether the opt-in engine schedule overlay is enabled (persisted agent setting). */
 export function isScheduleEnabled(): boolean {
   try {

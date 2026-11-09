@@ -9,7 +9,8 @@ export interface TodoItem {
   activeForm?: string;
 }
 
-export function todoTool(onChange?: (todos: TodoItem[]) => void): AgentTool {
+/** `sessionId` is the session that called the tool: a subagent runs its parent's tool object. */
+export function todoTool(onChange?: (todos: TodoItem[], sessionId: string) => void): AgentTool {
   return defineTool({
     name: "todo_write",
     description: "Maintain a short checklist for multi-step work. Send the full list each time; keep exactly one item in_progress.",
@@ -22,8 +23,8 @@ export function todoTool(onChange?: (todos: TodoItem[]) => void): AgentTool {
     }),
     // Session-local bookkeeping with no side effects outside the conversation.
     risk: () => ({ class: "READ" }),
-    async execute(a) {
-      onChange?.(a.todos);
+    async execute(a, ctx) {
+      onChange?.(a.todos, ctx.sessionId);
       const done = a.todos.filter((t) => t.status === "completed").length;
       return ok(`Todo list updated (${done}/${a.todos.length} done)`);
     },

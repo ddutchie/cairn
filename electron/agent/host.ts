@@ -19,10 +19,10 @@ import { runTurn, type Profile, type StreamFn } from "./loop";
 import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream } from "./provider";
 import { createModelReviewer, createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
-import type { AgentTool } from "./tools";
+import { resolveTools, type ToolsInput } from "./toolbox";
 import { createAdapter, failedTurnEnd } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
-import { deriveTitle, foldGoal, foldSchedules, foldState } from "./session/history";
+import { deriveTitle, foldGoal, foldSchedules, foldState, foldToolGroups } from "./session/history";
 import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
 import { replayFromRecords } from "./session/replay";
 import type { SessionRecord } from "./session/format";
@@ -59,12 +59,20 @@ export interface HostDeps {
 export interface PromptRequest {
   sessionId: string;
   prompt: string;
+  /** Text only the model sees, sent with this prompt (see `TurnOptions.context`). */
+  context?: string;
+  /**
+   * Context the model should always be able to see (an approved plan). Each entry is sent with
+   * the prompt only while the model's view of the conversation doesn't already hold it: once at
+   * first, and again after a compaction folds it away.
+   */
+  standingContext?: readonly string[];
   images?: readonly UserImage[];
   cwd: string;
   profile: Profile;
   route: ModelRoute;
   systemPrompt: string;
-  tools: readonly AgentTool[];
+  tools: ToolsInput;
   reasoningEffort?: string;
   temperature?: number;
   maxSteps?: number;
@@ -91,6 +99,17 @@ const GOAL_CONTINUE = (objective: string) =>
 const REMINDER_RETRY_MS = 1_000;
 
 export interface ChildInfo { id: string; label: string; running: boolean }
+
+/** The history as each request sends it: old bulky tool output and images stubbed. */
+const requestView = (messages: Message[]): Message[] => pruneImages(pruneToolResults(messages));
+
+/** This turn's context: standing entries the model can't currently see, then the per-turn text. */
+export function turnContext(history: readonly Message[], req: Pick<PromptRequest, "context" | "standingContext">): string | undefined {
+  const visible = (text: string) => history.some((m) => m.role === "user"
+    && (typeof m.content === "string" ? m.content.includes(text) : m.content.some((b) => b.type === "text" && b.text.includes(text))));
+  const parts = [...(req.standingContext ?? []).filter((text) => text && !visible(text)), req.context ?? ""].filter(Boolean);
+  return parts.join("\n\n") || undefined;
+}
 
 interface Session {
   id: string;
@@ -237,6 +256,7 @@ export class AgentHost {
       const { model, streamFn } = (this.deps.routeStream ?? createRouteStream)(req.route);
       const reasoning = reasoningOption(model, req.reasoningEffort);
       const threshold = compactionThreshold(model.contextWindow, model.maxTokens);
+      const streamOptions = { ...(reasoning ? { reasoning } : {}), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}) };
       const events = runTurn({
         sessionId: req.sessionId,
         model,
@@ -244,6 +264,7 @@ export class AgentHost {
         systemPrompt: req.systemPrompt,
         history: session.history,
         input: req.prompt,
+        context: turnContext(session.history, req),
         images: req.images,
         tools: req.tools,
         hooks: req.hooks,
@@ -260,11 +281,14 @@ export class AgentHost {
           : undefined),
         reviewerState: session.reviewerState,
         doomAcked: session.doomAcked,
-        streamOptions: { ...(reasoning ? { reasoning } : {}), ...(req.temperature !== undefined ? { temperature: req.temperature } : {}) },
-        transformContext: (m) => pruneImages(pruneToolResults(m)),
+        streamOptions,
+        transformContext: requestView,
         compaction: {
           threshold,
-          compact: (history, trigger) => compactHistory(history, trigger, { model, streamFn: streamFn as StreamFn, signal: controller.signal }),
+          compact: (history, trigger) => compactHistory(history, trigger, {
+            model, streamFn: streamFn as StreamFn, signal: controller.signal,
+            live: { systemPrompt: req.systemPrompt, tools: resolveTools(req.tools), view: requestView, streamOptions: { sessionId: req.sessionId, ...streamOptions } },
+          }),
         },
       });
       for await (const event of events) {
@@ -294,7 +318,14 @@ export class AgentHost {
     session.running = true;
     try {
       const { model, streamFn } = (this.deps.routeStream ?? createRouteStream)(route);
-      const result = await compactHistory(session.history, "manual", { model, streamFn: streamFn as StreamFn, keepRecentTokens: MANUAL_KEEP_RECENT_TOKENS });
+      // With the last request to copy, the summary is asked for on the conversation's cached prefix.
+      const last = session.lastReq;
+      const sameModel = last && last.route.model === route.model && last.route.baseUrl === route.baseUrl && last.route.api === route.api;
+      const reasoning = sameModel ? reasoningOption(model, last.reasoningEffort) : undefined;
+      const result = await compactHistory(session.history, "manual", {
+        model, streamFn: streamFn as StreamFn, keepRecentTokens: MANUAL_KEEP_RECENT_TOKENS,
+        ...(sameModel ? { live: { systemPrompt: last.systemPrompt, tools: resolveTools(last.tools), view: requestView, streamOptions: { sessionId, ...(reasoning ? { reasoning } : {}), ...(last.temperature !== undefined ? { temperature: last.temperature } : {}) } } } : {}),
+      });
       if (!result) return false;
       session.history.splice(0, session.history.length, ...result.history);
       await this.record(session, result.event);
@@ -374,6 +405,18 @@ export class AgentHost {
   async clearGoal(sessionId: string): Promise<void> {
     const session = await this.open(sessionId, "");
     if (foldGoal(session.records)) await this.record(session, { type: "goal/changed", operation: "clear", goal: null });
+  }
+
+  /** Tool groups the session has turned on, in order. Reads the log when the session isn't open. */
+  async toolGroups(sessionId: string): Promise<string[]> {
+    const live = this.sessions.get(sessionId);
+    return foldToolGroups(live?.records ?? (await readSession(this.deps.root, sessionId).catch(() => undefined))?.records ?? []);
+  }
+
+  /** Log that a group was turned on, so the session sends the same tool list when it is reopened. */
+  async enableToolGroup(sessionId: string, group: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session && !foldToolGroups(session.records).includes(group)) await this.record(session, { type: "tools/enabled", group });
   }
 
   async readSchedules(sessionId: string): Promise<ScheduleEntry[]> {

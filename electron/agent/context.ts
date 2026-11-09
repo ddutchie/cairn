@@ -4,7 +4,7 @@
  * last `keepCount` messages with a summary, and old bulky tool output is
  * pruned at request time. Nothing here mutates or deletes logged data.
  */
-import type { Api, AssistantMessage, Message, Model, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Message, Model, SimpleStreamOptions, Tool, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { COMPACTION_THRESHOLD_RATIO } from "../../shared/models/model-catalog";
 import type { AgentEvent, UserImage } from "./events";
 import { repairInterrupted } from "./repair";
@@ -57,6 +57,9 @@ export function userContent(text: string, images?: readonly UserImage[]): UserMe
   return [{ type: "text", text }, ...images.map((i) => ({ type: "image" as const, data: i.data, mimeType: i.mediaType }))];
 }
 
+/** The prompt as the model sees it: what the user typed, then any model-only context. */
+export const withContext = (text: string, context?: string): string => (context ? `${text}\n\n${context}` : text);
+
 // ── derived view ─────────────────────────────────────────────────────────
 
 export function summaryMessage(summary: string, timestamp: number): Message {
@@ -82,7 +85,7 @@ export function buildContextView(records: ReadonlyArray<{ event: AgentEvent; tim
   for (const { event, time } of records) {
     switch (event.type) {
       case "turn/start": messages = repairInterrupted(messages, time); break;
-      case "user/message": if (event.blocked) break; messages.push({ role: "user", content: userContent(event.content, event.images), timestamp: time }); break;
+      case "user/message": if (event.blocked) break; messages.push({ role: "user", content: userContent(withContext(event.content, event.context), event.images), timestamp: time }); break;
       case "assistant/message": messages.push(event.message); break;
       case "tool/result":
         // Logs imported before the importer dropped repeats still hold them; providers reject a result with no call to answer.
@@ -98,10 +101,17 @@ export function buildContextView(records: ReadonlyArray<{ event: AgentEvent; tim
 }
 
 // ── request-time pruning ─────────────────────────────────────────────────
+//
+// Providers cache a request by its prefix, so a view that rewrites an old message costs a
+// re-write of everything after it. Both pruners therefore measure from the START of the
+// history (positions there never move while it only grows) and advance their cut in large
+// steps: between steps the pruned prefix is byte-identical from one request to the next.
 
 export interface PruneOptions {
-  /** Newest tokens left untouched. */
+  /** Newest tokens always left untouched. */
   protectTokens?: number;
+  /** How far the cut moves each time it moves. Default: half of `protectTokens`. */
+  stepTokens?: number;
   /** Only outputs at least this long are worth replacing. */
   minChars?: number;
 }
@@ -109,37 +119,46 @@ export interface PruneOptions {
 /** Replace old, bulky tool output with a stub. Pure; returns the same objects when nothing changes. */
 export function pruneToolResults(messages: readonly Message[], opts: PruneOptions = {}): Message[] {
   const protect = opts.protectTokens ?? 40_000;
+  const step = Math.max(1, opts.stepTokens ?? Math.floor(protect / 2));
   const minChars = opts.minChars ?? 2_000;
-  let recent = 0;
   const out = messages.slice();
-  for (let i = out.length - 1; i >= 0; i--) {
+  const sizes = messages.map(estimateTokens);
+  const total = sizes.reduce((n, t) => n + t, 0);
+  // Everything that ends at or before `cut` tokens from the start is old enough to stub.
+  const cut = Math.floor((total - protect) / step) * step;
+  let end = 0;
+  for (let i = 0; i < out.length; i++) {
+    end += sizes[i];
+    if (end > cut) break;
     const m = out[i];
-    if (recent >= protect && m.role === "toolResult") {
-      const chars = m.content.reduce((n, b) => n + (b.type === "text" ? b.text.length : 0), 0);
-      const hasImage = m.content.some((b) => b.type === "image");
-      if (chars >= minChars || hasImage) {
-        out[i] = { ...m, content: [{ type: "text", text: `[tool output pruned: ${chars} chars${hasImage ? ", image" : ""}]` }] } satisfies ToolResultMessage;
-      }
+    if (m.role !== "toolResult") continue;
+    const chars = m.content.reduce((n, b) => n + (b.type === "text" ? b.text.length : 0), 0);
+    const hasImage = m.content.some((b) => b.type === "image");
+    if (chars >= minChars || hasImage) {
+      out[i] = { ...m, content: [{ type: "text", text: `[tool output pruned: ${chars} chars${hasImage ? ", image" : ""}]` }] } satisfies ToolResultMessage;
     }
-    recent += estimateTokens(m);
   }
   return out;
 }
 
 /**
- * Keep the newest `keep` images in the request and stub the rest, so a long
- * conversation doesn't resend every screenshot. Pure; the log keeps them all.
+ * Keep the newest images in the request and stub the rest, so a long conversation doesn't
+ * resend every screenshot. Images are dropped a batch at a time (half of `keep`), so between
+ * `keep` and `keep + batch - 1` stay. Pure; the log keeps them all.
  */
-export function pruneImages(messages: readonly Message[], keep = 8): Message[] {
-  let seen = 0;
+export function pruneImages(messages: readonly Message[], keep = 8, batch = Math.max(1, Math.floor(keep / 2))): Message[] {
+  const hasImages = (m: Message) => m.role !== "assistant" && typeof m.content !== "string" && m.content.some((b) => b.type === "image");
+  let total = 0;
+  for (const m of messages) if (hasImages(m)) total += (m.content as Block[]).filter((b) => b.type === "image").length;
+  let drop = Math.max(0, Math.floor((total - keep) / batch) * batch);
   const out = messages.slice();
-  for (let i = out.length - 1; i >= 0; i--) {
+  for (let i = 0; i < out.length && drop > 0; i++) {
     const m = out[i];
-    if (m.role === "assistant" || typeof m.content === "string") continue;
-    if (!m.content.some((b) => b.type === "image")) continue;
+    if (!hasImages(m) || m.role === "assistant" || typeof m.content === "string") continue;
     const content = m.content.map((b) => {
-      if (b.type !== "image") return b;
-      return ++seen > keep ? { type: "text" as const, text: "[earlier image omitted]" } : b;
+      if (b.type !== "image" || drop <= 0) return b;
+      drop--;
+      return { type: "text" as const, text: "[earlier image omitted]" };
     });
     out[i] = { ...m, content } as Message;
   }
@@ -169,14 +188,21 @@ export function planCompaction(messages: readonly Message[], keepRecentTokens: n
   return { head: messages.slice(0, cut), keepCount: messages.length - cut };
 }
 
-const SUMMARY_SYSTEM = `You compress a conversation between a user and an AI assistant so the assistant can continue it later.
-Write a dense, factual summary in markdown with these sections (omit empty ones):
+const SUMMARY_FORMAT = `Write a dense, factual summary in markdown with these sections (omit empty ones):
 ## Goal — what the user is trying to achieve
 ## Decisions & constraints — choices made, preferences, rules to keep following
 ## Progress — what has been done, including files, notes and tasks touched (with ids/paths)
 ## Open items — unfinished work and the immediate next step
 ## Key facts — names, ids, values the assistant will need again
 If the conversation begins with an earlier summary, merge it into your result instead of repeating it. Never invent details. Do not address the user.`;
+
+const SUMMARY_SYSTEM = `You compress a conversation between a user and an AI assistant so the assistant can continue it later.\n${SUMMARY_FORMAT}`;
+
+/** The same request, asked at the end of the live conversation (see `CompactorOptions.live`). */
+const SUMMARY_REQUEST = `<compaction_request>
+Pause the task here. This conversation is about to be compressed so you can continue it later with less context: reply with a summary of everything above and nothing else. Do not call any tools and do not continue the work.
+${SUMMARY_FORMAT}
+</compaction_request>`;
 
 const RESULT_CLIP = 1_500;
 
@@ -203,6 +229,19 @@ export interface CompactorOptions {
   /** Tokens of recent conversation kept verbatim. Default: a quarter of the message budget, max 20k. */
   keepRecentTokens?: number;
   maxSummaryTokens?: number;
+  /**
+   * The conversation's own request shape. With it the summary is asked for at the end of the
+   * conversation exactly as the last step sent it, so the provider reads the whole history from
+   * its cache instead of being sent a re-rendered transcript at full price. Not used after an
+   * overflow (that request is the one that didn't fit), and any failure falls back to the transcript.
+   */
+  live?: {
+    systemPrompt?: string;
+    tools: readonly Tool[];
+    /** The same view of the history the loop sends (`transformContext`). */
+    view?: (messages: Message[]) => Message[];
+    streamOptions?: Omit<SimpleStreamOptions, "signal" | "maxTokens">;
+  };
 }
 
 export interface CompactionResult {
@@ -210,18 +249,49 @@ export interface CompactionResult {
   history: Message[];
 }
 
+const summaryTokens = (o: CompactorOptions): number => o.maxSummaryTokens ?? Math.min(4_096, o.model.maxTokens || 4_096);
+const textOf = (m: AssistantMessage): string => m.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+
 export async function summarize(head: readonly Message[], o: CompactorOptions): Promise<string> {
   const prompt = `Summarize this conversation:\n\n<conversation>\n${renderTranscript(head)}\n</conversation>`;
   const stream = o.streamFn(o.model, { systemPrompt: SUMMARY_SYSTEM, messages: [{ role: "user", content: prompt, timestamp: Date.now() }] }, {
-    signal: o.signal, maxTokens: o.maxSummaryTokens ?? Math.min(4_096, o.model.maxTokens || 4_096),
+    signal: o.signal, maxTokens: summaryTokens(o),
   });
   for await (const ev of stream) void ev;
   const result: AssistantMessage = await stream.result();
   if (result.stopReason === "aborted") throw new Error("compaction aborted");
   if (result.stopReason === "error") throw new Error(result.errorMessage ?? "compaction request failed");
-  const text = result.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  const text = textOf(result);
   if (!text) throw new Error("compaction produced an empty summary");
   return text;
+}
+
+/**
+ * Ask for the summary as the next message of the live conversation. Returns undefined when the
+ * model didn't produce one (an error, a tool call, a cut-off or empty reply), so the caller can
+ * fall back; only an abort throws.
+ */
+export async function summarizeLive(history: readonly Message[], o: CompactorOptions): Promise<string | undefined> {
+  const live = o.live;
+  if (!live) return undefined;
+  const messages = [...history];
+  const context = {
+    systemPrompt: live.systemPrompt,
+    messages: [...(live.view ? live.view(messages) : messages), { role: "user" as const, content: SUMMARY_REQUEST, timestamp: Date.now() }],
+    tools: live.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+  };
+  let result: AssistantMessage;
+  try {
+    const stream = o.streamFn(o.model, context, { ...live.streamOptions, signal: o.signal, maxTokens: summaryTokens(o) });
+    for await (const ev of stream) void ev;
+    result = await stream.result();
+  } catch {
+    if (o.signal?.aborted) throw new Error("compaction aborted");
+    return undefined;
+  }
+  if (result.stopReason === "aborted") throw new Error("compaction aborted");
+  if (result.stopReason !== "stop" || result.content.some((b) => b.type === "toolCall")) return undefined;
+  return textOf(result) || undefined;
 }
 
 /** Compact a history. Returns undefined when there is nothing worth folding. */
@@ -230,7 +300,8 @@ export async function compactHistory(history: readonly Message[], trigger: Compa
   const keepRecent = o.keepRecentTokens ?? Math.min(20_000, Math.floor(budget / 4));
   const plan = planCompaction(history, keepRecent);
   if (!plan) return undefined;
-  const summary = await summarize(plan.head, o);
+  // The live request covers the kept tail too, which the summary may then repeat; that is harmless.
+  const summary = (trigger !== "overflow" ? await summarizeLive(history, o) : undefined) ?? await summarize(plan.head, o);
   const event: CompactionEvent = { type: "compaction", summary, keepCount: plan.keepCount, tokensBefore: estimateAll(history), trigger };
   return { event, history: applyCompaction(history, event) };
 }

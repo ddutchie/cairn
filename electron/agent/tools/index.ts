@@ -2,6 +2,8 @@
  * Which tools each surface gets. Mirrors the old per-surface inventory:
  * chat = Cairn data (+ external); coding adds the filesystem/exec stack;
  * automation-dev gets files only.
+ *
+ * The order is part of the contract: built-ins first in a fixed order, connector tools last.
  */
 import type { AgentTool } from "../tools";
 import { bashTool, type BashDeps } from "./bash";
@@ -30,7 +32,7 @@ export interface ToolsetDeps {
   /** Receives MCP server instructions, for the system prompt. */
   onInstructions?: (text: string) => void;
   fs?: FsDeps & BashDeps;
-  onTodos?: (todos: TodoItem[]) => void;
+  onTodos?: (todos: TodoItem[], sessionId: string) => void;
   /** Coding sessions in plan mode: how the model hands over its plan. */
   plan?: PlanDeps;
   /** Offered on coding and chat; children never get it. */
@@ -45,36 +47,58 @@ export interface ToolsetDeps {
   lsp?: LspDeps;
 }
 
-export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
-  const tools: AgentTool[] = [];
-  if (d.cairn) tools.push(...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
-  if (d.external) tools.push(...await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return []; }));
-  if (d.external) {
-    const extras = await externalExtras(d.external).catch((err) => { console.error("[agent] MCP extras unavailable:", err); return undefined; });
-    if (extras) { tools.push(...extras.tools); if (extras.instructions) d.onInstructions?.(extras.instructions); }
-  }
+/** Where a tool belongs when a session loads its tools in stages (see `Toolbox`). */
+export type ToolGroupId = "core" | "code" | "extended" | "external";
+
+export interface ToolPart { group: ToolGroupId; tools: AgentTool[] }
+
+/** One line per group for the `enable_tools` catalog. */
+export const TOOL_GROUP_SUMMARY: Record<Exclude<ToolGroupId, "core" | "external">, string> = {
+  code: "read, search and edit files in the working directory, run shell commands and background jobs",
+  extended: "long-running helpers: persistent terminals, language-server lookups, a standing goal, reminders and scripted workflows",
+};
+
+/** The surface's tools in the order they are sent, each run tagged with its group. */
+export async function buildToolParts(d: ToolsetDeps): Promise<ToolPart[]> {
+  const parts: ToolPart[] = [];
+  const add = (group: ToolGroupId, ...tools: AgentTool[]) => { if (tools.length) parts.push({ group, tools }); };
+  if (d.cairn) add("core", ...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
   if (d.surface !== "chat" && d.fs) {
-    tools.push(...fsTools(d.fs));
+    add("code", ...fsTools(d.fs));
     if (d.surface === "coding") {
-      tools.push(bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
+      add("code", bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
       const skill = skillTool({ cwd: d.fs.cwd });
-      if (skill) tools.push(skill);
+      if (skill) add("code", skill);
     }
   }
-  if (d.sessions && d.surface !== "automation-dev") tools.push(...sessionTools(d.sessions));
-  if (d.subagents && d.surface !== "automation-dev") tools.push(...subagentTools(d.subagents));
-  if (d.subagents && d.surface === "coding") tools.push(...workflowTools(d.subagents));
+  if (d.sessions && d.surface !== "automation-dev") add("core", ...sessionTools(d.sessions));
+  if (d.subagents && d.surface !== "automation-dev") add("core", ...subagentTools(d.subagents));
+  if (d.subagents && d.surface === "coding") add("extended", ...workflowTools(d.subagents));
   if (d.surface === "coding") {
-    if (d.goal) tools.push(...goalTools(d.goal));
-    if (d.schedule) tools.push(...scheduleTools(d.schedule));
-    if (d.jobs) tools.push(...jobTools(d.jobs));
-    if (d.terminals) tools.push(...terminalTools(d.terminals));
+    if (d.goal) add("extended", ...goalTools(d.goal));
+    if (d.schedule) add("extended", ...scheduleTools(d.schedule));
+    // `bash` can start background jobs, so reading and stopping them loads with it.
+    if (d.jobs) add("code", ...jobTools(d.jobs));
+    if (d.terminals) add("extended", ...terminalTools(d.terminals));
     const lsp = d.lsp && lspTool(d.lsp);
-    if (lsp) tools.push(lsp);
+    if (lsp) add("extended", lsp);
   }
-  if (d.plan && d.surface === "coding") tools.push(...planTools(d.plan));
+  if (d.plan && d.surface === "coding") add("core", ...planTools(d.plan));
+  // Connector tools go last, in name order. Providers cache a request by its prefix and the tool
+  // list is at the front of it, so a server that connects late or drops out must not shift the
+  // built-in tools: with these at the end, only the connector tools themselves are re-read.
+  if (d.external) {
+    const external = await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return []; });
+    const extras = await externalExtras(d.external).catch((err) => { console.error("[agent] MCP extras unavailable:", err); return undefined; });
+    if (extras?.instructions) d.onInstructions?.(extras.instructions);
+    add("external", ...(extras?.tools ?? []), ...[...external].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
+  }
+  return parts;
+}
+
+export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
   const seen = new Set<string>();
-  return tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
+  return (await buildToolParts(d)).flatMap((p) => p.tools).filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
 }
 
 export * from "./bash";

@@ -20,14 +20,15 @@ import type { Profile } from "../agent/loop";
 import type { Mode as EngineMode } from "../agent/policy";
 
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
-import { buildToolset } from "../agent/tools/index";
+import { buildToolParts, TOOL_GROUP_SUMMARY } from "../agent/tools/index";
+import { ENABLE_TOOLS, resolveTools, Toolbox, type ToolsInput } from "../agent/toolbox";
 import { JobRegistry } from "../agent/jobs";
 import { createHooks } from "../agent/hooks";
 import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importLegacySession } from "../agent/session/legacy-import";
 import { isLocalEndpoint } from "../lib/llm";
-import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
+import { createHostStore, getSandboxMode, isScheduleEnabled, isStagedToolsEnabled, recordUsage } from "../agent/host-store";
 import { deleteSessionProfile, listSessionIdsForWorkspace } from "../db/workspace-queries";
 import { deleteSessionEmbeddings } from "../db/embeddings-queries";
 import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../agent/session-search";
@@ -57,8 +58,15 @@ export function engineProfile(mode: Mode | undefined, role: "default" | "automat
   };
 }
 
+/** Sent with each plan-mode prompt, not in the system prompt, so approving the plan leaves the cached prefix intact. */
 export const PLAN_MODE_PROMPT = `## Plan mode
 You are in plan mode: everything you can do is read-only (shell commands run in a read-only sandbox, so they can inspect but not change anything). Investigate the code and the project, then write a complete plan in markdown (goal, approach, and a \`## Tasks\` checklist of \`- [ ]\` items). Present it by calling \`exit_plan_mode\` with the full plan, then stop and wait. Do not start the work until the user approves it.`;
+
+export const PLAN_MODE_ENDED = `## Plan mode is off
+You are no longer in plan mode: you can change files and run commands again, subject to the usual approvals.`;
+
+/** Sessions whose last turn ran in plan mode, so the next execute turn can say that it ended. */
+const sessionPlanning = new Set<string>();
 
 // ── permission presets (per session) ─────────────────────────────────────
 
@@ -247,6 +255,8 @@ export interface EnginePromptArgs {
   projectId?: string;
   workspaceId?: string;
   systemPrompt: string;
+  /** Model-only context kept visible across the session (see `PromptRequest.standingContext`). */
+  standingContext?: readonly string[];
   llmConfig: AgentLLMConfig;
   role?: "default" | "automation-dev";
   /** Chat threads run the same engine with the chat toolset and approval policy. */
@@ -328,7 +338,8 @@ interface SpawnContext {
   profile: Profile;
   route: ModelRoute;
   systemPrompt: string;
-  tools: readonly AgentTool[];
+  /** Read when a child starts: the tools its parent has at that moment. */
+  tools: () => readonly AgentTool[];
   reasoningEffort?: string;
   temperature?: number;
   maxSteps?: number;
@@ -353,7 +364,7 @@ function subagentDeps(ctx: DbContext): SubagentDeps {
       if (workspaceId) sessionWorkspace.set(childId, workspaceId);
       const out = await host().prompt({
         sessionId: childId, parentSession: parent, prompt: req.prompt, cwd: sc.cwd, profile: sc.profile, route: sc.route,
-        systemPrompt: `${sc.systemPrompt}${SUBAGENT_PROMPT}`, tools: sc.tools, reasoningEffort: sc.reasoningEffort,
+        systemPrompt: `${sc.systemPrompt}${SUBAGENT_PROMPT}`, tools: sc.tools(), reasoningEffort: sc.reasoningEffort,
         temperature: sc.temperature, maxSteps: sc.maxSteps, signal: req.signal,
       });
       return { childId, ...out };
@@ -384,6 +395,7 @@ export async function listEngineSchedules(ctx: DbContext, sessionId: string) {
 export function forgetEngineSession(sessionId: string): void {
   jobRegistry?.killAll(sessionId);
   terminalRegistry?.closeAll(sessionId);
+  sessionPlanning.delete(sessionId);
   for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
 }
 
@@ -512,7 +524,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const prepared = prepareAttachments(a.prompt, a.attachments);
 
   let mcpInstructions = "";
-  const tools = await buildToolset({
+  const parts = await buildToolParts({
     onInstructions: (text) => { mcpInstructions = text; },
     surface: chat ? "chat" : role === "automation-dev" ? "automation-dev" : "coding",
     // Develop sessions edit scripts only: no Cairn data tools.
@@ -557,9 +569,12 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
       add: (prompt, at, kind) => h.addSchedule(a.sessionId, prompt, at, kind),
       cancel: (id) => h.cancelSchedule(a.sessionId, id),
     },
-    onTodos: (todos) => broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "todos", { todos })),
+    // A subagent keeps its own checklist; only the session's own list is shown.
+    onTodos: (todos, sessionId) => { if (sessionId === a.sessionId) broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "todos", { todos })); },
     subagents: chat && !chat.req.useSubagents ? undefined : subagentDeps(a.ctx),
-    plan: planning ? {
+    // Always registered on a coding session so the tool list is the same in and out of plan mode.
+    plan: !chat && role === "default" ? {
+      active: () => planning,
       onPlan: (sessionId, plan) => {
         try { updateCodingSession(a.ctx.db, sessionId, { planContent: plan }); } catch (err) { console.warn("[agent] failed to persist plan:", err); }
         broadcastEvent("session:projection", makeSessionProjection(sessionId, "plan-note", { planContent: plan }));
@@ -567,14 +582,41 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
     } : undefined,
   });
 
-  if (a.extraTools?.length) tools.push(...a.extraTools);
-  if (a.allowTools) { const keep = tools.filter((t) => a.allowTools!.has(t.name)); tools.length = 0; tools.push(...keep); }
+  // Staged loading (experimental, coding sessions only): the long tail of tools is offered through
+  // `enable_tools` instead of being sent on every request. Runs with a fixed or extended toolset keep it.
+  const staged = isStagedToolsEnabled() && !chat && role === "default" && !a.profile && !a.allowTools && !a.extraTools?.length;
+  const of = (...groups: string[]) => parts.filter((p) => groups.includes(p.group)).flatMap((p) => p.tools);
+  let tools: ToolsInput;
+  if (staged) {
+    tools = new Toolbox({
+      base: of("core", "code"),
+      groups: [{ id: "extended", summary: TOOL_GROUP_SUMMARY.extended, tools: of("extended") }],
+      enabled: await h.toolGroups(a.sessionId),
+      tail: of("external"),
+      onEnable: (group) => h.enableToolGroup(a.sessionId, group),
+    });
+  } else {
+    const seen = new Set<string>();
+    let flat = parts.flatMap((p) => p.tools).filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
+    if (a.extraTools?.length) flat.push(...a.extraTools);
+    if (a.allowTools) flat = flat.filter((t) => a.allowTools!.has(t.name));
+    tools = flat;
+  }
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
-  const systemPrompt = [a.systemPrompt, planning ? PLAN_MODE_PROMPT : "", mcpInstructions].filter(Boolean).join("\n\n");
-  const subagentToolNames = new Set(["subagent", "delegate", "workflow", "ralph", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode"]);
+  const systemPrompt = [a.systemPrompt, mcpInstructions].filter(Boolean).join("\n\n");
+  // Mode changes travel with the prompt. In the system prompt they would re-write the provider's
+  // cache for the whole conversation on every switch.
+  const modeNote = planning ? PLAN_MODE_PROMPT : sessionPlanning.has(a.sessionId) ? PLAN_MODE_ENDED : "";
+  if (planning) sessionPlanning.add(a.sessionId); else sessionPlanning.delete(a.sessionId);
+  const context = modeNote ? `<session_context>\n${modeNote}\n</session_context>` : undefined;
+  const standingContext = a.standingContext?.filter(Boolean).map((text) => `<session_context>\n${text}\n</session_context>`);
+  // Children run the parent's tool objects, so anything bound to the parent's own state is withheld:
+  // delegation (one level deep), the plan hand-over, and the parent's goal and reminders.
+  const subagentToolNames = new Set(["subagent", "delegate", "workflow", "ralph", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode", ENABLE_TOOLS,
+    "get_goal", "create_goal", "update_goal", "schedule_create", "schedule_list", "schedule_cancel"]);
   spawnContexts.set(a.sessionId, {
-    cwd: a.cwd, profile, route, systemPrompt, tools: tools.filter((t) => !subagentToolNames.has(t.name)),
+    cwd: a.cwd, profile, route, systemPrompt, tools: () => resolveTools(tools).filter((t) => !subagentToolNames.has(t.name)),
     reasoningEffort: a.llmConfig.reasoningEffort, temperature: a.llmConfig.temperature, maxSteps: a.llmConfig.maxSteps,
   });
   const onAbort = () => h.abort(a.sessionId);
@@ -584,6 +626,8 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
     await h.prompt({
       sessionId: a.sessionId,
       prompt: prepared.text,
+      context,
+      standingContext,
       images: prepared.images,
       hooks: role === "automation-dev" || a.noHooks ? undefined : createHooks({ sessionId: a.sessionId, cwd: a.cwd }),
       cwd: a.cwd,
