@@ -77,8 +77,6 @@ export interface CachedConfig {
     scheduleEnabled?: boolean;
     // OS sandbox for agent shell commands. Unset = "workspace-write".
     sandbox?: "workspace-write" | "off";
-    // Experimental: load the coding agent's less-used tools on demand. Default OFF; no settings UI yet.
-    stagedTools?: boolean;
   };
   embeddingsConfig?: CachedEmbeddingsConfig;
   theme?: string;
@@ -251,7 +249,6 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.agentConfig?.activeProviderId,
         scheduleEnabled: typeof configRecord.scheduleEnabled === "boolean" ? configRecord.scheduleEnabled : current.agentConfig?.scheduleEnabled,
         sandbox: configRecord.sandbox === "off" || configRecord.sandbox === "workspace-write" ? configRecord.sandbox : current.agentConfig?.sandbox,
-        stagedTools: typeof configRecord.stagedTools === "boolean" ? configRecord.stagedTools : current.agentConfig?.stagedTools,
       };
     } else if (type === "embeddings" && configRecord) {
       current.embeddingsConfig = {

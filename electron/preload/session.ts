@@ -54,6 +54,8 @@ export const sessionApi = {
     createSession:  (input: CodingSessionCreateInput) => invokeContract("db:session:create", input),
     /** Delete a coding session and all its messages from SQLite */
     deleteSession:  (id: string) => invokeContract("db:session:delete", { id }),
+    /** Start engine session `to` as a copy of `from`'s conversation (chat ids are `chat-<threadId>`). */
+    forkSession:    (from: string, to: string, cwd?: string) => invokeContract("session:fork", { from, to, cwd }),
     /** Fetch session transcript from the engine JSONL log (session-as-truth), SQLite fallback */
     getSessionMessages: (sessionId: string) => invokeContract("db:session:messages", { sessionId }),
     /** Fetch the persisted todo list for a session */

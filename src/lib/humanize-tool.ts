@@ -75,7 +75,7 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
     case "pwsh": return typeof args.description === "string" && args.description.trim()
       ? { pre: short(args.description) }
       : { pre: "Ran", obj: short(args.command, "a command") };
-    case "skill": return { pre: "Loaded skill", obj: short(args.name, "a skill") };
+    case "skill": return args.name ? { pre: "Loaded skill", obj: short(args.name, "a skill") } : { pre: "Listed the skills" };
     case "todo_write": return { pre: "Updated the plan", obj: short(args.todos, "the task list") };
     // ── Cairn notes ──
     case "create_note": return { pre: "Created note", obj: short(args.title) };

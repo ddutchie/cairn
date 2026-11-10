@@ -19,13 +19,14 @@ import { runTurn, type Profile, type StreamFn } from "./loop";
 import { createRouteStream, reasoningOption, type ModelRoute, type RoutedStream } from "./provider";
 import { createModelReviewer, createReviewerState, type Reviewer, type ReviewerState } from "./reviewer";
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
-import type { ToolsInput } from "./toolbox";
 import { createAdapter, failedTurnEnd } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
-import { deriveTitle, foldGoal, foldSchedules, foldState, foldToolGroups } from "./session/history";
+import type { AgentTool } from "./tools";
+import { deriveTitle, foldGoal, foldSchedules, foldState } from "./session/history";
 import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
 import { replayFromRecords } from "./session/replay";
 import type { SessionRecord } from "./session/format";
+import { forkSessionLog, type ForkOptions } from "./session/fork";
 import { rm } from "node:fs/promises";
 
 /** `/compact` keeps about one exchange verbatim; automatic compaction keeps more. */
@@ -72,7 +73,7 @@ export interface PromptRequest {
   profile: Profile;
   route: ModelRoute;
   systemPrompt: string;
-  tools: ToolsInput;
+  tools: readonly AgentTool[];
   reasoningEffort?: string;
   temperature?: number;
   maxSteps?: number;
@@ -183,6 +184,16 @@ export class AgentHost {
       this.opening.set(id, pending);
     }
     return pending;
+  }
+
+  /**
+   * Start `to` as a copy of `from`'s conversation. Refused mid-turn, when a copy could end on a
+   * tool call with no result.
+   */
+  async fork(opts: ForkOptions): Promise<number> {
+    if (this.isRunning(opts.from)) throw new Error("The session is still working. Fork it when the turn has finished.");
+    if (this.sessions.has(opts.to) || this.opening.has(opts.to)) throw new Error(`Session ${opts.to} already exists.`);
+    return forkSessionLog(this.deps.root, opts);
   }
 
   isRunning(id: string): boolean { return this.sessions.get(id)?.running === true; }
@@ -395,18 +406,6 @@ export class AgentHost {
   async clearGoal(sessionId: string): Promise<void> {
     const session = await this.open(sessionId, "");
     if (foldGoal(session.records)) await this.record(session, { type: "goal/changed", operation: "clear", goal: null });
-  }
-
-  /** Tool groups the session has turned on, in order. Reads the log when the session isn't open. */
-  async toolGroups(sessionId: string): Promise<string[]> {
-    const live = this.sessions.get(sessionId);
-    return foldToolGroups(live?.records ?? (await readSession(this.deps.root, sessionId).catch(() => undefined))?.records ?? []);
-  }
-
-  /** Log that a group was turned on, so the session sends the same tool list when it is reopened. */
-  async enableToolGroup(sessionId: string, group: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (session && !foldToolGroups(session.records).includes(group)) await this.record(session, { type: "tools/enabled", group });
   }
 
   async readSchedules(sessionId: string): Promise<ScheduleEntry[]> {

@@ -42,6 +42,7 @@ describe("humanizeTool", () => {
 
   it("names the loaded skill", () => {
     expect(humanizedText("skill", { name: "pdf" })).toBe("Loaded skill pdf");
+    expect(humanizedText("skill", {})).toBe("Listed the skills");
   });
 
   it("bounds long display objects", () => {

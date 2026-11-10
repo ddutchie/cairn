@@ -57,8 +57,6 @@ export type AgentEvent =
   | { type: "context/overflow" }
   | { type: "compaction"; summary: string; keepCount: number; tokensBefore: number; trigger: "threshold" | "overflow" | "manual" }
   | { type: "session/title"; title: string }
-  /** A tool group was turned on (see `Toolbox`). The order of these events is the order the groups are sent in. */
-  | { type: "tools/enabled"; group: string }
   | { type: "goal/changed"; operation: "create" | "update" | "round" | "clear"; goal: GoalState | null }
   | { type: "schedule/changed"; operation: "add" | "fire" | "cancel"; schedule: ScheduleEntry }
   | { type: "error"; message: string }

@@ -160,6 +160,12 @@ export interface IpcContract {
   "db:session:list": { args: [req: { projectId: string }]; result: CodingSessionRow[] };
   "db:session:create": { writes: true; args: [input: CodingSessionCreateInput]; result: CodingSessionRow };
   "db:session:delete": { writes: true; args: [req: { id: string }]; result: void };
+  /**
+   * Copy one engine session's conversation into a new one. `from`/`to` are engine session ids
+   * (`chat-<threadId>` for a chat). A coding session cannot be forked into a chat; the caller
+   * creates the thread or session row for `to`.
+   */
+  "session:fork": { args: [req: { from: string; to: string; cwd?: string }]; result: { records: number } };
   "db:session:todos": { args: [req: { sessionId: string }]; result: SessionTodo[] };
   /** Transcript from the session's engine log; rejects on corrupt/unsupported logs, empty when missing. */
   "db:session:messages": {
@@ -852,6 +858,7 @@ const CHANNELS: ChannelRecord = {
   "db:session:list": "read",
   "db:session:create": "write",
   "db:session:delete": "write",
+  "session:fork": "read",
   "db:session:todos": "read",
   "db:session:messages": "read",
   "session:is-running": "read",

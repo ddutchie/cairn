@@ -1,5 +1,6 @@
 export * from "./format";
 export * from "./log";
+export * from "./fork";
 export * from "./history";
 export * from "./adapter";
 export { importLegacyLog, importLegacySession, importLegacyTree, readLegacyLogFile } from "./legacy-import";

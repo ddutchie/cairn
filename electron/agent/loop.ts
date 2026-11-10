@@ -36,7 +36,6 @@ import { repairInterrupted } from "./repair";
 import { createReviewerState, recordVerdict, type Reviewer, type ReviewerState } from "./reviewer";
 import { grantRule, offeredGrants, type GrantKind, type RiskInfo, type RuleStore } from "./rules";
 import type { AgentTool, ToolOutput } from "./tools";
-import { resolveTools, type ToolsInput } from "./toolbox";
 
 export type StreamFn = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 
@@ -65,8 +64,7 @@ export interface TurnOptions {
   context?: string;
   /** Images attached to this prompt. */
   images?: readonly UserImage[];
-  /** A fixed list, or a source the loop reads at the start of every step (see `Toolbox`). */
-  tools: ToolsInput;
+  tools: readonly AgentTool[];
   profile: Profile;
   rules: RuleStore;
   gate: Gate;
@@ -212,9 +210,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
       if (yield* tryCompact("threshold")) lastContextTokens = 0;
     }
 
-    // Read once per step: a tool group enabled during the last step is offered from this one,
-    // and the calls this step makes are checked against exactly what it was sent.
-    const tools = resolveTools(o.tools);
+    const tools = o.tools;
     let final: AssistantMessage;
     try {
       final = yield* streamAssistant(o, tools);

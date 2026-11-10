@@ -46,6 +46,8 @@ export interface ConversationPaneProps {
   emptyState?: React.ReactNode;
   transcriptRef?: React.RefObject<VirtuosoHandle | null>;
   transcriptFooter?: React.ComponentType<{ context: unknown }>;
+  /** Added to the action row of the last message once a turn has finished with a reply (e.g. Fork). Never on an empty or working session. */
+  lastReplyActions?: React.ReactNode;
   composerRef?: React.Ref<HTMLTextAreaElement>;
   composerBefore?: React.ReactNode;
   composerProps?: Partial<Omit<ConversationComposerProps, "value" | "onChange" | "onSubmit" | "onStop" | "isLoading" | "placeholder">>;
@@ -63,7 +65,7 @@ export function ConversationPane({
   sessionId, profile, messages, input, onInputChange, onPrompt, onAbort, isLoading,
   historyLoader, onHistoryLoaded, projection, onAnswerQuestions, title, contextLimit,
   usage, actions, connectors, onRetry, centered = false, placeholder, emptyState, transcriptRef,
-  transcriptFooter, composerRef, composerBefore, composerProps, className, showSessionStatus = false,
+  transcriptFooter, lastReplyActions, composerRef, composerBefore, composerProps, className, showSessionStatus = false,
 }: ConversationPaneProps) {
   useEffect(() => {
     if (!historyLoader) return;
@@ -98,9 +100,12 @@ export function ConversationPane({
         sentCount={messages.filter((message) => message.role === "user").length}
         emptyPlaceholder={() => <>{emptyState ?? <ConversationEmptyState />}</>}
         footer={transcriptFooter ?? renderDefaultFooter}
-        itemContent={(_index, message) => (
+        itemContent={(index, message) => (
           <div className={cn("px-3 py-1.5", centered && "max-w-3xl mx-auto w-full")}>
-            <ConversationMessageBubble message={message} sessionId={sessionId} onRetry={onRetry} connectors={connectors} />
+            <ConversationMessageBubble
+              message={message} sessionId={sessionId} onRetry={onRetry} connectors={connectors}
+              extraActions={!isLoading && index === messages.length - 1 && message.role === "assistant" && !message.isStreaming ? lastReplyActions : undefined}
+            />
           </div>
         )}
       />

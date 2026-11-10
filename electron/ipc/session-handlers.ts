@@ -50,6 +50,21 @@ export function registerSessionHandlers(ctx: DbContext): void {
     q.saveSessionTodos(ctx.db, id, []);
     q.deleteCodingSession(ctx.db, id);
   }));
+  // Fork: the new session starts as a copy of another one's conversation. Chat → chat, chat → coding
+  // and coding → coding only: a coding history is full of file and shell tool calls a chat cannot make.
+  registerContractHandle("session:fork", (_e, { from, to, cwd }) => handle(async () => {
+    assertSafeId(from, "sessionId");
+    assertSafeId(to, "sessionId");
+    const fromChat = from.startsWith("chat-");
+    const toChat = to.startsWith("chat-");
+    if (from.includes(".sub-")) throw new Error("A subagent's session cannot be forked.");
+    if (!fromChat && toChat) throw new Error("A coding session can only be forked into another coding session.");
+    if (!fromChat && q.getCodingSessionById(ctx.db, from)?.role !== "default") throw new Error("This session cannot be forked.");
+    if (fromChat && !toChat && !cwd) throw new Error("Forking a chat into a coding session needs a code folder.");
+    if (!(await engineOwns(ctx, from))) throw new Error("There is nothing to fork yet: the session has no messages.");
+    return { records: await getEngineHost(ctx).fork({ from, to, cwd, keepRules: fromChat === toChat }) };
+  }));
+
   registerContractHandle("db:session:todos", (_e, { sessionId }) => handle(() => q.getSessionTodos(ctx.db, sessionId)));
 
   // ── session:permissions ──────────────────────────────────────────────

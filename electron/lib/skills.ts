@@ -16,7 +16,8 @@
  *     ~/.opencode/skills/<name>/SKILL.md
  *
  * Three-level loading model (token-efficient):
- *   1. Metadata (name + description) — always injected into system prompt as XML
+ *   1. Metadata (name + first sentence of the description) — sent once per session as context
+ *      (`skillCatalog` in agent/tools/skill.ts); the full descriptions come from `skill` with no name
  *   2. Full body — loaded on demand when the agent calls the `skill` tool
  *   3. Bundled resources — co-located files the agent can read via the `read` tool
  *
