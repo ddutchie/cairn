@@ -86,7 +86,12 @@ export function useForkSession(source: ForkSource) {
     const res = await ipcResult((e) => e.session.forkSession(from, summary.id, cwd));
     if ("error" in res) { fail(`Fork failed: ${res.error}`); return; }
     const row = await ipcResult((e) => e.session.createSession(summary));
-    if ("error" in row) { fail(`Fork failed: ${row.error}`); return; }
+    if ("error" in row) {
+      // The log is already copied: remove it, or it stays on disk and searchable with no session to open.
+      void ipcResult((e) => e.session.deleteSession(summary.id));
+      fail(`Fork failed: ${row.error}`);
+      return;
+    }
     store.upsertCodingSessionSummary(summary);
     // Resuming reads the transcript back from the copied log.
     await handleResumeSession(summary, store.sessionPresentation);
