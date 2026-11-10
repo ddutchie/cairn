@@ -11,7 +11,7 @@ import type { ContextPanel, ID, AppUIState, SessionPresentation, SettingsSection
 import { storage } from "@/lib/storage";
 import { id as newId } from "@/lib/utils";
 import type { BoardFilter, BoardView } from "@/lib/board-filters";
-import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
+import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, OVERVIEW_DETAIL_KEY, type OverviewDetail, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
@@ -71,6 +71,11 @@ export interface LayoutSlice extends AppUIState {
   // to localStorage.
   overviewCollapsedSections: Record<string, boolean>;
   toggleOverviewSection: (projectId: ID, sectionId: string) => void;
+
+  // Project Overview detail level, per project (absent = DEFAULT_OVERVIEW_DETAIL).
+  // Persisted to localStorage.
+  overviewDetail: Record<ID, OverviewDetail>;
+  setOverviewDetail: (projectId: ID, detail: OverviewDetail) => void;
 
   // Saved board filter views, per project. Persisted to localStorage (a view
   // is a personal lens, so it stays on this device rather than syncing).
@@ -210,6 +215,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
   notesCollapsedFolders: {},
   overviewCollapsedSections: {},
+  overviewDetail: {},
   boardViews: {},
   chatPoppedOut: false,
   notesFullscreen: false,
@@ -294,6 +300,14 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
       else next[key] = true;           // expanded → collapsed
       storage.set(OVERVIEW_COLLAPSED_KEY, next);
       return { overviewCollapsedSections: next };
+    });
+  },
+
+  setOverviewDetail(projectId, detail) {
+    set((s) => {
+      const next = { ...s.overviewDetail, [projectId]: detail };
+      storage.set(OVERVIEW_DETAIL_KEY, next);
+      return { overviewDetail: next };
     });
   },
 
