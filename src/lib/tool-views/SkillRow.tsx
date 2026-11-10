@@ -45,6 +45,8 @@ function skillName(argsRaw: string, callId: string): string {
     if (typeof parsed === "object" && parsed !== null) {
       const name = (parsed as Record<string, unknown>).name;
       if (typeof name === "string" && name !== "") return firstLine(name);
+      // Cairn: a call with no name lists the skills.
+      if (name === undefined) return "Available skills";
     }
   } catch { /* streaming truncated-JSON prefix — fall through */ }
   return argsRaw === "" ? callId : firstLine(argsRaw);

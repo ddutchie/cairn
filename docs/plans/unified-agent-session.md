@@ -58,12 +58,31 @@ What step 1 delivers instead:
 |---|---|---|
 | Auto-load on first use | A call to a tool in a group that is not loaded turns the group on and asks the model to call again, instead of "Unknown tool". Step 2 needs this for models that skip `enable_tools`. | done |
 | Default | Stays off: `agentConfig.stagedTools` or `CAIRN_STAGED_TOOLS=1` opts in. | decided by the numbers above |
+| `skill` catalogue | Out of the tool definition; short list sent once as context (below). | done |
 | Weak-model check | A live run on the weakest model in regular use. The local Ornith endpoint was down on 2026-11-09; the bridge model on `:3042` found `enable_tools` unprompted. | open |
 
-A better target than the extended group is the **`skill` catalogue**: a third of the coding tool
-tokens in this repository, in a tool description that changes whenever a skill file does. Moving
-the catalogue out of the tool description (a short fixed description, with the list sent as
-context once) would save more than staging and remove a source of cache re-writes. Not started.
+### The `skill` catalogue: moved out of the tool definition (done)
+
+The catalogue was a third of the coding tool tokens in this repository (24 skills, 3,516 tokens),
+in a tool description that changed whenever a skill file did. Now:
+
+- The `skill` tool has a fixed description (under 100 tokens) and the same definition whatever
+  skills exist. Called with no name it returns the full list; skills are read at call time, so one
+  added during a session is found.
+- A session gets a short list once as standing context: one line per skill, the first sentence of
+  its description clipped to 160 characters (about 1,000 tokens here). It is sent again only when
+  it is no longer in the model's view (after compaction) or when the list changes, and then it is
+  appended, so the cached prefix is untouched.
+
+Net: about 3,400 fewer tokens in the tool list on every request, about 1,000 added once to the
+conversation, and skill edits no longer re-write the cache.
+
+Two things to watch:
+
+- **Skills may trigger less often.** The model now picks from a one-sentence summary instead of
+  the full description. Not measured; a live comparison is open.
+- **Subagents get no list.** They carry the `skill` tool but not the session's context, so they
+  have to call it with no name first.
 
 Groups today (`buildToolParts`):
 

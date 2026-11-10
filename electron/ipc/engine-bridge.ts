@@ -20,7 +20,7 @@ import type { Profile } from "../agent/loop";
 import type { Mode as EngineMode } from "../agent/policy";
 
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
-import { buildToolParts, TOOL_GROUP_SUMMARY } from "../agent/tools/index";
+import { buildToolParts, skillCatalog, TOOL_GROUP_SUMMARY } from "../agent/tools/index";
 import { ENABLE_TOOLS, resolveTools, Toolbox, type ToolsInput } from "../agent/toolbox";
 import { JobRegistry } from "../agent/jobs";
 import { createHooks } from "../agent/hooks";
@@ -610,7 +610,10 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const modeNote = planning ? PLAN_MODE_PROMPT : sessionPlanning.has(a.sessionId) ? PLAN_MODE_ENDED : "";
   if (planning) sessionPlanning.add(a.sessionId); else sessionPlanning.delete(a.sessionId);
   const context = modeNote ? `<session_context>\n${modeNote}\n</session_context>` : undefined;
-  const standingContext = a.standingContext?.filter(Boolean).map((text) => `<session_context>\n${text}\n</session_context>`);
+  // The skill list is context, not part of the tool definition: there it would be paid for on every
+  // request and re-write the cache whenever a skill file changed.
+  const skills = resolveTools(tools).some((t) => t.name === "skill") ? skillCatalog({ cwd: a.cwd }) : undefined;
+  const standingContext = [...(a.standingContext ?? []), skills].filter((text): text is string => !!text).map((text) => `<session_context>\n${text}\n</session_context>`);
   // Children run the parent's tool objects, so anything bound to the parent's own state is withheld:
   // delegation (one level deep), the plan hand-over, and the parent's goal and reminders.
   const subagentToolNames = new Set(["subagent", "delegate", "workflow", "ralph", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode", ENABLE_TOOLS,
