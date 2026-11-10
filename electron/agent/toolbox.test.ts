@@ -59,23 +59,31 @@ describe("Toolbox", () => {
 });
 
 describe("staged tools in a turn", () => {
-  it("offers a group from the step after it was enabled, and runs its tools", async () => {
+  it("loads a group when one of its tools is called, and offers it from the next step", async () => {
     const ran: string[] = [];
     const toolbox = new Toolbox({ base: [tool("note", ran)], groups: [{ id: "code", summary: "files", tools: [tool("read", ran)] }] });
     const h = makeHarness();
     const offered: string[][] = [];
     const reply = (message: ReturnType<typeof fauxAssistantMessage>) => (c: unknown) => { offered.push(getCurrentTools((c as { messages: Parameters<typeof getCurrentTools>[0] }).messages).map((t) => t.name)); return message; };
     h.faux.setResponses([
-      // Not loaded yet: the call is refused, not run.
+      // Not loaded yet: the call is not run, but it loads the group.
       reply(fauxAssistantMessage([fauxToolCall("read", {}, { id: "c0" })], { stopReason: "toolUse" })),
       reply(fauxAssistantMessage([fauxToolCall(ENABLE_TOOLS, { group: "code" }, { id: "c1" })], { stopReason: "toolUse" })),
       reply(fauxAssistantMessage([fauxToolCall("read", {}, { id: "c2" })], { stopReason: "toolUse" })),
       reply(fauxAssistantMessage("done")),
     ]);
     const events = await drive(runTurn(h.opts({ tools: toolbox })));
-    expect(offered).toEqual([["note", ENABLE_TOOLS], ["note", ENABLE_TOOLS], ["note", ENABLE_TOOLS, "read"], ["note", ENABLE_TOOLS, "read"]]);
-    expect(ofType(events, "tool/result").map((r) => [r.callId, r.isError])).toEqual([["c0", true], ["c1", false], ["c2", false]]);
+    // The first call loaded the group by itself, so the explicit enable finds it already on.
+    expect(offered).toEqual([["note", ENABLE_TOOLS], ["note", ENABLE_TOOLS, "read"], ["note", ENABLE_TOOLS, "read"], ["note", ENABLE_TOOLS, "read"]]);
+    const results = ofType(events, "tool/result");
+    expect(results.map((r) => [r.callId, r.isError])).toEqual([["c0", true], ["c1", false], ["c2", false]]);
+    expect(results[0].text).toMatch(/not loaded.*call read again/);
+    expect(results[1].text).toMatch(/already on/);
     expect(ran).toEqual(["read"]);
+    // A name that belongs to no group is still unknown.
+    h.faux.setResponses([reply(fauxAssistantMessage([fauxToolCall("nope", {}, { id: "c3" })], { stopReason: "toolUse" })), reply(fauxAssistantMessage("ok"))]);
+    const more = await drive(runTurn(h.opts({ tools: toolbox })));
+    expect(ofType(more, "tool/result")[0].text).toBe("Unknown tool: nope");
   });
 });
 

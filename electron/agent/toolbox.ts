@@ -25,6 +25,11 @@ export interface ToolGroup {
 /** A tool list that can change between the steps of a turn. The loop reads it once per step. */
 export interface ToolSource {
   current(): readonly AgentTool[];
+  /**
+   * The model called a tool that is not loaded. If it belongs to a group that can be turned on,
+   * turn it on and return the group's id; the loop then asks the model to call again.
+   */
+  enableFor?(toolName: string, sessionId: string): Promise<string | undefined>;
 }
 
 export type ToolsInput = readonly AgentTool[] | ToolSource;
@@ -68,6 +73,24 @@ export class Toolbox implements ToolSource {
     return out.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
   }
 
+  /** Turn a group on. False when it was already on. */
+  private async enable(group: string, sessionId: string): Promise<boolean> {
+    if (this.enabled.includes(group)) return false;
+    this.enabled.push(group);
+    await this.opts.onEnable?.(group, sessionId);
+    return true;
+  }
+
+  /** Models that skip `enable_tools` and call a tool by name still get it, one step later. */
+  async enableFor(toolName: string, sessionId: string): Promise<string | undefined> {
+    for (const g of this.groups.values()) {
+      if (!g.tools.some((t) => t.name === toolName)) continue;
+      await this.enable(g.id, sessionId);
+      return g.id;
+    }
+    return undefined;
+  }
+
   private buildEnableTool(): AgentTool {
     const catalog = [...this.groups.values()].map((g) => `- ${g.id}: ${g.summary} (${g.tools.map((t) => t.name).join(", ")})`).join("\n");
     return defineTool({
@@ -80,9 +103,7 @@ export class Toolbox implements ToolSource {
         const g = this.groups.get(group);
         if (!g) return { content: `Unknown tool group "${group}". Available: ${[...this.groups.keys()].join(", ")}.`, isError: true };
         const names = g.tools.map((t) => t.name).join(", ");
-        if (this.enabled.includes(group)) return { content: `The ${group} tools are already on: ${names}.` };
-        this.enabled.push(group);
-        await this.opts.onEnable?.(group, ctx.sessionId);
+        if (!(await this.enable(group, ctx.sessionId))) return { content: `The ${group} tools are already on: ${names}.` };
         return { content: `Enabled the ${group} tools: ${names}. Call them from your next step.` };
       },
     });

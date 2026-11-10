@@ -343,6 +343,10 @@ async function* prepare(o: TurnOptions, call: ToolCall, tools: readonly AgentToo
   const tool = toolMap.get(call.name);
   if (!tool) {
     yield { type: "tool/call", callId: call.id, name: call.name, args: call.arguments, risk: "EXEC" };
+    // A tool from a group that isn't loaded yet: load the group and have the model call again,
+    // now against the tool's real schema. Nothing ran, so the retry is safe.
+    const group = "current" in o.tools ? await o.tools.enableFor?.(call.name, o.sessionId).catch(() => undefined) : undefined;
+    if (group) return { call, refusal: `The ${call.name} tool was not loaded. The ${group} tools are on now: call ${call.name} again.` };
     return { call, refusal: `Unknown tool: ${call.name}` };
   }
 
