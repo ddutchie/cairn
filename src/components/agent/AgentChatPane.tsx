@@ -8,6 +8,7 @@
  * Multi-turn: each new message continues the same session's history.
  */
 
+import { ForkSessionMenu } from "@/components/agent/ForkSessionMenu";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
@@ -676,6 +677,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       onAbort={handleStop}
       isLoading={isLoading}
       transcriptRef={virtuosoRef}
+      lastReplyActions={<ForkSessionMenu source={{ kind: "coding", sessionId: session.sessionId }} />}
       composerRef={textareaRef}
       usage={session.lastUsage}
       contextLimit={normalizeContextLimit(agentConfig.contextLimit)}

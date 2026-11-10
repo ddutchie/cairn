@@ -36,7 +36,6 @@ import { repairInterrupted } from "./repair";
 import { createReviewerState, recordVerdict, type Reviewer, type ReviewerState } from "./reviewer";
 import { grantRule, offeredGrants, type GrantKind, type RiskInfo, type RuleStore } from "./rules";
 import type { AgentTool, ToolOutput } from "./tools";
-import { resolveTools, type ToolsInput } from "./toolbox";
 
 export type StreamFn = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 
@@ -65,8 +64,7 @@ export interface TurnOptions {
   context?: string;
   /** Images attached to this prompt. */
   images?: readonly UserImage[];
-  /** A fixed list, or a source the loop reads at the start of every step (see `Toolbox`). */
-  tools: ToolsInput;
+  tools: readonly AgentTool[];
   profile: Profile;
   rules: RuleStore;
   gate: Gate;
@@ -212,9 +210,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
       if (yield* tryCompact("threshold")) lastContextTokens = 0;
     }
 
-    // Read once per step: a tool group enabled during the last step is offered from this one,
-    // and the calls this step makes are checked against exactly what it was sent.
-    const tools = resolveTools(o.tools);
+    const tools = o.tools;
     let final: AssistantMessage;
     try {
       final = yield* streamAssistant(o, tools);
@@ -343,10 +339,6 @@ async function* prepare(o: TurnOptions, call: ToolCall, tools: readonly AgentToo
   const tool = toolMap.get(call.name);
   if (!tool) {
     yield { type: "tool/call", callId: call.id, name: call.name, args: call.arguments, risk: "EXEC" };
-    // A tool from a group that isn't loaded yet: load the group and have the model call again,
-    // now against the tool's real schema. Nothing ran, so the retry is safe.
-    const group = "current" in o.tools ? await o.tools.enableFor?.(call.name, o.sessionId).catch(() => undefined) : undefined;
-    if (group) return { call, refusal: `The ${call.name} tool was not loaded. The ${group} tools are on now: call ${call.name} again.` };
     return { call, refusal: `Unknown tool: ${call.name}` };
   }
 

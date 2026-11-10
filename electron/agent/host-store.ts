@@ -157,25 +157,6 @@ export function getSandboxMode(): "workspace-write" | "off" {
   }
 }
 
-/**
- * Experimental: coding sessions load the long tail of tools on demand (see `agent/toolbox.ts`).
- * On with `agentConfig.stagedTools` or `CAIRN_STAGED_TOOLS=1`; read per prompt.
- *
- * Off by default on purpose. Measured 2026-11-09, the extended group is ~1,060 of ~10,740 tool
- * tokens (8%), which a caching provider bills at a tenth; one late `enable_tools` re-writes the
- * whole conversation's cache and costs more than a session of that saving. Staging pays when the
- * deferred group is large and turned on early, which is the chat → code case, not this one.
- * See docs/plans/unified-agent-session.md.
- */
-export function isStagedToolsEnabled(): boolean {
-  if (process.env.CAIRN_STAGED_TOOLS === "1") return true;
-  try {
-    return getCachedConfigImpl().agentConfig?.stagedTools === true;
-  } catch {
-    return false;
-  }
-}
-
 /** Whether the opt-in engine schedule overlay is enabled (persisted agent setting). */
 export function isScheduleEnabled(): boolean {
   try {

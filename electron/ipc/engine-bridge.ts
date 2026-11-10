@@ -20,15 +20,14 @@ import type { Profile } from "../agent/loop";
 import type { Mode as EngineMode } from "../agent/policy";
 
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
-import { buildToolParts, skillCatalog, TOOL_GROUP_SUMMARY } from "../agent/tools/index";
-import { ENABLE_TOOLS, resolveTools, Toolbox, type ToolsInput } from "../agent/toolbox";
+import { buildToolset, skillCatalog } from "../agent/tools/index";
 import { JobRegistry } from "../agent/jobs";
 import { createHooks } from "../agent/hooks";
 import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importLegacySession } from "../agent/session/legacy-import";
 import { isLocalEndpoint } from "../lib/llm";
-import { createHostStore, getSandboxMode, isScheduleEnabled, isStagedToolsEnabled, recordUsage } from "../agent/host-store";
+import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
 import { deleteSessionProfile, listSessionIdsForWorkspace } from "../db/workspace-queries";
 import { deleteSessionEmbeddings } from "../db/embeddings-queries";
 import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../agent/session-search";
@@ -524,7 +523,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const prepared = prepareAttachments(a.prompt, a.attachments);
 
   let mcpInstructions = "";
-  const parts = await buildToolParts({
+  let tools = await buildToolset({
     onInstructions: (text) => { mcpInstructions = text; },
     surface: chat ? "chat" : role === "automation-dev" ? "automation-dev" : "coding",
     // Develop sessions edit scripts only: no Cairn data tools.
@@ -582,26 +581,8 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
     } : undefined,
   });
 
-  // Staged loading (experimental, coding sessions only): the long tail of tools is offered through
-  // `enable_tools` instead of being sent on every request. Runs with a fixed or extended toolset keep it.
-  const staged = isStagedToolsEnabled() && !chat && role === "default" && !a.profile && !a.allowTools && !a.extraTools?.length;
-  const of = (...groups: string[]) => parts.filter((p) => groups.includes(p.group)).flatMap((p) => p.tools);
-  let tools: ToolsInput;
-  if (staged) {
-    tools = new Toolbox({
-      base: of("core", "code"),
-      groups: [{ id: "extended", summary: TOOL_GROUP_SUMMARY.extended, tools: of("extended") }],
-      enabled: await h.toolGroups(a.sessionId),
-      tail: of("external"),
-      onEnable: (group) => h.enableToolGroup(a.sessionId, group),
-    });
-  } else {
-    const seen = new Set<string>();
-    let flat = parts.flatMap((p) => p.tools).filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
-    if (a.extraTools?.length) flat.push(...a.extraTools);
-    if (a.allowTools) flat = flat.filter((t) => a.allowTools!.has(t.name));
-    tools = flat;
-  }
+  if (a.extraTools?.length) tools.push(...a.extraTools);
+  if (a.allowTools) tools = tools.filter((t) => a.allowTools!.has(t.name));
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
   const systemPrompt = [a.systemPrompt, mcpInstructions].filter(Boolean).join("\n\n");
@@ -610,16 +591,16 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const modeNote = planning ? PLAN_MODE_PROMPT : sessionPlanning.has(a.sessionId) ? PLAN_MODE_ENDED : "";
   if (planning) sessionPlanning.add(a.sessionId); else sessionPlanning.delete(a.sessionId);
   const context = modeNote ? `<session_context>\n${modeNote}\n</session_context>` : undefined;
-  // The skill list is context, not part of the tool definition: there it would be paid for on every
-  // request and re-write the cache whenever a skill file changed.
-  const skills = resolveTools(tools).some((t) => t.name === "skill") ? skillCatalog({ cwd: a.cwd }) : undefined;
+  // The skill list is context, not part of the tool definition: there it would re-write the cache
+  // whenever a skill file changed.
+  const skills = tools.some((t) => t.name === "skill") ? skillCatalog({ cwd: a.cwd, contextWindow: a.llmConfig.contextWindow }) : undefined;
   const standingContext = [...(a.standingContext ?? []), skills].filter((text): text is string => !!text).map((text) => `<session_context>\n${text}\n</session_context>`);
   // Children run the parent's tool objects, so anything bound to the parent's own state is withheld:
   // delegation (one level deep), the plan hand-over, and the parent's goal and reminders.
-  const subagentToolNames = new Set(["subagent", "delegate", "workflow", "ralph", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode", ENABLE_TOOLS,
+  const subagentToolNames = new Set(["subagent", "delegate", "workflow", "ralph", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode",
     "get_goal", "create_goal", "update_goal", "schedule_create", "schedule_list", "schedule_cancel"]);
   spawnContexts.set(a.sessionId, {
-    cwd: a.cwd, profile, route, systemPrompt, tools: () => resolveTools(tools).filter((t) => !subagentToolNames.has(t.name)),
+    cwd: a.cwd, profile, route, systemPrompt, tools: () => tools.filter((t) => !subagentToolNames.has(t.name)),
     reasoningEffort: a.llmConfig.reasoningEffort, temperature: a.llmConfig.temperature, maxSteps: a.llmConfig.maxSteps,
   });
   const onAbort = () => h.abort(a.sessionId);

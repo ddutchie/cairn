@@ -55,14 +55,24 @@ describe("skillCatalog", () => {
     expect(skillCatalog({ cwd: "/", discover: () => [] })).toBeUndefined();
   });
 
-  it("gives one clipped line per skill, sorted by name", () => {
+  it("sends full descriptions, sorted by name, when the list fits its budget", () => {
     const cwd = project();
-    addSkill(cwd, "changelog", "Write the changelog entry. Long detail that the short list leaves out.");
-    addSkill(cwd, "audit", `${"word ".repeat(80)}end.`);
+    addSkill(cwd, "changelog", "Write the changelog entry. Use after a user-facing change.");
     const lines = skillCatalog({ cwd, discover: local })!.split("\n").slice(1);
-    expect(lines.map((l) => l.split(":")[0])).toEqual(["- audit", "- changelog", "- release-notes"]);
-    expect(lines[1]).toBe("- changelog: Write the changelog entry.");
-    expect(lines[0].length).toBeLessThanOrEqual(170);
+    expect(lines).toEqual(["- changelog: Write the changelog entry. Use after a user-facing change.", "- release-notes: Draft release notes"]);
+  });
+
+  it("clips every description to the same length when the list is over budget", () => {
+    const cwd = project();
+    addSkill(cwd, "audit", `${"word ".repeat(200)}end.`);
+    addSkill(cwd, "review", `${"term ".repeat(200)}end.`);
+    // 2% of 5,000 tokens is 400 characters for the whole list.
+    const text = skillCatalog({ cwd, discover: local, contextWindow: 5_000 })!;
+    const lines = text.split("\n").slice(1);
+    expect(text).toContain("call skill with no name");
     expect(lines[0].endsWith("…")).toBe(true);
+    expect(lines[0].length).toBe(lines[2].length + "audit".length - "review".length);
+    expect(lines[1]).toBe("- release-notes: Draft release notes");
+    expect(text.length).toBeLessThan(600);
   });
 });

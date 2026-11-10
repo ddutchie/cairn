@@ -29,6 +29,8 @@ interface ConversationMessageBubbleProps {
   sessionId?: string;
   onRetry?: (content: string) => void;
   connectors?: Record<string, ConnectorMeta>;
+  /** Extra controls at the end of this message's action row (Copy, Report, …). */
+  extraActions?: React.ReactNode;
 }
 
 function ContextRefChip({ ref_ }: { ref_: LinkedContextReference }) {
@@ -45,6 +47,7 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
   sessionId: _sessionId,
   onRetry,
   connectors,
+  extraActions,
 }: ConversationMessageBubbleProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -201,6 +204,7 @@ const ConversationMessageBubbleBody = React.memo(function ConversationMessageBub
                     <Info size={10} />
                   </IconButton>
                 )}
+                {extraActions}
                 {isUser && onRetry && (
                   <IconButton label="Retry" tooltipSide="top" onClick={() => onRetry(message.content)} className={iconBtn}><RotateCcw size={10} /></IconButton>
                 )}

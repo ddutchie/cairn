@@ -1,5 +1,6 @@
 "use client";
 
+import { ForkSessionMenu } from "@/components/agent/ForkSessionMenu";
 import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { type VirtuosoHandle } from "react-virtuoso";
 import { Trash2, ArrowLeftFromLine, History } from "lucide-react";
@@ -773,6 +774,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           onAbort={stopStream}
           isLoading={isLoading}
           transcriptRef={chatVirtuosoRef}
+          lastReplyActions={threadId && !popoutMode ? <ForkSessionMenu source={{ kind: "chat", threadId }} /> : undefined}
           centered={isView(activeView, "chat")}
           title={popoutMode ? (
           <div className="flex-1 min-w-0">

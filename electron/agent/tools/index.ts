@@ -47,43 +47,31 @@ export interface ToolsetDeps {
   lsp?: LspDeps;
 }
 
-/** Where a tool belongs when a session loads its tools in stages (see `Toolbox`). */
-export type ToolGroupId = "core" | "code" | "extended" | "external";
-
-export interface ToolPart { group: ToolGroupId; tools: AgentTool[] }
-
-/** One line per group for the `enable_tools` catalog. */
-export const TOOL_GROUP_SUMMARY: Record<Exclude<ToolGroupId, "core" | "external">, string> = {
-  code: "read, search and edit files in the working directory, run shell commands and background jobs",
-  extended: "long-running helpers: persistent terminals, language-server lookups, a standing goal, reminders and scripted workflows",
-};
-
-/** The surface's tools in the order they are sent, each run tagged with its group. */
-export async function buildToolParts(d: ToolsetDeps): Promise<ToolPart[]> {
-  const parts: ToolPart[] = [];
-  const add = (group: ToolGroupId, ...tools: AgentTool[]) => { if (tools.length) parts.push({ group, tools }); };
-  if (d.cairn) add("core", ...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
+/** The surface's tools in the order they are sent. The order is fixed: it is the front of the cached request prefix. */
+export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
+  const tools: AgentTool[] = [];
+  const add = (...more: AgentTool[]) => { tools.push(...more); };
+  if (d.cairn) add(...cairnTools(d.cairn, { exclude: d.cairn.exclude }));
   if (d.surface !== "chat" && d.fs) {
-    add("code", ...fsTools(d.fs));
+    add(...fsTools(d.fs));
     if (d.surface === "coding") {
-      add("code", bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
+      add(bashTool(d.fs), webFetchTool(), todoTool(d.onTodos));
       const skill = skillTool({ cwd: d.fs.cwd });
-      if (skill) add("code", skill);
+      if (skill) add(skill);
     }
   }
-  if (d.sessions && d.surface !== "automation-dev") add("core", ...sessionTools(d.sessions));
-  if (d.subagents && d.surface !== "automation-dev") add("core", ...subagentTools(d.subagents));
-  if (d.subagents && d.surface === "coding") add("extended", ...workflowTools(d.subagents));
+  if (d.sessions && d.surface !== "automation-dev") add(...sessionTools(d.sessions));
+  if (d.subagents && d.surface !== "automation-dev") add(...subagentTools(d.subagents));
+  if (d.subagents && d.surface === "coding") add(...workflowTools(d.subagents));
   if (d.surface === "coding") {
-    if (d.goal) add("extended", ...goalTools(d.goal));
-    if (d.schedule) add("extended", ...scheduleTools(d.schedule));
-    // `bash` can start background jobs, so reading and stopping them loads with it.
-    if (d.jobs) add("code", ...jobTools(d.jobs));
-    if (d.terminals) add("extended", ...terminalTools(d.terminals));
+    if (d.goal) add(...goalTools(d.goal));
+    if (d.schedule) add(...scheduleTools(d.schedule));
+    if (d.jobs) add(...jobTools(d.jobs));
+    if (d.terminals) add(...terminalTools(d.terminals));
     const lsp = d.lsp && lspTool(d.lsp);
-    if (lsp) add("extended", lsp);
+    if (lsp) add(lsp);
   }
-  if (d.plan && d.surface === "coding") add("core", ...planTools(d.plan));
+  if (d.plan && d.surface === "coding") add(...planTools(d.plan));
   // Connector tools go last, in name order. Providers cache a request by its prefix and the tool
   // list is at the front of it, so a server that connects late or drops out must not shift the
   // built-in tools: with these at the end, only the connector tools themselves are re-read.
@@ -91,14 +79,11 @@ export async function buildToolParts(d: ToolsetDeps): Promise<ToolPart[]> {
     const external = await externalTools(d.external).catch((err) => { console.error("[agent] external tools unavailable:", err); return []; });
     const extras = await externalExtras(d.external).catch((err) => { console.error("[agent] MCP extras unavailable:", err); return undefined; });
     if (extras?.instructions) d.onInstructions?.(extras.instructions);
-    add("external", ...(extras?.tools ?? []), ...[...external].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
+    add(...(extras?.tools ?? []), ...[...external].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
   }
-  return parts;
-}
-
-export async function buildToolset(d: ToolsetDeps): Promise<AgentTool[]> {
+  // First definition wins, so a connector can't replace a built-in tool.
   const seen = new Set<string>();
-  return (await buildToolParts(d)).flatMap((p) => p.tools).filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
+  return tools.filter((t) => (seen.has(t.name) ? false : (seen.add(t.name), true)));
 }
 
 export * from "./bash";

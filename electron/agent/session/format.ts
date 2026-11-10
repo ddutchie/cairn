@@ -13,7 +13,10 @@ export interface SessionHeader {
   id: string;
   cwd?: string;
   createdAt: number;
+  /** Set on a subagent's log: the session that spawned it. */
   parentId?: string;
+  /** Set on a fork: the session whose log this one started as a copy of. A fork is a top-level session, not a child. */
+  forkedFrom?: string;
   title?: string;
   /** "native" for sessions written by this engine, "legacy-import" for converted ones. */
   origin: "native" | "legacy-import";
