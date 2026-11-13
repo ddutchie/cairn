@@ -23,7 +23,7 @@ import {
   type BearerResolver,
 } from "../../shared/chat/service-exec";
 import { errMsg } from "../host-shared/errors";
-import type { ServiceTestResult } from "../../shared/types/tools";
+import { resolveCallTimeoutMs, type ServiceTestResult } from "../../shared/types/tools";
 
 // Re-export the shared pure surface so existing `import * as services` call
 // sites (external-tools.ts, ipc/tools.ts) keep resolving every symbol here.
@@ -47,18 +47,33 @@ export {
   type BearerResolver,
 } from "../../shared/chat/service-exec";
 
-const CALL_TIMEOUT_MS = 60_000;
+/** The settings "Test" request: a quick check, not a real call. */
+const TEST_TIMEOUT_MS = 60_000;
 
 // ── Execution (impure) ────────────────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+class CallTimeoutError extends Error {}
+
+/**
+ * Fetch and read the body under one deadline. The request is aborted when the
+ * deadline passes or the caller's `signal` fires (the user stopped the turn).
+ */
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number, signal?: AbortSignal): Promise<{ res: Response; text: string }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, ms);
   timer.unref?.();
+  const onAbort = () => controller.abort();
+  if (signal?.aborted) onAbort(); else signal?.addEventListener("abort", onAbort, { once: true });
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    return { res, text: await res.text() };
+  } catch (e) {
+    if (timedOut) throw new CallTimeoutError(`timed out after ${Math.round(ms / 1000)}s; the request was cancelled. The limit is this service's call timeout (Settings → Tools).`);
+    throw e;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -71,6 +86,7 @@ export async function callService(
   namespaced: string,
   args: Record<string, unknown>,
   resolveBearer?: BearerResolver,
+  opts: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
   try {
     // resolveOperation → normalizeOperations → parseToolDefinition can throw on
@@ -83,8 +99,7 @@ export async function callService(
     const headers = await withOAuthBearer(cfg, resolveSecrets(cfg.headers ?? {}), resolveBearer);
     const { parameters } = parseToolDefinition(op.toolDefinition);
     const { url, init } = buildOperationRequest(op, args, headers, parameters);
-    const res = await fetchWithTimeout(url, init, CALL_TIMEOUT_MS);
-    const text = await res.text();
+    const { res, text } = await fetchWithTimeout(url, init, opts.timeoutMs ?? resolveCallTimeoutMs(undefined), opts.signal);
     if (!res.ok) {
       return `Error: ${op.method} ${url} returned ${res.status} ${res.statusText}\n${text.slice(0, 1000)}`;
     }
@@ -157,8 +172,7 @@ export async function testService(
         ? sampleArgs
         : sampleArgsFromSchema(parameters);
     const { url, init } = buildOperationRequest(op, args, headers, parameters);
-    const res = await fetchWithTimeout(url, init, CALL_TIMEOUT_MS);
-    const text = await res.text();
+    const { res, text } = await fetchWithTimeout(url, init, TEST_TIMEOUT_MS);
     const filtered = filterResponse(tryParseJson(text), op.responseKeys);
     const preview = (typeof filtered === "string" ? filtered : JSON.stringify(filtered)).slice(0, 500);
     return { ok: res.ok, status: res.status, preview };

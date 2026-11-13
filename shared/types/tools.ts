@@ -47,8 +47,28 @@ interface McpServerBase {
    * applied workspace-wide. Absent / empty = all tools enabled.
    */
   disabledTools?: string[];
+  /** How long one tool call may run, in seconds. Absent = {@link DEFAULT_CALL_TIMEOUT_SEC}. */
+  callTimeoutSec?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Default limit for one connector tool call: long enough for a connector that runs its own model. */
+export const DEFAULT_CALL_TIMEOUT_SEC = 300;
+export const MIN_CALL_TIMEOUT_SEC = 5;
+export const MAX_CALL_TIMEOUT_SEC = 3600;
+
+/** A stored per-connector call timeout as milliseconds, clamped; anything unusable falls back to the default. */
+export function resolveCallTimeoutMs(sec: number | null | undefined): number {
+  const usable = typeof sec === "number" && Number.isFinite(sec) && sec > 0 ? sec : DEFAULT_CALL_TIMEOUT_SEC;
+  return Math.min(MAX_CALL_TIMEOUT_SEC, Math.max(MIN_CALL_TIMEOUT_SEC, Math.round(usable))) * 1000;
+}
+
+/** A timeout typed into a settings form: undefined (use the default) unless it is a positive number. */
+export function parseCallTimeoutSec(text: string): number | undefined {
+  const n = Number(text.trim());
+  if (!text.trim() || !Number.isFinite(n) || n <= 0) return undefined;
+  return Math.min(MAX_CALL_TIMEOUT_SEC, Math.max(MIN_CALL_TIMEOUT_SEC, Math.round(n)));
 }
 
 /** Remote MCP server the AI chat/agent can connect to as a client. */
@@ -153,6 +173,8 @@ export interface CustomServiceConfig {
   operations?: ServiceOperationConfig[];
   /** Keys to keep from the API response (token optimisation). */
   responseKeys?: string[];
+  /** How long one call may run, in seconds. Absent = {@link DEFAULT_CALL_TIMEOUT_SEC}. */
+  callTimeoutSec?: number;
   /** Where the user can obtain an API key. */
   apiKeyUrl?: string;
   /**

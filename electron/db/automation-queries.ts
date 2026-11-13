@@ -46,7 +46,7 @@ function toAutomation(r: Row): Automation {
     enabled: Boolean(r.enabled),
     maxRuns: r.max_runs === null || r.max_runs === undefined ? null : Number(r.max_runs),
     runCount: Number(r.run_count),
-    approvalMode: r.approval_mode === "ask" ? "ask" : "auto",
+    approvalMode: r.approval_mode === "ask" || r.approval_mode === "auto-connectors" ? r.approval_mode : "auto",
     activeHoursStart: r.active_hours_start ? String(r.active_hours_start) : null,
     activeHoursEnd: r.active_hours_end ? String(r.active_hours_end) : null,
     standingRules: parseJson<Array<{ tool: string; target?: string }>>(r.standing_rules, []),

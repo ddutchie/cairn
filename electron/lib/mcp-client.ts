@@ -41,13 +41,17 @@ import {
 } from "../../shared/chat/mcp-namespace";
 import { encode } from "gpt-tokenizer";
 import { errMsg } from "../host-shared/errors";
-import type { ListMcpToolsResult, McpTestResult, McpToolInfo } from "../../shared/types/tools";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { resolveCallTimeoutMs, type ListMcpToolsResult, type McpTestResult, type McpToolInfo } from "../../shared/types/tools";
 
 export { namespaceToolName, parseToolName, isMcpToolName, mcpToolsToOpenAI };
 export type { OpenAIToolDef };
 
 const CONNECT_TIMEOUT_MS = 15_000;
+/** Listing tools and resources: quick metadata requests. Tool calls have their own, longer limit. */
 const CALL_TIMEOUT_MS = 60_000;
+/** Ceiling for one tool call whose server keeps reporting progress. */
+const MAX_TOTAL_CALL_MS = 30 * 60_000;
 const IDLE_TIMEOUT_MS = 5 * 60_000;
 
 // ── Server config (subset of McpServerConfig from src/types) ─────────────────
@@ -69,6 +73,8 @@ export type McpServerRuntimeConfig =
   oauthRedirectUri?: string;
   /** Display name, used to label the OAuth client registration. */
   name?: string;
+  /** Limit for one tool call; absent = the default. */
+  callTimeoutMs?: number;
     }
   | {
       id: string;
@@ -79,6 +85,8 @@ export type McpServerRuntimeConfig =
       env?: Record<string, string>;
       cwd?: string;
       name?: string;
+      /** Limit for one tool call; absent = the default. */
+      callTimeoutMs?: number;
     };
 
 // ── Connection manager ───────────────────────────────────────────────────────
@@ -88,6 +96,8 @@ interface Conn {
   transport: StreamableHTTPClientTransport | SSEClientTransport | StdioClientTransport;
   lastUsed: number;
   idleTimer: NodeJS.Timeout | null;
+  /** Tool calls in flight. The connection is never closed as idle while this is above zero. */
+  activeCalls: number;
   /** Signature of the config used to open this connection (baseUrl/transport/headers). */
   signature: string;
 }
@@ -169,6 +179,9 @@ function makeTransport(cfg: McpServerRuntimeConfig) {
 function touch(conn: Conn): void {
   conn.lastUsed = Date.now();
   if (conn.idleTimer) clearTimeout(conn.idleTimer);
+  conn.idleTimer = null;
+  // A call may run longer than the idle limit: the clock starts when the last one ends.
+  if (conn.activeCalls > 0) return;
   conn.idleTimer = setTimeout(() => {
     void dispose(findServerId(conn));
   }, IDLE_TIMEOUT_MS);
@@ -256,7 +269,7 @@ async function openConnection(cfg: McpServerRuntimeConfig, signature: string, st
     await transport.close().catch(() => undefined);
     throw e;
   }
-  const conn: Conn = { client, transport, lastUsed: Date.now(), idleTimer: null, signature };
+  const conn: Conn = { client, transport, lastUsed: Date.now(), idleTimer: null, activeCalls: 0, signature };
   conns.set(cfg.id, conn);
   // A crashed server must not stay cached: the next call reconnects.
   const prevClose = transport.onclose;
@@ -417,6 +430,11 @@ export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<Li
   }
 }
 
+/** Test hook: whether the idle-disposal timer is armed for a server's connection. */
+export function _idleTimerArmed(serverId: string): boolean {
+  return conns.get(serverId)?.idleTimer != null;
+}
+
 /**
  * Call a namespaced MCP tool. Returns the textual result, or an error string
  * (never throws). `namespaced` is the `mcp__<serverId>__<tool>` name; `cfg` must
@@ -432,21 +450,42 @@ export async function callTool(
   if (!parsed || parsed.serverId !== cfg.id) {
     return `Error: "${namespaced}" is not a tool of MCP server ${cfg.id}`;
   }
+  const timeout = cfg.callTimeoutMs ?? resolveCallTimeoutMs(undefined);
+  let conn: Conn | undefined;
   try {
-    const conn = await connect(cfg);
-    const res = await withTimeout(
-      conn.client.callTool({ name: parsed.toolName, arguments: args }, undefined, { signal }),
-      CALL_TIMEOUT_MS,
-      `MCP callTool ${namespaced}`
-    );
+    conn = await connect(cfg);
+    conn.activeCalls += 1;
+    touch(conn);
+    // The SDK owns the deadline: on expiry it sends the server a cancellation
+    // instead of only giving up locally. `onprogress` makes it ask the server for
+    // progress, and each report restarts the clock (up to the total ceiling).
+    const res = await conn.client.callTool({ name: parsed.toolName, arguments: args }, undefined, {
+      signal,
+      timeout,
+      resetTimeoutOnProgress: true,
+      maxTotalTimeout: Math.max(timeout, MAX_TOTAL_CALL_MS),
+      onprogress: () => { /* only the deadline reset matters */ },
+    });
     return stringifyToolResult(res);
   } catch (e) {
+    if (e instanceof McpError && e.code === ErrorCode.RequestTimeout) {
+      const total = /maximum total/i.test(e.message);
+      const secs = Math.round((total ? Math.max(timeout, MAX_TOTAL_CALL_MS) : timeout) / 1000);
+      console.error(`[mcp-client] callTool ${namespaced} timed out after ${secs}s`);
+      return `Error calling ${namespaced}: timed out after ${secs}s${total ? " in total" : " without a response or progress"}; the call was cancelled. The limit is this connector's call timeout (Settings → Tools).`;
+    }
     if (reportIfAuthError(cfg, e)) {
       return `Error calling ${namespaced}: MCP server "${cfg.name ?? cfg.id}" is not signed in. A Sign in button is shown in the chat; ask the user to sign in, then retry.`;
     }
     const msg = errMsg(e);
     console.error(`[mcp-client] callTool ${namespaced} failed:`, msg);
     return `Error calling ${namespaced}: ${msg}`;
+  } finally {
+    if (conn) {
+      conn.activeCalls -= 1;
+      // Restart the idle clock once the last call is done, unless the connection was dropped meanwhile.
+      if (conn.activeCalls === 0 && conns.get(cfg.id) === conn) touch(conn);
+    }
   }
 }
 

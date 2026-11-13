@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { AutomationDevModal } from "./automation-dev-modal";
 import { RunWatcherModal } from "./run-watcher-modal";
 import type { Automation, ScheduleKind } from "@/store/slices/automations";
+import type { AutomationApprovalMode } from "../../../shared/types/automations";
 import type { RegistryAutomationEntry, RegistryRequirement } from "@/types";
 import { AutomationBudgetControl } from "./budget-control";
 import { RUN_TIME, STATUS_COLOR, scheduleLabel, runScratchTool, runScratchArtifacts } from "./automation-format";
@@ -76,7 +77,7 @@ export function AutomationsView() {
   const [projectId, setProjectId] = useState<string>("");
   const [timezone, setTimezone] = useState("");
   const [maxRuns, setMaxRuns] = useState("");
-  const [approvalMode, setApprovalMode] = useState<"auto" | "ask">("auto");
+  const [approvalMode, setApprovalMode] = useState<AutomationApprovalMode>("auto");
   const [activeHoursStart, setActiveHoursStart] = useState("");
   const [activeHoursEnd, setActiveHoursEnd] = useState("");
   const [scheduleValid, setScheduleValid] = useState(true);
@@ -139,7 +140,7 @@ export function AutomationsView() {
     setTimezone(def.schedule.timezone ?? "");
     setMaxRuns(def.maxRuns !== undefined ? String(def.maxRuns) : "");
     // Connector-aware recipes default to 'ask' — external tool calls stay gated
-    // behind the approval inbox (never auto-approved side effects), regardless
+    // behind approval (the user opts into "auto-connectors" themselves), regardless
     // of the recipe's own approvalMode hint.
     setApprovalMode(def.approvalMode ?? (def.requires?.length ? "ask" : "auto"));
     setActiveHoursStart("");

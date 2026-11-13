@@ -966,7 +966,7 @@ const MIGRATIONS: Migration[] = [
         enabled         INTEGER NOT NULL DEFAULT 1,
         max_runs        INTEGER,                       -- optional cap; NULL = unlimited
         run_count       INTEGER NOT NULL DEFAULT 0,
-        approval_mode   TEXT NOT NULL DEFAULT 'auto',  -- 'auto' (run writes freely) | 'ask' (gate writes behind the approval inbox)
+        approval_mode   TEXT NOT NULL DEFAULT 'auto',  -- 'auto' (writes run freely, connector calls ask) | 'auto-connectors' (selected connectors run freely too) | 'ask' (every write asks)
         standing_rules  TEXT NOT NULL DEFAULT '[]',    -- JSON [{tool, target}]
         source          TEXT NOT NULL DEFAULT 'custom',-- 'custom' | 'community'
         community_id    TEXT,
@@ -1797,6 +1797,9 @@ function ensureColumns(db: Database.Database): void {
   ensure("mcp_servers", "oauth_client_id", "oauth_client_id TEXT");
   ensure("mcp_servers", "oauth_redirect_uri", "oauth_redirect_uri TEXT");
   ensure("mcp_servers", "oauth_client_id_required", "oauth_client_id_required INTEGER NOT NULL DEFAULT 0");
+  // Per-connector tool-call timeout in seconds; NULL = the default.
+  ensure("mcp_servers", "call_timeout_sec", "call_timeout_sec INTEGER");
+  ensure("custom_services", "call_timeout_sec", "call_timeout_sec INTEGER");
   ensure("mcp_servers", "command", "command TEXT");
   ensure("mcp_servers", "args", "args TEXT NOT NULL DEFAULT '[]'");
   ensure("mcp_servers", "env", "env TEXT NOT NULL DEFAULT '{}'");

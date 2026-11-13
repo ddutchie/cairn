@@ -69,6 +69,8 @@ interface McpServerBaseInput {
   enabled: boolean; source: string; communityId?: string; version?: string;
   /** Raw (un-namespaced) tool names disabled for this server, workspace-wide. */
   disabledTools?: string[];
+  /** Tool-call timeout in seconds; absent = the default. */
+  callTimeoutSec?: number;
 }
 
 export interface McpRemoteServerInput extends McpServerBaseInput {
@@ -83,6 +85,11 @@ export interface McpStdioServerInput extends McpServerBaseInput {
 }
 
 type McpServerInput = McpRemoteServerInput | McpStdioServerInput;
+
+/** Only a positive whole number of seconds is stored; anything else is NULL (use the default). */
+function timeoutColumn(sec: unknown): number | null {
+  return typeof sec === "number" && Number.isFinite(sec) && sec > 0 ? Math.round(sec) : null;
+}
 
 export function getMcpServers(db: Database.Database, workspaceId: string) {
   return (db.prepare("SELECT * FROM mcp_servers WHERE workspace_id = ? ORDER BY created_at").all(workspaceId) as unknown[])
@@ -100,8 +107,8 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
   const remote = isStdio ? null : (s as McpRemoteServerInput);
   const stdio = isStdio ? (s as McpStdioServerInput) : null;
   db.prepare(`
-    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, oauth_client_id, oauth_redirect_uri, oauth_client_id_required, command, args, env, cwd, enabled, source, community_id, version, disabled_tools, dsh_path, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO mcp_servers (id, workspace_id, name, description, transport, base_url, headers, auth_mode, oauth_scope, oauth_client_id, oauth_redirect_uri, oauth_client_id_required, command, args, env, cwd, enabled, source, community_id, version, disabled_tools, dsh_path, call_timeout_sec, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name        = excluded.name,
       description = excluded.description,
@@ -123,6 +130,7 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
       version     = excluded.version,
       disabled_tools = excluded.disabled_tools,
       dsh_path    = excluded.dsh_path,
+      call_timeout_sec = excluded.call_timeout_sec,
       updated_at  = excluded.updated_at
   `).run(
     s.id, s.workspaceId, s.name, s.description ?? null, s.transport,
@@ -131,7 +139,7 @@ export function saveMcpServer(db: Database.Database, s: McpServerInput) {
     remote?.oauthClientId ?? null, remote?.oauthRedirectUri ?? null, remote?.oauthClientIdRequired ? 1 : 0,
     stdio?.command ?? null, j(stdio?.args ?? []), j(stdio?.env ?? {}), stdio?.cwd ?? null,
     s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
-    j(s.disabledTools ?? []), 0, now, now,
+    j(s.disabledTools ?? []), 0, timeoutColumn(s.callTimeoutSec), now, now,
   );
   return getMcpServerById(db, s.id)!;
 }
@@ -148,6 +156,8 @@ interface CustomServiceInput {
   apiUrl?: string; method?: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>;
   toolDefinition?: string; responseKeys?: string[]; apiKeyUrl?: string;
   baseUrl?: string; operations?: unknown[];
+  /** Call timeout in seconds; absent = the default. */
+  callTimeoutSec?: number;
   authMode?: "none" | "oauth";
   oauth?: { serverUrl?: string; scope?: string; clientId?: string; redirectUri?: string; authorizationUrl?: string; tokenUrl?: string };
   enabled: boolean; source: string; communityId?: string; version?: string;
@@ -166,8 +176,8 @@ export function getCustomServiceById(db: Database.Database, id: string) {
 export function saveCustomService(db: Database.Database, s: CustomServiceInput) {
   const now = ts();
   db.prepare(`
-    INSERT INTO custom_services (id, workspace_id, name, description, api_url, method, headers, tool_definition, base_url, operations, response_keys, api_key_url, enabled, source, community_id, version, auth_mode, oauth_config, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO custom_services (id, workspace_id, name, description, api_url, method, headers, tool_definition, base_url, operations, response_keys, api_key_url, enabled, source, community_id, version, auth_mode, oauth_config, call_timeout_sec, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name            = excluded.name,
       description     = excluded.description,
@@ -185,6 +195,7 @@ export function saveCustomService(db: Database.Database, s: CustomServiceInput) 
       version         = excluded.version,
       auth_mode       = excluded.auth_mode,
       oauth_config    = excluded.oauth_config,
+      call_timeout_sec = excluded.call_timeout_sec,
       updated_at      = excluded.updated_at
   `).run(
     s.id, s.workspaceId, s.name, s.description ?? null, s.apiUrl ?? "", s.method ?? "GET",
@@ -192,7 +203,7 @@ export function saveCustomService(db: Database.Database, s: CustomServiceInput) 
     s.operations ? JSON.stringify(s.operations) : null,
     j(s.responseKeys ?? []), s.apiKeyUrl ?? null,
     s.enabled ? 1 : 0, s.source, s.communityId ?? null, s.version ?? null,
-    s.authMode ?? "none", s.oauth ? JSON.stringify(s.oauth) : null, now, now,
+    s.authMode ?? "none", s.oauth ? JSON.stringify(s.oauth) : null, timeoutColumn(s.callTimeoutSec), now, now,
   );
   return getCustomServiceById(db, s.id)!;
 }

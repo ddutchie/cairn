@@ -24,6 +24,7 @@ export const automationsApi = {
     /** Approve/deny a pending tool approval for a running automation (engine). */
     approve: (callId: string, approved: boolean, grant?: "session" | "always") =>
       invokeContract("automation:approve", { callId, approved, grant }),
+    pendingApprovals: (runId: string) => invokeContract("automation:pendingApprovals", { runId }),
     folder: (id: string) => invokeContract("db:automation:folder", { id }),
     syncFromManifest: (id: string) => invokeContract("db:automation:syncFromManifest", { id }),
     files: (id: string) => invokeContract("db:automation:files", { id }),

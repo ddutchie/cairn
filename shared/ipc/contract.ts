@@ -326,6 +326,8 @@ export interface IpcContract {
     args: [req: { callId: string; approved: boolean; grant?: "session" | "always" }];
     result: void;
   };
+  /** Tool calls a running automation is waiting on, oldest first (the run watcher reads this when it opens). */
+  "automation:pendingApprovals": { args: [req: { runId: string }]; result: { approvals: Array<{ callId: string; tool: string; label: string }> } };
   /** The automation's folder, created and populated if needed (Develop cwd). */
   "db:automation:folder": { args: [req: { id: string }]; result: { folder: string } };
   "db:automation:files": { args: [req: { id: string }]; result: { files: AutomationFolderFile[] } };
@@ -934,6 +936,7 @@ const CHANNELS: ChannelRecord = {
   "db:automation:budget:set": "write",
   "db:automation:runNow": "write",
   "automation:approve": "read",
+  "automation:pendingApprovals": "read",
   "db:automation:folder": "read",
   "db:automation:files": "read",
   "db:automation:runLog": "read",
