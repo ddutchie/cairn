@@ -179,6 +179,13 @@ export const NOTES_COLLAPSED_FOLDERS_KEY = "notesCollapsedFolders";
 /** localStorage key for per-project collapsed Project Overview sections (Record<`${projectId}:${sectionId}`, true>). */
 export const OVERVIEW_COLLAPSED_KEY = "overviewCollapsedSections";
 
+/** How much the Project Overview shows: a status line, the week, or every panel. */
+export type OverviewDetail = "glance" | "brief" | "full";
+export const OVERVIEW_DETAILS: readonly OverviewDetail[] = ["glance", "brief", "full"];
+export const DEFAULT_OVERVIEW_DETAIL: OverviewDetail = "full";
+/** localStorage key for the per-project Overview detail level (Record<projectId, OverviewDetail>). */
+export const OVERVIEW_DETAIL_KEY = "overviewDetail";
+
 /** localStorage key for saved board filter views (Record<projectId, BoardView[]>). */
 export const BOARD_VIEWS_KEY = "boardViews";
 
