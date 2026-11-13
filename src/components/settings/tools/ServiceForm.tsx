@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import type { CustomServiceConfig } from "@/types";
 import { type HeaderRow, headersToRows, inputCls, labelCls } from "./helpers";
 import { HeaderEditor } from "./HeaderEditor";
+import { CallTimeoutField } from "./CallTimeoutField";
+import { parseCallTimeoutSec } from "../../../../shared/types/tools";
 
 /** Add/edit form for a custom HTTP service exposed to the AI as one tool. */
 export function ServiceForm({
@@ -25,6 +27,7 @@ export function ServiceForm({
   const [method, setMethod] = useState<CustomServiceConfig["method"]>(initial?.method ?? "GET");
   const [toolDefinition, setToolDefinition] = useState(initial?.toolDefinition ?? "");
   const [responseKeys, setResponseKeys] = useState((initial?.responseKeys ?? []).join(", "));
+  const [callTimeout, setCallTimeout] = useState(initial?.callTimeoutSec ? String(initial.callTimeoutSec) : "");
   const [rows, setRows] = useState<HeaderRow[]>(headersToRows(initial?.headers));
   const [authMode, setAuthMode] = useState<"none" | "oauth">(initial?.authMode ?? "none");
   const [oauthScope, setOauthScope] = useState(initial?.oauth?.scope ?? "");
@@ -141,6 +144,7 @@ export function ServiceForm({
         <input value={responseKeys} onChange={(e) => setResponseKeys(e.target.value)} placeholder="results, title, url, snippet" className={cn(inputCls, "font-mono")} />
         <p className="text-xs text-[var(--text-tertiary)] mt-1">Only these keys are kept from the response (saves tokens). Leave empty to return everything.</p>
       </div>
+      <CallTimeoutField value={callTimeout} onChange={setCallTimeout} />
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
         <Button
@@ -156,6 +160,7 @@ export function ServiceForm({
                 method,
                 toolDefinition: toolDefinition.trim(),
                 responseKeys: responseKeys.split(",").map((s) => s.trim()).filter(Boolean),
+                callTimeoutSec: parseCallTimeoutSec(callTimeout),
                 authMode,
                 oauth:
                   authMode === "oauth"

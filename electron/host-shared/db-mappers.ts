@@ -138,6 +138,7 @@ export function toMcpServer(row: DbRow): McpServerConfig {
     communityId: (row.community_id ?? undefined) as string | undefined,
     version: (row.version ?? undefined) as string | undefined,
     disabledTools: j2(row.disabled_tools),
+    callTimeoutSec: typeof row.call_timeout_sec === "number" ? row.call_timeout_sec : undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -180,6 +181,7 @@ export function toCustomService(row: DbRow): StoredCustomService {
     baseUrl: (row.base_url ?? undefined) as string | undefined,
     operations: row.operations ? (j2(row.operations) as unknown as ServiceOperationConfig[]) : undefined,
     responseKeys: j2(row.response_keys),
+    callTimeoutSec: typeof row.call_timeout_sec === "number" ? row.call_timeout_sec : undefined,
     apiKeyUrl: (row.api_key_url ?? undefined) as string | undefined,
     authMode: (row.auth_mode ?? "none") as "none" | "oauth",
     oauth: parseOAuthConfig(row.oauth_config),

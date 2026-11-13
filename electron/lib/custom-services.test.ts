@@ -308,3 +308,40 @@ describe("custom-services OAuth bearer injection", () => {
     expect(sent.Authorization).toBeUndefined();
   });
 });
+
+describe("custom-services call timeout", () => {
+  const cfg: CustomServiceRuntimeConfig = {
+    id: "svc1",
+    apiUrl: "https://api.example.com/search",
+    method: "GET",
+    toolDefinition: JSON.stringify({ name: "search", description: "Search", parameters: { type: "object", properties: {} } }),
+  };
+  /** A fetch that never answers, and rejects when its signal aborts (as the real one does). */
+  function hangingFetch(): { aborted: () => boolean } {
+    let aborted = false;
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => { aborted = true; reject(new DOMException("aborted", "AbortError")); });
+    }));
+    return { aborted: () => aborted };
+  }
+
+  it("aborts the request when the service's timeout passes", async () => {
+    const f = hangingFetch();
+    const out = await callService(cfg, "svc__svc1__search", {}, undefined, { timeoutMs: 30 });
+    vi.unstubAllGlobals();
+    expect(f.aborted()).toBe(true);
+    expect(out).toMatch(/timed out after .*cancelled/);
+  });
+
+  it("aborts the request when the turn is stopped", async () => {
+    const f = hangingFetch();
+    const stop = new AbortController();
+    const pending = callService(cfg, "svc__svc1__search", {}, undefined, { timeoutMs: 60_000, signal: stop.signal });
+    await new Promise((r) => setTimeout(r, 10));
+    stop.abort();
+    const out = await pending;
+    vi.unstubAllGlobals();
+    expect(f.aborted()).toBe(true);
+    expect(out).not.toMatch(/timed out/);
+  });
+});

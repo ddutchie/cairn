@@ -8,6 +8,8 @@ import type { McpServerConfig } from "@/types";
 import { type HeaderRow, headersToRows, inputCls, labelCls } from "./helpers";
 import { isAbsolutePath } from "../../../../shared/mcp/stdio-validation";
 import { HeaderEditor } from "./HeaderEditor";
+import { CallTimeoutField } from "./CallTimeoutField";
+import { parseCallTimeoutSec } from "../../../../shared/types/tools";
 
 /** Add/edit form for an MCP server (remote http/sse or local stdio). */
 export function McpForm({
@@ -22,6 +24,7 @@ export function McpForm({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
+  const [callTimeout, setCallTimeout] = useState(initial?.callTimeoutSec ? String(initial.callTimeoutSec) : "");
   const initialTransport = initial?.transport ?? "http";
   const [transport, setTransport] = useState<"sse" | "http" | "stdio">(initialTransport);
   const isStdio = transport === "stdio";
@@ -101,6 +104,7 @@ export function McpForm({
           command: command.trim(),
           args,
           cwd: cwd.trim() || undefined,
+          callTimeoutSec: parseCallTimeoutSec(callTimeout),
           enabled: initial?.enabled ?? false,
           source: initial?.source ?? "manual",
         },
@@ -120,6 +124,7 @@ export function McpForm({
         oauthClientId: authMode === "oauth" ? oauthClientId.trim() || undefined : undefined,
         oauthRedirectUri: authMode === "oauth" ? oauthRedirectUri.trim() || undefined : undefined,
         oauthClientIdRequired: authMode === "oauth" ? oauthClientIdRequired : undefined,
+        callTimeoutSec: parseCallTimeoutSec(callTimeout),
         enabled: initial?.enabled ?? false,
         source: initial?.source ?? "manual",
       },
@@ -268,6 +273,7 @@ export function McpForm({
           )}
         </>
       )}
+      <CallTimeoutField value={callTimeout} onChange={setCallTimeout} />
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel

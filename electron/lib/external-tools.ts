@@ -23,6 +23,7 @@ import * as mcpClient from "./mcp-client";
 import * as services from "./custom-services";
 import * as mcpOauth from "./mcp-oauth";
 import type { RequirementStatus } from "../../shared/types/automations";
+import { resolveCallTimeoutMs } from "../../shared/types/tools";
 
 /** Mirrors GLOBAL_TOOL_SCOPE in src/types — electron cannot import from src. */
 const GLOBAL_TOOL_SCOPE = "__global__";
@@ -72,9 +73,12 @@ function toRuntimeConfig(s: {
   env?: Record<string, string>;
   cwd?: string;
   name?: string;
+  callTimeoutSec?: number;
 }): mcpClient.McpServerRuntimeConfig {
+  const callTimeoutMs = resolveCallTimeoutMs(s.callTimeoutSec);
   if (s.transport === "stdio") {
     return {
+      callTimeoutMs,
       id: s.id,
       transport: "stdio",
       command: s.command ?? "",
@@ -85,6 +89,7 @@ function toRuntimeConfig(s: {
     };
   }
   return {
+    callTimeoutMs,
     id: s.id,
     baseUrl: s.baseUrl ?? "",
     transport: s.transport,
@@ -389,6 +394,7 @@ export async function executeExternalTool(
       name,
       args,
       makeServiceBearerResolver(svc),
+      { timeoutMs: resolveCallTimeoutMs(svc.callTimeoutSec), signal },
     );
   }
 

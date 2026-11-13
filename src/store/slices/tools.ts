@@ -248,6 +248,8 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
         env,
         cwd: entry.definition.cwd,
         disabledTools: entry.definition.disabledTools,
+        // A reinstall keeps the call timeout the user set.
+        callTimeoutSec: existing?.callTimeoutSec,
         // Install DISABLED so the user reviews before it goes live.
         enabled: false,
         source: "community",
@@ -276,6 +278,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       oauthClientIdRequired:
         entry.definition.requiresClientId ?? (existing?.transport !== "stdio" ? existing?.oauthClientIdRequired : undefined),
       disabledTools: entry.definition.disabledTools,
+      callTimeoutSec: existing?.callTimeoutSec,
       // Install DISABLED so the user reviews (and, for OAuth, connects) before it goes live.
       enabled: false,
       source: "community",
@@ -305,6 +308,7 @@ export const createToolsSlice: StateCreator<CairnStore, [], [], ToolsSlice> = (s
       baseUrl: entry.definition.baseUrl,
       operations: entry.definition.operations,
       responseKeys: entry.definition.responseKeys,
+      callTimeoutSec: existing?.callTimeoutSec,
       apiKeyUrl: entry.definition.apiKeyUrl,
       authMode: entry.definition.authMode,
       oauth: entry.definition.oauth,
