@@ -17,7 +17,7 @@ import {
   automationSpendSince,
   type AutomationEnv,
 } from "../db/automation-queries";
-import { runAutomationNow, resolveAutomationApproval } from "../lib/heartbeat-runner";
+import { runAutomationNow, resolveAutomationApproval, listPendingAutomationApprovals } from "../lib/heartbeat-runner";
 import { checkRequirements } from "../lib/external-tools";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog } from "../lib/automation-folder";
@@ -114,6 +114,8 @@ export function registerAutomationHandlers(ctx: DbContext): void {
   // an `on` listener — approvals from the run watcher used to be dropped.
   registerContractHandle("automation:approve", (_e, { callId, approved, grant }) =>
     handle(() => resolveAutomationApproval(callId, approved, grant)));
+  registerContractHandle("automation:pendingApprovals", (_e, { runId }) =>
+    handle(() => ({ approvals: listPendingAutomationApprovals(runId) })));
 
   // The automation's folder on disk (<project>/.automations/<id>/) — the dev
   // agent's cwd when building/testing the automation's scripts. The folder is

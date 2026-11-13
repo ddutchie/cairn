@@ -288,7 +288,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
       </div>
 
       <p className="text-2xs text-[var(--text-tertiary)]">
-        Picking a recipe pre-fills the form — you can change the schedule, approval mode, and instructions before saving. Data-only recipes use notes, tasks, tags and boards; connector recipes also use the attached MCP/service tools, which stay gated behind the approval inbox (never auto-approved).
+        Picking a recipe pre-fills the form — you can change the schedule, approval mode, and instructions before saving. Data-only recipes use notes, tasks, tags and boards; connector recipes also use the attached MCP/service tools, which wait for your approval unless you choose &ldquo;Auto, including connectors&rdquo;.
       </p>
 
       <p className="flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)]">

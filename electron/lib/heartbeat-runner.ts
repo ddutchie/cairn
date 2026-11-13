@@ -22,7 +22,7 @@ import path from "path";
 import type { OpenAIMessage } from "./llm";
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
-import { buildSystemPrompt, TOOLS, type ChatRequest } from "./tools";
+import { buildSystemPrompt, type ChatRequest } from "./tools";
 import { resolveTemperatureForModel } from "./model-pricing";
 import { insertNotification } from "../mcp/db";
 import {
@@ -98,6 +98,9 @@ export interface AutomationRunContext {
 // recordStandingAllowance.
 interface PendingAutomationApproval {
   tool: string;
+  /** Display name for the approval card and the notification. */
+  label: string;
+  callId: string;
   args: Record<string, unknown>;
   db: Database.Database;
   runId: string;
@@ -131,6 +134,16 @@ export function resolveAutomationApproval(callId: string, approved: boolean, gra
 }
 
 /**
+ * The tool calls a run is waiting on, oldest first. The run watcher reads this
+ * when it opens: an approval raised before then is not replayed as an event.
+ */
+export function listPendingAutomationApprovals(runId: string): Array<{ callId: string; tool: string; label: string }> {
+  return [...pendingAutomationApprovals.values()]
+    .filter((p) => p.runId === runId)
+    .map((p) => ({ callId: p.callId, tool: p.tool, label: p.label }));
+}
+
+/**
  * Decide whether a tool call is auto-allowed by the automation's approval
  * policy, or must be forwarded to the user for approval. The engine seam
  * resolves via resolve({approved}) — no DB approval inbox behind it (the
@@ -139,22 +152,25 @@ export function resolveAutomationApproval(callId: string, approved: boolean, gra
  *   - read tools + standing rules → allow
  *   - 'ask' mode → gate every write (forward)
  *   - 'auto' mode → only forward external MCP/service calls when connector-aware
+ *   - 'auto-connectors' mode → as 'auto', but the tools of the connectors the
+ *     automation selected (`connectorTools`) run without asking
  *   - run_script is always gated (code execution)
  * Standing-rule per-arg matching (e.g. bash:<cmd>) uses the tool's primary
  * identifier (path/note/card/title) — args are not carried through the seam.
  */
-function shouldAutoAllowAutomationTool(db: Database.Database, run: AutomationRun, automation: Automation, name: string, args: Record<string, unknown>): boolean {
+function shouldAutoAllowAutomationTool(automation: Automation, name: string, args: Record<string, unknown>, connectorTools: ReadonlySet<string>): boolean {
   if (isReadTool(name)) return true;
   if (name === RUN_SCRIPT_TOOL_NAME) return false;
   const target = standingRuleTarget(name, args);
   if (automation.standingRules.some((r) => standingRuleCoversTool(r.tool, name, args) && (r.target === undefined || r.target === target))) return true;
   if (automation.approvalMode === "ask") return false;
   const connectorAware = (automation.requires ?? []).length > 0;
-  if (connectorAware && isExternalTool(name)) return false;
+  if (connectorAware && isExternalTool(name)) return automation.approvalMode === "auto-connectors" && connectorTools.has(name);
   return true;
 }
 
 const DEFAULT_MAX_STEPS = 10;
+const APPROVAL_NOTICE_COOLDOWN_MS = 30_000;
 
 /** Project display name from the DB, or null for workspace-scoped automations. */
 function projectNameOf(db: Database.Database, projectId: string | null): string | null {
@@ -385,27 +401,23 @@ export async function runAutomation(
     { role: "user", content: recipe },
   ];
 
-  // Connector-aware automation: load the project's attached external tools
-  // (MCP servers / custom services) and offer them to the loop as extraTools.
-  // getExternalToolDefs filters to enabled + project/global-attached connectors,
-  // so a missing/attached-only requirement simply contributes no tools and the
-  // agent works with what's actually in scope. External calls stay gated by
-  // the engine approval waterfall (shouldAutoAllowAutomationTool below +
-  // cairnApprovalPlugin) — never auto-approved side effects.
+  // Connector-aware automation: the engine offers the project's attached
+  // connector tools itself; here the selected connectors are resolved up front.
   // A connector-load failure is NOT degraded away: the recipe declared these
   // connectors as required, so a run that can't assemble their tools is failed
-  // up front rather than silently continuing with built-in tools only.
-  // The cast mirrors chat.ts's shape: external defs are OpenAIToolDef[]
-  // (open tool-name strings), the loop's extraTools slot is the typed TOOLS.
-  let _extraTools: typeof TOOLS | undefined;
+  // rather than silently continuing with built-in tools only.
+  // The names of the selected connectors' tools: what 'auto-connectors' mode
+  // lets through without asking. Other attached connectors still ask.
+  const connectorTools = new Set<string>();
   if ((automation.requires ?? []).length > 0) {
     try {
-      _extraTools = (await getExternalToolDefs(
+      const defs = await getExternalToolDefs(
         db,
         automation.workspaceId,
         automation.projectId ?? "",
         automation.requires,
-      )) as unknown as typeof TOOLS;
+      );
+      for (const def of defs) connectorTools.add(def.function.name);
     } catch (err) {
       const message = errMsg(err);
       console.error("[heartbeat] failed to assemble external tools:", err);
@@ -555,6 +567,8 @@ export async function runAutomation(
   // Aborted by session:abort (which stops the engine run) or by the run_script handler's own signal.
   const abortCtrl = new AbortController();
 
+  // One notification per burst of asks, not one per call.
+  let lastApprovalNotice = 0;
   // Arguments per call, so a standing rule can match on the real target when an ask arrives.
   const argsByCall = new Map<string, Record<string, unknown>>();
   const engineCtx = { db, workspacePath, getWin: () => null } as unknown as DbContext;
@@ -571,22 +585,36 @@ export async function runAutomation(
     const projection = payload as SessionProjection;
     if (projection.kind !== "approval") return;
     const data = projection.data as Record<string, unknown>;
-    if (data.status !== "required" || typeof data.callId !== "string") return;
+    if (typeof data.callId !== "string") return;
     const callId = data.callId;
+    const key = automationKey(run.id, callId);
+    if (data.status === "resolved") {
+      // Decided by anyone, including a timeout: the watcher drops its card.
+      if (pendingAutomationApprovals.delete(key)) emitRun("approvalResolved", { callId });
+      return;
+    }
+    if (data.status !== "required") return;
     const toolName = (data.name as string | undefined) ?? "tool";
     const nonce = data.nonce as string | undefined;
     const trusted = argsByCall.get(callId) ?? {};
     emitRun("toolConfirmRequired", { tool: toolName, callId, label: data.label });
-    if (shouldAutoAllowAutomationTool(db, run, automation, toolName, trusted)) {
+    if (shouldAutoAllowAutomationTool(automation, toolName, trusted, connectorTools)) {
       respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: true });
       return;
     }
-    const key = automationKey(run.id, callId);
+    const label = externalToolLabel(toolName, db);
     pendingAutomationApprovals.set(key, {
-      tool: toolName, args: trusted, db, runId: run.id,
+      tool: toolName, label, callId, args: trusted, db, runId: run.id,
       resolve: (d) => { respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: d.approved, grant: d.grant }); },
     });
-    emitRun("approval", { tool: toolName, callId });
+    emitRun("approval", { tool: toolName, label, callId });
+    // Nobody may be watching: without this the run waits unseen until the ask times out.
+    const now = Date.now();
+    if (now - lastApprovalNotice >= APPROVAL_NOTICE_COOLDOWN_MS) {
+      lastApprovalNotice = now;
+      insertNotification(db, "automation_approval", `Automation waiting for approval: "${automation.name}"`,
+        `${label} needs your approval. Open Automations and watch the run to approve or deny it.`, { type: "automation", id: automation.id });
+    }
   };
 
   let codingResult: { ok: boolean; error?: string } = { ok: true };

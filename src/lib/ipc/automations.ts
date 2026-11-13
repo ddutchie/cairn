@@ -25,6 +25,9 @@ export const automationsClient = {
   runNow: (id: string) => automation((a) => a.runNow(id)),
   approve: (callId: string, approved: boolean, grant?: "session" | "always") =>
     automation((a) => a.approve(callId, approved, grant)),
+  /** Tool calls the run is waiting on right now, oldest first. */
+  pendingApprovals: async (runId: string): Promise<Array<{ callId: string; tool: string; label: string }>> =>
+    (await automation((a) => a.pendingApprovals(runId))).approvals,
   budget: () => automation((a) => a.budget.get()),
   setBudget: (usd: number | null) => automation((a) => a.budget.set(usd)),
   /** The automation's folder (created on first use) — the Develop session's cwd. */

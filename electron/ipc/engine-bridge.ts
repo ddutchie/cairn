@@ -206,6 +206,8 @@ export function getEngineHost(ctx: DbContext): AgentHost {
       } as never);
     },
     onAsk: (ask) => {
+      // A tapped run (an automation) answers or reports its own asks; it has no session to open.
+      if (sessionTaps.has(ask.sessionId)) return;
       if (hostCtx) notifyAgentAttention(hostCtx.db, { sessionId: ask.sessionId, kind: "approval", detail: ask.title });
     },
   });

@@ -19,7 +19,7 @@ import { createAutomation, createAutomationRun, getAutomationRunById } from "../
 import { automationFolderDir, automationRunDir } from "./automation-folder";
 // vi.mock calls are hoisted above this import, so the static import sees the
 // mocked config-cache / chat-loop / external-tools modules.
-import { runAutomation, runAutomationNow, resolveAutomationApproval } from "./heartbeat-runner";
+import { runAutomation, runAutomationNow, resolveAutomationApproval, listPendingAutomationApprovals } from "./heartbeat-runner";
 
 const { runEngineMock, getExternalToolDefsMock, engineMock } = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,7 +64,7 @@ function makeDb(): Database.Database {
   return db;
 }
 
-function makeAutomation(db: Database.Database, opts: { projectId?: string; requires?: Array<{ kind: "mcp" | "service"; name: string }> }) {
+function makeAutomation(db: Database.Database, opts: { projectId?: string; requires?: Array<{ kind: "mcp" | "service"; name: string }>; approvalMode?: "auto" | "ask" | "auto-connectors" }) {
   return createAutomation(db, {
     workspaceId: "ws1",
     projectId: opts.projectId,
@@ -74,6 +74,7 @@ function makeAutomation(db: Database.Database, opts: { projectId?: string; requi
     scheduleExpr: "1 hour",
     nextRunAt: new Date().toISOString(),
     requires: opts.requires,
+    approvalMode: opts.approvalMode,
   });
 }
 
@@ -422,6 +423,59 @@ describe("runAutomation folder plumbing", () => {
 
     release({ ok: true });
     await pending;
+  });
+
+  it("connector calls: parked and listed in 'auto' mode with a notification; selected connectors run freely in 'auto-connectors'", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    saveMcpServer(db, {
+      id: "m-slack", workspaceId: "ws1", name: "Slack", transport: "http",
+      baseUrl: "https://mcp.slack.test/mcp", enabled: true, source: "community",
+      communityId: "slack",
+    });
+    setToolAttachment(db, { projectId: "p1", toolType: "mcp", toolId: "m-slack", enabled: true });
+    const root = makeRoot();
+    getExternalToolDefsMock.mockResolvedValue([{ type: "function", function: { name: "mcp__slack__search", description: "", parameters: {} } }] as never);
+    const ask = (runId: string, name: string, callId: string) => lastLoopOpts().tap?.("session:projection", { sessionId: runId, kind: "approval", data: { status: "required", callId, nonce: `n-${callId}`, name, label: name } });
+    const notices = () => (db.prepare("SELECT COUNT(*) AS n FROM mcp_notifications WHERE tool = 'automation_approval'").get() as { n: number }).n;
+
+    for (const mode of ["auto", "auto-connectors"] as const) {
+      const automation = makeAutomation(db, { projectId: "p1", approvalMode: mode, requires: [{ kind: "mcp", name: "slack" }] });
+      const run = createAutomationRun(db, automation.id, "running");
+      engineMock.respondEngineAsk.mockClear();
+      const events: Array<{ event: string; callId?: string }> = [];
+      let release!: (v: unknown) => void;
+      runEngineMock.mockImplementation(() => {
+        ask(run.id, "mcp__slack__search", "c1");  // a selected connector's tool
+        ask(run.id, "mcp__other__post", "c2");    // attached, but not selected
+        return new Promise((r) => { release = r; });
+      });
+      const before = notices();
+      const pending = runAutomation({ db, workspacePath: root, send: (_c, p) => events.push(p as never) }, run, automation);
+      await new Promise((r) => setTimeout(r, 20));
+
+      const waiting = listPendingAutomationApprovals(run.id).map((a) => a.callId);
+      if (mode === "auto") {
+        expect(waiting).toEqual(["c1", "c2"]);
+        expect(engineMock.respondEngineAsk).not.toHaveBeenCalled();
+      } else {
+        expect(waiting).toEqual(["c2"]);
+        expect(engineMock.respondEngineAsk).toHaveBeenCalledWith(expect.anything(), run.id, "c1", "n-c1", { approved: true });
+      }
+      // One notification for the burst, not one per call.
+      expect(notices()).toBe(before + 1);
+
+      // A decision made elsewhere (e.g. the ask timing out) clears the parked call.
+      lastLoopOpts().tap?.("session:projection", { sessionId: run.id, kind: "approval", data: { status: "resolved", callId: "c2", approved: false, by: "timeout" } });
+      expect(listPendingAutomationApprovals(run.id).map((a) => a.callId)).not.toContain("c2");
+      expect(events.some((e) => e.event === "approvalResolved" && e.callId === "c2")).toBe(true);
+
+      release({ ok: true });
+      await pending;
+      expect(listPendingAutomationApprovals(run.id)).toEqual([]);
+    }
+    getExternalToolDefsMock.mockResolvedValue([]);
   });
 
   it("flushes the transcript incrementally as tools complete (survives a crash mid-run)", async () => {

@@ -7,6 +7,13 @@ import type { ID } from "./domain";
 
 export type ScheduleKind = "cron" | "every" | "once";
 
+/**
+ * How a run's tool calls are approved. `auto`: data tools run freely and
+ * connector calls wait for the user. `auto-connectors`: the selected connectors'
+ * tools also run without asking. `ask`: every write waits. Scripts always ask.
+ */
+export type AutomationApprovalMode = "auto" | "ask" | "auto-connectors";
+
 /** An external connector (MCP server / HTTP service) an automation needs in scope. */
 export interface AutomationRequirement {
   kind: "mcp" | "service";
@@ -47,7 +54,7 @@ export interface Automation {
   enabled: boolean;
   maxRuns: number | null;
   runCount: number;
-  approvalMode: "auto" | "ask";
+  approvalMode: AutomationApprovalMode;
   /** Optional "HH:MM" window — the scheduler only fires runs inside it. */
   activeHoursStart: string | null;
   activeHoursEnd: string | null;
@@ -102,7 +109,7 @@ export interface AutomationInput {
   timezone?: string | null;
   enabled?: boolean;
   maxRuns?: number | null;
-  approvalMode?: "auto" | "ask";
+  approvalMode?: AutomationApprovalMode;
   activeHoursStart?: string | null;
   activeHoursEnd?: string | null;
   standingRules?: Array<{ tool: string; target?: string }>;
@@ -163,7 +170,7 @@ export interface RunLog {
 
 /** Live run activity pushed on `automation:run` (the "watch this run" view). */
 export interface AutomationRunEvent {
-  event: "started" | "token" | "thought" | "tool" | "toolDone" | "toolConfirmRequired" | "approval" | "finished";
+  event: "started" | "token" | "thought" | "tool" | "toolDone" | "toolConfirmRequired" | "approval" | "approvalResolved" | "finished";
   automationId: string;
   runId: string;
   delta?: string;

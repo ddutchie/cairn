@@ -45,14 +45,24 @@ export function RunWatcherModal({
   const [thought, setThought] = useState("");
   const [tools, setTools] = useState<ToolChip[]>([]);
   const [finished, setFinished] = useState(false);
-  const [approval, setApproval] = useState<{ tool: string; callId: string } | null>(null);
+  // Every call the run is waiting on, oldest first; the card shows the first.
+  const [approvals, setApprovals] = useState<Array<{ tool: string; label: string; callId: string }>>([]);
+  const approval = approvals[0] ?? null;
+  const dropApproval = (callId: string) => setApprovals((p) => p.filter((a) => a.callId !== callId));
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setRecipe(null); setAssistant(""); setThought(""); setTools([]); setFinished(false); setApproval(null); /* eslint-disable-line react-hooks/set-state-in-effect */
+    setRecipe(null); setAssistant(""); setThought(""); setTools([]); setFinished(false); setApprovals([]); /* eslint-disable-line react-hooks/set-state-in-effect */
     if (!runId) return;
     const toolSeq = { n: 0 };
-    return automationsClient.onRunEvent((e) => {
+    const addApproval = (a: { tool: string; label: string; callId: string }) =>
+      setApprovals((p) => (p.some((x) => x.callId === a.callId) ? p : [...p, a]));
+    // Asks raised before this modal opened are not replayed as events: fetch them.
+    let cancelled = false;
+    automationsClient.pendingApprovals(runId)
+      .then((pending) => { if (!cancelled) pending.forEach(addApproval); })
+      .catch(() => { /* the live events still arrive */ });
+    const unsubscribe = automationsClient.onRunEvent((e) => {
       if (e.runId !== runId) return;
       switch (e.event) {
         case "started": setRecipe(e.recipe ?? ""); break;
@@ -74,16 +84,20 @@ export function RunWatcherModal({
           ));
           break;
         case "approval":
-          if (e.callId) setApproval({ tool: e.tool ?? "tool", callId: e.callId });
+          if (e.callId) addApproval({ tool: e.tool ?? "tool", label: e.label ?? e.tool ?? "tool", callId: e.callId });
           break;
-        case "finished": setFinished(true); setApproval(null); break;
+        case "approvalResolved":
+          if (e.callId) { const id = e.callId; setApprovals((p) => p.filter((a) => a.callId !== id)); }
+          break;
+        case "finished": setFinished(true); setApprovals([]); break;
       }
     });
+    return () => { cancelled = true; unsubscribe(); };
   }, [runId]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [assistant, tools.length, thought]);
+  }, [assistant, tools.length, thought, approval?.callId]);
 
   const isLive = !finished && runId !== null;
 
@@ -168,17 +182,18 @@ export function RunWatcherModal({
             <div className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
               <Bot size={13} className="text-[var(--accent)] shrink-0" />
               <span>
-                The agent wants to run <span className="font-mono text-xs">{approval.tool}</span> — this tool requires your approval.
+                The agent wants to run <span className="font-medium">{approval.label}</span>. This tool needs your approval.
+                {approvals.length > 1 && <span className="text-[var(--text-tertiary)]"> {approvals.length - 1} more waiting.</span>}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => { sendApproval(approval.callId, true); setApproval(null); }}>
+              <Button size="sm" onClick={() => { sendApproval(approval.callId, true); dropApproval(approval.callId); }}>
                 Approve
               </Button>
-              <Button size="sm" variant="outline" onClick={() => { sendApproval(approval.callId, true, "always"); setApproval(null); }}>
+              <Button size="sm" variant="outline" onClick={() => { sendApproval(approval.callId, true, "always"); dropApproval(approval.callId); }}>
                 Always allow
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { sendApproval(approval.callId, false); setApproval(null); }}>
+              <Button size="sm" variant="ghost" onClick={() => { sendApproval(approval.callId, false); dropApproval(approval.callId); }}>
                 Deny
               </Button>
             </div>

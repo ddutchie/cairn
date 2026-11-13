@@ -144,7 +144,7 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
             <InfoRow label="Project" value={automation.projectId ? projectName ?? "—" : "Workspace (all projects)"} />
             <InfoRow label="Next run" value={formatRelative(automation.nextRunAt, RUN_TIME)} />
             <InfoRow label="Total runs" value={`${automation.runCount}${automation.maxRuns ? ` / max ${automation.maxRuns}` : ""}`} />
-            <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : "Auto"} />
+            <InfoRow label="Approval" value={automation.approvalMode === "ask" ? "Ask" : automation.approvalMode === "auto-connectors" ? "Auto, including connectors" : "Auto"} />
             <InfoRow label="Status" value={automation.enabled ? "Enabled" : "Disabled"} />
             {automation.requires.length > 0 && (
               <InfoRow label="Needs" value={automation.requires.map((r) => r.name).join(", ")} />

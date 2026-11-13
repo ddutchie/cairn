@@ -13,6 +13,7 @@ import { BrowseAutomationsContent } from "./browse-automations";
 import { TimePicker } from "@/components/ui/time-picker";
 import { toolsClient } from "@/lib/ipc/tools";
 import type { Automation, ScheduleKind } from "@/store/slices/automations";
+import type { AutomationApprovalMode } from "../../../shared/types/automations";
 import type { RegistryAutomationEntry, RegistryRequirement, McpServerConfig, CustomServiceConfig } from "@/types";
 
 interface AutomationDialogProps {
@@ -26,7 +27,7 @@ interface AutomationDialogProps {
   projectId: string; setProjectId: (v: string) => void;
   timezone: string; setTimezone: (v: string) => void;
   maxRuns: string; setMaxRuns: (v: string) => void;
-  approvalMode: "auto" | "ask"; setApprovalMode: (v: "auto" | "ask") => void;
+  approvalMode: AutomationApprovalMode; setApprovalMode: (v: AutomationApprovalMode) => void;
   activeHoursStart: string; setActiveHoursStart: (v: string) => void;
   activeHoursEnd: string; setActiveHoursEnd: (v: string) => void;
   scheduleValid: boolean;
@@ -193,15 +194,20 @@ export function AutomationDialog({
             className="w-full"
             options={[
               { value: "auto", label: "Auto — run freely (writes happen automatically)" },
+              ...(requires.length > 0 || approvalMode === "auto-connectors"
+                ? [{ value: "auto-connectors" as const, label: "Auto, including connectors — selected connectors run without asking" }]
+                : []),
               { value: "ask", label: "Ask — approve or deny each write" },
             ]}
           />
           <span className="text-xs text-[var(--text-tertiary)]">
             {approvalMode === "ask"
-              ? "Write actions park in the approval inbox and the run waits for your decision."
-              : requires.length > 0
-                ? "External connector calls are still gated behind the approval inbox — only data tools run freely."
-                : "Data tools run freely; running your scripts (run_script) is always gated behind the approval inbox."}
+              ? "Each write waits for you: you get a notification, and approve or deny it from the run's live view."
+              : approvalMode === "auto-connectors"
+                ? "The connectors selected below run without asking, including ones that post or edit. Other connectors and scripts still wait for your approval."
+                : requires.length > 0
+                  ? "Data tools run freely. Connector calls wait for your approval in the run's live view; choose \"Auto, including connectors\" for unattended runs."
+                  : "Data tools run freely. Running your scripts (run_script) always waits for your approval in the run's live view."}
           </span>
         </label>
         {requires.length > 0 && (
@@ -209,8 +215,9 @@ export function AutomationDialog({
             <Plug size={12} className="text-[var(--accent)] shrink-0" />
             <span>
               This automation needs its attached connectors to run. Runs are offered
-              the project&apos;s attached MCP/service tools, and every external call
-              waits for your approval.
+              the project&apos;s attached MCP/service tools{approvalMode === "auto-connectors"
+                ? ", and the selected connectors run without asking."
+                : ", and every external call waits for your approval."}
             </span>
           </div>
         )}
@@ -249,7 +256,7 @@ export function AutomationDialog({
                 })}
               </div>
               <p className="text-xs text-[var(--text-tertiary)]">
-                Selected connectors are offered to the run, but only if they&apos;re enabled and attached to the chosen project (Settings → Tools) will their tools actually appear. External calls always wait for your approval.
+                Selected connectors are offered to the run, but only if they&apos;re enabled and attached to the chosen project (Settings → Tools) will their tools actually appear.
               </p>
             </>
           )}
