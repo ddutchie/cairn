@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { useCairnStore } from "@/store";
 import type { SuggestedAction, ChatHistoryEntry } from "@/types";
 import { useSessionConversation } from "./useSessionConversation";
@@ -43,10 +43,20 @@ export interface UseChatStreamResult {
   stopStream: () => void;
   clearQuestions: () => void;
   answerQuestions: (answers: string) => boolean;
+  /** Set the active thread's running state from the main process (never from a guess). */
+  syncRunning: (running: boolean) => void;
 }
 
 /** Chat's public API remains stable; session lifecycle and event folding live in the shared controller. */
-export function useChatStream(threadId: string | null): UseChatStreamResult {
+export function useChatStream(
+  threadId: string | null,
+  opts: {
+    /** A turn of this thread has ended (any reason), after its reply was stored. May be a thread that is not on screen. */
+    onTurnFinished?: (threadId: string) => void;
+  } = {},
+): UseChatStreamResult {
+  const onTurnFinishedRef = useRef(opts.onTurnFinished);
+  useLayoutEffect(() => { onTurnFinishedRef.current = opts.onTurnFinished; });
   const addMessage = useCairnStore((state) => state.addMessage);
   const setThreadUsage = useCairnStore((state) => state.setThreadUsage);
   const pendingActionsRef = useRef(new Map<string, SuggestedAction[]>());
@@ -110,6 +120,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         if (failure && !snapshot.text.trim() && !snapshot.toolCalls.length && !snapshot.subagents.length) {
           addFailureNotice();
           clearStagedActions(sessionId);
+          onTurnFinishedRef.current?.(turnThreadId);
           return;
         }
         const assistant = snapshot.assistant;
@@ -120,6 +131,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         if (snapshot.toolCalls.some((tool) => !["suggest_connections", "ask_questions"].includes(tool.tool) && !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")) || snapshot.subagents.some((agent) => (agent.toolCalls ?? []).some((tool) => !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")))) {
           useCairnStore.getState().hydrateFromElectron(true).catch((error) => console.error("[useChatStream] post-write hydrate failed", error));
         }
+        onTurnFinishedRef.current?.(turnThreadId);
       },
     },
   });
@@ -131,7 +143,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       attachments: req.images, history: req.history, systemPrompt: req.systemPrompt,
       personality: req.personality, approvalPolicy: req.approvalPolicy, useSubagents: req.useSubagents, config: req.config,
     }), `chat-${req.threadId}`);
-    if (threadId) setThreadUsage(threadId, undefined);
+    setThreadUsage(req.threadId, undefined);
   }
 
   function stopStream() { controller.stop(); }
