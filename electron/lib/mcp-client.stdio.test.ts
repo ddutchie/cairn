@@ -48,6 +48,20 @@ describe("stdio MCP servers", () => {
     expect(fs.existsSync(marker)).toBe(true);
   }, 30_000);
 
+  it("does not count a connection as idle while a call is running", async () => {
+    await mcpClient.callTool(cfg, "mcp__echo__shout", { text: "warm" });
+    expect(mcpClient._idleTimerArmed("echo")).toBe(true);
+    const slow = mcpClient.callTool(cfg, "mcp__echo__slow", { ms: 400 });
+    const overlapping = mcpClient.callTool(cfg, "mcp__echo__slow", { ms: 100 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mcpClient._idleTimerArmed("echo")).toBe(false);
+    await overlapping;
+    // One call is still running: the idle clock stays off.
+    expect(mcpClient._idleTimerArmed("echo")).toBe(false);
+    await slow;
+    expect(mcpClient._idleTimerArmed("echo")).toBe(true);
+  }, 30_000);
+
   it("keeps waiting while the server reports progress", async () => {
     const out = await mcpClient.callTool({ ...cfg, callTimeoutMs: 400 }, "mcp__echo__slow", { ms: 1_500, tick: 100 });
     expect(out).toContain("finished");

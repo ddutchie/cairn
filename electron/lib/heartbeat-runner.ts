@@ -164,8 +164,11 @@ function shouldAutoAllowAutomationTool(automation: Automation, name: string, arg
   const target = standingRuleTarget(name, args);
   if (automation.standingRules.some((r) => standingRuleCoversTool(r.tool, name, args) && (r.target === undefined || r.target === target))) return true;
   if (automation.approvalMode === "ask") return false;
+  // 'auto-connectors' lets through only the selected connectors' tools, also
+  // when none are selected (then no connector call runs unasked).
+  if (automation.approvalMode === "auto-connectors" && isExternalTool(name)) return connectorTools.has(name);
   const connectorAware = (automation.requires ?? []).length > 0;
-  if (connectorAware && isExternalTool(name)) return automation.approvalMode === "auto-connectors" && connectorTools.has(name);
+  if (connectorAware && isExternalTool(name)) return false;
   return true;
 }
 
@@ -589,8 +592,11 @@ export async function runAutomation(
     const callId = data.callId;
     const key = automationKey(run.id, callId);
     if (data.status === "resolved") {
-      // Decided by anyone, including a timeout: the watcher drops its card.
-      if (pendingAutomationApprovals.delete(key)) emitRun("approvalResolved", { callId });
+      // Decided by anyone, including a timeout: every watcher drops its card.
+      // Sent even when the entry is already gone: a decision made in one window
+      // removes it before the engine reports back, and other windows still show it.
+      pendingAutomationApprovals.delete(key);
+      emitRun("approvalResolved", { callId });
       return;
     }
     if (data.status !== "required") return;

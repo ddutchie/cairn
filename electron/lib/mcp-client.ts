@@ -96,6 +96,8 @@ interface Conn {
   transport: StreamableHTTPClientTransport | SSEClientTransport | StdioClientTransport;
   lastUsed: number;
   idleTimer: NodeJS.Timeout | null;
+  /** Tool calls in flight. The connection is never closed as idle while this is above zero. */
+  activeCalls: number;
   /** Signature of the config used to open this connection (baseUrl/transport/headers). */
   signature: string;
 }
@@ -177,6 +179,9 @@ function makeTransport(cfg: McpServerRuntimeConfig) {
 function touch(conn: Conn): void {
   conn.lastUsed = Date.now();
   if (conn.idleTimer) clearTimeout(conn.idleTimer);
+  conn.idleTimer = null;
+  // A call may run longer than the idle limit: the clock starts when the last one ends.
+  if (conn.activeCalls > 0) return;
   conn.idleTimer = setTimeout(() => {
     void dispose(findServerId(conn));
   }, IDLE_TIMEOUT_MS);
@@ -264,7 +269,7 @@ async function openConnection(cfg: McpServerRuntimeConfig, signature: string, st
     await transport.close().catch(() => undefined);
     throw e;
   }
-  const conn: Conn = { client, transport, lastUsed: Date.now(), idleTimer: null, signature };
+  const conn: Conn = { client, transport, lastUsed: Date.now(), idleTimer: null, activeCalls: 0, signature };
   conns.set(cfg.id, conn);
   // A crashed server must not stay cached: the next call reconnects.
   const prevClose = transport.onclose;
@@ -425,6 +430,11 @@ export async function listToolsDetailed(cfg: McpServerRuntimeConfig): Promise<Li
   }
 }
 
+/** Test hook: whether the idle-disposal timer is armed for a server's connection. */
+export function _idleTimerArmed(serverId: string): boolean {
+  return conns.get(serverId)?.idleTimer != null;
+}
+
 /**
  * Call a namespaced MCP tool. Returns the textual result, or an error string
  * (never throws). `namespaced` is the `mcp__<serverId>__<tool>` name; `cfg` must
@@ -441,8 +451,11 @@ export async function callTool(
     return `Error: "${namespaced}" is not a tool of MCP server ${cfg.id}`;
   }
   const timeout = cfg.callTimeoutMs ?? resolveCallTimeoutMs(undefined);
+  let conn: Conn | undefined;
   try {
-    const conn = await connect(cfg);
+    conn = await connect(cfg);
+    conn.activeCalls += 1;
+    touch(conn);
     // The SDK owns the deadline: on expiry it sends the server a cancellation
     // instead of only giving up locally. `onprogress` makes it ask the server for
     // progress, and each report restarts the clock (up to the total ceiling).
@@ -467,6 +480,12 @@ export async function callTool(
     const msg = errMsg(e);
     console.error(`[mcp-client] callTool ${namespaced} failed:`, msg);
     return `Error calling ${namespaced}: ${msg}`;
+  } finally {
+    if (conn) {
+      conn.activeCalls -= 1;
+      // Restart the idle clock once the last call is done, unless the connection was dropped meanwhile.
+      if (conn.activeCalls === 0 && conns.get(cfg.id) === conn) touch(conn);
+    }
   }
 }
 

@@ -478,6 +478,34 @@ describe("runAutomation folder plumbing", () => {
     getExternalToolDefsMock.mockResolvedValue([]);
   });
 
+  it("'auto-connectors' with no connector selected lets no connector call through, and a human decision still reports resolved", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1", approvalMode: "auto-connectors" });
+    const run = createAutomationRun(db, automation.id, "running");
+    engineMock.respondEngineAsk.mockClear();
+    const events: Array<{ event: string; callId?: string }> = [];
+    let release!: (v: unknown) => void;
+    runEngineMock.mockImplementation(() => {
+      lastLoopOpts().tap?.("session:projection", { sessionId: run.id, kind: "approval", data: { status: "required", callId: "c1", nonce: "n1", name: "mcp__other__post", label: "post" } });
+      return new Promise((r) => { release = r; });
+    });
+    const pending = runAutomation({ db, workspacePath: makeRoot(), send: (_c, p) => events.push(p as never) }, run, automation);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(engineMock.respondEngineAsk).not.toHaveBeenCalled();
+    expect(listPendingAutomationApprovals(run.id).map((a) => a.callId)).toEqual(["c1"]);
+
+    // Approved in one window: the entry is gone before the engine reports back,
+    // and the report must still reach every other window.
+    resolveAutomationApproval("c1", true);
+    lastLoopOpts().tap?.("session:projection", { sessionId: run.id, kind: "approval", data: { status: "resolved", callId: "c1", approved: true, by: "human" } });
+    expect(events.some((e) => e.event === "approvalResolved" && e.callId === "c1")).toBe(true);
+
+    release({ ok: true });
+    await pending;
+  });
+
   it("flushes the transcript incrementally as tools complete (survives a crash mid-run)", async () => {
     const db = makeDb();
     createWorkspace(db, { id: "ws1", name: "W" });

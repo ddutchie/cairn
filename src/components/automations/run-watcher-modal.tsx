@@ -58,9 +58,16 @@ export function RunWatcherModal({
     const addApproval = (a: { tool: string; label: string; callId: string }) =>
       setApprovals((p) => (p.some((x) => x.callId === a.callId) ? p : [...p, a]));
     // Asks raised before this modal opened are not replayed as events: fetch them.
+    // The snapshot can land after events about the same calls, so it is merged
+    // against what those events already settled.
     let cancelled = false;
+    let runFinished = false;
+    const resolved = new Set<string>();
     automationsClient.pendingApprovals(runId)
-      .then((pending) => { if (!cancelled) pending.forEach(addApproval); })
+      .then((pending) => {
+        if (cancelled || runFinished) return;
+        pending.filter((a) => !resolved.has(a.callId)).forEach(addApproval);
+      })
       .catch(() => { /* the live events still arrive */ });
     const unsubscribe = automationsClient.onRunEvent((e) => {
       if (e.runId !== runId) return;
@@ -87,9 +94,9 @@ export function RunWatcherModal({
           if (e.callId) addApproval({ tool: e.tool ?? "tool", label: e.label ?? e.tool ?? "tool", callId: e.callId });
           break;
         case "approvalResolved":
-          if (e.callId) { const id = e.callId; setApprovals((p) => p.filter((a) => a.callId !== id)); }
+          if (e.callId) { const id = e.callId; resolved.add(id); setApprovals((p) => p.filter((a) => a.callId !== id)); }
           break;
-        case "finished": setFinished(true); setApprovals([]); break;
+        case "finished": runFinished = true; setFinished(true); setApprovals([]); break;
       }
     });
     return () => { cancelled = true; unsubscribe(); };
