@@ -39,6 +39,7 @@ import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
 import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
 import { DependencyMatrix } from "./DependencyMatrix";
+import { formatWhenAbsent } from "../../../shared/format/date";
 import { ModuleMap } from "./ModuleMap";
 import type {
   CodebaseGraph, CodebaseOverview, CodebaseOverviewFile, CodebaseRelationEdge, CodebaseRelations, CodebaseSymbol,
@@ -87,12 +88,7 @@ function relPath(filePath: string, root: string): string {
 }
 
 function formatWhen(iso: string | null): string {
-  if (!iso) return "never";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-  });
+  return formatWhenAbsent(iso);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────

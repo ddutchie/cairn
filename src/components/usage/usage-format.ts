@@ -1,19 +1,13 @@
 /**
  * Number/date formatting helpers for the Usage view.
  */
+import { formatCompactWithMillion } from "../../../shared/format/number";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function trim0(s: string): string {
-  return s.replace(/\.0$/, "");
-}
-
 /** 1_234_000 → "1.2M", 48_000 → "48K". */
 export function fmtCompact(n: number): string {
-  const v = Math.max(0, Math.round(n));
-  if (v >= 1e6) return trim0((v / 1e6).toFixed(1)) + "M";
-  if (v >= 1e3) return trim0((v / 1e3).toFixed(1)) + "K";
-  return String(v);
+  return formatCompactWithMillion(n);
 }
 
 /** Full thousands-separated token count. */

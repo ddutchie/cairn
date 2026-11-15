@@ -10,6 +10,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Clock } from "lucide-react";
 import type { ScheduleKind } from "@/store/slices/automations";
+import { formatWhenRelative } from "../../../shared/format/date";
 
 type ScheduleMode = "every" | "daily" | "weekly" | "monthly" | "once" | "cron";
 
@@ -349,17 +350,5 @@ function TimeInput({ value, onChange }: { value: string; onChange: (v: string) =
 }
 
 function formatWhen(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "—";
-  const diff = t - Date.now();
-  const abs = Math.abs(diff);
-  const mins = Math.round(abs / 60_000);
-  const hrs = Math.round(abs / 3_600_000);
-  const days = Math.round(abs / 86_400_000);
-  const future = diff >= 0;
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m ${future ? "away" : "ago"}`;
-  if (hrs < 24) return `${hrs}h ${future ? "away" : "ago"}`;
-  if (days < 30) return `${days}d ${future ? "away" : "ago"}`;
-  return new Date(iso).toLocaleDateString();
+  return formatWhenRelative(iso);
 }

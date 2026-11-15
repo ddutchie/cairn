@@ -13,12 +13,11 @@ import fs from "fs";
 import path from "path";
 import { DEFAULT_MAX_BYTES } from "../truncation";
 import { assertCommandNotReadingSecrets } from "./secrets";
+import { formatBytesBinary } from "../../../shared/format/number";
 
-// Local byte formatter for streaming truncation hints
+// Byte formatter for streaming truncation hints (shared, see F14).
 function fmt(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return formatBytesBinary(bytes);
 }
 
 const MAX_OUTPUT_BYTES = DEFAULT_MAX_BYTES;

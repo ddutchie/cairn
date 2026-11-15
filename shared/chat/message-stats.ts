@@ -4,6 +4,8 @@
  * the chat and coding renderers, and the composer stats line, format identically.
  */
 
+import { formatCompact } from "../format/number";
+
 export interface MessageStatsLike {
   ttftMs?: number;
   tokensPerSecond?: number;
@@ -26,7 +28,7 @@ export function formatThroughput(tps: number | undefined): string | null {
 /** "1.2K tok" / "840 tok" — output token count. Returns null for missing/invalid. */
 export function formatOutputTokens(n: number | undefined): string | null {
   if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return null;
-  const label = n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K` : `${n}`;
+  const label = formatCompact(n, { upper: true });
   return `${label} tok`;
 }
 

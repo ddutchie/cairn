@@ -8,6 +8,7 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import type { McpServerConfig } from "@/types";
+import { formatCompact } from "../../../../shared/format/number";
 
 /**
  * Expandable per-tool enable/disable checklist for an MCP server. Lists the
@@ -39,7 +40,7 @@ export function McpToolList({ server }: { server: McpServerConfig }) {
   const estimateTokens = (list: typeof tools) => list.reduce((n, t) => n + (t.tokens ?? 0), 0);
   const totalTokens = estimateTokens(tools);
   const enabledTokens = estimateTokens(enabledTools);
-  const fmtTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : `${n}`);
+  const fmtTokens = (n: number) => formatCompact(n);
   const tokenLabel = tools.length > 0 ? `~${fmtTokens(enabledTokens)} tokens` + (enabledCount !== tools.length ? ` of ~${fmtTokens(totalTokens)}` : "") : null;
   const isHeavy = enabledTokens > 10000;
 

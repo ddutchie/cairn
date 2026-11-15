@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatBalance, formatUsd } from "../../../shared/chat/provider-credits";
+import { formatCompact } from "../../../shared/format/number";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
 import { cacheHitColor } from "@/lib/cache-metrics";
@@ -187,10 +188,7 @@ export function ContextRing({
   ];
 
   function formatTokenCount(num: number): string {
-    if (num >= 1000) {
-      return `${(num / 1000).toFixed(1).replace(/\.0$/, "")}K`;
-    }
-    return num.toString();
+    return formatCompact(num, { upper: true });
   }
 
   // Ordered breakdown slices for the ring (its 8 categories).

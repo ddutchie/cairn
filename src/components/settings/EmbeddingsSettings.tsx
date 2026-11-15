@@ -8,6 +8,7 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { useCairnStore } from "@/store";
+import { formatMegabytes } from "../../../shared/format/number";
 import { IconButton } from "@/components/ui/icon-button";
 
 interface EmbeddingsConfig {
@@ -261,7 +262,7 @@ export function EmbeddingsSettings() {
     }
   };
 
-  const fmtSize = (bytes: number) => (bytes / 1024 / 1024).toFixed(0) + " MB";
+  const fmtSize = (bytes: number) => formatMegabytes(bytes);
 
   return (
     <SettingsGroup

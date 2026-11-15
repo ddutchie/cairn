@@ -27,6 +27,7 @@ import fs from "fs";
 import path from "path";
 import { DEFAULT_MAX_BYTES } from "./truncation";
 import { getBashExecutable, killProcessTree, trackPid, untrackPid } from "./coding-tools/bash";
+import { formatBytesBinary } from "../../shared/format/number";
 
 export const RUN_SCRIPT_TOOL_NAME = "run_script";
 export const WRITE_RUN_FILE_TOOL_NAME = "write_run_file";
@@ -83,9 +84,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const UPDATE_THROTTLE_MS = 150;
 
 function fmt(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return formatBytesBinary(bytes);
 }
 
 /**
