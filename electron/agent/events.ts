@@ -43,14 +43,16 @@ export type AgentEvent =
   /** `blocked`: a hook refused this prompt. It stays in the user's transcript but must never reach a model, directly or through session search. */
   /** `context`: text only the model sees, appended to the prompt (hook output, mode reminders). Logged so replay rebuilds the same message. */
   /** `synthetic`: the engine wrote this prompt, not the user (a Stop hook asking for more work). The model sees it; the transcript and session search don't. */
-  | { type: "user/message"; content: string; images?: UserImage[]; blocked?: true; context?: string; synthetic?: true }
+  /** `agentAuthored`: the engine or the agent wrote this prompt (a goal round, a reminder, a subagent's task). Shown like any prompt, but never counted as something the user asked for. */
+  | { type: "user/message"; content: string; images?: UserImage[]; blocked?: true; context?: string; synthetic?: true; agentAuthored?: true }
   | { type: "assistant/delta"; text: string }
   | { type: "assistant/thinking"; text: string }
   | { type: "assistant/message"; message: AssistantMessage }
   | { type: "tool/call"; callId: string; name: string; args: JsonObject; risk: RiskClass }
   | { type: "approval/asked"; ask: AskSpec }
   | { type: "approval/decided"; callId: string; approved: boolean; by: DecisionSource; reason?: string; ruleId?: string; grant?: GrantKind }
-  | { type: "rule/added"; rule: Rule }
+  /** `callId`: the approved call this grant came from. */
+  | { type: "rule/added"; rule: Rule; callId?: string }
   | { type: "tool/result"; callId: string; name: string; text: string; isError: boolean }
   | { type: "auto/paused"; reason: string }
   | { type: "retry"; attempt: number; maxAttempts: number; delayMs: number; error: string }

@@ -6,7 +6,8 @@
  *  2 plan mode              → deny anything not READ (enforced, not advisory)
  *  3 deny rules             → deny
  *  4 doom-loop              → ask (human only; never auto-allowed or reviewed)
- *  5 protected paths        → ask, unless a non-preset allow rule covers it
+ *  5 protected paths        → ask, unless a rule naming that path covers it (writes; reads of
+ *                              credentials outside the workspace)
  *  6 ask rules              → ask (human only)
  *  7 allow rules            → allow
  *  8 READ                   → allow
@@ -15,7 +16,8 @@
  * Doom-loop sits above every allow so a granted tool cannot spin forever, and
  * it is evaluated before any ask short-circuit (audit gap G3).
  */
-import { findRule, isProtectedPath, type CallView, type Rule } from "./rules";
+import * as path from "node:path";
+import { findRule, isProtectedPath, isSecretPath, isWithin, type CallView, type Rule } from "./rules";
 import type { DecisionSource } from "./events";
 
 export type Mode = "ask" | "auto" | "yolo" | "plan";
@@ -91,11 +93,18 @@ export function decide(call: CallView, signature: string, state: PolicyState): D
 
   const allowRule = findRule(state.rules, call, ctx, ["allow"]);
 
+  // Presets and blanket grants never reach these; only a rule that names a path outside "the workspace" does.
+  const explicitPath = (r: Rule) => r.source !== "preset" && r.match.path !== undefined && r.match.path.within !== "workspace";
   if (risk !== "READ" && call.risk.paths?.some((p) => isProtectedPath(p, state.workspaceRoot, state.protectedPaths))) {
-    // Presets never reach protected paths; only an explicit user decision does.
-    const explicit = findRule(state.rules, call, ctx, ["allow"], (r) => r.source !== "preset");
+    const explicit = findRule(state.rules, call, ctx, ["allow"], explicitPath);
     if (explicit) return { kind: "allow", by: "rule", ruleId: explicit.id };
     return { kind: "ask", by: "protected", reason: "Touches a protected path (credentials, git, shell config or Cairn config)" };
+  }
+  // Reading credentials outside the workspace sends them to the model provider: that is the human's call.
+  if (risk === "READ" && call.risk.paths?.some((p) => !isWithin(state.workspaceRoot, path.resolve(state.workspaceRoot, p)) && isSecretPath(p, state.workspaceRoot))) {
+    const explicit = findRule(state.rules, call, ctx, ["allow"], explicitPath);
+    if (explicit) return { kind: "allow", by: "rule", ruleId: explicit.id };
+    return { kind: "ask", by: "protected", reason: "Reads credentials outside the workspace (keys, tokens or cloud config)" };
   }
 
   const askRule = findRule(state.rules, call, ctx, ["ask"]);

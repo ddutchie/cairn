@@ -604,7 +604,10 @@ export async function runAutomation(
     const nonce = data.nonce as string | undefined;
     const trusted = argsByCall.get(callId) ?? {};
     emitRun("toolConfirmRequired", { tool: toolName, callId, label: data.label });
-    if (shouldAutoAllowAutomationTool(automation, toolName, trusted, connectorTools)) {
+    // Only a routine ask may be answered for the user. One raised for a protected path, a repeated
+    // call, a rule or a hook, or to leave the shell sandbox, is asked whatever the approval mode.
+    const routine = (data.by === undefined || data.by === "mode") && data.escalation !== true;
+    if (routine && shouldAutoAllowAutomationTool(automation, toolName, trusted, connectorTools)) {
       respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: true });
       return;
     }

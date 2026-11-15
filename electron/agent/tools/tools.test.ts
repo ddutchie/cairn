@@ -112,8 +112,8 @@ describe("bash tool", () => {
 
 describe("web helpers", () => {
   it("flags private and loopback addresses", () => {
-    for (const ip of ["127.0.0.1", "10.1.2.3", "192.168.0.5", "172.20.0.1", "169.254.169.254", "::1", "fd00::1", "::ffff:10.0.0.1"]) expect(isPrivateAddress(ip), ip).toBe(true);
-    for (const ip of ["8.8.8.8", "1.1.1.1", "2606:4700::1111"]) expect(isPrivateAddress(ip), ip).toBe(false);
+    for (const ip of ["127.0.0.1", "10.1.2.3", "192.168.0.5", "172.20.0.1", "169.254.169.254", "::1", "::", "fd00::1", "fe80::1", "::ffff:10.0.0.1", "::ffff:7f00:1", "::ffff:c0a8:1", "64:ff9b::7f00:1", "224.0.0.1", "198.18.0.1"]) expect(isPrivateAddress(ip), ip).toBe(true);
+    for (const ip of ["8.8.8.8", "1.1.1.1", "2606:4700::1111", "::ffff:8.8.8.8", "::ffff:808:808"]) expect(isPrivateAddress(ip), ip).toBe(false);
   });
   it("strips markup", () => {
     expect(htmlToText("<html><head><title>t</title></head><body><script>x()</script><p>Hello &amp; bye</p><ul><li>one</li></ul></body></html>")).toBe("Hello & bye\n- one");

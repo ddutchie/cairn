@@ -9,6 +9,7 @@ import { goalTools } from "./tools/goal";
 import { scheduleTools } from "./tools/schedule";
 import { subagentTools } from "./tools/subagent";
 import { todoTool } from "./tools/todo";
+import { readSession } from "./session/log";
 import { makeHarness, makeTools } from "./test-harness";
 
 const call = (name: string, args: Record<string, unknown>, id: string) => fauxToolCall(name, args as never, { id });
@@ -78,6 +79,21 @@ describe("AgentHost", () => {
     expect(t.executed.map((e) => e.name)).toEqual(["write_file"]);
     expect(t.proj("approval").some((p) => p.payload.data.status === "resolved")).toBe(true);
     expect(t.host.pendingAsks("s1")).toHaveLength(0);
+  });
+
+  it("saves a workspace grant for the call it was given on, and only that one", async () => {
+    const saved: Array<{ tool?: string; command?: unknown }> = [];
+    const t = await setup({ onWorkspaceGrant: (_s, rule) => saved.push(rule.match) });
+    t.h.faux.setResponses([toolUse(call("write_file", { path: "src/a.ts" }, "c1")), toolUse(call("bash", { command: "rm -rf build" }, "c2")), fauxAssistantMessage("done")]);
+    const run = t.host.prompt(t.req());
+    await until(() => t.host.pendingAsks("s1").some((a) => a.callId === "c1"));
+    t.host.respondTool("s1", "c1", t.host.pendingAsks("s1")[0].nonce, { approved: true, grant: "workspace" });
+    await until(() => t.host.pendingAsks("s1").some((a) => a.callId === "c2"));
+    expect(saved).toEqual([{ tool: "write_file", path: { within: "workspace" } }]);
+    // A grant for this session only is never saved to the workspace.
+    t.host.respondTool("s1", "c2", t.host.pendingAsks("s1")[0].nonce, { approved: true, grant: "command" });
+    await run;
+    expect(saved).toHaveLength(1);
   });
 
   it("an 'always allow' grant survives a restart because it is in the log", async () => {
@@ -350,8 +366,26 @@ describe("AgentHost", () => {
       await t.host.prompt(t.req());
       t.host.notify("s1", "Background job job-1 completed.");
       await t.host.prompt(t.req({ prompt: "next" }));
-      const records = (await t.host.loadMessages("s1")).messages.filter((m) => m.role === "user");
-      expect(records.at(-1)!.content).toContain("<notice>Background job job-1 completed.</notice>");
+      // The model sees the notice; the logged prompt stays what the user typed.
+      const users = (await t.host.loadMessages("s1")).messages.filter((m) => m.role === "user");
+      expect(users.at(-1)!.content).toBe("next");
+      const logged = (await readSession(t.root, "s1"))!.records.map((r) => r.event).filter((e) => e.type === "user/message").at(-1)!;
+      expect(logged).toMatchObject({ content: "next", context: expect.stringContaining("<notice>Background job job-1 completed.</notice>") });
+    });
+
+    it("fires a reminder that fell due before the session was prompted again after a restart", async () => {
+      const t = await setup();
+      const tools = [...makeTools(t.executed), ...scheduleTools({ list: () => t.host.schedules("s1"), add: (p, at, kind) => t.host.addSchedule("s1", p, at, kind), cancel: (id) => t.host.cancelSchedule("s1", id) })];
+      t.h.faux.setResponses([fauxAssistantMessage("a")]);
+      await t.host.prompt(t.req({ tools }));
+      await t.host.addSchedule("s1", "check the build", new Date(Date.now() + 40), "after");
+      t.host.release("s1"); // restart: the timer is gone and there is no request to copy
+      await new Promise((r) => setTimeout(r, 60));
+      t.h.faux.setResponses([fauxAssistantMessage("b"), fauxAssistantMessage("checked")]);
+      await t.host.prompt(t.req({ tools, prompt: "back again" }));
+      await until(() => t.host.schedules("s1").length === 0 && !t.host.isRunning("s1"));
+      const users = (await t.host.loadMessages("s1")).messages.filter((m) => m.role === "user").map((m) => m.content);
+      expect(users).toContain("Reminder: check the build");
     });
   });
 

@@ -5,6 +5,7 @@
  */
 import type { Database } from "better-sqlite3";
 import { getSandboxMode } from "./host-store";
+import type { SandboxMode } from "./sandbox";
 import { getPtySession, killPtySession, onPtySessionData, onPtySessionExit, spawnShellPty } from "../lib/pty-sessions";
 
 const MAX_SCROLLBACK = 200_000;
@@ -14,7 +15,8 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** The PTY substrate; production uses the shared manager, tests inject a fake. */
 export interface PtyAdapter {
-  spawn(cwd: string): Promise<{ sessionId: string }>;
+  /** `sandbox` overrides the user's setting (unattended runs are always confined). */
+  spawn(cwd: string, sandbox?: SandboxMode): Promise<{ sessionId: string }>;
   write(id: string, data: string): void;
   signal(id: string, sig: string): void;
   kill(id: string): void;
@@ -24,7 +26,7 @@ export interface PtyAdapter {
 
 export function sharedPtyAdapter(db: Database): PtyAdapter {
   return {
-    spawn: async (cwd) => ({ sessionId: (await spawnShellPty(db, cwd, { kind: "model", sandbox: { mode: getSandboxMode() } })).sessionId }),
+    spawn: async (cwd, sandbox) => ({ sessionId: (await spawnShellPty(db, cwd, { kind: "model", sandbox: { mode: sandbox ?? getSandboxMode() } })).sessionId }),
     write: (id, data) => { getPtySession(id)?.pty.write(data); },
     signal: (id, sig) => { getPtySession(id)?.pty.kill(sig); },
     kill: (id) => killPtySession(id),
@@ -63,9 +65,9 @@ export class TerminalRegistry {
 
   constructor(private readonly pty: () => PtyAdapter) {}
 
-  async open(owner: string, cwd: string): Promise<TerminalInfo> {
+  async open(owner: string, cwd: string, sandbox?: SandboxMode): Promise<TerminalInfo> {
     const pty = this.pty();
-    const { sessionId } = await pty.spawn(cwd);
+    const { sessionId } = await pty.spawn(cwd, sandbox);
     const id = `term-${++this.n}`;
     const term: Term = { id, owner, adapterId: sessionId, cwd, alive: true, text: "", cursor: 0, lastOutputAt: Date.now(), pending: "", dispose: () => undefined };
     const offData = pty.onData(sessionId, (data) => {

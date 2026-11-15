@@ -128,7 +128,13 @@ function darwinCacheDir(): string[] {
   } catch { return []; }
 }
 
-const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun", ".gradle", ".m2", ".node-gyp", "go", ".local/share/pnpm", "Library/pnpm", "Library/Caches"];
+/**
+ * Package-manager caches and stores. Where a tool keeps its installed commands beside its cache
+ * (Go, Bun, pnpm) only the cache part is listed, so a sandboxed command cannot put a program on PATH.
+ */
+const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun/install", ".gradle", ".m2", ".node-gyp", "go/pkg", ".local/share/pnpm/store", "Library/pnpm/store", "Library/Caches"];
+/** Command folders inside those roots; they stay read-only. */
+const HOME_BIN_DIRS = [".cargo/bin", ".yarn/bin"];
 
 /** Scratch space every command needs (pagers, heredocs, compilers); not the user's files. */
 export function tempRoots(tmp = os.tmpdir()): string[] {
@@ -170,7 +176,7 @@ export function bwrapArgs(roots: string[], blockNetwork = false, pty = false, re
 
 /** Inside the writable roots, these stay read-only: git hooks and tool shims that later run outside the sandbox. */
 export function readOnlyCarveOuts(roots: string[], cwd: string, home = os.homedir()): string[] {
-  const out = [path.join(home, ".cargo", "bin")];
+  const out = HOME_BIN_DIRS.map((d) => path.join(home, d));
   for (const r of roots) out.push(path.join(r, ".git", "hooks"));
   for (const d of gitDirs(cwd)) out.push(path.join(d, "hooks"));
   return [...new Set(out.map(real))].filter((p) => roots.some((r) => p === r || p.startsWith(r + path.sep)));

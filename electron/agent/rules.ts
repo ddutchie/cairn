@@ -146,6 +146,26 @@ const PROTECTED_SEGMENTS = new Set([".git", ".cairn"]);
 const PROTECTED_BASENAMES = /^(\.env(\..*)?|\.npmrc|\.pypirc|\.netrc|id_(rsa|dsa|ecdsa|ed25519)|\.bashrc|\.bash_profile|\.zshrc|\.zprofile|\.zshenv|\.profile)$/;
 const PROTECTED_EXT = /\.(pem|key|p12|pfx)$/;
 
+const SECRET_BASENAMES = /^(\.npmrc|\.pypirc|\.netrc|id_(rsa|dsa|ecdsa|ed25519)|credentials(\.json)?|\.git-credentials)$/;
+const ENV_FILE = /^\.env(\..*)?$/;
+const ENV_EXAMPLE = /\.(example|sample|template|dist)$/;
+const SECRET_SEGMENTS = new Set([".ssh", ".aws", ".gnupg", ".kube", ".azure"]);
+const SECRET_DIRS = [[".config", "gcloud"], [".config", "gh"], [".docker"]];
+
+/**
+ * A file or folder that holds credentials. Reads of these are asked about when they are outside the
+ * workspace; inside it the shell and search tools reach them anyway, so asking would only be noise.
+ */
+export function isSecretPath(p: string, workspaceRoot: string): boolean {
+  const abs = path.resolve(workspaceRoot, p);
+  const parts = abs.split(path.sep);
+  if (parts.some((seg) => SECRET_SEGMENTS.has(seg))) return true;
+  if (SECRET_DIRS.some((dir) => parts.some((_, i) => dir.every((seg, j) => parts[i + j] === seg)))) return true;
+  const base = path.basename(abs);
+  if (ENV_FILE.test(base)) return !ENV_EXAMPLE.test(base);
+  return SECRET_BASENAMES.test(base) || PROTECTED_EXT.test(base);
+}
+
 export function isProtectedPath(p: string, workspaceRoot: string, extra: readonly string[] = []): boolean {
   const abs = path.resolve(workspaceRoot, p);
   const parts = abs.split(path.sep);
@@ -179,21 +199,39 @@ export function presetRules(...ids: PresetId[]): Rule[] {
 
 export type GrantKind = "tool" | "command";
 
-/** Grants the UI may offer for a call. EXEC grants are exact-command only. */
-export function offeredGrants(risk: RiskInfo): GrantKind[] {
+/**
+ * Grants the UI may offer for a call. EXEC grants are exact-command only. A call that touches a
+ * protected path gets none: it is asked about every time.
+ */
+export function offeredGrants(risk: RiskInfo, workspaceRoot?: string, protectedPaths?: readonly string[]): GrantKind[] {
   if (risk.class === "READ") return [];
   if (risk.escalation) return [];
+  if (workspaceRoot !== undefined && risk.paths?.some((p) => isProtectedPath(p, workspaceRoot, protectedPaths))) return [];
   if (risk.class === "EXEC") return risk.command && canonicalCommand(risk.command) ? ["command"] : [];
   return ["tool"];
 }
 
+/**
+ * How far a file-write grant reaches: the workspace when the approved write was inside it, otherwise
+ * only the folders that were written to. Never the whole disk.
+ */
+function grantPath(risk: RiskInfo, workspaceRoot: string | undefined): RuleMatch["path"] | undefined {
+  if (risk.class !== "WRITE_LOCAL" || !risk.paths?.length || workspaceRoot === undefined) return undefined;
+  const abs = risk.paths.map((p) => path.resolve(workspaceRoot, p));
+  if (abs.every((p) => isWithin(workspaceRoot, p))) return { within: "workspace" };
+  const dirs = [...new Set(abs.map((p) => path.dirname(p)))];
+  // One folder can be expressed as a rule; several unrelated ones cannot, so that grant only covers the workspace.
+  return dirs.length === 1 ? { within: dirs[0] } : { within: "workspace" };
+}
+
 let grantSeq = 0;
-export function grantRule(call: CallView, grant: GrantKind): Rule {
+export function grantRule(call: CallView, grant: GrantKind, workspaceRoot?: string): Rule {
   const id = `grant:${Date.now().toString(36)}:${(grantSeq++).toString(36)}`;
   if (grant === "command") {
     return { id, effect: "allow", scope: "session", source: "grant", match: { tool: call.name, command: { exact: canonicalCommand(call.risk.command ?? "") } } };
   }
-  return { id, effect: "allow", scope: "session", source: "grant", match: { tool: call.name } };
+  const within = grantPath(call.risk, workspaceRoot);
+  return { id, effect: "allow", scope: "session", source: "grant", match: { tool: call.name, ...(within ? { path: within } : {}) } };
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@
  *  - `pending()` is the snapshot a reconnecting renderer replays (G5)
  */
 import { randomBytes } from "node:crypto";
+import type { DecisionSource } from "./events";
 import type { GrantKind, RiskClass } from "./rules";
 
 export interface AskSpec {
@@ -22,6 +23,10 @@ export interface AskSpec {
   preview: string;
   /** Why we're asking: the rule, the doom-loop pause, the reviewer's reason. */
   reason: string;
+  /** What raised the ask. Only a `mode` ask is routine; the others (protected path, doom-loop, rule, hook, reviewer) are meant for a human. */
+  source?: DecisionSource;
+  /** The call leaves, or cannot use, the shell sandbox. */
+  escalation?: boolean;
   grants: GrantKind[];
   expiresAt: number;
 }

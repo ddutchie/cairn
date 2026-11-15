@@ -56,6 +56,8 @@ export interface TurnOptions {
   /** Provider messages so far. The loop appends to it as the turn progresses. */
   history: Message[];
   input: string;
+  /** The engine or the agent wrote `input`, not the user (a goal round, a reminder, a subagent's task). */
+  inputAgentAuthored?: boolean;
   /**
    * Text only the model sees, appended to this prompt (a mode reminder, an approved plan).
    * Things that change during a session belong here and not in `systemPrompt`: a changed
@@ -181,7 +183,7 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
   const context = [promptHook?.context ? `<hook_context>\n${promptHook.context}\n</hook_context>` : "", o.context ?? ""].filter(Boolean).join("\n\n") || undefined;
   o.history.push({ role: "user", content: userContent(withContext(o.input, context), images), timestamp: Date.now() } satisfies UserMessage);
   // The context is logged with the prompt, so a replayed history matches the live one.
-  yield { type: "user/message", content: o.input, ...(images ? { images } : {}), ...(context ? { context } : {}) };
+  yield { type: "user/message", content: o.input, ...(images ? { images } : {}), ...(context ? { context } : {}), ...(o.inputAgentAuthored ? { agentAuthored: true as const } : {}) };
   let stopContinuations = 0;
 
   let compactions = 0;
@@ -442,7 +444,9 @@ async function* resolveDecision(
     title: call.name,
     preview: tool.preview?.(args) ?? JSON.stringify(args),
     reason: askReason,
-    grants: offeredGrants(risk),
+    source: askBy,
+    ...(risk.escalation ? { escalation: true } : {}),
+    grants: offeredGrants(risk, o.workspaceRoot),
   };
   const { ask, outcome } = o.gate.open(input, { signal: o.signal, ttlMs: o.askTtlMs });
   yield { type: "approval/asked", ask };
@@ -459,9 +463,9 @@ async function* resolveDecision(
   }
   if (askBy === "doom") state.doomAcked.add(signature);
   if (res.grant) {
-    const rule = grantRule({ name: call.name, risk }, res.grant);
+    const rule = grantRule({ name: call.name, risk }, res.grant, o.workspaceRoot);
     o.rules.add(rule);
-    yield { type: "rule/added", rule };
+    yield { type: "rule/added", rule, callId: call.id };
   }
   yield decided(true, "human", { grant: res.grant });
   return { approved: true };

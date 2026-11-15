@@ -8,6 +8,23 @@ import { bashTool } from "./tools/bash";
 import { decide, type PolicyState } from "./policy";
 import { offeredGrants } from "./rules";
 
+describe("writable home folders", () => {
+  it("opens package caches but not the folders commands are installed into", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sb-home-"));
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "sb-work-"));
+    const roots = writableRoots(work, [], home);
+    const at = (p: string) => path.join(fs.realpathSync(home), p);
+    // A folder that does not exist yet is listed as written; an existing one by its real path.
+    const has = (p: string) => roots.includes(at(p)) || roots.includes(path.join(home, p));
+    for (const cache of ["go/pkg", ".bun/install", "Library/pnpm/store", ".npm"]) expect(has(cache), cache).toBe(true);
+    for (const bin of ["go", "go/bin", ".bun", ".bun/bin", "Library/pnpm", ".local/share/pnpm"]) expect(has(bin), bin).toBe(false);
+    fs.mkdirSync(path.join(home, ".yarn", "bin"), { recursive: true });
+    fs.mkdirSync(path.join(home, ".cargo", "bin"), { recursive: true });
+    const ro = readOnlyCarveOuts(writableRoots(work, [], home), work, home);
+    expect(ro).toEqual(expect.arrayContaining([at(".yarn/bin"), at(".cargo/bin")]));
+  });
+});
+
 describe("sandbox profiles", () => {
   it("seatbelt denies writes outside the roots and quotes paths", () => {
     const p = seatbeltProfile(["/work/a b", '/x"y']);
