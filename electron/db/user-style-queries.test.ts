@@ -1,13 +1,7 @@
 import { describe, it, expect } from "vitest";
-import Database from "better-sqlite3";
 import { applySchema } from "./schema";
+import { makeDb } from "../test-support/db";
 import { getUserStyle, saveUserStyle, clearUserStyle, USER_STYLE_ID } from "./user-style-queries";
-
-function makeDb() {
-  const db = new Database(":memory:");
-  applySchema(db);
-  return db;
-}
 
 describe("user-style queries", () => {
   it("returns null before anything is saved", () => {

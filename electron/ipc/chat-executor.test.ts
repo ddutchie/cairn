@@ -17,9 +17,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
-import { applySchema } from "../db/schema";
+import { makeDb } from "../test-support/db";
 import * as q from "../db/queries";
 import {
   createWorkspace, createProject, createNote, updateNote,
@@ -30,12 +29,6 @@ import type { LLMConfig } from "../lib/llm";
 import type { ChatRequest } from "../lib/tools";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
-
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
 
 const llmConfig: LLMConfig = { baseUrl: "http://localhost", model: "test", apiKey: "" };
 const chatReq: ChatRequest = { message: "", workspaceId: "ws1", projectId: "proj1", threadId: "t1" };
@@ -737,7 +730,6 @@ describe("ensure_note", () => {
     const note2 = await exec(db, "get_note", { noteId: result2.id }) as Record<string, unknown>;
     expect(note2.content).toBe("");
   });
-
 
   it("only one note exists after two ensure calls with same title", async () => {
     const db = makeDb();

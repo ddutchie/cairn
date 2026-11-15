@@ -11,6 +11,7 @@ import path from "path";
 import os from "os";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import { makeDb } from "./test-support/db";
 import { applySchema } from "./db/schema";
 import { createWorkspace, createProject, updateProject } from "./db/queries";
 import {
@@ -299,12 +300,6 @@ describe("stripMarkdown", () => {
 
 // ── adoptExternalNoteFile ─────────────────────────────────────────────────
 
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
-
 function seedProjectInDb(db: Database.Database, name = "My Project", id = "proj1", wsId = "ws1") {
   createWorkspace(db, { id: wsId, name: "Test Workspace" });
   return createProject(db, { id, workspaceId: wsId, name });
@@ -591,7 +586,6 @@ describe("renameProjectNotesDir", () => {
     expect(fs.existsSync(oldDir)).toBe(false);
   });
 });
-
 
 describe("reconcileProjectFolders", () => {
   let db: Database.Database;

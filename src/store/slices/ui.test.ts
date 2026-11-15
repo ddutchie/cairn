@@ -17,35 +17,26 @@ vi.mock("@/lib/storage", () => ({
 }));
 
 describe("createUISlice", () => {
-  it("initializes with overview as activeView and lastContentView", () => {
-    let state: any = {};
+  let state: any = {};
 
+  beforeEach(() => {
+    state = {};
     const mockSet = (updater: any) => {
       const next = typeof updater === "function" ? updater(state) : updater;
       state = { ...state, ...next };
     };
     const mockGet = () => state;
-
     const slice = createUISlice(mockSet, mockGet, {} as any);
     state = { ...state, ...slice };
+  });
 
+  it("initializes with overview as activeView and lastContentView", () => {
     expect(state.activeView).toBe("overview");
     expect(state.lastContentView).toBe("overview");
     expect(state.sessionPresentation).toBe("drawer");
   });
 
   it("setView updates activeView and lastContentView for content views", () => {
-    let state: any = {};
-
-    const mockSet = (updater: any) => {
-      const next = typeof updater === "function" ? updater(state) : updater;
-      state = { ...state, ...next };
-    };
-    const mockGet = () => state;
-
-    const slice = createUISlice(mockSet, mockGet, {} as any);
-    state = { ...state, ...slice };
-
     // Navigate to board (a content view)
     state.setView("board");
     expect(state.activeView).toBe("board");
@@ -58,14 +49,6 @@ describe("createUISlice", () => {
   });
 
   it("openCalendar reopens the calendar in its last scope, and remembers it", () => {
-    let state: any = {};
-    const mockSet = (updater: any) => {
-      const next = typeof updater === "function" ? updater(state) : updater;
-      state = { ...state, ...next };
-    };
-    const slice = createUISlice(mockSet, () => state, {} as any);
-    state = { ...state, ...slice };
-
     state.openCalendar();
     expect(state.activeView).toBe("calendar");
 
@@ -79,17 +62,6 @@ describe("createUISlice", () => {
   });
 
   it("setView does not update lastContentView when entering chat or search mode", () => {
-    let state: any = {};
-
-    const mockSet = (updater: any) => {
-      const next = typeof updater === "function" ? updater(state) : updater;
-      state = { ...state, ...next };
-    };
-    const mockGet = () => state;
-
-    const slice = createUISlice(mockSet, mockGet, {} as any);
-    state = { ...state, ...slice };
-
     // Set a baseline content view
     state.setView("board");
     expect(state.activeView).toBe("board");
@@ -122,16 +94,6 @@ describe("createUISlice", () => {
   });
 
   it("keeps conversation presentation independent from content view navigation", () => {
-    let state: any = {};
-
-    const mockSet = (updater: any) => {
-      const next = typeof updater === "function" ? updater(state) : updater;
-      state = { ...state, ...next };
-    };
-    const mockGet = () => state;
-    const slice = createUISlice(mockSet, mockGet, {} as any);
-    state = { ...state, ...slice };
-
     state.setView("chat");
     expect(state.sessionPresentation).toBe("center");
 
@@ -144,16 +106,6 @@ describe("createUISlice", () => {
   });
 
   it("resets to the drawer when leaving the chat view", () => {
-    let state: any = {};
-
-    const mockSet = (updater: any) => {
-      const next = typeof updater === "function" ? updater(state) : updater;
-      state = { ...state, ...next };
-    };
-    const mockGet = () => state;
-    const slice = createUISlice(mockSet, mockGet, {} as any);
-    state = { ...state, ...slice };
-
     state.setView("board");
     state.setView("chat");
     expect(state.activeView).toBe("chat");
@@ -168,15 +120,7 @@ describe("createUISlice", () => {
   });
 
   it("opens the global Chat affordance in the drawer", () => {
-    let state: any = { sessionPresentation: "center" };
-
-    const mockSet = (updater: any) => {
-      const next = typeof updater === "function" ? updater(state) : updater;
-      state = { ...state, ...next };
-    };
-    const mockGet = () => state;
-    const slice = createUISlice(mockSet, mockGet, {} as any);
-    state = { ...state, ...slice, sessionPresentation: "center" };
+    state = { ...state, sessionPresentation: "center" };
 
     state.toggleChat();
     expect(state.chatOpen).toBe(true);
@@ -184,21 +128,13 @@ describe("createUISlice", () => {
   });
 
   it("setActiveWorkspace and setActiveProject reset lastContentView to overview", () => {
-    let state: any = {
+    state = {
+      ...state,
       projects: [
         { id: "p1", workspaceId: "w1" },
         { id: "p2", workspaceId: "w2" },
       ],
     };
-
-    const mockSet = (updater: any) => {
-      const next = typeof updater === "function" ? updater(state) : updater;
-      state = { ...state, ...next };
-    };
-    const mockGet = () => state;
-
-    const slice = createUISlice(mockSet, mockGet, {} as any);
-    state = { ...state, ...slice };
 
     // Set a baseline
     state.setView("board");

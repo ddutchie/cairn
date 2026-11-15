@@ -12,35 +12,13 @@ import type { AddressInfo } from "net";
  * click-through in the app.
  */
 
-// In-memory secrets backing (same approach as secure-store.test / mcp-oauth.test).
-let virtualFiles: Record<string, string> = {};
+// In-memory secrets backing (shared mock; same approach as secure-store.test).
+import { resetVirtualFiles } from "../test-support/secure-store-mock";
 
-vi.mock("electron", () => ({
-  app: {
-    isReady: () => true,
-    getPath: (k: string) => (k === "userData" ? "/tmp/svc-oauth-int" : `/mock/${k}`),
-    on: () => {},
-  },
-  shell: { openExternal: vi.fn(() => Promise.resolve()) },
-  safeStorage: {
-    isEncryptionAvailable: () => true,
-    encryptString: (s: string) => Buffer.from(`enc:${s}`, "utf-8"),
-    decryptString: (b: Buffer) => b.toString("utf-8").replace(/^enc:/, ""),
-  },
-}));
+vi.mock("electron", async () =>
+  (await import("../test-support/secure-store-mock")).electronMock("/tmp/svc-oauth-int"));
 
-vi.mock("fs", () => ({
-  default: {
-    existsSync: (p: string) => Object.prototype.hasOwnProperty.call(virtualFiles, p),
-    readFileSync: (p: string) => {
-      if (!Object.prototype.hasOwnProperty.call(virtualFiles, p)) throw new Error("ENOENT");
-      return virtualFiles[p];
-    },
-    writeFileSync: (p: string, data: string) => {
-      virtualFiles[p] = data;
-    },
-  },
-}));
+vi.mock("fs", async () => (await import("../test-support/secure-store-mock")).fsMock());
 
 // These SDK submodules are only needed for their real exports; the transport
 // classes are never constructed on the service path, but the module graph pulls
@@ -156,7 +134,7 @@ describe("HTTP-service OAuth — real refresh round-trip (getAccessToken)", () =
   let as: MockAS;
 
   beforeEach(async () => {
-    virtualFiles = {};
+    resetVirtualFiles();
     as = await startMockAS();
   });
   afterEach(async () => {
@@ -220,7 +198,7 @@ describe("HTTP-service OAuth — real refresh round-trip (getAccessToken)", () =
 describe("HTTP-service OAuth — real sign-in round-trip (auth + code exchange)", () => {
   let as: MockAS;
   beforeEach(async () => {
-    virtualFiles = {};
+    resetVirtualFiles();
     as = await startMockAS();
   });
   afterEach(async () => {

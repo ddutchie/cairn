@@ -1,38 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { resetVirtualFiles, virtualFiles } from "../test-support/secure-store-mock";
 
-// In-memory file backing the secrets store.
-let virtualFiles: Record<string, string> = {};
+vi.mock("electron", async () =>
+  (await import("../test-support/secure-store-mock")).electronMock("/tmp/secure-store-test"));
 
-vi.mock("electron", () => ({
-  app: {
-    isReady: () => true,
-    getPath: (key: string) => (key === "userData" ? "/tmp/secure-store-test" : `/mock/${key}`),
-  },
-  // Reversible "encryption" so the round-trip is verifiable in tests.
-  safeStorage: {
-    isEncryptionAvailable: () => true,
-    encryptString: (s: string) => Buffer.from(`enc:${s}`, "utf-8"),
-    decryptString: (b: Buffer) => b.toString("utf-8").replace(/^enc:/, ""),
-  },
-}));
-
-vi.mock("fs", () => ({
-  default: {
-    existsSync: (p: string) => Object.prototype.hasOwnProperty.call(virtualFiles, p),
-    readFileSync: (p: string) => {
-      if (!Object.prototype.hasOwnProperty.call(virtualFiles, p)) throw new Error("ENOENT");
-      return virtualFiles[p];
-    },
-    writeFileSync: (p: string, data: string) => {
-      virtualFiles[p] = data;
-    },
-  },
-}));
+vi.mock("fs", async () => (await import("../test-support/secure-store-mock")).fsMock());
 
 import * as store from "./secure-store";
 
 beforeEach(() => {
-  virtualFiles = {};
+  resetVirtualFiles();
 });
 
 describe("secure-store pure helpers", () => {

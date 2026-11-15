@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import BetterSqlite3 from "better-sqlite3";
-import { applySchema } from "../db/schema";
+import { makeDb } from "../test-support/db";
 import {
   addWorkspaceApprovalGrant,
   getWorkspaceApprovalGrants,
@@ -9,12 +8,6 @@ import {
   clearWorkspaceApprovalGrants,
   isWildcardExecGrant,
 } from "../db/approval-grant-queries";
-
-function makeDb() {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
 
 describe("approval_grants (workspace-persistent Always Allow)", () => {
   it("stores a tool-scoped grant and matches it", () => {
