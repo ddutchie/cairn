@@ -29,6 +29,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Primitives**: every icon-only button is an `IconButton` (required `label` → tooltip + accessible name; one shape, `FOCUS_RING`, `pressed` for toggles). The `cairn/icon-button-label` lint rule (`eslint-rules/cairn.mjs`) reports any icon-only `<button>`; a deliberate exception carries `eslint-disable-next-line cairn/icon-button-label -- <why>`. Hover hints on other controls use `Tooltip`, not `title=`; keep `title=` only to show truncated text in full. Menus use `DropdownMenu`, rich floating panels use `Popover`, searchable pickers use `Combobox`, plain pickers use `Select`. Don't hand-roll `absolute … z-50` popovers.
 - **Monospace**: `font-mono` is for code, paths, kbd and numeric counts, not dates or status words.
 - **Font scaling**: `--font-scale` CSS variable is set on `<html>` inline by `applyFontScale()`. Root `font-size: calc(14px * var(--font-scale))`. SVG `fontSize` attributes must be multiplied by `useFontScale()` from `src/lib/viz/hooks.ts`.
+
+## Native modules
+
 - **better-sqlite3 (v13+, N-API)**: better-sqlite3 ≥13 is built on the N-API, so one prebuilt binary (shipped inside the package at `node_modules/better-sqlite3/prebuilds/<platform>-<arch>.node`) is ABI-stable across Electron, the pkg Node 24 runtime, and system Node. `scripts/rebuild-native.js` fans the in-package prebuild out to `electron-native/<arch>/better_sqlite3_electron.node`, `pkg-native/<arch>/better_sqlite3.node`, and `vitest-native/better_sqlite3.node` (arch-separated so a single macOS build ships both arm64 + x64, resolved at runtime via `process.arch`). On macOS it also re-signs each copy ad-hoc with an explicit identifier (`codesign -s - -i cairn-better-sqlite3-<arch>`): the shipped prebuilds are linker-signed, and dyld SIGKILLs an ad-hoc-signed `pkg` binary that dlopens them. The only place a `Database` is constructed is `electron/db/client.ts` (Electron) and the MCP runtime (`mcp-server.ts`, dev) / packaged `cairn-mcp` via `resolveMcpNativeBinding()` — plus the readonly workspace-detection probe in `electron/mcp/db.ts` (`findDbPath`, readonly + closed immediately) — always passing `nativeBinding` for the arch-matched addon. The standalone `cairn-mcp` binary must run independently of the app (so agents can read/write the workspace while Cairn is closed), which is why it bundles its own Node runtime + sqlite rather than reusing the Electron one; `build-mcp-binary.js` stages the addon as a real sidecar next to the executable and re-signs it on macOS. Helper functions in `electron/db/queries.ts` and `electron/db/graph-queries.ts` may be imported from `electron/mcp/tools/*` — they run on the already-constructed `db` handle regardless of which TS file defines them (see `electron/mcp/tools/codebase.ts`, which already does `import * as q from "../../db/queries"`). Never construct a `Database` outside those bootstrap sites in production/runtime code. (Test code is exempt — vitest runs in plain Node via the `vitest-sqlite-shim.cjs` alias, and v13's `exports` map means the shim must import the package main entry, not `better-sqlite3/lib/*`.)
 - **onnxruntime-node is PINNED to 1.23.x (currently 1.23.2) — do not bump.** We ship mac Intel (x64) alongside arm64, and onnxruntime-node dropped the `darwin/x64` prebuild in **1.24.0** (every release since, up to 1.31.1 as checked 2026-11-01, is macOS-arm64-only; 1.23.2 is the newest patch that still ships x64). The loader does a hard `require('../bin/napi-v6/${process.platform}/${process.arch}/onnxruntime_binding.node')` with no fallback, so ≥1.24 cannot start the embeddings server on an Intel Mac. `@huggingface/transformers` (4.3.2 at last check) declares an exact `onnxruntime-node` (1.30.0 at last check), which can drop further than the pin; an npm `override` (`"onnxruntime-node": "1.23.2"` in `package.json`) forces it back. This is safe because Cairn creates the `InferenceSession` itself from `onnxruntime-node` (`electron/embeddings/pipeline.ts`, `electron/runtime/adapters/embeddings.ts`) and only uses transformers for tokenizers; verified 2026-11-01 by running the cached bge-small model on 1.23.2 under Node and Electron 45. Bumping onnxruntime-node therefore requires either (a) cross-compiling onnxruntime from source for darwin-x64, or (b) an explicit decision to drop mac Intel support.
 
@@ -129,6 +132,12 @@ Shared modules:
 | Tools | `slices/tools.ts` | Workspace MCP servers + custom services (CRUD/cache only; execution is main-process) |
 | Graph | `slices/graph.ts` | `graphData`, `graphLoading`, `graphFilters`, `graphLayout`, `loadGraph`, `setGraphLayout`, `setGraphFilters` |
 | Selectors | `slices/selectors.ts` | `getWorkspaceProjects`, `getProjectNotes`, `search` |
+| Commands | `slices/commands.ts` | `customCommands`, `fetchCommands`, `createCommand`, `updateCommand`, `deleteCommand` |
+| Automations | `slices/automations.ts` | `automations`, `fetchAutomations`, runs, schedules |
+| Notifications | `slices/notifications.ts` | `notifications`, `fetchNotifications`, `markNotificationRead`, polling |
+| Coding agents | `slices/coding-agents.ts` | `agents`, `fetchAgents`, `saveAgent`, `deleteAgent`, `setDefaultAgent` |
+| User style | `slices/user-style.ts` | `userStyle`, `fetchUserStyle`, `saveUserStyle` |
+| Terminal sessions | `slices/terminal-sessions.ts` | `terminalSessions`, jobs bridge, session summaries |
 
 Hydration: `hydrate()` (web/localStorage) and `hydrateFromElectron()` both restore `theme` and `fontScale` from localStorage on startup.
 
@@ -159,7 +168,40 @@ Workspace
 
 Notes write to both `.md` files and SQLite simultaneously. (Dashboards were removed in 3.1.3; any legacy `type="dashboard"` row is converted to a markdown note at boot by `electron/db/legacy-dashboards.ts`.)
 
-## Key constraints
+## Where things live
+
+Before writing a helper, look here. If the thing exists, use it; if it almost fits, extend it.
+
+| Concept | Home | Notes |
+|---|---|---|
+| Domain and wire types | `shared/types/`, `shared/agent/session-wire.ts`, `shared/chat/registry-schema.ts` | Renderer and main import these with `import type`. Never re-declare a wire type in `src/`. |
+| IPC channels and payloads | `shared/ipc/contract.ts` | Main registers with `registerContractHandle` (`electron/ipc/registry.ts`); renderer calls through `src/lib/ipc/<namespace>.ts`. |
+| IPC result envelope | `electron/ipc/result-helpers.ts` (`handle`) | Main returns `{ data } \| { error }`; the typed client unwraps it. |
+| Dates and relative time | `shared/format/date.ts` | Includes `formatRelative`, `formatWhenAbsent`, `formatWhenRelative`. |
+| Numbers, tokens, bytes, durations | `shared/format/number.ts` | `formatCompact` (`upper` for `K` vs `k`), `formatCompactWithMillion`, `formatBytesBinary`, `formatBytesSI`, `formatMegabytes`, `formatDurationMs`. No rendered string changes — pick the function that matches. |
+| Error to message | `errMsg` (`electron/host-shared/errors.ts`) | |
+| Markdown to text, wikilinks | `shared/notes/text.ts`, `shared/notes/wikilinks.ts` | |
+| LLM base URL, defaults | `electron/lib/llm.ts` (`normaliseBaseUrl`, `buildApiUrl`) | Do not resolve keys/models outside the handler that owns them (see F4; `llm-config.ts` lands in B2). |
+| Model calls | `electron/agent/provider.ts` (streaming), `electron/agent/one-shot.ts` (single reply) | There is no other transport. |
+| Tool schemas (Cairn data tools) | `electron/lib/tool-schemas.ts` (`TOOL_SCHEMAS`) | |
+| Per-surface toolsets | `electron/agent/tools/index.ts` (`buildToolset`), shown by `electron/lib/tool-inventory.ts` | |
+| Shell sandbox | `electron/agent/sandbox.ts` | |
+| DB access | `electron/db/*-queries.ts` on the handle from `electron/db/client.ts` | |
+| UI primitives | `src/components/ui/` | See "Styling rules". |
+| Viz hooks and colour helpers | `src/lib/viz/` | |
+| Syntax highlight colours | `shared/notes/syntax-palette.ts` | Renderer builds on it; no raw hex in components. |
+
+(Future rows — `shared/agent/tool-names.ts`, `shared/agent/risk.ts`, `shared/net/address.ts`, `electron/lib/proc.ts`, `electron/lib/git-exec.ts`, `electron/ipc/session-guards.ts`, `electron/ipc/engine/session-state.ts`, `electron/agent/profiles.ts`, test-support modules — get added in the PR that creates each module.)
+
+## Rules that keep it that way
+
+- **Search before you write.** For any parser, validator, formatter, id/path check or config lookup, search `shared/` and the table above first. A second copy "kept local to avoid a dependency" is not allowed; move the original to `shared/` instead.
+- **Pure logic used by both processes goes in `shared/`** (no Electron, no Node-only APIs). Main-only helpers go in `electron/lib/`. Renderer-only helpers go in `src/lib/`.
+- **A comment that says "mirrors X" is a bug report.** Import X.
+- **The renderer never touches `window.electron` directly** outside `src/lib/ipc/` and `src/store/ipc.ts`.
+- **Tests take fixtures from the test-support modules** (once A1 lands in `electron/test-support/`). Do not declare `makeDb` in a test file.
+- **Retired names stay out of live code.** `cordis`, `dsh`, `engine-tool-*`, `pwsh`, `str_replace_editor` belong only in `electron/agent/session/legacy-import.ts`, migrations and `docs/archive/`.
+- **Plans in `docs/plans/` are current or marked.** When a plan is finished or dropped, move it to `docs/archive/`.
 
 ## Agent tools & surfaces
 
@@ -167,7 +209,7 @@ Notes write to both `.md` files and SQLite simultaneously. (Dashboards were remo
 - **Per-surface inventory**: `electron/lib/tool-inventory.ts` builds each surface's toolset with the engine's own `buildToolset` (chat = Cairn tools only, no `read`/`edit`/`bash`; coding = + filesystem/exec stack, subagents, goals, jobs, terminals; automation-dev = file tools only; MCP = minus chat-only) — served by `runtime:tools:inventory`, displayed in Settings → AI tabs
 - **Prompt-cache rules**: providers cache by request prefix (tools → system prompt → messages), so nothing in that prefix may change mid-session. Built-in tools keep a fixed order with connector tools last (`buildToolset`), and the tool list never changes during a session; the skill list is sent as context, not in the `skill` tool's description; mode switches and the approved plan go in a prompt's model-only `context` (logged on `user/message`), never the system prompt; request-time pruning cuts from the start of the history in steps (`agent/context.ts`). A user who wants different tools forks the session (`agent/session/fork.ts`, `session:fork`): chat → chat, chat → coding and coding → coding, never coding → chat
 - **Coding prompt**: `electron/lib/coding-session-prompt.ts` carries the board-tracking workflow (In Progress → Review/Done, PRD checklists, session summaries); chat prompt is `buildSystemPrompt` in `electron/lib/tools.ts`
-- Never construct a `Database` instance outside `electron/db/client.ts` (Electron), `mcp-server.ts` (MCP runtime), and the readonly probe in `electron/mcp/db.ts` (`findDbPath`) — those are the only three ABI bootstrap sites (see "better-sqlite3 ABI" above)
+- Never construct a `Database` instance outside `electron/db/client.ts` (Electron), `mcp-server.ts` (MCP runtime), and the readonly probe in `electron/mcp/db.ts` (`findDbPath`) — those are the only three ABI bootstrap sites (see "Native modules" above)
 - All DB writes from renderer go through `ipc()` / `ipcAwait()` to the Electron main process
 - `graphData` is lazy — only populated when `loadGraph(activeWorkspaceId)` is called. Both `KnowledgeGraphView` and `InsightsView` call it on mount.
 - D3 `fontSize` in SVG must always be multiplied by `useFontScale()` — never hardcode px values

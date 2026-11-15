@@ -77,6 +77,9 @@ jobs:
       - name: Lint
         run: npm run lint -- --max-warnings 0
 
+      - name: Unused-code check (report-only)
+        run: npx --no-install knip@5 --no-progress || true
+
   # ── Mobile (Expo companion) ─────────────────────────────────────────────────
   # Root type-check/lint ignore mobile/** (separate RN-aware toolchain), so the
   # companion app gets its own gate here instead of only at release time

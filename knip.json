@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "electron/main.ts",
+    "electron/preload/*.ts",
+    "electron/runtime/server.ts",
+    "electron/embeddings/server.ts",
+    "electron/mcp-server.ts",
+    "next.config.*",
+    "src/app/**/page.tsx",
+    "scripts/*.js"
+  ],
+  "ignore": ["tests/**", "tests/e2e/**", "**/*.test.ts", "**/*.test.tsx", "**/*.live.test.ts"],
+  "ignoreDependencies": ["d3-zoom", "cmdk"]
+}
