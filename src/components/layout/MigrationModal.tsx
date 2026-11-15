@@ -12,19 +12,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
-
-interface MigrationStatus {
-  id: string;
-  title: string;
-  description: string;
-  needed: boolean;
-}
-
-interface MigrationProgress {
-  migrationId: string;
-  pct: number;
-  msg: string;
-}
+import type {
+  MigrationProgress,
+  MigrationStatus,
+} from "../../../shared/types/app";
 
 type Phase = "pending" | "running" | "done" | "error" | "none";
 

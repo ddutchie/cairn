@@ -15,72 +15,25 @@
 
 import { useSyncExternalStore } from "react";
 
-export type SyncState = "disabled" | "idle" | "syncing" | "offline";
+import type { ConflictCopy, SyncState, SyncStatus } from "../../shared/types/sync";
+import type {
+  PeerProtocol,
+  RestorableRow,
+  RestoreRefusal,
+  SyncActivityRow,
+  SyncOutcome,
+} from "../../shared/sync/engine";
 
-export interface SyncStatus {
-  state: SyncState;
-  pending: number;
-  conflicts: number;
-  lastSyncAt: string | null;
-  connected: boolean;
-}
+// Wire shapes live in shared/ (single source). Re-exported so existing
+// @/lib/sync-client type imports keep working; do not re-declare (F10).
+export type { ConflictCopy, SyncState, SyncStatus } from "../../shared/types/sync";
+export type { PeerProtocol, RestoreRefusal, SyncOutcome } from "../../shared/sync/engine";
+/** Engine SyncActivityRow under its historic client name. */
+export type SyncActivityEntry = SyncActivityRow;
+/** Engine RestorableRow under its historic client name. */
+export type RestorableNote = RestorableRow;
 
-export interface ConflictCopy {
-  id: string;
-  title: string;
-  content: string | null;
-  projectId: string;
-  folder: string;
-  updatedAt: string;
-  deviceId: string | null;
-  originalId: string | null;
-  original: { id: string; title: string; content: string | null; updatedAt: string } | null;
-  /** Common-ancestor body for a 3-way merge, if the engine recorded one. */
-  baseBody: string | null;
-}
-
-export type SyncOutcome = "applied" | "conflict-copy" | "delete-won" | "skipped-stale";
-
-/** One reconcile decision, as recorded by the engine's activity log. */
-export interface SyncActivityEntry {
-  seq: number;
-  at: string;
-  entity: string;
-  entity_id: string;
-  op: "put" | "delete";
-  hlc: string;
-  origin: string;
-  outcome: SyncOutcome;
-  conflict_copy_id: string | null;
-  /** Current title of the affected row, or null if it no longer exists. */
-  title: string | null;
-  /** True when this device authored the change. */
-  isSelf: boolean;
-  /** Whose version the conflict copy holds. */
-  conflict_side: "local" | "remote" | null;
-}
-
-/** A note another device deleted that can still be brought back. */
-export interface RestorableNote {
-  entity: string;
-  entity_id: string;
-  title: string | null;
-  /** When the delete was authored on the originating device. */
-  deleted_at: string | null;
-  delete_origin: string | null;
-}
-
-/** Why a restore was refused, straight from the engine. */
-export type RestoreRefusal =
-  | "missing"
-  | "live"
-  | "shell"
-  | "conflict-copy"
-  | "orphaned"
-  | "self-deleted"
-  | "no-delete-record"
-  | "preserved-as-copy";
-
+/** Why a restore was refused — desktop file-write wrapper (no engine counterpart). */
 export interface RestoreOutcome {
   restored: boolean;
   reason?: RestoreRefusal | string;
@@ -92,14 +45,6 @@ export interface RepairOutcome {
   repaired: boolean;
   reason?: string;
   fileError?: string;
-}
-
-/** A peer device on a different sync protocol version than this build. */
-export interface PeerProtocol {
-  deviceId: string;
-  version: number;
-  /** True when the peer is on an OLDER protocol — it may not honour deletes. */
-  behind: boolean;
 }
 
 type SyncApi = {

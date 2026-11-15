@@ -1,12 +1,23 @@
 /**
  * Shared session-stats — token throughput & latency, folded from durable log.
  * Vendored from electron/agent/session-stats.ts so both main (replay) and
- * renderer (live) share one implementation. Keep the two files in sync.
+ * renderer (live) share one implementation.
+ *
+ * The wire shapes live in shared/agent/session-wire.ts (single source); this
+ * module owns `foldSessionStats`.
  *
  * Client-safe: inlined isTokenDelta (was `import { isTokenDelta } from
  * "@deepseek-ai/engine-llm"` which pulls `node:module` and breaks Next.js
  * client chunking).
  */
+import type {
+  SessionStats,
+  SessionStatsTotals,
+  TurnStats,
+} from "./agent/session-wire";
+
+export type { SessionStats, SessionStatsTotals, TurnStats };
+
 function isTokenDelta(chunk: unknown): boolean {
   if (!chunk || typeof chunk !== "object") return false;
   const c = chunk as { type?: unknown; text?: unknown; argumentsDelta?: unknown; name?: unknown };
@@ -21,26 +32,6 @@ function isTokenDelta(chunk: unknown): boolean {
   }
 }
 
-export interface SessionStatsTotals {
-  turns: number;
-  steps: number;
-  llmMs: number;
-  toolMs: number;
-  ttftMs: number;
-  ttftSteps: number;
-  decodeMs: number;
-  decodeTokens: number;
-}
-export interface TurnStats {
-  ttftMs?: number;
-  tokensPerSecond?: number;
-  outputTokens?: number;
-}
-export interface SessionStats {
-  totals: SessionStatsTotals;
-  byTurn: Record<number, TurnStats>;
-  tokensPerSecond?: number;
-}
 type Ev = { type: string; time?: unknown; data?: unknown };
 function outputTokensOf(usage: unknown): number | null {
   if (typeof usage !== "object" || usage === null) return null;

@@ -23,15 +23,11 @@ import * as mcpClient from "./mcp-client";
 import * as services from "./custom-services";
 import * as mcpOauth from "./mcp-oauth";
 import type { RequirementStatus } from "../../shared/types/automations";
+import type { OpenAIToolDef } from "../../shared/chat/mcp-namespace";
 import { resolveCallTimeoutMs } from "../../shared/types/tools";
 
 /** Mirrors GLOBAL_TOOL_SCOPE in src/types — electron cannot import from src. */
 const GLOBAL_TOOL_SCOPE = "__global__";
-
-export interface OpenAIToolDef {
-  type: "function";
-  function: { name: string; description: string; parameters: Record<string, unknown> };
-}
 
 export interface ExternalToolRequirement {
   kind: "mcp" | "service";
