@@ -32,7 +32,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { revealNote } from "@/lib/events";
 import { isBenignTurnEnd } from "../../../shared/agent/turn-end-reason";
 import { resolvePromptContext } from "@/lib/context-resolver";
-import { useChatMessageQueue, useQueueDrain } from "@/hooks/useChatMessageQueue";
+import { useChatMessageQueue, useQueueDrain, queuedFor, waitForSessionIdle } from "@/hooks/useChatMessageQueue";
 import { getModelInfo, prewarmModelCatalog, subscribeModelCatalog, getModelCatalogVersion, effectiveTemperatureForModel } from "@/lib/models-dev";
 import { hasPromptFired, markPromptFired } from "@/lib/agent-prompt-guard";
 import type { TerminalSession, TokenBreakdown, RegistryFetchResult } from "@/types";
@@ -164,16 +164,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   // light no matter how far you scroll — the DOM never grows with scroll depth.
   // Prompts the user queued while the agent was running — sent (FIFO) when the
   // current run finishes. Kept on Stop and drained after errors too. Attachments
-  // are queued alongside so staged images/PDFs are never silently dropped.
-  const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, clearQueue, drainNext } = useChatMessageQueue<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }>();
+  // are queued alongside so staged images/PDFs are never silently dropped. One
+  // queue per session, so switching sessions keeps what was queued.
+  const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, promoteQueued, clearQueue, drainNext } = useChatMessageQueue<{ id: string; content: string; attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> }>(session.sessionId);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const lastSessionIdRef = useRef(session.sessionId);
   useEffect(() => {
     if (lastSessionIdRef.current !== session.sessionId) {
       lastSessionIdRef.current = session.sessionId;
-      // Queued prompts belong to the previous session — drop them so they are
-      // never sent into the newly selected session.
-      clearQueue();
       // Jump to the newest message when switching sessions.
       if (messages.length > 0) {
         virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
@@ -181,7 +179,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     }
     // messages.length in deps is deliberate — the guard above short-circuits
     // so it only scrolls when the session actually changes.
-  }, [session.sessionId, messages.length, clearQueue]);
+  }, [session.sessionId, messages.length]);
   const project     = projects.find((p) => p.id === session.projectId);
 
   const [input, setInput]                         = useState("");
@@ -607,9 +605,29 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Drain the queue: when a run finishes (loading went true → false), send the
   // next queued prompt. Keeps the queue on Stop and drains after errors.
-  useQueueDrain(isLoading, drainNext, (next) => {
-    sendPromptRef.current(next.content, next.attachments);
-  });
+  // The send waits until the main process has let go of the turn: right after
+  // Stop it is still winding down and would reject the prompt as busy.
+  const drainingRef = useRef(false);
+  const sendQueued = useCallback(async (sessionId: string) => {
+    if (drainingRef.current || queuedFor(sessionId).length === 0) return;
+    drainingRef.current = true;
+    try {
+      if (!(await waitForSessionIdle(sessionId))) return;
+      // The pane may show another session by now: that one's queue is not ours to send.
+      if (lastSessionIdRef.current !== sessionId) return;
+      const next = drainNext(sessionId);
+      if (next) await sendPromptRef.current(next.content, next.attachments);
+    } finally {
+      drainingRef.current = false;
+    }
+  }, [drainNext]);
+  // `drainNext` here only signals "a run ended": the item is popped in sendQueued.
+  const peekQueued = useCallback(() => (queuedFor(session.sessionId)[0] ?? null), [session.sessionId]);
+  useQueueDrain(isLoading, peekQueued, () => { void sendQueued(session.sessionId); }, session.sessionId);
+  // Safety net: an idle session shown with prompts still queued sends the next one.
+  useEffect(() => {
+    if (!isLoading && queued.length > 0) void sendQueued(session.sessionId);
+  }, [session.sessionId, isLoading, queued.length, sendQueued]);
 
   // Doom-loop decision: allow → the repeated call runs and the session stops
   // re-pausing; deny → the main loop halts with an error.
@@ -647,6 +665,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     finaliseAgentMessage(session.sessionId);
     setIsLoading(false);
     sessionConversation.setQuestions(null);
+  }
+
+  // "Send now" on a queued prompt: it goes to the head of the queue; a running
+  // turn is stopped, and the prompt is sent once that turn has really ended.
+  function handleSendQueuedNow(qid: string) {
+    promoteQueued(qid);
+    if (isLoading) handleStop();
+    else void sendQueued(session.sessionId);
   }
 
   function handleClear() {
@@ -706,7 +732,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       composerBefore={(
         <div className={cn("flex-shrink-0", sessionPresentation === "center" && "max-w-3xl mx-auto w-full")}>
           {isLoading && !pendingQuestions && <ConversationWorkingStatus phase={overallPhase({ retrying: Boolean(retryInfo), compacting: isCompacting })} label={isCompacting ? "Compacting context — you can queue messages below" : "Agent is working — you can queue messages below"} />}
-          <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
+          <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} onSendNow={handleSendQueuedNow} busy={isLoading} noun="message" />
           {session.mode === "execute" && planNoteContent && <PlanTaskList content={planNoteContent} />}
           <AgentGoalChip goal={sessionGoal} />
           {session.mode === "execute" && (sessionTodos?.length ?? 0) > 0 && <AgentTodoDock todos={sessionTodos ?? []} live={false} />}

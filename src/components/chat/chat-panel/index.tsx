@@ -1,14 +1,14 @@
 "use client";
 
 import { ForkSessionMenu } from "@/components/agent/ForkSessionMenu";
-import React, { useState, useRef, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { type VirtuosoHandle } from "react-virtuoso";
 import { Trash2, ArrowLeftFromLine, History } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { chatSessionId } from "../../../../shared/agent/session-identity";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStream } from "@/hooks/useChatStream";
-import { useChatMessageQueue, useQueueDrain, type QueuedMessage } from "@/hooks/useChatMessageQueue";
+import { useChatMessageQueue, queuedFor, waitForSessionIdle, type QueuedMessage } from "@/hooks/useChatMessageQueue";
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { useGraphData } from "@/hooks/useGraphData";
 import { ipcResult } from "@/store/ipc";
@@ -110,6 +110,14 @@ function ChatTranscriptPadding() {
   return <div className="px-3 pt-3 pb-3 space-y-3" />;
 }
 
+/** How a send differs from the user pressing Enter in the visible thread. */
+interface SendOptions {
+  /** Send into this thread (may not be the one on screen). */
+  threadId?: string;
+  /** The message came off the queue: send even though the thread just ended a turn, and leave the input alone. */
+  fromQueue?: boolean;
+}
+
 export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelProps = {}) {
   const {
     chatOpen,
@@ -158,12 +166,28 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const [input, setInput] = useState("");
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
-  const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>) => Promise<void>>(async () => {});
+  const handleSendRef = useRef<(text?: string, attachments?: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }>, opts?: SendOptions) => Promise<void>>(async () => {});
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Each item carries the thread + attachments captured
-  // at enqueue time so a thread switch or queued images/PDFs are never lost.
-  // Session-scoped; cleared on thread switch.
-  const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, clearQueue, drainNext } = useChatMessageQueue<QueuedMessage>();
+  // at enqueue time so queued images/PDFs are never lost. One queue per thread:
+  // it survives switching threads and is sent when that thread's reply ends,
+  // whether or not the thread is on screen.
+  const { queued, queueExpanded, setQueueExpanded, enqueue, removeQueued, promoteQueued, clearQueue, drainNext } = useChatMessageQueue<QueuedMessage>(threadId);
+  // Threads with a queued send in flight, so two triggers never send two messages.
+  const drainingRef = useRef(new Set<string>());
+  const drainThread = useCallback(async (id: string) => {
+    if (drainingRef.current.has(id) || queuedFor(id).length === 0) return;
+    drainingRef.current.add(id);
+    try {
+      // The reply may only just have been stopped: wait until the main process
+      // has let go of the turn. Still busy after that → its turn end drains.
+      if (!(await waitForSessionIdle(`chat-${id}`))) return;
+      const next = drainNext(id);
+      if (next) await handleSendRef.current(next.content, next.attachments ?? [], { threadId: id, fromQueue: true });
+    } finally {
+      drainingRef.current.delete(id);
+    }
+  }, [drainNext]);
   const registryCommands = useRegistryCommands();
   const chatCommands = useMemo(
     () => getCommandsForScope("chat", customCommands, registryCommands),
@@ -181,7 +205,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const allowImages = supportsImageInput(getModelInfo(aiConfig.model));
   const allowPdf = supportsPdfInput(getModelInfo(aiConfig.model));
 
-  const { isLoading, toolCalls, streamStore, subagents, pendingQuestions, sendStream, stopStream, clearQuestions, answerQuestions } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamStore, subagents, pendingQuestions, sendStream, stopStream, clearQuestions, answerQuestions, syncRunning } = useChatStream(threadId, { onTurnFinished: (id) => { void drainThread(id); } });
 
   const project   = useMemo(() => projects.find((p) => p.id === activeProjectId),   [projects, activeProjectId]);
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
@@ -259,6 +283,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
 
   const handleArchiveChat = useCallback(async () => {
     if (!threadId) return;
+    // Nothing queued may be sent into the thread once it is archived.
+    clearQueue(threadId);
     if (isLoading) stopStream();
 
     const threadMessages = chatMessages.filter((m) => m.threadId === threadId);
@@ -350,7 +376,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // Add a final system message confirming the save
     addMessage(threadId, "system", `Chat archived to project note: \`conversations/${noteTitle}\`.`);
 
-  }, [threadId, isLoading, stopStream, chatMessages, activeProjectId, activeThread, aiConfig, addMessage, createNote, clearThreadMessages]);
+  }, [threadId, isLoading, stopStream, clearQueue, chatMessages, activeProjectId, activeThread, aiConfig, addMessage, createNote, clearThreadMessages]);
 
   // Track isLoading in a ref so the thread-init effect can read it without
   // being listed as a dependency (we never want a loading-state change to
@@ -358,9 +384,25 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const isLoadingRef = useRef(isLoading);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
-  // A queue belongs to the thread that was active when its messages were
-  // written — switching threads drops anything still pending.
-  useEffect(() => { clearQueue(); }, [threadId, clearQueue]);
+  // A thread shown again (switch, or the panel remounting) takes its running
+  // state from the main process: the turn may have started before this panel
+  // could see it. Only ever sets running; the turn's own end clears it.
+  const syncRunningRef = useRef(syncRunning);
+  useLayoutEffect(() => { syncRunningRef.current = syncRunning; });
+  useEffect(() => {
+    if (!threadId) return;
+    let cancelled = false;
+    void window.electron?.session?.isRunning(`chat-${threadId}`)
+      .then((state) => { if (!cancelled && state?.running) syncRunningRef.current(true); })
+      .catch(() => { /* the live events still arrive */ });
+    return () => { cancelled = true; };
+  }, [threadId]);
+
+  // Safety net: an idle thread with messages still queued (its turn ended
+  // while the panel was closed, say) sends the next one when it is shown.
+  useEffect(() => {
+    if (threadId && !isLoading && queued.length > 0) void drainThread(threadId);
+  }, [threadId, isLoading, queued.length, drainThread]);
 
 
 
@@ -477,10 +519,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   }, [isChatActive, pendingQuestionCount]);
   useEffect(() => { if (chatOpen) inputRef.current?.focus(); }, [chatOpen]);
 
-  const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = []) => {
+  const handleSend = useCallback(async (text?: string, attachments: Array<{ kind: "image" | "pdf"; name: string; dataUrl: string }> = [], opts: SendOptions = {}) => {
     const content = text ?? input.trim();
     if ((!content || !content.trim()) && attachments.length === 0) return;
-    let targetThreadId: string | null = threadId;
+    const fromQueue = opts.fromQueue === true;
+    let targetThreadId: string | null = opts.threadId ?? threadId;
     if (!targetThreadId && activeWorkspaceId) {
       const t = useCairnStore.getState().getOrCreateThread(activeWorkspaceId, activeProjectId ?? undefined);
       targetThreadId = t.id;
@@ -491,23 +534,27 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // A turn is already running — queue this message instead of interrupting it.
     // The queue drains (FIFO) when the current reply finishes. Attachments are
     // queued alongside the text so staged images/PDFs are never silently dropped.
-    if (isLoadingRef.current) {
+    if (!fromQueue && isLoadingRef.current) {
       if (!content.trim() && attachments.length === 0) return;
-      enqueue({ id: id(), content, threadId: targetThreadId!, attachments });
+      enqueue({ id: id(), content, threadId: targetThreadId!, attachments }, targetThreadId!);
       setInput("");
       return;
     }
+    // A queued message may be sent into a thread that is not on screen: its
+    // project, history and input box are that thread's, not the visible one's.
+    const background = targetThreadId !== threadId;
+    const clearInput = () => { if (!fromQueue) clearInput(); };
 
     const trimmed = content.trim();
     if (!attachments.length) {
       if (trimmed === "/compact" || trimmed === "/ compact") {
-        setInput("");
+        clearInput();
         useCairnStore.getState().compactChatThread(targetThreadId!);
         return;
       }
 
       if (trimmed === "/archive-chat" || trimmed === "/archive" || trimmed === "/ archive-chat" || trimmed === "/ archive") {
-        setInput("");
+        clearInput();
         handleArchiveChat();
         return;
       }
@@ -522,7 +569,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           ?? (commandName === "plan" ? { name: "plan", description: "Enter or leave plan mode" } : undefined)
         : undefined;
       if (commandMatch) {
-        setInput("");
+        clearInput();
         const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
         void window.electron?.runtime?.executeCommand({ sessionId: `chat-${targetThreadId}`, line: trimmed }).then((result) => {
           if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
@@ -538,31 +585,43 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // input so it can be sent once a provider is added.
     const { aiConfig: currentAi } = useCairnStore.getState();
     if (!isAIProviderReady(currentAi, currentAi.savedProviders)) {
-      setInput(content);
-      setProviderDialogOpen(true);
+      // A queued message goes back to the head of its queue instead of into the input.
+      if (fromQueue) enqueue({ id: id(), content, threadId: targetThreadId!, attachments }, targetThreadId!, true);
+      else setInput(content);
+      if (!background) setProviderDialogOpen(true);
       return;
     }
 
-    setInput("");
+    clearInput();
 
     const attachmentsToSend = attachments.length > 0 ? attachments : undefined;
     const attachmentUrls = attachments.map((a) => ({ url: a.dataUrl, name: a.name, kind: a.kind }));
 
+    // The thread's history as stored right now (before this message): always
+    // current, including the reply that just finished, for any thread.
+    const store = useCairnStore.getState();
+    const priorMessages = store.chatMessages.filter((m) => m.threadId === targetThreadId);
+    const targetThread = store.chatThreads.find((t) => t.id === targetThreadId);
+    const sendProjectId = background ? (targetThread?.projectId ?? null) : activeProjectId;
+    const sendWorkspaceId = background ? (targetThread?.workspaceId ?? activeWorkspaceId) : activeWorkspaceId;
+    const codeDirectory = background
+      ? (store.projects.find((p) => p.id === sendProjectId)?.codeDirectory ?? null)
+      : (project?.codeDirectory ?? null);
+
     addMessage(targetThreadId!, "user", content, undefined, undefined, undefined, undefined, attachmentUrls);
 
     // Resolve context references and append to prompt payload
-    const store = useCairnStore.getState();
     const resolvedMessage = await resolvePromptContext(
       content,
       store.notes,
       store.cards,
       store.columns,
-      project?.codeDirectory ?? null,
+      codeDirectory,
       store.loadNoteBody,
     );
 
     let systemPrompt: string | undefined = undefined;
-    if (isView(activeView, "graph")) {
+    if (!background && isView(activeView, "graph")) {
       const graphContext = buildGraphContext(graphData, selectedNode);
       const date = new Date().toLocaleDateString("en-US", {
         weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -640,11 +699,11 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // previous bug was historyForLog derived from visibleMessages, so scrubbing to
     // 20% would send only 20% of history as context and the next turn would lose
     // track (the "bonkers" duplicate Hello! after a scrub).
-    const historyForLog = formatChatHistory(messages);
+    const historyForLog = formatChatHistory(priorMessages);
     sendStream({
       message: resolvedMessage, threadId: targetThreadId!,
-      projectId: activeProjectId,
-      workspaceId: activeWorkspaceId,
+      projectId: sendProjectId,
+      workspaceId: sendWorkspaceId,
       history: historyForLog,
       config: {
         provider:    aiConfig.provider    || "openai",
@@ -687,25 +746,20 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       // per-thread flag.
       useSubagents: (aiConfig.subagentsEnabled ?? false),
     });
-  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, messages, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue, registryCommands, setActiveChatThreadId]);
+  }, [input, threadId, addMessage, sendStream, activeProjectId, activeWorkspaceId, aiConfig, activeView, graphData, selectedNode, handleArchiveChat, project, enqueue, registryCommands, setActiveChatThreadId]);
 
   useEffect(() => {
     handleSendRef.current = handleSend;
   }, [handleSend]);
 
-  // Drain the queue: when a turn finishes (loading went true → false), send the
-  // next queued message. Keep the queue on Stop (the user only cancels the
-  // in-flight reply) and drain after errors too — any turn ending advances the
-  // queue. The sink is refreshed via useLayoutEffect inside the hook, so the
-  // drained send always closes over the LATEST history (including the reply
-  // that just finished) — never a stale pre-reply snapshot.
-  useQueueDrain(isLoading, drainNext, (next) => {
-    // Only drain into the thread the message was queued for — a thread switch
-    // in the same commit must not post it into the newly active thread.
-    if (next.threadId === threadId) {
-      handleSend(next.content, next.attachments);
-    }
-  });
+  // "Send now" on a queued message: it goes to the head of the queue; a
+  // running reply is stopped, and the turn's real end sends it.
+  const handleSendQueuedNow = useCallback((qid: string) => {
+    if (!threadId) return;
+    promoteQueued(qid);
+    if (isLoadingRef.current) stopStream();
+    else void drainThread(threadId);
+  }, [threadId, promoteQueued, stopStream, drainThread]);
 
   const handleRetry = useCallback((content: string) => {
     handleSend(content);
@@ -823,7 +877,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
           composerBefore={(
             <div className={cn("flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]", isView(activeView, "chat") && "max-w-3xl mx-auto w-full")}>
               {isLoading && <ConversationWorkingStatus label="Cairn is working — you can queue messages below" />}
-              <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} noun="message" />
+              <ConversationQueueDock items={queued as ConversationQueuedItem[]} expanded={queueExpanded} onToggle={() => setQueueExpanded((v) => !v)} onRemove={removeQueued} onSendNow={handleSendQueuedNow} busy={isLoading} noun="message" />
             </div>
           )}
           composerRef={inputRef}

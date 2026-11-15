@@ -426,6 +426,10 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     const id = promptSessionId ?? sessionIdRef.current;
     watchedRef.current.add(transientKey(id));
     resetTransientFor(id);
+    // Running from the moment of sending, not from the main process's turn/start:
+    // that only arrives once the tools are loaded, and a thread the user leaves
+    // and returns to in between must not look idle.
+    getTransient(transientKey(id)).running = true;
     if (id === sessionIdRef.current) setIsLoading(true);
     dispatch();
   };
@@ -438,7 +442,10 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     if (!id || !callId) return false;
     window.electron?.session.respondQuestions(id, callId, answers, nonce); clearQuestionsFor(id); return true;
   };
-  const syncRunning = (running: boolean) => setIsLoading(running);
+  const syncRunning = (running: boolean) => {
+    getTransient(transientKey(sessionIdRef.current)).running = running;
+    setIsLoading(running);
+  };
   const setToolApproval = (callId: string, required: boolean, nonce?: string, reason?: string) => {
     const key = transientKey(sessionIdRef.current);
     const t = getTransient(key);
