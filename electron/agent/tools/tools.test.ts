@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { rgPath } from "@vscode/ripgrep";
@@ -8,7 +8,7 @@ import { TOOL_SCHEMAS } from "../../lib/tool-schemas";
 import type { AgentTool, ToolContext, ToolOutput } from "../tools";
 import { bashTool } from "./bash";
 import { cairnRisk, cairnTools } from "./cairn";
-import { fsTools } from "./fs";
+import { fsTools, riskPath } from "./fs";
 import { buildToolset } from "./index";
 import { todoTool } from "./todo";
 import { htmlToText, isPrivateAddress } from "./web";
@@ -27,6 +27,25 @@ async function workspace() {
 }
 
 describe("fs tools", () => {
+  it("judges a call by where a symlink really leads", async () => {
+    const dir = await workspace();
+    const outside = await mkdtemp(path.join(os.tmpdir(), "agent-outside-"));
+    await mkdir(path.join(outside, ".ssh"));
+    await writeFile(path.join(outside, ".ssh", "id_ed25519"), "key");
+    await symlink(path.join(outside, ".ssh", "id_ed25519"), path.join(dir, "key-link"));
+    await symlink(path.join(outside, ".ssh"), path.join(dir, "dir-link"));
+    const real = await realpath(outside);
+    expect(riskPath(dir, "key-link")).toBe(path.join(real, ".ssh", "id_ed25519"));
+    // A file that does not exist yet, behind a linked folder.
+    expect(riskPath(dir, "dir-link/authorized_keys")).toBe(path.join(real, ".ssh", "authorized_keys"));
+    // Inside the working directory the path stays as given, even when the directory is itself reached through a link.
+    expect(riskPath(dir, "src/a.ts")).toBe(path.join(dir, "src", "a.ts"));
+    expect(riskPath(dir, "src/new.ts")).toBe(path.join(dir, "src", "new.ts"));
+    const t = fsTools({ cwd: dir, rgPath });
+    expect(get(t, "read").risk({ file_path: "key-link" } as never).paths).toEqual([path.join(real, ".ssh", "id_ed25519")]);
+    expect(get(t, "write").risk({ file_path: "dir-link/authorized_keys", content: "" } as never).paths).toEqual([path.join(real, ".ssh", "authorized_keys")]);
+  });
+
   it("reads with line numbers, offsets and a continuation hint", async () => {
     const dir = await workspace();
     const t = fsTools({ cwd: dir, rgPath });
@@ -81,7 +100,8 @@ describe("fs tools", () => {
     const dir = await workspace();
     const t = fsTools({ cwd: dir, rgPath });
     expect(get(t, "write").risk({ file_path: "src/x.ts", content: "" })).toEqual({ class: "WRITE_LOCAL", paths: [path.join(dir, "src/x.ts")] });
-    expect(get(t, "read").risk({ file_path: "/etc/hosts" })).toEqual({ class: "READ", paths: ["/etc/hosts"] });
+    // Outside the working directory the real location is reported (`/etc` is a link on macOS).
+    expect(get(t, "read").risk({ file_path: "/etc/hosts" })).toEqual({ class: "READ", paths: [await realpath("/etc/hosts")] });
   });
 
   it("readOnly mode omits the mutating tools", () => {

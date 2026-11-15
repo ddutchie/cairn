@@ -192,6 +192,9 @@ export function getEngineHost(ctx: DbContext): AgentHost {
     onWorkspaceGrant: (sessionId, rule) => {
       const workspaceId = sessionWorkspace.get(sessionId);
       if (!workspaceId || !hostCtx) return;
+      // Only the tool and a command are stored, so a grant for a folder outside the workspace would
+      // come back as a grant for the whole workspace. It stays a grant for this session.
+      if (rule.match.path && rule.match.path.within !== "workspace") return;
       addWorkspaceApprovalGrant(hostCtx.db, workspaceId, rule.match.tool ?? "", rule.match.command?.exact ?? null);
     },
     onAssistantMessage: (sessionId, message) => {

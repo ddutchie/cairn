@@ -6,7 +6,7 @@
  *  2 plan mode              → deny anything not READ (enforced, not advisory)
  *  3 deny rules             → deny
  *  4 doom-loop              → ask (human only; never auto-allowed or reviewed)
- *  5 protected paths        → ask, unless a rule naming that path covers it (writes; reads of
+ *  5 protected paths        → ask, unless a user-written rule naming that folder covers it (writes; reads of
  *                              credentials outside the workspace)
  *  6 ask rules              → ask (human only)
  *  7 allow rules            → allow
@@ -93,8 +93,9 @@ export function decide(call: CallView, signature: string, state: PolicyState): D
 
   const allowRule = findRule(state.rules, call, ctx, ["allow"]);
 
-  // Presets and blanket grants never reach these; only a rule that names a path outside "the workspace" does.
-  const explicitPath = (r: Rule) => r.source !== "preset" && r.match.path !== undefined && r.match.path.within !== "workspace";
+  // Presets and grants never reach these, not even a grant for the folder the file is in (allowing
+  // `~/report.txt` must not cover `~/.zshrc`). Only a rule the user wrote for a named folder does.
+  const explicitPath = (r: Rule) => r.source === "user" && r.match.path !== undefined && r.match.path.within !== "workspace";
   if (risk !== "READ" && call.risk.paths?.some((p) => isProtectedPath(p, state.workspaceRoot, state.protectedPaths))) {
     const explicit = findRule(state.rules, call, ctx, ["allow"], explicitPath);
     if (explicit) return { kind: "allow", by: "rule", ruleId: explicit.id };

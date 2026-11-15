@@ -157,7 +157,8 @@ const SECRET_DIRS = [[".config", "gcloud"], [".config", "gh"], [".docker"]];
  * workspace; inside it the shell and search tools reach them anyway, so asking would only be noise.
  */
 export function isSecretPath(p: string, workspaceRoot: string): boolean {
-  const abs = path.resolve(workspaceRoot, p);
+  // Lower-cased: on macOS and Windows `.ENV` is the same file as `.env`.
+  const abs = path.resolve(workspaceRoot, p).toLowerCase();
   const parts = abs.split(path.sep);
   if (parts.some((seg) => SECRET_SEGMENTS.has(seg))) return true;
   if (SECRET_DIRS.some((dir) => parts.some((_, i) => dir.every((seg, j) => parts[i + j] === seg)))) return true;
@@ -167,13 +168,15 @@ export function isSecretPath(p: string, workspaceRoot: string): boolean {
 }
 
 export function isProtectedPath(p: string, workspaceRoot: string, extra: readonly string[] = []): boolean {
-  const abs = path.resolve(workspaceRoot, p);
+  const exact = path.resolve(workspaceRoot, p);
+  // Names are matched lower-cased: on macOS and Windows `.ENV` is the same file as `.env`.
+  const abs = exact.toLowerCase();
   const parts = abs.split(path.sep);
   if (parts.some((seg) => PROTECTED_SEGMENTS.has(seg))) return true;
   if (/[\\/]\.github[\\/]workflows[\\/]/.test(abs)) return true;
   const base = path.basename(abs);
   if (PROTECTED_BASENAMES.test(base) || PROTECTED_EXT.test(base)) return true;
-  return extra.some((e) => isWithin(path.resolve(workspaceRoot, e), abs));
+  return extra.some((e) => isWithin(path.resolve(workspaceRoot, e), exact));
 }
 
 // ── Presets and grants ──────────────────────────────────────────────────────
@@ -207,9 +210,13 @@ export function offeredGrants(risk: RiskInfo, workspaceRoot?: string, protectedP
   if (risk.class === "READ") return [];
   if (risk.escalation) return [];
   if (workspaceRoot !== undefined && risk.paths?.some((p) => isProtectedPath(p, workspaceRoot, protectedPaths))) return [];
+  // A file directly in a filesystem root: a grant for "its folder" would be a grant for the whole disk.
+  if (workspaceRoot !== undefined && risk.class === "WRITE_LOCAL" && risk.paths?.some((p) => inFilesystemRoot(path.resolve(workspaceRoot, p)) && !isWithin(workspaceRoot, path.resolve(workspaceRoot, p)))) return [];
   if (risk.class === "EXEC") return risk.command && canonicalCommand(risk.command) ? ["command"] : [];
   return ["tool"];
 }
+
+const inFilesystemRoot = (abs: string) => path.dirname(abs) === path.parse(abs).root;
 
 /**
  * How far a file-write grant reaches: the workspace when the approved write was inside it, otherwise
@@ -221,7 +228,7 @@ function grantPath(risk: RiskInfo, workspaceRoot: string | undefined): RuleMatch
   if (abs.every((p) => isWithin(workspaceRoot, p))) return { within: "workspace" };
   const dirs = [...new Set(abs.map((p) => path.dirname(p)))];
   // One folder can be expressed as a rule; several unrelated ones cannot, so that grant only covers the workspace.
-  return dirs.length === 1 ? { within: dirs[0] } : { within: "workspace" };
+  return dirs.length === 1 && dirs[0] !== path.parse(dirs[0]).root ? { within: dirs[0] } : { within: "workspace" };
 }
 
 let grantSeq = 0;

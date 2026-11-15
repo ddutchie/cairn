@@ -132,7 +132,7 @@ function darwinCacheDir(): string[] {
  * Package-manager caches and stores. Where a tool keeps its installed commands beside its cache
  * (Go, Bun, pnpm) only the cache part is listed, so a sandboxed command cannot put a program on PATH.
  */
-const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun/install", ".gradle", ".m2", ".node-gyp", "go/pkg", ".local/share/pnpm/store", "Library/pnpm/store", "Library/Caches"];
+const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun/install/cache", ".gradle", ".m2", ".node-gyp", "go/pkg", ".local/share/pnpm/store", "Library/pnpm/store", "Library/Caches"];
 /** Command folders inside those roots; they stay read-only. */
 const HOME_BIN_DIRS = [".cargo/bin", ".yarn/bin"];
 
@@ -182,6 +182,17 @@ export function readOnlyCarveOuts(roots: string[], cwd: string, home = os.homedi
   return [...new Set(out.map(real))].filter((p) => roots.some((r) => p === r || p.startsWith(r + path.sep)));
 }
 
+/**
+ * bubblewrap can only mount a folder read-only if it exists; a missing one inside a writable root
+ * (`~/.yarn/bin` under `~/.yarn`) could otherwise be created and filled by the sandboxed command.
+ * So each missing carve-out whose parent exists is created empty first. Seatbelt matches by path and needs none of this.
+ */
+export function ensureCarveOuts(readOnly: string[]): void {
+  for (const dir of readOnly) {
+    try { if (!fs.existsSync(dir) && fs.existsSync(path.dirname(dir))) fs.mkdirSync(dir); } catch { /* left writable only if it cannot be made */ }
+  }
+}
+
 /** Wrap a command so it runs confined; returns it unchanged when the sandbox is off or unavailable. */
 export function wrapSandboxed(cmd: Spawnable, cwd: string, opts: SandboxOptions, platform: NodeJS.Platform = process.platform): Spawnable {
   if (opts.mode === "off") return cmd;
@@ -191,6 +202,7 @@ export function wrapSandboxed(cmd: Spawnable, cwd: string, opts: SandboxOptions,
   const roots = opts.mode === "read-only" ? tempRoots() : writableRoots(opts.root ?? cwd, opts.writableRoots);
   const ro = readOnlyCarveOuts(roots, opts.root ?? cwd);
   if (backend === "seatbelt") return { file: SEATBELT, args: ["-p", seatbeltProfile(roots, opts.blockNetwork, ro), cmd.file, ...cmd.args] };
+  ensureCarveOuts(ro);
   return { file: "bwrap", args: [...bwrapArgs(roots, opts.blockNetwork, opts.pty, ro), "--chdir", cwd, cmd.file, ...cmd.args] };
 }
 

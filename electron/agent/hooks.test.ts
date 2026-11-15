@@ -71,6 +71,14 @@ describe("hooks in the loop", () => {
     expect(ofType(events, "approval/decided")[0]).toMatchObject({ approved: false, by: "hook" });
   });
 
+  it("a PreToolUse ask is the ask's source even when the mode would have asked anyway", async () => {
+    // A headless run answers routine `mode` asks itself; a hook's ask must still reach a person.
+    const t = run({ PreToolUse: cmd(`echo '{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"check it"}}'`) },
+      [fauxAssistantMessage([call("bash", { command: "make" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")], "ask");
+    const asked = ofType(await t.events, "approval/asked")[0];
+    expect(asked.ask).toMatchObject({ source: "hook", reason: "check it" });
+  });
+
   it("a PreToolUse ask upgrades an allowed call to an approval", async () => {
     const t = run({ PreToolUse: cmd(`echo '{"hookSpecificOutput":{"permissionDecision":"ask"}}'`) }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
     const events: string[] = [];

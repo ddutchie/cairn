@@ -47,6 +47,13 @@ describe("createModelReviewer", () => {
       { sessionId: "s", callId: "c", tool: "write", args: { file_path: "a.ts", content: `${"x".repeat(8000)}TAIL-MARKER` }, risk: { class: "WRITE_LOCAL" } as never });
     expect(r.prompts[0]).toContain("TAIL-MARKER");
   });
+  it("scrubs secrets from the arguments it shows the model", async () => {
+    const r = reply('{"verdict":"allow","reason":"x"}');
+    await createModelReviewer({ model, streamFn: r.streamFn, cwd: "/p", userRequests: () => ["call the api"] })(
+      { sessionId: "s", callId: "c", tool: "bash", args: { command: "curl https://api.example.com", apiKey: "sk-live-abcdefghijklmnopqrstuvwxyz123456" }, risk: { class: "EXEC" } as never });
+    expect(r.prompts[0]).not.toContain("sk-live-abcdefghijklmnopqrstuvwxyz123456");
+    expect(r.prompts[0]).toContain("curl https://api.example.com");
+  });
   it("throws on unparseable output so the loop falls back to asking", async () => {
     await expect(review(reply("nope").streamFn, { class: "EXEC", command: "ls" })).rejects.toThrow();
   });

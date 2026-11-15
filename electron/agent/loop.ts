@@ -372,7 +372,8 @@ async function* prepare(o: TurnOptions, call: ToolCall, tools: readonly AgentToo
   let effective = decision;
   const gate = await o.hooks?.preTool?.({ name: call.name, args, callId: call.id }).catch(() => ({} as { decision?: "deny" | "ask"; reason?: string }));
   if (gate?.decision === "deny" && decision.kind !== "deny") effective = { kind: "deny", by: "hook", reason: gate.reason ?? "blocked by PreToolUse hook" };
-  else if (gate?.decision === "ask" && decision.kind === "allow") effective = { kind: "ask", by: "hook", reason: gate.reason ?? "A PreToolUse hook asked for approval" };
+  // It also replaces a routine `mode` ask and a pending review: a headless run answers `mode` asks itself, and a reviewer could allow.
+  else if (gate?.decision === "ask" && (decision.kind === "allow" || decision.kind === "review" || (decision.kind === "ask" && decision.by === "mode"))) effective = { kind: "ask", by: "hook", reason: gate.reason ?? "A PreToolUse hook asked for approval" };
 
   const resolution = yield* resolveDecision(o, { call, tool, args }, risk, signature, effective, state);
   return resolution.approved ? { call, tool, args, readOnly: o.profile.mode === "plan" } : { call, tool, args, refusal: resolution.refusal };

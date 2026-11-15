@@ -4,6 +4,7 @@
  * See docs/plans/agent-engine-design.md §5.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { redactValue } from "../../shared/chat/redaction";
 import type { StreamFn } from "./loop";
 import type { RiskInfo } from "./rules";
 
@@ -117,7 +118,8 @@ export function createModelReviewer(o: ModelReviewerOptions): Reviewer {
   return async (req) => {
     if (req.risk.class === "EXTERNAL") return { verdict: "ask", reason: "External calls always need approval", tags: ["external"] };
     const requests = o.userRequests().slice(-6).map((t, i) => `${i + 1}. ${t.length > 1500 ? `${t.slice(0, 1500)}…` : t}`).join("\n") || "(none)";
-    const args = JSON.stringify(req.args ?? {});
+    // Scrubbed first: the reviewer judges the action, it does not need the secrets in it.
+    const args = JSON.stringify(redactValue(req.args ?? {}));
     if (args.length > MAX_REVIEW_ARG_CHARS) return { verdict: "ask", reason: "Too large to review in full", tags: ["oversize"] };
     const body = `<user_requests>\n${requests}\n</user_requests>\n\n<action>\n${describeAction(req, o.cwd, args)}\n</action>`;
     const first = await ask(`${REVIEW_SYSTEM}\nBe terse: keep the reason under 80 characters.`, body, 120, req.signal);
