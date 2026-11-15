@@ -4,6 +4,7 @@
  * See docs/plans/agent-engine-design.md §5.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { redactValue } from "../../shared/chat/redaction";
 import type { StreamFn } from "./loop";
 import type { RiskInfo } from "./rules";
 
@@ -86,8 +87,10 @@ function parseVerdict(text: string): Verdict | undefined {
   } catch { return undefined; }
 }
 
-function describeAction(req: ReviewRequest, cwd: string): string {
-  const args = JSON.stringify(req.args ?? {});
+/** Above this the reviewer would be judging an action it cannot read in full, so the human is asked. */
+export const MAX_REVIEW_ARG_CHARS = 24_000;
+
+function describeAction(req: ReviewRequest, cwd: string, args: string): string {
   return [
     `Project directory: ${cwd}`,
     `Tool: ${req.tool}`,
@@ -95,7 +98,7 @@ function describeAction(req: ReviewRequest, cwd: string): string {
     req.risk.command ? `Command: ${req.risk.command}` : "",
     req.risk.paths?.length ? `Paths: ${req.risk.paths.join(", ")}` : "",
     req.risk.host ? `Host: ${req.risk.host}` : "",
-    `Arguments: ${args.length > 4000 ? `${args.slice(0, 4000)}…` : args}`,
+    `Arguments: ${args}`,
   ].filter(Boolean).join("\n");
 }
 
@@ -115,7 +118,10 @@ export function createModelReviewer(o: ModelReviewerOptions): Reviewer {
   return async (req) => {
     if (req.risk.class === "EXTERNAL") return { verdict: "ask", reason: "External calls always need approval", tags: ["external"] };
     const requests = o.userRequests().slice(-6).map((t, i) => `${i + 1}. ${t.length > 1500 ? `${t.slice(0, 1500)}…` : t}`).join("\n") || "(none)";
-    const body = `<user_requests>\n${requests}\n</user_requests>\n\n<action>\n${describeAction(req, o.cwd)}\n</action>`;
+    // Scrubbed first: the reviewer judges the action, it does not need the secrets in it.
+    const args = JSON.stringify(redactValue(req.args ?? {}));
+    if (args.length > MAX_REVIEW_ARG_CHARS) return { verdict: "ask", reason: "Too large to review in full", tags: ["oversize"] };
+    const body = `<user_requests>\n${requests}\n</user_requests>\n\n<action>\n${describeAction(req, o.cwd, args)}\n</action>`;
     const first = await ask(`${REVIEW_SYSTEM}\nBe terse: keep the reason under 80 characters.`, body, 120, req.signal);
     if (first?.verdict === "allow") return { ...first, tags: ["stage1"] };
     const second = await ask(`${REVIEW_SYSTEM}\nThink the action through against the user's requests, then answer.`, body, 400, req.signal);

@@ -84,6 +84,8 @@ export interface PromptRequest {
   hooks?: TurnHooks;
   /** Aborts this turn (a subagent stops when its parent does). */
   signal?: AbortSignal;
+  /** The engine or the agent wrote this prompt (a goal round, a reminder); it is not a user request. */
+  agentAuthored?: boolean;
 }
 
 export interface PromptOutcome {
@@ -123,9 +125,6 @@ interface Session {
   parent?: string;
   records: SessionRecord[];
   controller?: AbortController;
-  /** callIds whose grant the human scoped to the workspace, awaiting the resulting rule. */
-  workspaceGrantCalls: Set<string>;
-  workspaceGrantArmed?: boolean;
   /** Serializes turns of one session. */
   running: boolean;
   /** The last request, so a reminder can prompt the session the same way. */
@@ -144,6 +143,11 @@ export class AgentHost {
   readonly gate = new Gate();
   private readonly sessions = new Map<string, Session>();
   private readonly opening = new Map<string, Promise<Session>>();
+  /**
+   * Asks whose grant the human scoped to the workspace, awaiting the resulting rule. Keyed by the
+   * session the ask was shown under (a subagent asks through its parent) and the call.
+   */
+  private readonly workspaceGrantCalls = new Set<string>();
 
   constructor(private readonly deps: HostDeps) {
     if (deps.onAsk) this.gate.onAsk(deps.onAsk);
@@ -173,7 +177,6 @@ export class AgentHost {
           parent: log?.header.parentId ?? parent,
           records: [...records],
           running: false,
-          workspaceGrantCalls: new Set(),
           timers: new Map(),
           notices: [],
         };
@@ -226,9 +229,14 @@ export class AgentHost {
   respondTool(sessionId: string, callId: string, nonce: string | undefined, decision: { approved: boolean; grant?: "session" | "command" | "workspace" }): boolean {
     if (!nonce) return false;
     const grant: GrantKind | undefined = decision.grant === "command" ? "command" : decision.grant ? "tool" : undefined;
-    if (decision.approved && decision.grant === "workspace") this.sessions.get(sessionId)?.workspaceGrantCalls.add(callId);
     const human: HumanDecision = { approved: decision.approved, ...(grant ? { grant } : {}) };
-    return this.gate.resolve(sessionId, callId, nonce, human);
+    // Marked before the gate resolves: the turn can log the resulting rule in the same tick.
+    const key = `${sessionId}::${callId}`;
+    const workspace = decision.approved && decision.grant === "workspace";
+    if (workspace) this.workspaceGrantCalls.add(key);
+    const resolved = this.gate.resolve(sessionId, callId, nonce, human);
+    if (!resolved && workspace) this.workspaceGrantCalls.delete(key);
+    return resolved;
   }
 
   /** Asks still waiting, so a reloaded renderer can redraw its cards. */
@@ -241,19 +249,21 @@ export class AgentHost {
     if (session.running) throw new SessionBusyError();
     session.running = true;
     session.lastReq = req;
-    const notices = session.notices.splice(0);
+    // Notices travel as model-only context, so the logged prompt stays what was actually asked.
+    const notices = session.notices.splice(0).map((n) => `<notice>${n}</notice>`).join("\n");
     try {
-      let outcome = await this.runTurnOnce(session, notices.length ? { ...req, prompt: `${notices.map((n) => `<notice>${n}</notice>`).join("\n")}\n${req.prompt}` } : req);
+      let outcome = await this.runTurnOnce(session, notices ? { ...req, context: [notices, req.context ?? ""].filter(Boolean).join("\n\n") } : req);
       // A standing goal keeps the session going until it is met, blocked or out of rounds.
       while (!session.parent && outcome.reason === "stop" && !req.signal?.aborted) {
         const goal = foldGoal(session.records);
         if (!goal || goal.phase !== "active" || goal.roundsStarted >= goal.maxGoalRounds) break;
         await this.record(session, { type: "goal/changed", operation: "round", goal: { ...goal, roundsStarted: goal.roundsStarted + 1, revision: goal.revision + 1, updatedAt: Date.now() } });
-        outcome = await this.runTurnOnce(session, { ...req, prompt: GOAL_CONTINUE(goal.objective) });
+        outcome = await this.runTurnOnce(session, { ...req, prompt: GOAL_CONTINUE(goal.objective), agentAuthored: true });
       }
       return outcome;
     } finally {
       session.running = false;
+      this.rearmReminders(session);
     }
   }
 
@@ -275,6 +285,8 @@ export class AgentHost {
         systemPrompt: req.systemPrompt,
         history: session.history,
         input: req.prompt,
+        // A subagent's task comes from its parent agent.
+        inputAgentAuthored: req.agentAuthored || Boolean(session.parent),
         context: turnContext(session.history, req),
         images: req.images,
         tools: req.tools,
@@ -288,7 +300,7 @@ export class AgentHost {
         maxSteps: req.maxSteps,
         askTtlMs: this.deps.askTtlMs,
         reviewer: this.deps.reviewer ?? (req.profile.mode === "auto"
-          ? createModelReviewer({ model, streamFn: streamFn as StreamFn, cwd: req.cwd, userRequests: () => session.history.flatMap((m) => m.role === "user" ? [typeof m.content === "string" ? m.content : m.content.flatMap((c) => c.type === "text" ? [c.text] : []).join("\n")] : []) })
+          ? createModelReviewer({ model, streamFn: streamFn as StreamFn, cwd: req.cwd, userRequests: () => this.humanRequests(session) })
           : undefined),
         reviewerState: session.reviewerState,
         doomAcked: session.doomAcked,
@@ -336,6 +348,17 @@ export class AgentHost {
     }
   }
 
+  /**
+   * What the human asked for, oldest first, for the auto-mode reviewer. Only prompts a person typed:
+   * goal rounds, reminders, hook follow-ups, job notices and compaction summaries are the engine's or
+   * the agent's own words and must not vouch for an action. A subagent answers to its parent's user.
+   */
+  private humanRequests(session: Session): string[] {
+    const source = session.parent ? this.sessions.get(session.parent) : session;
+    return (source?.records ?? []).flatMap(({ event }) =>
+      event.type === "user/message" && !event.blocked && !event.synthetic && !event.agentAuthored ? [event.content] : []);
+  }
+
   /** Global rules first, then the session's grants; `add` always lands in the session store. */
   private ruleView(session: Session): RuleStore {
     const global = this.deps.globalRules;
@@ -349,10 +372,13 @@ export class AgentHost {
   private async record(session: Session, event: AgentEvent): Promise<void> {
     const rec = await session.writer.append(event);
     if (rec) session.records.push(rec);
-    if (event.type === "approval/decided" && event.grant && session.workspaceGrantCalls.delete(event.callId)) session.workspaceGrantArmed = true;
-    else if (event.type === "rule/added" && session.workspaceGrantArmed) {
-      session.workspaceGrantArmed = false;
+    // The rule is logged before its `approval/decided`, so it is matched to the ask by call id, not by order.
+    const askKey = (callId: string) => `${session.parent ?? session.id}::${callId}`;
+    if (event.type === "rule/added" && event.callId && this.workspaceGrantCalls.delete(askKey(event.callId))) {
       try { this.deps.onWorkspaceGrant?.(session.id, event.rule); } catch { /* persistence is best effort; the session grant still applies */ }
+    } else if (event.type === "approval/decided") {
+      // Approved with a grant the ask did not offer: no rule follows, so nothing is left waiting.
+      this.workspaceGrantCalls.delete(askKey(event.callId));
     }
     if (event.type === "assistant/message") {
       try { this.deps.onAssistantMessage?.(session.id, event.message); } catch { /* accounting must never break a turn */ }
@@ -444,6 +470,15 @@ export class AgentHost {
     session.timers.set(entry.id, timer);
   }
 
+  /**
+   * Arm reminders that have no timer. One that fell due while the session had no request to copy
+   * (it was reopened after a restart) fires once the session has been prompted again.
+   */
+  private rearmReminders(session: Session): void {
+    if (this.sessions.get(session.id) !== session || !session.lastReq) return;
+    for (const entry of foldSchedules(session.records)) if (!session.timers.has(entry.id)) this.arm(session, entry);
+  }
+
   private async fire(session: Session, entry: ScheduleEntry, remaining: number): Promise<void> {
     session.timers.delete(entry.id);
     if (!foldSchedules(session.records).some((e) => e.id === entry.id) || this.sessions.get(session.id) !== session) return;
@@ -453,7 +488,7 @@ export class AgentHost {
     if (!req) return;
     if (session.running) return this.arm(session, entry, REMINDER_RETRY_MS);
     await this.record(session, { type: "schedule/changed", operation: "fire", schedule: entry });
-    await this.prompt({ ...req, prompt: `Reminder: ${entry.prompt}`, signal: undefined }).catch(() => undefined);
+    await this.prompt({ ...req, prompt: `Reminder: ${entry.prompt}`, signal: undefined, agentAuthored: true }).catch(() => undefined);
   }
 
   /** Leave a note for the model; it is shown at the start of the session's next turn. */

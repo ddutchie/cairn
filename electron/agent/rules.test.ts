@@ -91,6 +91,28 @@ describe("grants", () => {
     expect(offeredGrants({ class: "READ" })).toEqual([]);
   });
 
+  it("offers no grant for a call on a protected path", () => {
+    expect(offeredGrants({ class: "WRITE_LOCAL", paths: ["/ws/.env"] }, "/ws")).toEqual([]);
+    expect(offeredGrants({ class: "WRITE_LOCAL", paths: ["/ws/src/a.ts"] }, "/ws")).toEqual(["tool"]);
+  });
+
+  it("scopes a file-write grant to the workspace, or to the folder written outside it", () => {
+    const write = (p: string) => ({ name: "write", risk: { class: "WRITE_LOCAL" as const, paths: [p] } });
+    const inside = grantRule(write("/ws/src/a.ts"), "tool", "/ws");
+    expect(inside.match).toEqual({ tool: "write", path: { within: "workspace" } });
+    expect(ruleMatches(inside, write("/ws/src/b.ts"), ctx)).toBe(true);
+    expect(ruleMatches(inside, write("/home/u/.zshrc"), ctx)).toBe(false);
+    const outside = grantRule(write("/tmp/out/a.txt"), "tool", "/ws");
+    expect(outside.match).toEqual({ tool: "write", path: { within: "/tmp/out" } });
+    expect(ruleMatches(outside, write("/tmp/out/b.txt"), ctx)).toBe(true);
+    expect(ruleMatches(outside, write("/tmp/elsewhere/b.txt"), ctx)).toBe(false);
+    // A file directly in a filesystem root: "its folder" would be the whole disk, so no grant is offered.
+    expect(offeredGrants({ class: "WRITE_LOCAL", paths: ["/report.txt"] }, "/ws")).toEqual([]);
+    expect(grantRule(write("/report.txt"), "tool", "/ws").match).toEqual({ tool: "write", path: { within: "workspace" } });
+    // A tool that names no path (a Cairn delete) keeps a tool-wide grant.
+    expect(grantRule({ name: "delete", risk: { class: "WRITE_LOCAL" } }, "tool", "/ws").match).toEqual({ tool: "delete" });
+  });
+
   it("builds a command grant that matches only that command", () => {
     const g = grantRule(bash("make ship"), "command");
     expect(ruleMatches(g, bash("make   ship"), ctx)).toBe(true);
@@ -103,6 +125,10 @@ describe("isProtectedPath", () => {
   it.each([".env", ".env.local", "app/.git/config", ".cairn/config.json", "~/.zshrc".replace("~/", ""), "keys/server.pem", ".github/workflows/ci.yml", "/home/u/.ssh/id_rsa"])(
     "protects %s", (p) => expect(isProtectedPath(p, "/ws")).toBe(true));
   it.each(["src/index.ts", "README.md", "docs/environment.md", ".gitignore"])("does not protect %s", (p) => expect(isProtectedPath(p, "/ws")).toBe(false));
+  it("ignores case, as macOS and Windows do", () => {
+    expect(isProtectedPath(".ENV", "/ws")).toBe(true);
+    expect(isProtectedPath(".Git/hooks/pre-commit", "/ws")).toBe(true);
+  });
   it("honours extra protected paths", () => expect(isProtectedPath("secrets/a.txt", "/ws", ["secrets"])).toBe(true));
 });
 

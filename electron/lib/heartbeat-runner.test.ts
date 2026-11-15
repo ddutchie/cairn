@@ -425,6 +425,35 @@ describe("runAutomation folder plumbing", () => {
     await pending;
   });
 
+  it("never answers for the user an ask raised for the sandbox, a protected path or a repeated call", async () => {
+    const db = makeDb();
+    createWorkspace(db, { id: "ws1", name: "W" });
+    createProject(db, { id: "p1", workspaceId: "ws1", name: "P" });
+    const automation = makeAutomation(db, { projectId: "p1" });
+    const run = createAutomationRun(db, automation.id, "running");
+    const root = makeRoot();
+    engineMock.respondEngineAsk.mockClear();
+    const ask = (callId: string, extra: Record<string, unknown>) => lastLoopOpts().tap?.("session:projection", { sessionId: run.id, kind: "approval", data: { status: "required", callId, nonce: `n-${callId}`, name: "write", label: "write", ...extra } });
+
+    let release!: (v: unknown) => void;
+    runEngineMock.mockImplementation(() => {
+      ask("c1", { by: "mode", escalation: true }); // leaves the shell sandbox
+      ask("c2", { by: "protected" });
+      ask("c3", { by: "doom" });
+      ask("c4", { by: "hook" });
+      ask("c5", { by: "mode" });                   // routine: auto mode answers it
+      return new Promise((r) => { release = r; });
+    });
+
+    const pending = runAutomation({ db, workspacePath: root }, run, automation);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(engineMock.respondEngineAsk).toHaveBeenCalledTimes(1);
+    expect(engineMock.respondEngineAsk).toHaveBeenCalledWith(expect.anything(), run.id, "c5", "n-c5", { approved: true });
+
+    release({ ok: true });
+    await pending;
+  });
+
   it("connector calls: parked and listed in 'auto' mode with a notification; selected connectors run freely in 'auto-connectors'", async () => {
     const db = makeDb();
     createWorkspace(db, { id: "ws1", name: "W" });

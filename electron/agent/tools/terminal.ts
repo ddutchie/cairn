@@ -2,9 +2,16 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";
 import { clampMiddle, fail, ok } from "./schema";
+import type { SandboxMode } from "../sandbox";
 import type { TerminalRegistry } from "../terminals";
 
-export interface TerminalDeps { registry: TerminalRegistry; owner: string; cwd: string }
+export interface TerminalDeps {
+  registry: TerminalRegistry;
+  owner: string;
+  cwd: string;
+  /** Confinement for this session's terminals, whatever the user's setting says (unattended runs). */
+  sandbox?: SandboxMode;
+}
 
 const MAX_OUTPUT = 30_000;
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT", "SIGTSTP"] as const;
@@ -15,14 +22,14 @@ const attempt = async (run: () => string | Promise<string>) => {
 const render = (r: { text: string; alive: boolean; exitCode?: number; timedOut?: boolean }) =>
   `${clampMiddle(r.text.trimEnd(), MAX_OUTPUT) || "(no output)"}${r.alive ? "" : `\n[terminal exited${r.exitCode !== undefined ? ` with ${r.exitCode}` : ""}]`}${r.timedOut ? "\n[still running — read more output with terminal_read]" : ""}`;
 
-export function terminalTools({ registry, owner, cwd }: TerminalDeps): AgentTool[] {
+export function terminalTools({ registry, owner, cwd, sandbox }: TerminalDeps): AgentTool[] {
   return [
     defineTool({
       name: "terminal_open",
       description: "Open a persistent interactive shell. Use it for long-lived processes or state that must survive between commands (cd, env vars, REPLs). Returns the terminal id.",
       parameters: Type.Object({}),
       risk: () => ({ class: "EXEC", command: "terminal_open" }),
-      execute: () => attempt(async () => { const t = await registry.open(owner, cwd); return `Opened ${t.id} in ${t.cwd}.`; }),
+      execute: () => attempt(async () => { const t = await registry.open(owner, cwd, sandbox); return `Opened ${t.id} in ${t.cwd}.`; }),
     }),
     defineTool({
       name: "terminal_send",

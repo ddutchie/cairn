@@ -5,6 +5,7 @@
  * the model has actually seen).
  */
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
@@ -44,9 +45,36 @@ function rg(deps: FsDeps, args: string[], cwd: string, signal?: AbortSignal): Pr
   });
 }
 
+/** `p` with symlinks resolved; the part that does not exist yet (a file about to be written) is kept as given. */
+function realPath(p: string): string {
+  let head = p;
+  const tail: string[] = [];
+  for (;;) {
+    try { return path.join(realpathSync(head), ...tail); } catch { /* not there yet: try its parent */ }
+    const parent = path.dirname(head);
+    if (parent === head) return p;
+    tail.unshift(path.basename(head));
+    head = parent;
+  }
+}
+
+/**
+ * The path a call is judged by: where it really lands. A link inside the working directory that
+ * points at `~/.ssh/id_ed25519` is reported as that file, not as the harmless-looking link. A target
+ * inside the working directory is reported under `cwd` as given, so workspace rules still match
+ * when `cwd` itself is reached through a link (`/tmp` on macOS).
+ */
+export function riskPath(cwd: string, p: string): string {
+  const abs = path.resolve(cwd, p);
+  const real = realPath(abs);
+  const rel = path.relative(realPath(cwd), real);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel)) ? path.join(cwd, rel) : real;
+}
+
 export function fsTools(deps: FsDeps, opts: { readOnly?: boolean } = {}): AgentTool[] {
   const observed = deps.observed ?? new Set<string>();
   const abs = (p: string) => path.resolve(deps.cwd, p);
+  const judged = (p: string) => riskPath(deps.cwd, p);
 
   const read = defineTool({
     name: "read",
@@ -56,7 +84,7 @@ export function fsTools(deps: FsDeps, opts: { readOnly?: boolean } = {}): AgentT
       offset: Type.Optional(Type.Number({ description: "1-based first line to return. Defaults to 1." })),
       limit: Type.Optional(Type.Number({ description: `Maximum number of lines to return. Defaults to ${DEFAULT_READ_LIMIT}.` })),
     }),
-    risk: (a) => ({ class: "READ", paths: [abs(a.file_path)] }),
+    risk: (a) => ({ class: "READ", paths: [judged(a.file_path)] }),
     concurrency: "parallel",
     async execute(a) {
       const file = abs(a.file_path);
@@ -82,7 +110,7 @@ export function fsTools(deps: FsDeps, opts: { readOnly?: boolean } = {}): AgentT
     name: "read_image",
     description: "Read a PNG, JPEG, GIF or WebP image so you can look at it.",
     parameters: Type.Object({ file_path: Type.String({ description: "Image path." }) }),
-    risk: (a) => ({ class: "READ", paths: [abs(a.file_path)] }),
+    risk: (a) => ({ class: "READ", paths: [judged(a.file_path)] }),
     concurrency: "parallel",
     async execute(a) {
       const mime = IMAGE_TYPES[path.extname(a.file_path).toLowerCase()];
@@ -103,7 +131,7 @@ export function fsTools(deps: FsDeps, opts: { readOnly?: boolean } = {}): AgentT
       pattern: Type.String({ description: "Glob such as **/*.ts" }),
       path: Type.Optional(Type.String({ description: "Directory to search. Defaults to the working directory." })),
     }),
-    risk: (a) => ({ class: "READ", paths: [abs(a.path ?? ".")] }),
+    risk: (a) => ({ class: "READ", paths: [judged(a.path ?? ".")] }),
     concurrency: "parallel",
     async execute(a, ctx) {
       try {
@@ -131,7 +159,7 @@ export function fsTools(deps: FsDeps, opts: { readOnly?: boolean } = {}): AgentT
       ignore_case: Type.Optional(Type.Boolean()),
       context: Type.Optional(Type.Number({ description: "Lines of context around each match (content mode)." })),
     }),
-    risk: (a) => ({ class: "READ", paths: [abs(a.path ?? ".")] }),
+    risk: (a) => ({ class: "READ", paths: [judged(a.path ?? ".")] }),
     concurrency: "parallel",
     async execute(a, ctx) {
       const mode = a.output_mode ?? "content";
@@ -167,7 +195,7 @@ export function fsTools(deps: FsDeps, opts: { readOnly?: boolean } = {}): AgentT
       file_path: Type.String({ description: "Path to write." }),
       content: Type.String({ description: "Full text content." }),
     }),
-    risk: (a) => ({ class: "WRITE_LOCAL", paths: [abs(a.file_path)] }),
+    risk: (a) => ({ class: "WRITE_LOCAL", paths: [judged(a.file_path)] }),
     preview: (a) => a.content,
     async execute(a) {
       const file = abs(a.file_path);
@@ -194,7 +222,7 @@ export function fsTools(deps: FsDeps, opts: { readOnly?: boolean } = {}): AgentT
       new_string: Type.String({ description: "Replacement text; empty deletes the match." }),
       replace_all: Type.Optional(Type.Boolean({ description: "Replace every match. Otherwise old_string must appear exactly once." })),
     }),
-    risk: (a) => ({ class: "WRITE_LOCAL", paths: [abs(a.file_path)] }),
+    risk: (a) => ({ class: "WRITE_LOCAL", paths: [judged(a.file_path)] }),
     preview: (a) => `${a.old_string}\n→\n${a.new_string}`,
     async execute(a) {
       const file = abs(a.file_path);

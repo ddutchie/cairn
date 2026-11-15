@@ -26,7 +26,6 @@ import { createHooks } from "../agent/hooks";
 import { LspManager } from "../agent/lsp";
 import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
 import { importLegacySession } from "../agent/session/legacy-import";
-import { isLocalEndpoint } from "../lib/llm";
 import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
 import { deleteSessionProfile, listSessionIdsForWorkspace } from "../db/workspace-queries";
 import { deleteSessionEmbeddings } from "../db/embeddings-queries";
@@ -120,13 +119,17 @@ export function chatSystemPrompt(req: ChatRequest, policy: ChatApprovalPolicy): 
 export const chatApprovalPolicyFor = (req: ChatRequest): ChatApprovalPolicy =>
   resolveChatApprovalPolicy(req.approvalPolicy ?? (getCachedConfig().aiConfig as { chatApprovalPolicy?: unknown } | undefined)?.chatApprovalPolicy);
 
+/** Tools whose saved grants reach files: they cover the session's code folder, never the whole disk. */
+const FILE_WRITE_TOOLS = new Set(["write", "edit"]);
+
 function grantsToRules(sessionId: string, grants: Array<{ id: string; tool: string; target: string | null }>): Rule[] {
   return grants.map((g) => ({
     id: `workspace:${g.id}`,
     effect: "allow" as const,
     scope: "workspace" as const,
     source: "grant" as const,
-    match: g.target ? { tool: g.tool, command: { exact: canonicalCommand(g.target) } } : { tool: g.tool },
+    // Only the tool and a command are stored, so a file-write grant is scoped again when it is loaded.
+    match: g.target ? { tool: g.tool, command: { exact: canonicalCommand(g.target) } } : FILE_WRITE_TOOLS.has(g.tool) ? { tool: g.tool, path: { within: "workspace" as const } } : { tool: g.tool },
     note: `Workspace grant (${sessionId})`,
   }));
 }
@@ -189,6 +192,9 @@ export function getEngineHost(ctx: DbContext): AgentHost {
     onWorkspaceGrant: (sessionId, rule) => {
       const workspaceId = sessionWorkspace.get(sessionId);
       if (!workspaceId || !hostCtx) return;
+      // Only the tool and a command are stored, so a grant for a folder outside the workspace would
+      // come back as a grant for the whole workspace. It stays a grant for this session.
+      if (rule.match.path && rule.match.path.within !== "workspace") return;
       addWorkspaceApprovalGrant(hostCtx.db, workspaceId, rule.match.tool ?? "", rule.match.command?.exact ?? null);
     },
     onAssistantMessage: (sessionId, message) => {
@@ -558,7 +564,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
       },
     },
     lsp: role === "automation-dev" ? undefined : { manager: getLsp(), cwd: a.cwd },
-    terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd },
+    terminals: role === "automation-dev" ? undefined : { registry: getTerminals(a.ctx), owner: a.sessionId, cwd: a.cwd, ...(a.forceSandbox ? { sandbox: "workspace-write" as const } : {}) },
     goal: {
       get: () => h.goal(a.sessionId),
       create: (objective, maxRounds) => h.createGoal(a.sessionId, objective, maxRounds),
@@ -647,11 +653,9 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
   }
   // Lazy: chat.ts pulls in the pop-out window module, which needs a live Electron `app` at import time.
   const { resolveAIConfig } = await import("./chat");
+  // No key is not refused here: a self-hosted provider on the network needs none, and a hosted one
+  // that does answers with its own error, which is shown in plain words.
   const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);
-  if (!apiKey && !isLocalEndpoint(baseUrl)) {
-    rejectPrompt(sessionId, "Missing API key. Add one for this provider in Settings → AI.", "missing-api-key");
-    return;
-  }
   const policy = chatApprovalPolicyFor(req);
   await runEnginePrompt({
     ctx, sessionId, prompt: req.message, cwd: ctx.workspacePath, attachments: req.images as Attachment[] | undefined,

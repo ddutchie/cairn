@@ -10,14 +10,42 @@ const MAX_CHARS = 60_000;
 const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 20_000;
 
+/** The 16-bit groups of an IPv6 address, or undefined when it is not one. */
+function v6Groups(ip: string): number[] | undefined {
+  if (!net.isIPv6(ip)) return undefined;
+  let text = ip.split("%")[0].toLowerCase();
+  // A dotted IPv4 tail (`::ffff:127.0.0.1`) is the last two groups.
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number);
+    text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head, tail] = text.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const fill = text.includes("::") ? new Array(Math.max(0, 8 - left.length - right.length)).fill("0") : [];
+  const groups = [...left, ...fill, ...right].map((g) => parseInt(g, 16));
+  return groups.length === 8 && groups.every((g) => g >= 0 && g <= 0xffff) ? groups : undefined;
+}
+
 export function isPrivateAddress(ip: string): boolean {
   if (net.isIPv4(ip)) {
-    const [a, b] = ip.split(".").map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+    const [a, b, c] = ip.split(".").map(Number);
+    return a === 10 || a === 127 || a === 0 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+      || (a === 100 && b >= 64 && b <= 127) || (a === 192 && b === 0 && c === 0) || (a === 198 && (b === 18 || b === 19));
   }
-  const v6 = ip.toLowerCase();
-  if (v6.startsWith("::ffff:")) return isPrivateAddress(v6.slice(7));
-  return v6 === "::1" || v6 === "::" || v6.startsWith("fc") || v6.startsWith("fd") || v6.startsWith("fe8") || v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb");
+  const g = v6Groups(ip);
+  // Not an address we can read: refuse rather than guess.
+  if (!g) return true;
+  const embedded = `${g[6] >> 8}.${g[6] & 0xff}.${g[7] >> 8}.${g[7] & 0xff}`;
+  const zeros = (n: number) => g.slice(0, n).every((x) => x === 0);
+  // IPv4 carried inside IPv6, in either spelling (`::ffff:127.0.0.1` is `::ffff:7f00:1`): mapped, compatible, NAT64.
+  if ((zeros(5) && g[5] === 0xffff) || zeros(6) || (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0))) {
+    if (zeros(6) && g[6] === 0 && g[7] <= 1) return true; // `::` and `::1`
+    return isPrivateAddress(embedded);
+  }
+  // Unique local (fc00::/7), link local (fe80::/10), multicast (ff00::/8).
+  return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xff00) === 0xff00;
 }
 
 async function assertPublic(url: URL): Promise<void> {

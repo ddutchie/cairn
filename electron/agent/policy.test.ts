@@ -87,9 +87,32 @@ describe("decide: protected paths", () => {
     expect(decideFor(edit(".env"), base({ mode: "yolo" })).kind).toBe("ask");
   });
 
-  it("an explicit user or grant rule can allow it", () => {
-    const rules = [...workspaceEdits, rule({ id: "u", effect: "allow", match: { tool: "write" } })];
-    expect(decideFor(edit(".env"), base({ rules }))).toMatchObject({ kind: "allow", ruleId: "u" });
+  it("a blanket or workspace-wide grant does not reach it; a rule naming the folder does", () => {
+    const blanket = rule({ id: "b", source: "grant", effect: "allow", match: { tool: "write" } });
+    const workspaceWide = rule({ id: "w", source: "grant", effect: "allow", match: { tool: "write", path: { within: "workspace" } } });
+    expect(decideFor(edit(".env"), base({ rules: [...workspaceEdits, blanket, workspaceWide] }))).toMatchObject({ kind: "ask", by: "protected" });
+    expect(decideFor(edit(".git/hooks/pre-commit"), base({ rules: [blanket] }))).toMatchObject({ kind: "ask", by: "protected" });
+    const named = rule({ id: "u", effect: "allow", match: { tool: "write", path: { within: "/ws/.git/hooks" } } });
+    expect(decideFor(edit(".git/hooks/pre-commit"), base({ rules: [named] }))).toMatchObject({ kind: "allow", ruleId: "u" });
+    // A grant for a folder (given on ~/report.txt) does not cover the protected files in it.
+    const folderGrant = rule({ id: "g", source: "grant", effect: "allow", match: { tool: "write", path: { within: "/home/u" } } });
+    expect(decideFor(edit("/home/u/.zshrc"), base({ rules: [folderGrant] }))).toMatchObject({ kind: "ask", by: "protected" });
+    expect(decideFor(edit("/home/u/notes.txt"), base({ rules: [folderGrant] }))).toMatchObject({ kind: "allow", ruleId: "g" });
+  });
+
+  it("asks before reading credentials outside the workspace, in every mode", () => {
+    const readOf = (p: string): CallView => ({ name: "read", risk: { class: "READ", paths: [p] } });
+    for (const mode of ["ask", "auto", "yolo", "plan"] as Mode[]) {
+      expect(decideFor(readOf("/home/u/.ssh/id_ed25519"), base({ mode })), mode).toMatchObject({ kind: "ask", by: "protected" });
+    }
+    expect(decideFor(readOf("/home/u/.aws/credentials"), base()).kind).toBe("ask");
+    expect(decideFor(readOf("/other/project/.env"), base()).kind).toBe("ask");
+    expect(decideFor(readOf("/other/project/.ENV"), base()).kind).toBe("ask");
+    expect(decideFor(readOf("/home/u/.SSH/config"), base()).kind).toBe("ask");
+    // Inside the workspace, and ordinary files anywhere, read as before.
+    expect(decideFor(readOf(".env"), base()).kind).toBe("allow");
+    expect(decideFor(readOf("/other/project/.env.example"), base()).kind).toBe("allow");
+    expect(decideFor(readOf("/home/u/notes.txt"), base()).kind).toBe("allow");
   });
 
   it("does not apply to reads", () => {

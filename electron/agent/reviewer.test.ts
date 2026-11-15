@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "./loop";
-import { createModelReviewer } from "./reviewer";
+import { createModelReviewer, MAX_REVIEW_ARG_CHARS } from "./reviewer";
 
 const model = { maxTokens: 4096 } as Model<Api>;
 const reply = (...texts: string[]) => {
@@ -33,6 +33,26 @@ describe("createModelReviewer", () => {
     const r = reply('{"verdict":"allow","reason":"x"}');
     expect(await review(r.streamFn, { class: "EXTERNAL" })).toMatchObject({ verdict: "ask" });
     expect(r.prompts).toHaveLength(0);
+  });
+  it("asks the user about an action too large to show the model in full", async () => {
+    const r = reply('{"verdict":"allow","reason":"x"}');
+    const verdict = await createModelReviewer({ model, streamFn: r.streamFn, cwd: "/p", userRequests: () => ["write the file"] })(
+      { sessionId: "s", callId: "c", tool: "write", args: { file_path: "a.ts", content: "x".repeat(MAX_REVIEW_ARG_CHARS) }, risk: { class: "WRITE_LOCAL" } as never });
+    expect(verdict).toMatchObject({ verdict: "ask" });
+    expect(r.prompts).toHaveLength(0);
+  });
+  it("shows the model the whole action below that size", async () => {
+    const r = reply('{"verdict":"allow","reason":"x"}');
+    await createModelReviewer({ model, streamFn: r.streamFn, cwd: "/p", userRequests: () => ["write the file"] })(
+      { sessionId: "s", callId: "c", tool: "write", args: { file_path: "a.ts", content: `${"x".repeat(8000)}TAIL-MARKER` }, risk: { class: "WRITE_LOCAL" } as never });
+    expect(r.prompts[0]).toContain("TAIL-MARKER");
+  });
+  it("scrubs secrets from the arguments it shows the model", async () => {
+    const r = reply('{"verdict":"allow","reason":"x"}');
+    await createModelReviewer({ model, streamFn: r.streamFn, cwd: "/p", userRequests: () => ["call the api"] })(
+      { sessionId: "s", callId: "c", tool: "bash", args: { command: "curl https://api.example.com", apiKey: "sk-live-abcdefghijklmnopqrstuvwxyz123456" }, risk: { class: "EXEC" } as never });
+    expect(r.prompts[0]).not.toContain("sk-live-abcdefghijklmnopqrstuvwxyz123456");
+    expect(r.prompts[0]).toContain("curl https://api.example.com");
   });
   it("throws on unparseable output so the loop falls back to asking", async () => {
     await expect(review(reply("nope").streamFn, { class: "EXEC", command: "ls" })).rejects.toThrow();

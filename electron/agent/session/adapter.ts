@@ -106,7 +106,7 @@ export function createAdapter(sessionId: string, now: () => number = Date.now, r
         const a = event.ask;
         projections.push(makeSessionProjection(sessionId, "approval", {
           sessionId, status: "required", callId: a.callId, nonce: a.nonce, name: a.tool, label: a.title, preview: a.preview,
-          reason: a.reason, risk: a.risk, grants: a.grants, expiresAt: a.expiresAt,
+          reason: a.reason, risk: a.risk, grants: a.grants, expiresAt: a.expiresAt, by: a.source, ...(a.escalation ? { escalation: true } : {}),
         }));
         break;
       }

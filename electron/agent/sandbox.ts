@@ -128,7 +128,13 @@ function darwinCacheDir(): string[] {
   } catch { return []; }
 }
 
-const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun", ".gradle", ".m2", ".node-gyp", "go", ".local/share/pnpm", "Library/pnpm", "Library/Caches"];
+/**
+ * Package-manager caches and stores. Where a tool keeps its installed commands beside its cache
+ * (Go, Bun, pnpm) only the cache part is listed, so a sandboxed command cannot put a program on PATH.
+ */
+const HOME_CACHES = [".npm", ".cache", ".cargo", ".pnpm-store", ".yarn", ".bun/install/cache", ".gradle", ".m2", ".node-gyp", "go/pkg", ".local/share/pnpm/store", "Library/pnpm/store", "Library/Caches"];
+/** Command folders inside those roots; they stay read-only. */
+const HOME_BIN_DIRS = [".cargo/bin", ".yarn/bin"];
 
 /** Scratch space every command needs (pagers, heredocs, compilers); not the user's files. */
 export function tempRoots(tmp = os.tmpdir()): string[] {
@@ -170,10 +176,21 @@ export function bwrapArgs(roots: string[], blockNetwork = false, pty = false, re
 
 /** Inside the writable roots, these stay read-only: git hooks and tool shims that later run outside the sandbox. */
 export function readOnlyCarveOuts(roots: string[], cwd: string, home = os.homedir()): string[] {
-  const out = [path.join(home, ".cargo", "bin")];
+  const out = HOME_BIN_DIRS.map((d) => path.join(home, d));
   for (const r of roots) out.push(path.join(r, ".git", "hooks"));
   for (const d of gitDirs(cwd)) out.push(path.join(d, "hooks"));
   return [...new Set(out.map(real))].filter((p) => roots.some((r) => p === r || p.startsWith(r + path.sep)));
+}
+
+/**
+ * bubblewrap can only mount a folder read-only if it exists; a missing one inside a writable root
+ * (`~/.yarn/bin` under `~/.yarn`) could otherwise be created and filled by the sandboxed command.
+ * So each missing carve-out whose parent exists is created empty first. Seatbelt matches by path and needs none of this.
+ */
+export function ensureCarveOuts(readOnly: string[]): void {
+  for (const dir of readOnly) {
+    try { if (!fs.existsSync(dir) && fs.existsSync(path.dirname(dir))) fs.mkdirSync(dir); } catch { /* left writable only if it cannot be made */ }
+  }
 }
 
 /** Wrap a command so it runs confined; returns it unchanged when the sandbox is off or unavailable. */
@@ -185,6 +202,7 @@ export function wrapSandboxed(cmd: Spawnable, cwd: string, opts: SandboxOptions,
   const roots = opts.mode === "read-only" ? tempRoots() : writableRoots(opts.root ?? cwd, opts.writableRoots);
   const ro = readOnlyCarveOuts(roots, opts.root ?? cwd);
   if (backend === "seatbelt") return { file: SEATBELT, args: ["-p", seatbeltProfile(roots, opts.blockNetwork, ro), cmd.file, ...cmd.args] };
+  ensureCarveOuts(ro);
   return { file: "bwrap", args: [...bwrapArgs(roots, opts.blockNetwork, opts.pty, ro), "--chdir", cwd, cmd.file, ...cmd.args] };
 }
 
