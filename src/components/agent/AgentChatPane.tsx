@@ -303,13 +303,14 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     if (!hasPromptFired(session.sessionId)) return;
     let cancelled = false;
     const sync = async () => {
-      // Settle before polling: a prompt fired on this very mount (initial
-      // prompt or queue drain) is in flight to the main process, and is-running
-      // could read false in the split second before runningLoops is populated —
-      // which would wrongly flip the input to idle and finalise a live bubble.
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      const res = await sessionClient.isRunning(session.sessionId);
-      if (cancelled) return;
+      try {
+        // Settle before polling: a prompt fired on this very mount (initial
+        // prompt or queue drain) is in flight to the main process, and is-running
+        // could read false in the split second before runningLoops is populated —
+        // which would wrongly flip the input to idle and finalise a live bubble.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const res = await sessionClient.isRunning(session.sessionId);
+        if (cancelled) return;
       const running = res?.running ?? false;
       // Re-surface approval asks whose original push was lost to a reload —
       // the main-process loop is still blocked waiting on them.
@@ -335,8 +336,12 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       finaliseAgentMessage(session.sessionId);
       setRetryInfo(null);
       sessionConversation.setQuestions(null);
+      } catch {
+        // Off-Electron (web/test-shim) — isRunning rejects with
+        // IpcUnavailableError; leave local state untouched.
+      }
     };
-    void sync();
+    void sync().catch(() => {});
     return () => { cancelled = true; };
   // `sessionConversation.setQuestions` is ref-backed by the shared controller;
   // the hook result object is intentionally not a dependency because it is a
