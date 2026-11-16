@@ -12,6 +12,7 @@ import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KE
 import { secretsClient } from "@/lib/ipc/tools";
 import { appClient } from "@/lib/ipc/app";
 import { hasElectron } from "@/lib/ipc/client";
+import { isLoopbackHost } from "../../../shared/net/address";
 
 // ── AI / MCP config ───────────────────────────────────────────────────────────
 
@@ -597,7 +598,7 @@ export const createAiConfigSlice: StateCreator<CairnStore, [], [], AiConfigSlice
     try {
       const u = new URL(conn.baseUrl);
       const host = u.hostname.toLowerCase();
-      name = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1"
+      name = isLoopbackHost(host)
         ? `Local server (${u.port || "default port"})`
         : host;
     } catch { /* keep fallback */ }

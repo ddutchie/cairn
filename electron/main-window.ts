@@ -3,6 +3,7 @@
 import { BrowserWindow, shell } from "electron";
 import path from "path";
 import { readThemeSurface } from "./lib/theme-surface";
+import { isAllowedNavigationUrl } from "./lib/window-nav-guard";
 import { attachSpellcheck } from "./spellcheck";
 
 /** Windows built by createWindow — the only ones the tray and Quick Capture may target. */
@@ -77,18 +78,7 @@ export function createWindow(isDev: boolean): BrowserWindow {
   // Deny any in-page navigation to external origins. Only allow the bundled
   // app:// scheme, the asset:// scheme, and the localhost dev server.
   win.webContents.on("will-navigate", (event, url) => {
-    try {
-      const parsed = new URL(url);
-      const allowed =
-        parsed.protocol === "app:" ||
-        parsed.protocol === "asset:" ||
-        (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
-        (parsed.protocol === "ws:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
-        (parsed.protocol === "https:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"));
-      if (!allowed) event.preventDefault();
-    } catch {
-      event.preventDefault();
-    }
+    if (!isAllowedNavigationUrl(url)) event.preventDefault();
   });
 
   return win;

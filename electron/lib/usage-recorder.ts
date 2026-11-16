@@ -11,6 +11,7 @@
 
 import type Database from "better-sqlite3";
 import { insertLlmUsage, type LlmUsageRecord, type UsageSource } from "../db/usage-queries";
+import { classifyHost } from "../../shared/net/address";
 import { endpointLogoSlug } from "../../shared/models/model-catalog";
 import { getCachedConfig } from "./config-cache";
 import { estimateCostUsd } from "./model-pricing";
@@ -78,16 +79,11 @@ function hostOf(baseUrl: string): string | null {
 }
 
 function isLocalHost(host: string): boolean {
-  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
-  if (h === "localhost" || h === "::1") return true;
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
-    const [a, b, c] = h.split(".").map(Number);
-    if (a === 127 || a === 10) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    return a === 0 && b === 0 && c === 0;
-  }
-  return false;
+  // Usage "Local" labelling (display only — never a fetch or key decision,
+  // see shared/net/address.ts Q3): loopback, private and link-local all read
+  // as Local. Invalid input falls through to the hostname display as before.
+  const c = classifyHost(host);
+  return c === "loopback" || c === "private" || c === "link-local";
 }
 
 /** Slug → display name for common provider slugs (community/manual installs). */

@@ -6,6 +6,8 @@
  * electron/agent/one-shot.ts (single reply) — there is no other transport.
  */
 
+import { isLocalBaseUrl } from "../../shared/net/address";
+
 export function normaliseBaseUrl(raw: string): string {
   return raw.replace(/\/+$/, "");
 }
@@ -42,23 +44,7 @@ export function buildApiUrl(baseUrl: string, path: string): string {
 
 /** Returns true if the given base URL points to a local server. */
 export function isLocalEndpoint(baseUrl: string): boolean {
-  try {
-    let urlString = baseUrl.trim();
-    if (!/^https?:\/\//i.test(urlString)) {
-      urlString = "http://" + urlString;
-    }
-    const parsed = new URL(urlString);
-    const host = parsed.hostname.toLowerCase();
-    return (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host === "0.0.0.0" ||
-      host === "[::1]" ||
-      host === "::1"
-    );
-  } catch {
-    return false;
-  }
+  return isLocalBaseUrl(baseUrl);
 }
 
 export interface LLMConfig {

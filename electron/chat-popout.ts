@@ -19,6 +19,7 @@ import type { DbContext } from "./ipc/result-helpers";
 import { handle } from "./ipc/result-helpers";
 import { registerContractHandle, sendIpcEvent } from "./ipc/registry";
 import { getSessionProfile } from "./db/queries";
+import { isAllowedNavigationUrl } from "./lib/window-nav-guard";
 import { attachSpellcheck } from "./spellcheck";
 
 const isDev = !app.isPackaged;
@@ -106,18 +107,7 @@ export function createChatPopoutWindow(): BrowserWindow {
   });
 
   win.webContents.on("will-navigate", (event, url) => {
-    try {
-      const parsed = new URL(url);
-      const allowed =
-        parsed.protocol === "app:" ||
-        parsed.protocol === "asset:" ||
-        (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
-        (parsed.protocol === "ws:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) ||
-        (parsed.protocol === "https:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"));
-      if (!allowed) event.preventDefault();
-    } catch {
-      event.preventDefault();
-    }
+    if (!isAllowedNavigationUrl(url)) event.preventDefault();
   });
 
   loadPopupUrl(win);

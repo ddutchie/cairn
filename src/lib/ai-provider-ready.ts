@@ -1,11 +1,11 @@
 /** The connection fields shared by the chat (`aiConfig`) and agent (`agentConfig`) configs. */
+import { isLocalBaseUrl } from "../../shared/net/address";
+
 export interface ProviderConnection {
   baseUrl?: string;
   apiKey?: string;
   activeProviderId?: string;
 }
-
-const LOCAL_ENDPOINT = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i;
 
 /**
  * True when a surface can send a turn: it has a key, the user selected a saved
@@ -21,5 +21,5 @@ export function isAIProviderReady(
 ): boolean {
   if (config.apiKey?.trim()) return true;
   if (config.activeProviderId && savedProviders.some((p) => p.id === config.activeProviderId)) return true;
-  return LOCAL_ENDPOINT.test(config.baseUrl ?? "");
+  return isLocalBaseUrl(config.baseUrl ?? "");
 }
