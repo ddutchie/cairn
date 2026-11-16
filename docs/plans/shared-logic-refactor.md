@@ -22,6 +22,7 @@
 > - #296 merged — B1 (address classifier).
 > - #297 merged — B2 (unified LLM config; Q2 key rule as own commit).
 > - Next: B3 (ready — session guards) → B4 → B5 → C5-boundary → llm-http.ts (Q9) → knip report-only (Q8) → F20 renames (Q7: after final refactor PR). C4 DROPPED (Q5).
+- Q9 PR #298 opened — shared LLM HTTP helper (`electron/lib/llm-http.ts`: `authHeaders` + `fetchJson`, one 10s default timeout; narrows #179 to the token-breakdown checkbox).
 > - Rule: every refactor PR updates this log before merge.
 
 > Status: **proposal**, written 2026-11-15 on `fix/3.2.0-audit-hardening` (PR ddutchie/cairn#284 still open). Investigation only: no code was changed.
