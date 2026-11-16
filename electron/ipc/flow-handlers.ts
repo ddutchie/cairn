@@ -6,7 +6,7 @@
  * delegate to `q.*` from `db/queries.ts`. The `db:flow:node:summarize` handler
  * includes an inlined BFS that collects content from every node reachable from
  * the summary node (both edge directions), skips other `ai_summary` nodes,
- * and feeds the collected text into `callLLM`.
+ * and feeds the collected text into a one-shot model call (`runOneShot`).
  *
  * NOTE (tracked): the BFS here is partly duplicated by `q.getResolvedFlow`
  * (`db/queries.ts:651-735`). A deeper refactor could extract a shared
