@@ -183,12 +183,16 @@ const engineBoundary = {
         if (node.source?.value) check(node.source.value, node.source, isTypeOnly(node));
       },
       ExportAllDeclaration(node) {
-        if (node.source?.value) check(node.source.value, node.source, false);
+        if (node.source?.value) check(node.source.value, node.source, isTypeOnly(node));
       },
       ImportExpression(node) {
         const src = node.source;
-        if (src && (src.type === "Literal" || src.type === "TemplateLiteral") && src.value) {
+        if (src && src.type === "Literal" && typeof src.value === "string") {
           check(src.value, src, false);
+        } else if (src && src.type === "TemplateLiteral" && src.expressions.length === 0) {
+          // Static backtick import: text lives in quasis, not value.
+          const cooked = src.quasis[0]?.value?.cooked;
+          if (typeof cooked === "string") check(cooked, src, false);
         }
       },
       CallExpression(node) {
