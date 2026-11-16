@@ -10,6 +10,7 @@
 
 import { Type } from "@earendil-works/pi-ai";
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, toolCategory } from "./tool-schemas";
+import { isCairnReadTool } from "../../shared/agent/tool-names";
 import { buildToolset, type ToolSurface, type ToolsetDeps } from "../agent/tools/index";
 import type { AgentTool } from "../agent/tools";
 import type { InventoryCategory, InventorySource, InventorySurface, InventoryTool } from "../../shared/types/runtime";
@@ -25,7 +26,11 @@ const GLOBAL_TOOLS = new Set(["subagent", "delegate", "send_message", "list_agen
 
 function categoryOf(name: string): InventoryCategory {
   if (name in TOOL_SCHEMAS) return toolCategory(name);
-  if (READ_TOOLS.has(name)) return "read";
+  // Engine read names are set membership above; the shared Cairn-read
+  // predicate covers any further get_/list_/search_ engine tool (today this
+  // adds nothing — get_goal/list_agents are already listed — but a newly
+  // registered read tool can't silently land in "exec").
+  if (READ_TOOLS.has(name) || isCairnReadTool(name)) return "read";
   if (WRITE_TOOLS.has(name)) return "write";
   return "exec";
 }

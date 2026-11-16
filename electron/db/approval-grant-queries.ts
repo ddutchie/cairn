@@ -14,6 +14,7 @@
 
 import type Database from "better-sqlite3";
 import { newId } from "./utils";
+import { CODE_EXEC_TOOLS } from "../../shared/agent/tool-names";
 
 /** One grant, as returned by list/get. */
 export type { ApprovalGrant } from "../../shared/types/approval";
@@ -23,10 +24,9 @@ import type { ApprovalGrant } from "../../shared/types/approval";
  * True for the two tools where a target-less "always allow" would be a
  * WILDCARD grant of arbitrary code execution — it would auto-allow every
  * `bash` / `run_script` call. The grant writer refuses those; the checker
- * likewise refuses to match them on a target-less basis. Mirrors
- * CODE_EXEC_TOOLS in automation-approval.ts.
+ * likewise refuses to match them on a target-less basis. (Set lives in
+ * shared/agent/tool-names.ts as CODE_EXEC_TOOLS.)
  */
-const CODE_EXEC_TOOLS = new Set(["bash", "run_script"]);
 
 /** True when the grant would be a wildcard execution grant. */
 export function isWildcardExecGrant(tool: string, target: string | null | undefined): boolean {
