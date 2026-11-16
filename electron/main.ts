@@ -37,7 +37,7 @@ import { recoverInterruptedRuns } from "./db/automation-queries";
 import { getProjectName } from "./ipc/result-helpers";
 import { setupProtocol, registerAssetProtocol, setAssetWorkspacePath } from "./lib/protocol";
 import { createTray } from "./lib/tray";
-import { killTrackedBashProcesses } from "./lib/coding-tools/bash";
+import { killTrackedBashProcesses } from "./lib/proc";
 import { startMcpNotificationPoller } from "./lib/mcp-poller";
 import { HeartbeatScheduler } from "./lib/heartbeat-scheduler";
 import { runAutomation } from "./lib/heartbeat-runner";

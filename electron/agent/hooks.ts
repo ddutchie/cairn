@@ -6,10 +6,10 @@
  * reason) or a JSON `decision: "block"` blocks, `permissionDecision` deny/ask
  * decides a tool call, and `additionalContext` is passed to the model.
  */
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runProcess } from "../lib/proc";
 
 export interface TurnHooks {
   /** Run before a prompt reaches the model. */
@@ -60,22 +60,23 @@ export function parseHookConfig(raw: string, projectDir: string): HookConfig {
 interface HookResult { code: number | null; stdout: string; stderr: string }
 
 function runCommand(h: HookCommand, payload: unknown, cwd: string, signal?: AbortSignal): Promise<HookResult> {
-  return new Promise((resolve) => {
-    const shell = process.platform === "win32" ? { file: "powershell.exe", args: ["-NoProfile", "-Command", h.command] } : { file: "/bin/sh", args: ["-c", h.command] };
-    const child = spawn(shell.file, shell.args, { cwd, env: { ...process.env, CLAUDE_PROJECT_DIR: cwd }, stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => { stdout += d; });
-    child.stderr.on("data", (d) => { stderr += d; });
-    const finish = (code: number | null) => { clearTimeout(timer); signal?.removeEventListener("abort", kill); resolve({ code, stdout, stderr }); };
-    const kill = () => child.kill("SIGKILL");
-    const timer = setTimeout(kill, h.timeoutMs);
-    signal?.addEventListener("abort", kill, { once: true });
-    child.on("error", (err) => { stderr += err.message; finish(1); });
-    child.on("close", finish);
-    child.stdin.on("error", () => undefined);
-    child.stdin.end(JSON.stringify(payload));
-  });
+  // Shell choice is unchanged: /bin/sh on POSIX, powershell.exe on Windows.
+  const shell = process.platform === "win32" ? { file: "powershell.exe", args: ["-NoProfile", "-Command", h.command] } : { file: "/bin/sh", args: ["-c", h.command] };
+  return runProcess({
+    file: shell.file,
+    args: shell.args,
+    cwd,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: cwd },
+    stdin: JSON.stringify(payload),
+    timeoutMs: h.timeoutMs,
+    signal,
+    killTree: false,
+    killSignal: "SIGKILL",
+  }).then((r) => ({
+    code: r.error ? 1 : r.code,
+    stdout: r.stdout,
+    stderr: r.error ? r.stderr + r.error : r.stderr,
+  }));
 }
 
 interface Parsed { block?: string; permission?: "deny" | "ask" | "allow"; permissionReason?: string; context?: string }
