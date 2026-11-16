@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,6 @@ import { kindLabel, SessionRow, SessionTypeIcon } from "./SessionRow";
 import { SessionSearchInput, SessionSearchList } from "./SessionSearchList";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 
 interface SessionBrowserProps {
   activeSessionId: string | null;
