@@ -66,6 +66,12 @@ export interface ReindexResult {
   total: number;
 }
 
+/** Whether local embeddings are on, and which model. Single source (was also in electron + renderer). */
+export interface EmbeddingsConfig {
+  enabled: boolean;
+  modelId: string;
+}
+
 export interface ProjectionResult {
   projected: number;
   total: number;

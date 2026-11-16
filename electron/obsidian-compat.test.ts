@@ -14,9 +14,8 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import matter from "gray-matter";
-import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
-import { applySchema } from "./db/schema";
+import { makeDb } from "./test-support/db";
 import { createWorkspace, createProject, updateProject } from "./db/queries";
 import {
   toSlug,
@@ -46,12 +45,6 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
-
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
 
 function seedProject(db: Database.Database, name = "ArchWiz", id = "proj1", wsId = "ws1") {
   createWorkspace(db, { id: wsId, name: "Test Workspace" });

@@ -1,7 +1,8 @@
 import { AlertTriangle } from "lucide-react";
 import { outputBudgetPressure } from "../../../shared/models/model-catalog";
+import { formatCompact } from "../../../shared/format/number";
 
-const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k` : String(n));
+const fmt = (n: number) => formatCompact(n);
 
 /**
  * Shown under "Max output tokens" when the reserved output eats a large share

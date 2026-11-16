@@ -7,12 +7,11 @@
  * subscriptions, and idempotent kill.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import { makeDb } from "../test-support/db";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, setProjectCodeDirectory } from "../db/queries";
 import {
   __clearPtySessionsForTest,
@@ -80,12 +79,6 @@ function makeFakeSpawn() {
     return fake;
   };
   return { spawned, fakes, fn };
-}
-
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
 }
 
 function seedCodeDir(db: Database.Database, codeDir: string): void {

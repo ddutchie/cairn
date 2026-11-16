@@ -1,35 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { resetVirtualFiles, virtualFiles } from "../test-support/secure-store-mock";
 
-// In-memory file backing the secrets store (same approach as secure-store.test).
-let virtualFiles: Record<string, string> = {};
+vi.mock("electron", async () =>
+  (await import("../test-support/secure-store-mock")).electronMock("/tmp/mcp-oauth-test"));
 
-vi.mock("electron", () => ({
-  app: {
-    isReady: () => true,
-    getPath: (key: string) => (key === "userData" ? "/tmp/mcp-oauth-test" : `/mock/${key}`),
-    on: () => {},
-    setAsDefaultProtocolClient: () => true,
-  },
-  shell: { openExternal: vi.fn(() => Promise.resolve()) },
-  safeStorage: {
-    isEncryptionAvailable: () => true,
-    encryptString: (s: string) => Buffer.from(`enc:${s}`, "utf-8"),
-    decryptString: (b: Buffer) => b.toString("utf-8").replace(/^enc:/, ""),
-  },
-}));
-
-vi.mock("fs", () => ({
-  default: {
-    existsSync: (p: string) => Object.prototype.hasOwnProperty.call(virtualFiles, p),
-    readFileSync: (p: string) => {
-      if (!Object.prototype.hasOwnProperty.call(virtualFiles, p)) throw new Error("ENOENT");
-      return virtualFiles[p];
-    },
-    writeFileSync: (p: string, data: string) => {
-      virtualFiles[p] = data;
-    },
-  },
-}));
+vi.mock("fs", async () => (await import("../test-support/secure-store-mock")).fsMock());
 
 // The SDK modules are heavy and not needed for these pure/persistence tests; the
 // provider only touches the secure store. Stub the transport/client/auth imports.
@@ -54,7 +29,7 @@ import {
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 
 beforeEach(() => {
-  virtualFiles = {};
+  resetVirtualFiles();
 });
 
 describe("parseOAuthCallback", () => {

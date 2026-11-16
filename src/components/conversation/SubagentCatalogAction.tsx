@@ -9,8 +9,7 @@ import { StatusDot } from "@/components/ui/status-dot";
 import * as Popover from "@radix-ui/react-popover";
 import { IconButton } from "@/components/ui/icon-button";
 import type { SessionProjection } from "@/../shared/agent/session-projection";
-
-type SubagentScope = "children" | "descendants";
+import type { SubagentScope } from "@/../shared/agent/session-wire";
 
 interface CatalogChild {
   kind?: string;

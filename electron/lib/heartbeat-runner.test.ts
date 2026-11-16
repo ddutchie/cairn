@@ -11,9 +11,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
-import { applySchema } from "../db/schema";
+import { makeDb } from "../test-support/db";
 import { createWorkspace, createProject, saveMcpServer, setToolAttachment } from "../db/queries";
 import { createAutomation, createAutomationRun, getAutomationRunById } from "../db/automation-queries";
 import { automationFolderDir, automationRunDir } from "./automation-folder";
@@ -57,12 +56,6 @@ vi.mock("./external-tools", async (importOriginal) => {
     getExternalToolDefs: getExternalToolDefsMock,
   };
 });
-
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
 
 function makeAutomation(db: Database.Database, opts: { projectId?: string; requires?: Array<{ kind: "mcp" | "service"; name: string }>; approvalMode?: "auto" | "ask" | "auto-connectors" }) {
   return createAutomation(db, {

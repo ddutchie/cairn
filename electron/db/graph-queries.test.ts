@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
-import { applySchema } from "./schema";
+import { makeDb } from "../test-support/db";
 import {
   createWorkspace,
   createProject,
@@ -23,12 +22,6 @@ import { buildGraphFixture } from "./bench/graph-fixture";
 
 const TOP_K = 5;
 const FLOOR = 0.55;
-
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
 
 function seed(db: Database.Database) {
   createWorkspace(db, { id: "ws1", name: "WS" });

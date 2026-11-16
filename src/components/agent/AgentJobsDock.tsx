@@ -18,6 +18,7 @@ import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { JobSummary } from "@/../shared/agent/session-projection";
 import { Tooltip } from "@/components/ui/tooltip";
+import { formatDurationMs } from "../../../shared/format/number";
 
 interface AgentJobsDockProps {
   jobs: JobSummary[];
@@ -29,12 +30,7 @@ interface AgentJobsDockProps {
 const TERMINAL = new Set(["completed", "killed", "failed"]);
 
 function formatElapsed(startedAt: number, finishedAt?: number): string {
-  const ms = Math.max(0, (finishedAt ?? Date.now()) - startedAt);
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
+  return formatDurationMs((finishedAt ?? Date.now()) - startedAt);
 }
 
 export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockProps) {

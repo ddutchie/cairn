@@ -43,11 +43,10 @@ export function isServiceToolName(name: string): boolean {
 }
 
 // ── Tool definition (pure) ────────────────────────────────────────────────────
-
-export interface OpenAIToolDef {
-  type: "function";
-  function: { name: string; description: string; parameters: Record<string, unknown> };
-}
+// Canonical OpenAIToolDef lives in ./mcp-namespace (single source, also
+// consumed by mobile). Do not re-declare it here.
+import type { OpenAIToolDef } from "./mcp-namespace";
+export type { OpenAIToolDef };
 
 interface ParsedToolDefinition {
   name: string;

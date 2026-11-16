@@ -116,3 +116,36 @@ export function getDueDateStatus(dueDate: string | null | undefined, now: number
   if (diff === 0) return "today";
   return "upcoming";
 }
+
+/**
+ * Absolute "when": null→"never", unparseable→passthrough, else "Nov 15, 02:30 PM".
+ * From ArchitectureView (agent file index timestamps).
+ */
+export function formatWhenAbsent(iso: string | null): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+/**
+ * Relative "when": "now" / "5m away" / "3h ago" / "5d ago", else absolute date.
+ * Invalid→"—". From the automation schedule-builder.
+ */
+export function formatWhenRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diff = t - Date.now();
+  const abs = Math.abs(diff);
+  const mins = Math.round(abs / 60_000);
+  const hrs = Math.round(abs / 3_600_000);
+  const days = Math.round(abs / 86_400_000);
+  const future = diff >= 0;
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m ${future ? "away" : "ago"}`;
+  if (hrs < 24) return `${hrs}h ${future ? "away" : "ago"}`;
+  if (days < 30) return `${days}d ${future ? "away" : "ago"}`;
+  return new Date(iso).toLocaleDateString();
+}

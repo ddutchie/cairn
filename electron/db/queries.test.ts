@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import * as os from "os";
 import * as path from "path";
 import { applySchema } from "./schema";
@@ -76,20 +77,6 @@ import {
 } from "./queries";
 
 // ── Shared fixture builders ───────────────────────────────────────────────
-
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
-
-function seedWorkspace(db: Database.Database, id = "ws1") {
-  return createWorkspace(db, { id, name: "Test Workspace" });
-}
-
-function seedProject(db: Database.Database, workspaceId = "ws1", id = "proj1") {
-  return createProject(db, { id, workspaceId, name: "Test Project" });
-}
 
 describe("session_profiles migration and queries", () => {
   it("creates v53 metadata and upserts it by session id", () => {

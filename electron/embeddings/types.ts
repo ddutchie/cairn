@@ -1,6 +1,12 @@
 import * as z from "zod";
-import type { EmbeddingModelManifestEntry, EmbeddingsStatus } from "../../shared/types/embeddings";
-export type { EmbeddingModelManifestEntry, EmbeddingsStatus };
+import type {
+  EmbeddingModelManifestEntry,
+  EmbeddingsConfig,
+  EmbeddingsStatus,
+} from "../../shared/types/embeddings";
+// Canonical config lives in shared (single source); re-exported here so
+// existing electron imports keep working. Do not re-declare.
+export type { EmbeddingModelManifestEntry, EmbeddingsConfig, EmbeddingsStatus };
 
 export type EmbedTask = "search_document" | "search_query" | "clustering";
 
@@ -51,11 +57,6 @@ export type EmbeddedVector = {
 };
 
 
-
-export interface EmbeddingsConfig {
-  enabled: boolean;
-  modelId: string;
-}
 
 export const DEFAULT_EMBEDDINGS_CONFIG: EmbeddingsConfig = {
   enabled: false,

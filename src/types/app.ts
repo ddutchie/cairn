@@ -39,16 +39,3 @@ export interface AppUIState {
   tutorialActive: boolean;
   tutorialStepIndex: number;
 }
-
-/** Wrapper for IPC handler return values — either a result or an error. */
-export type IpcResult<T> = T | { error: string };
-
-/** Type guard — returns true if the IPC result is an error object. */
-export function isIpcError<T>(result: IpcResult<T>): result is { error: string } {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "error" in result &&
-    typeof (result as { error: unknown }).error === "string"
-  );
-}

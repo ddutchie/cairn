@@ -20,12 +20,8 @@ export interface AgentSubagentMessage {
   lastUsage?: { promptTokens: number; completionTokens: number; reasoningTokens?: number; breakdown?: TokenBreakdown; costUsd?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
 }
 
-/** One item in the agent session's todo list (todowrite tool). */
-export interface SessionTodo {
-  content: string;
-  status: "pending" | "in_progress" | "completed" | "cancelled";
-  priority: "high" | "medium" | "low";
-}
+/** One item in the agent session's todo list (todowrite tool). Single source: shared. */
+export type { SessionTodo } from "../../shared/agent/session-wire";
 
 export interface AgentMessage {
   id: string;

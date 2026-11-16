@@ -10,6 +10,7 @@ import { useShallow } from "zustand/react/shallow";
 import { storage } from "@/lib/storage";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { persist } from "@/lib/ipc/client";
+import { formatBytesSI } from "../../../shared/format/number";
 
 export function DataSettings({
   stats,
@@ -33,9 +34,7 @@ export function DataSettings({
   }, []);
 
   function formatBytes(n: number): string {
-    if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
-    if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
-    return `${Math.round(n / 1e3)} KB`;
+    return formatBytesSI(n);
   }
 
   async function handleClearLeftovers() {

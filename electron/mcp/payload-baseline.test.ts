@@ -10,11 +10,10 @@
  */
 import { describe, it, beforeEach, afterEach } from "vitest";
 import type Database from "better-sqlite3";
-import BetterSqlite3 from "better-sqlite3";
+import { makeDb } from "../test-support/db";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { applySchema } from "../db/schema";
 import {
   createWorkspace, createProject, createNote, createColumn, createCard,
   updateNote, updateCard, createTag,
@@ -23,12 +22,6 @@ import { executeTool as executeMcpTool } from "../mcp-server";
 import { executeTool as executeChatTool } from "../agent/tools/cairn-executor";
 import type { ChatRequest } from "../lib/tools";
 import type { LLMConfig } from "../lib/llm";
-
-function makeDb() {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
 
 function seed(db: Database.Database) {
   createWorkspace(db, { id: "ws-main", name: "Main Workspace" });

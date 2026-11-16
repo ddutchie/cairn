@@ -8,50 +8,18 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { useCairnStore } from "@/store";
+import { formatMegabytes } from "../../../shared/format/number";
+import type {
+  EmbeddingDownloadProgress,
+  EmbeddingModelManifestEntry,
+  EmbeddingsConfig,
+  EmbeddingsStatus,
+} from "../../../shared/types/embeddings";
 import { IconButton } from "@/components/ui/icon-button";
 
-interface EmbeddingsConfig {
-  enabled: boolean;
-  modelId: string;
-}
+type ModelEntry = EmbeddingModelManifestEntry;
 
-interface EmbeddingsStatus {
-  running: boolean;
-  port: number | null;
-  activeModelId: string | null;
-  defaultModelId: string | null;
-  installed: boolean;
-  error: string | null;
-  reindexInProgress: boolean;
-  recomputeInProgress: boolean;
-  lastReindexDone: number;
-  lastReindexTotal: number;
-  lastRecomputeDone: number;
-  lastRecomputeTotal: number;
-}
-
-interface ModelEntry {
-  id: string;
-  name: string;
-  repo: string;
-  dim: number;
-  maxTokens: number;
-  sizeBytes: number;
-  status: "not_downloaded" | "downloading" | "installed" | "error";
-  downloadProgress: number;
-  downloadSpeed?: string;
-  error?: string;
-}
-
-interface ProgressEvent {
-  modelId: string;
-  status: string;
-  file?: string;
-  progress?: number;
-  loaded?: number;
-  total?: number;
-  error?: string;
-}
+type ProgressEvent = EmbeddingDownloadProgress;
 
 const DEFAULT_CONFIG: EmbeddingsConfig = { enabled: false, modelId: "Xenova/bge-small-en-v1.5" };
 
@@ -261,7 +229,7 @@ export function EmbeddingsSettings() {
     }
   };
 
-  const fmtSize = (bytes: number) => (bytes / 1024 / 1024).toFixed(0) + " MB";
+  const fmtSize = (bytes: number) => formatMegabytes(bytes);
 
   return (
     <SettingsGroup

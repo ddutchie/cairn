@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
+import { makeDb } from "../test-support/db";
 import { applySchema } from "../db/schema";
 import {
   getCodingAgents,
@@ -27,12 +28,6 @@ import {
 import { isSafePath } from "./agent";
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
-
-function makeDb(): Database.Database {
-  const db = new BetterSqlite3(":memory:");
-  applySchema(db);
-  return db;
-}
 
 function seedWorkspaceAndProject(db: Database.Database) {
   createWorkspace(db, { id: "ws1", name: "Workspace" });
