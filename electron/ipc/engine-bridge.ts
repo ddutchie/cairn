@@ -47,8 +47,12 @@ import { notifyAgentAttention } from "../lib/agent-attention";
 import { routeFromConfig } from "../agent/route";
 import type { AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ApprovalMode } from "../../shared/agent/approval-mode";
-import { makeSessionProjection, type SessionBusyReason } from "../../shared/agent/session-projection";
+import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { failedTurnEnd } from "../agent/session/adapter";
+import { rejectBusy } from "./session-guards";
+
+/** Re-exported so existing importers keep working; the home is `session-guards.ts`. */
+export { rejectPrompt } from "./session-guards";
 
 export { routeFromConfig };
 
@@ -457,9 +461,7 @@ function reportPromptError(sessionId: string, err: unknown): void {
   const tap = sessionTaps.get(sessionId);
   // "Busy" means another turn is live: it will send its own turn/end, so this must not.
   if (err instanceof SessionBusyError) {
-    const projection = makeSessionProjection(sessionId, "error", { message, code: "already-running" });
-    if (tap) tap("session:projection", projection as never); else broadcastEvent("session:projection", projection);
-    broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+    rejectBusy(sessionId, message, "already-running", tap as ((channel: string, payload: unknown) => void) | undefined);
     return;
   }
   const projection = makeSessionProjection(sessionId, "error", { message });
@@ -467,16 +469,6 @@ function reportPromptError(sessionId: string, err: unknown): void {
   if (tap) { tap("session:projection", projection as never); tap("session:event", event as never); return; }
   broadcastEvent("session:projection", projection);
   broadcastEvent("session:event", event);
-}
-
-/**
- * Refuse a prompt before its turn starts. The renderer already shows a spinner for the
- * prompt and clears it only on `turn/end`, so a refusal has to end the turn it never ran.
- */
-export function rejectPrompt(sessionId: string, message: string, code: SessionBusyReason): void {
-  broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message, code }));
-  broadcastEvent("session:busy", { sessionId, reason: code, message });
-  broadcastEvent("session:event", { sessionId, event: failedTurnEnd(message) });
 }
 
 async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
@@ -619,8 +611,7 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
   const sessionId = `chat-${req.threadId}`;
   const h = getEngineHost(ctx);
   if (h.isRunning(sessionId)) {
-    broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — please wait for the current turn to finish.", code: "already-running" }));
-    broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+    rejectBusy(sessionId, "Session is busy — please wait for the current turn to finish.");
     return;
   }
   // Lazy: chat.ts pulls in the pop-out window module, which needs a live Electron `app` at import time.

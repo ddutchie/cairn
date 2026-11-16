@@ -42,7 +42,9 @@ describe("typed IPC contract", () => {
 
   it.each(IPC_SEND_CHANNELS)("%s is sent through sendContract and has a registerIpcOn listener", (channel) => {
     expect(preload).toMatch(new RegExp(`\\bsendContract\\(\\s*"${channel}"`));
-    expect(sources).toMatch(new RegExp(`\\bregisterIpcOn(<[^>]*>)?\\(\\s*"${channel}"`));
+    // B3: session:* channels register through onSession (session-guards.ts),
+    // which validates the session id once and delegates to registerIpcOn.
+    expect(sources).toMatch(new RegExp(`\\b(registerIpcOn|onSession)(<[^>]*>)?\\(\\s*"${channel}"`));
   });
 
   it("builds preload only from the typed helpers in preload/ipc.ts", () => {
