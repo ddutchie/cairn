@@ -10,6 +10,7 @@
 
 import { parseCredits, type CreditInfo } from "../../shared/chat/provider-credits";
 import { errMsg } from "../host-shared/errors";
+import { fetchJson } from "./llm-http";
 
 export {
   sameEndpoint,
@@ -45,10 +46,7 @@ export async function probeCredits(
 ): Promise<CreditProbe> {
   let res: Response;
   try {
-    res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal,
-    });
+    res = await fetchJson(url, { apiKey, signal });
   } catch (err) {
     return {
       status: 0,

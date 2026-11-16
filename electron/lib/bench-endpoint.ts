@@ -15,6 +15,7 @@
  */
 
 import { normaliseBaseUrl, buildApiUrl } from "./llm";
+import { fetchJson } from "./llm-http";
 
 export const BASE_URL = normaliseBaseUrl(
   process.env.TEST_LLM_BASE_URL?.trim() || "http://localhost:1234/v1",
@@ -34,10 +35,7 @@ export const LIVE_TESTS_ENABLED =
 /** True if the given (or default) endpoint is reachable. */
 export async function endpointUp(url: string = BASE_URL, key: string = API_KEY): Promise<boolean> {
   try {
-    const res = await fetch(buildApiUrl(url, "models"), {
-      headers: key ? { Authorization: `Bearer ${key}` } : {},
-      signal: AbortSignal.timeout(2500),
-    });
+    const res = await fetchJson(buildApiUrl(url, "models"), { apiKey: key || undefined });
     return res.ok || res.status === 401 || res.status === 404;
   } catch {
     return false;
