@@ -268,6 +268,33 @@ Before writing a helper, look here. If the thing exists, use it; if it almost fi
 ## 7. Open questions for the owner
 
 > Decisions 2026-11-16: Q1 remove the `cairn-embeddings` binary once verified unused (B6 proceeds on that basis — `electron/runtime/` is the survivor). Q2 unify on the chat rule: agent sessions must refuse a cached key for a different endpoint, own commit (security angle). Q3 agent's choice: keep two named predicates (`isLoopbackHost` for "needs no key", `isPrivateAddress` for "must not fetch") — usage labelling and fetch refusal are different decisions; conflating them risks leaking keys or over-blocking. Q4 accepted: live tests of the old transport deleted with it in A2. Q5–Q7, Q9 need deeper research — C4, C5 renames and #179 stay deferred.
+>
+> A8 closed 2026-11-16: one typed client per namespace in `src/lib/ipc/`
+> (`agent`, `session`, `runtime` + legacy `embeddings`, `ai` + `usage`,
+> `registry`, `commands`, `platform`, `note`, `chat`, `board` (column/card),
+> `workspace`/`project`/`tag`/`changes`, `sync`, `userStyle`, `toolBuilder`,
+> `app`, `automation` deltas) and the `window.electron` boundary lint rule
+> (`no-restricted-syntax`, allowed only in `src/lib/ipc/` + `src/store/ipc.ts`;
+> tests/fixtures exempt). All `window.electron` call sites migrated; no
+> intentional behavior changes (off-Electron paths preserved or made explicit).
+>
+> Research 2026-11-16 (see subagent briefs; #284 is MERGED so the C-phase gate
+> is open — branch C-work from current `main`):
+> - Q5 → DROP C4. The automation gate is only a pre-filter in the tap; engine
+>   `RuleMatch` cannot express target-scoped standing rules or the
+>   `run_script`-always-gated invariant, and folding would erase the tap's
+>   second-opinion re-ask. C2's shared predicates fix the real drift. (Owner to
+>   confirm in follow-up session.)
+> - Q6 → REMOVE `pwsh`/`str_replace_editor` from gating sets. `legacy-import`
+>   stamps replayed calls `risk: "READ"` and never consults risk on replay;
+>   nothing registers those tools live; worst case falls through to the
+>   unknown-tool default (still asks). Keep display fallbacks; pin with a test.
+> - Q7 → DEFER F20 renames until after the 3.2.0 release (package.json still
+>   3.1.7, changelog staged). Rename-only commits when the stack is flattest.
+>   The C5 boundary-lint half (`agent/index.ts` surface) may go earlier.
+> - Q9 → KEEP #179 OPEN, descoped to a shared HTTP helper. Token-breakdown
+>   half is done (A2). Five Bearer+fetch sites remain with disagreeing
+>   timeouts → new `electron/lib/llm-http.ts` (`authHeaders` + `fetchJson`).
 
 1. **Embeddings (F1).** Is `electron/runtime/` the intended survivor, and may the standalone `cairn-embeddings` binary and the `embeddings:*` IPC namespace go? Today "install model" warms the old worker (`ipc/embeddings-handlers.ts:244`) while indexing uses the runtime process: is that a known double load?
 2. **Cached API key reuse (F4).** Chat refuses to reuse a cached key for a different endpoint (`ipc/chat.ts:37–52`); agent sessions do not check (`ipc/session-runtime-handlers.ts:293–307`). Should agent sessions get the chat rule? This is a behaviour change with a security angle, so it should be its own commit.
