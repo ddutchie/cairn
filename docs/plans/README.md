@@ -7,7 +7,6 @@ dropped, move it to `../archive/` so this directory only holds live work.
 
 - `agent-engine-design.md` — the engine that replaced the DeepSeek harness (draft for review).
 - `ui-consistency-pass.md` — UI consistency audit (2026-11-01).
-- `shared-logic-refactor.md` — shared-logic and redundancy refactor proposal (2026-11-15).
 - `unified-agent-session.md` — decided: fork instead of a merged session type.
 - `apple-foundation-models-provider.md`, `iphone-duo.md`, `local-embeddings.md`
   (in progress), `mcp-payload-optimization.md`, `mobile-app-viability.md` (draft),
@@ -20,3 +19,4 @@ dropped, move it to `../archive/` so this directory only holds live work.
   `electron-host-runtime.md` — DeepSeek harness era (Historical banner).
 - `remove-dsh.md` — complete (2026-10-30), kept as the migration record.
 - `approval-gating-audit.md` — superseded by the engine approval work.
+- `shared-logic-refactor.md` — complete (2026-11-16, PRs #285–#304), kept as the execution record.

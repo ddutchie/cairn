@@ -27,7 +27,9 @@
 > - #301 merged — B4 (engine-bridge split, unified session state).
 > - #302 merged — B5 (proc + git-exec helpers).
 > - #303 merged — C5-boundary (engine public surface + import lint).
-> - Next: F20 renames (unblocked — #303 was the final refactor PR) → close #179 checkbox → retire plan to docs/archive/. C4 DROPPED (Q5).
+> - #304 merged — F20 renames (tool-types, chat-prompt, *-handlers; pure moves).
+> - #179 CLOSED — token-breakdown half done in A2, helper half done in #298.
+> - WAVE COMPLETE 2026-11-16. All Phase A + B + C items done except C4 (dropped by owner) and knip triage (report-only was the scope; 7 flagged files are future fuel). Retiring this plan to docs/archive/.
 - Q9 PR #298 opened — shared LLM HTTP helper (`electron/lib/llm-http.ts`: `authHeaders` + `fetchJson`, one 10s default timeout; narrows #179 to the token-breakdown checkbox).
 > - Rule: every refactor PR updates this log before merge.
 
