@@ -200,7 +200,7 @@ Before writing a helper, look here. If the thing exists, use it; if it almost fi
 - **A comment that says "mirrors X" is a bug report.** Import X.
 - **The renderer never touches `window.electron` directly** outside `src/lib/ipc/` and `src/store/ipc.ts`.
 - **Tests take fixtures from the test-support modules** (once A1 lands in `electron/test-support/`). Do not declare `makeDb` in a test file.
-- **Retired names stay out of live code.** `cordis`, `dsh`, `engine-tool-*`, `pwsh`, `str_replace_editor` belong only in `electron/agent/session/legacy-import.ts`, migrations and `docs/archive/`.
+- **Retired names stay out of live code.** `cordis`, `dsh`, `engine-tool-*`, `str_replace_editor` belong only in `electron/agent/session/legacy-import.ts`, migrations and `docs/archive/`. (`pwsh` is intentionally still classified as a shell tool in `tool-risk.ts`, `automation-approval.ts` and the grant queries until the legacy-import replay question in the refactor plan (Q6) is answered — do not remove it from those sets alone.)
 - **Plans in `docs/plans/` are current or marked.** When a plan is finished or dropped, move it to `docs/archive/`.
 
 ## Agent tools & surfaces
