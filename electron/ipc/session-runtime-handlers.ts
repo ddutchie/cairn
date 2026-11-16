@@ -11,6 +11,7 @@
  */
 
 import { registerContractHandle, registerIpcOn, broadcastEvent } from "./registry";
+import { onSession, rejectBusy, rejectPrompt } from "./session-guards";
 import { handle } from "./result-helpers";
 import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/tools";
@@ -30,7 +31,7 @@ import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { errMsg } from "../host-shared/errors";
 import type { ApprovalMode } from "../../shared/agent/approval-mode";
-import { rejectPrompt, answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
+import { answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
 
@@ -212,14 +213,7 @@ export function registerSessionRuntimeHandlers(
   });
 
   // ── session:prompt ───────────────────────────────────────────────────────
-  registerIpcOn("session:prompt", async (event, req: AgentPromptRequest) => {
-    try {
-      assertSafeId(req.sessionId, "sessionId");
-    } catch {
-      broadcastEvent("session:projection", makeSessionProjection(String(req.sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
-      broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
-      return;
-    }
+  onSession("session:prompt", async (event, req: AgentPromptRequest) => {
     const storedProfile = q.getSessionProfile(ctx.db, req.sessionId)?.profile;
     const selected = selectSessionProfile(storedProfile, req.profile);
     if (!selected.profile) {
@@ -251,8 +245,7 @@ export function registerSessionRuntimeHandlers(
     // the is-running state inconsistent. The renderer queues prompts while busy,
     // so this is a defensive guard, not the normal path.
     if (getEngineHost(ctx).isRunning(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
-      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+      rejectBusy(sessionId);
       return;
     }
 
@@ -326,14 +319,7 @@ export function registerSessionRuntimeHandlers(
   // ── session:approve-plan ─────────────────────────────────────────────────
   // Renderer fires this when the user clicks "Approve Plan". Fetches the PRD
   // note, injects the approval message, then continues in execute mode.
-  registerIpcOn("session:approve-plan", async (event, req: AgentApprovePlanRequest) => {
-    try {
-      assertSafeId(req.sessionId, "sessionId");
-    } catch {
-      broadcastEvent("session:projection", makeSessionProjection(String(req.sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
-      broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
-      return;
-    }
+  onSession("session:approve-plan", async (event, req: AgentApprovePlanRequest) => {
     const { sessionId, planNoteId, projectId, workspaceId, cwd, taskTitle } = req;
 
     const send = (channel: string, payload: unknown) => {
@@ -343,8 +329,7 @@ export function registerSessionRuntimeHandlers(
     // Same concurrency guard as session:prompt — a plan approval is also a
     // loop run and must never stack on an in-flight loop for this session.
     if (getEngineHost(ctx).isRunning(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — already running.", code: "already-running" }));
-      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+      rejectBusy(sessionId);
       return;
     }
 
@@ -398,14 +383,7 @@ export function registerSessionRuntimeHandlers(
   // thresholdRatio 0.8) runs between steps automatically; this is the explicit
   // user-triggered variant. It opens the session's agent from its persisted jsonl
   // (idle), runs ctx.compaction.compactNow(agent), then disposes it.
-  registerIpcOn("session:compact-now", async (event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number; apiMode?: "responses" | "completions" | "anthropic-messages" } }) => {
-    try {
-      assertSafeId(req.sessionId, "sessionId");
-    } catch {
-      broadcastEvent("session:projection", makeSessionProjection(String(req.sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
-      broadcastEvent("session:busy", { sessionId: String(req.sessionId ?? "unknown"), reason: "invalid-id" });
-      return;
-    }
+  onSession("session:compact-now", async (event, req: { sessionId: string; config?: { baseUrl?: string; model?: string; apiKey?: string; contextWindow?: number; apiMode?: "responses" | "completions" | "anthropic-messages" } }) => {
     const { sessionId } = req;
     const send = (channel: string, payload: unknown) => {
       broadcastEvent(channel, payload);
@@ -441,17 +419,9 @@ export function registerSessionRuntimeHandlers(
 
   // ── session:set-mode ─────────────────────────────────────────────────────
   // The engine picks the mode per prompt, so toggling only records it and tells the UI.
-  registerIpcOn("session:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
-    try {
-      assertSafeId(sessionId, "sessionId");
-    } catch {
-      broadcastEvent("session:projection", makeSessionProjection(String(sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
-      broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
-      return;
-    }
+  onSession("session:set-mode", (_event, { sessionId, mode }: { sessionId: string; mode: "plan" | "execute" }) => {
     if (getEngineHost(ctx).isRunning(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot toggle plan mode while running.", code: "already-running" }));
-      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+      rejectBusy(sessionId, "Session is busy — cannot toggle plan mode while running.");
       return;
     }
     void (async () => {
@@ -466,8 +436,7 @@ export function registerSessionRuntimeHandlers(
         // The durable session log remains authoritative and the UI can retry.
         const msg = errMsg(e);
         if (msg.includes("while it is live") || msg.includes("already-running")) {
-          broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — try again when the agent finishes.", code: "already-running" }));
-          broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+          rejectBusy(sessionId, "Session is busy — try again when the agent finishes.");
         } else {
           broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: msg, code: "plan-toggle-failed" }));
         }
@@ -520,23 +489,14 @@ export function registerSessionRuntimeHandlers(
   // Clears a session's message history (new conversation within same session).
   // Also resets the compaction transformer so the new conversation starts
   // with a fresh cachedSummary.
-  registerIpcOn("session:clear", (_event, { sessionId }: { sessionId: string }) => {
-    // Reject renderer-supplied ids that could path-traverse before they reach
-    // fs.rmSync() below. Any legitimate session id (pi-<nanoid>, subagent uuid)
-    // passes; `..`, `/`, `\`, empty, over-length, control chars all fail here.
-    try {
-      assertSafeId(sessionId, "sessionId");
-    } catch (_err) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Invalid session id.", code: "invalid-id" }));
-      broadcastEvent("session:busy", { sessionId, reason: "invalid-id" });
-      return;
-    }
+  onSession("session:clear", (_event, { sessionId }: { sessionId: string }) => {
+    // onSession already rejected path-traversal ids before they reach
+    // fs.rmSync() via removeLegacySessions below.
     // Clearing the persisted log while a loop is running would desync its
     // in-flight context. The renderer stops the run before clearing, so this is
     // defensive. Clear is rejected if running or already clearing (atomic gate).
     if (getEngineHost(ctx).isRunning(sessionId) || clearingSessions.has(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot clear while running.", code: "already-running" }));
-      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+      rejectBusy(sessionId, "Session is busy — cannot clear while running.");
       return;
     }
     clearingSessions.add(sessionId);
@@ -556,17 +516,9 @@ export function registerSessionRuntimeHandlers(
 
   // ── session:destroy ──────────────────────────────────────────────────────
   // Called when a coding session tab is closed — frees memory
-  registerIpcOn("session:destroy", (_event, { sessionId }: { sessionId: string }) => {
-    try {
-      assertSafeId(sessionId, "sessionId");
-    } catch (_err) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Invalid session id.", code: "invalid-id" }));
-      broadcastEvent("session:busy", { sessionId, reason: "invalid-id" });
-      return;
-    }
+  onSession("session:destroy", (_event, { sessionId }: { sessionId: string }) => {
     if (clearingSessions.has(sessionId)) {
-      broadcastEvent("session:projection", makeSessionProjection(sessionId, "error", { message: "Session is busy — cannot destroy while clearing.", code: "already-running" }));
-      broadcastEvent("session:busy", { sessionId, reason: "already-running" });
+      rejectBusy(sessionId, "Session is busy — cannot destroy while clearing.");
       return;
     }
     sessions.delete(sessionId);
@@ -604,14 +556,7 @@ export function registerSessionRuntimeHandlers(
   // ── session:restore-context ───────────────────────────────────────────────────────
   // Session context resumes from the engine's log; this handler just restores the persisted session persona so a re-prompt
   // keeps the session's tool restrictions (validated, failing closed).
-  registerIpcOn("session:restore-context", (_event, { sessionId }: { sessionId: string }) => {
-    try {
-      assertSafeId(sessionId, "sessionId");
-    } catch {
-      broadcastEvent("session:projection", makeSessionProjection(String(sessionId ?? "unknown"), "error", { message: "Invalid session id.", code: "invalid-id" }));
-      broadcastEvent("session:busy", { sessionId: String(sessionId ?? "unknown"), reason: "invalid-id" });
-      return;
-    }
+  onSession("session:restore-context", (_event, { sessionId }: { sessionId: string }) => {
     if (sessions.has(sessionId)) return; // already in memory
     try {
       const sessionRow = q.getCodingSessionById(ctx.db, sessionId);
