@@ -152,7 +152,7 @@ describe("tool-risk classifier — set membership", () => {
   });
 
   // Q6: `pwsh` and `str_replace_editor` are retired — nothing registers
-  // them live (only `bash` / `write` / `edit` in agent/tools). They fall
+  // them live (only `bash` / `write` / `edit` in agent/tool-types). They fall
   // through to the unknown-tool default (WRITE_LOCAL), which still asks —
   // fail-closed, never silently allowed. legacy-import.ts stamps replayed
   // calls risk READ and never consults risk, so old history needs no entry.

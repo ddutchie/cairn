@@ -5,7 +5,7 @@ import { rgPath } from "@vscode/ripgrep";
 import { validateToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { TOOL_SCHEMAS } from "../../lib/tool-schemas";
-import type { AgentTool, ToolContext, ToolOutput } from "../tools";
+import type { AgentTool, ToolContext, ToolOutput } from "../tool-types";
 import { bashTool } from "./bash";
 import { cairnRisk, cairnTools } from "./cairn";
 import { fsTools, riskPath } from "./fs";

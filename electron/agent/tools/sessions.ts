@@ -2,7 +2,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import { listSessions, readSession, SESSION_FILE } from "../session/log";
 import { deriveTitle } from "../session/history";
 import type { SessionRecord } from "../session/format";

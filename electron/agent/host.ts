@@ -21,7 +21,7 @@ import { createModelReviewer, createReviewerState, type Reviewer, type ReviewerS
 import { createRuleStore, type GrantKind, type Rule, type RuleStore } from "./rules";
 import { createAdapter, failedTurnEnd } from "./session/adapter";
 import { createTraceAdapter } from "./session/trace";
-import type { AgentTool } from "./tools";
+import type { AgentTool } from "./tool-types";
 import { deriveTitle, foldGoal, foldSchedules, foldState } from "./session/history";
 import { listSessions, openSession, readSession, sessionDir, type SessionWriter } from "./session/log";
 import { replayFromRecords } from "./session/replay";

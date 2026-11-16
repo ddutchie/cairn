@@ -26,7 +26,7 @@ import { errMsg } from "../host-shared/errors";
 import { resolveCallTimeoutMs, type ServiceTestResult } from "../../shared/types/tools";
 
 // Re-export the shared pure surface so existing `import * as services` call
-// sites (external-tools.ts, ipc/tools.ts) keep resolving every symbol here.
+// sites (external-tools.ts, ipc/tools-handlers.ts) keep resolving every symbol here.
 export {
   namespaceServiceTool,
   parseServiceToolName,

@@ -14,7 +14,7 @@ import { registerContractHandle, registerIpcOn, broadcastEvent } from "./registr
 import { onSession, rejectBusy, rejectPrompt } from "./session-guards";
 import { handle } from "./result-helpers";
 import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types";
-import type { ChatRequest } from "../lib/tools";
+import type { ChatRequest } from "../lib/chat-prompt";
 import { emitSessionChip } from "./engine-commands";
 import { approvedPlanContext, buildAgentSystemPrompt } from "../lib/coding-session-prompt";
 import { getSandboxMode, sandboxPolicyNote } from "../agent/index";

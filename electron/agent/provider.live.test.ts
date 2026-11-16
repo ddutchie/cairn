@@ -13,7 +13,7 @@ import { Gate } from "./gate";
 import { runTurn } from "./loop";
 import { createRouteStream } from "./provider";
 import { createRuleStore, presetRules } from "./rules";
-import { defineTool } from "./tools";
+import { defineTool } from "./tool-types";
 import { drive, ofType, toolResults, types } from "./test-harness";
 import type { Message } from "@earendil-works/pi-ai";
 

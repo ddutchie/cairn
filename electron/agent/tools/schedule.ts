@@ -1,6 +1,6 @@
 /** schedule_create / schedule_list / schedule_cancel: reminders that prompt this session later. */
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import type { ScheduleEntry } from "../events";
 import { fail, ok } from "./schema";
 

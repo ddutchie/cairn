@@ -8,7 +8,7 @@
  * its symbols with signatures/docstrings and their call graph (incoming +
  * outgoing references).
  *
- * All data comes from read-only agent:* IPC (see electron/ipc/agent.ts); the
+ * All data comes from read-only agent:* IPC (see electron/ipc/agent-handlers.ts); the
  * index itself is populated by the agent's codebase_reindex tool, and can be
  * (re)built here with the Reindex button.
  */

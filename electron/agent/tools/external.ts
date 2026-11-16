@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import { createHostStore } from "../host-store";
 import { approvalPreview } from "../../../shared/agent/tool-risk";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import { fail, fromJsonSchema, renderValue } from "./schema";
 
 export interface ExternalToolDeps {

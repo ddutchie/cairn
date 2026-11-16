@@ -8,7 +8,7 @@ import { getEngineHost } from "./host";
 import { runEnginePrompt } from "./prompt";
 import { chatApprovalPolicyFor, chatSystemPrompt } from "./permissions";
 import type { Attachment } from "../../agent/attachments";
-import type { ChatRequest } from "../../lib/tools";
+import type { ChatRequest } from "../../lib/chat-prompt";
 import type { AgentLLMConfig } from "../../lib/session-runtime-types";
 import { makeSessionProjection } from "../../../shared/agent/session-projection";
 import { rejectBusy } from "../session-guards";
@@ -22,8 +22,8 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
     rejectBusy(sessionId, "Session is busy — please wait for the current turn to finish.");
     return;
   }
-  // Lazy: chat.ts pulls in the pop-out window module, which needs a live Electron `app` at import time.
-  const { resolveAIConfig } = await import("../chat");
+  // Lazy: chat-handlers.ts pulls in the pop-out window module, which needs a live Electron `app` at import time.
+  const { resolveAIConfig } = await import("../chat-handlers");
   // No key is not refused here: a self-hosted provider on the network needs none, and a hosted one
   // that does answers with its own error, which is shown in plain words.
   const { provider, baseUrl, model, apiKey } = resolveAIConfig(req.config);

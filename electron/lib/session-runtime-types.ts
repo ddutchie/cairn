@@ -6,7 +6,7 @@
  */
 
 import type { BrowserWindow } from "electron";
-import type { ChatRequest } from "./tools";
+import type { ChatRequest } from "./chat-prompt";
 import type { SkillMeta } from "./skills";
 import type Database from "better-sqlite3";
 

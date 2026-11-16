@@ -22,7 +22,7 @@ import path from "path";
 import type { OpenAIMessage } from "./llm";
 import { getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
-import { buildSystemPrompt, type ChatRequest } from "./tools";
+import { buildSystemPrompt, type ChatRequest } from "./chat-prompt";
 import { resolveTemperatureForModel } from "./model-pricing";
 import { insertNotification } from "../mcp/db";
 import {

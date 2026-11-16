@@ -23,7 +23,7 @@ import { createWorkspace, createProject, createNote, getNoteById } from "../db/q
 import { executeTool } from "../agent/tools/cairn-executor";
 import { parseToolArgs } from "../../shared/chat/parse-tool-args";
 import type { LLMConfig } from "../lib/llm";
-import type { ChatRequest } from "../lib/tools";
+import type { ChatRequest } from "../lib/chat-prompt";
 
 const llmConfig: LLMConfig = { baseUrl: "http://localhost", model: "test", apiKey: "" };
 const chatReq: ChatRequest = { message: "", workspaceId: "ws1", projectId: "proj1", threadId: "t1" };

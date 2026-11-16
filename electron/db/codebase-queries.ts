@@ -6,7 +6,7 @@
  * Extracted from db/queries.ts to keep that file focused on the core app domain.
  * Re-exported from db/queries.ts (`export * from "./codebase-queries"`) so every
  * existing `../db/queries` / `./queries` import (lib/codebase-index.ts,
- * mcp/tools/codebase.ts, ipc/agent.ts, components/agent/ModuleMap.tsx) is
+ * mcp/tools/codebase.ts, ipc/agent-handlers.ts, components/agent/ModuleMap.tsx) is
  * unchanged.
  *
  * Same governance as db/queries.ts: NEVER construct a Database here — these run

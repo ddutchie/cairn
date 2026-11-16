@@ -35,7 +35,7 @@ import { callSignature, decide, type Decision, type PolicyMode } from "./policy"
 import { repairInterrupted } from "./repair";
 import { createReviewerState, recordVerdict, type Reviewer, type ReviewerState } from "./reviewer";
 import { grantRule, offeredGrants, type GrantKind, type RiskInfo, type RuleStore } from "./rules";
-import type { AgentTool, ToolOutput } from "./tools";
+import type { AgentTool, ToolOutput } from "./tool-types";
 
 export type StreamFn = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 

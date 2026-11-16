@@ -4,7 +4,7 @@
  * Single home for the hand-built OpenAI-compatible Bearer requests that
  * survived the A2 transport removal:
  *   - `ipc/ai-handlers.ts` (`ai:fetchModels`, `ai:probeProtocols`)
- *   - `ipc/tool-builder.ts` (`callModel`)
+ *   - `ipc/tool-builder-handlers.ts` (`callModel`)
  *   - `lib/provider-credits.ts` (`probeCredits`)
  *   - `lib/bench-endpoint.ts` (`endpointUp`)
  *

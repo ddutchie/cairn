@@ -1,6 +1,6 @@
 /** terminal_*: persistent shells the model can type into across tool calls. */
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import { clampMiddle, fail, ok } from "./schema";
 import type { SandboxMode } from "../sandbox";
 import type { TerminalRegistry } from "../terminals";

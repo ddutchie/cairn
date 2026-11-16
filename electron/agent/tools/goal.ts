@@ -1,6 +1,6 @@
 /** get_goal / create_goal / update_goal: the session's standing objective. */
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import type { GoalPhase, GoalState } from "../events";
 import { fail, ok } from "./schema";
 

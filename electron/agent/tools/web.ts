@@ -3,7 +3,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import { Type } from "@earendil-works/pi-ai";
 import { isPrivateAddress } from "../../../shared/net/address";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import { clampMiddle, fail, ok } from "./schema";
 
 export { isPrivateAddress };

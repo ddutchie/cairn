@@ -8,10 +8,10 @@ import type { BrowserWindow } from "electron";
 import * as z from "zod";
 import { executeTool } from "./cairn-executor";
 import type { LLMConfig } from "../../lib/llm";
-import type { ChatRequest } from "../../lib/tools";
+import type { ChatRequest } from "../../lib/chat-prompt";
 import { TOOL_SCHEMAS, toolParametersJsonSchema } from "../host-store";
 import { APPROVAL_SAFE_TOOLS, approvalPreview } from "../../../shared/agent/tool-risk";
-import { defineTool, type AgentTool, type ToolContext } from "../tools";
+import { defineTool, type AgentTool, type ToolContext } from "../tool-types";
 import type { RiskInfo } from "../rules";
 import { fail, fromJsonSchema, ok, renderValue } from "./schema";
 

@@ -10,7 +10,7 @@ import type { BrowserWindow } from "electron";
 import { writeNoteFile } from "../../notes-files";
 import type { CairnSnapshot } from "../../lib/read-tools";
 import { type LLMConfig } from "../../lib/llm";
-import type { ChatRequest, ToolArgs } from "../../lib/tools";
+import type { ChatRequest, ToolArgs } from "../../lib/chat-prompt";
 import {
   createHostStore,
   newId,

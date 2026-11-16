@@ -24,7 +24,7 @@ import {
 import { randomBytes } from "node:crypto";
 import type { HostSend } from "../agent/index";
 import { forgetEngineSession, getEngineHost, runEngineTapped } from "./engine-bridge";
-import { TOOLS } from "../lib/tools";
+import { TOOLS } from "../lib/chat-prompt";
 import * as q from "../db/queries";
 import { errMsg } from "../host-shared/errors";
 
