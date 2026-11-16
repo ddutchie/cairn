@@ -20,9 +20,9 @@
  *   - keychain ref resolution (via `resolveLlmApiKey`)
  *   - `normaliseBaseUrl` / `buildApiUrl` outputs (untouched in `lib/llm.ts`)
  *
- * Security note (Q2): the agent merge reuses a cached key for ANY endpoint
- * (legacy rule). Unifying it on the chat rule (refuse a cached key for a
- * different endpoint) is a behaviour change and lands as its own commit.
+ * Security note (Q2): the agent merge reuses a cached key only for the SAME
+ * endpoint (unified with the chat rule). A keyless request to a different
+ * endpoint stays keyless instead of inheriting another endpoint's key.
  */
 
 import { normaliseBaseUrl, isLocalEndpoint } from "./llm";
@@ -100,8 +100,10 @@ export function isSameEndpoint(reqBaseUrl: string | undefined, cachedBaseUrl: st
  * - "ai": chat rule — reuse the cached key only for the same endpoint, and
  *   never for a local endpoint request path (local needs no key; the chat
  *   resolver skips the cache lookup entirely for local requests).
- * - "agent": legacy rule — reuse the cached key for any endpoint whenever the
- *   request is keyless. (Q2 unification removes this branch.)
+ * - "agent": same rule (Q2) — a keyless request reuses the cached key only
+ *   for the same endpoint; a different endpoint stays keyless. Behavioural
+ *   prefs (autoApprove/mode) still fall back to the cache — they are not
+ *   secrets.
  */
 function mergeConnection(
   kind: "ai" | "agent",
@@ -123,8 +125,10 @@ function mergeConnection(
     }
     return req;
   }
-  // Agent legacy merge (session:prompt / session:approve-plan, verbatim).
-  if (!req?.apiKey && cached?.apiKey) {
+  // Agent merge (session:prompt / session:approve-plan): Q2 — same-endpoint
+  // rule, matching chat. A keyless request to a different endpoint must never
+  // inherit another endpoint's key (secret leak across endpoints).
+  if (!req?.apiKey && cached?.apiKey && isSameEndpoint(req?.baseUrl, cached?.baseUrl)) {
     return {
       ...req,
       baseUrl: req?.baseUrl || cached.baseUrl,

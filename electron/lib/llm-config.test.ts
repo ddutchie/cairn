@@ -103,11 +103,11 @@ describe("resolveConnection('ai') — chat rule", () => {
 });
 
 describe("resolveConnection('agent') / resolveAgentLlmConfig — agent legacy rule", () => {
-  it("key absent + cache other endpoint: cached key REUSED (legacy; Q2 flips this)", () => {
+  it("key absent + cache other endpoint: cached key REFUSED (Q2 unified rule)", () => {
     const conn = resolveConnection("agent", { baseUrl: OTHER_BASE, model: "m" });
-    expect(conn).toEqual({ provider: "openai", baseUrl: OTHER_BASE, model: "m", apiKey: "CACHED_AGENT_KEY" });
+    expect(conn).toEqual({ provider: "openai", baseUrl: OTHER_BASE, model: "m", apiKey: "" });
     const { llmConfig } = resolveAgentLlmConfig({ baseUrl: OTHER_BASE, model: "m" });
-    expect(llmConfig.apiKey).toBe("CACHED_AGENT_KEY");
+    expect(llmConfig.apiKey).toBe("");
     expect(llmConfig.baseUrl).toBe(OTHER_BASE);
   });
 
