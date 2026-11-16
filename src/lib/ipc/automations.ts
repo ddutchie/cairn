@@ -8,6 +8,7 @@ import type {
   Automation, AutomationEnvSpec, AutomationInput, AutomationPatch, AutomationRequirement, AutomationRun, AutomationRunEvent,
   AutomationRunWithAutomation, RunLog,
 } from "../../../shared/types/automations";
+import type { TodayState } from "../../../shared/today/brief";
 import { domainCall, type ElectronApi } from "./client";
 
 const automation = <T>(fn: (api: ElectronApi["automation"]) => Promise<T>) => domainCall("automation", fn);
@@ -48,4 +49,20 @@ export const automationsClient = {
   files: (id: string) => automation((a) => a.files(id)),
   checkRequirements: (workspaceId: string, projectId: string, requires: AutomationRequirement[]) =>
     automation((a) => a.checkRequirements(workspaceId, projectId, requires)),
+};
+
+/** The built-in Today automation behind Overview → Today. */
+export const todayClient = {
+  get: (workspaceId: string, projectId: string): Promise<TodayState> => automation((a) => a.today.get(workspaceId, projectId)),
+  enable: (req: { workspaceId: string; projectId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }): Promise<TodayState> =>
+    automation((a) => a.today.enable(req)),
+  disable: (workspaceId: string, projectId: string): Promise<TodayState> => automation((a) => a.today.disable(workspaceId, projectId)),
+  /** Starts a run now; `skipped` when one is already running. */
+  run: (workspaceId: string, projectId: string) => automation((a) => a.today.run(workspaceId, projectId)),
+  /** Where an item goes and which connector tools could send it. Connects to the in-scope servers, so it can take a moment. */
+  route: (req: { workspaceId: string; projectId: string; source: string; target?: string; kind?: string }) =>
+    automation((a) => a.today.route(req)),
+  /** Saves a debug bundle through a save dialog; null when cancelled. */
+  export: (req: { workspaceId: string; projectId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
+    automation((a) => a.today.export(req)),
 };

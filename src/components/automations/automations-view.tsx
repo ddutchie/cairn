@@ -15,6 +15,8 @@ import { sessionClient } from "@/lib/ipc/session";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { IconButton } from "@/components/ui/icon-button";
+import { MiniStack } from "@/components/layout/project-overview/today-stack";
+import { TODAY_COMMUNITY_ID } from "../../../shared/today/brief";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -351,6 +353,9 @@ export function AutomationsView() {
                     className="min-w-0 flex-1 text-left group"
                   >
                   <div className="flex items-center gap-2">
+                    {a.communityId === TODAY_COMMUNITY_ID && (
+                      <MiniStack size={16} busy={isRunning} muted={!a.enabled} label="Today, built-in" />
+                    )}
                     <h3 className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
                       {a.name}
                     </h3>

@@ -1,5 +1,8 @@
 /** Heartbeat automations: CRUD, runs, folder/manifest, env vars. Split out of db-handlers.ts. */
 
+import fs from "node:fs";
+import path from "node:path";
+import { app, dialog } from "electron";
 import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
@@ -18,13 +21,17 @@ import {
   type AutomationEnv,
 } from "../db/automation-queries";
 import { runAutomationNow, resolveAutomationApproval, listPendingAutomationApprovals } from "../lib/heartbeat-runner";
-import { checkRequirements } from "../lib/external-tools";
+import { checkRequirements, getExternalToolDefs } from "../lib/external-tools";
+import { channelFor, channelLabel, sendCandidates } from "../../shared/today/route";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog } from "../lib/automation-folder";
 import { deleteAutomationWithCleanup } from "../lib/automation-delete";
 import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { errMsg } from "../host-shared/errors";
+import { buildTodayDebugExport, disableToday, enableToday, findTodayAutomation, getTodayState } from "../lib/today";
+import { hostRoot } from "./engine-bridge";
+import { SESSION_FILE } from "../agent/index";
 
 export function registerAutomationHandlers(ctx: DbContext): void {
   // ── Heartbeat automations ─────────────────────────
@@ -104,6 +111,60 @@ export function registerAutomationHandlers(ctx: DbContext): void {
       send: (channel, payload) => broadcastEvent(channel, payload),
     }, id);
     return runId === null ? { skipped: true as const } : { runId };
+  }));
+
+  // ── Today ─────────────────────────────────────────
+  const todayState = (workspaceId: string, projectId: string) =>
+    getTodayState(ctx.db, ctx.workspacePath, workspaceId, projectId, q.getProjectById(ctx.db, projectId)?.name ?? null);
+  registerContractHandle("today:get", (_e, { workspaceId, projectId }) => handle(() => todayState(workspaceId, projectId)));
+  registerContractHandle("today:enable", (_e, req) => handle(() => {
+    enableToday(ctx.db, req);
+    return todayState(req.workspaceId, req.projectId);
+  }));
+  registerContractHandle("today:disable", (_e, { workspaceId, projectId }) => handle(() => {
+    disableToday(ctx.db, workspaceId, projectId);
+    return todayState(workspaceId, projectId);
+  }));
+  registerContractHandle("today:run", (_e, { workspaceId, projectId }) => handle(() => {
+    const a = findTodayAutomation(ctx.db, workspaceId, projectId);
+    if (!a || !a.enabled) return { skipped: true as const };
+    const runId = runAutomationNow({
+      db: ctx.db,
+      workspacePath: ctx.workspacePath,
+      send: (channel, payload) => broadcastEvent(channel, payload),
+    }, a.id);
+    return runId === null ? { skipped: true as const } : { runId };
+  }));
+
+  registerContractHandle("today:route", (_e, { workspaceId, projectId, source, target, kind }) => handle(async () => {
+    const channel = channelFor(source, target, kind);
+    const base = { channel, label: channelLabel(channel) };
+    try {
+      const defs = await getExternalToolDefs(ctx.db, workspaceId, projectId);
+      const names: Record<string, string> = {};
+      for (const srv of [...q.getMcpServers(ctx.db, workspaceId), ...q.getCustomServices(ctx.db, workspaceId)]) names[srv.id] = srv.name || srv.id;
+      return { ...base, tools: sendCandidates(defs.map((d) => ({ name: d.function.name, description: d.function.description })), channel, names) };
+    } catch (err) {
+      return { ...base, tools: [], error: errMsg(err) };
+    }
+  }));
+  registerContractHandle("today:export", (_e, { workspaceId, projectId, local }) => handle(async () => {
+    const readSession = (runId: string) => {
+      try { return fs.readFileSync(path.join(hostRoot(), runId, SESSION_FILE), "utf8"); } catch { return null; }
+    };
+    const { fileName, data } = buildTodayDebugExport(
+      ctx.db, ctx.workspacePath, workspaceId, projectId, q.getProjectById(ctx.db, projectId)?.name ?? null, readSession, local,
+    );
+    const win = ctx.getWin();
+    if (!win || win.isDestroyed()) throw new Error("No window");
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: "Export Today data",
+      defaultPath: path.join(app.getPath("downloads"), fileName),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (canceled || !filePath) return null;
+    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+    return { filePath };
   }));
 
   // Resolve a pending tool approval for a running automation (engine).

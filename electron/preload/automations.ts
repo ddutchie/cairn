@@ -15,6 +15,18 @@ export const automationsApi = {
     recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) =>
       invokeContract("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invokeContract("db:automation:runNow", { id }),
+    /** Built-in Today automation (Overview → Today). */
+    today: {
+      get: (workspaceId: string, projectId: string) => invokeContract("today:get", { workspaceId, projectId }),
+      enable: (req: { workspaceId: string; projectId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }) =>
+        invokeContract("today:enable", req),
+      disable: (workspaceId: string, projectId: string) => invokeContract("today:disable", { workspaceId, projectId }),
+      run: (workspaceId: string, projectId: string) => invokeContract("today:run", { workspaceId, projectId }),
+      route: (req: { workspaceId: string; projectId: string; source: string; target?: string; kind?: string }) =>
+        invokeContract("today:route", req),
+      export: (req: { workspaceId: string; projectId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
+        invokeContract("today:export", req),
+    },
     /** Daily automation budget (USD) + today's recorded automation spend. */
     budget: {
       get: () => invokeContract("db:automation:budget:get"),

@@ -202,7 +202,9 @@ export function writeRunLog(runDir: string, log: RunLog): void {
   const tmpPath = path.join(runDir, ".run-log.json.tmp");
   try {
     fs.writeFileSync(tmpPath, `${JSON.stringify(log, null, 2)}\n`, "utf8");
-    const fd = fs.openSync(tmpPath, "r");
+    // "r+", not "r": on Windows fsync needs write access (FlushFileBuffers), and
+    // a read-only handle throws EPERM, which left every log stuck in the temp file.
+    const fd = fs.openSync(tmpPath, "r+");
     try {
       fs.fsyncSync(fd);
     } finally {

@@ -16,6 +16,8 @@
  */
 
 import type { NoteSnippet } from "../notes/search";
+import type { TodayState } from "../today/brief";
+import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type { WireProtocol } from "../models/model-catalog";
 import type { ProbeProtocol, ProtocolAvailability } from "../chat/protocol-probe";
@@ -321,6 +323,27 @@ export interface IpcContract {
   "db:automation:budget:set": { writes: true; args: [req: { usd: number | null }]; result: { budgetUsd: number | null } };
   /** `skipped` when the automation is already running. */
   "db:automation:runNow": { writes: true; args: [req: { id: string }]; result: { runId: string } | { skipped: true } };
+  // ── Today (built-in automation behind Overview → Today) ─────────────────
+  "today:get": { args: [req: { workspaceId: string; projectId: string }]; result: TodayState };
+  /** Creates or re-enables the project's Today automation with this schedule. */
+  "today:enable": {
+    writes: true;
+    args: [req: { workspaceId: string; projectId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }];
+    result: TodayState;
+  };
+  "today:disable": { writes: true; args: [req: { workspaceId: string; projectId: string }]; result: TodayState };
+  /** Starts a run now; `skipped` when one is already running or Today is off. */
+  "today:run": { writes: true; args: [req: { workspaceId: string; projectId: string }]; result: { runId: string } | { skipped: true } };
+  /** Where a Today item goes, and which in-scope connector tools could send it there. */
+  "today:route": {
+    args: [req: { workspaceId: string; projectId: string; source: string; target?: string; kind?: string }];
+    result: TodayRoute;
+  };
+  /** Save a debug bundle (recipe, brief, recent runs, the last run's log and session events) via a save dialog. Null when cancelled. */
+  "today:export": {
+    args: [req: { workspaceId: string; projectId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }];
+    result: { filePath: string } | null;
+  };
   /** Approve/deny a tool call a running automation is waiting on. */
   "automation:approve": {
     args: [req: { callId: string; approved: boolean; grant?: "session" | "always" }];
@@ -935,6 +958,12 @@ const CHANNELS: ChannelRecord = {
   "db:automation:budget:get": "read",
   "db:automation:budget:set": "write",
   "db:automation:runNow": "write",
+  "today:get": "read",
+  "today:enable": "write",
+  "today:disable": "write",
+  "today:run": "write",
+  "today:export": "read",
+  "today:route": "read",
   "automation:approve": "read",
   "automation:pendingApprovals": "read",
   "db:automation:folder": "read",

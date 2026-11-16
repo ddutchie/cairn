@@ -8,6 +8,7 @@ dropped, move it to `../archive/` so this directory only holds live work.
 - `agent-engine-design.md` — the engine that replaced the DeepSeek harness (draft for review).
 - `ui-consistency-pass.md` — UI consistency audit (2026-11-01).
 - `unified-agent-session.md` — decided: fork instead of a merged session type.
+- `morning-brief.md` — daily brief view and connected-apps strategy (draft, 2026-11-16).
 - `apple-foundation-models-provider.md`, `iphone-duo.md`, `local-embeddings.md`
   (in progress), `mcp-payload-optimization.md`, `mobile-app-viability.md` (draft),
   `mobile-capture-and-widgets.md`, `mobile-skia-graph.md`, `sync-attachments.md`,

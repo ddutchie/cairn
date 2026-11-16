@@ -67,6 +67,8 @@ export interface EnginePromptArgs {
   usageSource?: "automation" | "writing-style";
   /** Run with exactly these tools (by name), whatever the surface offers. */
   allowTools?: ReadonlySet<string>;
+  /** Headless runs: keep only the tools this returns true for (Today's read-only toolset). */
+  toolFilter?: (name: string) => boolean;
   /** Skip the user's prompt/tool hooks (internal one-off runs). */
   noHooks?: boolean;
   profile?: Profile;
@@ -191,6 +193,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
 
   if (a.extraTools?.length) tools.push(...a.extraTools);
   if (a.allowTools) tools = tools.filter((t) => a.allowTools!.has(t.name));
+  if (a.toolFilter) tools = tools.filter((t) => a.toolFilter!(t.name));
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
   const systemPrompt = [a.systemPrompt, mcpInstructions].filter(Boolean).join("\n\n");

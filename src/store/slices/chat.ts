@@ -54,6 +54,11 @@ export interface ChatSlice {
   deleteThread: (threadId: ID) => Promise<boolean>;
   renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
+  /**
+   * List a thread that so far ran off the list (a Today act panel's chat) under
+   * its existing id, so its engine session opens in the chat panel as is.
+   */
+  keepThread: (threadId: ID, workspaceId: ID, projectId?: ID, title?: string) => ChatThread;
   compactChatThread: (threadId: ID) => Promise<void>;
   clearThreadMessages: (threadId: ID) => Promise<void>;
   clearAllThreads: (workspaceId: ID, projectId?: ID) => Promise<void>;
@@ -458,6 +463,12 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
   createNewThread(workspaceId, projectId) {
     return saveThread(set, get, buildThread(workspaceId, projectId));
+  },
+
+  keepThread(threadId, workspaceId, projectId, title) {
+    const existing = get().chatThreads.find((t) => t.id === threadId);
+    if (existing) return existing;
+    return saveThread(set, get, { ...buildThread(workspaceId, projectId), id: threadId, title });
   },
 
   async compactChatThread(threadId) {

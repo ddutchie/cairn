@@ -40,9 +40,71 @@ import { TaskFlowPanel, PriorityPanel, NotesSummaryPanel } from "./overview-pane
 import type { FocusFilter } from "./focus";
 import { HeaderToolIcons } from "./header-tool-icons";
 import { Tooltip } from "@/components/ui/tooltip";
+import { ViewTabs } from "@/components/ui/view-tabs";
+import { TodayPanel, useTodayBadge } from "./today-panel";
+import { MiniStack } from "./today-stack";
 
+type OverviewTab = "summary" | "today";
+const OVERVIEW_TAB_KEY = "overview:tab";
 
+/** Overview: the project summary, and Today (the built-in daily brief). */
 export function ProjectOverview() {
+  const { activeProjectId, activeWorkspaceId, projects } = useCairnStore(
+    useShallow((s) => ({ activeProjectId: s.activeProjectId, activeWorkspaceId: s.activeWorkspaceId, projects: s.projects })),
+  );
+  const [tab, setTab] = useState<OverviewTab>(() => {
+    if (typeof window === "undefined") return "summary";
+    return localStorage.getItem(OVERVIEW_TAB_KEY) === "today" ? "today" : "summary";
+  });
+  const pick = (t: OverviewTab) => {
+    setTab(t);
+    localStorage.setItem(OVERVIEW_TAB_KEY, t);
+  };
+  const project = projects.find((p) => p.id === activeProjectId);
+  const today = useTodayBadge(activeWorkspaceId, project?.id ?? null);
+  if (!project || !activeWorkspaceId) return <OverviewSummary />;
+  const todayHint = !today.enabled
+    ? "Turn on a daily brief from the board and your connected apps"
+    : today.running
+      ? "Gathering today's brief"
+      : today.unseen
+        ? "A new brief is ready"
+        : "Your daily brief from the board and connected apps";
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 w-full min-w-0">
+      <ViewTabs<OverviewTab>
+        tabs={[
+          { value: "summary", label: "Summary" },
+          {
+            value: "today",
+            label: "Today",
+            title: todayHint,
+            icon: <MiniStack size={14} muted={!today.enabled} busy={today.running} dot={today.unseen && tab !== "today"} />,
+          },
+        ]}
+        value={tab}
+        onChange={pick}
+        ariaLabel="Overview"
+        panelId="overview-panel"
+      />
+      <div id="overview-panel" role="tabpanel" className="flex-1 flex flex-col min-h-0">
+        {tab === "summary" ? (
+          <OverviewSummary />
+        ) : (
+          <div className="@container flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="max-w-[1240px] mx-auto w-full px-4 pt-4 md:px-7 md:pt-6 pb-8">
+              <TodayPanel key={project.id} workspaceId={activeWorkspaceId} projectId={project.id} projectName={project.name} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function OverviewSummary() {
   const {
     activeProjectId,
     activeWorkspaceId,

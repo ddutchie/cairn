@@ -74,6 +74,7 @@ import { getSecretValue } from "./secure-store";
 import { toSlug } from "../host-shared/text-utils";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 import { errMsg } from "../host-shared/errors";
+import { isTodayAutomation, saveTodayBrief, todayAllowsTool, TODAY_RECIPE } from "./today";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -171,6 +172,8 @@ function shouldAutoAllowAutomationTool(automation: Automation, name: string, arg
 }
 
 const DEFAULT_MAX_STEPS = 10;
+/** Today reads several connectors before it writes; give it room. */
+const TODAY_MIN_STEPS = 30;
 const APPROVAL_NOTICE_COOLDOWN_MS = 30_000;
 
 /** Project display name from the DB, or null for workspace-scoped automations. */
@@ -293,6 +296,8 @@ export async function runAutomation(
 
   const apiKey = resolveLlmApiKey(cached.apiKey);
   const provider = (cached.provider ?? "openai") as "openai";
+  const today = isTodayAutomation(automation);
+  const maxSteps = today ? Math.max(cached.maxSteps ?? DEFAULT_MAX_STEPS, TODAY_MIN_STEPS) : (cached.maxSteps ?? DEFAULT_MAX_STEPS);
 
   // ── Folder plumbing (phase 1/2) ───────────────────────────────────────────
   // Every run gets a working directory under <project>/.automations/<id>/runs/
@@ -380,6 +385,9 @@ export async function runAutomation(
   } catch {
     /* fall back to the row */
   }
+  // Today's recipe belongs to the app, not the row: a row saved by an older
+  // build keeps its old text, so the current one is used on every run.
+  if (isTodayAutomation(automation)) recipe = TODAY_RECIPE;
 
   const req: ChatRequest = {
     message: recipe,
@@ -390,7 +398,7 @@ export async function runAutomation(
       baseUrl: cached.baseUrl,
       model: cached.model,
       apiKey: cached.apiKey,
-      maxSteps: cached.maxSteps ?? DEFAULT_MAX_STEPS,
+      maxSteps,
       // Gate on the model capability: never send temperature to a model that
       // declares `temperature: false`, even if a stale cached value lingers.
       temperature: resolveTemperatureForModel(cached.model, cached.temperature),
@@ -602,6 +610,12 @@ export async function runAutomation(
     const nonce = data.nonce as string | undefined;
     const trusted = argsByCall.get(callId) ?? {};
     emitRun("toolConfirmRequired", { tool: toolName, callId, label: data.label });
+    // Today is read-only and unattended: decide every ask here, never wait on the user.
+    if (today) {
+      const allowed = data.escalation !== true && todayAllowsTool(toolName);
+      respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: allowed });
+      return;
+    }
     // Only a routine ask may be answered for the user. One raised for a protected path, a repeated
     // call, a rule or a hook, or to leave the shell sandbox, is asked whatever the approval mode.
     const routine = (data.by === undefined || data.by === "mode") && data.escalation !== true;
@@ -651,9 +665,11 @@ export async function runAutomation(
       systemPrompt: buildSystemPrompt(req),
       llmConfig: {
         baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai",
-        maxSteps: cached.maxSteps ?? DEFAULT_MAX_STEPS, temperature: req.config?.temperature,
+        maxSteps, temperature: req.config?.temperature,
       } as never,
       extraTools: automationTools,
+      // Today never sees a tool that writes, so no saved "always allow" grant can let one run.
+      toolFilter: today ? todayAllowsTool : undefined,
       autoApprove: automation.approvalMode !== "ask",
       signal: abortCtrl.signal,
       tap: tapWithErrors,
@@ -681,6 +697,21 @@ export async function runAutomation(
     insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, summarize(automation, result.content, "failed"), completionTarget());
     cleanupRuns();
     return;
+  }
+
+  // Today: the final message is the brief. A run that produced none is an error, so the tab can say why.
+  if (today) {
+    let saved = false;
+    try { saved = saveTodayBrief(workspacePath, automation, projectName, finalContent) !== null; } catch (err) {
+      console.warn("[heartbeat] failed to save Today brief:", err);
+    }
+    if (!saved) {
+      const error = "The run finished without a readable brief. Try again, or pick a more capable model.";
+      finaliseLog("error", error);
+      updateAutomationRun(db, run.id, { status: "error", resultNoteId: null, error, scratch: finalScratch() });
+      cleanupRuns();
+      return;
+    }
   }
 
   updateAutomationRun(db, run.id, {
