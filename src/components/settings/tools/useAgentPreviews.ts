@@ -85,6 +85,7 @@ export function useAgentPreviews(): PreviewsState {
   }, [workspacePath]);
 
   // Auto-load on mount and when deps change
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   return {

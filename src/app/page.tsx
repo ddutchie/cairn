@@ -45,7 +45,6 @@ import { clearOnboardingInProgress, isOnboardingInProgress, readPendingImport } 
 import { QuickCapture } from "@/components/layout/QuickCapture";
 import { visibleNumberedViews } from "@/components/layout/sidebar-utils";
 import { persist, reportIpcError } from "@/lib/ipc/client";
-import { chatClient } from "@/lib/ipc/chat";
 import { appClient } from "@/lib/ipc/app";
 import { hasElectron } from "@/lib/ipc/client";
 
