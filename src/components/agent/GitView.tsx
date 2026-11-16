@@ -28,7 +28,8 @@ import { useGitStatus } from "./git/useGitStatus";
 import { discardMessage, readPrTemplate } from "./git/git-actions";
 import { useTwoStepConfirm } from "@/hooks/useTwoStepConfirm";
 import { gitClient } from "@/lib/ipc/git";
-import { errorMessage, requireElectron } from "@/lib/ipc/client";
+import { errorMessage } from "@/lib/ipc/client";
+import { aiClient } from "@/lib/ipc/ai";
 import { IconButton } from "@/components/ui/icon-button";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -246,7 +247,7 @@ export function GitView({ cwd }: GitViewProps) {
         model: agentConfig.model,
         apiKey: agentConfig.apiKey,
       };
-      const msg = await requireElectron().ai.generateCommitMessage({ diff, config });
+      const msg = await aiClient.generateCommitMessage({ diff, config });
       setCommitSubject(msg.subject);
       setCommitBody(msg.body);
     } catch (e) {
@@ -296,7 +297,7 @@ export function GitView({ cwd }: GitViewProps) {
       const project = projects.find((p) => p.id === activeProjectId) ?? null;
       const template = await readPrTemplate(cwd, project?.projectSettings as ProjectSettings | undefined);
 
-      const result = await requireElectron().ai.generatePrDescription({ 
+      const result = await aiClient.generatePrDescription({ 
         diff, 
         config, 
         template: template || undefined 

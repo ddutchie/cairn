@@ -25,6 +25,7 @@ import { useFontScale } from "@/lib/viz/hooks";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/tooltip";
+import { aiClient } from "@/lib/ipc/ai";
 import { agentClient } from "@/lib/ipc/agent";
 
 interface ModuleNode {
@@ -232,7 +233,7 @@ export function ModuleMap({ cwd }: Props) {
     setAiError(null);
     try {
       const config = { baseUrl: agentConfig.baseUrl, model: agentConfig.model, apiKey: agentConfig.apiKey };
-      const res = await window.electron?.ai.explainArchitecture({ summary: llmSummary, config });
+      const res = await aiClient.explainArchitecture({ summary: llmSummary, config });
       if (res) setAiExplain(res);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : String(e));

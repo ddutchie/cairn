@@ -3,6 +3,7 @@
  */
 
 import type { StateCreator } from "zustand";
+import { aiClient } from "@/lib/ipc/ai";
 import type { CairnStore } from "../index";
 import type { Note, ID, NoteType } from "@/types";
 import { id, now } from "@/lib/utils";
@@ -358,7 +359,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     if (!isElectron() || !window.electron) return { error: "Not in Electron" };
     const { aiConfig } = get();
     try {
-      return await window.electron.ai.generatePrd({
+      return await aiClient.generatePrd({
         projectId,
         title,
         requirements,

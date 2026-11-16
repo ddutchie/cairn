@@ -7,6 +7,8 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatBalance, formatUsd } from "../../../shared/chat/provider-credits";
 import { formatCompact } from "../../../shared/format/number";
+import { aiClient } from "@/lib/ipc/ai";
+import { hasElectron } from "@/lib/ipc/client";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TokenBreakdown } from "@/types";
 import { cacheHitColor } from "@/lib/cache-metrics";
@@ -61,9 +63,9 @@ function updateBalance(entry: BalanceEntry): void {
 let inflightBalance: { key: string; promise: Promise<ProviderBalance | null> } | null = null;
 
 async function fetchBalance(baseUrl: string, apiKey: string): Promise<ProviderBalance | null> {
-  if (typeof window === "undefined" || !window.electron?.ai?.fetchKeyInfo) return null;
+  if (typeof window === "undefined" || !hasElectron("ai")) return null;
   try {
-    const info = await window.electron.ai.fetchKeyInfo({ baseUrl, apiKey });
+    const info = await aiClient.fetchKeyInfo({ baseUrl, apiKey });
     if (!info) return null;
     return {
       remaining: info.remaining,

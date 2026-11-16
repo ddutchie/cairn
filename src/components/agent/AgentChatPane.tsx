@@ -13,6 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, use
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
 import { agentClient } from "@/lib/ipc/agent";
+import { registryClient } from "@/lib/ipc/registry";
 import { runtimeClient } from "@/lib/ipc/runtime";
 import { sessionClient } from "@/lib/ipc/session";
 import { hasElectron } from "@/lib/ipc/client";
@@ -239,7 +240,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // flag (for the `developer` system role) once data arrives.
     prewarmModelCatalog();
     let cancelled = false;
-    const fetchRegistry = window.electron?.registry?.fetch;
+    const fetchRegistry = registryClient.fetch;
     if (!fetchRegistry) return () => { cancelled = true; };
     fetchRegistry().then((result) => {
       if (!cancelled) setConnectorEntries(result.manifest);

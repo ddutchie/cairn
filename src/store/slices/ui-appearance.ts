@@ -11,6 +11,7 @@ import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accen
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
 import { persist } from "@/lib/ipc/client";
+import { registryClient } from "@/lib/ipc/registry";
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ export function setCommunityChatThemes(presets: ChatThemePreset[]): void {
  * after it refreshes. Soft-fails: no catalog, no problem.
  */
 export async function fetchAndCacheCommunityChatThemes(): Promise<void> {
-  const api = typeof window !== "undefined" ? window.electron?.registry : undefined;
+  const api = typeof window !== "undefined" ? registryClient : undefined;
   if (!api?.fetchChatThemes) return;
   try {
     const cached = await api.fetchChatThemes();

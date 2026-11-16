@@ -12,15 +12,11 @@ import { CatalogBrowserShell, isSafeExternalUrl } from "@/components/ui/catalog-
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import type { ProvidersFetchResult, RegistryProviderEntry } from "@/types";
+import type { RegistryProviderEntry } from "@/types";
 import { ConnectorLogo } from "./ConnectorLogo";
 import { endpointLogoSlug } from "../../../../shared/models/model-catalog";
 import { getOrFetchLogoSvg, subscribeModelCatalog, getModelCatalogVersion } from "@/lib/models-dev";
-
-const emptyResult: ProvidersFetchResult = {
-  manifest: { version: 1, updatedAt: "", providers: [] },
-  fromCache: false,
-};
+import { useRegistryManifest } from "./useRegistryManifest";
 
 /**
  * Browse Community Providers — one-click presets for OpenAI-compatible AI
@@ -44,13 +40,11 @@ export function BrowseProvidersModal({ onClose, onInstalled }: BrowseProvidersMo
     }))
   );
 
-  const [result, setResult] = useState<ProvidersFetchResult | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { result, loading, refreshing, load } = useRegistryManifest("providers");
+  const [query, setQuery] = useState("");
   // Re-render when lazily-fetched models.dev provider SVGs land so entries
   // without an inline community icon pop in their brand mark on the chip.
   useSyncExternalStore(subscribeModelCatalog, getModelCatalogVersion);
-  const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -58,27 +52,8 @@ export function BrowseProvidersModal({ onClose, onInstalled }: BrowseProvidersMo
   const [keyPrompt, setKeyPrompt] = useState<RegistryProviderEntry | null>(null);
   const [keyValue, setKeyValue] = useState("");
 
-  const load = useCallback(async (force: boolean) => {
-    const reg = window.electron?.registry;
-    if (!reg?.fetchProviders) {
-      setLoading(false);
-      return;
-    }
-    if (force) setRefreshing(true);
-    else setLoading(true);
-    try {
-      const r = force ? await reg.refreshProviders() : await reg.fetchProviders();
-      setResult(r);
-    } catch (err) {
-      setResult({ ...emptyResult, error: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load(false); // eslint-disable-line react-hooks/set-state-in-effect
+    void load(false);
   }, [load]);
 
   const providers = useMemo(() => result?.manifest.providers ?? [], [result]);

@@ -4,6 +4,8 @@ import React, { useState, useCallback } from "react";
 import { Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { storage } from "@/lib/storage";
+import { aiClient } from "@/lib/ipc/ai";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -130,7 +132,7 @@ export function useEndpointConfig(): UseEndpointConfigResult {
     const gen = ++keyInfoGenRef.current;
     const isCurrent = () => gen === keyInfoGenRef.current;
     try {
-      const info = await window.electron.ai.fetchKeyInfo({ baseUrl, apiKey });
+      const info = await aiClient.fetchKeyInfo({ baseUrl, apiKey });
       if (!isCurrent()) return; // a newer request superseded this one
       setKeyInfo(info ?? null);
     } catch {
@@ -151,8 +153,8 @@ export function useEndpointConfig(): UseEndpointConfigResult {
       // and never crosses into the renderer or the CSP boundary. Falls back to a
       // renderer fetch only in the web/no-electron context.
       let ids: string[];
-      if (typeof window !== "undefined" && window.electron?.ai?.fetchModels) {
-        ids = await window.electron.ai.fetchModels({ baseUrl, apiKey });
+      if (typeof window !== "undefined" && hasElectron("ai")) {
+        ids = await aiClient.fetchModels({ baseUrl, apiKey });
       } else {
         const url = normBaseUrl(baseUrl);
         const headers: Record<string, string> = {};

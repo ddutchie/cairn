@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { id } from "@/lib/utils";
 import { secretsClient, toolsClient } from "@/lib/ipc/tools";
+import { registryClient } from "@/lib/ipc/registry";
 import type { McpServerConfig, CustomServiceConfig } from "@/types";
 import { SettingsGroup } from "./shared";
 import { ToolBuilderModal } from "./ToolBuilderModal";
@@ -63,10 +64,8 @@ export function ToolsSettings() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const reg = window.electron?.registry;
-      if (!reg) return;
       try {
-        const { manifest } = await reg.fetch();
+        const { manifest } = await registryClient.fetch();
         if (cancelled) return;
         const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
         for (const e of [...manifest.mcpServers, ...manifest.services]) {
