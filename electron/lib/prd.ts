@@ -29,7 +29,7 @@ export async function generatePrd(
 
   let prdMarkdown: string;
   try {
-    const { runOneShot } = await import("../agent/one-shot");
+    const { runOneShot } = await import("../agent/index");
     prdMarkdown = await runOneShot({
       systemPrompt, userPrompt,
       config: llmConfig,

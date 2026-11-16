@@ -22,7 +22,7 @@ import {
   type UserStyleGenerationInput,
 } from "../lib/user-style-prompt";
 import { randomBytes } from "node:crypto";
-import type { HostSend } from "../agent/host";
+import type { HostSend } from "../agent/index";
 import { forgetEngineSession, getEngineHost, runEngineTapped } from "./engine-bridge";
 import { TOOLS } from "../lib/tools";
 import * as q from "../db/queries";
@@ -128,7 +128,7 @@ export async function generateUserStyleMarkdown(
   const { systemPrompt, userPrompt } = buildUserStylePromptPair(step, input);
 
   // One-shot (single-turn, no tools) on the configured provider.
-  const { runOneShot } = await import("../agent/one-shot");
+  const { runOneShot } = await import("../agent/index");
   // A failed first attempt (e.g. a degenerate empty completion, which
   // runOneShot rejects as EMPTY_RESPONSE) gets the same single retry as an
   // unusable one; a second failure propagates.

@@ -100,6 +100,20 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // Engine boundary (F11/C5): code outside electron/agent/ reaches the
+    // engine only through its public surface electron/agent/index.ts, and
+    // engine code reaches app code only through ./host-store (plus the
+    // explicit allowlist in eslint-rules/cairn.mjs). Type-only imports stay
+    // allowed on both sides (erased at compile time). Tests keep deep access
+    // to fixtures and the tool executor.
+    files: ["electron/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    plugins: { cairn },
+    rules: {
+      "cairn/engine-boundary": "error",
+    },
+  },
+  {
     // Icon-only buttons need an accessible name: use IconButton (its required
     // label is the tooltip and the name) or add aria-label. See AGENTS.md.
     files: ["src/**/*.tsx"],

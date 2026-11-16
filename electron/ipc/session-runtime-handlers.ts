@@ -17,8 +17,7 @@ import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types"
 import type { ChatRequest } from "../lib/tools";
 import { emitSessionChip } from "./engine-commands";
 import { approvedPlanContext, buildAgentSystemPrompt } from "../lib/coding-session-prompt";
-import { sandboxPolicyNote } from "../agent/sandbox";
-import { getSandboxMode } from "../agent/host-store";
+import { getSandboxMode, sandboxPolicyNote } from "../agent/index";
 import { normaliseBaseUrl } from "../lib/llm";
 import { DEFAULT_LLM, resolveAgentLlmConfig } from "../lib/llm-config";
 import type { DbContext } from "./handlers";

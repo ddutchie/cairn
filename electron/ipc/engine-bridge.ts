@@ -10,33 +10,47 @@ import * as electron from "electron";
 import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "./result-helpers";
 import { broadcastEvent } from "./registry";
-import { AgentHost, SessionBusyError, type HostSend } from "../agent/host";
-import type { AgentTool } from "../agent/tools";
-import type { SubagentDeps } from "../agent/tools/subagent";
-import type { ModelRoute } from "../agent/provider";
-import { prepareAttachments, type Attachment } from "../agent/attachments";
-import { updateCodingSession } from "../db/sessions-queries";
-import type { Profile } from "../agent/loop";
 import {
-  PERMISSION_PRESETS,
+  AgentHost,
+  buildToolset,
+  canonicalCommand,
   chatEngineProfile,
+  createHooks,
+  createHostStore,
+  failedTurnEnd,
+  getSandboxMode,
+  importLegacySession,
+  indexSessions,
+  isScheduleEnabled,
+  JobRegistry,
+  LspManager,
+  PERMISSION_PRESETS,
   presetProfile as purePresetProfile,
   presetFromApprovalMode,
+  presetRules,
+  prepareAttachments,
+  recordUsage,
+  routeFromConfig,
+  runtimeEmbed,
+  searchSessionsSemantic,
+  SessionBusyError,
+  sharedPtyAdapter,
+  skillCatalog,
+  TerminalRegistry,
+  type AgentTool,
+  type Attachment,
+  type HostSend,
+  type ModelRoute,
   type PermissionPreset,
-} from "../agent/profiles";
-export { chatEngineProfile, engineProfile, PERMISSION_PRESETS } from "../agent/profiles";
-
-import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
-import { buildToolset, skillCatalog } from "../agent/tools/index";
-import { JobRegistry } from "../agent/jobs";
-import { createHooks } from "../agent/hooks";
-import { LspManager } from "../agent/lsp";
-import { sharedPtyAdapter, TerminalRegistry } from "../agent/terminals";
-import { importLegacySession } from "../agent/session/legacy-import";
-import { createHostStore, getSandboxMode, isScheduleEnabled, recordUsage } from "../agent/host-store";
+  type Profile,
+  type Rule,
+  type SessionIndexDeps,
+  type SubagentDeps,
+} from "../agent/index";
+import { updateCodingSession } from "../db/sessions-queries";
+export { chatEngineProfile, engineProfile, PERMISSION_PRESETS } from "../agent/index";
 import { deleteSessionProfile, listSessionIdsForWorkspace } from "../db/workspace-queries";
 import { deleteSessionEmbeddings } from "../db/embeddings-queries";
-import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../agent/session-search";
 import { getEmbeddingsSettingsCached } from "../lib/config-cache";
 import { buildSystemPrompt, withPersonality, type ChatRequest } from "../lib/tools";
 import { CHAT_EXCLUDED_TOOLS } from "../lib/tool-schemas";
@@ -44,11 +58,9 @@ import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../shared
 import { addWorkspaceApprovalGrant, getWorkspaceApprovalGrants } from "../db/approval-grant-queries";
 import { getCachedConfig } from "../lib/config-cache";
 import { notifyAgentAttention } from "../lib/agent-attention";
-import { routeFromConfig } from "../agent/route";
 import type { AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ApprovalMode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
-import { failedTurnEnd } from "../agent/session/adapter";
 import { rejectBusy } from "./session-guards";
 
 /** Re-exported so existing importers keep working; the home is `session-guards.ts`. */

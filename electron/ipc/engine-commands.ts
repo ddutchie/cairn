@@ -15,10 +15,9 @@ import { normaliseBaseUrl } from "../lib/llm";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { buildAgentSystemPrompt } from "../lib/coding-session-prompt";
 import { buildSystemPrompt } from "../lib/tools";
-import { SESSION_FILE } from "../agent/session/log";
+import { SESSION_FILE, type GoalState } from "../agent/index";
 import type { CommandExecutionResult, SystemPromptPreview } from "../../shared/types/runtime";
 import type { AgentLLMConfig } from "../lib/session-runtime-types";
-import type { GoalState } from "../agent/events";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { broadcastEvent } from "./registry";
 

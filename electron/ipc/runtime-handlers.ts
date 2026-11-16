@@ -3,8 +3,7 @@ import { handle, type DbContext } from "./result-helpers";
 import * as runtime from "../runtime/client";
 import { BrowserWindow } from "electron";
 import { errMsg } from "../host-shared/errors";
-import { sandboxStatus } from "../agent/sandbox";
-import { getSandboxMode } from "../agent/host-store";
+import { getSandboxMode, sandboxStatus } from "../agent/index";
 import { ENGINE_COMMANDS, executeEngineCommand, previewEnginePrompt } from "./engine-commands";
 
 let progressForwarderSetUp = false;

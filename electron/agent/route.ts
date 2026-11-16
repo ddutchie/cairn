@@ -1,5 +1,5 @@
 /** Cairn endpoint config → engine ModelRoute. The wire protocol is pinned from the saved apiMode, never probed. */
-import { wireApiFor, wireBaseUrlFor } from "../lib/model-pricing";
+import { wireApiFor, wireBaseUrlFor } from "./host-store";
 import type { ModelRoute } from "./provider";
 
 export interface RouteConfig {

@@ -8,7 +8,7 @@
  */
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";
-import { discoverSkills, loadSkill, type SkillMeta } from "../../lib/skills";
+import { discoverSkills, loadSkill, type SkillMeta } from "../host-store";
 import { DEFAULT_CONTEXT_WINDOW } from "../provider";
 import { fail, ok } from "./schema";
 

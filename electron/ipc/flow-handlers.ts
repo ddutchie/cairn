@@ -113,7 +113,7 @@ export function registerFlowHandlers(ctx: DbContext): void {
 
         let summary: string;
         try {
-          const { runOneShot } = await import("../agent/one-shot");
+          const { runOneShot } = await import("../agent/index");
           summary = await runOneShot({
             systemPrompt, userPrompt,
             config: { baseUrl, model, apiKey, provider: "openai", apiMode },

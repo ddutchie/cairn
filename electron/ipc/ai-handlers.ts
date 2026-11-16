@@ -20,7 +20,7 @@ import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { fetchProvidersManifest } from "../lib/community-registry";
 import { resolveCreditSpec, probeCredits } from "../lib/provider-credits";
-import { runOneShot } from "../agent/one-shot";
+import { runOneShot } from "../agent/index";
 import { CAIRN_USER_AGENT } from "../lib/cairn-identity";
 import { PROBE_PROTOCOLS, classifyProtocolProbe, protocolProbeRequest, type ProbeProtocol, type ProtocolAvailability } from "../../shared/chat/protocol-probe";
 

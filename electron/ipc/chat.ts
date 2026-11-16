@@ -10,8 +10,7 @@ import { handle } from "./result-helpers";
 import type { DbContext } from "./result-helpers";
 import { resolveConnection } from "../lib/llm-config";
 import { getEngineHost } from "./engine-bridge";
-import { routeFromConfig } from "../agent/route";
-import { runOneShot } from "../agent/one-shot";
+import { routeFromConfig, runOneShot } from "../agent/index";
 
 export function resolveAIConfig(config?: {
   provider?: string;
