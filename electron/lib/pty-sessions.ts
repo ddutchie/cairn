@@ -3,7 +3,7 @@
  *
  * Single owner of every PTY child process in the main process: the
  * renderer's bottom-terminal tabs (`agent:spawnShell` et al. in
- * `electron/ipc/agent.ts`) AND the engine model terminal backend
+ * `electron/ipc/agent-handlers.ts`) AND the engine model terminal backend
  * (`electron/agent/terminal-backend.ts`) both allocate through here, so
  * there is exactly one spawn/validation/kill implementation and one live
  * session table. Kill propagation is trivially bidirectional at this
@@ -72,7 +72,7 @@ function spawnFn(): SpawnFn {
 
 /**
  * Raw spawn without validation or registration (agent-binary runs in
- * `electron/ipc/agent.ts` use this, then `registerPtySession`). Prefer
+ * `electron/ipc/agent-handlers.ts` use this, then `registerPtySession`). Prefer
  * `spawnShellPty` for interactive shells.
  */
 export function spawnRawPty(file: string, args: string[], opts: PtySpawnOptions): PtyHandle {
@@ -165,7 +165,7 @@ export function __clearPtySessionsForTest(): void {
   sessions.clear();
 }
 
-// ── Security (verbatim from electron/ipc/agent.ts) ────────────────────────────
+// ── Security (verbatim from electron/ipc/agent-handlers.ts) ────────────────────────────
 
 /** Absolute path with no shell metacharacters */
 const SAFE_PATH_RE = /^\/[^;&|`$<>'"\\*?[\]{}!]+$/;
@@ -279,7 +279,7 @@ export function onPtySessionExit(
 // ── Shell spawn (bottom terminal pane + model PTYs — one implementation) ─────
 //
 // Spawns the user's login shell ($SHELL / cmd.exe) directly in a given cwd.
-// Moved verbatim from electron/ipc/agent.ts `agent:spawnShell` so UI tabs and
+// Moved verbatim from electron/ipc/agent-handlers.ts `agent:spawnShell` so UI tabs and
 // model-owned PTYs share the fallback chain, the project-boundary filter,
 // and the environment. Callers wire their own onData/onExit listeners.
 

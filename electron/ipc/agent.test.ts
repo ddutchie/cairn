@@ -25,7 +25,7 @@ import {
   createProject,
   getProjectById,
 } from "../db/queries";
-import { isSafePath } from "./agent";
+import { isSafePath } from "./agent-handlers";
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 

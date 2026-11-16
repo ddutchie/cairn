@@ -4,10 +4,10 @@
  * Single home for the default endpoint/model, the cached-key reuse rule and
  * the agent behavioural merge (mode vs autoApprove precedence, renderer-
  * authoritative temperature). Callers:
- *   - `ipc/chat.ts` (`resolveAIConfig`) → {@link resolveConnection}("ai")
+ *   - `ipc/chat-handlers.ts` (`resolveAIConfig`) → {@link resolveConnection}("ai")
  *   - `ipc/session-runtime-handlers.ts` (prompt / approve-plan) →
  *     {@link resolveAgentLlmConfig}; (compact-now) → DEFAULT_LLM + key resolve
- *   - `ipc/tool-builder.ts` (cache-only connection) → {@link resolveConnection}("ai", undefined)
+ *   - `ipc/tool-builder-handlers.ts` (cache-only connection) → {@link resolveConnection}("ai", undefined)
  *   - `ipc/ai-handlers.ts`, `ipc/flow-handlers.ts`,
  *     `ipc/user-style-handlers.ts` → DEFAULT_LLM literals (their merge
  *     semantics are unchanged by this module)

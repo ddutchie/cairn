@@ -4,7 +4,7 @@
  * Runs in the Electron main process (so it has no CORS restrictions) and
  * extracts the same metadata a social-media link unfurls would.
  *
- * Used by the `db:flow:url:fetch` IPC handler (in `electron/ipc/url-metadata.ts`)
+ * Used by the `db:flow:url:fetch` IPC handler (in `electron/ipc/url-metadata-handlers.ts`)
  * for the `create_idea_flow_node` URL-node creation flow — fetching title +
  * description so the user can confirm the node is what they intended.
  */

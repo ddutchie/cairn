@@ -1,7 +1,7 @@
 /**
  * AI Tool Builder — system prompt + internal tool definitions.
  *
- * These tools are dispatched LOCALLY by electron/ipc/tool-builder.ts (not the
+ * These tools are dispatched LOCALLY by electron/ipc/tool-builder-handlers.ts (not the
  * general chat executor). The prompt orchestrates a classify → probe → discover
  * → optimize → finalize flow and enforces the secret-placeholder rule.
  */
