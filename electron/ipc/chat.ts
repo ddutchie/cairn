@@ -64,7 +64,6 @@ export function resolveAIConfig(config?: {
 
 // Re-export for backward compatibility (prd.ts and others import LLMConfig from here)
 export type { LLMConfig } from "../lib/llm";
-export { callLLM } from "../lib/llm";
 
 /**
  * Registers the chat streaming channels.
