@@ -18,105 +18,9 @@ import { useMemo, useCallback, useState, useEffect } from "react";
 import { Check, Copy } from "lucide-react";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { SYNTAX_COLORS } from "@/lib/syntax-palette";
 import { ensureLanguage, isLanguageReady, highlightCode, onLanguageReady } from "@/lib/lazy-lowlight";
+import { renderHast, usePalette, type HastNode } from "@/lib/highlight/render-hast";
 import { Tooltip } from "@/components/ui/tooltip";
-
-// ── Token colour map ──────────────────────────────────────────────────────────
-//
-// Maps highlight.js token class names to CSS colour values.
-// We define two palettes and pick based on data-theme on <html>.
-// Keeping this inline (not global CSS) means no style-sheet collisions.
-
-type Palette = Record<string, string>;
-
-// Both palettes are derived from the shared `SYNTAX_COLORS` tokens so the three
-// syntax-highlight consumers (CodeBlock, editor-theme, PDF export) stay in
-// lockstep. `variant` picks the dark/light hex per token.
-function buildPalette(variant: "dark" | "light"): Palette {
-  const c = (name: keyof typeof SYNTAX_COLORS) => SYNTAX_COLORS[name][variant];
-  return {
-    // Keywords: if, const, function, return, class …
-    "hljs-keyword":        c("keyword"),
-    "hljs-built_in":       c("builtin"),
-    // Literals: true, false, null, undefined
-    "hljs-literal":        c("literal"),
-    // Numbers
-    "hljs-number":         c("number"),
-    // Strings (all flavours)
-    "hljs-string":         c("string"),
-    "hljs-template-tag":   c("string"),
-    "hljs-template-variable": c("variable"),
-    // Regexp
-    "hljs-regexp":         c("string"),
-    // Comments
-    "hljs-comment":        c("comment"),
-    "hljs-quote":          c("comment"),
-    // Variable names / identifiers
-    "hljs-variable":       c("variable"),
-    "hljs-attr":           c("variable"),
-    "hljs-attribute":      c("variable"),
-    // Function / method names
-    "hljs-title":          c("func"),
-    "hljs-title.class_":   c("builtin"),
-    "hljs-title.function_":c("func"),
-    // Types, classes
-    "hljs-type":           c("builtin"),
-    "hljs-class":          c("builtin"),
-    // Operators & punctuation
-    "hljs-operator":       c("literal"),
-    "hljs-punctuation":    c("punctuation"),
-    // Tags (HTML/JSX)
-    "hljs-tag":            c("variable"),
-    "hljs-name":           c("variable"),
-    "hljs-selector-tag":   c("variable"),
-    "hljs-selector-id":    c("func"),
-    "hljs-selector-class": c("builtin"),
-    // Meta / preprocessor
-    "hljs-meta":           c("func"),
-    "hljs-meta-keyword":   c("keyword"),
-    "hljs-meta-string":    c("string"),
-    // Diff
-    "hljs-addition":       c("string"),
-    "hljs-deletion":       c("variable"),
-    // Section / heading (markdown inside code?)
-    "hljs-section":        c("func"),
-    "hljs-bullet":         c("builtin"),
-    "hljs-link":           c("string"),
-    "hljs-symbol":         c("func"),
-    "hljs-formula":        c("literal"),
-    "hljs-emphasis":       c("builtin"),
-    "hljs-strong":         c("strong"),
-  };
-}
-
-const DARK: Palette = buildPalette("dark");
-const LIGHT: Palette = buildPalette("light");
-
-// ── Token renderer ─────────────────────────────────────────────────────────────
-
-interface HastNode {
-  type: string;
-  value?: string;
-  properties?: { className?: string[] };
-  children?: HastNode[];
-}
-
-function renderNode(node: HastNode, palette: Palette, key: string): React.ReactNode {
-  if (node.type === "text") return node.value ?? "";
-  if (node.type === "element") {
-    const classes = node.properties?.className ?? [];
-    // Pick the first class that has a colour in our palette
-    const colour = classes.map((c) => palette[c]).find(Boolean);
-    const children = node.children?.map((child, i) =>
-      renderNode(child, palette, `${key}-${i}`)
-    );
-    return colour
-      ? <span key={key} style={{ color: colour }}>{children}</span>
-      : <span key={key}>{children}</span>;
-  }
-  return null;
-}
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
@@ -132,7 +36,7 @@ export function CodeBlock({ code, language }: Props) {
 
   const isDark = useIsDark();
 
-  const palette = isDark ? DARK : LIGHT;
+  const palette = usePalette();
 
   // Grammars load lazily (per-language dynamic import). `ready` flips to true
   // once the requested language's grammar chunk has resolved, triggering a
@@ -214,7 +118,7 @@ export function CodeBlock({ code, language }: Props) {
       >
         <code>
           {tokens
-            ? tokens.map((node, i) => renderNode(node, palette, String(i)))
+            ? tokens.map((node, i) => renderHast(node, palette, String(i)))
             : code
           }
         </code>
