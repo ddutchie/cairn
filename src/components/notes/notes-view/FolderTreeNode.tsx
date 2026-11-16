@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Folder, FolderInput, FolderOpen, Plus } from
 import { cn } from "@/lib/utils";
 import type { Note } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
-import { NoteListItem } from "./NoteListItem";
+import { NoteListItems } from "./NoteListItems";
 import type { FolderNode } from "./buildFolderTree";
 import { IconButton } from "@/components/ui/icon-button";
 
@@ -142,24 +142,21 @@ export const FolderTreeNode = memo(function FolderTreeNode({
               onFolderDrop={onFolderDrop}
             />
           ))}
-          {node.notes.map((note) => (
-            <NoteListItem
-              key={note.id}
-              note={note}
-              isActive={note.id === activeNoteId}
-              hasChanges={changedNoteIds?.has(note.id) ?? false}
-              indent={indent + 16}
-              onClick={() => onNoteClick(note.id)}
-              onPin={() => onNotePin(note)}
-              onDelete={() => onNoteDelete(note)}
-              onArchive={() => onNoteArchive(note)}
-              onMove={() => onNoteMove(note)}
-              onMoveToFolder={() => onNoteMoveToFolder(note)}
-              onReveal={() => onNoteReveal(note)}
-              onDragStart={onNoteDragStart}
-              onDragEnd={onNoteDragEnd}
-            />
-          ))}
+          <NoteListItems
+            notes={node.notes}
+            activeNoteId={activeNoteId}
+            changedNoteIds={changedNoteIds ?? new Set()}
+            onNoteClick={onNoteClick}
+            onNotePin={onNotePin}
+            onNoteDelete={onNoteDelete}
+            onNoteArchive={onNoteArchive}
+            onNoteMove={onNoteMove}
+            onNoteMoveToFolder={onNoteMoveToFolder}
+            onNoteReveal={onNoteReveal}
+            onNoteDragStart={onNoteDragStart}
+            onNoteDragEnd={onNoteDragEnd}
+            indent={indent + 16}
+          />
           {node.notes.length === 0 && node.children.length === 0 && (
             <button
               onClick={() => onCreateInFolder(node.path)}
