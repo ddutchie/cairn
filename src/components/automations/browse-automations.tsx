@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import type { RegistryAutomationEntry, RegistryRequirement } from "@/types";
 import { CATALOG_SEARCH_INPUT_CLS as inputCls } from "@/components/ui/catalog-browser-shell";
+import { automationsClient } from "@/lib/ipc/automations";
+import { hasElectron } from "@/lib/ipc/client";
 import { useRegistryManifest } from "../settings/tools/useRegistryManifest";
 
 const KIND_LABEL: Record<string, string> = {
@@ -83,7 +85,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
       for (const r of a.definition.requires ?? []) unique.set(reqKey(r), r);
     }
     const reqs = [...unique.values()];
-    const check = window.electron?.automation?.checkRequirements;
+    const check = hasElectron("automation") ? automationsClient.checkRequirements : undefined;
     let cancelled = false;
     void Promise.resolve()
       .then(() =>

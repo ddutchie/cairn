@@ -24,6 +24,9 @@ import type {
 import { storage } from "@/lib/storage";
 import { historyManager } from "@/lib/history";
 import { isOwnNoteWrite, isAiNoteWrite, isElectron } from "./ipc";
+import { appClient } from "@/lib/ipc/app";
+import { changesClient } from "@/lib/ipc/workspace";
+import { hasElectron } from "@/lib/ipc/client";
 import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
 import { ipcResult } from "./ipc";
@@ -221,7 +224,7 @@ async function runChangeFeedRefresh(
   set: (partial: Partial<CairnStore>) => void,
   get: () => CairnStore,
 ): Promise<void> {
-  const api = typeof window !== "undefined" ? window.electron?.changes : undefined;
+  const api = typeof window !== "undefined" && hasElectron("changes") ? changesClient : undefined;
   const { feedId, seq } = getChangeFeedCursor();
   const fullRefresh = async () => {
     await get().hydrateFromElectron(true);
@@ -632,14 +635,14 @@ export const useCairnStore = create<CairnStore>()(
         // copy is never read in Electron (see persist()).
         storage.delete(STORAGE_KEY);
 
-        // Fetch configurations from backend cache first if window.electron is available
+        // Fetch configurations from backend cache first if the bridge is available
         let backendAiConfig = null;
         let backendAgentConfig = null;
 
-        if (window.electron) {
+        if (hasElectron()) {
           try {
-            if (window.electron.getAiSettings)    backendAiConfig = await window.electron.getAiSettings();
-            if (window.electron.getAgentSettings) backendAgentConfig = await window.electron.getAgentSettings();
+            backendAiConfig = await appClient.getAiSettings();
+            backendAgentConfig = await appClient.getAgentSettings();
           } catch (e) {
             console.warn("Failed to fetch backend cached settings:", e);
           }
@@ -674,8 +677,8 @@ export const useCairnStore = create<CairnStore>()(
           const mergedAiConfig = { ...DEFAULT_AI_CONFIG, ...savedConfig };
           set({ aiConfig: mergedAiConfig });
           storage.set(AI_CONFIG_KEY, mergedAiConfig);
-          if (window.electron && window.electron.saveAiSettings) {
-            window.electron.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
+          if (hasElectron()) {
+            void appClient.saveAiSettings(mergedAiConfig as unknown as Record<string, unknown>).catch(() => {});
           }
         } else {
           set({ aiConfig: DEFAULT_AI_CONFIG });
@@ -691,8 +694,8 @@ export const useCairnStore = create<CairnStore>()(
         if (savedAgentConfig) {
           set({ agentConfig: { ...DEFAULT_AGENT_CONFIG, ...savedAgentConfig } });
           storage.set(AGENT_CONFIG_KEY, savedAgentConfig);
-          if (!backendAgentConfig && window.electron && window.electron.saveAgentSettings) {
-            window.electron.saveAgentSettings(savedAgentConfig as unknown as Record<string, unknown>).catch(() => {});
+          if (!backendAgentConfig && hasElectron()) {
+            void appClient.saveAgentSettings(savedAgentConfig as unknown as Record<string, unknown>).catch(() => {});
           }
         } else if (savedConfig) {
           const configRecord = savedConfig as unknown as Record<string, string | number | undefined>;
@@ -739,11 +742,11 @@ export const useCairnStore = create<CairnStore>()(
             set({ aiConfig: migrated.ai, agentConfig: migrated.agent });
             storage.set(AI_CONFIG_KEY, migrated.ai);
             storage.set(AGENT_CONFIG_KEY, migrated.agent);
-            if (window.electron?.saveAiSettings) {
-              window.electron.saveAiSettings(migrated.ai as unknown as Record<string, unknown>).catch(() => {});
+            if (hasElectron()) {
+              void appClient.saveAiSettings(migrated.ai as unknown as Record<string, unknown>).catch(() => {});
             }
-            if (window.electron?.saveAgentSettings) {
-              window.electron.saveAgentSettings(migrated.agent as unknown as Record<string, unknown>).catch(() => {});
+            if (hasElectron()) {
+              void appClient.saveAgentSettings(migrated.agent as unknown as Record<string, unknown>).catch(() => {});
             }
           }
         } catch (e) {
@@ -757,7 +760,7 @@ export const useCairnStore = create<CairnStore>()(
       // written in between is re-delivered by the next changeset (idempotent).
       await initChangeFeedCursor();
       // Notes arrive without bodies (loaded on demand — store/note-bodies.ts).
-      const snap = (await window.electron!.snapshot({ noteBodies: false })) as PersistedState;
+      const snap = (await changesClient.snapshot({ noteBodies: false })) as PersistedState;
 
       // External (MCP/AI) write refreshes invalidate the undo stack.
       if (isRefresh) historyManager.clear();

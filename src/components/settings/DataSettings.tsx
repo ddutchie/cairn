@@ -9,7 +9,10 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { storage } from "@/lib/storage";
 import { SettingsGroup, SettingsRow } from "./shared";
-import { persist } from "@/lib/ipc/client";
+import { persist, hasElectron } from "@/lib/ipc/client";
+import { appClient } from "@/lib/ipc/app";
+import { changesClient } from "@/lib/ipc/workspace";
+import { platformName } from "@/lib/ipc/platform";
 import { formatBytesSI } from "../../../shared/format/number";
 
 export function DataSettings({
@@ -27,8 +30,8 @@ export function DataSettings({
   const [clearedBytes, setClearedBytes] = useState<number | null>(null);
 
   React.useEffect(() => {
-    if (typeof window === "undefined" || !window.electron?.llmLeftovers) return;
-    window.electron.llmLeftovers()
+    if (typeof window === "undefined" || !hasElectron()) return;
+    appClient.llmLeftovers()
       .then((info) => setLeftovers(info))
       .catch(() => {});
   }, []);
@@ -38,13 +41,13 @@ export function DataSettings({
   }
 
   async function handleClearLeftovers() {
-    if (!window.electron?.clearLlmLeftovers) return;
+    if (!hasElectron()) return;
     if (!clearArmed) {
       setClearArmed(true);
       return;
     }
     try {
-      const res = await window.electron.clearLlmLeftovers();
+      const res = await appClient.clearLlmLeftovers();
       setClearedBytes(res.reclaimedBytes);
       setLeftovers({ bytes: 0, files: [] });
     } catch {
@@ -59,8 +62,8 @@ export function DataSettings({
       setExportError(false);
       // Electron keeps note bodies out of the store (loaded on demand), so read
       // the full snapshot — bodies included — straight from the database.
-      const full = window.electron
-        ? (await window.electron.snapshot()) as { workspaces: unknown[]; projects: unknown[]; notes: unknown[]; columns: unknown[]; cards: unknown[]; tags: unknown[] }
+      const full = hasElectron()
+        ? await changesClient.snapshot({ noteBodies: true })
         : { workspaces, projects, notes, columns, cards, tags };
       const data = { ...full, exportedAt: new Date().toISOString() };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -79,7 +82,7 @@ export function DataSettings({
 
   async function handleReset() {
     storage.clear();
-    await window.electron?.resetAllData();
+    await appClient.resetAllData().catch(() => {});
     // relaunch is called inside the IPC handler; if running in browser dev, fallback
     window.location.reload();
   }
@@ -103,8 +106,8 @@ export function DataSettings({
       </SettingsRow>
 
       <SettingsRow label="Assets folder" description="Open the folder containing all pasted images">
-        <Button variant="default" size="sm" onClick={() => { if (window.electron) persist(window.electron.revealAssets(), "Couldn't open the assets folder"); }}>
-          <FolderOpen size={12} /> {window.electron?.platform === "darwin" ? "Show in Finder" : window.electron?.platform === "win32" ? "Show in Explorer" : "Open folder"}
+        <Button variant="default" size="sm" onClick={() => { if (hasElectron()) persist(appClient.revealAssets(), "Couldn't open the assets folder"); }}>
+          <FolderOpen size={12} /> {platformName() === "darwin" ? "Show in Finder" : platformName() === "win32" ? "Show in Explorer" : "Open folder"}
         </Button>
       </SettingsRow>
 

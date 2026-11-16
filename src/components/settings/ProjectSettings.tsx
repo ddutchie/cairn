@@ -11,6 +11,8 @@ import type { ProjectSettings } from "@/types";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { agentClient } from "@/lib/ipc/agent";
+import { platformName } from "@/lib/ipc/platform";
+import { projectClient } from "@/lib/ipc/workspace";
 import { hasElectron } from "@/lib/ipc/client";
 
 interface ProjectSettingsSectionProps {
@@ -42,7 +44,7 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
   useEffect(() => {
     const currentProjectId = activeProject?.id;
     if (activeProject?.codeDirectory && hasElectron("agent")) {
-      const pathSeparator = window.electron!.platform === "win32" ? "\\" : "/";
+      const pathSeparator = platformName() === "win32" ? "\\" : "/";
       const templatePath = `${activeProject.codeDirectory}${pathSeparator}.github${pathSeparator}PULL_REQUEST_TEMPLATE.md`;
       agentClient.readFile(templatePath)
         .then(() => {
@@ -105,7 +107,7 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
         autoStageOnCommit: settings.autoStageOnCommit !== undefined ? settings.autoStageOnCommit : null,
         useRepoPrTemplate: settings.useRepoPrTemplate !== undefined ? settings.useRepoPrTemplate : null,
       };
-      await window.electron?.project.updateSettings(activeProject.id, payload);
+      await projectClient.updateSettings(activeProject.id, payload);
       
       const cleanProjectSettings: ProjectSettings = {};
       if (payload.prTemplate !== null) cleanProjectSettings.prTemplate = payload.prTemplate;
@@ -164,7 +166,7 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
               className="w-full pl-8 pr-3 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] text-xs font-mono placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
-          {typeof window !== "undefined" && window.electron && (
+          {typeof window !== "undefined" && hasElectron() && (
             <Button variant="outline" size="sm" onClick={pickCodeDir} className="flex-shrink-0">
               <FolderOpen size={13} />
               Browse

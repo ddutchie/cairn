@@ -11,6 +11,7 @@
  * In the web build (no Electron) notes always carry their content and all of
  * this is a no-op.
  */
+import { hasElectron } from "@/lib/ipc/client";
 
 /** Unpinned bodies kept after use (recently opened notes stay instant). */
 export const MAX_CACHED_BODIES = 50;
@@ -60,7 +61,7 @@ export function bodiesToEvict(keep: (id: string) => boolean): string[] {
 
 /** True when note bodies are loaded lazily (Electron); false in the web build. */
 export function lazyNoteBodies(): boolean {
-  return typeof window !== "undefined" && !!window.electron?.note?.bodies;
+  return typeof window !== "undefined" && hasElectron("note");
 }
 
 /** Test hook. */

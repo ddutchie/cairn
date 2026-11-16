@@ -5,7 +5,7 @@
  */
 
 import type {
-  Automation, AutomationEnvSpec, AutomationInput, AutomationPatch, AutomationRun, AutomationRunEvent,
+  Automation, AutomationEnvSpec, AutomationInput, AutomationPatch, AutomationRequirement, AutomationRun, AutomationRunEvent,
   AutomationRunWithAutomation, RunLog,
 } from "../../../shared/types/automations";
 import { domainCall, type ElectronApi } from "./client";
@@ -23,6 +23,9 @@ export const automationsClient = {
   runningCount: (): Promise<number> => automation((a) => a.runningCount()),
   /** Starts a run now; `skipped` when one is already running. */
   runNow: (id: string) => automation((a) => a.runNow(id)),
+  /** Live "next run" preview via the main-process schedule parser. */
+  preview: (scheduleKind: string, scheduleExpr: string, timezone?: string | null) =>
+    automation((a) => a.preview(scheduleKind, scheduleExpr, timezone)),
   approve: (callId: string, approved: boolean, grant?: "session" | "always") =>
     automation((a) => a.approve(callId, approved, grant)),
   /** Tool calls the run is waiting on right now, oldest first. */
@@ -42,4 +45,7 @@ export const automationsClient = {
   /** Subscribe to live run activity; returns the unsubscribe function (a no-op off-Electron). */
   onRunEvent: (cb: (event: AutomationRunEvent) => void): (() => void) =>
     window.electron?.automation.onRunEvent(cb) ?? (() => {}),
+  files: (id: string) => automation((a) => a.files(id)),
+  checkRequirements: (workspaceId: string, projectId: string, requires: AutomationRequirement[]) =>
+    automation((a) => a.checkRequirements(workspaceId, projectId, requires)),
 };

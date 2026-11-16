@@ -3,6 +3,7 @@
  */
 import type { ProjectSettings } from "@/types";
 import type { GitStatusData } from "./git-helpers";
+import { platformName } from "../../../lib/ipc/platform";
 import { agentClient } from "../../../lib/ipc/agent";
 import { hasElectron } from "../../../lib/ipc/client";
 
@@ -46,7 +47,7 @@ export function discardMessage(status: GitStatusData | null, paths: string[]): s
 export async function readPrTemplate(cwd: string, settings: ProjectSettings | undefined): Promise<string> {
   const custom = settings?.useRepoPrTemplate ? "" : settings?.prTemplate || "";
   if (custom || !hasElectron("agent")) return custom;
-  const sep = window.electron!.platform === "win32" ? "\\" : "/";
+  const sep = platformName() === "win32" ? "\\" : "/";
   try {
     return await agentClient.readFile(`${cwd}${sep}.github${sep}PULL_REQUEST_TEMPLATE.md`);
   } catch {

@@ -5,6 +5,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
 import { sessionClient } from "@/lib/ipc/session";
+import { noteFilesClient } from "@/lib/ipc/notes";
+import { changesClient } from "@/lib/ipc/workspace";
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
@@ -43,6 +45,9 @@ import { clearOnboardingInProgress, isOnboardingInProgress, readPendingImport } 
 import { QuickCapture } from "@/components/layout/QuickCapture";
 import { visibleNumberedViews } from "@/components/layout/sidebar-utils";
 import { persist, reportIpcError } from "@/lib/ipc/client";
+import { chatClient } from "@/lib/ipc/chat";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 
 export default function Home() {
   const {
@@ -195,7 +200,7 @@ export default function Home() {
   // Live unread-notification polling for the bell badge + center (same pattern;
   // also subscribes to the main-process mcp:unread-count pushes).
   useEffect(() => {
-    if (typeof window === "undefined" || !window.electron?.notification) return;
+    if (typeof window === "undefined" || !hasElectron("notification")) return;
     startNotificationPolling();
     return () => stopNotificationPolling();
   }, [startNotificationPolling, stopNotificationPolling]);
@@ -209,10 +214,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const electron = window.electron;
-    if (typeof window !== "undefined" && electron) {
+    if (typeof window !== "undefined" && hasElectron()) {
       Promise.all([
-        electron.needsWorkspaceSetup(),
+        appClient.needsWorkspaceSetup(),
         hydrateFromElectron(),
       ]).then(async ([needsSetup]) => {
         if (needsSetup) {
@@ -225,7 +229,7 @@ export default function Home() {
         // Restore the last coding session for the active project
         const state = useCairnStore.getState();
         const projId = state.activeProjectId;
-        if (projId && window.electron) {
+        if (projId && hasElectron()) {
           try {
             await state.fetchCodingSessionHistory(projId);
             const history = useCairnStore.getState().codingSessionHistory;
@@ -287,15 +291,15 @@ export default function Home() {
       // Track AI note writes (in-app chat executor + standalone MCP server) so
       // the db:changed handler below knows to re-hydrate and accept the AI's
       // content for those notes, overriding the own-write guard.
-      const unsubAiStart = electron.onAiWriteStarted(({ noteId }) => {
+      const unsubAiStart = noteFilesClient.onAiWriteStarted(({ noteId }) => {
         markAiNoteWriteStarted(noteId);
       });
-      const unsubAiEnd = electron.onAiWriteEnded(({ noteId }) => {
+      const unsubAiEnd = noteFilesClient.onAiWriteEnded(({ noteId }) => {
         markAiNoteWriteEnded(noteId);
       });
 
       // Register db:changed listener synchronously so React gets the cleanup fn
-      const unsubDb = electron.onDbChanged(() => {
+      const unsubDb = changesClient.onDbChanged(() => {
         // Don't refresh (and potentially reset onboardingState) while the
         // onboarding wizard is still in progress — folder selection and workspace
         // creation trigger db:changed but the wizard handles its own state. The
@@ -312,10 +316,10 @@ export default function Home() {
       });
 
       // Auto-updater listeners — events may arrive in any order
-      const unsubAvailable = electron.updater.onUpdateAvailable((info) => {
+      const unsubAvailable = appClient.updater.onUpdateAvailable((info) => {
         setUpdateVersion(info.version);
       });
-      const unsubDownloaded = electron.updater.onUpdateDownloaded(() => {
+      const unsubDownloaded = appClient.updater.onUpdateDownloaded(() => {
         setUpdateDownloaded(true);
       });
 
@@ -532,7 +536,7 @@ export default function Home() {
       <UpdateBanner
         version={updateVersion}
         downloaded={updateDownloaded}
-        onInstall={() => { if (window.electron) persist(window.electron.updater.install(), "Couldn't install the update"); }}
+        onInstall={() => { if (hasElectron()) persist(appClient.updater.install(), "Couldn't install the update"); }}
         onDismiss={() => { setUpdateVersion(null); setUpdateDownloaded(false); }}
       />
       <ConflictBanner />

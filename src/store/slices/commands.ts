@@ -12,6 +12,8 @@ import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { CustomSlashCommand, ID, RegistryCommandEntry, SlashCommandScope } from "@/types";
 import { id } from "@/lib/utils";
+import { commandsClient } from "@/lib/ipc/commands";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -51,9 +53,9 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   customCommands: [],
 
   async fetchCommands(workspaceId) {
-    if (typeof window === "undefined" || !window.electron?.command) return;
+    if (typeof window === "undefined" || !hasElectron("command")) return;
     try {
-      const rows = await window.electron.command.list(workspaceId);
+      const rows = await commandsClient.list(workspaceId);
       // Guard against a stale response after the workspace changed mid-flight.
       if (get().activeWorkspaceId && get().activeWorkspaceId !== workspaceId) return;
       set({ customCommands: rows });
@@ -63,9 +65,9 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   },
 
   async createCommand(input) {
-    if (typeof window === "undefined" || !window.electron?.command) return;
+    if (typeof window === "undefined" || !hasElectron("command")) return;
     try {
-      const saved = await window.electron.command.create({
+      const saved = await commandsClient.create({
         id: id(),
         workspaceId: input.workspaceId,
         name: input.name,
@@ -82,9 +84,9 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   },
 
   async updateCommand(commandId, patch) {
-    if (typeof window === "undefined" || !window.electron?.command) return;
+    if (typeof window === "undefined" || !hasElectron("command")) return;
     try {
-      const saved = await window.electron.command.update(commandId, patch);
+      const saved = await commandsClient.update(commandId, patch);
       set((s) => ({
         customCommands: s.customCommands.map((c) => (c.id === commandId ? saved : c)),
       }));
@@ -94,12 +96,12 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   },
 
   async deleteCommand(commandId) {
-    if (typeof window === "undefined" || !window.electron?.command) return;
+    if (typeof window === "undefined" || !hasElectron("command")) return;
     // Optimistic — roll back by re-fetching if the IPC call fails.
     const prev = get().customCommands;
     set({ customCommands: prev.filter((c) => c.id !== commandId) });
     try {
-      await window.electron.command.delete(commandId);
+      await commandsClient.delete(commandId);
     } catch (err) {
       console.error("[commands] deleteCommand error", err);
       set({ customCommands: prev });
@@ -107,7 +109,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
   },
 
   async installCommunityCommand(entry) {
-    if (typeof window === "undefined" || !window.electron?.command) {
+    if (typeof window === "undefined" || !hasElectron("command")) {
       throw new Error("Unavailable");
     }
     const workspaceId = get().activeWorkspaceId;
@@ -124,7 +126,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
       commands.find((c) => c.name === def.name);
 
     if (existing) {
-      const saved = await window.electron.command.update(existing.id, {
+      const saved = await commandsClient.update(existing.id, {
         name: def.name,
         description: def.description ?? "",
         insertText: def.insertText,
@@ -136,7 +138,7 @@ export const createCommandsSlice: StateCreator<CairnStore, [], [], CommandsSlice
       return existing.id;
     }
 
-    const saved = await window.electron.command.create({
+    const saved = await commandsClient.create({
       id: id(),
       workspaceId,
       name: def.name,

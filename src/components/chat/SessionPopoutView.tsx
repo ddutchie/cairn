@@ -15,6 +15,7 @@ import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { SessionRow } from "@/components/agent/SessionRow";
 import { sessionClient } from "@/lib/ipc/session";
+import { chatClient } from "@/lib/ipc/chat";
 import { useListboxNavigation, sanitizeAriaId } from "@/hooks/useListboxNavigation";
 import { IconButton } from "@/components/ui/icon-button";
 
@@ -341,7 +342,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState("");
   const loadHistory = useCallback(async () => {
-    const result = profile === "chat" ? await window.electron?.chat.sessionMessages(threadId) : await sessionClient.getSessionMessages(sessionId);
+    const result = profile === "chat" ? await chatClient.sessionMessages(threadId) : await sessionClient.getSessionMessages(sessionId);
     return normalizeSessionMessages(result);
   }, [profile, sessionId, threadId]);
   // Approvals still waiting on the user. Kept apart from `messages` because an

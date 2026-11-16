@@ -7,6 +7,8 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import { storage } from "@/lib/storage";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 import { resolveAccentPreset, DEFAULT_ACCENT_ID } from "../../../shared/ui/accents";
 import { resolveFontPreset, DEFAULT_FONT_ID } from "../../../shared/ui/fonts";
 import { resolveChatTheme, chatThemeFontStack, chatThemeFontWeightValue, manifestToChatThemes, DEFAULT_CHAT_THEME_ID, type ChatThemePreset } from "../../../shared/ui/chat-themes";
@@ -253,8 +255,8 @@ export const createAppearanceSlice: StateCreator<CairnStore, [], [], AppearanceS
     set({ theme });
     storage.set(THEME_KEY, theme);
     applyTheme(theme);
-    if (typeof window !== "undefined" && window.electron) {
-      persist(window.electron.setTheme(theme), "Couldn't save the theme");
+    if (typeof window !== "undefined" && hasElectron()) {
+      persist(appClient.setTheme(theme), "Couldn't save the theme");
     }
   },
 
@@ -263,8 +265,8 @@ export const createAppearanceSlice: StateCreator<CairnStore, [], [], AppearanceS
     set({ accentColor: accentId });
     storage.set(ACCENT_KEY, accentId);
     applyAccent(accentId);
-    if (typeof window !== "undefined" && window.electron?.setAccent) {
-      persist(window.electron.setAccent(accentId), "Couldn't save the accent colour");
+    if (typeof window !== "undefined" && hasElectron()) {
+      persist(appClient.setAccent(accentId), "Couldn't save the accent colour");
     }
   },
 

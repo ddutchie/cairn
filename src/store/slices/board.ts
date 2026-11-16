@@ -7,6 +7,8 @@ import type { CairnStore } from "../index";
 import type { BoardColumn, TaskCard, ID } from "@/types";
 import { id, now } from "@/lib/utils";
 import { ipc, ipcResult, isElectron } from "../ipc";
+import { cardsClient } from "@/lib/ipc/board";
+import { hasElectron } from "@/lib/ipc/client";
 import { historyManager } from "@/lib/history";
 import {
   makeCreateCardCmd,
@@ -323,9 +325,9 @@ export const createBoardSlice: StateCreator<CairnStore, [], [], BoardSlice> = (
       ),
     }));
     get().persist();
-    if (!isElectron() || !window.electron) return affectedIds.size;
+    if (!isElectron() || !hasElectron()) return affectedIds.size;
     try {
-      const result = await window.electron.card.archiveDone(columnId) as { archived?: number } | undefined;
+      const result = await cardsClient.archiveDone(columnId) as { archived?: number } | undefined;
       return result?.archived ?? affectedIds.size;
     } catch (err) {
       // Roll back optimistic update

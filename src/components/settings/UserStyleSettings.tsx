@@ -14,6 +14,8 @@ import { PenLine, Sparkles, Trash2, RefreshCw } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
+import { userStyleClient } from "@/lib/ipc/userstyle";
+import { hasElectron } from "@/lib/ipc/client";
 import { SettingsGroup, SettingsRow } from "./shared";
 import { UserStyleWizardModal } from "./UserStyleWizardModal";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
@@ -42,14 +44,14 @@ export function UserStyleSettings() {
 
   const regenerateCheatsheet = async () => {
     if (!userStyle?.fullGuide) return;
-    if (!window.electron?.generateUserStyle) {
+    if (!hasElectron()) {
       setRegenerateError("AI generation isn't available in this build.");
       return;
     }
     setRegenerating(true);
     setRegenerateError(null);
     try {
-      const res = await window.electron.generateUserStyle("cheatsheet", {
+      const res = await userStyleClient.generateUserStyle("cheatsheet", {
         persona: userStyle.persona ?? {},
         samples: [],
         answers: [],

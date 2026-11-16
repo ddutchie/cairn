@@ -28,6 +28,8 @@ import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { cn } from "@/lib/utils";
 import type { UserStylePersona, UserStyleRow } from "@/types";
 import { IconButton } from "@/components/ui/icon-button";
+import { userStyleClient } from "@/lib/ipc/userstyle";
+import { hasElectron } from "@/lib/ipc/client";
 
 interface Sample {
   context: string;
@@ -123,14 +125,14 @@ export function UserStyleWizardModal({
   // Abort + clean up listeners when the wizard closes mid-generation.
   useEffect(() => {
     return () => {
-      window.electron?.abortUserStyleStream?.();
+      void userStyleClient.abortUserStyleStream().catch(() => {});
       unsubsRef.current.forEach((u) => u());
       unsubsRef.current = [];
     };
   }, []);
 
   const cancelGeneration = () => {
-    window.electron?.abortUserStyleStream?.();
+    void userStyleClient.abortUserStyleStream().catch(() => {});
     unsubsRef.current.forEach((u) => u());
     unsubsRef.current = [];
     setBusy(false);
@@ -203,8 +205,11 @@ export function UserStyleWizardModal({
   // live in the preview. Falls back to the one-shot IPC when streaming isn't
   // available in this build.
   const generate = (target: "full" | "cheatsheet" | "optimize") => {
-    const electron = window.electron;
-    if (electron?.generateUserStyleStream) {
+    if (!hasElectron()) {
+      setError("AI generation isn't available in this build.");
+      return;
+    }
+    {
       const unsubs: Array<() => void> = [];
       unsubsRef.current = unsubs;
       setBusy(true);
@@ -214,14 +219,14 @@ export function UserStyleWizardModal({
       setStreamTools([]);
 
       unsubs.push(
-        electron.onUserStyleToken!(({ delta }) => setStreamingText((t) => t + delta)),
-        electron.onUserStyleToolCall!((e) =>
+        userStyleClient.onUserStyleToken(({ delta }) => setStreamingText((t) => t + delta)),
+        userStyleClient.onUserStyleToolCall((e) =>
           setStreamTools((prev) => [...prev, { tool: e.tool, label: e.label, done: false }]),
         ),
-        electron.onUserStyleToolCallDone!((e) =>
+        userStyleClient.onUserStyleToolCallDone((e) =>
           setStreamTools((prev) => prev.map((t) => (t.tool === e.tool ? { ...t, done: true } : t))),
         ),
-        electron.onUserStyleDone!(({ content, usable, error }) => {
+        userStyleClient.onUserStyleDone(({ content, usable, error }) => {
           unsubs.forEach((u) => u());
           unsubsRef.current = [];
           setStreaming(false);
@@ -244,26 +249,22 @@ export function UserStyleWizardModal({
       );
 
       const activeProject = projects.find((p) => p.id === activeProjectId);
-      electron.generateUserStyleStream({
+      void userStyleClient.generateUserStyleStream({
         workspaceId: activeWorkspaceId ?? undefined,
         projectId: activeProjectId ?? undefined,
         projectName: activeProject?.name,
         step: target,
         analyseNotes: samples.some((s) => s.context.startsWith("From your")),
         input: generationInput,
-      });
+      }).catch(() => {});
       return;
     }
 
-    if (!electron?.generateUserStyle) {
-      setError("AI generation isn't available in this build.");
-      return;
-    }
     void (async () => {
       setBusy(true);
       setError(null);
       try {
-        const res = await electron.generateUserStyle(target, generationInput);
+        const res = await userStyleClient.generateUserStyle(target, generationInput);
         if (target === "full" || target === "optimize") {
           setFullGuide(res.markdown);
           setStep(3);

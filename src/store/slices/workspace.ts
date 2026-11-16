@@ -7,6 +7,9 @@ import type { CairnStore } from "../index";
 import type { Workspace, Project, BoardColumn, ID } from "@/types";
 import { id, now } from "@/lib/utils";
 import { ipc, ipcAwait, ipcResult, isElectron } from "../ipc";
+import { projectClient } from "@/lib/ipc/workspace";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
@@ -116,9 +119,9 @@ export const createWorkspaceSlice: StateCreator<
 
     // Single atomic IPC call — server creates project + 5 default columns together.
     // On success, replace optimistic columns with authoritative server rows.
-    if (typeof window !== "undefined" && window.electron) {
+    if (typeof window !== "undefined" && hasElectron()) {
       try {
-        const { columns } = await window.electron.project.create({
+        const { columns } = await projectClient.create({
           ...proj, workspaceId, withDefaultColumns: true,
         });
         if (columns.length > 0) {
@@ -186,7 +189,7 @@ export const createWorkspaceSlice: StateCreator<
 
   async mergeProject(sourceId, targetId) {
     if (sourceId === targetId) return null;
-    if (!isElectron() || !window.electron) return null;
+    if (!isElectron() || !hasElectron()) return null;
 
     // If the source is the active project, switch to the target before the row
     // disappears so the UI doesn't land on a deleted project.
@@ -203,8 +206,8 @@ export const createWorkspaceSlice: StateCreator<
   },
 
   async selectAndInitWorkspace() {
-    if (!isElectron() || !window.electron) return null;
-    const folder = await window.electron.selectWorkspaceFolder();
+    if (!isElectron() || !hasElectron()) return null;
+    const folder = await appClient.selectWorkspaceFolder();
     if (!folder) return null;
     // initWorkspace writes workspace-config.json, opens the new DB in-process,
     // restarts the file watcher, and fires db:changed — no relaunch needed.
@@ -213,14 +216,14 @@ export const createWorkspaceSlice: StateCreator<
   },
 
   async initWorkspacePath(workspacePath, excludedFolders) {
-    if (!isElectron() || !window.electron) return;
+    if (!isElectron() || !hasElectron()) return;
     // Route through the shared IPC helper so a database-affecting operation
     // respects the main-process access boundary and surfaces ipc errors.
     await ipcAwait((e) => e.initWorkspace(workspacePath, excludedFolders));
   },
 
   async getWorkspacePath() {
-    if (!isElectron() || !window.electron) return null;
-    return window.electron.getWorkspacePath();
+    if (!isElectron() || !hasElectron()) return null;
+    return appClient.getWorkspacePath();
   },
 });

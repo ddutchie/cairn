@@ -9,6 +9,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { prepareNoteHtmlForPdf } from "./note-pdf-export";
 import { resolveFontPreset } from "../../../shared/ui/fonts";
 import type { FontFamilyId } from "@/store/slices/ui-appearance";
+import { noteFilesClient } from "@/lib/ipc/notes";
+import { hasElectron } from "@/lib/ipc/client";
 
 type ExportState = "idle" | "exporting" | "done";
 
@@ -51,18 +53,18 @@ export function NoteExportMenu({ noteId, title, proseRef, fontFamilyId }: {
     // only — bundled webfonts won't load in the print engine).
     const fontFamily = resolveFontPreset(fontFamilyId).cssFamily;
 
-    if (isElectron && window.electron?.exportNotePdf) {
+    if (isElectron && hasElectron()) {
       // Desktop returns null when the save dialog was cancelled.
-      return (await window.electron.exportNotePdf(title, html, { theme, fontFamily })) ? undefined : false;
+      return (await noteFilesClient.exportNotePdf(title, html, { theme, fontFamily })) ? undefined : false;
     } else {
       window.print();
     }
   });
 
   const exportMarkdown = () => run("Markdown", async () => {
-    if (!window.electron?.exportMarkdown) return;
+    if (!hasElectron()) return;
     // Desktop returns null when the save dialog was cancelled.
-    return (await window.electron.exportMarkdown("note", noteId)) ? undefined : false;
+    return (await noteFilesClient.exportMarkdown("note", noteId)) ? undefined : false;
   });
 
   return (

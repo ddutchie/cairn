@@ -16,19 +16,8 @@ interface SyncNowResult {
   connected: boolean;
 }
 
-// window.electron.sync is added in preload.ts; type it locally to avoid a
-// global d.ts edit.
-type SyncApi = {
-  getFolder: () => Promise<string | null>;
-  selectFolder: () => Promise<string | null>;
-  clearFolder: () => Promise<{ ok: true }>;
-  now: () => Promise<SyncNowResult>;
-};
-
-function syncApi(): SyncApi | null {
-  if (typeof window === "undefined" || !window.electron) return null;
-  return (window.electron as unknown as { sync?: SyncApi }).sync ?? null;
-}
+import { syncClient } from "@/lib/ipc/sync";
+import { hasElectron } from "@/lib/ipc/client";
 
 export function SyncSettings() {
   const [folder, setFolder] = useState<string | null>(null);
@@ -36,17 +25,15 @@ export function SyncSettings() {
   const [last, setLast] = useState<SyncNowResult | null>(null);
 
   useEffect(() => {
-    const api = syncApi();
-    if (!api) return;
-    api.getFolder().then(setFolder).catch(() => {});
+    if (!hasElectron("sync")) return;
+    syncClient.getFolder().then(setFolder).catch(() => {});
   }, []);
 
   const onConnect = async () => {
-    const api = syncApi();
-    if (!api) return;
+    if (!hasElectron("sync")) return;
     setBusy(true);
     try {
-      const chosen = await api.selectFolder();
+      const chosen = await syncClient.selectFolder();
       if (chosen) setFolder(chosen);
     } finally {
       setBusy(false);
@@ -54,19 +41,17 @@ export function SyncSettings() {
   };
 
   const onDisconnect = async () => {
-    const api = syncApi();
-    if (!api) return;
-    await api.clearFolder();
+    if (!hasElectron("sync")) return;
+    await syncClient.clearFolder();
     setFolder(null);
     setLast(null);
   };
 
   const onSyncNow = async () => {
-    const api = syncApi();
-    if (!api) return;
+    if (!hasElectron("sync")) return;
     setBusy(true);
     try {
-      setLast(await api.now());
+      setLast(await syncClient.now());
     } finally {
       setBusy(false);
     }

@@ -13,6 +13,7 @@ import { FileText, SquareCheck, CheckCircle, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { prettifyToolLabel } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
+import { appClient } from "@/lib/ipc/app";
 import { useCairnStore } from "@/store";
 
 // ── Action label lookup ──────────────────────────────────────────────────────
@@ -202,7 +203,7 @@ export function ExternalRefChip({ toolName, externalRef }: { toolName?: string; 
   const sub = externalRef.title ? hostOf(externalRef.url) : (toolName ? prettifyToolLabel(toolName) : "Open link");
 
   function handleClick() {
-    window.electron?.openExternal(externalRef.url);
+    void appClient.openExternal(externalRef.url).catch(() => window.open(externalRef.url, "_blank", "noopener"));
   }
 
   return (

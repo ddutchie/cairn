@@ -12,6 +12,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 import type {
   MigrationProgress,
   MigrationStatus,
@@ -30,10 +32,9 @@ export function MigrationModal() {
 
   // Check for pending migrations on mount
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron?.checkMigrations) return; // stay "none"
+    if (!hasElectron()) return; // stay "none"
 
-    electron.checkMigrations().then((statuses) => {
+    appClient.checkMigrations().then((statuses) => {
       const pending = statuses.filter((m) => m.needed);
       if (pending.length > 0) {
         setMigrations(pending);
@@ -47,17 +48,15 @@ export function MigrationModal() {
 
   // Listen for progress events
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron?.onMigrationProgress) return;
-    const unsub = electron.onMigrationProgress((e) => {
+    if (!hasElectron()) return;
+    const unsub = appClient.onMigrationProgress((e) => {
       setProgress(e);
     });
     return () => { unsub(); };
   }, []);
 
   const handleRunAll = useCallback(async () => {
-    const electron = window.electron;
-    if (!electron?.runMigration) return;
+    if (!hasElectron()) return;
 
     setPhase("running");
 
@@ -65,7 +64,7 @@ export function MigrationModal() {
       setCurrentMigration(m.id);
       setProgress({ migrationId: m.id, pct: 0, msg: "Starting..." });
       try {
-        await electron.runMigration(m.id);
+        await appClient.runMigration(m.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setPhase("error");

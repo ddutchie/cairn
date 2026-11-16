@@ -11,6 +11,8 @@ import type { Command } from "@/lib/history";
 import { flowHandlers } from "@/lib/history";
 import type { TaskCard } from "@/types";
 import { flowClient } from "@/lib/ipc/flow";
+import { cardsClient } from "@/lib/ipc/board";
+import { hasElectron } from "@/lib/ipc/client";
 import { id as newId } from "@/lib/utils";
 
 // Strip resolved/computed fields that are added at read time and are not
@@ -302,7 +304,7 @@ export function makePromoteToTaskCmd(
     async undo() {
       // Delete the task_ref node and the card
       await flowClient.deleteNode(newTaskRefNodeId);
-      await window.electron?.card.delete(createdCard.id);
+      if (hasElectron()) await cardsClient.delete(createdCard.id).catch(() => {});
       flowHandlers.removeNode?.(newTaskRefNodeId);
 
       // Restore the idea node
@@ -325,15 +327,17 @@ export function makePromoteToTaskCmd(
     },
     async redo() {
       // Re-create the card
-      const created = await window.electron?.card.create({
-        id: newId(),
-        projectId: createdCard.projectId,
-        workspaceId: createdCard.workspaceId,
-        columnId: createdCard.columnId,
-        title: createdCard.title,
-        description: createdCard.description,
-        priority: createdCard.priority,
-      });
+      const created = hasElectron()
+        ? await cardsClient.create({
+          id: newId(),
+          projectId: createdCard.projectId,
+          workspaceId: createdCard.workspaceId,
+          columnId: createdCard.columnId,
+          title: createdCard.title,
+          description: createdCard.description,
+          priority: createdCard.priority,
+        })
+        : undefined;
       const cardId = created?.id ?? createdCard.id;
 
       // Delete old idea node if still present

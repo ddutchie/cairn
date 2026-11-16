@@ -18,6 +18,7 @@ import { isView } from "@/lib/views";
 import { SyncStatusIndicator } from "../sync-status-indicator";
 import { QuickSettings } from "../QuickSettings";
 import { Tooltip } from "@/components/ui/tooltip";
+import { platformName } from "@/lib/ipc/platform";
 import { Button } from "@/components/ui/button";
 import { WorkspaceIcon, ProjectIcon } from "@/lib/workspace-icons";
 import { modKey } from "../sidebar-utils";
@@ -72,9 +73,7 @@ export function UnifiedRail() {
 
   useEffect(() => {
     queueMicrotask(() => {
-      const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-      if (window.electron && isElectron) setPlatform(window.electron.platform ?? "linux");
-      else setPlatform("linux");
+      setPlatform(platformName() ?? "linux");
     });
   }, []);
 

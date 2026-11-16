@@ -20,6 +20,8 @@ import { isView } from "@/lib/views";
 import { IconButton } from "@/components/ui/icon-button";
 import { modKey } from "@/components/layout/sidebar-utils";
 import { agentClient } from "@/lib/ipc/agent";
+import { chatClient } from "@/lib/ipc/chat";
+import { hasElectron } from "@/lib/ipc/client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -187,7 +189,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     const sessionId = isChat ? (state.activeChatThreadId ? chatSessionId(state.activeChatThreadId) : null) : coding?.sessionId;
     if (!sessionId) return;
     const project = state.projects.find((item) => item.id === (coding?.projectId ?? state.activeProjectId));
-    const result = await window.electron?.chat.popOut({
+    const result = await chatClient.popOut({
       sessionId,
       activeProjectId: coding?.projectId ?? state.activeProjectId,
       profile: isChat ? "chat" : coding?.role === "automation-dev" ? "automation-dev" : "coding",
@@ -209,7 +211,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
   }, [setChatPoppedOut]);
 
   const handlePopIn = useCallback(() => {
-    window.electron?.chat.requestPopIn();
+    void chatClient.requestPopIn().catch(() => {});
   }, []);
 
   const handleClosePanel = useCallback(() => {
@@ -227,22 +229,20 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
 
   // Listen for pop-in final state from the main process
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron?.chat.onChatPoppedIn) return;
-    const unsub = electron.chat.onChatPoppedIn((_payload) => {
+    if (!hasElectron()) return;
+    const unsub = chatClient.onChatPoppedIn((_payload) => {
       setChatPoppedOut(false);
     });
-    return () => { unsub?.(); };
+    return () => { unsub(); };
   }, [setChatPoppedOut]);
 
   // Pop-out window closed unexpectedly (e.g. Cmd+W)
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron?.chat.onChatPoppedOutClosed) return;
-    const unsub = electron.chat.onChatPoppedOutClosed(() => {
+    if (!hasElectron()) return;
+    const unsub = chatClient.onChatPoppedOutClosed(() => {
       setChatPoppedOut(false);
     });
-    return () => { unsub?.(); };
+    return () => { unsub(); };
   }, [setChatPoppedOut]);
 
   const pinnedIsActive =

@@ -11,6 +11,8 @@ import type { ConversationMessage } from "@/lib/conversation/message";
 import { buildIssueUrl, ISSUE_REPO, ISSUE_TITLE_MAX, type IssueEnv, type IssueSetup } from "../../../shared/chat/issue-report";
 import { IconButton } from "@/components/ui/icon-button";
 import { runtimeClient } from "@/lib/ipc/runtime";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 
 function platformName(): string {
   if (typeof navigator === "undefined") return "unknown";
@@ -54,7 +56,7 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
         if (!cancelled && inv?.surfaces) setSetupTools({ total: list.length, bySource });
       } catch { /* optional detail */ }
       try {
-        const cwd = await window.electron?.getWorkspacePath();
+        const cwd = hasElectron() ? await appClient.getWorkspacePath().catch(() => null) : null;
         const prompt = cwd ? await runtimeClient.systemPromptPreview({ cwd }) : undefined;
         if (!cancelled && prompt) setSetupSkills((prompt.skills ?? []).map((k) => k.name));
       } catch { /* optional detail */ }
@@ -96,7 +98,7 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
 
   const submit = () => {
     const { url } = buildIssueUrl({ title, notes, reply: includeReply ? reply : undefined, env });
-    if (window.electron?.openExternal) window.electron.openExternal(url);
+    if (hasElectron()) void appClient.openExternal(url).catch(() => {});
     else window.open(url, "_blank", "noopener");
     setOpen(false);
   };

@@ -123,7 +123,7 @@ export function useEndpointConfig(): UseEndpointConfigResult {
   const fetchKeyInfo = useCallback(async (baseUrl: string, apiKey: string) => {
     // Only available through the main process (needs to resolve the key ref and
     // hit a provider-specific endpoint). No-op / clears on web or when unset.
-    if (typeof window === "undefined" || !window.electron?.ai?.fetchKeyInfo) {
+    if (typeof window === "undefined" || !hasElectron("ai")) {
       setKeyInfo(null);
       return;
     }

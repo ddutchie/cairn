@@ -1,6 +1,7 @@
 import { parseWikilinks } from "./wikilink-parser";
 import type { Note, TaskCard, BoardColumn } from "@/types";
 import { agentClient } from "./ipc/agent";
+import { hasElectron } from "./ipc/client";
 
 /**
  * Parses raw prompt text for wikilinks [[Title]] and backticked paths `path`.
@@ -73,7 +74,7 @@ ${card.description || "(no description)"}`);
   }
 
   // Resolve backticks (files)
-  if (typeof window !== "undefined" && window.electron && cwd) {
+  if (typeof window !== "undefined" && hasElectron() && cwd) {
     for (const fileMatch of uniqueBackticks) {
       // Basic heuristic: check if it looks like a file path (has extension or slash)
       const hasExtension = /\.[a-zA-Z0-9]{1,10}$/.test(fileMatch);

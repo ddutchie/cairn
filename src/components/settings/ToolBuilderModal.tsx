@@ -6,6 +6,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { id, cn } from "@/lib/utils";
+import { toolBuilderClient } from "@/lib/ipc/tools";
+import { hasElectron } from "@/lib/ipc/client";
 
 interface TranscriptItem {
   role: "user" | "assistant" | "step";
@@ -22,7 +24,8 @@ const inputCls =
 
 /**
  * AI Tool Builder modal — drives a streaming builder session over
- * window.electron.toolBuilder. The user describes an endpoint; the builder
+ * The builder session streams tool calls via the typed toolBuilder client.
+ * The user describes an endpoint; the builder
  * probes it (in the main process), discovers the tool shape, optimizes the
  * response keys, and saves a tool DISABLED for review.
  */
@@ -55,27 +58,26 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
   }, []);
 
   useEffect(() => {
-    const tb = window.electron?.toolBuilder;
-    if (!tb) return;
+    if (!hasElectron("toolBuilder")) return;
     const offs = [
-      tb.onToken((e) => {
+      toolBuilderClient.onToken((e) => {
         if (e.sessionId !== sessionId) return;
         appendAssistant(e.delta);
       }),
-      tb.onStep((e) => {
+      toolBuilderClient.onStep((e) => {
         if (e.sessionId !== sessionId) return;
         const detail = e.args?.url ? ` ${String(e.args.url)}` : "";
         setTranscript((prev) => [...prev, { role: "step", text: `${e.name}${detail}` }]);
       }),
-      tb.onProbeHost((e) => {
+      toolBuilderClient.onProbeHost((e) => {
         if (e.sessionId !== sessionId) return;
         setProbeHost(e.host);
       }),
-      tb.onProposal((e) => {
+      toolBuilderClient.onProposal((e) => {
         if (e.sessionId !== sessionId) return;
         setProposal({ toolType: e.toolType, config: e.config as Record<string, unknown> });
       }),
-      tb.onDone((e) => {
+      toolBuilderClient.onDone((e) => {
         if (e.sessionId !== sessionId) return;
         streamingRef.current = false;
         setBusy(false);
@@ -84,7 +86,7 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
     ];
     return () => {
       offs.forEach((off) => off?.());
-      window.electron?.toolBuilder?.end(sessionId);
+      void toolBuilderClient.end(sessionId).catch(() => {});
     };
   }, [sessionId, appendAssistant]);
 
@@ -104,13 +106,13 @@ export function ToolBuilderModal({ workspaceId, onClose }: { workspaceId: string
     const value = secretValue.trim();
     const secret = header && value ? { header, value } : undefined;
     if (secret) setSecretSent(true);
-    window.electron?.toolBuilder?.prompt({ sessionId, workspaceId, message, secret });
+    void toolBuilderClient.prompt({ sessionId, workspaceId, message, secret }).catch(() => {});
   }, [input, busy, sessionId, workspaceId, secretHeader, secretValue]);
 
   // Abort an in-flight run. Also clears local streaming state in case a `done`
   // event is never delivered (e.g. the run hangs), so the modal can be closed.
   const cancel = useCallback(() => {
-    window.electron?.toolBuilder?.abort(sessionId);
+    void toolBuilderClient.abort(sessionId).catch(() => {});
     streamingRef.current = false;
     setBusy(false);
   }, [sessionId]);

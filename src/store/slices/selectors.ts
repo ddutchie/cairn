@@ -71,7 +71,7 @@ export interface SelectorsSlice {
   /**
    * Keyword search over notes + cards. Note bodies load lazily in Electron, so
    * callers pass `noteBodyMatches` — ids whose BODY matched, from the main
-   * process (`window.electron.note.search`); titles and loaded bodies are
+   * process (typed `noteClient.search`); titles and loaded bodies are
    * matched here.
    */
   searchAll: (query: string, noteBodyMatches?: ReadonlySet<string>, limit?: number) => SearchResult[];

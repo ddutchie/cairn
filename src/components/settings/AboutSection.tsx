@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import licensesData from "@/generated/licenses.json";
 import { SettingsGroup } from "./shared";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 import { NewFeatureModal } from "@/components/layout/NewFeatureModal";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -31,8 +33,8 @@ export function AboutSection() {
   };
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electron?.latestChangelog) {
-      window.electron.latestChangelog().then((md) => setChangelog(md ?? null));
+    if (typeof window !== "undefined" && hasElectron()) {
+      appClient.latestChangelog().then((md) => setChangelog(md ?? null)).catch(() => {});
     }
   }, []);
 

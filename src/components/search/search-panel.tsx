@@ -20,6 +20,7 @@ import {
 } from "./search-utils";
 import { IconButton } from "@/components/ui/icon-button";
 import { runtimeClient, embeddingsClient } from "@/lib/ipc/runtime";
+import { noteClient } from "@/lib/ipc/notes";
 import { hasElectron } from "@/lib/ipc/client";
 
 interface ResultRowProps {
@@ -224,7 +225,7 @@ export function SearchPanel() {
       setFocused(0);
       // Note bodies aren't all in the renderer (loaded lazily): the main
       // process matches bodies; merge those in when they arrive.
-      const searchSnippets = window.electron?.note?.searchSnippets;
+      const searchSnippets = hasElectron("note") ? noteClient.searchSnippets : undefined;
       const settled = searchKey(trimmed, filterProject);
       if (!searchSnippets) { setSettledKey(settled); return; }
       try {

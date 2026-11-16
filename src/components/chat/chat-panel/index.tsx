@@ -12,6 +12,7 @@ import { useChatMessageQueue, queuedFor, waitForSessionIdle, type QueuedMessage 
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { useGraphData } from "@/hooks/useGraphData";
 import { ipcResult } from "@/store/ipc";
+import { chatClient } from "@/lib/ipc/chat";
 import { runtimeClient } from "@/lib/ipc/runtime";
 import { sessionClient } from "@/lib/ipc/session";
 import { resolvePromptContext } from "@/lib/context-resolver";
@@ -798,7 +799,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   const handlePopIn = useCallback(async () => {
     const state = useCairnStore.getState();
     if (state.activeChatThreadId) {
-      await window.electron?.chat.popIn({ sessionId: chatSessionId(state.activeChatThreadId) });
+      void chatClient.popIn({ sessionId: chatSessionId(state.activeChatThreadId) }).catch(() => {});
     }
   }, []);
 

@@ -25,6 +25,7 @@ import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { SyncStatusIndicator } from "./sync-status-indicator";
 import { IconButton } from "@/components/ui/icon-button";
+import { platformName } from "@/lib/ipc/platform";
 
 export function TitleBar() {
   // Start as null on both server and client so SSR output matches the initial
@@ -42,9 +43,9 @@ export function TitleBar() {
 
   useEffect(() => {
     const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-    if (window.electron && isElectron) {
+    if (isElectron) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPlatform(window.electron.platform ?? "linux");
+      setPlatform(platformName() ?? "linux");
     }
   }, []);
 

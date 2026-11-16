@@ -9,6 +9,9 @@ import type { CairnStore } from "../index";
 import { storage } from "@/lib/storage";
 import { id as genId } from "@/lib/utils";
 import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY } from "@/lib/constants";
+import { secretsClient } from "@/lib/ipc/tools";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── AI / MCP config ───────────────────────────────────────────────────────────
 
@@ -151,16 +154,16 @@ function reconcileConfig<C extends ProviderCarrier>(config: C, list: SavedProvid
 /** Persist an AIConfig to localStorage + the Electron backend cache. */
 function persistAi(next: AIConfig): void {
   storage.set(AI_CONFIG_KEY, next);
-  if (typeof window !== "undefined" && window.electron?.saveAiSettings) {
-    window.electron.saveAiSettings(next as unknown as Record<string, unknown>).catch(() => {});
+  if (typeof window !== "undefined" && hasElectron()) {
+    appClient.saveAiSettings(next as unknown as Record<string, unknown>).catch(() => {});
   }
 }
 
 /** Persist an AgentConfig to localStorage + the Electron backend cache. */
 function persistAgent(next: AgentConfig): void {
   storage.set(AGENT_CONFIG_KEY, next);
-  if (typeof window !== "undefined" && window.electron?.saveAgentSettings) {
-    window.electron.saveAgentSettings(next as unknown as Record<string, unknown>).catch(() => {});
+  if (typeof window !== "undefined" && hasElectron()) {
+    appClient.saveAgentSettings(next as unknown as Record<string, unknown>).catch(() => {});
   }
 }
 
@@ -195,7 +198,7 @@ export async function migrateLlmKeysToKeychain(
     ai = { ...ai, savedProviders: dedupedProviders };
   }
 
-  const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
+  const secrets = typeof window !== "undefined" && hasElectron("secrets") ? secretsClient : undefined;
   if (!secrets) return { ai, agent, changed };
 
   // 1. Saved providers: convert each provider's raw key to a keychain ref.
@@ -618,7 +621,7 @@ export const createAiConfigSlice: StateCreator<CairnStore, [], [], AiConfigSlice
     let apiKeyRef = existing?.apiKey ?? "";
     const raw = apiKey?.trim();
     if (raw) {
-      const secrets = typeof window !== "undefined" ? window.electron?.secrets : undefined;
+      const secrets = typeof window !== "undefined" && hasElectron("secrets") ? secretsClient : undefined;
       if (!secrets) {
         // Refuse to persist a plaintext key when secure storage is unavailable
         // (e.g. a web build with no keychain bridge). Fail loudly instead.

@@ -5,6 +5,8 @@ import { X, ExternalLink, FileText, Kanban, Code2, GitBranch } from "lucide-reac
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { agentClient } from "../../lib/ipc/agent";
+import { gitClient } from "@/lib/ipc/git";
+import { hasElectron } from "@/lib/ipc/client";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { CardDetailPanel } from "@/components/kanban/card-detail-panel";
 import { revealNote, revealCard } from "@/lib/events";
@@ -41,10 +43,10 @@ function DiffContextContent({ path }: { path?: string }) {
   const [result, setResult] = useState<{ stat: { added: number; deleted: number }; diff: string } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (!project?.codeDirectory || !window.electron?.git) return;
+    if (!project?.codeDirectory || !hasElectron("git")) return;
     const request = path
-      ? window.electron.git.diffFile(project.codeDirectory, path)
-      : window.electron.git.diff(project.codeDirectory).then((diff) => ({ stat: { added: 0, deleted: 0 }, diff }));
+      ? gitClient.diffFile(project.codeDirectory, path)
+      : gitClient.diff(project.codeDirectory).then((diff) => ({ stat: { added: 0, deleted: 0 }, diff }));
     request.then((value) => { if (!cancelled) setResult(value); }).catch(() => { if (!cancelled) setResult({ stat: { added: 0, deleted: 0 }, diff: "Unable to load diff." }); });
     return () => { cancelled = true; };
   }, [path, project?.codeDirectory]);

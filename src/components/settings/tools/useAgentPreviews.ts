@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useCairnStore } from "@/store";
 import { runtimeClient } from "@/lib/ipc/runtime";
+import { appClient } from "@/lib/ipc/app";
 
 export interface InventoryToolView {
   name: string;
@@ -46,7 +47,7 @@ export function useAgentPreviews(): PreviewsState {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    window.electron?.getWorkspacePath().then((p) => setWorkspacePath(p ?? null));
+    void appClient.getWorkspacePath().then((p) => setWorkspacePath(p ?? null)).catch(() => {});
   }, []);
 
   const load = useCallback(async () => {
@@ -84,7 +85,6 @@ export function useAgentPreviews(): PreviewsState {
   }, [workspacePath]);
 
   // Auto-load on mount and when deps change
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   return {

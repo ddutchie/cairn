@@ -3,6 +3,7 @@
  * keyboard-shortcut mapping, per-project open-card aggregation, and due-date
  * severity bucketing can be unit-tested without rendering the sidebar.
  */
+import { platformName } from "@/lib/ipc/platform";
 
 /**
  * True on macOS, where the modifier key is ⌘ (Command). Prefers the Electron
@@ -12,7 +13,7 @@
  */
 export function isMacPlatform(): boolean {
   if (typeof window !== "undefined") {
-    const p = window.electron?.platform;
+    const p = platformName();
     if (p) return p === "darwin";
   }
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);

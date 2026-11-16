@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import { appClient } from "@/lib/ipc/app";
 import type { ProjectSettings } from "@/types";
 import {
   DropdownMenu,
@@ -429,7 +430,7 @@ export function GitView({ cwd }: GitViewProps) {
           {prStatus && (
             <Tooltip content={prStatus.title || "Open pull request in browser"}>
               <button
-                onClick={() => { if (prStatus.url) window.electron?.openExternal(prStatus.url); }}
+                onClick={() => { if (prStatus.url) void appClient.openExternal(prStatus.url).catch(() => {}); }}
                 className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--on-accent)] border border-[var(--accent)] transition-colors cursor-pointer"
               >
                 <GitPullRequest size={10} />
@@ -504,7 +505,7 @@ export function GitView({ cwd }: GitViewProps) {
             PR created: {prUrl}
           </span>
           <button
-            onClick={() => { window.electron?.openExternal(prUrl); }}
+            onClick={() => { void appClient.openExternal(prUrl).catch(() => {}); }}
             className="text-2xs text-[var(--accent)] hover:underline flex-shrink-0 hover:scale-102"
           >
             Open
