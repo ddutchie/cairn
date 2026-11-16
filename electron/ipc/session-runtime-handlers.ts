@@ -29,7 +29,7 @@ import { assertSafeId } from "./path-safety";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { errMsg } from "../host-shared/errors";
-import { isMode, modeFromAutoApprove, type Mode } from "../../shared/agent/approval-mode";
+import { isApprovalMode, approvalModeFromAutoApprove, type ApprovalMode } from "../../shared/agent/approval-mode";
 import { rejectPrompt, answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ interface AgentPromptRequest {
     temperature?: number;
     maxTokens?: number;
     autoApprove?: boolean;
-    mode?: Mode;
+    mode?: ApprovalMode;
     isReasoningModel?: boolean;
     /** The agent's context-window size — drives the sliding-window pruner. */
     contextWindow?: number;
@@ -92,7 +92,7 @@ interface AgentApprovePlanRequest {
     temperature?: number;
     maxTokens?: number;
     autoApprove?: boolean;
-    mode?: Mode;
+    mode?: ApprovalMode;
     isReasoningModel?: boolean;
     /** The agent's context-window size — drives the sliding-window pruner. */
     contextWindow?: number;
@@ -285,7 +285,7 @@ export function registerSessionRuntimeHandlers(
       temperature: req.config?.temperature,
       maxTokens: req.config?.maxTokens,
       autoApprove: req.config?.autoApprove,
-      mode: (req.config as { mode?: Mode })?.mode,
+      mode: (req.config as { mode?: ApprovalMode })?.mode,
     } as never);
 
     let reqConfig = req.config;
@@ -303,25 +303,25 @@ export function registerSessionRuntimeHandlers(
         temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
       } as typeof reqConfig;
     } else if (cached) {
       reqConfig = {
         ...reqConfig,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
       } as typeof reqConfig;
     }
 
     const _reqMode = (reqConfig as { mode?: unknown })?.mode;
-    const _reqModeValid = typeof _reqMode === "string" && isMode(_reqMode as Mode) ? _reqMode as Mode : undefined;
+    const _reqModeValid = typeof _reqMode === "string" && isApprovalMode(_reqMode as ApprovalMode) ? _reqMode as ApprovalMode : undefined;
     const _cachedMode = (cached as { mode?: unknown })?.mode;
-    const _cachedModeValid = typeof _cachedMode === "string" && isMode(_cachedMode as Mode) ? _cachedMode as Mode : undefined;
-    // Resolve Mode from explicit mode, then legacy autoApprove, then cached mode, then default.
-    const resolvedMode: Mode = _reqModeValid
-      ?? (typeof reqConfig?.autoApprove === "boolean" ? modeFromAutoApprove(reqConfig.autoApprove) : undefined)
+    const _cachedModeValid = typeof _cachedMode === "string" && isApprovalMode(_cachedMode as ApprovalMode) ? _cachedMode as ApprovalMode : undefined;
+    // Resolve ApprovalMode from explicit mode, then legacy autoApprove, then cached mode, then default.
+    const resolvedMode: ApprovalMode = _reqModeValid
+      ?? (typeof reqConfig?.autoApprove === "boolean" ? approvalModeFromAutoApprove(reqConfig.autoApprove) : undefined)
       ?? _cachedModeValid
-      ?? (typeof cached?.autoApprove === "boolean" ? modeFromAutoApprove(cached.autoApprove) : undefined)
+      ?? (typeof cached?.autoApprove === "boolean" ? approvalModeFromAutoApprove(cached.autoApprove) : undefined)
       ?? "interactive";
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
@@ -428,7 +428,7 @@ export function registerSessionRuntimeHandlers(
       temperature: req.config?.temperature,
       maxTokens: req.config?.maxTokens,
       autoApprove: req.config?.autoApprove,
-      mode: (req.config as { mode?: Mode })?.mode,
+      mode: (req.config as { mode?: ApprovalMode })?.mode,
     } as never);
 
     let reqConfig = req.config;
@@ -446,24 +446,24 @@ export function registerSessionRuntimeHandlers(
         temperature: reqConfig?.temperature,
         maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
       } as typeof reqConfig;
     } else if (cached) {
       reqConfig = {
         ...reqConfig,
         autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: Mode })?.mode ?? (cached as { mode?: Mode })?.mode,
+        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
       } as typeof reqConfig;
     }
 
     const _reqMode2 = (reqConfig as { mode?: unknown })?.mode;
-    const _reqModeValid2 = typeof _reqMode2 === "string" && isMode(_reqMode2 as Mode) ? _reqMode2 as Mode : undefined;
+    const _reqModeValid2 = typeof _reqMode2 === "string" && isApprovalMode(_reqMode2 as ApprovalMode) ? _reqMode2 as ApprovalMode : undefined;
     const _cachedMode2 = (cached as { mode?: unknown })?.mode;
-    const _cachedModeValid2 = typeof _cachedMode2 === "string" && isMode(_cachedMode2 as Mode) ? _cachedMode2 as Mode : undefined;
-    const resolvedMode2: Mode = _reqModeValid2
-      ?? (typeof reqConfig?.autoApprove === "boolean" ? modeFromAutoApprove(reqConfig.autoApprove) : undefined)
+    const _cachedModeValid2 = typeof _cachedMode2 === "string" && isApprovalMode(_cachedMode2 as ApprovalMode) ? _cachedMode2 as ApprovalMode : undefined;
+    const resolvedMode2: ApprovalMode = _reqModeValid2
+      ?? (typeof reqConfig?.autoApprove === "boolean" ? approvalModeFromAutoApprove(reqConfig.autoApprove) : undefined)
       ?? _cachedModeValid2
-      ?? (typeof cached?.autoApprove === "boolean" ? modeFromAutoApprove(cached.autoApprove) : undefined)
+      ?? (typeof cached?.autoApprove === "boolean" ? approvalModeFromAutoApprove(cached.autoApprove) : undefined)
       ?? "interactive";
     const llmConfig: AgentLLMConfig = {
       baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),

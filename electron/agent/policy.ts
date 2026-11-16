@@ -20,10 +20,10 @@ import * as path from "node:path";
 import { findRule, isProtectedPath, isSecretPath, isWithin, type CallView, type Rule } from "./rules";
 import type { DecisionSource } from "./events";
 
-export type Mode = "ask" | "auto" | "yolo" | "plan";
+export type PolicyMode = "ask" | "auto" | "yolo" | "plan";
 
 export interface PolicyState {
-  mode: Mode;
+  mode: PolicyMode;
   /** Tool names this profile never has (e.g. chat has no `bash`). */
   deniedTools: readonly string[];
   rules: readonly Rule[];

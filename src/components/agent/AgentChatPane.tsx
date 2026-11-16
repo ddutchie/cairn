@@ -586,7 +586,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
             agentConfig.contextLimit,
           ),
           ...(() => {
-            const effectiveMode = (agentConfig as { mode?: import("../../../shared/agent/approval-mode").Mode }).mode
+            const effectiveMode = (agentConfig as { mode?: import("../../../shared/agent/approval-mode").ApprovalMode }).mode
               ?? (session.autoApprove !== undefined ? (session.autoApprove ? "auto" as const : "interactive" as const) : agentConfig.autoApprove ? "auto" as const : "interactive" as const);
             return { mode: effectiveMode, autoApprove: effectiveMode === "auto" };
           })(),

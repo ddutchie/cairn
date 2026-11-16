@@ -31,7 +31,7 @@ import type { AgentEvent, DecisionSource, UserImage } from "./events";
 import { userContent, withContext, type CompactionResult, type CompactionTrigger } from "./context";
 import { Gate, type AskInput } from "./gate";
 import type { TurnHooks } from "./hooks";
-import { callSignature, decide, type Decision, type Mode } from "./policy";
+import { callSignature, decide, type Decision, type PolicyMode } from "./policy";
 import { repairInterrupted } from "./repair";
 import { createReviewerState, recordVerdict, type Reviewer, type ReviewerState } from "./reviewer";
 import { grantRule, offeredGrants, type GrantKind, type RiskInfo, type RuleStore } from "./rules";
@@ -43,7 +43,7 @@ export interface Profile {
   id: string;
   /** False for automation/heartbeat: an `ask` becomes a deny instead of waiting. */
   interactive: boolean;
-  mode: Mode;
+  mode: PolicyMode;
   deniedTools?: readonly string[];
   externalAlwaysAsks?: boolean;
 }

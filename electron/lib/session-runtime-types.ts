@@ -28,7 +28,7 @@ export interface AgentLLMConfig {
   /** Whether to automatically approve tool calls or prompt the user. @deprecated — use `mode`. Kept as alias: true→"auto", false→"interactive". */
   autoApprove?: boolean;
   /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
-  mode?: import("../../shared/agent/approval-mode").Mode;
+  mode?: import("../../shared/agent/approval-mode").ApprovalMode;
   /** Max output tokens per turn. Undefined/0 → Auto. */
   maxTokens?: number;
   /** Whether the selected model is a reasoning/thinking model. */

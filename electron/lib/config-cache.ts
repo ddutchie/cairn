@@ -67,7 +67,7 @@ export interface CachedConfig {
     temperature?: number;
     maxTokens?: number;
     autoApprove?: boolean;
-    mode?: import("../../shared/agent/approval-mode").Mode;
+    mode?: import("../../shared/agent/approval-mode").ApprovalMode;
     // The coding agent's active saved-provider id. The provider LIST itself is
     // shared and persisted under aiConfig.savedProviders (single source of truth).
     activeProviderId?: string;
@@ -225,7 +225,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
       // Mode + autoApprove are co-persisted: writing one syncs the other so
       // old renderers reading `autoApprove` and new code reading `mode` stay aligned.
       const rawMode = (configRecord as Record<string, unknown>).mode;
-      const incomingMode = typeof rawMode === "string" && ["discuss","plan","interactive","auto","custom"].includes(rawMode) ? rawMode as import("../../shared/agent/approval-mode").Mode : undefined;
+      const incomingMode = typeof rawMode === "string" && ["discuss","plan","interactive","auto","custom"].includes(rawMode) ? rawMode as import("../../shared/agent/approval-mode").ApprovalMode : undefined;
       const incomingAuto = typeof configRecord.autoApprove === "boolean" ? configRecord.autoApprove : undefined;
       // If mode was sent explicitly, keep it and derive autoApprove from it.
       // If only autoApprove was sent, derive mode from it.
@@ -245,7 +245,7 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
         temperature: typeof configRecord.temperature === "number" ? configRecord.temperature : current.agentConfig?.temperature,
         maxTokens: typeof configRecord.maxTokens === "number" ? configRecord.maxTokens : current.agentConfig?.maxTokens,
         autoApprove: nextAuto,
-        mode: nextMode as import("../../shared/agent/approval-mode").Mode | undefined,
+        mode: nextMode as import("../../shared/agent/approval-mode").ApprovalMode | undefined,
         activeProviderId: typeof configRecord.activeProviderId === "string" ? configRecord.activeProviderId : current.agentConfig?.activeProviderId,
         scheduleEnabled: typeof configRecord.scheduleEnabled === "boolean" ? configRecord.scheduleEnabled : current.agentConfig?.scheduleEnabled,
         sandbox: configRecord.sandbox === "off" || configRecord.sandbox === "workspace-write" ? configRecord.sandbox : current.agentConfig?.sandbox,
@@ -302,7 +302,7 @@ export function getEmbeddingsSettingsCached(): CachedEmbeddingsConfig {
  */
 export function cacheLlmConnection(
   type: "ai" | "agent",
-  config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; autoApprove?: boolean; mode?: import("../../shared/agent/approval-mode").Mode } | undefined,
+  config: { provider?: string; baseUrl?: string; model?: string; apiKey?: string; maxSteps?: number; temperature?: number; maxTokens?: number; autoApprove?: boolean; mode?: import("../../shared/agent/approval-mode").ApprovalMode } | undefined,
 ): void {
   if (!config) return;
   if (config.baseUrl === undefined && config.model === undefined && config.apiKey === undefined) return;

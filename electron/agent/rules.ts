@@ -3,8 +3,8 @@
  * See docs/plans/agent-engine-design.md §3.
  */
 import * as path from "node:path";
-
-export type RiskClass = "READ" | "WRITE_CAIRN" | "WRITE_LOCAL" | "EXEC" | "EXTERNAL";
+import type { RiskClass } from "../../shared/agent/risk";
+export type { RiskClass } from "../../shared/agent/risk";
 
 /** What a tool says about one concrete invocation. */
 export interface RiskInfo {
