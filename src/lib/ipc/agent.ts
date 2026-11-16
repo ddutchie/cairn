@@ -52,11 +52,11 @@ export const agentClient = {
   modelTerminals: () => agent((a) => a.modelTerminals()),
   /** Subscribe to model-terminal events; returns the unsubscribe function (a no-op off-Electron). */
   onModelTerminal: (cb: (e: ModelPtyEvent) => void): (() => void) =>
-    window.electron?.agent?.onModelTerminal(cb) ?? (() => {}),
+    window.electron?.agent?.onModelTerminal?.(cb) ?? (() => {}),
   /** Subscribe to PTY output; returns the unsubscribe function (a no-op off-Electron). */
   onData: (cb: (payload: PtyDataEvent) => void): (() => void) =>
-    window.electron?.agent?.onData(cb) ?? (() => {}),
+    window.electron?.agent?.onData?.(cb) ?? (() => {}),
   /** Subscribe to PTY exits; returns the unsubscribe function (a no-op off-Electron). */
   onExit: (cb: (payload: PtyExitEvent) => void): (() => void) =>
-    window.electron?.agent?.onExit(cb) ?? (() => {}),
+    window.electron?.agent?.onExit?.(cb) ?? (() => {}),
 };

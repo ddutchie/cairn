@@ -355,6 +355,7 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       kill:             () => Promise.resolve(),
       onData:           makeListener("agent.onData"),
       onExit:           makeListener("agent.onExit"),
+      onModelTerminal:  makeListener("agent.onModelTerminal"),
     },
 
     // ── Cairn native agent (pi) — agent/dsh unified session ─────────────────
