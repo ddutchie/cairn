@@ -12,6 +12,7 @@
 import { net } from "electron";
 
 import type { UrlMetadata } from "../../shared/types/flow";
+import { classifyHost } from "../../shared/net/address";
 
 export type { UrlMetadata };
 
@@ -24,28 +25,16 @@ const FETCH_TIMEOUT_MS = 8_000;
 const MAX_REDIRECTS = 5;
 
 /**
- * Reject non-public hosts (localhost, private ranges, link-local) to mitigate
- * SSRF when fetching arbitrary URLs supplied by the user.
+ * Reject non-public hosts (loopback, private ranges, link-local, invalid) to
+ * mitigate SSRF when fetching arbitrary URLs supplied by the user.
+ * Deliberately stricter than the old literal check: IPv6 ULA/private,
+ * CGNAT, multicast and `0.0.0.0` now refuse too (same "Non-public host"
+ * message, more inputs refused — the point of the shared classifier).
  */
 function assertPublicHost(hostname: string): void {
-  const lower = hostname.toLowerCase();
-
-  if (lower === "localhost" || lower === "::1") {
+  if (classifyHost(hostname) !== "public") {
     throw new Error("Non-public host");
   }
-
-  // IPv4 loopback, private ranges, and link-local.
-  const ipv4 = lower.split(".");
-  if (ipv4.length === 4 && ipv4.every((part) => /^\d+$/.test(part) && Number(part) <= 255)) {
-    const [a, b] = ipv4.map(Number);
-    if (a === 127 || a === 10) throw new Error("Non-public host");
-    if (a === 172 && b >= 16 && b <= 31) throw new Error("Non-public host");
-    if (a === 192 && b === 168) throw new Error("Non-public host");
-    if (a === 169 && b === 254) throw new Error("Non-public host");
-  }
-
-  // IPv6 link-local.
-  if (lower.startsWith("fe80:")) throw new Error("Non-public host");
 }
 
 async function fetchWithHostValidation(url: string, redirectCount = 0): Promise<Response> {

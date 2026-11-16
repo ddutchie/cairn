@@ -17,14 +17,7 @@ export const BASE_URL_PRESETS = [
   { label: "LM Studio", url: "http://localhost:1234" },
 ] as const;
 
-export function isLocalBaseUrl(baseUrl: string): boolean {
-  return (
-    baseUrl.includes("localhost") ||
-    baseUrl.includes("127.0.0.1") ||
-    baseUrl.includes("0.0.0.0") ||
-    baseUrl.includes("[::1]")
-  );
-}
+export { isLocalBaseUrl } from "../../../shared/net/address";
 
 // ── Per-endpoint model cache ────────────────────────────────────────────────
 //
