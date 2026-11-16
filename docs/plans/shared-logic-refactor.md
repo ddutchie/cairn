@@ -6,6 +6,22 @@
 > namespaces + `window.electron` boundary lint). Phase B (B1–B6) and Phase C
 > (C1–C5) remain open; owner decisions Q1–Q4 are recorded in §7, Q5–Q7 and Q9
 > still need research (C4, C5 renames and #179 stay deferred).
+>
+> Execution log (update with every PR — newest at the bottom):
+> - #285 merged — A1/A3/A4/A5/A6 (fixtures, formatters, wire types, docs, prompt fix).
+> - #286 merged — A2 (dead LLM transport removal).
+> - #287 merged — A7 (renderer dedupe + highlight palette).
+> - #288 merged — A8 agent client (+ partial-bridge tolerance fixup).
+> - #289 merged — A8 session/runtime/embeddings clients.
+> - #290 merged — A8 final namespaces + `window.electron` lint rule (+ review fixups).
+> - #291 merged — dead one-shot fallback removal (review follow-up, 1 file).
+> - #292 merged — Q6 (pwsh/str_replace_editor out of gating sets).
+> - #293 merged — C1 (engine test helpers).
+> - #294 merged — C2 (shared tool-name predicates).
+> - #295 merged — C3 (one RiskClass, PolicyMode/ApprovalMode; aliases cut pre-merge).
+> - #296 merged — B1 (address classifier).
+> - Next: B2 (in progress, worktree) → B3 → B4 → B5 → C5-boundary → llm-http.ts (Q9) → knip report-only (Q8) → F20 renames (Q7: after final refactor PR). C4 DROPPED (Q5).
+> - Rule: every refactor PR updates this log before merge.
 
 > Status: **proposal**, written 2026-11-15 on `fix/3.2.0-audit-hardening` (PR ddutchie/cairn#284 still open). Investigation only: no code was changed.
 > Goal: make the repo easy to edit for coding agents and human collaborators. One home per rule, clear module boundaries, less to keep in sync by hand.
