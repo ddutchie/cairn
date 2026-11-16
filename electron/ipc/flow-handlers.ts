@@ -19,6 +19,7 @@ import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
 import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
+import { DEFAULT_LLM } from "../lib/llm-config";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 
@@ -47,8 +48,8 @@ function resolveAiConfig(input: { baseUrl?: string; model?: string; apiKey?: str
     }
   }
 
-  const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com");
-  const model = reqConfig?.model || "gpt-5.6-luna";
+  const baseUrl = normaliseBaseUrl(reqConfig?.baseUrl || DEFAULT_LLM.baseUrl);
+  const model = reqConfig?.model || DEFAULT_LLM.model;
   const keyRef = reqConfig?.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
   if (!keyRef && !isLocal) {

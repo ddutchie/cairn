@@ -13,6 +13,7 @@ import type { UserStyleStreamRequest } from "../../shared/types/user-style";
 import { handle, type DbContext } from "./result-helpers";
 import { getCachedConfig } from "../lib/config-cache";
 import { isLocalEndpoint, normaliseBaseUrl, type LLMConfig } from "../lib/llm";
+import { DEFAULT_LLM } from "../lib/llm-config";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import {
   buildUserStyleFullGuidePrompt,
@@ -51,8 +52,8 @@ const abortControllers = new Map<number, AbortController>();
 /** Resolve the AI Chat connection (same semantics as ai-handlers.resolveConfig). */
 function resolveChatConfig(): { error: string } | LLMConfig {
   const cached = getCachedConfig().aiConfig;
-  const baseUrl = normaliseBaseUrl(cached?.baseUrl || "https://api.openai.com");
-  const model = cached?.model || "gpt-5.6-luna";
+  const baseUrl = normaliseBaseUrl(cached?.baseUrl || DEFAULT_LLM.baseUrl);
+  const model = cached?.model || DEFAULT_LLM.model;
   const keyRef = cached?.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
   if (!keyRef && !isLocal) {
