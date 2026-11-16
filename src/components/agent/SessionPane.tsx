@@ -188,14 +188,20 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     const coding = codingSessionId ? state.terminalSessions.find((s) => s.sessionId === codingSessionId && s.sessionType === "coding") : undefined;
     const sessionId = isChat ? (state.activeChatThreadId ? chatSessionId(state.activeChatThreadId) : null) : coding?.sessionId;
     if (!sessionId) return;
+    if (!hasElectron()) return;
     const project = state.projects.find((item) => item.id === (coding?.projectId ?? state.activeProjectId));
-    const result = await chatClient.popOut({
-      sessionId,
-      activeProjectId: coding?.projectId ?? state.activeProjectId,
-      profile: isChat ? "chat" : coding?.role === "automation-dev" ? "automation-dev" : "coding",
-      workspaceId: project?.workspaceId ?? state.activeWorkspaceId,
-      cwd: coding?.cwd ?? null,
-    }) as { ok: boolean; reason?: string } | undefined;
+    let result: { ok: boolean; reason?: string } | undefined;
+    try {
+      result = await chatClient.popOut({
+        sessionId,
+        activeProjectId: coding?.projectId ?? state.activeProjectId,
+        profile: isChat ? "chat" : coding?.role === "automation-dev" ? "automation-dev" : "coding",
+        workspaceId: project?.workspaceId ?? state.activeWorkspaceId,
+        cwd: coding?.cwd ?? null,
+      }) as { ok: boolean; reason?: string } | undefined;
+    } catch {
+      return;
+    }
     if (result?.ok) {
       setChatPoppedOut(true);
     } else if (result && !result.ok) {

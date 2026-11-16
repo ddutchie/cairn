@@ -86,10 +86,17 @@ const eslintConfig = defineConfig([
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/lib/ipc/**", "src/store/ipc.ts", "**/*.test.{ts,tsx}", "src/test-utils/**"],
     rules: {
-      "no-restricted-syntax": ["error", {
-        selector: "MemberExpression[object.name='window'][property.name='electron']",
-        message: "Renderer code must not touch window.electron directly — use a typed client in src/lib/ipc/ (see AGENTS.md boundary rules).",
-      }],
+      "no-restricted-syntax": ["error",
+        {
+          selector: "MemberExpression[object.name='window'][property.name='electron']",
+          message: "Renderer code must not touch window.electron directly — use a typed client in src/lib/ipc/ (see AGENTS.md boundary rules).",
+        },
+        {
+          // Cast-evasion idiom: (window as {...}).electron — same ban, same fix.
+          selector: "MemberExpression[object.type='TSAsExpression'][property.name='electron']",
+          message: "Renderer code must not touch (window as ...).electron directly — use a typed client in src/lib/ipc/ (see AGENTS.md boundary rules).",
+        },
+      ],
     },
   },
   {

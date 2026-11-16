@@ -11,6 +11,8 @@ import { InlineCode } from "@/lib/markdown/pipeline";
 import { CELL_CHECKBOX_RE } from "../../../shared/notes/markdown";
 import type { Note } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 
 /**
  * Flatten React children to their plain-text content. Heading slugs must be
@@ -143,8 +145,7 @@ export function useNoteMarkdownComponents({
             href={url}
             onClick={(e) => {
               e.preventDefault();
-              const el = (window as { electron?: { openExternal?: (u: string) => void } }).electron;
-              if (el?.openExternal) el.openExternal(url);
+              if (hasElectron()) void appClient.openExternal(url).catch(() => window.open(url, "_blank"));
               else window.open(url, "_blank");
             }}
             className="block"
@@ -264,8 +265,7 @@ export function useNoteMarkdownComponents({
               rel="noreferrer"
               onClick={(e) => {
                 e.preventDefault();
-                const el = (window as { electron?: { openExternal?: (u: string) => void } }).electron;
-                if (el?.openExternal) el.openExternal(href);
+                if (hasElectron()) void appClient.openExternal(href).catch(() => window.open(href, "_blank"));
                 else window.open(href, "_blank");
               }}
             >

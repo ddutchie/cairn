@@ -57,6 +57,7 @@ export function useRegistryManifest<K extends RegistryKind = "tools">(kind: K = 
         setLoading(false);
         return;
       }
+      if (force) setRefreshing(true);
       else setLoading(true);
       try {
         const r = force ? await OPS[kind].refresh() : await OPS[kind].fetch();
