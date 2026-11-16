@@ -23,7 +23,7 @@ import { registerIpcOn, sendIpcEvent } from "./registry";
 import type { IpcEventArgs } from "../../shared/ipc/contract";
 import type { ToolBuilderPromptRequest } from "../../shared/types/tool-builder";
 import { getCachedConfig } from "../lib/config-cache";
-import { resolveConnection, DEFAULT_LLM } from "../lib/llm-config";
+import { resolveConnection } from "../lib/llm-config";
 import { isLocalEndpoint, buildApiUrl } from "../lib/llm";
 import { newId } from "../db/utils";
 import * as q from "../db/queries";
