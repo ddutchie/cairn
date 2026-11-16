@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { isView } from "@/lib/views";
 import { IconButton } from "@/components/ui/icon-button";
 import { modKey } from "@/components/layout/sidebar-utils";
+import { agentClient } from "@/lib/ipc/agent";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -134,7 +135,7 @@ export function SessionPane({ isRightPanel = false, chatPrefill = null, onPrefil
     e.stopPropagation();
     TerminalManager.delete(sessionId);
     removeTerminalSession(sessionId);
-    window.electron?.agent.kill(sessionId).catch(console.error);
+    agentClient.kill(sessionId).catch(console.error);
   }, [removeTerminalSession]);
 
   const persistentSession = terminalSessions.find((t) => t.sessionId === activeCodingSessionId && t.sessionType === "coding");

@@ -6,6 +6,7 @@ import { useCairnStore } from "@/store";
 import { TerminalManager } from "./TerminalManager";
 import { cn } from "@/lib/utils";
 import type { TerminalSession } from "@/types";
+import { agentClient } from "@/lib/ipc/agent";
 
 // xterm.css must be imported at module level.
 import "@xterm/xterm/css/xterm.css";
@@ -94,19 +95,19 @@ export function SessionMount({ session, isActive }: SessionMountProps) {
       const roTimeout = setTimeout(() => ro.disconnect(), 2000);
 
       const d1 = terminal.onData((data: string) => {
-        window.electron?.agent.input(session.sessionId, data);
+        void agentClient.input(session.sessionId, data).catch(() => {});
       });
       const d2 = terminal.onResize(({ cols, rows }: { cols: number; rows: number }) => {
-        window.electron?.agent.resize(session.sessionId, cols, rows);
+        void agentClient.resize(session.sessionId, cols, rows).catch(() => {});
       });
-      const offData = window.electron?.agent.onData(
+      const offData = agentClient.onData(
         ({ sessionId: sid, data }: { sessionId: string; data: string }) => {
           if (sid !== session.sessionId) return;
           terminal.write(data);
           TerminalManager.appendOutput(sid, data);
         }
       );
-      const offExit = window.electron?.agent.onExit(
+      const offExit = agentClient.onExit(
         ({ sessionId: sid, exitCode }: { sessionId: string; exitCode: number }) => {
           if (sid !== session.sessionId) return;
           markSessionExited(sid, exitCode);

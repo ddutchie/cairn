@@ -6,6 +6,8 @@
  */
 
 import { useEffect, useState } from "react";
+import { agentClient } from "../../lib/ipc/agent";
+import { hasElectron } from "../../lib/ipc/client";
 
 interface ImageViewerProps {
   filePath: string;
@@ -19,8 +21,8 @@ export function ImageViewer({ filePath }: ImageViewerProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSrc(null);
     setError(null);
-    if (!window.electron) return;
-    window.electron.agent.readFileBase64(filePath)
+    if (!hasElectron()) return;
+    agentClient.readFileBase64(filePath)
       .then((dataUrl: string) => setSrc(dataUrl))
       .catch((e: unknown) => setError(String(e)));
   }, [filePath]);

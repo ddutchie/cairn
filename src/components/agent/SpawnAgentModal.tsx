@@ -22,6 +22,7 @@ import { Select } from "@/components/ui/select";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
+import { agentClient } from "@/lib/ipc/agent";
 import type { TaskCard } from "@/types";
 
 interface SpawnAgentModalProps {
@@ -138,7 +139,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
       } else {
         // External PTY agent
         if (!selectedAgent) return;
-        const { sessionId: ptySessionId } = await window.electron!.agent.spawn({
+        const { sessionId: ptySessionId } = await agentClient.spawn({
           agentId:   selectedAgent.id,
           projectId: project.id,
           cwd:       codeDirectory,
@@ -236,7 +237,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
                   className="underline"
                   onClick={async () => {
                     if (!project) return;
-                    const picked = await window.electron?.agent.pickDirectory();
+                    const picked = await agentClient.pickDirectory().catch(() => null);
                     if (picked) updateProject(project.id, { codeDirectory: picked });
                   }}
                 >

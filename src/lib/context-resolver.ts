@@ -1,5 +1,6 @@
 import { parseWikilinks } from "./wikilink-parser";
 import type { Note, TaskCard, BoardColumn } from "@/types";
+import { agentClient } from "./ipc/agent";
 
 /**
  * Parses raw prompt text for wikilinks [[Title]] and backticked paths `path`.
@@ -84,7 +85,7 @@ ${card.description || "(no description)"}`);
           const cleanPath = fileMatch.startsWith("/") || fileMatch.startsWith("\\") ? fileMatch.slice(1) : fileMatch;
           const absolutePath = `${cleanCwd}/${cleanPath}`;
 
-          const content = await window.electron.agent.readFile(absolutePath);
+          const content = await agentClient.readFile(absolutePath);
           attachedContext.push(`\`${fileMatch}\`:
 ---
 ${content}`);

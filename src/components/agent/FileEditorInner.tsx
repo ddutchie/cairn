@@ -13,6 +13,8 @@ import { search, searchKeymap } from "@codemirror/search";
 import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { buildTheme, buildHighlightStyle, buildSearchTheme, lineNumbers } from "@/lib/editor-theme";
+import { agentClient } from "../../lib/ipc/agent";
+import { hasElectron } from "../../lib/ipc/client";
 
 export interface FileEditorInnerProps {
   filePath: string;
@@ -33,13 +35,13 @@ export function FileEditorInner({ filePath, isActive, isDark, onDirtyChange, onS
   useEffect(() => { onSaveRef.current = onSave; });
 
   useEffect(() => {
-    if (!window.electron) return;
+    if (!hasElectron()) return;
     let unmounted = false;
     const fontScale = parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--font-scale").trim() || "1"
     ) || 1;
 
-    window.electron.agent.readFile(filePath)
+    agentClient.readFile(filePath)
       .then(async (content: string) => {
         const lang = await LanguageDescription.matchFilename(languages, filePath)
           ?.load().catch(() => null);

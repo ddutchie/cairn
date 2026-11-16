@@ -25,6 +25,7 @@ import { modKey } from "@/components/layout/sidebar-utils";
 import { useShallow } from "zustand/react/shallow";
 import type { Project } from "@/types";
 import type { DirEntry, FileSearchResult } from "../../../shared/types/coding-agent";
+import { agentClient } from "@/lib/ipc/agent";
 import { IconButton } from "@/components/ui/icon-button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ function EntryContextMenu({ entry, onOpen, children }: { entry: DirEntry; onOpen
         <ContextMenuItem onSelect={onOpen}>
           <ExternalLink size={13} /> {entry.type === "dir" ? "Toggle folder" : "Open file"}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void window.electron?.agent?.revealPath?.(entry.path)}>
+        <ContextMenuItem onSelect={() => void agentClient.revealPath(entry.path).catch(() => {})}>
           <FolderSearch size={13} /> Reveal in Finder
         </ContextMenuItem>
         <ContextMenuSeparator />
@@ -89,7 +90,7 @@ function TreeNode({ entry, depth, activePath, onFileClick }: TreeNodeProps) {
       setLoading(true);
       setLoadError(null);
       try {
-        const entries = await window.electron?.agent.readDir(entry.path);
+        const entries = await agentClient.readDir(entry.path);
         if (entries) setChildren(entries);
       } catch (e) {
         setLoadError(String(e));
@@ -193,8 +194,8 @@ export function FileTree({ project }: FileTreeProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!codeDirectory) { setRootEntries(null); return; }
     setError(null);
-    window.electron?.agent.readDir(codeDirectory)
-      ?.then((entries) => setRootEntries(entries))
+    agentClient.readDir(codeDirectory)
+      .then((entries) => setRootEntries(entries))
       .catch((e: unknown) => setError(String(e)));
   }, [codeDirectory]);
 
@@ -206,7 +207,7 @@ export function FileTree({ project }: FileTreeProps) {
     setRefreshing(true);
     setError(null);
     try {
-      const entries = await window.electron?.agent.readDir(codeDirectory);
+      const entries = await agentClient.readDir(codeDirectory);
       if (entries) setRootEntries(entries);
       setRefreshKey((k) => k + 1);
     } catch (e) {
@@ -263,15 +264,15 @@ export function FileTree({ project }: FileTreeProps) {
     }
     const q = searchQuery.trim();
     setSearching(true);
-    window.electron?.agent.searchFiles(codeDirectory, q)
-      ?.then((results) => setSearchResults(results ?? []))
+    agentClient.searchFiles(codeDirectory, q)
+      .then((results) => setSearchResults(results ?? []))
       .catch(() => setSearchResults([]))
       .finally(() => setSearching(false));
   }, [searchQuery, searchActive, codeDirectory]);
 
   async function handlePickCodeDir() {
     if (!project) return;
-    const picked = await window.electron?.agent.pickDirectory();
+    const picked = await agentClient.pickDirectory().catch(() => null);
     if (picked) updateProject(project.id, { codeDirectory: picked });
   }
 

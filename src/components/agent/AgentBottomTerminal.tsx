@@ -17,6 +17,8 @@ import { Terminal as TerminalIcon, X, Plus, Bot } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { IconButton } from "@/components/ui/icon-button";
+import { agentClient } from "@/lib/ipc/agent";
+import { hasElectron } from "@/lib/ipc/client";
 
 interface AgentBottomTerminalProps {
   cwd: string;
@@ -95,14 +97,14 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
         const container = containers.get(sid);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (container as any)?._cleanup?.();
-        if (!observed.has(sid)) window.electron?.agent.kill(sid).catch(() => {});
+        if (!observed.has(sid)) agentClient.kill(sid).catch(() => {});
       }
     };
   }, []);
 
   // Spawn the first shell on mount — guard against StrictMode double-invoke
   useEffect(() => {
-    if (!window.electron) return;
+    if (!hasElectron()) return;
     if (spawnStarted.current) return;
     spawnStarted.current = true;
     spawnShell();
@@ -113,8 +115,6 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
   // mount, then follow spawn/exit. Output is buffered here until the tab's
   // xterm exists; initTerminal replays the buffer, then goes live.
   useEffect(() => {
-    const api = window.electron?.agent;
-    if (!api?.onModelTerminal) return;
     let cancelled = false;
     const addTab = (sessionId: string, cwd: string, scrollback = "") => {
       if (dismissedIds.current.has(sessionId)) return;
@@ -124,7 +124,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
         ? prev
         : [...prev, { id: sessionId, label: `Agent · ${base}`, exited: false, observed: true }]);
     };
-    const off = api.onModelTerminal((e) => {
+    const off = agentClient.onModelTerminal((e) => {
       if (e.type === "spawn") addTab(e.sessionId, e.cwd);
       else if (e.type === "data") {
         if (dismissedIds.current.has(e.sessionId)) return;
@@ -136,7 +136,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
         setTabs((prev) => prev.map((t) => t.id === e.sessionId ? { ...t, exited: true } : t));
       }
     });
-    void api.modelTerminals().then((res) => {
+    void agentClient.modelTerminals().then((res) => {
       if (cancelled) return;
       const list = (res as { data?: Array<{ sessionId: string; cwd: string; scrollback: string }> } | undefined)?.data
         ?? (Array.isArray(res) ? res : []);
@@ -147,7 +147,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
 
   async function spawnShell() {
     try {
-      const result = await window.electron?.agent.spawnShell(cwd);
+      const result = await agentClient.spawnShell(cwd);
       if (!result?.sessionId) return;
       const tab: ShellTab = { id: result.sessionId, label: nextLabel(), exited: false };
       setTabs((prev) => [...prev, tab]);
@@ -252,14 +252,16 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
     roOngoing.observe(container);
 
     // Keystrokes → PTY
-    if (!observed) terminal.onData((data: string) => window.electron?.agent.input(sessionId, data));
+    if (!observed) terminal.onData((data: string) => {
+      void agentClient.input(sessionId, data).catch(() => {});
+    });
 
     // Resize → PTY
     if (!observed) terminal.onResize(({ cols, rows }: { cols: number; rows: number }) =>
-      window.electron?.agent.resize(sessionId, cols, rows));
+      void agentClient.resize(sessionId, cols, rows).catch(() => {}));
 
     // PTY output → terminal
-    const offData = window.electron?.agent.onData(
+    const offData = agentClient.onData(
       ({ sessionId: sid, data }: { sessionId: string; data: string }) => {
         if (sid !== sessionId) return;
         terminal.write(data);
@@ -267,7 +269,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
     );
 
     // PTY exit
-    const offExit = window.electron?.agent.onExit(
+    const offExit = agentClient.onExit(
       ({ sessionId: sid, exitCode }: { sessionId: string; exitCode: number }) => {
         if (observed || sid !== sessionId) return;
         terminal.writeln(`\r\n\x1b[33m[Process exited with code ${exitCode}]\x1b[0m`);
@@ -288,7 +290,7 @@ export function AgentBottomTerminal({ cwd, height }: AgentBottomTerminalProps) {
 
   function closeTab(sessionId: string) {
     // Closing an observed tab only detaches the view; the agent still owns the shell.
-    if (!observedIds.current.has(sessionId)) window.electron?.agent.kill(sessionId).catch(() => {});
+    if (!observedIds.current.has(sessionId)) agentClient.kill(sessionId).catch(() => {});
     if (observedIds.current.delete(sessionId)) dismissedIds.current.add(sessionId);
     observedBuffers.current.delete(sessionId);
     const container = containerRefs.current.get(sessionId);

@@ -25,6 +25,8 @@ import { FileEditorInner } from "./FileEditorInner";
 import { ImageViewer } from "./ImageViewer";
 import { modKey } from "@/components/layout/sidebar-utils";
 import { IconButton } from "@/components/ui/icon-button";
+import { agentClient } from "@/lib/ipc/agent";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── AgentEditor ───────────────────────────────────────────────────────────────
 
@@ -68,13 +70,13 @@ export function AgentEditor() {
   }, []);
   const scheduleReindex = useCallback((path: string) => {
     const root = projects.find((p) => p.id === activeProjectId)?.codeDirectory;
-    if (!root || !window.electron) return;
+    if (!root || !hasElectron()) return;
     const timers = reindexTimers.current;
     const existing = timers.get(path);
     if (existing) clearTimeout(existing);
     timers.set(path, setTimeout(() => {
       timers.delete(path);
-      window.electron?.agent
+      agentClient
         .codebaseReindexFile(root, path)
         .then((changed) => { if (changed) window.dispatchEvent(CairnEvents.agentFilesChanged()); })
         .catch(() => {});
@@ -82,10 +84,10 @@ export function AgentEditor() {
   }, [projects, activeProjectId]);
 
   const handleSave = useCallback(async (path: string, content: string) => {
-    if (!window.electron) return;
+    if (!hasElectron()) return;
     setSavingFiles((prev) => new Set(prev).add(path));
     try {
-      await window.electron.agent.writeFile(path, content);
+      await agentClient.writeFile(path, content);
       handleDirtyChange(path, false);
       // Refresh preview content if in preview mode
       setPreviewContent((prev) => ({ ...prev, [path]: content }));
@@ -105,8 +107,8 @@ export function AgentEditor() {
       return next;
     });
     // Load current content for preview if not cached
-    if (!previewContent[path] && window.electron) {
-      const content = await window.electron.agent.readFile(path);
+    if (!previewContent[path] && hasElectron()) {
+      const content = await agentClient.readFile(path);
       setPreviewContent((prev) => ({ ...prev, [path]: content ?? "" }));
     }
   }, [previewContent]);

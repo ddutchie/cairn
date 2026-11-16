@@ -30,6 +30,7 @@ import { CairnEvents } from "@/lib/events";
 import { MicroLabel, SectionLabel } from "@/components/ui/labels";
 import type { CodebaseRelationEdge, CodebaseRelations, CodebaseSymbol } from "../../../shared/types/codebase";
 import { IconButton } from "@/components/ui/icon-button";
+import { agentClient } from "@/lib/ipc/agent";
 import { Tooltip } from "@/components/ui/tooltip";
 
 const KIND_COLOR: Record<string, string> = {
@@ -71,7 +72,7 @@ export function ArchitectureSidebar() {
     let cancelled = false;
     setLoading(true);
     setNotIndexed(false);
-    window.electron?.agent
+    agentClient
       .codebaseFileSymbols(filePath)
       .then((data) => {
         if (cancelled) return;
@@ -102,7 +103,7 @@ export function ArchitectureSidebar() {
       try {
         // Scope to this file's codebase root so relations don't leak across
         // other indexed projects that happen to share a symbol name.
-        const data = await window.electron?.agent.codebaseRelations(sym.name, sym.root_path);
+        const data = await agentClient.codebaseRelations(sym.name, sym.root_path);
         if (data) setRelations((prev) => ({ ...prev, [sym.id]: data }));
       } catch {
         /* ignore */

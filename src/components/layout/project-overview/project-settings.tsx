@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { PRIORITY_OPTIONS, PROJECT_STATUS_OPTIONS, STATUS_CSS_COLORS, PRIORITY_CSS_COLORS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { agentClient } from "@/lib/ipc/agent";
 import { DialogClose } from "@/components/ui/dialog";
 import type { Project, ProjectStatus, Priority } from "@/types";
 import { IconButton } from "@/components/ui/icon-button";
@@ -53,7 +54,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
   }, [open]);
 
   async function handlePickCodeDir() {
-    const picked = await window.electron?.agent.pickDirectory();
+    const picked = await agentClient.pickDirectory().catch(() => null);
     if (picked) {
       setCodeDirInput(picked);
     }

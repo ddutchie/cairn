@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState } from "react";
 import { X, ExternalLink, FileText, Kanban, Code2, GitBranch } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { agentClient } from "../../lib/ipc/agent";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { CardDetailPanel } from "@/components/kanban/card-detail-panel";
 import { revealNote, revealCard } from "@/lib/events";
@@ -23,7 +24,7 @@ function FileContextContent({ path }: { path: string }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    window.electron?.agent.readFile(path).then((value) => {
+    agentClient.readFile(path).then((value) => {
       if (!cancelled) setContent(value as string);
     }).catch((reason) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { agentClient } from "@/lib/ipc/agent";
 import { FileTree } from "./FileTree";
 import { AgentEditor } from "./AgentEditor";
 import { AgentBottomTerminal } from "./AgentBottomTerminal";
@@ -47,7 +48,7 @@ export function AgentView() {
 
   async function handlePickCodeDir() {
     if (!project) return;
-    const picked = await window.electron?.agent.pickDirectory();
+    const picked = await agentClient.pickDirectory().catch(() => null);
     if (picked) updateProject(project.id, { codeDirectory: picked });
   }
 
