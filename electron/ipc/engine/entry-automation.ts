@@ -5,7 +5,7 @@
 import type { HostSend } from "../../agent/host";
 import { forgetEngineSession, releaseEngineSession } from "./host";
 import { runEnginePrompt, type EnginePromptArgs } from "./prompt";
-import { sessionTaps } from "./session-state";
+import { ensureSessionState, getSessionState } from "./session-state";
 
 export interface EngineAutomationArgs extends Omit<EnginePromptArgs, "chat" | "role" | "usageSource" | "profile"> {
   /** Every event and projection of the run goes here instead of to the renderer. */
@@ -16,7 +16,7 @@ export interface EngineAutomationArgs extends Omit<EnginePromptArgs, "chat" | "r
 
 /** A headless coding run (automations): same engine and tools, events delivered to `tap` only. */
 export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void> {
-  sessionTaps.set(a.sessionId, a.tap);
+  ensureSessionState(a.sessionId).tap = a.tap;
   try {
     await runEnginePrompt({
       ...a,
@@ -26,7 +26,8 @@ export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void
       profile: { id: "automation", interactive: true, mode: a.autoApprove ? "yolo" : "ask", externalAlwaysAsks: a.autoApprove },
     });
   } finally {
-    sessionTaps.delete(a.sessionId);
+    const st = getSessionState(a.sessionId);
+    if (st) delete st.tap;
     // Nothing will clear an unattended run later: stop what it left running and drop its in-memory state.
     forgetEngineSession(a.sessionId);
     releaseEngineSession(a.sessionId);
@@ -35,10 +36,11 @@ export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void
 
 /** A run whose events go to `tap` instead of the renderer (internal wizards). */
 export async function runEngineTapped(a: Omit<EnginePromptArgs, "role" | "profile"> & { tap: HostSend }): Promise<void> {
-  sessionTaps.set(a.sessionId, a.tap);
+  ensureSessionState(a.sessionId).tap = a.tap;
   try {
     await runEnginePrompt(a);
   } finally {
-    sessionTaps.delete(a.sessionId);
+    const st = getSessionState(a.sessionId);
+    if (st) delete st.tap;
   }
 }

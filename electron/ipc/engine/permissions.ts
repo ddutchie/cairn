@@ -16,21 +16,21 @@ import { buildSystemPrompt, withPersonality, type ChatRequest } from "../../lib/
 import type { ApprovalMode } from "../../../shared/agent/approval-mode";
 import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../../shared/agent/chat-approval";
 import { makeSessionProjection } from "../../../shared/agent/session-projection";
-import { sessionPreset } from "./session-state";
+import { ensureSessionState, getSessionState } from "./session-state";
 
 export { PERMISSION_PRESETS };
 
 export function presetProfile(sessionId: string, mode: ApprovalMode | undefined, role: "default" | "automation-dev" | undefined): Profile {
-  return purePresetProfile(sessionPreset.get(sessionId), mode, role);
+  return purePresetProfile(getSessionState(sessionId)?.preset, mode, role);
 }
 
 export function readEnginePermissions(sessionId: string, fallback: ApprovalMode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
-  return { options: PERMISSION_PRESETS.map((p) => ({ ...p })), currentValue: sessionPreset.get(sessionId) ?? presetFromApprovalMode(fallback) };
+  return { options: PERMISSION_PRESETS.map((p) => ({ ...p })), currentValue: getSessionState(sessionId)?.preset ?? presetFromApprovalMode(fallback) };
 }
 
 export function setEnginePermission(sessionId: string, preset: string, fallback: ApprovalMode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
   if (!PERMISSION_PRESETS.some((p) => p.value === preset)) throw Object.assign(new Error(`Unknown permission preset: ${preset}`), { code: "bad-request" });
-  sessionPreset.set(sessionId, preset as PermissionPreset);
+  ensureSessionState(sessionId).preset = preset as PermissionPreset;
   const view = readEnginePermissions(sessionId, fallback);
   broadcastEvent("session:projection", makeSessionProjection(sessionId, "permissions", view));
   return view;

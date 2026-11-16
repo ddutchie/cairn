@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import type { DbContext } from "../result-helpers";
 import { getEngineHost } from "./host";
 import type { SubagentDeps } from "../../agent/tools/subagent";
-import { sessionRules, sessionWorkspace, spawnContexts, usageMeta } from "./session-state";
+import { ensureSessionState, getSessionState } from "./session-state";
 
 const SUBAGENT_PROMPT = "\n\n## Subagent\nYou are a subagent working for another agent. Do the task you were given and finish with a concise report of what you found or did. You cannot start further subagents.";
 
@@ -19,14 +19,14 @@ export function subagentDeps(ctx: DbContext): SubagentDeps {
   const host = (): ReturnType<typeof getEngineHost> => getEngineHost(ctx);
   return {
     run: async (parent, req) => {
-      const sc = spawnContexts.get(parent);
+      const sc = getSessionState(parent)?.spawn;
       if (!sc) throw controlError("parent-unavailable", "Subagents are unavailable for this session.");
       const childId = req.childId ?? `${parent}.sub-${randomBytes(4).toString("hex")}`;
-      const meta = usageMeta.get(parent);
-      if (meta) usageMeta.set(childId, meta);
-      sessionRules.set(childId, sessionRules.get(parent) ?? []);
-      const workspaceId = sessionWorkspace.get(parent);
-      if (workspaceId) sessionWorkspace.set(childId, workspaceId);
+      const fromParent = getSessionState(parent);
+      const child = ensureSessionState(childId);
+      if (fromParent?.usage) child.usage = fromParent.usage;
+      child.rules = fromParent?.rules ?? [];
+      if (fromParent?.workspaceId) child.workspaceId = fromParent.workspaceId;
       const out = await host().prompt({
         sessionId: childId, parentSession: parent, prompt: req.prompt, cwd: sc.cwd, profile: sc.profile, route: sc.route,
         systemPrompt: `${sc.systemPrompt}${SUBAGENT_PROMPT}`, tools: sc.tools(), reasoningEffort: sc.reasoningEffort,
@@ -61,7 +61,7 @@ export async function listEngineSubagents(ctx: DbContext, parent: string): Promi
   const children = await getEngineHost(ctx).listChildren(parent);
   return {
     entries: children.map((c) => ({ id: c.id, mode: "continuable" as const, label: c.label, activity: c.running ? "running" as const : "inactive" as const, live: c.running, hasChildren: false })),
-    parentAvailable: spawnContexts.has(parent),
+    parentAvailable: getSessionState(parent)?.spawn !== undefined,
   };
 }
 
@@ -73,7 +73,7 @@ export function interruptEngineSubagent(ctx: DbContext, parent: string, childId:
 /** A human follow-up to a finished child. Runs in the background; the trace shows the reply. */
 export async function messageEngineSubagent(ctx: DbContext, parent: string, childId: string, text: string): Promise<{ messageId: string }> {
   const deps = subagentDeps(ctx);
-  if (!spawnContexts.has(parent)) throw controlError("parent-unavailable", "Send the session a prompt first; its subagents can be messaged once it is running again.");
+  if (!getSessionState(parent)?.spawn) throw controlError("parent-unavailable", "Send the session a prompt first; its subagents can be messaged once it is running again.");
   const known = (await deps.list(parent)).find((c) => c.id === childId);
   if (!known) throw controlError("bad-request", "Unknown subagent.");
   if (known.running) throw controlError("delivery-unavailable", "The subagent is still working.");

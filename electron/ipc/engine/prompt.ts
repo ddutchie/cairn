@@ -30,17 +30,8 @@ import { adoptLegacySession, hostRoot } from "./legacy-sessions";
 import { presetProfile } from "./permissions";
 import { chatEngineProfile } from "../../agent/profiles";
 import { subagentDeps } from "./subagents";
-import {
-  observedFiles,
-  pendingQuestions,
-  qKey,
-  sessionPlanning,
-  sessionRules,
-  sessionTaps,
-  sessionWorkspace,
-  spawnContexts,
-  usageMeta,
-} from "./session-state";
+import { askSessionQuestion, takeSessionQuestion } from "./questions";
+import { ensureSessionState, getSessionState } from "./session-state";
 
 /** Sent with each plan-mode prompt, not in the system prompt, so approving the plan leaves the cached prefix intact. */
 export const PLAN_MODE_PROMPT = `## Plan mode
@@ -103,7 +94,7 @@ export async function runEnginePrompt(a: EnginePromptArgs): Promise<void> {
 /** Error projection to the run's tap when it has one (automations), else the renderer. */
 function reportPromptError(sessionId: string, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
-  const tap = sessionTaps.get(sessionId);
+  const tap = getSessionState(sessionId)?.tap;
   // "Busy" means another turn is live: it will send its own turn/end, so this must not.
   if (err instanceof SessionBusyError) {
     rejectBusy(sessionId, message, "already-running", tap as ((channel: string, payload: unknown) => void) | undefined);
@@ -119,7 +110,8 @@ function reportPromptError(sessionId: string, err: unknown): void {
 async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const h = getEngineHost(a.ctx);
   await adoptLegacySession(a.sessionId);
-  if (a.workspaceId) sessionWorkspace.set(a.sessionId, a.workspaceId);
+  const st = ensureSessionState(a.sessionId);
+  if (a.workspaceId) st.workspaceId = a.workspaceId;
   const chat = a.chat;
   // The session list, pop-out and session search key off these rows; the engine owns writing them now.
   try {
@@ -128,13 +120,12 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
     if (chat && a.workspaceId) store.indexChatThread(a.sessionId.replace(/^chat-/, ""), a.workspaceId, a.projectId);
   } catch (err) { console.warn("[agent] could not record session profile:", err instanceof Error ? err.message : err); }
   const chatProfile = chat ? chatEngineProfile(chat.policy) : undefined;
-  sessionRules.set(a.sessionId, chatProfile?.rules ?? []);
-  usageMeta.set(a.sessionId, {
+  st.rules = chatProfile?.rules ?? [];
+  st.usage = {
     source: a.usageSource ?? (chat ? "chat" : "coding"), workspaceId: a.workspaceId ?? "", projectId: a.projectId,
     provider: a.llmConfig.provider, model: a.llmConfig.model, baseUrl: a.llmConfig.baseUrl,
-  });
-  const observed = observedFiles.get(a.sessionId) ?? new Set<string>();
-  observedFiles.set(a.sessionId, observed);
+  };
+  const observed = (st.observed ??= new Set<string>());
   const role = a.role ?? "default";
   const planning = a.sessionMode === "plan" && !chat && role === "default";
   const prepared = prepareAttachments(a.prompt, a.attachments);
@@ -153,8 +144,8 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
       getWin: a.ctx.getWin,
       askQuestions: a.noQuestions ? undefined : (questions, tool) => new Promise((resolve, reject) => {
         const nonce = randomBytes(16).toString("hex");
-        pendingQuestions.set(qKey(a.sessionId, tool.callId), { nonce, questions, resolve: (answers) => { try { resolve(JSON.parse(answers)); } catch { resolve(answers); } }, reject });
-        tool.signal?.addEventListener("abort", () => { if (pendingQuestions.delete(qKey(a.sessionId, tool.callId))) reject(new Error("cancelled")); }, { once: true });
+        askSessionQuestion(a.sessionId, tool.callId, nonce, questions, (answers) => { try { resolve(JSON.parse(answers)); } catch { resolve(answers); } }, reject);
+        tool.signal?.addEventListener("abort", () => { if (takeSessionQuestion(a.sessionId, tool.callId)) reject(new Error("cancelled")); }, { once: true });
         broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "question", { callId: tool.callId, questions, nonce }));
       }),
     },
@@ -205,8 +196,8 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const systemPrompt = [a.systemPrompt, mcpInstructions].filter(Boolean).join("\n\n");
   // Mode changes travel with the prompt. In the system prompt they would re-write the provider's
   // cache for the whole conversation on every switch.
-  const modeNote = planning ? PLAN_MODE_PROMPT : sessionPlanning.has(a.sessionId) ? PLAN_MODE_ENDED : "";
-  if (planning) sessionPlanning.add(a.sessionId); else sessionPlanning.delete(a.sessionId);
+  const modeNote = planning ? PLAN_MODE_PROMPT : st.planning ? PLAN_MODE_ENDED : "";
+  st.planning = planning;
   const context = modeNote ? `<session_context>\n${modeNote}\n</session_context>` : undefined;
   // The skill list is context, not part of the tool definition: there it would re-write the cache
   // whenever a skill file changed.
@@ -216,10 +207,10 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   // delegation (one level deep), the plan hand-over, and the parent's goal and reminders.
   const subagentToolNames = new Set(["subagent", "delegate", "workflow", "ralph", "send_message", "list_agents", "interrupt_agent", "exit_plan_mode",
     "get_goal", "create_goal", "update_goal", "schedule_create", "schedule_list", "schedule_cancel"]);
-  spawnContexts.set(a.sessionId, {
+  st.spawn = {
     cwd: a.cwd, profile, route, systemPrompt, tools: () => tools.filter((t) => !subagentToolNames.has(t.name)),
     reasoningEffort: a.llmConfig.reasoningEffort, temperature: a.llmConfig.temperature, maxSteps: a.llmConfig.maxSteps,
-  });
+  };
   const onAbort = (): void => h.abort(a.sessionId);
   if (a.signal?.aborted) onAbort(); else a.signal?.addEventListener("abort", onAbort, { once: true });
 

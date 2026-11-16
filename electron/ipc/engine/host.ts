@@ -19,12 +19,8 @@ import { makeSessionProjection } from "../../../shared/agent/session-projection"
 import { grantsToRules } from "./permissions";
 import { adoptLegacySession, hostRoot, removeLegacySessions } from "./legacy-sessions";
 import {
-  sessionPlanning,
-  sessionRules,
-  sessionTaps,
-  sessionWorkspace,
-  spawnContexts,
-  usageMeta,
+  forgetSessionState,
+  getSessionState,
 } from "./session-state";
 
 let host: AgentHost | undefined;
@@ -65,18 +61,19 @@ export function getEngineHost(ctx: DbContext): AgentHost {
     readNote: (noteId) => createHostStore(ctx.db).readNoteContent(noteId),
     send: (channel, payload) => {
       const sid = "sessionId" in payload ? String(payload.sessionId) : "";
-      const tap = sessionTaps.get(sid);
+      const tap = getSessionState(sid)?.tap;
       if (tap) tap(channel, payload); else broadcastEvent(channel, payload);
     },
     askTtlMs: undefined,
     globalRules: (sessionId) => {
-      const base = [...presetRules("cairn-data", "safe-shell"), ...(sessionRules.get(sessionId) ?? [])];
-      const workspaceId = sessionWorkspace.get(sessionId);
+      const st = getSessionState(sessionId);
+      const base = [...presetRules("cairn-data", "safe-shell"), ...(st?.rules ?? [])];
+      const workspaceId = st?.workspaceId;
       if (!workspaceId || !hostCtx) return base;
       try { return [...base, ...grantsToRules(sessionId, getWorkspaceApprovalGrants(hostCtx.db, workspaceId))]; } catch { return base; }
     },
     onWorkspaceGrant: (sessionId, rule) => {
-      const workspaceId = sessionWorkspace.get(sessionId);
+      const workspaceId = getSessionState(sessionId)?.workspaceId;
       if (!workspaceId || !hostCtx) return;
       // Only the tool and a command are stored, so a grant for a folder outside the workspace would
       // come back as a grant for the whole workspace. It stays a grant for this session.
@@ -84,7 +81,7 @@ export function getEngineHost(ctx: DbContext): AgentHost {
       addWorkspaceApprovalGrant(hostCtx.db, workspaceId, rule.match.tool ?? "", rule.match.command?.exact ?? null);
     },
     onAssistantMessage: (sessionId, message) => {
-      const meta = usageMeta.get(sessionId);
+      const meta = getSessionState(sessionId)?.usage;
       const u = message.usage;
       if (!meta || !u) return;
       const promptTokens = u.input + u.cacheRead + u.cacheWrite;
@@ -99,7 +96,7 @@ export function getEngineHost(ctx: DbContext): AgentHost {
     },
     onAsk: (ask) => {
       // A tapped run (an automation) answers or reports its own asks; it has no session to open.
-      if (sessionTaps.has(ask.sessionId)) return;
+      if (getSessionState(ask.sessionId)?.tap) return;
       if (hostCtx) notifyAgentAttention(hostCtx.db, { sessionId: ask.sessionId, kind: "approval", detail: ask.title });
     },
   });
@@ -120,8 +117,7 @@ export async function engineOwns(ctx: DbContext, sessionId: string): Promise<boo
 export function forgetEngineSession(sessionId: string): void {
   jobRegistry?.killAll(sessionId);
   terminalRegistry?.closeAll(sessionId);
-  sessionPlanning.delete(sessionId);
-  for (const id of [...spawnContexts.keys()]) if (id === sessionId || id.startsWith(`${sessionId}.sub-`)) spawnContexts.delete(id);
+  forgetSessionState(sessionId);
 }
 
 /** The retired harness kept per-turn copies as `<session>-<epoch ms>-<suffix>`. */
