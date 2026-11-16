@@ -2,9 +2,9 @@
  * Background shell jobs. A job belongs to the session that started it; the
  * registry lives for the process, so a job outlives the turn that began it.
  */
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { JobSummary } from "../../shared/agent/session-projection";
+import { killTree, spawnTracked } from "../lib/proc";
 
 const KEEP_CHARS = 120_000;
 
@@ -20,10 +20,10 @@ export class JobRegistry {
 
   start(s: JobStart): JobSummary {
     const id = `job-${randomUUID().slice(0, 8)}`;
-    const child = spawn(s.file, s.args, { cwd: s.cwd, env: s.env ?? process.env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnTracked(s.file, s.args, { cwd: s.cwd, env: s.env });
     const job: Job = {
       id, kind: "bash", label: s.label, status: "running", startedAt: Date.now(), ownerSession: s.owner, output: "",
-      kill: () => { try { if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); } catch { /* already gone */ } },
+      kill: () => { if (child.pid) killTree(child.pid); },
     };
     this.jobs.set(id, job);
     const onData = (d: Buffer) => { job.output += d.toString("utf8"); if (job.output.length > KEEP_CHARS) job.output = job.output.slice(-KEEP_CHARS); };

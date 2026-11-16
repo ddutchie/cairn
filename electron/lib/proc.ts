@@ -14,7 +14,8 @@
  * - `getBashExecutable()` — Git Bash detection on Windows (never WSL bash).
  */
 
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import { spawn, execSync, type ChildProcess, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -302,13 +303,13 @@ export function spawnTracked(
   file: string,
   args: string[],
   opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
-): ChildProcess {
+): ChildProcessByStdio<null, Readable, Readable> {
   const child = spawn(file, args, {
     cwd: opts.cwd,
     env: opts.env ?? process.env,
     detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
-  });
+  }) as unknown as ChildProcessByStdio<null, Readable, Readable>;
   if (child.pid !== undefined) trackPid(child.pid);
   const done = () => { if (child.pid !== undefined) untrackPid(child.pid); };
   child.on("close", done);
