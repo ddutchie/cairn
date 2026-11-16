@@ -202,8 +202,7 @@ export function UserStyleWizardModal({
   );
 
   // Stream the generation so the guide (and any note-reading tool calls) appear
-  // live in the preview. Falls back to the one-shot IPC when streaming isn't
-  // available in this build.
+  // live in the preview. Streaming is available on all desktop builds.
   const generate = (target: "full" | "cheatsheet" | "optimize") => {
     if (!hasElectron()) {
       setError("AI generation isn't available in this build.");
@@ -257,27 +256,7 @@ export function UserStyleWizardModal({
         analyseNotes: samples.some((s) => s.context.startsWith("From your")),
         input: generationInput,
       }).catch(() => {});
-      return;
     }
-
-    void (async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        const res = await userStyleClient.generateUserStyle(target, generationInput);
-        if (target === "full" || target === "optimize") {
-          setFullGuide(res.markdown);
-          setStep(3);
-        } else {
-          setCheatsheet(res.markdown);
-          setStep(4);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Generation failed.");
-      } finally {
-        setBusy(false);
-      }
-    })();
   };
 
   const save = async () => {
