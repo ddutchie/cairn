@@ -1,7 +1,7 @@
 import { mkdtemp, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { AgentHost, SessionBusyError, type HostDeps, type PromptRequest } from "./host";
 import { presetRules } from "./rules";
@@ -10,13 +10,7 @@ import { scheduleTools } from "./tools/schedule";
 import { subagentTools } from "./tools/subagent";
 import { todoTool } from "./tools/todo";
 import { readSession } from "./session/log";
-import { makeHarness, makeTools } from "./test-harness";
-
-const call = (name: string, args: Record<string, unknown>, id: string) => fauxToolCall(name, args as never, { id });
-const toolUse = (...calls: ReturnType<typeof call>[]) => fauxAssistantMessage(calls, { stopReason: "toolUse" });
-const tick = () => new Promise((r) => setTimeout(r, 20));
-/** Wait for a condition instead of guessing how long the machine needs. */
-const until = async (cond: () => boolean, ms = 3_000) => { for (const end = Date.now() + ms; !cond() && Date.now() < end;) await tick(); };
+import { call, makeHarness, makeTools, toolUse, until } from "./test-harness";
 
 async function setup(init: Partial<HostDeps> = {}) {
   const root = init.root ?? await mkdtemp(path.join(os.tmpdir(), "agent-host-"));

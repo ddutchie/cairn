@@ -1,10 +1,10 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { createHooks, parseHookConfig, type HookConfig } from "./hooks";
-import { drive, makeHarness, makeTools, ofType, toolResults, types } from "./test-harness";
+import { call, drive, makeHarness, makeTools, ofType, toolResults, types } from "./test-harness";
 import { runTurn } from "./loop";
 import { buildContextView } from "./context";
 import { deriveTitle } from "./session/history";
@@ -60,7 +60,6 @@ describe("hooks in the loop", () => {
     h.faux.setResponses(responses);
     return { h, executed, events: drive(runTurn({ ...h.opts(), tools: makeTools(executed), hooks: hooksFor(hooks) })) };
   };
-  const call = (name: string, args: Record<string, unknown>) => fauxToolCall(name, args as never, { id: "c1" });
 
   it("a PreToolUse deny stops the tool from running and tells the model", async () => {
     const t = run({ PreToolUse: cmd("echo blocked by policy >&2; exit 2") }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
