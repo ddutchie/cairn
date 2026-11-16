@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type {
-  RegistryFetchResult,
   RegistryMcpEntry,
   RegistryServiceEntry,
 } from "@/types";
@@ -26,6 +25,7 @@ import { headerNeedsSecret } from "@/store/slices/tools";
 import { toolsClient } from "@/lib/ipc/tools";
 import { ConnectorLogo } from "./ConnectorLogo";
 import { IconButton } from "@/components/ui/icon-button";
+import { useRegistryManifest } from "./useRegistryManifest";
 
 type Kind = "mcp" | "service";
 interface CardEntry {
@@ -76,9 +76,7 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
       }))
     );
 
-  const [result, setResult] = useState<RegistryFetchResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { result, loading, refreshing, load } = useRegistryManifest();
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -92,27 +90,8 @@ export function BrowseCommunityModal({ onClose }: { onClose: () => void }) {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
-  const load = useCallback(async (force: boolean) => {
-    const reg = window.electron?.registry;
-    if (!reg) { setLoading(false); return; }
-    if (force) setRefreshing(true); else setLoading(true);
-    try {
-      const r = force ? await reg.refresh() : await reg.fetch();
-      setResult(r);
-    } catch (err) {
-      setResult({
-        manifest: { version: 1, updatedAt: "", mcpServers: [], services: [], commands: [] },
-        fromCache: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load(false); // eslint-disable-line react-hooks/set-state-in-effect
+    void load(false);
   }, [load]);
 
   const entries: CardEntry[] = useMemo(() => {
