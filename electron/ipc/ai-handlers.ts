@@ -14,6 +14,7 @@ import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl, type LLMConfig } from "../lib/llm";
+import { fetchJson } from "../lib/llm-http";
 import { DEFAULT_LLM } from "../lib/llm-config";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
@@ -124,22 +125,14 @@ export function registerAiHandlers(ctx: DbContext): void {
       handle(async () => {
         const url = normaliseBaseUrl(args.baseUrl || DEFAULT_LLM.baseUrl);
         const realKey = resolveLlmApiKey(args.apiKey);
-        const headers: Record<string, string> = {};
-        if (realKey) headers["Authorization"] = `Bearer ${realKey}`;
-        // Abort a hung endpoint after 12s so the picker's spinner can't hang forever.
-        const ac = new AbortController();
-        const timer = setTimeout(() => ac.abort(), 12_000);
-        try {
-          const res = await fetch(buildApiUrl(url, "models"), { headers, signal: ac.signal });
+        // Single shared timeout (llm-http.ts) so the picker's spinner can't hang forever.
+        const res = await fetchJson(buildApiUrl(url, "models"), { apiKey: realKey });
           if (!res.ok) throw new Error(`${res.status}`);
           const data = (await res.json()) as { data?: Array<{ id: string }> };
           return (data?.data ?? [])
             .map((m) => m.id)
             .filter((id) => !id.includes("embed") && !id.includes("whisper") && !id.includes("tts") && !id.includes("dall-e"))
             .sort();
-        } finally {
-          clearTimeout(timer);
-        }
       })
   );
 
@@ -157,16 +150,16 @@ export function registerAiHandlers(ctx: DbContext): void {
         const probe = async (protocol: ProbeProtocol): Promise<ProtocolAvailability> => {
           const req = protocolProbeRequest(protocol, args.model);
           try {
-            const res = await fetch(buildApiUrl(url, req.path), {
+            const res = await fetchJson(buildApiUrl(url, req.path), {
               method: "POST",
+              apiKey: realKey,
+              apiKeyHeader: true,
               headers: {
                 "Content-Type": "application/json",
                 "User-Agent": CAIRN_USER_AGENT,
-                ...(realKey ? { Authorization: `Bearer ${realKey}`, "x-api-key": realKey } : {}),
                 ...req.headers,
               },
               body: JSON.stringify(req.body),
-              signal: AbortSignal.timeout(10_000),
             });
             return classifyProtocolProbe(res.status, await res.text().catch(() => ""));
           } catch {
@@ -196,8 +189,6 @@ export function registerAiHandlers(ctx: DbContext): void {
         const realKey = resolveLlmApiKey(args.apiKey);
         // No key → nothing to query (credit endpoints are all authed).
         if (!realKey) return null;
-        const ac = new AbortController();
-        const timer = setTimeout(() => ac.abort(), 12_000);
         try {
           const { manifest } = await fetchProvidersManifest();
           const credits = resolveCreditSpec(baseUrl, manifest.providers);
@@ -205,13 +196,12 @@ export function registerAiHandlers(ctx: DbContext): void {
           // /v1/key probe (harmless for providers without one — returns null).
           const url = credits?.url ?? buildApiUrl(baseUrl, "key");
           const shape = credits?.shape ?? "openrouter";
-          const probe = await probeCredits(url, realKey, shape, ac.signal);
+          // probeCredits bounds itself with the shared LLM HTTP timeout.
+          const probe = await probeCredits(url, realKey, shape);
           return probe.info;
         } catch {
           // Endpoint absent / offline / aborted — treat as "no credits info".
           return null;
-        } finally {
-          clearTimeout(timer);
         }
       })
   );

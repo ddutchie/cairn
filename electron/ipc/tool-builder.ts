@@ -25,6 +25,7 @@ import type { ToolBuilderPromptRequest } from "../../shared/types/tool-builder";
 import { getCachedConfig } from "../lib/config-cache";
 import { resolveConnection } from "../lib/llm-config";
 import { isLocalEndpoint, buildApiUrl } from "../lib/llm";
+import { fetchJson } from "../lib/llm-http";
 import { newId } from "../db/utils";
 import * as q from "../db/queries";
 import * as builder from "../lib/tool-builder";
@@ -104,12 +105,11 @@ async function callModel(
   signal: AbortSignal,
   attrib?: { sessionId?: string; workspaceId?: string },
 ): Promise<OpenAIMessage> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
-  const res = await fetch(buildApiUrl(config.baseUrl, "chat/completions"), {
+  const res = await fetchJson(buildApiUrl(config.baseUrl, "chat/completions"), {
     method: "POST",
-    headers,
+    apiKey: config.apiKey,
     signal,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: config.model,
       messages,
