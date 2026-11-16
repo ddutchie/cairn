@@ -2,7 +2,7 @@
  * UI approval mode → engine policy profile.
  *
  * Single home for the three translations that used to live as separate helpers
- * in `electron/ipc/engine-bridge.ts` (`engineProfile`, `presetFromMode`,
+ * in `electron/ipc/engine-bridge.ts` (`engineProfile`, `presetFromApprovalMode`,
  * `presetProfile`): they all funnel through `toPolicyMode()`.
  * Persisted strings are unchanged — only identifiers were renamed
  * (`Mode` → `PolicyMode` on the engine side, `Mode` → `ApprovalMode` on the UI side).
@@ -44,8 +44,6 @@ export type PermissionPreset = typeof PERMISSION_PRESETS[number]["value"];
 export function presetFromApprovalMode(mode: ApprovalMode | undefined): PermissionPreset {
   return mode === "auto" ? "yolo" : "ask";
 }
-/** @deprecated — use `presetFromApprovalMode`. */
-export const presetFromMode = presetFromApprovalMode;
 
 /**
  * Layer a per-session permission preset over the base profile. Pure: the caller

@@ -17,16 +17,11 @@ export {
 } from "../../shared/agent/tool-risk";
 export {
   type ApprovalMode,
-  type Mode,
   APPROVAL_MODES,
-  MODES,
   isApprovalMode,
-  isMode,
   approvalModeFromAutoApprove,
-  modeFromAutoApprove,
   autoApproveFromMode,
   resolveApprovalMode,
-  resolveMode,
   shouldAskForRisk,
   shouldAskForTool,
 } from "../../shared/agent/approval-mode";

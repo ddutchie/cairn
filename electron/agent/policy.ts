@@ -21,8 +21,6 @@ import { findRule, isProtectedPath, isSecretPath, isWithin, type CallView, type 
 import type { DecisionSource } from "./events";
 
 export type PolicyMode = "ask" | "auto" | "yolo" | "plan";
-/** @deprecated — use `PolicyMode`. Same persisted strings. */
-export type Mode = PolicyMode;
 
 export interface PolicyState {
   mode: PolicyMode;

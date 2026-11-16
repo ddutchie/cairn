@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { callSignature, decide, type Mode, type PolicyState } from "./policy";
+import { callSignature, decide, type PolicyMode, type PolicyState } from "./policy";
 import { PRESETS, presetRules, type CallView, type Rule } from "./rules";
 
 const base = (over: Partial<PolicyState> = {}): PolicyState => ({
@@ -15,7 +15,7 @@ const bash = (command: string): CallView => ({ name: "bash", risk: { class: "EXE
 
 describe("decide: defaults by mode", () => {
   it("allows READ in every mode", () => {
-    for (const mode of ["ask", "auto", "yolo", "plan"] as Mode[]) expect(decideFor(read, base({ mode })).kind).toBe("allow");
+    for (const mode of ["ask", "auto", "yolo", "plan"] as PolicyMode[]) expect(decideFor(read, base({ mode })).kind).toBe("allow");
   });
 
   it.each([
@@ -102,7 +102,7 @@ describe("decide: protected paths", () => {
 
   it("asks before reading credentials outside the workspace, in every mode", () => {
     const readOf = (p: string): CallView => ({ name: "read", risk: { class: "READ", paths: [p] } });
-    for (const mode of ["ask", "auto", "yolo", "plan"] as Mode[]) {
+    for (const mode of ["ask", "auto", "yolo", "plan"] as PolicyMode[]) {
       expect(decideFor(readOf("/home/u/.ssh/id_ed25519"), base({ mode })), mode).toMatchObject({ kind: "ask", by: "protected" });
     }
     expect(decideFor(readOf("/home/u/.aws/credentials"), base()).kind).toBe("ask");

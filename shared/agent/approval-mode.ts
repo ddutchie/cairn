@@ -10,26 +10,17 @@
  *
  * Pure data + pure functions: no Electron/Node APIs — importable from renderer,
  * main, and tests.
- *
- * `Mode` is kept as a deprecated alias of `ApprovalMode` so existing importers
- * (and persisted `mode` strings) keep working; new code uses `ApprovalMode`.
  */
 import type { RiskClass } from "./risk";
 import { riskForTool } from "./tool-risk";
 
 export type ApprovalMode = "discuss" | "plan" | "interactive" | "auto" | "custom";
-/** @deprecated — use `ApprovalMode`. */
-export type Mode = ApprovalMode;
 
 export const APPROVAL_MODES: readonly ApprovalMode[] = ["discuss", "plan", "interactive", "auto", "custom"] as const;
-/** @deprecated — use `APPROVAL_MODES`. Same values. */
-export const MODES: readonly ApprovalMode[] = APPROVAL_MODES;
 
 export function isApprovalMode(value: unknown): value is ApprovalMode {
   return typeof value === "string" && (APPROVAL_MODES as readonly string[]).includes(value);
 }
-/** @deprecated — use `isApprovalMode`. */
-export const isMode = isApprovalMode;
 
 /**
  * Map the legacy boolean toggle to an ApprovalMode so behaviour is preserved:
@@ -42,8 +33,6 @@ export const isMode = isApprovalMode;
 export function approvalModeFromAutoApprove(autoApprove?: boolean): ApprovalMode {
   return autoApprove ? "auto" : "interactive";
 }
-/** @deprecated — use `approvalModeFromAutoApprove`. */
-export const modeFromAutoApprove = approvalModeFromAutoApprove;
 
 export function autoApproveFromMode(mode: ApprovalMode): boolean {
   return mode === "auto";
@@ -59,8 +48,6 @@ export function resolveApprovalMode(input: { mode?: ApprovalMode; autoApprove?: 
   if (typeof input.autoApprove === "boolean") return approvalModeFromAutoApprove(input.autoApprove);
   return fallback;
 }
-/** @deprecated — use `resolveApprovalMode`. */
-export const resolveMode = resolveApprovalMode;
 
 /**
  * Does this risk class require user confirmation under the given ApprovalMode?
