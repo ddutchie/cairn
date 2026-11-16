@@ -69,6 +69,28 @@ export interface ChatSlice {
 
 // ── Slice creator ─────────────────────────────────────────────────────────────
 
+/** Fresh unsaved thread row for a workspace/project scope. */
+function buildThread(workspaceId: ID, projectId?: ID): ChatThread {
+  return {
+    id: id(),
+    scope: projectId ? "project" : "workspace",
+    workspaceId,
+    projectId,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+}
+
+type CreatorArgs = Parameters<StateCreator<CairnStore, [], [], ChatSlice>>;
+
+/** Append + persist + upsert a thread row. Shared by lookup-or-create and always-create. */
+function saveThread(set: CreatorArgs[0], get: CreatorArgs[1], thread: ChatThread): ChatThread {
+  set((s) => ({ chatThreads: [...s.chatThreads, thread] }));
+  get().persist();
+  ipc((e) => e.chat.upsertThread(toUpsertInput(thread)));
+  return thread;
+}
+
 export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   set,
   get
@@ -315,18 +337,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     );
     if (existing) return existing;
 
-    const thread: ChatThread = {
-      id: id(),
-      scope: projectId ? "project" : "workspace",
-      workspaceId,
-      projectId,
-      createdAt: now(),
-      updatedAt: now(),
-    };
-    set((s) => ({ chatThreads: [...s.chatThreads, thread] }));
-    get().persist();
-    ipc((e) => e.chat.upsertThread(toUpsertInput(thread)));
-    return thread;
+    return saveThread(set, get, buildThread(workspaceId, projectId));
   },
 
   addMessage(threadId, role, content, contextRefs, toolCalls, actions, reasoning, images, subagents, reasoningSummary, reasoningItems, reasoningField, reasoningModel, stats) {
@@ -445,18 +456,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   createNewThread(workspaceId, projectId) {
-    const thread: ChatThread = {
-      id: id(),
-      scope: projectId ? "project" : "workspace",
-      workspaceId,
-      projectId,
-      createdAt: now(),
-      updatedAt: now(),
-    };
-    set((s) => ({ chatThreads: [...s.chatThreads, thread] }));
-    get().persist();
-    ipc((e) => e.chat.upsertThread(toUpsertInput(thread)));
-    return thread;
+    return saveThread(set, get, buildThread(workspaceId, projectId));
   },
 
   async compactChatThread(threadId) {
