@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import path from "path";
 import { config as loadDotenv } from "dotenv";
-import { TOOLS } from "./tools";
+import { TOOLS } from "./chat-prompt";
 
 loadDotenv({ path: path.resolve(__dirname, "../../.env.test"), override: false });
 loadDotenv({ path: path.resolve(__dirname, "../../mobile/.env"), override: false });

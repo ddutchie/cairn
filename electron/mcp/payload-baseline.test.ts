@@ -20,7 +20,7 @@ import {
 } from "../db/queries";
 import { executeTool as executeMcpTool } from "../mcp-server";
 import { executeTool as executeChatTool } from "../agent/tools/cairn-executor";
-import type { ChatRequest } from "../lib/tools";
+import type { ChatRequest } from "../lib/chat-prompt";
 import type { LLMConfig } from "../lib/llm";
 
 function seed(db: Database.Database) {

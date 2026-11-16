@@ -12,7 +12,7 @@ import {
 } from "../../agent/profiles";
 import { canonicalCommand, type Rule } from "../../agent/rules";
 import { getCachedConfig } from "../../lib/config-cache";
-import { buildSystemPrompt, withPersonality, type ChatRequest } from "../../lib/tools";
+import { buildSystemPrompt, withPersonality, type ChatRequest } from "../../lib/chat-prompt";
 import type { ApprovalMode } from "../../../shared/agent/approval-mode";
 import { resolveChatApprovalPolicy, type ChatApprovalPolicy } from "../../../shared/agent/chat-approval";
 import { makeSessionProjection } from "../../../shared/agent/session-projection";

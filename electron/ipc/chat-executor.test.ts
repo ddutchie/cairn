@@ -26,7 +26,7 @@ import {
 } from "../db/queries";
 import { executeTool } from "../agent/tools/cairn-executor";
 import type { LLMConfig } from "../lib/llm";
-import type { ChatRequest } from "../lib/tools";
+import type { ChatRequest } from "../lib/chat-prompt";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

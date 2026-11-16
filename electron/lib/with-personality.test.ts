@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { withPersonality } from "./tools";
+import { withPersonality } from "./chat-prompt";
 
 describe("withPersonality", () => {
   const base = "You are the Cairn AI assistant — an intelligent helper.";

@@ -19,7 +19,7 @@ import { listSessionIdsForWorkspace } from "../../db/workspace-queries";
 import { indexSessions, runtimeEmbed, searchSessionsSemantic, type SessionIndexDeps } from "../../agent/session-search";
 import { getEmbeddingsSettingsCached } from "../../lib/config-cache";
 import { CHAT_EXCLUDED_TOOLS } from "../../lib/tool-schemas";
-import type { ChatRequest } from "../../lib/tools";
+import type { ChatRequest } from "../../lib/chat-prompt";
 import { routeFromConfig } from "../../agent/route";
 import type { AgentLLMConfig } from "../../lib/session-runtime-types";
 import type { ChatApprovalPolicy } from "../../../shared/agent/chat-approval";

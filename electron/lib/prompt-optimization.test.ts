@@ -24,7 +24,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import path from "path";
 import { config as loadDotenv } from "dotenv";
 import { encode } from "gpt-tokenizer";
-import { buildSystemPrompt, TOOLS } from "./tools";
+import { buildSystemPrompt, TOOLS } from "./chat-prompt";
 import { parseMobileTools } from "./mobile-tools-fixture";
 
 // Load .env.test so TEST_LLM_* are available (git-ignored). mobile/.env too, in

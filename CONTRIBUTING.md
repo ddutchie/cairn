@@ -360,7 +360,7 @@ Shared modules live in `src/components/graph/`: `analyticsUtils.ts` (constants, 
 | `electron/lib/truncation.ts` | `truncateOutput(text, opts)` — unified byte+line cap for all coding tool outputs; exports `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationResult` |
 | `electron/agent/session/` | JSONL session log, history folding, projection adapter and legacy-log import |
 | `electron/lib/llm.ts` | `LLMConfig`, `callLLM`, `streamCompletion`, `isLocalEndpoint`, `normaliseBaseUrl` |
-| `electron/lib/tools.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
+| `electron/lib/chat-prompt.ts` | `TOOLS` (OpenAI function definitions), `TOOL_LABELS`, `buildSystemPrompt` |
 | `electron/agent/tools/cairn-executor.ts` | Cairn data-tool execution (consolidated tools via `mcp/tools/consolidated.ts`, plus chat-only tools) |
 | `electron/lib/prd.ts` | `generatePrd` — shared PRD generation logic |
 | `electron/db/queries.ts` | Single source of truth for all SQL query helpers (CRUD, search, snapshot, `getProjectById`, `getNoteById`, `getCardById`). Imported by both the Electron main process and the MCP server (`electron/mcp/tools/*`) — the only ABI-sensitive operation is `new Database(...)` which happens once in `mcp-server.ts` |
@@ -590,7 +590,7 @@ Launch with `mode: "plan"` for a planning session. Plan mode is read-only by pol
 > **First, prefer extending an existing tool.** The model-facing set is consolidated — one tool per intent, with `mode` / `filter` / `action` / `type` enums (`search_tasks filter:"overdue"`, `task_progress action:"claim"`, `delete type:"note"`). Every tool's schema is sent on every request, so a new parameter on an existing tool is far cheaper than a new tool. Run the live A/B test (`electron/lib/tool-schema-optimization.test.ts`, `CAIRN_LIVE_TESTS=1`) to catch tool-selection regressions.
 
 1. Add or extend the Zod schema in `electron/lib/tool-schemas.ts` — `TOOL_SCHEMAS`, and `CHAT_ONLY_TOOLS` / `CHAT_EXCLUDED_TOOLS` if it is surface-specific
-2. Add a `TOOL_LABELS` entry in `electron/lib/tools.ts` (the `TOOLS` array is auto-derived), a `humanizeTool` case in `src/lib/humanize-tool.ts`, and classify it in `shared/agent/tool-risk.ts`
+2. Add a `TOOL_LABELS` entry in `electron/lib/chat-prompt.ts` (the `TOOLS` array is auto-derived), a `humanizeTool` case in `src/lib/humanize-tool.ts`, and classify it in `shared/agent/tool-risk.ts`
 3. Implement it: a per-operation handler in `electron/mcp/tools/` (`notes.ts`, `tasks.ts`, `flow.ts`, … — delegate to `q.*` helpers from `db/queries.ts`), routed from `electron/mcp/tools/consolidated.ts` when the tool is a consolidated one
 4. If chat needs extra behaviour (AI write locks, active context), add it in `electron/agent/tools/cairn-executor.ts`
 5. Add a corresponding query helper to `electron/db/queries.ts` if needed

@@ -8,7 +8,7 @@ import { getEngineHost } from "./host";
 import { runEnginePrompt } from "./prompt";
 import { chatApprovalPolicyFor, chatSystemPrompt } from "./permissions";
 import type { Attachment } from "../../agent/attachments";
-import type { ChatRequest } from "../../lib/tools";
+import type { ChatRequest } from "../../lib/chat-prompt";
 import type { AgentLLMConfig } from "../../lib/session-runtime-types";
 import { makeSessionProjection } from "../../../shared/agent/session-projection";
 import { rejectBusy } from "../session-guards";

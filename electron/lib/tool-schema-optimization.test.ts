@@ -24,7 +24,7 @@ import path from "path";
 import { config as loadDotenv } from "dotenv";
 import { encode } from "gpt-tokenizer";
 import * as z from "zod";
-import { TOOLS } from "./tools";
+import { TOOLS } from "./chat-prompt";
 import { TOOL_SCHEMAS } from "./tool-schemas";
 import { parseMobileTools } from "./mobile-tools-fixture";
 
