@@ -4,6 +4,7 @@ import { MIN_CHAT_PANEL_WIDTH, MIN_MAIN_CONTENT_WIDTH } from "@/store/slices/ui-
 import React, { useEffect, useState, useRef } from "react";
 import { useCairnStore } from "@/store";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
+import { sessionClient } from "@/lib/ipc/session";
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
 import { useShallow } from "zustand/react/shallow";
 import { CairnEvents } from "@/lib/events";
@@ -238,7 +239,7 @@ export default function Home() {
                 reasoning: string | null;
                 toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
               };
-              const sessRes = await window.electron.session.getSessionMessages(latest.id);
+              const sessRes = await sessionClient.getSessionMessages(latest.id);
               const payload = unwrapSessionPayload(sessRes);
               const rows: SessionRow[] | undefined = payload.messages.length > 0 ? payload.messages as unknown as SessionRow[] : undefined;
               const lastUsage = payload.usage as import("@/store/slices/terminal-sessions").TerminalSession["lastUsage"];
@@ -275,7 +276,7 @@ export default function Home() {
               });
                     state.setActiveCodingSession(latest.id);
               // Restore LLM context in main process
-              window.electron.session.restoreContext(latest.id);
+              void sessionClient.restoreContext(latest.id).catch(() => {});
             }
           } catch (e) {
             console.error("[startup] failed to restore coding session", e);

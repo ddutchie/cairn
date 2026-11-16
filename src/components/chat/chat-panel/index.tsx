@@ -12,6 +12,8 @@ import { useChatMessageQueue, queuedFor, waitForSessionIdle, type QueuedMessage 
 import { buildGraphContext } from "@/components/graph/graph-ai-utils";
 import { useGraphData } from "@/hooks/useGraphData";
 import { ipcResult } from "@/store/ipc";
+import { runtimeClient } from "@/lib/ipc/runtime";
+import { sessionClient } from "@/lib/ipc/session";
 import { resolvePromptContext } from "@/lib/context-resolver";
 import { storage } from "@/lib/storage";
 import { ACTIVE_PROJECT_KEY } from "@/lib/constants";
@@ -392,7 +394,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
   useEffect(() => {
     if (!threadId) return;
     let cancelled = false;
-    void window.electron?.session?.isRunning(`chat-${threadId}`)
+    void sessionClient
+      .isRunning(`chat-${threadId}`)
       .then((state) => { if (!cancelled && state?.running) syncRunningRef.current(true); })
       .catch(() => { /* the live events still arrive */ });
     return () => { cancelled = true; };
@@ -571,7 +574,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       if (commandMatch) {
         clearInput();
         const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
-        void window.electron?.runtime?.executeCommand({ sessionId: `chat-${targetThreadId}`, line: trimmed }).then((result) => {
+        void runtimeClient.executeCommand({ sessionId: `chat-${targetThreadId}`, line: trimmed }).then((result) => {
           if (commandName === "plan" && commandArgs && commandArgs !== "off" && result?.kind === "success") {
             void handleSendRef.current(commandArgs);
           }

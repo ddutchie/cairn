@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { sessionClient } from "@/lib/ipc/session";
 
 // Shared coalesced poller for `session:running-ids`.
 // Sidebar mounts one SessionBrowser per expanded project (sidebar.tsx:605),
@@ -19,8 +20,7 @@ let visibilityAttached = false;
 const listeners = new Set<(ids: Set<string>) => void>();
 
 function poll() {
-  if (!window.electron?.session?.runningIds) return;
-  window.electron.session
+  sessionClient
     .runningIds()
     .then((result) => {
       const next = new Set(result.ids);

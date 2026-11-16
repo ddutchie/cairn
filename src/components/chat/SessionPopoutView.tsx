@@ -14,6 +14,7 @@ import { useSessionConversation } from "@/hooks/useSessionConversation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { SessionRow } from "@/components/agent/SessionRow";
+import { sessionClient } from "@/lib/ipc/session";
 import { useListboxNavigation, sanitizeAriaId } from "@/hooks/useListboxNavigation";
 import { IconButton } from "@/components/ui/icon-button";
 
@@ -340,7 +341,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState("");
   const loadHistory = useCallback(async () => {
-    const result = profile === "chat" ? await window.electron?.chat.sessionMessages(threadId) : await window.electron?.session.getSessionMessages(sessionId);
+    const result = profile === "chat" ? await window.electron?.chat.sessionMessages(threadId) : await sessionClient.getSessionMessages(sessionId);
     return normalizeSessionMessages(result);
   }, [profile, sessionId, threadId]);
   // Approvals still waiting on the user. Kept apart from `messages` because an
@@ -381,7 +382,7 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
 
   useEffect(() => {
     let cancelled = false;
-    void window.electron?.session.isRunning(sessionId).then((state) => {
+    void sessionClient.isRunning(sessionId).then((state) => {
       if (cancelled) return;
       sessionConversation.syncRunning(state.running);
       const pending = state.pendingQuestions?.[0];
@@ -402,9 +403,9 @@ function SessionPopoutConversation({ selection, browserOpen, onToggleBrowser, on
     setInput("");
     const optimistic: ConversationMessage = { id: `popout-${Date.now()}`, role: "user", content, createdAt: new Date().toISOString() };
     setMessages((current) => [...current, optimistic]);
-    sessionConversation.startPrompt(() => window.electron?.session.prompt(profile === "chat"
+    sessionConversation.startPrompt(() => void sessionClient.prompt(profile === "chat"
       ? { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: workspaceId ?? undefined, config: { provider: aiConfig.provider || "openai", baseUrl: aiConfig.baseUrl || undefined, model: aiConfig.model || undefined, apiKey: aiConfig.apiKey || undefined, maxSteps: aiConfig.maxSteps ?? 30, contextLimit: aiConfig.contextLimit, contextWindow: aiConfig.contextLimit } }
-      : { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: workspaceId ?? undefined, cwd: cwd ?? undefined, mode: "execute", config: agentConfig }));
+      : { sessionId, profile, prompt: content, projectId: activeProjectId ?? undefined, workspaceId: workspaceId ?? undefined, cwd: cwd ?? undefined, mode: "execute", config: agentConfig }).catch(() => {}));
   }
 
   return <AISettingsLinkContext.Provider value={false}><ConversationPane

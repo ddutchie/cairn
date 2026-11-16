@@ -13,6 +13,8 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, use
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
 import { agentClient } from "@/lib/ipc/agent";
+import { runtimeClient } from "@/lib/ipc/runtime";
+import { sessionClient } from "@/lib/ipc/session";
 import { hasElectron } from "@/lib/ipc/client";
 import type { PendingQuestion } from "@/lib/conversation/message";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
@@ -305,7 +307,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       // could read false in the split second before runningLoops is populated —
       // which would wrongly flip the input to idle and finalise a live bubble.
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const res = await window.electron?.session.isRunning(session.sessionId);
+      const res = await sessionClient.isRunning(session.sessionId);
       if (cancelled) return;
       const running = res?.running ?? false;
       // Re-surface approval asks whose original push was lost to a reload —
@@ -357,8 +359,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
 
   // Subscribe to IPC events for this session
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron) return;
+    if (!hasElectron()) return;
 
     const { sessionId } = session;
 
@@ -371,7 +372,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // A live goal projection is newer than the in-flight snapshot — once one
     // arrives, the pending snapshot must not clobber it when it settles.
     let liveUpdate = false;
-    void electron.session.goal(sessionId).then((res) => {
+    void sessionClient.goal(sessionId).then((res) => {
       if (cancelled || liveUpdate) return;
       if (res && typeof res === "object" && "ok" in res && res.ok) {
         setSessionGoal((res as { value: GoalSummary | null }).value);
@@ -379,7 +380,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     }).catch(() => undefined);
 
     const attachedSubagents = new Set<string>();
-    const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
+    const unsubProjection = sessionClient.onProjection((projection: SessionProjection) => {
       if (projection.sessionId !== sessionId) return;
       const e = projection.data as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
       if (projection.kind === "subagent-trace" && e.parentSession === sessionId) {
@@ -415,7 +416,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       else if (projection.kind === "compact-result") {
         void (async () => {
           try {
-            const result = await electron.session.getSessionMessages(sessionId);
+            const result = await sessionClient.getSessionMessages(sessionId);
             const rows = unwrapSessionPayload(result).messages;
             if (rows.length) useCairnStore.setState((s) => ({ terminalSessions: s.terminalSessions.map((t) => t.sessionId === sessionId ? { ...t, messages: rows as never } : t) }));
           } catch (err) { console.warn("[AgentChatPane] compact reload failed", err); }
@@ -456,7 +457,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     // ── Slash commands ─────────────────────────────────────────────────────
     if (trimmed === "/compact") {
       setInput("");
-      window.electron?.session.compactNow({
+      void sessionClient.compactNow({
         sessionId: session.sessionId,
         config: {
           // Never coerce localhost URLs to a special local slug — a user-run
@@ -475,7 +476,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           // never mounts a different api than the live turns (replay stays valid).
           apiMode: (aiConfig.savedProviders?.find((p) => p.id === agentConfig.activeProviderId)?.apiMode) ?? "completions",
         },
-      });
+      }).catch(() => {});
       return;
     }
 
@@ -498,7 +499,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     if (commandMatch) {
       setInput("");
       const commandArgs = trimmed.slice(1).trim().slice(commandName.length).trim();
-      void window.electron?.runtime?.executeCommand({ sessionId: session.sessionId, line: trimmed }).then((result) => {
+      void runtimeClient.executeCommand({ sessionId: session.sessionId, line: trimmed }).then((result) => {
         // engine's /plan handler uses agent.steer() for its suffix. That works
         // while a live turn is open, but this command runs on an idle resumed
         // agent in Cairn. Submit the suffix as a normal user turn after the
@@ -597,7 +598,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
           apiMode: (aiConfig.savedProviders?.find((p) => p.id === agentConfig.activeProviderId)?.apiMode) ?? "completions",
        },
     };
-    window.electron?.session.prompt(promptPayload);
+    void sessionClient.prompt(promptPayload).catch(() => {});
   }, [isLoading, session, agentConfig, aiConfig, activeWorkspaceId, addAgentMessage, setInput, enqueue, registryCommands, sessionConversation]);
 
   // Keep ref current so the initialPrompt effect always calls the latest version.
@@ -642,7 +643,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
       void sendPrompt(answersText);
       return;
     }
-    window.electron?.session.respondQuestions(session.sessionId, pendingQuestionCallId, answersText, pendingQuestionNonce);
+    void sessionClient.respondQuestions(session.sessionId, pendingQuestionCallId, answersText, pendingQuestionNonce).catch(() => {});
     sessionConversation.setQuestions(null);
   }, [pendingQuestionCallId, pendingQuestionNonce, session, sendPrompt, sessionConversation]);
 
@@ -685,7 +686,7 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
     clearQueue();
     clearAgentMessages(session.sessionId);
     setSessionTodos(session.sessionId, []);
-    window.electron?.session.clear(session.sessionId);
+    void sessionClient.clear(session.sessionId).catch(() => {});
   }
 
   // Plan approval flows through engine's exit_plan_mode tool and the structured

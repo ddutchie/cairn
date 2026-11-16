@@ -9,6 +9,7 @@ import { id, now } from "@/lib/utils";
 import { storage } from "@/lib/storage";
 import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
 import { ipc, ipcAwait, ipcResult } from "../ipc";
+import { sessionClient } from "@/lib/ipc/session";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
 
 /** The thread-index fields `db:chat:upsertThread` stores (it stamps its own timestamps). */
@@ -389,7 +390,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // can be up to 2s stale). A running turn must be stopped first.
     // Fail closed: an unknown running state must not authorize deletion.
     try {
-      const state = await window.electron?.session.isRunning(`chat-${threadId}`);
+      const state = await sessionClient.isRunning(`chat-${threadId}`);
       if (state?.running) return false;
     } catch (err) {
       console.error("[chat] deleteThread: running check failed", err);
@@ -401,7 +402,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // PersistenceCoordinator stays "live" and the next prompt on a new
     // thread can race with the still-preparing old session (chat-Z... while live)
     try {
-      window.electron?.session.abort(`chat-${threadId}`);
+      sessionClient.abort(`chat-${threadId}`).catch(() => {});
     } catch {}
     set((s) => {
       const { [threadId]: _omit, ...rest } = s.projectedTitles;
@@ -538,7 +539,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     // Authoritative running check — refuse the whole clear if any turn is live.
     // Fail closed: any failed check cancels the whole clear.
     try {
-      const states = await Promise.all([...ids].map((id) => window.electron?.session.isRunning(`chat-${id}`)));
+      const states = await Promise.all([...ids].map((id) => sessionClient.isRunning(`chat-${id}`)));
       if (states.some((st) => st?.running)) return;
     } catch (err) {
       console.error("[chat] clearAllThreads: running check failed", err);

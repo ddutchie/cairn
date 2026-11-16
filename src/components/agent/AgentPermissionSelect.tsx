@@ -22,6 +22,8 @@ import { ShieldCheck } from "lucide-react";
 import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { SessionProjection, SessionProjectionData } from "../../../shared/agent/session-projection";
+import { sessionClient } from "@/lib/ipc/session";
+import { hasElectron } from "@/lib/ipc/client";
 
 type PermissionsSelect = SessionProjectionData["permissions"];
 
@@ -52,25 +54,24 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
     // A live projection is newer than the in-flight cold read — once one
     // arrives, the pending snapshot must not clobber it when it settles.
     let liveUpdate = false;
-    const electron = window.electron;
-    if (!electron) return;
+    if (!hasElectron()) return;
     // Cold read — works before any live projection (fresh pane, no turn yet).
-    const read = () => void electron.session.permissions(sessionId).then((res: SnapshotResult) => {
+    const read = () => void sessionClient.permissions(sessionId).then((res: SnapshotResult) => {
       if (cancelled || liveUpdate || !res || typeof res !== "object" || !("ok" in res) || !res.ok) return;
       if (isSelect(res.value)) setSelect(res.value);
     }).catch(() => undefined);
     read();
     // The presets service only mounts with a coding turn's shell, and a resumed
     // session emits no preset change — so re-read once each turn is underway.
-    const unsubEvent = electron.session.onEvent?.((envelope) => {
+    const unsubEvent = sessionClient.onEvent((envelope) => {
       if (!cancelled && envelope.sessionId === sessionId && envelope.event.type === "step/start") read();
     });
     // Live select — preset switches (this pane's or the model's) re-render.
-    const unsub = electron.session.onProjection((projection: SessionProjection) => {
+    const unsub = sessionClient.onProjection((projection: SessionProjection) => {
       if (cancelled || projection.sessionId !== sessionId || projection.kind !== "permissions") return;
       if (isSelect(projection.data)) { liveUpdate = true; setSelect(projection.data); }
     });
-    return () => { cancelled = true; unsub?.(); unsubEvent?.(); };
+    return () => { cancelled = true; unsub(); unsubEvent(); };
   }, [sessionId]);
 
   if (!select) return null;
@@ -79,9 +80,9 @@ export function AgentPermissionSelect({ sessionId }: AgentPermissionSelectProps)
     if (value === CUSTOM_VALUE || value === select.currentValue) return;
     // Refresh after settle so a rejected switch snaps back to the true value
     // even if the projection broadcast is missed.
-    const done = window.electron?.session.setPermissionPreset(sessionId, value);
-    void done?.catch(() => undefined).finally(() => {
-      void window.electron?.session.permissions(sessionId).then((res: SnapshotResult) => {
+    const done = sessionClient.setPermissionPreset(sessionId, value);
+    void done.catch(() => undefined).finally(() => {
+      void sessionClient.permissions(sessionId).then((res: SnapshotResult) => {
         if (!res || typeof res !== "object" || !("ok" in res) || !res.ok) return;
         if (isSelect(res.value)) setSelect(res.value);
       }).catch(() => undefined);

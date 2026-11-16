@@ -5,6 +5,7 @@ import { useCairnStore } from "@/store";
 import { id } from "@/lib/utils";
 import type { AgentMessage, CodingSessionSummary, SessionPresentation, TerminalSession } from "@/types";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
+import { sessionClient } from "@/lib/ipc/session";
 
 /**
  * Shared hook for creating new Cairn Agent sessions and resuming existing ones.
@@ -51,7 +52,7 @@ export function useAgentSessionActions() {
       spawnedAt: now,
       updatedAt: now,
     };
-    try { await window.electron?.session.createSession(summary); } catch (e) {
+    try { await sessionClient.createSession(summary); } catch (e) {
       console.debug("[useAgentSessionActions] createSession failed:", e);
     }
     addTerminalSession({
@@ -82,7 +83,7 @@ export function useAgentSessionActions() {
           reasoning?: string | null;
           toolCalls: unknown[] | null; subagents: unknown[] | null; timestamp: string;
         };
-        const sessRes = await window.electron?.session.getSessionMessages(summary.id);
+        const sessRes = await sessionClient.getSessionMessages(summary.id);
         const payload = unwrapSessionPayload(sessRes);
         const rows: RowType[] | undefined = payload.messages.length > 0 ? payload.messages as unknown as RowType[] : undefined;
         lastUsage = payload.usage as TerminalSession["lastUsage"];
@@ -101,7 +102,7 @@ export function useAgentSessionActions() {
         }
       } catch { /* ok */ }
 
-      window.electron?.session.restoreContext(summary.id);
+      void sessionClient.restoreContext(summary.id).catch(() => {});
       addTerminalSession({
         sessionId: summary.id, taskId: summary.taskId ?? summary.id,
         taskTitle: summary.taskTitle, agentId: "cairn-agent", agentName: "Cairn Agent",
@@ -114,7 +115,7 @@ export function useAgentSessionActions() {
     } else {
 
 
-      window.electron?.session.restoreContext(summary.id);
+      void sessionClient.restoreContext(summary.id).catch(() => {});
     }
     if (activate) {
       setActiveCodingSession(summary.id);

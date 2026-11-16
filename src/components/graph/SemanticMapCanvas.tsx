@@ -14,6 +14,8 @@ import { useContainerDims, useFontScale, useRelativePointer } from "@/lib/viz/ho
 import { CanvasCallout } from "./AnalyticsShared";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { embeddingsClient, runtimeClient } from "@/lib/ipc/runtime";
+import { hasElectron } from "@/lib/ipc/client";
 
 interface Props {
   nodes: GraphNode[];
@@ -97,14 +99,13 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
   // Reload projections whenever scope or workspace changes
   const reloadProjections = useCallback(async () => {
     if (!activeWorkspaceId) return;
-    const e = window.electron?.embeddings;
-    if (!e?.projections) {
+    if (!hasElectron("embeddings")) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const result = await e.projections(activeWorkspaceId);
+      const result = await embeddingsClient.projections(activeWorkspaceId);
       setProjections(result.rows);
       setAnyStale(result.anyStale);
       setProjectionModel(result.model);
@@ -123,7 +124,7 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
 
   // Subscribe to recompute progress broadcasts
   useEffect(() => {
-    const off = window.electron?.runtime?.embeddings?.onProgress((ev) => {
+    const off = runtimeClient.embeddings.onProgress((ev) => {
       if (ev.modelId || ev.status === "downloading") return;
       if (ev.status === "progress" && typeof ev.loaded === "number" && typeof ev.total === "number") {
         setRecomputeProgress({ done: ev.loaded, total: ev.total });
@@ -210,11 +211,10 @@ export function SemanticMapCanvas({ nodes, onNodeClick, selectedNodeId }: Props)
   }, []);
 
   function handleRecompute() {
-    const e = window.electron?.embeddings;
-    if (!e?.recomputeProjections || !activeWorkspaceId) return;
+    if (!hasElectron("embeddings") || !activeWorkspaceId) return;
     setRecomputing(true);
     setRecomputeProgress({ done: 0, total: 0 });
-    e.recomputeProjections(activeWorkspaceId)
+    embeddingsClient.recomputeProjections(activeWorkspaceId)
       .then(() => reloadProjections())
       .catch(() => { /* error shown via progress event */ })
       .finally(() => {

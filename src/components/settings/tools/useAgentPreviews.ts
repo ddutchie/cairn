@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useCairnStore } from "@/store";
+import { runtimeClient } from "@/lib/ipc/runtime";
 
 export interface InventoryToolView {
   name: string;
@@ -53,7 +54,7 @@ export function useAgentPreviews(): PreviewsState {
     setLoading(true);
     setError(null);
     try {
-      const promptRes = await window.electron?.runtime?.systemPromptPreview({ cwd: workspacePath });
+      const promptRes = await runtimeClient.systemPromptPreview({ cwd: workspacePath });
       if (promptRes) {
         if (promptRes.error) setError(promptRes.error);
         setSystemPrompt(promptRes.text || null);
@@ -64,14 +65,14 @@ export function useAgentPreviews(): PreviewsState {
       try {
         const { projects: ps, activeProjectId: ap } = useCairnStore.getState();
         const projName = ps.find((p) => p.id === ap)?.name ?? ps[0]?.name;
-        const codingRes = await window.electron?.runtime?.codingPromptPreview?.({
+        const codingRes = await runtimeClient.codingPromptPreview({
           cwd: workspacePath,
           projectName: projName,
         });
         if (codingRes && !codingRes.error) setCodingPrompt(codingRes.text || null);
       } catch { /* informational — chat preview still answers */ }
       try {
-        const invRes = await window.electron?.runtime?.toolsInventory?.();
+        const invRes = await runtimeClient.toolsInventory();
         if (invRes?.surfaces) setInventory(invRes.surfaces);
         else if (invRes?.error) setError((prev) => prev ?? invRes.error ?? null);
       } catch { /* informational — legacy global list still answers */ }

@@ -8,6 +8,7 @@ import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 import { foldSessionStats } from "../../shared/session-stats";
 import { createLiveStreamStore } from "@/lib/conversation/live-stream-store";
+import { sessionClient } from "@/lib/ipc/session";
 
 export interface SessionConversationToolCall {
   tool: string;
@@ -225,8 +226,6 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
   const resetTransient = (keepQuestions = false) => resetTransientFor(sessionIdRef.current, keepQuestions);
 
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron?.session?.onEvent || !electron?.session?.onProjection) return;
     const matches = (id: string | undefined) =>
       matchesSessionConversation(sessionIdRef.current, id, acceptUnscopedEvents) ||
       (id != null && watchedRef.current.has(transientKey(id)));
@@ -373,14 +372,14 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
       foldsRef.current.set(key, fold);
       return fold;
     };
-    const unsubscribeEvent = electron.session.onEvent((envelope: SessionEventEnvelope) => {
+    const unsubscribeEvent = sessionClient.onEvent((envelope: SessionEventEnvelope) => {
       const key = transientKey(envelope.sessionId);
       if (!matches(envelope.sessionId) && !watchedRef.current.has(key)) return;
       // keep raw events for live stats fallback (mirrors electron/agent/session-replay.ts replay path)
       getTransient(key).events.push(envelope.event as { type: string; time?: unknown; data?: unknown });
       getFold(key, envelope.sessionId)(envelope.event);
     });
-    const unsubscribeProjection = electron.session.onProjection((projection: SessionProjection) => {
+    const unsubscribeProjection = sessionClient.onProjection((projection: SessionProjection) => {
       // Same routing as events: the active session plus this controller's
       // unfinished background turns (otherwise e.g. a background approval
       // card would never reach its transient).
@@ -433,14 +432,14 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     if (id === sessionIdRef.current) setIsLoading(true);
     dispatch();
   };
-  const stop = () => { if (sessionIdRef.current) window.electron?.session.abort(sessionIdRef.current); resetTransient(true); };
+  const stop = () => { if (sessionIdRef.current) void sessionClient.abort(sessionIdRef.current).catch(() => {}); resetTransient(true); };
   const clearQuestions = () => clearQuestionsFor(sessionIdRef.current);
   const answerQuestions = (answers: string) => {
     const id = sessionIdRef.current;
     const callId = id ? questionCallsBySession[id] : undefined;
     const nonce = id ? questionNoncesBySession[id] : undefined;
     if (!id || !callId) return false;
-    window.electron?.session.respondQuestions(id, callId, answers, nonce); clearQuestionsFor(id); return true;
+    void sessionClient.respondQuestions(id, callId, answers, nonce).catch(() => {}); clearQuestionsFor(id); return true;
   };
   const syncRunning = (running: boolean) => {
     getTransient(transientKey(sessionIdRef.current)).running = running;

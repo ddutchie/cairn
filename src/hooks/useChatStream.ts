@@ -5,6 +5,7 @@ import { useCairnStore } from "@/store";
 import type { SuggestedAction, ChatHistoryEntry } from "@/types";
 import { useSessionConversation } from "./useSessionConversation";
 import { isBenignTurnEnd } from "../../shared/agent/turn-end-reason";
+import { sessionClient } from "@/lib/ipc/session";
 import type { ConversationLiveToolCall, PendingQuestion as ConversationPendingQuestion, PendingQuestionOption as ConversationPendingQuestionOption } from "@/lib/conversation/message";
 
 // These now live in the shared conversation layer so the profile-neutral
@@ -137,12 +138,12 @@ export function useChatStream(
   });
 
   function sendStream(req: ChatStreamRequest) {
-    controller.startPrompt(() => window.electron?.session.prompt({
+    controller.startPrompt(() => void sessionClient.prompt({
       sessionId: `chat-${req.threadId}`, profile: "chat", prompt: req.message,
       projectId: req.projectId ?? undefined, workspaceId: req.workspaceId ?? undefined,
       attachments: req.images, history: req.history, systemPrompt: req.systemPrompt,
       personality: req.personality, approvalPolicy: req.approvalPolicy, useSubagents: req.useSubagents, config: req.config,
-    }), `chat-${req.threadId}`);
+    }).catch(() => {}), `chat-${req.threadId}`);
     setThreadUsage(req.threadId, undefined);
   }
 

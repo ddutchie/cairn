@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import type { JobSummary } from "@/../shared/agent/session-projection";
 import { Tooltip } from "@/components/ui/tooltip";
 import { formatDurationMs } from "../../../shared/format/number";
+import { sessionClient } from "@/lib/ipc/session";
 
 interface AgentJobsDockProps {
   jobs: JobSummary[];
@@ -50,7 +51,7 @@ export function AgentJobsDock({ jobs, live = true, sessionId }: AgentJobsDockPro
   const onKill = async (jobId: string) => {
     setKillError(null);
     try {
-      const res = await window.electron?.session.killJob(jobId, sessionId);
+      const res = await sessionClient.killJob(jobId, sessionId);
       if (res && typeof res === "object" && "ok" in res && !(res as { ok: boolean }).ok) {
         const { code, message } = res as { ok: false; code: string; message: string };
         setKillError(code === "owner-unavailable" ? "Can't stop: owning turn ended" : `Can't stop: ${message}`);

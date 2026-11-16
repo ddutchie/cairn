@@ -15,6 +15,8 @@ import { cn, prettifyToolLabel } from "@/lib/utils";
 import { isBenignTurnEnd } from "../../../../shared/agent/turn-end-reason";
 import { reportIpcError } from "@/lib/ipc/client";
 import { createSessionEventFold } from "../../../../shared/agent/session-event-fold";
+import { sessionClient } from "@/lib/ipc/session";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -137,8 +139,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
   // local messages (useChatStream already persists to the thread store,
   // but we need it in our local messages array for display in this modal).
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron) return;
+    if (!hasElectron()) return;
     let content = "";
     const fold = createSessionEventFold({
       onTurnStart: () => { content = ""; },
@@ -152,7 +153,7 @@ export function PrdModal({ projectId, workspaceId, onClose }: PrdModalProps) {
         if (!isBenignTurnEnd(reason)) reportIpcError(new Error(detail ?? "The AI request failed."));
       },
     });
-    const unsub = electron.session.onEvent((e) => {
+    const unsub = sessionClient.onEvent((e) => {
       if (e.sessionId === `chat-${threadId}`) fold(e.event);
     });
     return () => { unsub(); };

@@ -16,6 +16,8 @@ import { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import { forgetSessionPrompts } from "./session-prompt-guard";
 import { id } from "../../lib/utils";
+import { sessionClient } from "@/lib/ipc/session";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── Per-session token buffer (perf) ──────────────────────────────────────────
 //
@@ -756,9 +758,9 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   },
 
   async fetchCodingSessionHistory(projectId) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !hasElectron()) return;
     try {
-      const history = await window.electron.session.listSessions(projectId) as CodingSessionSummary[];
+      const history = await sessionClient.listSessions(projectId) as CodingSessionSummary[];
       set({ codingSessionHistory: history });
     } catch (err) {
       console.error("[coding-sessions] fetchCodingSessionHistory error", err);
@@ -768,10 +770,10 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   },
 
   async fetchCodingSessionHistoryForProjects(projectIds) {
-    if (typeof window === "undefined" || !window.electron) return;
+    if (typeof window === "undefined" || !hasElectron()) return;
     try {
       const histories = await Promise.all(
-        projectIds.map(async (projectId) => window.electron!.session.listSessions(projectId) as Promise<CodingSessionSummary[]>),
+        projectIds.map(async (projectId) => sessionClient.listSessions(projectId) as Promise<CodingSessionSummary[]>),
       );
       const merged = histories.flat().sort((a, b) =>
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -785,14 +787,14 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
   },
 
   async deleteCodingSessionFromHistory(sessionId) {
-    if (typeof window === "undefined" || !window.electron) return false;
+    if (typeof window === "undefined" || !hasElectron()) return false;
     // One delete per session at a time: an overlapping one could put back an entry the other removed.
     if (deletingCodingSessions.has(sessionId)) return false;
     deletingCodingSessions.add(sessionId);
     try {
       // Authoritative running check (UI running-ids poll can be 2s stale).
       try {
-        const state = await window.electron.session.isRunning(sessionId);
+        const state = await sessionClient.isRunning(sessionId);
         if (state?.running) {
           window.dispatchEvent(new CustomEvent("cairn:ipc-error", { detail: { message: "Stop the running session before deleting it." } }));
           return false;
@@ -812,7 +814,7 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         activeCodingSessionId: s.activeCodingSessionId === sessionId ? null : s.activeCodingSessionId,
       }));
       try {
-        await window.electron.session.deleteSession(sessionId);
+        await sessionClient.deleteSession(sessionId);
       } catch (err) {
         console.error("[coding-sessions] deleteCodingSessionFromHistory error", err);
         set((s) => ({
