@@ -99,7 +99,9 @@ export function SessionSearchList({
   listRef,
   onKeyDown,
 }: SessionSearchListProps) {
-  const hasActive = activeId != null;
+  // The active session may be filtered out (or beyond the preview limit):
+  // only treat it as the Tab entry point when it is actually rendered.
+  const hasActive = activeId != null && sessions.some((session) => session.id === activeId);
   return (
     <div
       ref={listRef}
