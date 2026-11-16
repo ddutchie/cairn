@@ -91,6 +91,49 @@ describe("permission presets", () => {
 });
 
 describe("destroyEngineSession", () => {
+  it("leaves no session state behind for the session or its subagents", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { default: Sqlite } = await import("better-sqlite3");
+    const { applySchema } = await import("../db/schema");
+    const { AgentHost } = await import("../agent/host");
+    const bridge = await import("./engine-bridge");
+    const { subagentDeps } = await import("./engine/subagents");
+    const state = await import("./engine/session-state");
+    const db = new Sqlite(":memory:");
+    applySchema(db);
+    const prompt = vi.spyOn(AgentHost.prototype, "prompt").mockResolvedValue({ text: "done", reason: "stopped" });
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "b4-state-"));
+    try {
+      const ctx = { db, workspacePath: cwd, getWin: () => null } as never;
+      const sessionId = `b4state${Date.now()}`;
+      const llmConfig = { baseUrl: "http://localhost:11434", model: "test-model", apiKey: "", maxSteps: 5 } as never;
+      const args = { ctx, sessionId, prompt: "do some work", cwd, workspaceId: "ws", projectId: "p", systemPrompt: "be helpful", llmConfig };
+      await bridge.runEnginePrompt(args);
+      expect(prompt).toHaveBeenCalledTimes(1);
+      // The idle session keeps what the turn recorded: rules, usage and the spawn context.
+      expect(state.getSessionState(sessionId)?.usage?.workspaceId).toBe("ws");
+      expect(state.getSessionState(sessionId)?.rules).toEqual([]);
+      expect(state.hasSessionState(sessionId)).toBe(true);
+
+      // A spawned child copies the parent's usage and workspace onto its own state.
+      const { childId } = await subagentDeps(ctx).run(sessionId, { prompt: "child task" });
+      expect(childId.startsWith(`${sessionId}.sub-`)).toBe(true);
+      expect(state.getSessionState(childId)?.usage?.workspaceId).toBe("ws");
+      expect(prompt).toHaveBeenCalledTimes(2);
+
+      await bridge.destroyEngineSession(ctx, sessionId);
+
+      const leaked = state.sessionStateIds().filter((id) => id === sessionId || id.startsWith(`${sessionId}.sub-`));
+      expect(leaked).toEqual([]);
+    } finally {
+      prompt.mockRestore();
+      db.close();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("removes the log, the legacy copy, the profile and the search vectors", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");

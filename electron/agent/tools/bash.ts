@@ -3,11 +3,11 @@
  * and bounded output. Commands run inside the OS sandbox (see ../sandbox.ts)
  * unless the model asks for `unsandboxed`, which always goes to the human.
  */
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";
 import type { JobRegistry } from "../jobs";
+import { platformShell, runProcess } from "../../lib/proc";
 import { sandboxDenialHint, sandboxStatus, sandboxUnavailable, wrapSandboxed, type SandboxOptions } from "../sandbox";
 import { clampMiddle, fail, ok } from "./schema";
 
@@ -24,11 +24,6 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
 const MAX_OUTPUT_CHARS = 30_000;
 const KEEP_BYTES = 4 * MAX_OUTPUT_CHARS;
-
-function shellFor(command: string): { file: string; args: string[] } {
-  if (process.platform === "win32") return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", command] };
-  return { file: process.env.SHELL && /\/(ba|z)?sh$/.test(process.env.SHELL) ? process.env.SHELL : "/bin/bash", args: ["-c", command] };
-}
 
 export function bashTool(deps: BashDeps): AgentTool {
   // Read per call so toggling the setting applies to the next command, not the next session.
@@ -66,39 +61,24 @@ export function bashTool(deps: BashDeps): AgentTool {
       if (ctx.readOnly && (a.unsandboxed || !sandboxOf() || !sandboxStatus(sandboxOf()!.mode).active)) return Promise.resolve(fail("Plan mode only allows shell commands inside the read-only sandbox, which is not available."));
       const cwd = a.workdir ? path.resolve(deps.cwd, a.workdir) : deps.cwd;
       const timeout = Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.floor(a.timeoutMs ?? DEFAULT_TIMEOUT_MS)));
-      const raw = shellFor(a.command);
+      const raw = platformShell(a.command);
       const { file, args } = sandboxOf() && !a.unsandboxed ? wrapSandboxed(raw, cwd, { ...sandboxOf()!, ...(ctx.readOnly ? { mode: "read-only" as const } : {}), root: deps.cwd }) : raw;
       if (a.run_in_background && deps.jobs) {
         const job = deps.jobs.registry.start({ owner: deps.jobs.owner, label: a.description || a.command, file, args, cwd, env: deps.env });
         return Promise.resolve(ok(`Started background job ${job.id}. Use job_output to read it and job_kill to stop it.`));
       }
-      return new Promise((resolve) => {
-        let out = "";
-        let timedOut = false;
-        const child = spawn(file, args, { cwd, env: deps.env ?? process.env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
-        const kill = () => {
-          try { if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); } catch { /* already gone */ }
-        };
-        const onData = (d: Buffer) => { out += d.toString("utf8"); if (out.length > KEEP_BYTES) out = out.slice(-KEEP_BYTES); };
-        child.stdout.on("data", onData);
-        child.stderr.on("data", onData);
-        const timer = setTimeout(() => { timedOut = true; kill(); }, timeout);
-        const onAbort = () => kill();
-        ctx.signal?.addEventListener("abort", onAbort, { once: true });
-        const done = (result: ReturnType<typeof ok>) => {
-          clearTimeout(timer);
-          ctx.signal?.removeEventListener("abort", onAbort);
-          resolve(result);
-        };
-        child.on("error", (err) => done(fail(`Failed to start shell: ${err.message}`)));
-        child.on("close", (code, signal) => {
-          const body = clampMiddle(out.trimEnd(), MAX_OUTPUT_CHARS);
-          const hint = code !== 0 && sandboxOf() && !a.unsandboxed ? sandboxDenialHint(out, ctx.readOnly) : undefined;
-          if (ctx.signal?.aborted) return done(fail(`${body}\n[aborted]`.trim()));
-          if (timedOut) return done(fail(`${body}\n[timed out after ${timeout}ms and was killed]`.trim()));
-          if (code === 0) return done(ok(body || "(no output)"));
-          done(fail(`${body}\n[exit ${code ?? signal}]${hint ? `\n${hint}` : ""}`.trim()));
-        });
+      return runProcess({
+        file, args, cwd, env: deps.env ?? process.env,
+        timeoutMs: timeout, signal: ctx.signal,
+        maxChars: KEEP_BYTES, keep: "tail", combine: true,
+      }).then((r) => {
+        if (r.error) return fail(`Failed to start shell: ${r.error}`);
+        const body = clampMiddle(r.stdout.trimEnd(), MAX_OUTPUT_CHARS);
+        const hint = r.code !== 0 && sandboxOf() && !a.unsandboxed ? sandboxDenialHint(r.stdout, ctx.readOnly) : undefined;
+        if (r.aborted) return fail(`${body}\n[aborted]`.trim());
+        if (r.timedOut) return fail(`${body}\n[timed out after ${timeout}ms and was killed]`.trim());
+        if (r.code === 0) return ok(body || "(no output)");
+        return fail(`${body}\n[exit ${r.code ?? r.signal}]${hint ? `\n${hint}` : ""}`.trim());
       });
     },
   });

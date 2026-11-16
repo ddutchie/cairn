@@ -4,12 +4,12 @@
  * existing file this session has not read (so edits are made against content
  * the model has actually seen).
  */
-import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tools";
+import { runProcess } from "../../lib/proc";
 import { clampMiddle, fail, ok } from "./schema";
 
 export interface FsDeps {
@@ -30,18 +30,20 @@ const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "imag
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 function rg(deps: FsDeps, args: string[], cwd: string, signal?: AbortSignal): Promise<{ stdout: string; stderr: string; code: number | null; truncated: boolean }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(deps.rgPath, args, { cwd, signal });
-    let stdout = "";
-    let stderr = "";
-    let truncated = false;
-    child.stdout.on("data", (d: Buffer) => {
-      if (stdout.length >= MAX_SEARCH_BYTES) { truncated = true; child.kill(); return; }
-      stdout += d.toString("utf8");
-    });
-    child.stderr.on("data", (d: Buffer) => { if (stderr.length < 8_192) stderr += d.toString("utf8"); });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ stdout, stderr, code, truncated }));
+  return runProcess({
+    file: deps.rgPath,
+    args,
+    cwd,
+    signal,
+    killTree: false,
+    killSignal: "SIGTERM",
+    maxChars: MAX_SEARCH_BYTES,
+    keep: "head",
+    maxStderrChars: 8_192,
+    killOnCap: true,
+  }).then((r) => {
+    if (r.error) throw new Error(r.error);
+    return { stdout: r.stdout, stderr: r.stderr, code: r.code, truncated: r.truncated };
   });
 }
 

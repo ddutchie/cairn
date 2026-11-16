@@ -158,6 +158,11 @@ const engineBoundary = {
     const insideEngine = parts[1] === "agent";
     if (insideEngine && fileRel === "electron/agent/host-store.ts") return {}; // the facade itself
     if (insideEngine && fileRel === ENGINE_INDEX) return {}; // the public surface re-exports by design
+    // The bridge's own implementation (split out of engine-bridge.ts in B4).
+    // These files ARE the boundary's engine side; the rule guards its users,
+    // not its guts. (Rewiring them through agent/index would only add
+    // indirection with no new protection.)
+    if (!insideEngine && parts[1] === "ipc" && parts[2] === "engine") return {};
 
     function check(spec, node, typeOnly) {
       if (typeof spec !== "string" || !spec.startsWith(".")) return;
