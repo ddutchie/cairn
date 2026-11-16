@@ -17,7 +17,7 @@ import { assertSafeId } from "./path-safety";
 import type { ReplayMessage, ReplaySubagent } from "../../shared/agent/session-wire";
 import { destroyEngineSession, engineOwns, getEngineHost, readEnginePermissions, setEnginePermission } from "./engine-bridge";
 import { getCachedConfig } from "../lib/config-cache";
-import type { Mode } from "../../shared/agent/approval-mode";
+import type { ApprovalMode } from "../../shared/agent/approval-mode";
 import type { AgentSessionMessage } from "../../shared/agent/session-wire";
 
 /** Map shared ReplayMessage[] to the coding-agent message shape the renderer expects. */
@@ -76,7 +76,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // `/permission <preset>` command, not here.
   registerContractHandle("session:permissions", (_e, { sessionId }) => handle(async () => {
     try {
-      return { ok: true as const, value: readEnginePermissions(sessionId, getCachedConfig().agentConfig?.mode as Mode | undefined) };
+      return { ok: true as const, value: readEnginePermissions(sessionId, getCachedConfig().agentConfig?.mode as ApprovalMode | undefined) };
     } catch (err) {
       const code = (err as { code?: string })?.code ?? "internal";
       return { ok: false as const, code, message: err instanceof Error ? err.message : "permissions snapshot failed" };
@@ -87,7 +87,7 @@ export function registerSessionHandlers(ctx: DbContext): void {
   // Preset switch for the renderer switcher; works while the session is idle.
   registerContractHandle("session:permissions:set", (_e, { sessionId, preset }) => handle(async () => {
     try {
-      return { ok: true as const, value: setEnginePermission(sessionId, preset, getCachedConfig().agentConfig?.mode as Mode | undefined) };
+      return { ok: true as const, value: setEnginePermission(sessionId, preset, getCachedConfig().agentConfig?.mode as ApprovalMode | undefined) };
     } catch (err) {
       const code = (err as { code?: string })?.code ?? "internal";
       return { ok: false as const, code, message: err instanceof Error ? err.message : "permission switch failed" };

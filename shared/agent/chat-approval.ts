@@ -12,7 +12,8 @@
  *
  * Pure data + functions: importable from renderer, main, and tests.
  */
-import { riskForTool, type RiskClass } from "./tool-risk";
+import { riskForTool } from "./tool-risk";
+import type { RiskClass } from "./risk";
 
 export type ChatApprovalPolicy = "safe" | "external" | "allow-all";
 

@@ -84,7 +84,7 @@ export interface LLMConfig {
    *  completions. */
   apiMode?: "responses" | "completions" | "anthropic-messages";
   /** OpenWorker-style approval Mode. When set it takes precedence over autoApprove. */
-  mode?: import("../../shared/agent/approval-mode").Mode;
+  mode?: import("../../shared/agent/approval-mode").ApprovalMode;
   /** @deprecated — use `mode`. Kept as alias: true→"auto", false→"interactive". */
   autoApprove?: boolean;
 }

@@ -17,7 +17,14 @@ import type { ModelRoute } from "../agent/provider";
 import { prepareAttachments, type Attachment } from "../agent/attachments";
 import { updateCodingSession } from "../db/sessions-queries";
 import type { Profile } from "../agent/loop";
-import type { Mode as EngineMode } from "../agent/policy";
+import {
+  PERMISSION_PRESETS,
+  chatEngineProfile,
+  presetProfile as purePresetProfile,
+  presetFromApprovalMode,
+  type PermissionPreset,
+} from "../agent/profiles";
+export { chatEngineProfile, engineProfile, PERMISSION_PRESETS } from "../agent/profiles";
 
 import { canonicalCommand, presetRules, type Rule } from "../agent/rules";
 import { buildToolset, skillCatalog } from "../agent/tools/index";
@@ -39,22 +46,11 @@ import { getCachedConfig } from "../lib/config-cache";
 import { notifyAgentAttention } from "../lib/agent-attention";
 import { routeFromConfig } from "../agent/route";
 import type { AgentLLMConfig } from "../lib/session-runtime-types";
-import type { Mode } from "../../shared/agent/approval-mode";
+import type { ApprovalMode } from "../../shared/agent/approval-mode";
 import { makeSessionProjection, type SessionBusyReason } from "../../shared/agent/session-projection";
 import { failedTurnEnd } from "../agent/session/adapter";
 
 export { routeFromConfig };
-
-/** Legacy approval modes onto engine modes. `auto` here keeps its old meaning: allow everything except EXTERNAL. */
-export function engineProfile(mode: Mode | undefined, role: "default" | "automation-dev" | undefined): Profile {
-  const engineMode: EngineMode = mode === "discuss" || mode === "plan" ? "plan" : mode === "auto" ? "yolo" : "ask";
-  return {
-    id: role === "automation-dev" ? "automation-dev" : "coding",
-    interactive: true,
-    mode: engineMode,
-    externalAlwaysAsks: engineMode === "yolo",
-  };
-}
 
 /** Sent with each plan-mode prompt, not in the system prompt, so approving the plan leaves the cached prefix intact. */
 export const PLAN_MODE_PROMPT = `## Plan mode
@@ -68,46 +64,22 @@ const sessionPlanning = new Set<string>();
 
 // ── permission presets (per session) ─────────────────────────────────────
 
-export const PERMISSION_PRESETS = [
-  { value: "ask", name: "Ask", description: "Ask before anything that changes files, runs commands, or calls external tools." },
-  { value: "auto", name: "Auto", description: "A model reviews each risky action: routine ones run, dangerous ones are blocked, unclear ones ask you. External tool calls still ask." },
-  { value: "yolo", name: "Allow all", description: "Run everything without asking, except external tool calls, which still ask." },
-] as const;
-type PermissionPreset = typeof PERMISSION_PRESETS[number]["value"];
 const sessionPreset = new Map<string, PermissionPreset>();
 
-/** The legacy approval mode a session would start with, as a preset. */
-const presetFromMode = (mode: Mode | undefined): PermissionPreset => (mode === "auto" ? "yolo" : "ask");
-
-function presetProfile(sessionId: string, mode: Mode | undefined, role: "default" | "automation-dev" | undefined): Profile {
-  const preset = sessionPreset.get(sessionId);
-  const base = engineProfile(mode, role);
-  if (!preset || base.mode === "plan") return base;
-  return { ...base, mode: preset, externalAlwaysAsks: preset === "yolo" };
+function presetProfile(sessionId: string, mode: ApprovalMode | undefined, role: "default" | "automation-dev" | undefined): Profile {
+  return purePresetProfile(sessionPreset.get(sessionId), mode, role);
 }
 
-export function readEnginePermissions(sessionId: string, fallback: Mode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
-  return { options: PERMISSION_PRESETS.map((p) => ({ ...p })), currentValue: sessionPreset.get(sessionId) ?? presetFromMode(fallback) };
+export function readEnginePermissions(sessionId: string, fallback: ApprovalMode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
+  return { options: PERMISSION_PRESETS.map((p) => ({ ...p })), currentValue: sessionPreset.get(sessionId) ?? presetFromApprovalMode(fallback) };
 }
 
-export function setEnginePermission(sessionId: string, preset: string, fallback: Mode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
+export function setEnginePermission(sessionId: string, preset: string, fallback: ApprovalMode | undefined): { options: Array<{ value: string; name: string; description?: string }>; currentValue: string } {
   if (!PERMISSION_PRESETS.some((p) => p.value === preset)) throw Object.assign(new Error(`Unknown permission preset: ${preset}`), { code: "bad-request" });
   sessionPreset.set(sessionId, preset as PermissionPreset);
   const view = readEnginePermissions(sessionId, fallback);
   broadcastEvent("session:projection", makeSessionProjection(sessionId, "permissions", view));
   return view;
-}
-
-/**
- * Chat approvals as engine policy. `safe` asks for deletes (WRITE_LOCAL) and connector calls (EXTERNAL)
- * simply because nothing allows them; `external` adds an allow for deletes; `allow-all` is yolo.
- * Grants stay overridable, which an `ask` rule would not be.
- */
-export function chatEngineProfile(policy: ChatApprovalPolicy): { profile: Profile; rules: Rule[] } {
-  const rules: Rule[] = policy === "external"
-    ? [{ id: "policy:chat-external-delete", effect: "allow", scope: "global", source: "preset", match: { tool: "delete" }, note: "Chat policy: external approve" }]
-    : [];
-  return { profile: { id: "chat", interactive: true, mode: policy === "allow-all" ? "yolo" : "ask" }, rules };
 }
 
 export function chatSystemPrompt(req: ChatRequest, policy: ChatApprovalPolicy): string {

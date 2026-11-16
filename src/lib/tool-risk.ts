@@ -16,11 +16,16 @@ export {
   type GrantScope,
 } from "../../shared/agent/tool-risk";
 export {
+  type ApprovalMode,
   type Mode,
+  APPROVAL_MODES,
   MODES,
+  isApprovalMode,
   isMode,
+  approvalModeFromAutoApprove,
   modeFromAutoApprove,
   autoApproveFromMode,
+  resolveApprovalMode,
   resolveMode,
   shouldAskForRisk,
   shouldAskForTool,

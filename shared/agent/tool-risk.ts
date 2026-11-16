@@ -10,7 +10,8 @@
  * renderer, the main process, and unit tests unchanged.
  */
 
-export type RiskClass = "READ" | "WRITE_LOCAL" | "EXEC" | "EXTERNAL";
+import type { RiskClass } from "./risk";
+export type { RiskClass } from "./risk";
 export type GrantScope = "none" | "command" | "session";
 
 /**
