@@ -62,13 +62,12 @@ export function shouldAskForRisk(risk: RiskClass, mode: Mode): boolean {
 }
 
 /**
- * Mode-aware per-tool gate. Combines the risk taxonomy with the active Mode,
- * and respects read-only invocations of multiplexed tools (str_replace_editor view).
+ * Mode-aware per-tool gate. Combines the risk taxonomy with the active Mode.
+ * (The retired `str_replace_editor` view carve-out was removed in Q6.)
  * Mirrors the old `needsApprovalForCall` policy, but MODE-scoped instead of binary.
  */
 export function shouldAskForTool(name: string, mode: Mode, args: Record<string, unknown> = {}): boolean {
-  // str_replace_editor view is read-only → map to READ regardless of mode.
-  if (name === "str_replace_editor" && args.command === "view") return false;
+  void args;
   const risk = riskForTool(name);
   return shouldAskForRisk(risk, mode);
 }
