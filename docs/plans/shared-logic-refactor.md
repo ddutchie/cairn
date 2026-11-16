@@ -23,7 +23,7 @@
 > - #297 merged — B2 (unified LLM config; Q2 key rule as own commit).
 > - #298 merged — llm-http.ts helper (Q9 second half; #179 stays open).
 > - #299 merged — B3 (session guards; turn-end rule centralized).
-> - Next: B4 (ready — engine-bridge split) → B5 → C5-boundary → knip report-only (Q8) → F20 renames (Q7: after final refactor PR). C4 DROPPED (Q5).
+> - Next: B4 (ready — engine-bridge split) → B5 (#302 opened) → C5-boundary → knip report-only (Q8) → F20 renames (Q7: after final refactor PR). C4 DROPPED (Q5).
 - Q9 PR #298 opened — shared LLM HTTP helper (`electron/lib/llm-http.ts`: `authHeaders` + `fetchJson`, one 10s default timeout; narrows #179 to the token-breakdown checkbox).
 > - Rule: every refactor PR updates this log before merge.
 
