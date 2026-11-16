@@ -30,7 +30,7 @@ const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
 // (the TOOL_SCHEMAS keys), while riskForTool ALSO handles engine names.
 const DSH_TOOL_NAMES = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
-  "write", "edit", "str_replace_editor", "todo_write", "skill", "bash", "pwsh",
+  "write", "edit", "todo_write", "skill", "bash",
   "subagent", "delegate", "send_message", "interrupt_agent", "list_agents",
   "job_list", "job_output", "job_kill",
   "terminal_open", "terminal_send", "terminal_signal", "terminal_close",
@@ -55,11 +55,8 @@ const DSH_TOOL_EXPECTATIONS: Array<[string, RiskClass, boolean, GrantScope]> = [
   ["skill", "READ", false, "none"],
   ["write", "WRITE_LOCAL", true, "session"],
   ["edit", "WRITE_LOCAL", true, "session"],
-  ["str_replace_editor", "WRITE_LOCAL", true, "session"],
   ["todo_write", "WRITE_LOCAL", true, "session"],
   ["bash", "EXEC", true, "command"],
-  // Windows mounts engine-tool-pwsh in place of engine-tool-bash — same gating.
-  ["pwsh", "EXEC", true, "command"],
   ["subagent", "EXEC", true, "none"],
   ["delegate", "EXEC", true, "none"],
   ["send_message", "EXEC", true, "none"],
@@ -143,6 +140,8 @@ describe("tool-risk classifier — set membership", () => {
   });
 
   it("bash is EXEC with a command grant scope; subagent is EXEC with none", () => {
+    expect(isShellTool("bash")).toBe(true);
+    expect(isShellTool("terminal_send")).toBe(false);
     expect(riskForTool("bash")).toBe("EXEC");
     expect(approvalGrantScope("bash")).toBe("command");
     expect(riskForTool("subagent")).toBe("EXEC");
@@ -152,10 +151,20 @@ describe("tool-risk classifier — set membership", () => {
     expect(riskForTool("spawn_subagent")).toBe("WRITE_LOCAL");
   });
 
-  it("pwsh (the Windows shell) is gated exactly like bash", () => {
-    expect(isShellTool("bash")).toBe(true);
-    expect(isShellTool("pwsh")).toBe(true);
-    expect(isShellTool("terminal_send")).toBe(false);
+  // Q6: `pwsh` and `str_replace_editor` are retired — nothing registers
+  // them live (only `bash` / `write` / `edit` in agent/tools). They fall
+  // through to the unknown-tool default (WRITE_LOCAL), which still asks —
+  // fail-closed, never silently allowed. legacy-import.ts stamps replayed
+  // calls risk READ and never consults risk, so old history needs no entry.
+  it("retired names (pwsh, str_replace_editor) fail closed via the unknown-tool default", () => {
+    for (const name of ["pwsh", "str_replace_editor"]) {
+      expect(needsApproval(name), `${name} must still ask`).toBe(true);
+      expect(riskForTool(name), `${name} risk`).toBe("WRITE_LOCAL");
+    }
+    // No standing command grant for a name with no shell registration…
+    expect(isShellTool("pwsh")).toBe(false);
+    expect(approvalGrantScope("pwsh")).toBe("session");
+    // …but old history still renders: the preview keeps the shell branch.
     expect(approvalPreview("pwsh", { command: "git status" })).toBe("git status");
     // A connector call with no arguments has no preview, never a bare "{}".
     expect(approvalPreview("mcp__atl1__getAccessibleAtlassianResources", {})).toBe("");
@@ -200,10 +209,10 @@ describe("tool-risk classifier — set membership", () => {
     expect(riskForTool("some_new_tool_not_yet_classified")).toBe("WRITE_LOCAL");
   });
 
-  it("str_replace_editor view is read-only (no prompt); its writes still gate", () => {
-    // view only reads a file — args-aware gate lets it through.
-    expect(needsApprovalForCall("str_replace_editor", { command: "view", path: "/x" })).toBe(false);
-    // create/str_replace/insert still require approval.
+  it("retired str_replace_editor has no read-only carve-out (Q6) — every call gates", () => {
+    // The old `command:"view"` exemption is gone with the tool: unknown names
+    // fall back to the name-only gate, which asks.
+    expect(needsApprovalForCall("str_replace_editor", { command: "view", path: "/x" })).toBe(true);
     expect(needsApprovalForCall("str_replace_editor", { command: "create", path: "/x" })).toBe(true);
     expect(needsApprovalForCall("str_replace_editor", { command: "str_replace", path: "/x" })).toBe(true);
     // No args → falls back to the name-only gate (still gated).

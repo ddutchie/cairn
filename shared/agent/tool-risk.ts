@@ -14,13 +14,14 @@ export type RiskClass = "READ" | "WRITE_LOCAL" | "EXEC" | "EXTERNAL";
 export type GrantScope = "none" | "command" | "session";
 
 /**
- * Shell tools with a `command` argument. `pwsh` replaces `bash` on Windows
- * (engine-tool-pwsh, upstream's win32 default); both are EXEC and bind standing
- * grants to the exact command.
+ * Shell tools with a `command` argument. Only `bash` is registered live
+ * (agent/tools/bash.ts, every platform). The retired `pwsh` alias was
+ * removed from this set in Q6: unknown names fail closed through the
+ * WRITE_LOCAL default below, which still asks.
  */
-const SHELL_TOOLS = new Set<string>(["bash", "pwsh"]);
+const SHELL_TOOLS = new Set<string>(["bash"]);
 
-/** The coding shell tool (`bash`, or `pwsh` on Windows). */
+/** The coding shell tool (`bash`, every platform). */
 export function isShellTool(name: string): boolean {
   return SHELL_TOOLS.has(name);
 }
@@ -62,8 +63,12 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "codebase_reindex", "suggest_connections", "update_user_writing_style",
 ]);
 
-/** Mutating engine coding-stack tools (fs/editor/todo). bash is EXEC, not here. */
-const DSH_WRITE_TOOLS = new Set<string>(["write", "edit", "str_replace_editor", "todo_write"]);
+/** Mutating engine coding-stack tools (fs/editor/todo). bash is EXEC, not here.
+ * The retired `str_replace_editor` alias was removed from this set in Q6 —
+ * it now falls through to the unknown-tool default (WRITE_LOCAL, still asks).
+ * See legacy-import.ts: replayed calls stamp risk READ and never consult risk.
+ */
+const DSH_WRITE_TOOLS = new Set<string>(["write", "edit", "todo_write"]);
 
 /** Does this call need the user's approval before it runs? */
 export function needsApproval(name: string): boolean {
@@ -71,15 +76,13 @@ export function needsApproval(name: string): boolean {
 }
 
 /**
- * Args-aware approval gate. Identical to `needsApproval` except it recognises
- * read-only invocations of multiplexed tools: `str_replace_editor` with
- * `command:"view"` only reads a file, so it should not prompt (its
- * create/str_replace/insert commands still do). Falls back to the name-only
- * gate for every other tool. Both the main-process gate and the renderer card
- * use this so they never diverge.
+ * Args-aware approval gate. The retired `str_replace_editor` view carve-out
+ * was removed in Q6 (nothing registers that tool live; unknown names fail
+ * closed via the name-only gate below). Both the main-process gate and the
+ * renderer card use this so they never diverge.
  */
 export function needsApprovalForCall(name: string, args: Record<string, unknown> = {}): boolean {
-  if (name === "str_replace_editor" && args.command === "view") return false;
+  void args;
   return needsApproval(name);
 }
 
@@ -125,7 +128,9 @@ export function riskForTool(name: string): RiskClass {
 }
 
 export function approvalPreview(name: string, args: Record<string, unknown> = {}): string {
-  const value = isShellTool(name)
+  // Display only: `pwsh` is retired from gating (Q6) but old history still
+  // renders through here, so it keeps the shell preview alongside bash.
+  const value = (isShellTool(name) || name === "pwsh")
     ? args.command
     : name === "terminal_send"
       ? args.text
@@ -162,7 +167,7 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
 /**
  * Which "always allow" grant the approval card offers for a tool:
  *
- * - `command` — bash/pwsh only: bind the standing grant to this exact command.
+ * - `command` — bash only: bind the standing grant to this exact command.
  * - `session` — writes and external calls: allow this tool for the session.
  * - `none`    — reads and other exec: one-off allow/deny only, no standing grant.
  */

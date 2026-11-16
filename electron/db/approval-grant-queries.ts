@@ -26,7 +26,7 @@ import type { ApprovalGrant } from "../../shared/types/approval";
  * likewise refuses to match them on a target-less basis. Mirrors
  * CODE_EXEC_TOOLS in automation-approval.ts.
  */
-const CODE_EXEC_TOOLS = new Set(["bash", "pwsh", "run_script"]);
+const CODE_EXEC_TOOLS = new Set(["bash", "run_script"]);
 
 /** True when the grant would be a wildcard execution grant. */
 export function isWildcardExecGrant(tool: string, target: string | null | undefined): boolean {

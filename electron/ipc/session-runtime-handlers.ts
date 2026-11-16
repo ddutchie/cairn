@@ -706,7 +706,7 @@ export function registerSessionRuntimeHandlers(
   // ── approval grants (workspace-persistent "Always allow") ─────────────────
   // Device-local, not synced: a trust decision on this machine must not
   // silently apply on another. One row per (workspace, tool, target) — target
-  // is the exact command for "bash"/"pwsh", otherwise null (whole tool).
+  // is the exact command for "bash", otherwise null (whole tool).
   registerContractHandle("approval-grants:list", (_event, { workspaceId }) =>
     handle(async () => {
       assertSafeId(workspaceId, "workspaceId");

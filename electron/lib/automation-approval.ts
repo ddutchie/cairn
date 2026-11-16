@@ -49,7 +49,9 @@ export function standingRuleTarget(tool: string, args: Record<string, unknown>):
   if (tool === RUN_SCRIPT_TOOL_NAME) {
     return typeof args.name === "string" && args.name ? args.name : undefined;
   }
-  if (tool === "bash" || tool === "pwsh") {
+  // `bash` grants the exact command; the retired `pwsh` alias was removed
+  // from this branch in Q6 (nothing registers it live).
+  if (tool === "bash") {
     return typeof args.command === "string" && args.command ? args.command : undefined;
   }
   // Single-item lists (update_tasks cardIds, update_notes noteIds) and the
@@ -177,7 +179,7 @@ function legacyRuleMatchesSubAction(ruleTool: string, tool: string, args: Record
  * target (see standingRuleTarget), so a target-less rule can only enter via a
  * hand/agent-authored manifest — sanitise those on ingest.
  */
-const CODE_EXEC_TOOLS = new Set([RUN_SCRIPT_TOOL_NAME, "bash", "pwsh"]);
+const CODE_EXEC_TOOLS = new Set([RUN_SCRIPT_TOOL_NAME, "bash"]);
 
 /**
  * Persist an "always allow" decision as a standing rule on the run's automation

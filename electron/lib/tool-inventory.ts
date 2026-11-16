@@ -19,7 +19,7 @@ export type { InventoryCategory, InventorySource, InventorySurface, InventoryToo
 export const CHAT_GATED_TOOLS: ReadonlySet<string> = new Set(["delete"]);
 
 const READ_TOOLS = new Set(["read", "read_image", "glob", "grep", "lsp", "terminal_read", "terminal_list", "list_agents", "job_output", "get_goal", "schedule_list", "web_fetch", "skill"]);
-const WRITE_TOOLS = new Set(["write", "edit", "str_replace_editor", "todo_write", "create_goal", "update_goal", "schedule_create", "schedule_cancel"]);
+const WRITE_TOOLS = new Set(["write", "edit", "todo_write", "create_goal", "update_goal", "schedule_create", "schedule_cancel"]);
 /** Registered on top of the filesystem/exec stack by the engine rather than the Cairn data layer. */
 const GLOBAL_TOOLS = new Set(["subagent", "delegate", "send_message", "list_agents", "interrupt_agent", "skill", "web_fetch", "workflow", "ralph", "exit_plan_mode"]);
 
