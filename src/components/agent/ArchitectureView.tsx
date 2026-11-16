@@ -38,6 +38,7 @@ import { SectionLabel } from "@/components/ui/labels";
 import { useCairnStore } from "@/store";
 import { CairnEvents } from "@/lib/events";
 import { ArchitectureGraphCanvas } from "./ArchitectureGraphCanvas";
+import { agentClient } from "@/lib/ipc/agent";
 import { DependencyMatrix } from "./DependencyMatrix";
 import { formatWhenAbsent } from "../../../shared/format/date";
 import { ModuleMap } from "./ModuleMap";
@@ -122,7 +123,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
     setLoading(true);
     setError(null);
     try {
-      const data = await window.electron?.agent.codebaseOverview(cwd);
+      const data = await agentClient.codebaseOverview(cwd);
       if (data) setOverview(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -148,7 +149,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
     setReindexing(true);
     setError(null);
     try {
-      const data = await window.electron?.agent.codebaseReindex(cwd);
+      const data = await agentClient.codebaseReindex(cwd);
       if (data) {
         setOverview(data);
         setExpanded(new Set());
@@ -174,7 +175,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
     });
     if (!fileSymbols[file.id]) {
       try {
-        const data = await window.electron?.agent.codebaseFileSymbols(file.file_path);
+        const data = await agentClient.codebaseFileSymbols(file.file_path);
         if (data) setFileSymbols((prev) => ({ ...prev, [file.id]: data }));
       } catch {
         /* leave the file empty on error */
@@ -189,7 +190,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
     useCairnStore.getState().openEditorFile(sym.file_path);
     window.dispatchEvent(CairnEvents.openFileAtLine(sym.file_path, sym.line));
     try {
-      const data = await window.electron?.agent.codebaseRelations(sym.name, cwd);
+      const data = await agentClient.codebaseRelations(sym.name, cwd);
       if (data) setRelations(data);
     } catch {
       /* no relations on error */
@@ -203,7 +204,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- kicks off the lazy graph fetch when a graph view opens
     setGraphLoading(true);
-    window.electron?.agent
+    agentClient
       .codebaseGraph(cwd)
       .then((data) => { if (!cancelled && data) setGraph(data); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
@@ -215,7 +216,7 @@ export function ArchitectureView({ cwd }: ArchitectureViewProps) {
   const openFileInPanel = useCallback(async (fileId: string, filePath: string) => {
     if (fileSymbols[fileId]) return;
     try {
-      const data = await window.electron?.agent.codebaseFileSymbols(filePath);
+      const data = await agentClient.codebaseFileSymbols(filePath);
       if (data) setFileSymbols((prev) => ({ ...prev, [fileId]: data }));
     } catch {
       /* leave empty on error */

@@ -16,6 +16,8 @@ import parseDiff from "parse-diff";
 import { Copy, Check, FolderGit2, ChevronRight, ChevronDown } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { agentClient } from "@/lib/ipc/agent";
+import { hasElectron } from "@/lib/ipc/client";
 import { usePalette } from "@/lib/highlight/render-hast";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { FileDiff } from "./DiffFile";
@@ -62,11 +64,11 @@ export function DiffViewer({ cwd }: DiffViewerProps) {
   const deferredDiffText = useDeferredValue(diffText);
 
   const fetchDiff = useCallback(async () => {
-    if (!window.electron) return;
+    if (!hasElectron()) return;
     setLoading(true);
     setError(null);
     try {
-      const diff = await window.electron.agent.gitDiff(cwd);
+      const diff = await agentClient.gitDiff(cwd);
       if (!isMounted.current) return;
       setDiffText(diff ?? "");
       setLastRefresh(new Date());

@@ -25,6 +25,7 @@ import { useFontScale } from "@/lib/viz/hooks";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Tooltip } from "@/components/ui/tooltip";
+import { agentClient } from "@/lib/ipc/agent";
 
 interface ModuleNode {
   id: string;
@@ -102,7 +103,7 @@ export function ModuleMap({ cwd }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch the module graph when the scoped folder changes
     setLoading(true);
     setError(null);
-    window.electron?.agent
+    agentClient
       .codebaseModuleGraph(scope, 1)
       .then((data) => { if (!cancelled && data) setGraph(data); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })

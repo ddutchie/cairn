@@ -10,6 +10,8 @@ import { StatusDot } from "@/components/ui/status-dot";
 import type { ProjectSettings } from "@/types";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { agentClient } from "@/lib/ipc/agent";
+import { hasElectron } from "@/lib/ipc/client";
 
 interface ProjectSettingsSectionProps {
   showHeader?: boolean;
@@ -39,10 +41,10 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
 
   useEffect(() => {
     const currentProjectId = activeProject?.id;
-    if (activeProject?.codeDirectory && window.electron?.agent) {
-      const pathSeparator = window.electron.platform === "win32" ? "\\" : "/";
+    if (activeProject?.codeDirectory && hasElectron("agent")) {
+      const pathSeparator = window.electron!.platform === "win32" ? "\\" : "/";
       const templatePath = `${activeProject.codeDirectory}${pathSeparator}.github${pathSeparator}PULL_REQUEST_TEMPLATE.md`;
-      window.electron.agent.readFile(templatePath)
+      agentClient.readFile(templatePath)
         .then(() => {
           if (activeProject?.id === currentProjectId) {
             setRepoTemplateExists(true);
@@ -81,7 +83,7 @@ export function ProjectSettingsSection({ showHeader = true }: ProjectSettingsSec
 
   async function pickCodeDir() {
     if (!activeProject) return;
-    const picked = await window.electron?.agent.pickDirectory();
+    const picked = await agentClient.pickDirectory().catch(() => null);
     if (picked) {
       setCodeDirInput(picked);
       updateProject(activeProject.id, { codeDirectory: picked });

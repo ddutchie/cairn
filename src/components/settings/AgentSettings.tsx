@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
+import { agentClient } from "@/lib/ipc/agent";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -38,7 +39,7 @@ function AgentForm({ initial, onSave, onCancel }: AgentFormProps) {
   const valid = name.trim().length > 0 && binaryPath.trim().length > 0;
 
   async function pickBinary() {
-    const picked = await window.electron?.agent.pickFile();
+    const picked = await agentClient.pickFile().catch(() => null);
     if (picked) setBinaryPath(picked);
   }
 

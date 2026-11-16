@@ -13,6 +13,8 @@ import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import { urlTransform } from "@/lib/utils";
 import "katex/dist/katex.min.css";
 import { renderCodeFence } from "./markdown-code-fence";
+import { agentClient } from "../../lib/ipc/agent";
+import { hasElectron } from "../../lib/ipc/client";
 import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { makeLatexPlugins, InlineCode, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
@@ -115,8 +117,8 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
       }
     }
 
-    if (absolutePath && window.electron) {
-      window.electron.agent.readFileBase64(absolutePath)
+    if (absolutePath && hasElectron()) {
+      agentClient.readFileBase64(absolutePath)
         .then((dataUrl: string) => {
           if (!active) return;
           setResolvedSrc(dataUrl);

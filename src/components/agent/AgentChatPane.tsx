@@ -12,6 +12,8 @@ import { ForkSessionMenu } from "@/components/agent/ForkSessionMenu";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from "react";
 import { Trash2, FileText, Map as MapIcon } from "lucide-react";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
+import { agentClient } from "@/lib/ipc/agent";
+import { hasElectron } from "@/lib/ipc/client";
 import type { PendingQuestion } from "@/lib/conversation/message";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
 import { useCairnStore } from "@/store";
@@ -645,9 +647,9 @@ export function AgentChatPane({ session, isActive }: AgentChatPaneProps) {
   }, [pendingQuestionCallId, pendingQuestionNonce, session, sendPrompt, sessionConversation]);
 
   const handleSearchFiles = useCallback(async (query: string): Promise<SuggestionItem[]> => {
-    if (!window.electron || !session.cwd) return [];
+    if (!hasElectron() || !session.cwd) return [];
     try {
-      const files = await window.electron.agent.searchFiles(session.cwd, query);
+      const files = await agentClient.searchFiles(session.cwd, query);
       return files.map((f) => ({
         id: f.path,
         type: "file",
