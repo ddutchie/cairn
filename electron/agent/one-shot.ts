@@ -4,9 +4,9 @@
  * and stream as the loop, so protocol pinning and usage accounting match.
  */
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { recordLlmUsage } from "../lib/usage-recorder";
-import type { LLMConfig } from "../lib/llm";
 import { createRouteStream } from "./provider";
+import type { LLMConfig } from "../lib/llm";
+import { recordUsage } from "./host-store";
 import { routeFromConfig } from "./route";
 
 export interface OneShotOptions {
@@ -40,7 +40,7 @@ export async function runOneShot(opts: OneShotOptions): Promise<string> {
   const result: AssistantMessage = await stream.result();
 
   try {
-    recordLlmUsage({
+    recordUsage({
       source: source as never,
       sessionId: sessionId ?? "one-shot",
       projectId, workspaceId,

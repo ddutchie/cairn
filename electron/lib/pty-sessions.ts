@@ -25,7 +25,7 @@ import { createRequire } from "node:module";
 import type { Database } from "better-sqlite3";
 import type * as nodePty from "node-pty";
 import { newId } from "../db/utils";
-import { sandboxUnavailable, wrapSandboxed } from "../agent/sandbox";
+import { sandboxUnavailable, wrapSandboxed } from "../agent/index";
 import type { ModelPtyEvent, ModelTerminal } from "../../shared/types/coding-agent";
 
 /** Structural subset of node-pty's IPty used by every consumer here. */

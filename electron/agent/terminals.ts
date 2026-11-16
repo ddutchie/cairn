@@ -4,9 +4,15 @@
  * belongs to the session that opened it. Output is kept as plain text.
  */
 import type { Database } from "better-sqlite3";
-import { getSandboxMode } from "./host-store";
+import {
+  getPtySession,
+  getSandboxMode,
+  killPtySession,
+  onPtySessionData,
+  onPtySessionExit,
+  spawnShellPty,
+} from "./host-store";
 import type { SandboxMode } from "./sandbox";
-import { getPtySession, killPtySession, onPtySessionData, onPtySessionExit, spawnShellPty } from "../lib/pty-sessions";
 
 const MAX_SCROLLBACK = 200_000;
 const POLL_MS = 50;

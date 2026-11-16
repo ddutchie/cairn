@@ -66,9 +66,7 @@ import {
   type DeliverFileHandler,
 } from "./automation-script";
 import { runEngineAutomation, respondEngineAsk } from "../ipc/engine-bridge";
-import type { HostSend } from "../agent/host";
-import { defineTool, type AgentTool } from "../agent/tools";
-import { fromJsonSchema } from "../agent/tools/schema";
+import { defineTool, fromJsonSchema, type AgentTool, type HostSend } from "../agent/index";
 import type { DbContext } from "../ipc/result-helpers";
 import type { SessionEventEnvelope } from "../../shared/agent/session-event";
 import { prepareAutomationFolder, readAutomationManifest, resolveAutomationEnv } from "./automation-env";

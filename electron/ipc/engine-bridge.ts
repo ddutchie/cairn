@@ -5,12 +5,12 @@
  * The implementation lives in `electron/ipc/engine/`; this file re-exports the
  * public surface so existing importers do not churn.
  */
-export { chatEngineProfile, engineProfile, PERMISSION_PRESETS } from "../agent/profiles";
+export { chatEngineProfile, engineProfile, PERMISSION_PRESETS } from "../agent/index";
 
 /** Re-exported so existing importers keep working; the home is `session-guards.ts`. */
 export { rejectPrompt } from "./session-guards";
 
-export { routeFromConfig } from "../agent/route";
+export { routeFromConfig } from "../agent/index";
 
 export { PLAN_MODE_PROMPT, PLAN_MODE_ENDED, runEnginePrompt, type EnginePromptArgs } from "./engine/prompt";
 export { readEnginePermissions, setEnginePermission, chatSystemPrompt, chatApprovalPolicyFor } from "./engine/permissions";

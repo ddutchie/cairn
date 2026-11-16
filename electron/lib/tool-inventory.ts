@@ -11,8 +11,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, toolCategory } from "./tool-schemas";
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { buildToolset, type ToolSurface, type ToolsetDeps } from "../agent/tools/index";
-import type { AgentTool } from "../agent/tools";
+import { type AgentTool, buildToolset, type ToolsetDeps, type ToolSurface } from "../agent/index";
 import type { InventoryCategory, InventorySource, InventorySurface, InventoryTool } from "../../shared/types/runtime";
 export type { InventoryCategory, InventorySource, InventorySurface, InventoryTool };
 

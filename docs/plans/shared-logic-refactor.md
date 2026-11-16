@@ -26,7 +26,8 @@
 > - #300 open — knip report-only config (Q8).
 > - #301 open — B4 (engine-bridge split, unified session state).
 > - #302 open — B5 (proc + git-exec helpers).
-> - Next: C5-boundary (in progress — waits on B5's import shapes) → F20 renames (Q7: after final refactor PR). C4 DROPPED (Q5).
+- #303 open — C5-boundary (engine public surface + import lint; rebase onto main after #302 merges).
+> - Next: F20 renames (Q7: after the final refactor PR). C4 DROPPED (Q5).
 - Q9 PR #298 opened — shared LLM HTTP helper (`electron/lib/llm-http.ts`: `authHeaders` + `fetchJson`, one 10s default timeout; narrows #179 to the token-breakdown checkbox).
 > - Rule: every refactor PR updates this log before merge.
 

@@ -21,7 +21,7 @@
 import type { IpcMainEvent } from "electron";
 import { assertSafeId } from "./path-safety";
 import { broadcastEvent, registerIpcOn } from "./registry";
-import { failedTurnEnd } from "../agent/session/adapter";
+import { failedTurnEnd } from "../agent/index";
 import { makeSessionProjection, type SessionBusyReason } from "../../shared/agent/session-projection";
 
 /** Refuse a renderer-supplied id that fails `assertSafeId`. No turn/end. */
