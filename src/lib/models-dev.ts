@@ -21,6 +21,8 @@
  */
 
 import { logoProviderFor, lookupModelInfo, normalizeModelInfo, parseCanonicalCatalog, parseEndpointProtocols, parseModelCatalog, protocolForEndpointModel, providerLogoUrl, type ModelInfo, type WireProtocol } from "../../shared/models/model-catalog";
+import { usageClient } from "./ipc/ai";
+import { hasElectron } from "./ipc/client";
 
 const API_URL = "https://models.dev/api.json";
 // v3: bumped when the parsed ModelInfo shape gains a field (cacheRead/cacheWrite)
@@ -386,25 +388,25 @@ export function endpointProtocolFor(baseUrl: string, model: string): WireProtoco
 
 /** Push the pricing map to the Electron main process (usage recorder). */
 export function pushModelPricingToMain(): void {
-  if (typeof window === "undefined" || !window.electron?.usage?.setPricing) return;
+  if (typeof window === "undefined" || !hasElectron("usage")) return;
   try {
     // Silently swallow a rejected pricing push — the main process just keeps
     // its previous (or empty) pricing map; estimation stays best-effort.
-    window.electron.usage.setPricing(getModelPricingMap()).catch(() => {});
+    usageClient.setPricing(getModelPricingMap()).catch(() => {});
   } catch {
     // best-effort (e.g. no IPC bridge yet)
   }
   // Also push the no-temperature model set so main-side builders (one-shots,
   // automations) gate temperature on the model capability like the renderer.
   try {
-    window.electron.usage?.setNoTemperatureModels?.(getNoTemperatureModels()).catch(() => {});
+    usageClient.setNoTemperatureModels(getNoTemperatureModels()).catch(() => {});
   } catch {
     // best-effort
   }
   // And the per-model wire protocols, so main mounts the api an OpenCode model
   // actually speaks (it answers any other with "does not support this protocol").
   try {
-    if (protocolCache) window.electron.usage?.setEndpointProtocols?.(protocolCache).catch(() => {});
+    if (protocolCache) usageClient.setEndpointProtocols(protocolCache).catch(() => {});
   } catch {
     // best-effort
   }

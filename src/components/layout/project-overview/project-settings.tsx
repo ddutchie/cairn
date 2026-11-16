@@ -15,6 +15,7 @@ import { PRIORITY_OPTIONS, PROJECT_STATUS_OPTIONS, STATUS_CSS_COLORS, PRIORITY_C
 import { Button } from "@/components/ui/button";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { agentClient } from "@/lib/ipc/agent";
+import { hasElectron } from "@/lib/ipc/client";
 import { DialogClose } from "@/components/ui/dialog";
 import type { Project, ProjectStatus, Priority } from "@/types";
 import { IconButton } from "@/components/ui/icon-button";
@@ -189,7 +190,7 @@ export function ProjectSettingsButton({ project }: { project: Project }) {
                 placeholder="Path for agent sessions…"
                 className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono rounded-md bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:text-[var(--text-primary)] transition-colors"
               />
-              {typeof window !== "undefined" && window.electron && (
+              {typeof window !== "undefined" && hasElectron() && (
                 <IconButton
                   label="Browse code directory" tooltip="Browse"
                   onClick={() => void handlePickCodeDir()}

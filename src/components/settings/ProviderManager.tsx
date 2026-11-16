@@ -5,8 +5,10 @@ import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Pencil, Trash2, Check, X, Server, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { persist } from "@/lib/ipc/client";
+import { persist, hasElectron } from "@/lib/ipc/client";
 import { secretsClient } from "@/lib/ipc/tools";
+import { aiClient } from "@/lib/ipc/ai";
+import { registryClient } from "@/lib/ipc/registry";
 import type { SavedProvider, ApiMode } from "@/store/slices/ui";
 import { dedupeProviders } from "@/store/slices/ui";
 import { SettingsRow } from "./shared";
@@ -51,13 +53,12 @@ function useProtocolAvailability(baseUrl: string, apiKey: string, model: string,
   const [probing, setProbing] = useState(false);
   const key = `${baseUrl.trim()}|${model.trim()}|${apiKey}`;
   useEffect(() => {
-    const probe = window.electron?.ai?.probeProtocols;
-    if (!enabled || !baseUrl.trim() || !model.trim() || !probe) return;
+    if (!enabled || !baseUrl.trim() || !model.trim() || !hasElectron("ai")) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       setProbing(true);
       try {
-        const value = await probe({ baseUrl: baseUrl.trim(), apiKey, model: model.trim() });
+        const value = await aiClient.probeProtocols({ baseUrl: baseUrl.trim(), apiKey, model: model.trim() });
         if (!cancelled) setResult({ key, value });
       } catch {
         // Best-effort: the picker just shows no availability tags.
@@ -149,10 +150,8 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const reg = window.electron?.registry;
-      if (!reg?.fetchProviders) return;
       try {
-        const { manifest } = await reg.fetchProviders();
+        const { manifest } = await registryClient.fetchProviders();
         if (cancelled || !manifest) return;
         const map: Record<string, { iconSvg?: string; brandColor?: string }> = {};
         for (const e of manifest.providers) {
@@ -319,10 +318,10 @@ export function ProviderManager({ kind = "ai" }: { kind?: "ai" | "agent" }) {
               const patch: { name: string; baseUrl: string; model: string; apiKey?: string; apiMode: ApiMode } = { name, baseUrl, model, apiMode };
               if (keyDirty) {
                 if (rawKey) {
-                  const ref = await window.electron?.secrets?.set("llm", editing, "apiKey", rawKey);
+                  const ref = await secretsClient.set("llm", editing, "apiKey", rawKey);
                   patch.apiKey = ref ?? "";
                 } else {
-                  await window.electron?.secrets?.delete("llm", editing, "apiKey");
+                  await secretsClient.delete("llm", editing, "apiKey");
                   patch.apiKey = "";
                 }
               }
@@ -355,7 +354,7 @@ export async function saveNewProvider(
   const id = actions.addSavedProvider({ name, baseUrl, model, apiKey: "", apiMode }, kind);
   if (keyDirty && rawKey) {
     try {
-      const ref = await window.electron?.secrets?.set("llm", id, "apiKey", rawKey);
+      const ref = await secretsClient.set("llm", id, "apiKey", rawKey);
       actions.updateSavedProvider(id, { apiKey: ref ?? "" });
     } catch (e) {
       // Don't leave an orphaned empty-key provider on keychain failure.

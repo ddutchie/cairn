@@ -7,6 +7,9 @@ import { SessionPopoutView } from "@/components/chat/SessionPopoutView";
 import { TitleBar } from "@/components/layout/title-bar";
 import { NotificationCenter } from "@/components/automations/notification-center";
 import { bindChatPopoutSession } from "../../../shared/agent/chat-popout";
+import { chatClient } from "@/lib/ipc/chat";
+import { appClient } from "@/lib/ipc/app";
+import { hasElectron } from "@/lib/ipc/client";
 
 export default function ChatPopoutPage() {
   const [ready, setReady] = useState(false);
@@ -24,8 +27,8 @@ export default function ChatPopoutPage() {
 
   useEffect(() => {
     async function init() {
-      if (window.electron?.chat.popoutReady) {
-        const handedOff = await window.electron.chat.popoutReady() as unknown as Record<string, unknown> & { reason?: string };
+      if (hasElectron()) {
+        const handedOff = await chatClient.popoutReady() as unknown as Record<string, unknown> & { reason?: string };
         const bound = bindChatPopoutSession(handedOff);
         if (!bound) {
           const reason = typeof handedOff?.reason === "string" ? handedOff.reason : "";
@@ -42,7 +45,7 @@ export default function ChatPopoutPage() {
         // by SessionPopoutView from the canonical session surface; do not run
         // the cold chat hydration path here.
         await useCairnStore.getState().hydrateFromElectron(true);
-        const savedAiConfig = await window.electron.getAiSettings?.();
+        const savedAiConfig = await appClient.getAiSettings().catch(() => null);
         if (savedAiConfig) {
           const currentAiConfig = useCairnStore.getState().aiConfig;
           useCairnStore.setState({ aiConfig: { ...currentAiConfig, ...savedAiConfig } });
@@ -57,9 +60,8 @@ export default function ChatPopoutPage() {
 
   // Handle live session updates pushed from main when a second popOut arrives while the pop-out is already open (C2 fix)
   useEffect(() => {
-    const electron = window.electron as unknown as { chat: { onChatSessionUpdated?: (cb: (p: unknown) => void) => (()=>void) } } | undefined;
-    if (!electron?.chat.onChatSessionUpdated) return;
-    const unsub = electron.chat.onChatSessionUpdated((payload: unknown) => {
+    if (!hasElectron()) return;
+    const unsub = chatClient.onChatSessionUpdated((payload) => {
       const bound = bindChatPopoutSession(payload);
       if (bound) {
         setSession(bound);
@@ -74,24 +76,23 @@ export default function ChatPopoutPage() {
   }, []);
 
   const handlePopIn = useCallback(async () => {
-    if (session?.sessionId) await window.electron?.chat.popIn({ sessionId: session.sessionId });
+    if (session?.sessionId) await chatClient.popIn({ sessionId: session.sessionId }).catch(() => {});
   }, [session]);
 
   // Listen for main window's "Pop in" request (relayed via main process)
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron?.chat.onChatRequestPopIn) return;
-    const unsub = electron.chat.onChatRequestPopIn(() => {
+    if (!hasElectron()) return;
+    const unsub = chatClient.onChatRequestPopIn(() => {
       handlePopIn();
     });
-    return () => { unsub?.(); };
+    return () => { unsub(); };
   }, [handlePopIn]);
 
   // The popout has its own renderer/store instance, so it must start the same
   // feeds that drive the shared title-bar badges in the main window.
   useEffect(() => {
     startRunCountPolling();
-    if (window.electron?.notification) startNotificationPolling();
+    if (hasElectron("notification")) startNotificationPolling();
     return () => {
       stopRunCountPolling();
       stopNotificationPolling();

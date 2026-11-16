@@ -8,8 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
-import type { AutomationsFetchResult, RegistryAutomationEntry, RegistryRequirement } from "@/types";
+import type { RegistryAutomationEntry, RegistryRequirement } from "@/types";
 import { CATALOG_SEARCH_INPUT_CLS as inputCls } from "@/components/ui/catalog-browser-shell";
+import { automationsClient } from "@/lib/ipc/automations";
+import { hasElectron } from "@/lib/ipc/client";
+import { useRegistryManifest } from "../settings/tools/useRegistryManifest";
 
 const KIND_LABEL: Record<string, string> = {
   cron: "Cron",
@@ -54,9 +57,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
 }) {
   const setView = useCairnStore((s) => s.setView);
   const setSettingsSection = useCairnStore((s) => s.setSettingsSection);
-  const [result, setResult] = useState<AutomationsFetchResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { result, loading, refreshing, load } = useRegistryManifest("automations");
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -68,31 +69,8 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
     setView("settings");
   }, [setSettingsSection, setView]);
 
-  const load = useCallback(async (force: boolean) => {
-    const reg = window.electron?.registry;
-    if (!reg) {
-      setLoading(false);
-      return;
-    }
-    if (force) setRefreshing(true);
-    else setLoading(true);
-    try {
-      const r = force ? await reg.refreshAutomations() : await reg.fetchAutomations();
-      setResult(r as AutomationsFetchResult);
-    } catch (err) {
-      setResult({
-        manifest: { version: 1, updatedAt: "", automations: [] },
-        fromCache: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load(false); // eslint-disable-line react-hooks/set-state-in-effect
+    void load(false);
   }, [load]);
 
   const automations = useMemo(() => result?.manifest.automations ?? [], [result]);
@@ -107,7 +85,7 @@ export function BrowseAutomationsContent({ onPick, onBack, workspaceId, projectI
       for (const r of a.definition.requires ?? []) unique.set(reqKey(r), r);
     }
     const reqs = [...unique.values()];
-    const check = window.electron?.automation?.checkRequirements;
+    const check = hasElectron("automation") ? automationsClient.checkRequirements : undefined;
     let cancelled = false;
     void Promise.resolve()
       .then(() =>

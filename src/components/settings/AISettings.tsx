@@ -14,6 +14,8 @@ import { ProviderManager } from "./ProviderManager";
 import { BrowsePersonalitiesModal } from "@/components/chat/BrowsePersonalitiesModal";
 import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-schema";
 import { Button } from "@/components/ui/button";
+import { aiClient } from "@/lib/ipc/ai";
+import { hasElectron } from "@/lib/ipc/client";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 import { PromptPreviewPanel } from "./PromptPreviewPanel";
@@ -43,8 +45,8 @@ const LOCAL_SERVER_CANDIDATES = [
 
 async function probeLocalServer(baseUrl: string): Promise<{ ok: boolean; models: string[] }> {
   try {
-    if (typeof window === "undefined" || !window.electron?.ai?.fetchModels) return { ok: false, models: [] };
-    const models = await window.electron.ai.fetchModels({ baseUrl });
+    if (typeof window === "undefined" || !hasElectron("ai")) return { ok: false, models: [] };
+    const models = await aiClient.fetchModels({ baseUrl });
     return { ok: true, models: (models ?? []).slice(0, 12) };
   } catch {
     return { ok: false, models: [] };

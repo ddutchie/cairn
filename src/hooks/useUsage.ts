@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useCairnStore } from "@/store";
+import { usageClient } from "@/lib/ipc/ai";
+import { hasElectron } from "@/lib/ipc/client";
 import type { UsageOverview, UsageRecentRow, UsageSource, UsageThreadGroup } from "@/types/usage";
 
 export interface UsageRange {
@@ -50,10 +52,9 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   const loadThreadRows = useCallback(async (sessionId: string) => {
-    const api = window.electron?.usage;
-    if (!api) return [];
+    if (!hasElectron("usage")) return [];
     const from = days == null ? undefined : Date.now() - days * 86_400_000;
-    return api.recent({
+    return usageClient.recent({
       workspaceId: activeWorkspaceId ?? undefined,
       source: source || undefined,
       from,
@@ -66,9 +67,8 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
 
   /** Delete the recorded usage rows for the current workspace (see usage:clear). */
   const clear = useCallback(async () => {
-    const api = window.electron?.usage;
-    if (!api?.clear) return;
-    await api.clear({ workspaceId: activeWorkspaceId ?? undefined });
+    if (!hasElectron("usage")) return;
+    await usageClient.clear({ workspaceId: activeWorkspaceId ?? undefined });
     setNonce((n) => n + 1);
   }, [activeWorkspaceId]);
 
@@ -76,8 +76,7 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
     let cancelled = false;
     const load = async () => {
       setLoading(true);
-      const api = window.electron?.usage;
-      if (!api) {
+      if (!hasElectron("usage")) {
         setOverview(null);
         setRecent([]);
         setThreads([]);
@@ -94,9 +93,9 @@ export function useUsage(days: number | null, source: UsageSource | "", excludeE
       };
       try {
         const [o, r, t] = await Promise.all([
-          api.overview(args),
-          api.recent({ ...args, noSession: true, limit: 100 }),
-          api.threads({ ...args, limit: 100 }),
+          usageClient.overview(args),
+          usageClient.recent({ ...args, noSession: true, limit: 100 }),
+          usageClient.threads({ ...args, limit: 100 }),
         ]);
         if (!cancelled) {
           setOverview(o);

@@ -10,6 +10,8 @@
 import type { StateCreator } from "zustand";
 import type { CairnStore } from "../index";
 import type { UserStyleRow, UserStyleSaveInput } from "@/types";
+import { userStyleClient } from "@/lib/ipc/userstyle";
+import { hasElectron } from "@/lib/ipc/client";
 
 export interface UserStyleSlice {
   userStyle: UserStyleRow | null;
@@ -22,21 +24,21 @@ export const createUserStyleSlice: StateCreator<CairnStore, [], [], UserStyleSli
   userStyle: null,
 
   async fetchUserStyle() {
-    if (typeof window === "undefined" || !window.electron?.getUserStyle) return;
-    const style = await window.electron.getUserStyle();
+    if (typeof window === "undefined" || !hasElectron()) return;
+    const style = await userStyleClient.getUserStyle();
     set({ userStyle: style });
   },
 
   async saveUserStyle(input) {
-    if (typeof window === "undefined" || !window.electron?.saveUserStyle) return get().userStyle;
-    const saved = await window.electron.saveUserStyle(input);
+    if (typeof window === "undefined" || !hasElectron()) return get().userStyle;
+    const saved = await userStyleClient.saveUserStyle(input);
     set({ userStyle: saved });
     return saved;
   },
 
   async clearUserStyle() {
-    if (typeof window !== "undefined" && window.electron?.clearUserStyle) {
-      await window.electron.clearUserStyle();
+    if (typeof window !== "undefined" && hasElectron()) {
+      await userStyleClient.clearUserStyle();
     }
     set({ userStyle: null });
   },

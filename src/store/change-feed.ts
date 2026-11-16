@@ -9,6 +9,8 @@
  */
 
 import type { Workspace, Project, Note, BoardColumn, TaskCard, Tag } from "@/types";
+import { changesClient } from "@/lib/ipc/workspace";
+import { hasElectron } from "@/lib/ipc/client";
 import type { ChangeSet, ChangeFeedEntity } from "../../shared/types/snapshot";
 
 export type { ChangeSet };
@@ -64,10 +66,9 @@ export function setChangeFeedCursor(feedId: string, seq: number): void {
 
 /** Point the cursor at the current feed head (call right before reading a full snapshot). */
 export async function initChangeFeedCursor(): Promise<void> {
-  const api = typeof window !== "undefined" ? window.electron?.changes : undefined;
-  if (!api) return;
+  if (typeof window === "undefined" || !hasElectron("changes")) return;
   try {
-    const res = await api.get({ since: null, feedId: null });
+    const res = await changesClient.get({ since: null, feedId: null });
     if (res) setChangeFeedCursor(res.feedId, res.head);
   } catch {
     // Older main process / feed unavailable: stay uninitialised → full refreshes.

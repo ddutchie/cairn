@@ -20,9 +20,11 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select } from "@/components/ui/select";
 import { useCairnStore } from "@/store";
+import { hasElectron } from "@/lib/ipc/client";
 import { useShallow } from "zustand/react/shallow";
 import { id } from "@/lib/utils";
 import { agentClient } from "@/lib/ipc/agent";
+import { sessionClient } from "@/lib/ipc/session";
 import type { TaskCard } from "@/types";
 
 interface SpawnAgentModalProps {
@@ -79,8 +81,8 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
     setSpawnError(null);
   }, [open, agents, card]);
 
-  const canSpawnPty = agents.length > 0 && !!codeDirectory && !!selectedAgentId && !!window.electron;
-  const canSpawnCoding = !!codeDirectory && !!window.electron;
+  const canSpawnPty = agents.length > 0 && !!codeDirectory && !!selectedAgentId && hasElectron();
+  const canSpawnCoding = !!codeDirectory && hasElectron();
   const canSpawn        = sessionType === "coding" ? canSpawnCoding : canSpawnPty;
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
@@ -99,7 +101,7 @@ export function SpawnAgentModal({ card, open, onClose }: SpawnAgentModalProps) {
         const now = new Date().toISOString();
         // Persist the session row to SQLite immediately
         try {
-          await window.electron!.session.createSession({
+          await sessionClient.createSession({
             id: sessionId,
             projectId: project.id,
             taskTitle,

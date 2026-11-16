@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { appClient } from "@/lib/ipc/app";
 import { Button } from "@/components/ui/button";
 import type { BoardColumn, ID } from "@/types";
 
@@ -47,7 +48,7 @@ export function QuickCapture() {
   );
 
   useEffect(() => {
-    return window.electron?.onQuickCapture?.(() => {
+    return appClient.onQuickCapture(() => {
       setOpen(true);
       setSaved(null);
       // Always target the project you're looking at now, not the last capture's.

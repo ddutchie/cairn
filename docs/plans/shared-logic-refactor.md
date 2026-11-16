@@ -1,5 +1,12 @@
 # Plan: shared logic and redundancy refactor (after 3.2.0)
 
+> Status: **executed 2026-11-16** — all of Phase A plus the A8 lint rule landed
+> across PRs #285 (A1/A3/A4/A5/A6), #286 (A2), #287 (A7), #288 (A8 agent),
+> #289 (A8 session/runtime/embeddings) and the final A8 PR (remaining
+> namespaces + `window.electron` boundary lint). Phase B (B1–B6) and Phase C
+> (C1–C5) remain open; owner decisions Q1–Q4 are recorded in §7, Q5–Q7 and Q9
+> still need research (C4, C5 renames and #179 stay deferred).
+
 > Status: **proposal**, written 2026-11-15 on `fix/3.2.0-audit-hardening` (PR ddutchie/cairn#284 still open). Investigation only: no code was changed.
 > Goal: make the repo easy to edit for coding agents and human collaborators. One home per rule, clear module boundaries, less to keep in sync by hand.
 > Scope: `electron/`, `src/`, `shared/`, `scripts/`, `tests/`. `mobile/` is out of scope.

@@ -18,12 +18,8 @@ import { CatalogBrowserShell, isSafeExternalUrl } from "@/components/ui/catalog-
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import type { PersonalitiesFetchResult, RegistryPersonalityEntry } from "@/types";
-
-const emptyResult: PersonalitiesFetchResult = {
-  manifest: { version: 1, updatedAt: "", personalities: [] },
-  fromCache: false,
-};
+import type { RegistryPersonalityEntry } from "@/types";
+import { useRegistryManifest } from "@/components/settings/tools/useRegistryManifest";
 
 export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
   const { installedPersonalities, installCommunityPersonality } = useCairnStore(
@@ -35,35 +31,14 @@ export function BrowsePersonalitiesModal({ onClose }: { onClose: () => void }) {
     })),
   );
 
-  const [result, setResult] = useState<PersonalitiesFetchResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { result, loading, refreshing, load } = useRegistryManifest("personalities");
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
 
-  const load = useCallback(async (force: boolean) => {
-    const reg = window.electron?.registry;
-    if (!reg?.fetchPersonalities) {
-      setLoading(false);
-      return;
-    }
-    if (force) setRefreshing(true);
-    else setLoading(true);
-    try {
-      const r = force ? await reg.refreshPersonalities() : await reg.fetchPersonalities();
-      setResult(r);
-    } catch (err) {
-      setResult({ ...emptyResult, error: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load(false); // eslint-disable-line react-hooks/set-state-in-effect
+    void load(false);
   }, [load]);
 
   const personalities = useMemo(() => result?.manifest.personalities ?? [], [result]);

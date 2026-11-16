@@ -7,13 +7,13 @@
  * sync status is window-chrome state, decoupled from the persisted workspace
  * data. Subscribes to pushed `sync:status` events from the main process (see
  * electron/main.ts setSyncStatusListener) and exposes the current snapshot plus
- * the conflict list/resolve actions.
- *
- * window.electron.sync is declared in electron/preload.ts; we type it locally
- * (matching SyncSettings.tsx) to avoid editing the global electron.d.ts.
+ * the conflict list/resolve actions. Transport goes through
+ * `src/lib/ipc/sync.ts` (syncClient).
  */
 
 import { useSyncExternalStore } from "react";
+import { syncClient } from "./ipc/sync";
+import { hasElectron } from "./ipc/client";
 
 import type { ConflictCopy, SyncStatus } from "../../shared/types/sync";
 import type {
@@ -44,28 +44,6 @@ export interface RepairOutcome {
   repaired: boolean;
   reason?: string;
   fileError?: string;
-}
-
-type SyncApi = {
-  status: () => Promise<SyncStatus>;
-  onStatus: (cb: (s: SyncStatus) => void) => () => void;
-  listConflicts: () => Promise<ConflictCopy[]>;
-  resolveConflict: (
-    copyId: string,
-    action: "keepCopy" | "keepOriginal" | "keepMerged",
-    mergedContent?: string,
-  ) => Promise<{ resolvedOriginalId: string | null }>;
-  now: () => Promise<{ connected: boolean }>;
-  activity: (limit?: number) => Promise<SyncActivityEntry[]>;
-  listRestorable: (limit?: number) => Promise<{ rows: RestorableNote[]; total: number }>;
-  restoreNote: (id: string) => Promise<RestoreOutcome>;
-  repairNoteFile: (id: string) => Promise<RepairOutcome>;
-  peerProtocols: () => Promise<PeerProtocol[]>;
-};
-
-export function syncApi(): SyncApi | null {
-  if (typeof window === "undefined" || !window.electron) return null;
-  return (window.electron as unknown as { sync?: SyncApi }).sync ?? null;
 }
 
 const DEFAULT_STATUS: SyncStatus = {
@@ -107,11 +85,10 @@ function setStatus(next: SyncStatus): void {
 /** Begin subscribing to pushed status events + prime the initial snapshot. */
 function ensureStarted(): void {
   if (started) return;
-  const api = syncApi();
-  if (!api) return; // browser / non-Electron — stays "disabled"
+  if (!hasElectron("sync")) return; // browser / non-Electron — stays "disabled"
   started = true;
-  api.status().then(setStatus).catch(() => {});
-  unsub = api.onStatus(setStatus);
+  syncClient.status().then(setStatus).catch(() => {});
+  unsub = syncClient.onStatus(setStatus);
 }
 
 function subscribe(cb: () => void): () => void {
@@ -140,10 +117,9 @@ export function useSyncStatus(): SyncStatus {
 
 /** Imperatively refetch conflicts (used by the resolution modal). */
 export async function fetchConflicts(): Promise<ConflictCopy[]> {
-  const api = syncApi();
-  if (!api) return [];
+  if (!hasElectron("sync")) return [];
   try {
-    return await api.listConflicts();
+    return await syncClient.listConflicts();
   } catch {
     return [];
   }
@@ -154,17 +130,15 @@ export async function resolveConflict(
   action: "keepCopy" | "keepOriginal" | "keepMerged",
   mergedContent?: string,
 ): Promise<void> {
-  const api = syncApi();
-  if (!api) return;
-  await api.resolveConflict(copyId, action, mergedContent);
+  if (!hasElectron("sync")) return;
+  await syncClient.resolveConflict(copyId, action, mergedContent);
 }
 
 /** Recent reconcile decisions, newest first. Empty outside Electron. */
 export async function fetchSyncActivity(limit = 100): Promise<SyncActivityEntry[]> {
-  const api = syncApi();
-  if (!api?.activity) return [];
+  if (!hasElectron("sync")) return [];
   try {
-    return await api.activity(limit);
+    return await syncClient.activity(limit);
   } catch {
     return [];
   }
@@ -172,10 +146,9 @@ export async function fetchSyncActivity(limit = 100): Promise<SyncActivityEntry[
 
 /** Notes a peer deleted that can still be restored. Empty outside Electron. */
 export async function fetchRestorableNotes(limit = 50): Promise<{ rows: RestorableNote[]; total: number }> {
-  const api = syncApi();
-  if (!api?.listRestorable) return { rows: [], total: 0 };
+  if (!hasElectron("sync")) return { rows: [], total: 0 };
   try {
-    const res = await api.listRestorable(limit);
+    const res = await syncClient.listRestorable(limit);
     return { rows: res?.rows ?? [], total: res?.total ?? 0 };
   } catch {
     return { rows: [], total: 0 };
@@ -190,10 +163,9 @@ export async function fetchRestorableNotes(limit = 50): Promise<{ rows: Restorab
  * tell the user why it didn't work.
  */
 export async function restoreDeletedNote(id: string): Promise<RestoreOutcome> {
-  const api = syncApi();
-  if (!api?.restoreNote) return { restored: false, reason: "missing" };
+  if (!hasElectron("sync")) return { restored: false, reason: "missing" };
   try {
-    return await api.restoreNote(id);
+    return await syncClient.restoreNote(id);
   } catch (err) {
     return { restored: false, reason: err instanceof Error ? err.message : String(err) };
   }
@@ -207,10 +179,9 @@ export async function restoreDeletedNote(id: string): Promise<RestoreOutcome> {
  * refused as `live` and the user could never repair it.
  */
 export async function repairNoteFile(id: string): Promise<RepairOutcome> {
-  const api = syncApi();
-  if (!api?.repairNoteFile) return { repaired: false, reason: "missing" };
+  if (!hasElectron("sync")) return { repaired: false, reason: "missing" };
   try {
-    return await api.repairNoteFile(id);
+    return await syncClient.repairNoteFile(id);
   } catch (err) {
     return { repaired: false, reason: err instanceof Error ? err.message : String(err) };
   }
@@ -218,10 +189,9 @@ export async function repairNoteFile(id: string): Promise<RepairOutcome> {
 
 /** Peers on an older/newer sync protocol than this build. Empty outside Electron. */
 export async function fetchPeerProtocols(): Promise<PeerProtocol[]> {
-  const api = syncApi();
-  if (!api?.peerProtocols) return [];
+  if (!hasElectron("sync")) return [];
   try {
-    return (await api.peerProtocols()) ?? [];
+    return (await syncClient.peerProtocols()) ?? [];
   } catch {
     return [];
   }
@@ -229,10 +199,9 @@ export async function fetchPeerProtocols(): Promise<PeerProtocol[]> {
 
 /** Trigger a manual sync now (from the popover). */
 export async function triggerSyncNow(): Promise<void> {
-  const api = syncApi();
-  if (!api) return;
+  if (!hasElectron("sync")) return;
   try {
-    await api.now();
+    await syncClient.now();
   } catch {
     /* status event will surface the offline state */
   }

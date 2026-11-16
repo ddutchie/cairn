@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { RegistryFetchResult } from "@/types";
+import { registryClient } from "@/lib/ipc/registry";
 import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 
 export type ChatConnectorMeta = ConnectorMeta;
@@ -32,7 +33,7 @@ export function useCommunityConnectorMap(): Record<string, ChatConnectorMeta> {
 
   useEffect(() => {
     let cancelled = false;
-    const fetchRegistry = window.electron?.registry?.fetch;
+    const fetchRegistry = registryClient.fetch;
     if (!fetchRegistry) return () => { cancelled = true; };
     fetchRegistry().then((result) => {
       if (!cancelled) setManifest(result.manifest);

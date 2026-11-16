@@ -3,6 +3,7 @@
  */
 
 import type { StateCreator } from "zustand";
+import { aiClient } from "@/lib/ipc/ai";
 import type { CairnStore } from "../index";
 import type { Note, ID, NoteType } from "@/types";
 import { id, now } from "@/lib/utils";
@@ -20,7 +21,8 @@ import {
   makeLinkNoteToCardCmd,
 } from "@/lib/commands/note-commands";
 import { excerptFor } from "@/lib/note-text";
-import { persist } from "@/lib/ipc/client";
+import { persist, hasElectron } from "@/lib/ipc/client";
+import { noteClient, noteFilesClient } from "@/lib/ipc/notes";
 
 /**
  * Notes in `projectId` that live at `source` (a normalized folder path) or any
@@ -180,7 +182,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
     void (async () => {
       let content: string | undefined;
       try {
-        content = (await window.electron!.note.bodies([noteId]))[0]?.content;
+        content = (await noteClient.bodies([noteId]))[0]?.content;
       } catch { /* fall through: delete, but without an undo entry */ }
       ipc((e) => e.note.delete(noteId));
       // Only offer undo when it can restore the real content — an undo that
@@ -351,14 +353,14 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
 
   revealNote(noteId, projectId) {
     if (!isElectron()) return;
-    if (window.electron) persist(window.electron.revealNote(noteId, projectId), "Couldn't reveal the note");
+    if (hasElectron()) persist(noteFilesClient.revealNote(noteId, projectId), "Couldn't reveal the note");
   },
 
   async generatePrd(projectId, title, requirements) {
-    if (!isElectron() || !window.electron) return { error: "Not in Electron" };
+    if (!isElectron() || !hasElectron()) return { error: "Not in Electron" };
     const { aiConfig } = get();
     try {
-      return await window.electron.ai.generatePrd({
+      return await aiClient.generatePrd({
         projectId,
         title,
         requirements,
@@ -392,7 +394,7 @@ export const createNotesSlice: StateCreator<CairnStore, [], [], NotesSlice> = (
       const req = (async () => {
         let bodies: Awaited<ReturnType<NonNullable<Window["electron"]>["note"]["bodies"]>> = [];
         try {
-          bodies = await window.electron!.note.bodies(want);
+          bodies = await noteClient.bodies(want);
         } catch (err) {
           console.error("[notes] loading note bodies failed", err);
           return;

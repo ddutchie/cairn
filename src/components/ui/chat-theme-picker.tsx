@@ -19,6 +19,7 @@ import { ChevronsUpDown, Check } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { fetchAndCacheCommunityChatThemes } from "@/store/slices/ui";
+import { registryClient } from "@/lib/ipc/registry";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -52,7 +53,7 @@ function useCommunityThemes(): { themes: ChatThemePreset[]; loaded: boolean } {
       // the active theme when it's a community id.
       await fetchAndCacheCommunityChatThemes();
       if (cancelled) return;
-      const api = typeof window !== "undefined" ? window.electron?.registry : undefined;
+      const api = typeof window !== "undefined" ? registryClient : undefined;
       const cached = api ? await api.fetchChatThemes().catch(() => null) : null;
       if (!cancelled && cached?.manifest) {
         setExtras(manifestToChatThemes(cached.manifest.themes));

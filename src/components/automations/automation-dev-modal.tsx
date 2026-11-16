@@ -7,6 +7,8 @@ import { AutomationModalFooter } from "./AutomationModalFooter";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AgentChatPane } from "@/components/agent/AgentChatPane";
+import { automationsClient } from "@/lib/ipc/automations";
+import { hasElectron } from "@/lib/ipc/client";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import type { Automation } from "@/store/slices/automations";
@@ -100,12 +102,12 @@ function DevFilesPanel({ automationId }: { automationId: string }) {
   const [changed, setChanged] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (!automationId || !window.electron) return;
+    if (!automationId || !hasElectron()) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const res = await window.electron!.automation.files(automationId);
+        const res = await automationsClient.files(automationId);
         if (cancelled) return;
         const prev = prevMtimes.current;
         const nextChanged: Record<string, boolean> = {};

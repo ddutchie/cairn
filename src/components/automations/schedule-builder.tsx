@@ -8,6 +8,8 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Tooltip } from "@/components/ui/tooltip";
+import { automationsClient } from "@/lib/ipc/automations";
+import { hasElectron } from "@/lib/ipc/client";
 import { Clock } from "lucide-react";
 import type { ScheduleKind } from "@/store/slices/automations";
 import { formatWhenRelative } from "../../../shared/format/date";
@@ -192,8 +194,8 @@ export function ScheduleBuilder({ initialKind, initialExpr, timezone, onChange, 
   const [preview, setPreview] = useState<{ ok: boolean; text: string }>({ ok: true, text: "" });
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const previewFn = typeof window !== "undefined" ? window.electron?.automation?.preview : undefined;
-    if (!previewFn) return;
+    if (typeof window === "undefined" || !hasElectron("automation")) return;
+    const previewFn = automationsClient.preview;
     if (previewTimer.current) clearTimeout(previewTimer.current);
     previewTimer.current = setTimeout(() => {
       void (async () => {

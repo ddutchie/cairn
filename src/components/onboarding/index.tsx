@@ -7,6 +7,7 @@ import { ipcResult, writesDuring } from "@/store/ipc";
 import { DEFAULT_WORKSPACE_ICON, DEFAULT_PROJECT_ICON } from "@/lib/workspace-icons";
 import { clearPendingImport, markOnboardingInProgress, readPendingImport, savePendingImport } from "@/lib/onboarding-progress";
 import { modKey } from "@/components/layout/sidebar-utils";
+import { appClient } from "@/lib/ipc/app";
 import type { OnboardingStep } from "./shared";
 import { StepChooseFolder } from "./StepChooseFolder";
 import { StepWorkspaceDetails } from "./StepWorkspaceDetails";
@@ -166,7 +167,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     setPreviewReady(false);
     setImportPreview(null);
     try {
-      const probe = await window.electron?.probeWorkspaceFolder?.(folder);
+      const probe = await appClient.probeWorkspaceFolder(folder).catch(() => null);
       if (!probe) throw new Error("Folder preview unavailable");
       setIsObsidianVault(!!probe.isObsidianVault);
       setImportPreview(probe);
@@ -181,7 +182,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
   async function handleChooseFolder() {
     setSubmitting(true);
     try {
-      const folder = await window.electron?.selectWorkspaceFolder?.();
+      const folder = await appClient.selectWorkspaceFolder().catch(() => null);
       if (!folder) return;
       setChosenFolder(folder);
       await loadImportPreview(folder);
@@ -238,7 +239,7 @@ export function Onboarding({ onComplete, initialStep = "choose-folder" }: Props)
     setSubmitting(true);
     setRollbackError(null);
     try {
-      await window.electron?.rollbackImport(ids);
+      await appClient.rollbackImport(ids);
       // Reset the wizard state so a fresh choose-folder → create-workspace flow
       // starts clean — no stale folder/name/icon or imported-project leftovers.
       setImportedProjects([]);

@@ -6,6 +6,7 @@ import {
   Archive, FolderInput, FolderSymlink,
 } from "lucide-react";
 import { cn, formatRelative } from "@/lib/utils";
+import { platformName } from "@/lib/ipc/platform";
 import type { Note } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
@@ -33,9 +34,9 @@ export interface NoteListItemProps {
 
 /** Reveal-in-OS label matching the current platform. */
 function revealLabel(): string {
-  return window.electron?.platform === "win32"
+  return platformName() === "win32"
     ? "Explorer"
-    : window.electron?.platform === "linux"
+    : platformName() === "linux"
       ? "Files"
       : "Finder";
 }

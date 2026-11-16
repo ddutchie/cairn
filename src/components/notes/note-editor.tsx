@@ -21,6 +21,7 @@ import { AITextToolbar, buildAIActionPrompt, applyFormat, type AITextAction, typ
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { makeLatexPlugins, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { sessionClient } from "@/lib/ipc/session";
+import { noteFilesClient } from "@/lib/ipc/notes";
 import { hasElectron } from "@/lib/ipc/client";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
@@ -205,12 +206,11 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
   // goes read-only and a non-blocking banner is shown.
   const [isAiWriting, setIsAiWriting] = useState(false);
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron) return;
-    const offStarted = electron.onAiWriteStarted(({ noteId }) => {
+    if (!hasElectron()) return;
+    const offStarted = noteFilesClient.onAiWriteStarted(({ noteId }) => {
       if (noteId === note.id) setIsAiWriting(true);
     });
-    const offEnded = electron.onAiWriteEnded(({ noteId }) => {
+    const offEnded = noteFilesClient.onAiWriteEnded(({ noteId }) => {
       if (noteId === note.id) setIsAiWriting(false);
     });
     return () => { offStarted(); offEnded(); };

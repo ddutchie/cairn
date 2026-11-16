@@ -5,7 +5,7 @@
  *
  * Titles (and any bodies already in memory) match synchronously. Note bodies
  * load lazily in Electron, so body matches come from the main process
- * (`window.electron.note.search`, debounced) and are merged in when they
+ * (`noteClient.search`, debounced) and are merged in when they
  * arrive — the list never waits on IPC to show title matches.
  */
 
@@ -14,6 +14,8 @@ import type { Note } from "@/types";
 import { matchesQuery } from "../../../../shared/notes/text";
 import { noteSearchText } from "@/lib/note-text";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
+import { noteClient } from "@/lib/ipc/notes";
+import { hasElectron } from "@/lib/ipc/client";
 
 const BODY_SEARCH_DEBOUNCE_MS = 120;
 
@@ -33,7 +35,7 @@ export function useNoteFilter(
   }), []);
 
   useEffect(() => {
-    const searchNotes = typeof window !== "undefined" ? window.electron?.note?.search : undefined;
+    const searchNotes = typeof window !== "undefined" && hasElectron("note") ? noteClient.search : undefined;
     if (!query || !searchNotes) return;
     let cancelled = false;
     const timer = setTimeout(async () => {

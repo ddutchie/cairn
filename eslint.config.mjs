@@ -79,6 +79,27 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // Renderer → preload bridge boundary (F9): renderer code must never touch
+    // window.electron directly — use a typed client in src/lib/ipc/ (built on
+    // src/lib/ipc/client.ts); src/store/ipc.ts hosts the shared store helpers.
+    // Test files, fixtures and the bridge type declaration are exempt.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/lib/ipc/**", "src/store/ipc.ts", "**/*.test.{ts,tsx}", "src/test-utils/**"],
+    rules: {
+      "no-restricted-syntax": ["error",
+        {
+          selector: "MemberExpression[object.name='window'][property.name='electron']",
+          message: "Renderer code must not touch window.electron directly — use a typed client in src/lib/ipc/ (see AGENTS.md boundary rules).",
+        },
+        {
+          // Cast-evasion idiom: (window as {...}).electron — same ban, same fix.
+          selector: "MemberExpression[object.type='TSAsExpression'][property.name='electron']",
+          message: "Renderer code must not touch (window as ...).electron directly — use a typed client in src/lib/ipc/ (see AGENTS.md boundary rules).",
+        },
+      ],
+    },
+  },
+  {
     // Icon-only buttons need an accessible name: use IconButton (its required
     // label is the tooltip and the name) or add aria-label. See AGENTS.md.
     files: ["src/**/*.tsx"],

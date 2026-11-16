@@ -2,6 +2,7 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { nanoid } from "nanoid";
 import { defaultUrlTransform } from "react-markdown";
+import { hasElectron } from "./ipc/client";
 export { PRIORITY_COLORS, STATUS_COLORS } from "./constants";
 // Date formatters + tool-label prettifier now live in @cairn/shared so desktop
 // and mobile share one implementation. Re-exported here to preserve the
@@ -44,7 +45,7 @@ export function getIsDark(): boolean {
 
 export function urlTransform(url: string): string {
   return url.startsWith("asset://")
-    ? (typeof window !== "undefined" && !window.electron ? `/api/assets/${url.slice(8)}` : url)
+    ? (typeof window !== "undefined" && !hasElectron() ? `/api/assets/${url.slice(8)}` : url)
     : defaultUrlTransform(url);
 }
 

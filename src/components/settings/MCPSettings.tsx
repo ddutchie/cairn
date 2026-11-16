@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 import { SettingsGroup } from "./shared";
 import { StatusDot } from "@/components/ui/status-dot";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
+import { appClient } from "@/lib/ipc/app";
+import { platformName } from "@/lib/ipc/platform";
+import { hasElectron } from "@/lib/ipc/client";
 import { SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 
 // ── MCP tab (AI section) ────────────────────────────────────────────────────
@@ -56,10 +59,10 @@ export function MCPServerSettings() {
   const { copiedKey, copy: copyToClipboard } = useCopyToClipboard();
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.electron) {
-      window.electron.mcpServerPath().then((p) => setMcpServerPath(p));
+    if (typeof window !== "undefined" && hasElectron()) {
+      appClient.mcpServerPath().then((p) => setMcpServerPath(p));
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPlatform(window.electron.platform ?? null);
+      setPlatform(platformName() ?? null);
     }
   }, []);
 

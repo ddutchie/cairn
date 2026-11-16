@@ -28,6 +28,8 @@ import {
   ContextMenuSeparator, ContextMenuTrigger, CONTEXT_MENU_DANGER,
 } from "@/components/ui/context-menu";
 import { revealNote, revealCard } from "@/lib/events";
+import { cardsClient } from "@/lib/ipc/board";
+import { hasElectron } from "@/lib/ipc/client";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown";
@@ -593,7 +595,7 @@ function IdeaFlowCanvas() {
   // ── Promote idea → task ───────────────────────────────────────
 
   const handlePromoteToTask = useCallback(async (nodeId: string) => {
-    if (!activeProjectId || !activeWorkspaceId || !window.electron) return;
+    if (!activeProjectId || !activeWorkspaceId || !hasElectron()) return;
     const node = nodes.find((n) => n.id === nodeId);
     if (!node || node.type !== "idea") return;
 
@@ -617,7 +619,7 @@ function IdeaFlowCanvas() {
     let newNode: { id: string };
     try {
       // Create a new task card
-      created = await window.electron.card.create({
+      created = await cardsClient.create({
         id: newId(),
         projectId: activeProjectId,
         workspaceId: activeWorkspaceId,

@@ -23,6 +23,8 @@ import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirro
 import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search";
 import { noteFindExtension } from "./note-find-extension";
 import { livePreview } from "@/lib/livePreview";
+import { noteFilesClient } from "@/lib/ipc/notes";
+import { hasElectron } from "@/lib/ipc/client";
 
 // ── Public handle so parent can read selection for AI toolbar ──────────────
 export interface MarkdownEditorHandle {
@@ -310,15 +312,14 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
             const reader = new FileReader();
             reader.onload = async () => {
               const buffer = reader.result as ArrayBuffer;
-              const electron = (window as { electron?: { uploadAsset?: (filename: string, data: ArrayBuffer) => Promise<{ assetUrl: string }> } }).electron;
-              if (!electron?.uploadAsset) return;
+              if (!hasElectron()) return;
 
               try {
                 const ext = file.type.split("/")[1]?.split("+")[0] ?? "png";
                 const filename = file.name || `pasted-image.${ext}`;
                 // Pass the ArrayBuffer directly — Electron structured-clone transfers
                 // it natively, avoiding the overhead of a JSON number array.
-                const result = await electron.uploadAsset(filename, buffer);
+                const result = await noteFilesClient.uploadAsset(filename, buffer);
                 // assetUrl is either "![[filename.png]]" (new) or "asset://hash.png" (legacy)
                 const markdown = result.assetUrl.startsWith("![[")
                   ? result.assetUrl

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { embeddingsClient } from "@/lib/ipc/runtime";
+import { noteClient } from "@/lib/ipc/notes";
 import { hasElectron } from "@/lib/ipc/client";
 import type { Note, Tag } from "@/types";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
@@ -131,10 +132,9 @@ export function BacklinksPanel({
     if (feedTouches(e, ["notes"])) setBacklinkRefresh((v) => v + 1);
   }), []);
   useEffect(() => {
-    const listBacklinks = window.electron?.note?.backlinks;
-    if (!listBacklinks) return;
+    if (!hasElectron("note")) return;
     let cancelled = false;
-    listBacklinks(note.id)
+    noteClient.backlinks(note.id)
       .then((ids) => { if (!cancelled) setRemoteBacklinkIds(ids); })
       .catch(() => { if (!cancelled) setRemoteBacklinkIds([]); });
     return () => { cancelled = true; };
@@ -142,7 +142,7 @@ export function BacklinksPanel({
 
   const wikilinkBacklinks = useMemo(() => {
     const linked = new Set(note.linkedNoteIds ?? []);
-    if (window.electron?.note?.backlinks) {
+    if (hasElectron("note")) {
       if (!remoteBacklinkIds) return [];
       const ids = new Set(remoteBacklinkIds);
       return notes.filter((n) => ids.has(n.id) && n.id !== note.id && !linked.has(n.id));

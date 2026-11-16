@@ -10,6 +10,14 @@ import type { McpNotification } from "../../../shared/types/notifications";
 import type {
   AuthCompleteResult, CustomServiceConfig, McpAuthRequiredEvent, McpServerConfig, SecretToolType, ToolAttachment, ToolType,
 } from "../../../shared/types/tools";
+import type {
+  ToolBuilderDoneEvent,
+  ToolBuilderProbeHostEvent,
+  ToolBuilderPromptRequest,
+  ToolBuilderProposalEvent,
+  ToolBuilderStepEvent,
+  ToolBuilderTokenEvent,
+} from "../../../shared/types/tool-builder";
 import { domainCall, type ElectronApi } from "./client";
 
 const tools = <T>(fn: (api: ElectronApi["tools"]) => Promise<T>) => domainCall("tools", fn);
@@ -75,4 +83,30 @@ export const notificationsClient = {
   /** Subscribe to unread-count pushes; returns the unsubscribe function (a no-op off-Electron). */
   onUnreadCount: (cb: (count: number) => void): (() => void) =>
     window.electron?.onMcpUnreadCount?.(cb) ?? (() => {}),
+};
+
+type ToolBuilderApi = NonNullable<ElectronApi["toolBuilder"]>;
+const toolBuilder = <T>(fn: (api: ToolBuilderApi) => Promise<T>) => domainCall("toolBuilder", fn);
+
+/** AI Tool Builder streaming session. Sends are fire-and-forget. */
+export const toolBuilderClient = {
+  /** Send a builder prompt (and optionally a user-supplied secret). Fire-and-forget. */
+  prompt: (req: ToolBuilderPromptRequest): Promise<void> =>
+    toolBuilder((t) => { t.prompt(req); return Promise.resolve(); }),
+  /** Abort the current in-flight builder turn. */
+  abort: (sessionId: string): Promise<void> =>
+    toolBuilder((t) => { t.abort(sessionId); return Promise.resolve(); }),
+  /** Destroy a builder session (clears its in-memory state + temp secrets). */
+  end: (sessionId: string): Promise<void> =>
+    toolBuilder((t) => { t.end(sessionId); return Promise.resolve(); }),
+  onToken: (cb: (e: ToolBuilderTokenEvent) => void): (() => void) =>
+    window.electron?.toolBuilder?.onToken?.(cb) ?? (() => {}),
+  onStep: (cb: (e: ToolBuilderStepEvent) => void): (() => void) =>
+    window.electron?.toolBuilder?.onStep?.(cb) ?? (() => {}),
+  onProbeHost: (cb: (e: ToolBuilderProbeHostEvent) => void): (() => void) =>
+    window.electron?.toolBuilder?.onProbeHost?.(cb) ?? (() => {}),
+  onProposal: (cb: (e: ToolBuilderProposalEvent) => void): (() => void) =>
+    window.electron?.toolBuilder?.onProposal?.(cb) ?? (() => {}),
+  onDone: (cb: (e: ToolBuilderDoneEvent) => void): (() => void) =>
+    window.electron?.toolBuilder?.onDone?.(cb) ?? (() => {}),
 };
