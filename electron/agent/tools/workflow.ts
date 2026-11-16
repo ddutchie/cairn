@@ -6,7 +6,7 @@
  */
 import vm from "node:vm";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import type { SubagentDeps } from "./subagent";
 import { clampMiddle, fail, ok } from "./schema";
 

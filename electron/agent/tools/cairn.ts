@@ -11,7 +11,7 @@ import type { LLMConfig } from "../../lib/llm";
 import type { ChatRequest } from "../../lib/tools";
 import { TOOL_SCHEMAS, toolParametersJsonSchema } from "../host-store";
 import { APPROVAL_SAFE_TOOLS, approvalPreview } from "../../../shared/agent/tool-risk";
-import { defineTool, type AgentTool, type ToolContext } from "../tools";
+import { defineTool, type AgentTool, type ToolContext } from "../tool-types";
 import type { RiskInfo } from "../rules";
 import { fail, fromJsonSchema, ok, renderValue } from "./schema";
 

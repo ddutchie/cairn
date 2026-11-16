@@ -1,5 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
-import type { ToolOutput } from "../tools";
+import type { ToolOutput } from "../tool-types";
 
 /** Wrap a plain JSON Schema (from zod or an MCP server) as a tool parameter schema. */
 export const fromJsonSchema = (json: Record<string, unknown>) => Type.Unsafe<Record<string, unknown>>(json);

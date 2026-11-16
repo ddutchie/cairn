@@ -1,5 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import { ok } from "./schema";
 
 export interface PlanDeps {

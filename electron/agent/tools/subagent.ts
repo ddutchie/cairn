@@ -1,5 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool, type ToolOutput } from "../tools";
+import { defineTool, type AgentTool, type ToolOutput } from "../tool-types";
 import { fail, ok } from "./schema";
 
 export interface ChildRun { childId: string; text: string; reason: string }

@@ -7,7 +7,7 @@ import { runTurn } from "./loop";
 import { repairInterrupted } from "./repair";
 import { createReviewerState, type Reviewer } from "./reviewer";
 import { presetRules, type Rule } from "./rules";
-import { defineTool } from "./tools";
+import { defineTool } from "./tool-types";
 import { Type } from "@earendil-works/pi-ai";
 import { call, drive, makeHarness, makeTools, ofType, toolResults, toolUse, types, type Harness } from "./test-harness";
 

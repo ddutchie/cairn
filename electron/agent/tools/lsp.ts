@@ -1,7 +1,7 @@
 /** lsp: read-only code navigation through a language server. */
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import type { LspManager } from "../lsp";
 import { fail, ok } from "./schema";
 

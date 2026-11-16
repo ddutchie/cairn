@@ -1,6 +1,6 @@
 /** job_output / job_kill: look in on and stop background shell jobs. */
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import type { JobRegistry } from "../jobs";
 import { fail, ok } from "./schema";
 

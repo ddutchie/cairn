@@ -4,7 +4,7 @@ import type { AgentEvent } from "./events";
 import { Gate } from "./gate";
 import type { Profile, StreamFn, TurnOptions } from "./loop";
 import { createRuleStore, type Rule } from "./rules";
-import { defineTool, type AgentTool } from "./tools";
+import { defineTool, type AgentTool } from "./tool-types";
 
 export const WORKSPACE = "/ws";
 

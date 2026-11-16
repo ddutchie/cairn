@@ -14,7 +14,7 @@ import type { Profile } from "../../agent/loop";
 import type { PermissionPreset } from "../../agent/profiles";
 import type { ModelRoute } from "../../agent/provider";
 import type { Rule } from "../../agent/rules";
-import type { AgentTool } from "../../agent/tools";
+import type { AgentTool } from "../../agent/tool-types";
 
 export interface UsageMeta { source: "chat" | "coding" | "automation" | "writing-style"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
 

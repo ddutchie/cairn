@@ -5,7 +5,7 @@
  *
  * The order is part of the contract: built-ins first in a fixed order, connector tools last.
  */
-import type { AgentTool } from "../tools";
+import type { AgentTool } from "../tool-types";
 import { bashTool, type BashDeps } from "./bash";
 import { cairnTools, type CairnToolDeps } from "./cairn";
 import { externalExtras, externalTools, type ExternalToolDeps } from "./external";

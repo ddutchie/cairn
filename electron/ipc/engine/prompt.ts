@@ -7,7 +7,7 @@ import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "../result-helpers";
 import { broadcastEvent } from "../registry";
 import { SessionBusyError } from "../../agent/host";
-import type { AgentTool } from "../../agent/tools";
+import type { AgentTool } from "../../agent/tool-types";
 import { prepareAttachments, type Attachment } from "../../agent/attachments";
 import { updateCodingSession } from "../../db/sessions-queries";
 import type { Profile } from "../../agent/loop";

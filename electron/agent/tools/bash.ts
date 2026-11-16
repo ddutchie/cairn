@@ -5,7 +5,7 @@
  */
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import type { JobRegistry } from "../jobs";
 import { platformShell, runProcess } from "../../lib/proc";
 import { sandboxDenialHint, sandboxStatus, sandboxUnavailable, wrapSandboxed, type SandboxOptions } from "../sandbox";

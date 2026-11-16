@@ -8,7 +8,7 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentTool } from "../tools";
+import { defineTool, type AgentTool } from "../tool-types";
 import { runProcess } from "../../lib/proc";
 import { clampMiddle, fail, ok } from "./schema";
 

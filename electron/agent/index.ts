@@ -4,7 +4,7 @@ export * from "./loop";
 export * from "./policy";
 export * from "./reviewer";
 export * from "./rules";
-export * from "./tools";
+export * from "./tool-types";
 export * from "./provider";
 export * from "./context";
 
@@ -13,7 +13,7 @@ export * from "./context";
  *
  * Code outside `electron/agent/` reaches the engine ONLY through this file —
  * enforced by the `cairn/engine-boundary` lint rule (see
- * `eslint-rules/cairn.mjs`). Deep imports (`../agent/host`, `../agent/tools`,
+ * `eslint-rules/cairn.mjs`). Deep imports (`../agent/host`, `../agent/tool-types`,
  * …) from outside the engine are banned at lint time (type-only imports stay
  * allowed: they are erased at compile time and cannot smuggle behaviour).
  *
