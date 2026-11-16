@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { MicroLabel } from "@/components/ui/labels";
 import { diffKey } from "./git/git-helpers";
 import { FileSection } from "./git/FileSection";
+import { StatusFileSection } from "./git/StatusFileSection";
 import { FileRow } from "./git/FileRow";
 import { useGitStatus } from "./git/useGitStatus";
 import { discardMessage, readPrTemplate } from "./git/git-actions";
@@ -582,104 +583,52 @@ export function GitView({ cwd }: GitViewProps) {
 
             {/* Unstaged */}
             {status && status.unstaged.length > 0 && (
-              <FileSection
+              <StatusFileSection
                 label="Modified"
-                count={status.unstaged.length}
+                files={status.unstaged}
                 expanded={expandedSections.unstaged}
                 onToggle={() => toggleSection("unstaged")}
-                action={
-                  <div className="flex items-center gap-1.5">
-                    <Tooltip content={armedDiscardKey === "unstaged-all" ? discardMessage(status, status.unstaged.map((f) => f.path)) : "Discard all unstaged changes in modified files"}>
-                      <button
-                        onClick={() => fireDiscard("unstaged-all", status.unstaged.map((f) => f.path))}
-                        className="text-2xs text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
-                      >
-                        {armedDiscardKey === "unstaged-all" ? "Confirm discard?" : "Discard all"}
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Stage all modified files">
-                      <button
-                        onClick={() => handleStage(status.unstaged.map((f) => f.path))}
-                        className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
-                      >
-                        Stage all
-                      </button>
-                    </Tooltip>
-                  </div>
-                }
-              >
-                {status.unstaged.map((file) => {
-                  const key = diffKey(file.path, false);
-                  return (
-                    <FileRow
-                      key={file.path}
-                      path={file.path}
-                      status={file.status}
-                      onAction={() => handleStage([file.path])}
-                      onDiscard={() => fireDiscard(`file:${file.path}`, [file.path])}
-                      discardArmed={armedDiscardKey === `file:${file.path}`}
-                      actionLabel="+"
-                      actionColor="var(--success)"
-                      stat={fileDiffs[key]}
-                      rawDiff={fileDiffs[key]?.diff ?? ""}
-                      expanded={expandedFiles.has(key)}
-                      loading={loadingFile === key}
-                      onToggle={() => handleToggleFile(file.path, false)}
-                    />
-                  );
-                })}
-              </FileSection>
+                discardArmed={armedDiscardKey === "unstaged-all"}
+                discardTooltip={armedDiscardKey === "unstaged-all" ? discardMessage(status, status.unstaged.map((f) => f.path)) : "Discard all unstaged changes in modified files"}
+                discardIdleLabel="Discard all"
+                discardArmedLabel="Confirm discard?"
+                onDiscardAll={() => fireDiscard("unstaged-all", status.unstaged.map((f) => f.path))}
+                stageTooltip="Stage all modified files"
+                onStageAll={() => handleStage(status.unstaged.map((f) => f.path))}
+                staged={false}
+                fileDiffs={fileDiffs}
+                expandedFiles={expandedFiles}
+                loadingFile={loadingFile}
+                armedDiscardKey={armedDiscardKey}
+                onStageFile={(path) => handleStage([path])}
+                onDiscardFile={(key, paths) => fireDiscard(key, paths)}
+                onToggleFile={(path, staged) => handleToggleFile(path, staged)}
+              />
             )}
 
             {/* Untracked */}
             {status && status.untracked.length > 0 && (
-              <FileSection
+              <StatusFileSection
                 label="Untracked"
-                count={status.untracked.length}
+                files={status.untracked}
                 expanded={expandedSections.untracked}
                 onToggle={() => toggleSection("untracked")}
-                action={
-                  <div className="flex items-center gap-1.5">
-                    <Tooltip content={armedDiscardKey === "untracked-all" ? discardMessage(status, status.untracked.map((f) => f.path)) : "Permanently delete all untracked files"}>
-                      <button
-                        onClick={() => fireDiscard("untracked-all", status.untracked.map((f) => f.path))}
-                        className="text-2xs text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-2 py-0.5 rounded transition-colors cursor-pointer"
-                      >
-                        {armedDiscardKey === "untracked-all" ? "Confirm delete?" : "Clean all"}
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Stage all untracked files">
-                      <button
-                        onClick={() => handleStage(status.untracked.map((f) => f.path))}
-                        className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-0.5 rounded hover:bg-[var(--surface-3)] transition-colors cursor-pointer"
-                      >
-                        Stage all
-                      </button>
-                    </Tooltip>
-                  </div>
-                }
-              >
-                {status.untracked.map((file) => {
-                  const key = diffKey(file.path, false);
-                  return (
-                    <FileRow
-                      key={file.path}
-                      path={file.path}
-                      status={file.status}
-                      onAction={() => handleStage([file.path])}
-                      onDiscard={() => fireDiscard(`file:${file.path}`, [file.path])}
-                      discardArmed={armedDiscardKey === `file:${file.path}`}
-                      actionLabel="+"
-                      actionColor="var(--success)"
-                      stat={fileDiffs[key]}
-                      rawDiff={fileDiffs[key]?.diff ?? ""}
-                      expanded={expandedFiles.has(key)}
-                      loading={loadingFile === key}
-                      onToggle={() => handleToggleFile(file.path, false)}
-                    />
-                  );
-                })}
-              </FileSection>
+                discardArmed={armedDiscardKey === "untracked-all"}
+                discardTooltip={armedDiscardKey === "untracked-all" ? discardMessage(status, status.untracked.map((f) => f.path)) : "Permanently delete all untracked files"}
+                discardIdleLabel="Clean all"
+                discardArmedLabel="Confirm delete?"
+                onDiscardAll={() => fireDiscard("untracked-all", status.untracked.map((f) => f.path))}
+                stageTooltip="Stage all untracked files"
+                onStageAll={() => handleStage(status.untracked.map((f) => f.path))}
+                staged={false}
+                fileDiffs={fileDiffs}
+                expandedFiles={expandedFiles}
+                loadingFile={loadingFile}
+                armedDiscardKey={armedDiscardKey}
+                onStageFile={(path) => handleStage([path])}
+                onDiscardFile={(key, paths) => fireDiscard(key, paths)}
+                onToggleFile={(path, staged) => handleToggleFile(path, staged)}
+              />
             )}
           </div>
         )}

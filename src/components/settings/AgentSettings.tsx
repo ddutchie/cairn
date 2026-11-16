@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import {
   Plus, Trash2, Star, FolderOpen, Check, BookOpen
 } from "lucide-react";
-import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
@@ -19,6 +18,7 @@ import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
+import { PromptPreviewPanel } from "./PromptPreviewPanel";
 import { Tooltip } from "@/components/ui/tooltip";
 
 // ── Agent form ────────────────────────────────────────────────────────────────
@@ -161,38 +161,14 @@ function CodingPreviewSection() {
   const shownTools = activeSurface === "coding" ? codingTools : automationDevTools;
 
   return (
-    <SettingsGroup
+    <PromptPreviewPanel
       title="Coding prompt and tools"
       description="The coding prompt carries Cairn's workflow (board tracking, PRD checklists, session summaries). Below are the tools the coding surfaces expose."
+      workspacePath={workspacePath}
+      error={error}
+      loading={loading}
+      reload={reload}
     >
-      {/* Refresh */}
-      <div className="flex items-center justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={reload}
-          disabled={loading}
-          className={cn(loading && "opacity-50")}
-        >
-          <RefreshSpin size={11} spinning={loading} />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Workspace path context */}
-      {workspacePath && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
-          <FolderOpen size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
-          <span className="text-xs font-mono text-[var(--text-tertiary)] truncate">{workspacePath}</span>
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] px-4 py-3">
-          <p className="text-xs text-[var(--danger)]">{error}</p>
-        </div>
-      )}
-
       {codingPrompt !== null ? (
         <div className="space-y-3">
           {/* Same shared global assembly as the Chat tab — only the identity
@@ -259,13 +235,7 @@ function CodingPreviewSection() {
           <ToolsLegend />
         </div>
       )}
-
-      {loading && (
-        <div className="py-8 text-center">
-          <RefreshSpin size={16} className="mx-auto text-[var(--text-tertiary)] opacity-50" />
-        </div>
-      )}
-    </SettingsGroup>
+    </PromptPreviewPanel>
   );
 }
 

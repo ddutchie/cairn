@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Pencil, Activity, FileText, Kanban, Sparkles } from "lucide-react";
+import { Pencil, Activity, FileText, Kanban, Sparkles } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -9,7 +9,7 @@ import { cn, formatRelative } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { DialogClose } from "@/components/ui/dialog";
+import { AutomationModalFooter } from "./AutomationModalFooter";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { EnvEditor } from "./env-editor";
 import type { Automation, AutomationRun } from "@/store/slices/automations";
@@ -97,31 +97,25 @@ export function AutomationDetailDialog({ automation, onOpenChange, runs, onEdit,
       }
       scrollable
       footer={
-        <>
-          {onDevelop && (
-            <Button variant="outline" size="sm" onClick={onDevelop} disabled={developing}>
-              <Sparkles size={12} className="mr-1" /> {developing ? "Starting…" : "Develop"}
-            </Button>
-          )}
-          {onEdit && (
-            <Button variant="outline" size="sm" onClick={onEdit}>
-              <Pencil size={12} className="mr-1" /> Edit
-            </Button>
-          )}
-          {onSyncFromManifest && (
-            <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
-              <RefreshSpin size={12} spinning={syncing} className="mr-1" /> {syncing ? "Syncing…" : "Sync from manifest"}
-            </Button>
-          )}
-          {onRunNow && (
-            <Button variant="accent" size="sm" onClick={onRunNow}>
-              <Play size={12} className="mr-1" /> Run now
-            </Button>
-          )}
-          <DialogClose asChild>
-            <Button variant="ghost" size="sm">Close</Button>
-          </DialogClose>
-        </>
+        <AutomationModalFooter
+          leading={
+            <>
+              {onDevelop && (
+                <Button variant="outline" size="sm" onClick={onDevelop} disabled={developing}>
+                  <Sparkles size={12} className="mr-1" /> {developing ? "Starting…" : "Develop"}
+                </Button>
+              )}
+              {onEdit && (
+                <Button variant="outline" size="sm" onClick={onEdit}>
+                  <Pencil size={12} className="mr-1" /> Edit
+                </Button>
+              )}
+            </>
+          }
+          onSyncFromManifest={onSyncFromManifest}
+          syncing={syncing}
+          onRunNow={onRunNow}
+        />
       }
     >
       {automation && (

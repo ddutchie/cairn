@@ -267,6 +267,8 @@ Before writing a helper, look here. If the thing exists, use it; if it almost fi
 
 ## 7. Open questions for the owner
 
+> Decisions 2026-11-16: Q1 remove the `cairn-embeddings` binary once verified unused (B6 proceeds on that basis — `electron/runtime/` is the survivor). Q2 unify on the chat rule: agent sessions must refuse a cached key for a different endpoint, own commit (security angle). Q3 agent's choice: keep two named predicates (`isLoopbackHost` for "needs no key", `isPrivateAddress` for "must not fetch") — usage labelling and fetch refusal are different decisions; conflating them risks leaking keys or over-blocking. Q4 accepted: live tests of the old transport deleted with it in A2. Q5–Q7, Q9 need deeper research — C4, C5 renames and #179 stay deferred.
+
 1. **Embeddings (F1).** Is `electron/runtime/` the intended survivor, and may the standalone `cairn-embeddings` binary and the `embeddings:*` IPC namespace go? Today "install model" warms the old worker (`ipc/embeddings-handlers.ts:244`) while indexing uses the runtime process: is that a known double load?
 2. **Cached API key reuse (F4).** Chat refuses to reuse a cached key for a different endpoint (`ipc/chat.ts:37–52`); agent sessions do not check (`ipc/session-runtime-handlers.ts:293–307`). Should agent sessions get the chat rule? This is a behaviour change with a security angle, so it should be its own commit.
 3. **Address classes (F7).** Should usage accounting treat link-local and CGNAT hosts as "local" the way the SSRF guard treats them as non-public, or keep two named predicates (`isLoopbackHost` for "needs no key", `isPrivateAddress` for "must not fetch")?

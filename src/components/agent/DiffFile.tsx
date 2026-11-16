@@ -10,46 +10,7 @@ import type { File, Change } from "parse-diff";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { ensureLanguage, isLanguageReady, highlightCode, onLanguageReady } from "@/lib/lazy-lowlight";
 import { useResizeObserver } from "@/lib/viz/hooks";
-
-// ── Palette ───────────────────────────────────────────────────────────────────
-
-export type Palette = Record<string, string>;
-
-export const PALETTE_DARK: Palette = {
-  "hljs-keyword": "#c678dd", "hljs-built_in": "#e5c07b", "hljs-literal": "#56b6c2",
-  "hljs-number": "#d19a66", "hljs-string": "#98c379", "hljs-comment": "#5c6370",
-  "hljs-variable": "#e06c75", "hljs-attr": "#e06c75", "hljs-title": "#61afef",
-  "hljs-type": "#e5c07b", "hljs-operator": "#56b6c2", "hljs-punctuation": "#abb2bf",
-  "hljs-tag": "#e06c75", "hljs-meta": "#61afef",
-  "hljs-addition": "#98c379", "hljs-deletion": "#e06c75",
-};
-
-export const PALETTE_LIGHT: Palette = {
-  "hljs-keyword": "#7c3aed", "hljs-built_in": "#b45309", "hljs-literal": "#0891b2",
-  "hljs-number": "#c2410c", "hljs-string": "#16a34a", "hljs-comment": "#9ca3af",
-  "hljs-variable": "#dc2626", "hljs-attr": "#dc2626", "hljs-title": "#1d4ed8",
-  "hljs-type": "#b45309", "hljs-operator": "#0891b2", "hljs-punctuation": "#374151",
-  "hljs-tag": "#dc2626", "hljs-meta": "#1d4ed8",
-  "hljs-addition": "#16a34a", "hljs-deletion": "#dc2626",
-};
-
-// ── Hast renderer ─────────────────────────────────────────────────────────────
-
-interface HastNode {
-  type: string; value?: string;
-  properties?: { className?: string[] };
-  children?: HastNode[];
-}
-
-function renderHast(node: HastNode, palette: Palette, key: string): React.ReactNode {
-  if (node.type === "text") return node.value ?? "";
-  if (node.type === "element") {
-    const colour = (node.properties?.className ?? []).map((c) => palette[c]).find(Boolean);
-    const children = node.children?.map((ch, i) => renderHast(ch, palette, `${key}-${i}`));
-    return colour ? <span key={key} style={{ color: colour }}>{children}</span> : <span key={key}>{children}</span>;
-  }
-  return null;
-}
+import { renderHast, type HastNode, type Palette } from "@/lib/highlight/render-hast";
 
 // ── Language detection ────────────────────────────────────────────────────────
 

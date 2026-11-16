@@ -19,7 +19,7 @@ import { PrdModal } from "./notes-view/PrdModal";
 import { MoveNoteModal } from "./notes-view/MoveNoteModal";
 import { useNoteFilter } from "./notes-view/useNoteFilter";
 import { buildFolderTree, type FolderNode } from "./notes-view/buildFolderTree";
-import { NoteListItem } from "./notes-view/NoteListItem";
+import { NoteListItems } from "./notes-view/NoteListItems";
 import { ArchivedNoteListItem } from "./notes-view/ArchivedNoteListItem";
 import { FolderTreeNode } from "./notes-view/FolderTreeNode";
 import { sortTagsByUsage } from "@/lib/tag-utils";
@@ -642,23 +642,20 @@ export function NotesView() {
             filtered.length === 0 ? (
               <EmptyState title="No matching notes" className="py-8" />
             ) : (
-              filtered.map((note) => (
-                <NoteListItem
-                  key={note.id}
-                  note={note}
-                  isActive={note.id === activeNote?.id}
-                  hasChanges={changedNoteIds.has(note.id)}
-                  onClick={() => handleNoteClick(note.id)}
-                  onPin={() => handleNotePin(note)}
-                  onDelete={() => handleNoteDelete(note)}
-                  onArchive={() => handleNoteArchive(note)}
-                  onMove={() => handleNoteMove(note)}
-                  onMoveToFolder={() => handleNoteMoveToFolder(note)}
-                  onReveal={() => handleNoteReveal(note)}
-                  onDragStart={handleNoteDragStart}
-                  onDragEnd={handleNoteDragEnd}
-                />
-              ))
+              <NoteListItems
+                notes={filtered}
+                activeNoteId={activeNote?.id}
+                changedNoteIds={changedNoteIds}
+                onNoteClick={handleNoteClick}
+                onNotePin={handleNotePin}
+                onNoteDelete={handleNoteDelete}
+                onNoteArchive={handleNoteArchive}
+                onNoteMove={handleNoteMove}
+                onNoteMoveToFolder={handleNoteMoveToFolder}
+                onNoteReveal={handleNoteReveal}
+                onNoteDragStart={handleNoteDragStart}
+                onNoteDragEnd={handleNoteDragEnd}
+              />
             )
           ) : (
             // Folder tree
@@ -692,23 +689,20 @@ export function NotesView() {
                 />
               ))}
               {/* Root notes (no folder) */}
-              {rootNotes.map((note) => (
-                <NoteListItem
-                  key={note.id}
-                  note={note}
-                  isActive={note.id === activeNote?.id}
-                  hasChanges={changedNoteIds.has(note.id)}
-                  onClick={() => handleNoteClick(note.id)}
-                  onPin={() => handleNotePin(note)}
-                  onDelete={() => handleNoteDelete(note)}
-                  onArchive={() => handleNoteArchive(note)}
-                  onMove={() => handleNoteMove(note)}
-                  onMoveToFolder={() => handleNoteMoveToFolder(note)}
-                  onReveal={() => handleNoteReveal(note)}
-                  onDragStart={handleNoteDragStart}
-                  onDragEnd={handleNoteDragEnd}
-                />
-              ))}
+              <NoteListItems
+                notes={rootNotes}
+                activeNoteId={activeNote?.id}
+                changedNoteIds={changedNoteIds}
+                onNoteClick={handleNoteClick}
+                onNotePin={handleNotePin}
+                onNoteDelete={handleNoteDelete}
+                onNoteArchive={handleNoteArchive}
+                onNoteMove={handleNoteMove}
+                onNoteMoveToFolder={handleNoteMoveToFolder}
+                onNoteReveal={handleNoteReveal}
+                onNoteDragStart={handleNoteDragStart}
+                onNoteDragEnd={handleNoteDragEnd}
+              />
             </>
           )}
 

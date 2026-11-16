@@ -16,9 +16,9 @@ import parseDiff from "parse-diff";
 import { Copy, Check, FolderGit2, ChevronRight, ChevronDown } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { useIsDark } from "@/hooks/useIsDark";
+import { usePalette } from "@/lib/highlight/render-hast";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { FileDiff, PALETTE_DARK, PALETTE_LIGHT } from "./DiffFile";
+import { FileDiff } from "./DiffFile";
 import type { ViewMode } from "./DiffFile";
 import { IconButton } from "@/components/ui/icon-button";
 
@@ -46,8 +46,7 @@ interface DiffViewerProps {
 }
 
 export function DiffViewer({ cwd }: DiffViewerProps) {
-  const isDark = useIsDark();
-  const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
+  const palette = usePalette();
 
   const [diffText, setDiffText] = useState("");
   const [loading, setLoading] = useState(false);

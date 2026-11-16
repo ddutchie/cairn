@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { FileText, FolderOpen, Play, Sparkles } from "lucide-react";
-import { RefreshSpin } from "@/components/ui/spinner";
+import { FileText, FolderOpen, Sparkles } from "lucide-react";
 import { ModalShell } from "@/components/ui/modal-shell";
-import { DialogClose } from "@/components/ui/dialog";
+import { AutomationModalFooter } from "./AutomationModalFooter";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AgentChatPane } from "@/components/agent/AgentChatPane";
@@ -55,28 +54,20 @@ export function AutomationDevModal({
         ) : ""
       }
       footer={
-        <>
-          {onStartOver && (
-            <Tooltip content="Abort this session and start a fresh one">
-              <Button variant="ghost" size="sm" onClick={onStartOver}>
-                <Sparkles size={12} className="mr-1" /> Start over
-              </Button>
-            </Tooltip>
-          )}
-          {onSyncFromManifest && (
-            <Button variant="outline" size="sm" onClick={onSyncFromManifest} disabled={syncing}>
-              <RefreshSpin size={12} spinning={syncing} className="mr-1" /> {syncing ? "Syncing…" : "Sync from manifest"}
-            </Button>
-          )}
-          {onRunNow && (
-            <Button variant="accent" size="sm" onClick={onRunNow}>
-              <Play size={12} className="mr-1" /> Run now
-            </Button>
-          )}
-          <DialogClose asChild>
-            <Button variant="ghost" size="sm">Close</Button>
-          </DialogClose>
-        </>
+        <AutomationModalFooter
+          leading={
+            onStartOver && (
+              <Tooltip content="Abort this session and start a fresh one">
+                <Button variant="ghost" size="sm" onClick={onStartOver}>
+                  <Sparkles size={12} className="mr-1" /> Start over
+                </Button>
+              </Tooltip>
+            )
+          }
+          onSyncFromManifest={onSyncFromManifest}
+          syncing={syncing}
+          onRunNow={onRunNow}
+        />
       }
     >
       <div className="flex gap-3 h-[65vh] min-h-[420px]">

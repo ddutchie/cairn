@@ -3,8 +3,7 @@
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
-import { Download, Plus, Trash2, Sparkles, X, FolderOpen, Server } from "lucide-react";
-import { RefreshSpin } from "@/components/ui/spinner";
+import { Download, Plus, Trash2, Sparkles, X, Server } from "lucide-react";
 import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 import { contextLimitForModel, modelInfoForModel } from "@/lib/models-dev";
@@ -17,6 +16,7 @@ import { MAX_PERSONALITY_PROMPT_CHARS } from "../../../shared/chat/registry-sche
 import { Button } from "@/components/ui/button";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
+import { PromptPreviewPanel } from "./PromptPreviewPanel";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -162,38 +162,14 @@ function ChatPreviewSection() {
   const chatTools = inventory?.chat ?? [];
 
   return (
-    <SettingsGroup
+    <PromptPreviewPanel
       title="Chat prompt and tools"
       description="What chat sends with every message: workspace SKILL.md files, the shared context sections, and its tools (none of which touch the filesystem)."
+      workspacePath={workspacePath}
+      error={error}
+      loading={loading}
+      reload={reload}
     >
-      {/* Refresh */}
-      <div className="flex items-center justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={reload}
-          disabled={loading}
-          className={cn(loading && "opacity-50")}
-        >
-          <RefreshSpin size={11} spinning={loading} />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Workspace path context */}
-      {workspacePath && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
-          <FolderOpen size={11} className="text-[var(--text-tertiary)] flex-shrink-0" />
-          <span className="text-xs font-mono text-[var(--text-tertiary)] truncate">{workspacePath}</span>
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] px-4 py-3">
-          <p className="text-xs text-[var(--danger)]">{error}</p>
-        </div>
-      )}
-
       {systemPrompt !== null && (
         <div className="space-y-3">
           {sections && sections.length > 0 && (
@@ -217,13 +193,7 @@ function ChatPreviewSection() {
           <ToolsLegend />
         </div>
       )}
-
-      {loading && (
-        <div className="py-8 text-center">
-          <RefreshSpin size={16} className="mx-auto text-[var(--text-tertiary)] opacity-50" />
-        </div>
-      )}
-    </SettingsGroup>
+    </PromptPreviewPanel>
   );
 }
 

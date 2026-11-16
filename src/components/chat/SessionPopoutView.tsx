@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftFromLine, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
@@ -14,6 +14,7 @@ import { useSessionConversation } from "@/hooks/useSessionConversation";
 import { useSessionRunningIds } from "@/hooks/useSessionRunningIds";
 import { buildSessionRegistry, type SessionSummary } from "@/lib/session-registry";
 import { SessionRow } from "@/components/agent/SessionRow";
+import { useListboxNavigation, sanitizeAriaId } from "@/hooks/useListboxNavigation";
 import { IconButton } from "@/components/ui/icon-button";
 
 type Props = ChatPopoutPayload & { onPopIn: () => void };
@@ -26,10 +27,6 @@ interface PopoutSelection {
   activeProjectId: string | null;
   workspaceId: string | null;
   cwd: string | null;
-}
-
-function sanitizeAriaId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
 /** Map a registry session to the profile/runtime shape the popout pane binds to. */
@@ -124,30 +121,7 @@ export function SessionPopoutView({ sessionId, activeProjectId, profile, workspa
   [runningIds]);
 
   // Single listbox for cross-project Arrow navigation (Medium 7)
-  function handleListboxKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
-    if ((e.nativeEvent as unknown as { isComposing?: boolean }).isComposing) return;
-    const container = popoutListboxRef.current;
-    if (!container) return;
-    const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
-    if (options.length === 0) return;
-    const active = document.activeElement as HTMLElement | null;
-    const currentIndex = active ? options.indexOf(active) : -1;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      const next = currentIndex < options.length - 1 ? currentIndex + 1 : 0;
-      options[next]?.focus();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      const prev = currentIndex > 0 ? currentIndex - 1 : options.length - 1;
-      options[prev]?.focus();
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      options[0]?.focus();
-    } else if (e.key === "End") {
-      e.preventDefault();
-      options[options.length - 1]?.focus();
-    }
-  }
+  const handleListboxKeyDown = useListboxNavigation(popoutListboxRef);
 
   const pickSession = useCallback((session: SessionSummary) => {
     // Coding sessions need their cwd for the runtime prompt; the registry summary

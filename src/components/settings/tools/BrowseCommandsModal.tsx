@@ -12,8 +12,9 @@ import { CatalogBrowserShell } from "@/components/ui/catalog-browser-shell";
 import { Button } from "@/components/ui/button";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
-import type { RegistryFetchResult, RegistryCommandEntry, CustomSlashCommand } from "@/types";
+import type { RegistryCommandEntry, CustomSlashCommand } from "@/types";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useRegistryManifest } from "./useRegistryManifest";
 
 const SCOPE_LABEL: Record<string, string> = {
   chat: "Chat",
@@ -50,9 +51,7 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
     }))
   );
 
-  const [result, setResult] = useState<RegistryFetchResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { result, loading, refreshing, load } = useRegistryManifest();
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -66,31 +65,8 @@ export function BrowseCommandsModal({ onClose }: { onClose: () => void }) {
     if (armedTimer.current) clearTimeout(armedTimer.current);
   }, []);
 
-  const load = useCallback(async (force: boolean) => {
-    const reg = window.electron?.registry;
-    if (!reg) {
-      setLoading(false);
-      return;
-    }
-    if (force) setRefreshing(true);
-    else setLoading(true);
-    try {
-      const r = force ? await reg.refresh() : await reg.fetch();
-      setResult(r as RegistryFetchResult);
-    } catch (err) {
-      setResult({
-        manifest: { version: 1, updatedAt: "", mcpServers: [], services: [], commands: [] },
-        fromCache: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load(false); // eslint-disable-line react-hooks/set-state-in-effect
+    void load(false);
   }, [load]);
 
   const commands: RegistryCommandEntry[] = useMemo(

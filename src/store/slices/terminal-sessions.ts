@@ -160,6 +160,43 @@ export interface TerminalSessionsSlice {
 /** Coding sessions with a delete in flight (see deleteCodingSessionFromHistory). */
 const deletingCodingSessions = new Set<string>();
 
+/**
+ * Append a streaming delta to the live message of the matching subagent,
+ * creating the streaming message when the last one already settled.
+ * `field` selects the token stream ("content") or the thinking stream ("reasoning").
+ * Returns the input array unchanged when no subagent matches (keeps row identity stable).
+ */
+function appendSubagentDelta(
+  subagents: AgentSubagentMessage[] | undefined,
+  childSessionId: string,
+  field: "content" | "reasoning",
+  delta: string,
+): AgentSubagentMessage[] | undefined {
+  const subIdx = (subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
+  if (subIdx === -1 || !subagents) return subagents;
+  const sub = subagents[subIdx];
+  const subMsgs = sub.messages;
+  const lastSub = subMsgs[subMsgs.length - 1];
+  let newSubMsgs: AgentMessage[];
+  if (lastSub?.isStreaming) {
+    newSubMsgs = field === "content"
+      ? [...subMsgs.slice(0, -1), { ...lastSub, content: lastSub.content + delta }]
+      : [...subMsgs.slice(0, -1), { ...lastSub, reasoning: (lastSub.reasoning ?? "") + delta }];
+  } else {
+    newSubMsgs = [...subMsgs, {
+      id: `sub-stream-${id()}`,
+      role: "assistant" as const,
+      content: field === "content" ? delta : "",
+      ...(field === "reasoning" ? { reasoning: delta } : {}),
+      isStreaming: true,
+      timestamp: new Date().toISOString(),
+    }];
+  }
+  const next = [...subagents];
+  next[subIdx] = { ...sub, messages: newSubMsgs };
+  return next;
+}
+
 export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], TerminalSessionsSlice> = (
   set,
   get
@@ -510,26 +547,8 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         return {
           ...t,
           messages: (t.messages ?? []).map((msg) => {
-            const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
-            if (subIdx === -1) return msg;
-            const sub = msg.subagents![subIdx];
-            const subMsgs = sub.messages;
-            const lastSub = subMsgs[subMsgs.length - 1];
-            let newSubMsgs: AgentMessage[];
-            if (lastSub?.isStreaming) {
-              newSubMsgs = [...subMsgs.slice(0, -1), { ...lastSub, content: lastSub.content + delta }];
-            } else {
-              newSubMsgs = [...subMsgs, {
-                id: `sub-stream-${id()}`,
-                role: "assistant" as const,
-                content: delta,
-                isStreaming: true,
-                timestamp: new Date().toISOString(),
-              }];
-            }
-            const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = { ...sub, messages: newSubMsgs };
-            return { ...msg, subagents: newSubagents };
+            const newSubagents = appendSubagentDelta(msg.subagents, childSessionId, "content", delta);
+            return newSubagents === msg.subagents ? msg : { ...msg, subagents: newSubagents };
           }),
         };
       }),
@@ -543,27 +562,8 @@ export const createTerminalSessionsSlice: StateCreator<CairnStore, [], [], Termi
         return {
           ...t,
           messages: (t.messages ?? []).map((msg) => {
-            const subIdx = (msg.subagents ?? []).findIndex((sa) => sa.childSessionId === childSessionId);
-            if (subIdx === -1) return msg;
-            const sub = msg.subagents![subIdx];
-            const subMsgs = sub.messages;
-            const lastSub = subMsgs[subMsgs.length - 1];
-            let newSubMsgs: AgentMessage[];
-            if (lastSub?.isStreaming) {
-              newSubMsgs = [...subMsgs.slice(0, -1), { ...lastSub, reasoning: (lastSub.reasoning ?? "") + delta }];
-            } else {
-              newSubMsgs = [...subMsgs, {
-                id: `sub-stream-${id()}`,
-                role: "assistant" as const,
-                content: "",
-                reasoning: delta,
-                isStreaming: true,
-                timestamp: new Date().toISOString(),
-              }];
-            }
-            const newSubagents = [...msg.subagents!];
-            newSubagents[subIdx] = { ...sub, messages: newSubMsgs };
-            return { ...msg, subagents: newSubagents };
+            const newSubagents = appendSubagentDelta(msg.subagents, childSessionId, "reasoning", delta);
+            return newSubagents === msg.subagents ? msg : { ...msg, subagents: newSubagents };
           }),
         };
       }),

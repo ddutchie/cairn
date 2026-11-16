@@ -2,13 +2,12 @@
 
 import { useMemo } from "react";
 import parseDiff from "parse-diff";
-import { useIsDark } from "@/hooks/useIsDark";
-import { UnifiedFile, PALETTE_DARK, PALETTE_LIGHT } from "../DiffFile";
+import { usePalette } from "@/lib/highlight/render-hast";
+import { UnifiedFile } from "../DiffFile";
 
 /** Renders a raw unified-diff string as themed diff hunks (or a loading/empty note). */
 export function InlineDiff({ rawDiff, loading }: { rawDiff: string; loading: boolean }) {
-  const isDark = useIsDark();
-  const palette = isDark ? PALETTE_DARK : PALETTE_LIGHT;
+  const palette = usePalette();
 
   const parsed = useMemo(() => {
     if (!rawDiff) return [];
