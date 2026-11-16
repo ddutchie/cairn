@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import { createSelectorsSlice } from "./selectors";
 import { cardItem, column, note, project } from "./test-support";
-import type { Note, TaskCard, Project, BoardColumn } from "@/types";
+import type { Note, TaskCard, BoardColumn } from "@/types";
 
 function setup(initial: any = {}) {
   let state: any = {

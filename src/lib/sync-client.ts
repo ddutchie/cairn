@@ -15,13 +15,12 @@
 
 import { useSyncExternalStore } from "react";
 
-import type { ConflictCopy, SyncState, SyncStatus } from "../../shared/types/sync";
+import type { ConflictCopy, SyncStatus } from "../../shared/types/sync";
 import type {
   PeerProtocol,
   RestorableRow,
   RestoreRefusal,
   SyncActivityRow,
-  SyncOutcome,
 } from "../../shared/sync/engine";
 
 // Wire shapes live in shared/ (single source). Re-exported so existing
