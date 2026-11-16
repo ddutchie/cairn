@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { runtimeClient } from "@/lib/ipc/runtime";
 
 /**
  * Load the engine registry commands (name + description) for the command palette.
@@ -10,7 +11,7 @@ export function useRegistryCommands(cwd?: string): Array<{ name: string; descrip
 
   useEffect(() => {
     let cancelled = false;
-    void window.electron?.runtime?.listCommands?.({ cwd }).then((list) => {
+    void runtimeClient.listCommands({ cwd }).then((list) => {
       if (!cancelled && Array.isArray(list)) setCommands(list);
     }).catch(() => { /* registry unavailable (non-engine boot) → empty */ });
     return () => { cancelled = true; };

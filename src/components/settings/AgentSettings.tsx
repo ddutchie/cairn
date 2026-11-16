@@ -18,6 +18,7 @@ import type { CodingAgent } from "@/store/slices/coding-agents";
 import { SettingsGroup, SettingsRow, StepperSettingsRow } from "./shared";
 import { ProviderManager } from "./ProviderManager";
 import { useAgentPreviews } from "./tools/useAgentPreviews";
+import { runtimeClient } from "@/lib/ipc/runtime";
 import { PromptPreview, SharedSectionsList, SurfaceToolsPanel, ToolsLegend } from "./tools/preview-components";
 import { PromptPreviewPanel } from "./PromptPreviewPanel";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -261,10 +262,10 @@ export function AgentSettings() {
   // Whether the sandbox is really confining commands here (it can be on in settings yet unable to start).
   const [sandboxNote, setSandboxNote] = useState("");
   useEffect(() => {
-    void window.electron?.runtime?.sandboxStatus?.().then((st) => {
+    void runtimeClient.sandboxStatus().then((st) => {
       if (st && agentConfig.sandbox !== "off" && !st.active) setSandboxNote(st.supported ? `Currently unavailable: ${st.reason}. Shell commands will ask before running.` : `${st.reason}; commands run unconfined.`);
       else setSandboxNote("");
-    });
+    }).catch(() => { setSandboxNote(""); });
   }, [agentConfig.sandbox]);
 
   // Connection fields (baseUrl/apiKey/model) are managed by the ProviderManager

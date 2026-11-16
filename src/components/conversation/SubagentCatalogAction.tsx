@@ -7,6 +7,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { CountBadge } from "@/components/ui/count-badge";
 import { StatusDot } from "@/components/ui/status-dot";
 import * as Popover from "@radix-ui/react-popover";
+import { sessionClient } from "@/lib/ipc/session";
+import { hasElectron } from "@/lib/ipc/client";
 import { IconButton } from "@/components/ui/icon-button";
 import type { SessionProjection } from "@/../shared/agent/session-projection";
 import type { SubagentScope } from "@/../shared/agent/session-wire";
@@ -72,13 +74,13 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
   const load = useCallback(async () => {
     const parent = parentSessionId;
     const requestedScope = scope;
-    if (!parent || !window.electron) return;
+    if (!parent || !hasElectron()) return;
     const seq = loadSeq.current + 1;
     loadSeq.current = seq;
     setLoading(true);
     setLoadError(null);
     try {
-      const res = (await window.electron.session.listSubagents(parent, requestedScope)) as CatalogResult;
+      const res = (await sessionClient.listSubagents(parent, requestedScope)) as CatalogResult;
       if (loadSeq.current !== seq || parentSessionId !== parent || scope !== requestedScope) return;
       if (res.ok) {
         setEntries(res.value.entries);
@@ -103,7 +105,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
   // Live updates: child traffic refreshes the list; replies accumulate per row
   // so a messaged cold child (no trace item yet) still shows its answer here.
   useEffect(() => {
-    const unsub = window.electron?.session.onProjection((projection: SessionProjection) => {
+    const unsub = sessionClient.onProjection((projection: SessionProjection) => {
       if (projection.kind !== "subagent-trace") return;
       if (projection.sessionId !== parentSessionId) return;
       const data = projection.data as Record<string, unknown>;
@@ -128,7 +130,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
     setBusy((current) => ({ ...current, [childId]: "send" }));
     setRowErrors((current) => ({ ...current, [childId]: "" }));
     try {
-      const res = (await window.electron?.session.messageSubagent(parent, childId, text)) as CatalogResult | undefined;
+      const res = (await sessionClient.messageSubagent(parent, childId, text)) as CatalogResult | undefined;
       if (!res) return;
       if (res.ok) {
         setDrafts((current) => ({ ...current, [childId]: "" }));
@@ -150,7 +152,7 @@ export function SubagentCatalogAction({ parentSessionId }: { parentSessionId: st
     setBusy((current) => ({ ...current, [childId]: "stop" }));
     setRowErrors((current) => ({ ...current, [childId]: "" }));
     try {
-      const res = (await window.electron?.session.interruptSubagent(parent, childId)) as CatalogResult | undefined;
+      const res = (await sessionClient.interruptSubagent(parent, childId)) as CatalogResult | undefined;
       if (res && !res.ok) setRowErrors((current) => ({ ...current, [childId]: errorHint(res.code) }));
     } catch {
       setRowErrors((current) => ({ ...current, [childId]: errorHint("internal") }));

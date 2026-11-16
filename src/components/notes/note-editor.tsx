@@ -20,6 +20,8 @@ import { findSectionTitleAtOffset, extractSectionTextAtOffset } from "./toc-util
 import { AITextToolbar, buildAIActionPrompt, applyFormat, type AITextAction, type FormatAction } from "./ai-text-toolbar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./markdown-editor";
 import { makeLatexPlugins, makeRehypeChangedLines, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
+import { sessionClient } from "@/lib/ipc/session";
+import { hasElectron } from "@/lib/ipc/client";
 import { BacklinksPanel, NoteTagBar } from "./BacklinksPanel";
 import { MDPreviewPanel } from "./MDPreviewPanel";
 import { NoteFindBar } from "./NoteFindBar";
@@ -442,8 +444,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
     async (action: AITextAction, customPrompt?: string) => {
       const sel = selectionRef.current;
       if (!sel) return;
-      const electron = window.electron;
-      if (!electron) return;
+      if (!hasElectron()) return;
 
        setAiLoading(true);
        try {
@@ -463,15 +464,15 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
                resolve({ content });
              },
            });
-           const unsub = electron.session.onEvent((e) => {
+           const unsub = sessionClient.onEvent((e) => {
              if (e.sessionId === "chat-ai-text-action") fold(e.event);
            });
-            electron.session.prompt({
+            void sessionClient.prompt({
               sessionId: "chat-ai-text-action",
               profile: "chat",
               prompt,
              config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
-           });
+           }).catch(() => {});
         });
 
         const replacement = result.content?.trim();
@@ -536,8 +537,7 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
   }, [openWikilinkPicker]);
 
   const handleSpawnTasks = useCallback(async () => {
-    const electron = window.electron;
-    if (!electron || !activeProjectId) return;
+    if (!hasElectron() || !activeProjectId) return;
 
     const projectColumns = getProjectColumns(activeProjectId);
     const backlogCol = projectColumns.find((c) => c.type === "backlog") ?? projectColumns[0];
@@ -565,16 +565,16 @@ function NoteEditorLoaded({ note, onBack }: NoteEditorProps) {
             resolve({ content });
           },
         });
-        const unsub = electron.session.onEvent((e) => {
+        const unsub = sessionClient.onEvent((e) => {
           if (e.sessionId === "chat-spawn-tasks") fold(e.event);
         });
-         electron.session.prompt({
+         void sessionClient.prompt({
            sessionId: "chat-spawn-tasks",
            profile: "chat",
            prompt: `Spawn tasks from the note with id="${note.id}" into column "${backlogCol.id}". Use the spawn_tasks_from_note tool.`,
           projectId: activeProjectId,
           config: { provider: aiConfig.provider, baseUrl: aiConfig.baseUrl, model: aiConfig.model, apiKey: aiConfig.apiKey },
-        });
+        }).catch(() => {});
       });
 
       if (failed) return;

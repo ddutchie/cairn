@@ -9,6 +9,8 @@ import type {
   JobSummary,
   SessionProjection,
 } from "../../../shared/agent/session-projection";
+import { sessionClient } from "@/lib/ipc/session";
+import { hasElectron } from "@/lib/ipc/client";
 
 /**
  * ConversationSessionStatus — jobs dock + goal chip for the shared chat pane.
@@ -33,22 +35,21 @@ export function ConversationSessionStatus({ sessionId }: { sessionId: string }) 
   const [sessionGoal, setSessionGoal] = useState<GoalSummary | null>(null);
 
   useEffect(() => {
-    const electron = window.electron;
-    if (!electron || !sessionId) return;
+    if (!hasElectron() || !sessionId) return;
 
     // Initial goal snapshot (durable log fold — works before any live agent).
     // A live projection is newer than this in-flight read: once one arrives,
     // the pending snapshot must not clobber it when it settles.
     let cancelled = false;
     let liveUpdate = false;
-    void electron.session.goal(sessionId).then((res) => {
+    void sessionClient.goal(sessionId).then((res) => {
       if (cancelled || liveUpdate) return;
       if (res && typeof res === "object" && "ok" in res && res.ok) {
         setSessionGoal((res as { value: GoalSummary | null }).value);
       }
     }).catch(() => undefined);
 
-    const unsubProjection = electron.session.onProjection((projection: SessionProjection) => {
+    const unsubProjection = sessionClient.onProjection((projection: SessionProjection) => {
       if (projection.sessionId !== sessionId) return;
       if (projection.kind === "jobs") {
         // Bridge emits the owner's full visible set (owned + unowned); the

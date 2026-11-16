@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { AlarmClock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sessionClient } from "@/lib/ipc/session";
 
 interface SchedulePillProps {
   sessionId: string;
@@ -36,7 +37,7 @@ export function SchedulePill({ sessionId, pollKey }: SchedulePillProps) {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await window.electron?.session.scheduleList(sessionId);
+        const res = await sessionClient.scheduleList(sessionId);
         if (cancelled || !res || typeof res !== "object" || !("ok" in res) || !res.ok) return;
         setReminders((res as { value: ReminderWire[] }).value);
       } catch {

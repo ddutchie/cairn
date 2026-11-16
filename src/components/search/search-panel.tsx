@@ -19,6 +19,8 @@ import {
   type SearchFilterType,
 } from "./search-utils";
 import { IconButton } from "@/components/ui/icon-button";
+import { runtimeClient, embeddingsClient } from "@/lib/ipc/runtime";
+import { hasElectron } from "@/lib/ipc/client";
 
 interface ResultRowProps {
   result: SearchResult;
@@ -170,10 +172,9 @@ export function SearchPanel() {
 
   useEffect(() => {
     if (!searchOpen) return;
-    const rt = window.electron?.runtime;
-    if (!rt?.embeddings?.status) return;
+    if (!hasElectron("runtime")) return;
     let cancelled = false;
-    rt.embeddings.status()
+    runtimeClient.embeddings.status()
       .then((st) => {
         if (cancelled) return;
         setEmbeddingsReady(Boolean(st.running && st.defaultModelId));
@@ -241,10 +242,9 @@ export function SearchPanel() {
 
     if (semanticMode && embeddingsReady && activeWorkspaceId) {
       semanticTimer.current = setTimeout(async () => {
-        const e = window.electron?.embeddings;
-        if (!e?.search) return;
+        if (!hasElectron("embeddings")) return;
         try {
-          const hits: SemanticHit[] = await e.search(activeWorkspaceId, trimmed, { k: 20 });
+          const hits: SemanticHit[] = await embeddingsClient.search(activeWorkspaceId, trimmed, { k: 20 });
           if (cancelled) return;
           const storeNotes = notesRef.current;
           const scoreMap = new Map<string, number>();

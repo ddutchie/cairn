@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { sessionClient } from "@/lib/ipc/session";
 
 /**
  * FIFO queues for messages/prompts the user sends while a turn is running, one
@@ -61,7 +62,7 @@ export function _resetChatMessageQueues(): void {
  * is still winding down (for example right after Stop).
  */
 export async function waitForSessionIdle(sessionId: string, timeoutMs = 5_000): Promise<boolean> {
-  const isRunning = typeof window === "undefined" ? undefined : window.electron?.session?.isRunning;
+  const isRunning = typeof window === "undefined" ? undefined : sessionClient.isRunning;
   if (!isRunning) return true;
   const deadline = Date.now() + timeoutMs;
   for (;;) {

@@ -10,6 +10,7 @@ import { Toggle } from "@/components/ui/toggle";
 import type { ConversationMessage } from "@/lib/conversation/message";
 import { buildIssueUrl, ISSUE_REPO, ISSUE_TITLE_MAX, type IssueEnv, type IssueSetup } from "../../../shared/chat/issue-report";
 import { IconButton } from "@/components/ui/icon-button";
+import { runtimeClient } from "@/lib/ipc/runtime";
 
 function platformName(): string {
   if (typeof navigator === "undefined") return "unknown";
@@ -46,7 +47,7 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
     let cancelled = false;
     void (async () => {
       try {
-        const inv = await window.electron?.runtime?.toolsInventory?.();
+        const inv = await runtimeClient.toolsInventory();
         const list = inv?.surfaces?.[onAgent ? "coding" : "chat"] ?? [];
         const bySource: Record<string, number> = {};
         for (const t of list) bySource[t.source] = (bySource[t.source] ?? 0) + 1;
@@ -54,7 +55,7 @@ export function ReportIssueControl({ message }: { message: ConversationMessage }
       } catch { /* optional detail */ }
       try {
         const cwd = await window.electron?.getWorkspacePath();
-        const prompt = cwd ? await window.electron?.runtime?.systemPromptPreview({ cwd }) : undefined;
+        const prompt = cwd ? await runtimeClient.systemPromptPreview({ cwd }) : undefined;
         if (!cancelled && prompt) setSetupSkills((prompt.skills ?? []).map((k) => k.name));
       } catch { /* optional detail */ }
     })();

@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { embeddingsClient } from "@/lib/ipc/runtime";
+import { hasElectron } from "@/lib/ipc/client";
 import type { Note, Tag } from "@/types";
 import { onChangeFeed, feedTouches } from "@/store/change-feed";
 import { linksToTitle } from "@/lib/wikilink-parser";
@@ -64,11 +66,10 @@ export function BacklinksPanel({
     }
     let cancelled = false;
     void (async () => {
-      const api = window.electron?.embeddings;
-      if (!api) return;
+      if (!hasElectron("embeddings")) return;
       setSearch({ kind: "loading" });
       try {
-        const hits = await api.search(workspaceId!, trimmed, {
+        const hits = await embeddingsClient.search(workspaceId!, trimmed, {
           queryNoteId: note.id,
           k: 5,
         });
@@ -87,11 +88,10 @@ export function BacklinksPanel({
     if (!canSectionSearch) return;
     let cancelled = false;
     void (async () => {
-      const api = window.electron?.embeddings;
-      if (!api) return;
+      if (!hasElectron("embeddings")) return;
       setSectionSearch({ kind: "loading" });
       try {
-        const hits = await api.search(workspaceId!, debouncedSectionText.trim(), {
+        const hits = await embeddingsClient.search(workspaceId!, debouncedSectionText.trim(), {
           queryNoteId: note.id,
           k: 3,
         });

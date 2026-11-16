@@ -8,6 +8,7 @@ import { CairnRefChip, ExternalRefChip, extractCairnRef } from "@/components/sha
 import { ConnectorToolCard, ToolPayload, type ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 import { ConnectorLogo } from "@/components/settings/tools/ConnectorLogo";
 import { redactTranscriptValue } from "@/lib/redact-agent-transcript";
+import { sessionClient } from "@/lib/ipc/session";
 import { WritingStylePromptChip, writingStyleNeedsSetup } from "@/components/shared/WritingStylePromptChip";
 import { humanizeConnectorTool, humanizeTool } from "@/lib/humanize-tool";
 import { cairnNameLookup } from "@/lib/cairn-name-lookup";
@@ -64,7 +65,7 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   const respond = (approved: boolean, grant?: "command" | "session" | "workspace") => {
     if (pending) return;
     setPending(grant === "workspace" ? "always" : grant === "command" ? "command" : approved ? "allow" : "deny");
-    void window.electron?.session.respondTool(sessionId, toolCall.callId!, approved, grant as never, grant === "command" ? command : undefined, toolCall.approvalNonce);
+    void sessionClient.respondTool(sessionId, toolCall.callId!, approved, grant as never, grant === "command" ? command : undefined, toolCall.approvalNonce).catch(() => {});
   };
   // Workspace-persistent "Always allow" — the per-workspace grant answered for
   // Stage 3a. For bash it is command-scoped (exact `command`), for every other

@@ -11,6 +11,7 @@ import { useShallow } from "zustand/react/shallow";
 import { cn, id, formatRelative } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { buildAutomationDevPrompt } from "@/lib/automation-dev-prompt";
+import { sessionClient } from "@/lib/ipc/session";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { IconButton } from "@/components/ui/icon-button";
@@ -215,8 +216,7 @@ export function AutomationsView() {
    * the board.
    */
   async function develop(a: Automation, forceNew = false) {
-    const electron = window.electron;
-    if (!electron) return;
+    if (!hasElectron()) return;
     setDeveloping(true);
     setDevelopError(null);
     try {
@@ -237,7 +237,7 @@ export function AutomationsView() {
       if (forceNew) {
         const stale = automationDevSessions[a.id];
         if (stale && terminalSessions.some((t) => t.sessionId === stale)) {
-          electron.session.destroy(stale);
+          void sessionClient.destroy(stale).catch(() => {});
           removeTerminalSession(stale);
         }
         clearAutomationDevSession(a.id);
@@ -245,7 +245,7 @@ export function AutomationsView() {
       const sessionId = id();
       const now = new Date().toISOString();
       const taskTitle = `Develop: ${a.name}`;
-      await electron.session.createSession({
+      await sessionClient.createSession({
         id: sessionId,
         projectId,
         taskTitle,

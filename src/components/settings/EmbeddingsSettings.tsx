@@ -8,6 +8,8 @@ import { RefreshSpin } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 import { useCairnStore } from "@/store";
+import { runtimeClient, embeddingsClient } from "@/lib/ipc/runtime";
+import { hasElectron } from "@/lib/ipc/client";
 import { formatMegabytes } from "../../../shared/format/number";
 import type {
   EmbeddingDownloadProgress,
@@ -48,10 +50,10 @@ export function EmbeddingsSettings() {
   const activeWorkspaceId = useCairnStore((s) => s.activeWorkspaceId);
 
   const refreshQuiet = useCallback(async () => {
-    if (!window.electron?.runtime) return;
+    if (!hasElectron("runtime")) return;
     const [sRes, mrRes] = await Promise.allSettled([
-      window.electron.runtime.embeddings.status(),
-      window.electron.runtime.embeddings.models(),
+      runtimeClient.embeddings.status(),
+      runtimeClient.embeddings.models(),
     ]);
     if (sRes.status === "fulfilled") {
       const s = sRes.value;
@@ -84,9 +86,8 @@ export function EmbeddingsSettings() {
 
   useEffect(() => {
     void (async () => {
-      const e = window.electron;
-      if (!e?.embeddings) return;
-      const settings = await e.embeddings.getSettings();
+      if (!hasElectron("embeddings")) return;
+      const settings = await embeddingsClient.getSettings();
       if (settings) {
         setConfig({
           enabled: settings.enabled ?? false,
@@ -96,7 +97,7 @@ export function EmbeddingsSettings() {
       await refreshQuiet();
     })();
 
-    const off = window.electron?.runtime?.embeddings.onProgress((ev) => {
+    const off = runtimeClient.embeddings.onProgress((ev) => {
       if (!ev.modelId) {
         if (ev.status === "progress" && typeof ev.loaded === "number" && typeof ev.total === "number") {
           setReindexProgress({ done: ev.loaded, total: ev.total });
@@ -122,11 +123,10 @@ export function EmbeddingsSettings() {
   }, [refreshQuiet]);
 
   const handleInstall = async (modelId: string) => {
-    const rt = window.electron?.runtime;
-    if (!rt) return;
+    if (!hasElectron("runtime")) return;
     setProgressByModel((p) => ({ ...p, [modelId]: { modelId, status: "downloading", progress: 0 } }));
     try {
-      await rt.embeddings.install(modelId);
+      await runtimeClient.embeddings.install(modelId);
     } catch (err) {
       console.error("[embeddings] install failed:", err);
       setProgressByModel((prev) => ({
@@ -139,10 +139,9 @@ export function EmbeddingsSettings() {
   };
 
   const handleRemove = async (modelId: string) => {
-    const rt = window.electron?.runtime;
-    if (!rt) return;
+    if (!hasElectron("runtime")) return;
     try {
-      await rt.embeddings.remove(modelId);
+      await runtimeClient.embeddings.remove(modelId);
       await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] remove failed:", err);
@@ -150,13 +149,12 @@ export function EmbeddingsSettings() {
   };
 
   const handleSetDefault = async (modelId: string) => {
-    const e = window.electron;
-    if (!e?.embeddings || !e.runtime) return;
+    if (!hasElectron("runtime") || !hasElectron("embeddings")) return;
     try {
-      await e.runtime.embeddings.setDefault(modelId);
+      await runtimeClient.embeddings.setDefault(modelId);
       const next = { ...config, modelId };
       setConfig(next);
-      await e.embeddings.saveSettings(next);
+      await embeddingsClient.saveSettings(next);
       await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] setDefault failed:", err);
@@ -164,17 +162,15 @@ export function EmbeddingsSettings() {
   };
 
   const handleToggleEnabled = async (enabled: boolean) => {
-    const e = window.electron?.embeddings;
-    const rt = window.electron?.runtime;
-    if (!e || (enabled && !rt)) return;
+    if (!hasElectron("embeddings") || (enabled && !hasElectron("runtime"))) return;
     const next = { ...config, enabled };
     setConfig(next);
-    await e.saveSettings(next);
+    await embeddingsClient.saveSettings(next);
     if (enabled) {
       setStartingWorker(true);
       try {
         // Ensure the unified runtime process is spawned and healthy
-        await rt?.embeddings.ensureStarted();
+        await runtimeClient.embeddings.ensureStarted();
         await refreshQuiet();
       } catch (err) {
         console.error("[embeddings] failed to start runtime:", err);
@@ -185,10 +181,9 @@ export function EmbeddingsSettings() {
   };
 
   const handleStop = async () => {
-    const rt = window.electron?.runtime;
-    if (!rt) return;
+    if (!hasElectron("runtime")) return;
     try {
-      await rt.stop();
+      await runtimeClient.stop();
       await refreshQuiet();
     } catch (err) {
       console.error("[embeddings] stop failed:", err);
@@ -196,13 +191,12 @@ export function EmbeddingsSettings() {
   };
 
   const handleReindexAll = async () => {
-    const e = window.electron?.embeddings;
-    if (!e || !activeWorkspaceId) return;
+    if (!hasElectron("embeddings") || !activeWorkspaceId) return;
     setReindexing(true);
     setReindexResult("");
     setReindexProgress(null);
     try {
-      const res = await e.reindex(activeWorkspaceId, undefined, config.modelId);
+      const res = await embeddingsClient.reindex(activeWorkspaceId, undefined, config.modelId);
       setReindexResult(`Indexed ${res.indexed}, skipped ${res.skipped} (total ${res.total})`);
     } catch (err) {
       setReindexResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -213,13 +207,12 @@ export function EmbeddingsSettings() {
   };
 
   const handleRecomputeProjections = async () => {
-    const e = window.electron?.embeddings;
-    if (!e || !activeWorkspaceId) return;
+    if (!hasElectron("embeddings") || !activeWorkspaceId) return;
     setReindexing(true);
     setReindexResult("");
     setReindexProgress(null);
     try {
-      await e.recomputeProjections(activeWorkspaceId, config.modelId);
+      await embeddingsClient.recomputeProjections(activeWorkspaceId, config.modelId);
       setReindexResult("Projections updated.");
     } catch (err) {
       setReindexResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
