@@ -15,27 +15,19 @@
 import type Database from "better-sqlite3";
 import { getAutomationById, getAutomationRunById, updateAutomation } from "../db/automation-queries";
 import { RUN_SCRIPT_TOOL_NAME } from "./automation-script";
+import { CODE_EXEC_TOOLS, isCairnReadTool, isExternalToolName } from "../../shared/agent/tool-names";
 
 
 /** How long a parked approval waits for a user decision before failing closed. */
 export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 
 /** Read-only tool names are never gated — they can't change state. */
-const READ_TOOL_PREFIXES = ["get_", "list_", "search_"];
-/**
- * True for external-tool names (namespaced MCP `mcp__…` / service `svc__…`
- * calls). Mirrors isExternalToolName in external-tools.ts — kept local so the
- * policy module stays dependency-light (no pull of the MCP client stack).
- */
 export function isExternalTool(name: string): boolean {
-  return /^(?:mcp|svc)__/.test(name);
+  return isExternalToolName(name);
 }
 
 export function isReadTool(name: string): boolean {
-  // codebase_query is read-only (READ in shared/agent/tool-risk.ts) but
-  // matches no prefix — name it explicitly so automations don't gate it.
-  if (name === "codebase_query") return true;
-  return READ_TOOL_PREFIXES.some((p) => name.startsWith(p));
+  return isCairnReadTool(name);
 }
 
 /**
@@ -178,8 +170,8 @@ function legacyRuleMatchesSubAction(ruleTool: string, tool: string, args: Record
  * execution. The approval inbox's "Always allow" always records a concrete
  * target (see standingRuleTarget), so a target-less rule can only enter via a
  * hand/agent-authored manifest — sanitise those on ingest.
+ * (Set lives in shared/agent/tool-names.ts as CODE_EXEC_TOOLS.)
  */
-const CODE_EXEC_TOOLS = new Set([RUN_SCRIPT_TOOL_NAME, "bash"]);
 
 /**
  * Persist an "always allow" decision as a standing rule on the run's automation

@@ -24,6 +24,7 @@ import * as services from "./custom-services";
 import * as mcpOauth from "./mcp-oauth";
 import type { RequirementStatus } from "../../shared/types/automations";
 import type { OpenAIToolDef } from "../../shared/chat/mcp-namespace";
+import { isExternalToolName } from "../../shared/agent/tool-names";
 import { resolveCallTimeoutMs } from "../../shared/types/tools";
 
 /** Mirrors GLOBAL_TOOL_SCOPE in src/types — electron cannot import from src. */
@@ -338,10 +339,9 @@ function svcToRuntimeConfig(s: {
 
 // ── Routing ───────────────────────────────────────────────────────────────────
 
-/** True if a tool name belongs to an external tool (MCP server or service). */
-export function isExternalToolName(name: string): boolean {
-  return mcpClient.isMcpToolName(name) || services.isServiceToolName(name);
-}
+// Re-exported from shared/agent/tool-names.ts (the single home for the
+// mcp__/svc__ namespace check) so existing importers keep working.
+export { isExternalToolName };
 
 /**
  * Execute an external tool by its namespaced name. Re-validates that the tool is

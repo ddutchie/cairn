@@ -13,6 +13,8 @@
 
 import * as z from "zod";
 
+import { isCairnReadTool } from "../../shared/agent/tool-names";
+
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
 const sId          = z.string();
@@ -331,15 +333,9 @@ export type ToolCategory = "read" | "write" | "delete";
 
 export function toolCategory(name: string): ToolCategory {
   if (name === "delete" || name.startsWith("delete_")) return "delete";
-  if (
-    // codebase_query is read-only (READ in shared/agent/tool-risk.ts) but
-    // matches no get_/list_/search_ prefix — name it explicitly so the MCP
-    // inventory doesn't mislabel it as a write tool.
-    name === "codebase_query" ||
-    name.startsWith("get_") ||
-    name.startsWith("list_") ||
-    name.startsWith("search_")
-  ) return "read";
+  // Read-only by name (get_/list_/search_ + codebase_query) — see
+  // shared/agent/tool-names.ts. Anything else mutates, so it is "write".
+  if (isCairnReadTool(name)) return "read";
   return "write";
 }
 

@@ -5,6 +5,7 @@ import { useCairnStore } from "@/store";
 import type { SuggestedAction, ChatHistoryEntry } from "@/types";
 import { useSessionConversation } from "./useSessionConversation";
 import { isBenignTurnEnd } from "../../shared/agent/turn-end-reason";
+import { isCairnReadTool } from "../../shared/agent/tool-names";
 import { sessionClient } from "@/lib/ipc/session";
 import type { ConversationLiveToolCall, PendingQuestion as ConversationPendingQuestion, PendingQuestionOption as ConversationPendingQuestionOption } from "@/lib/conversation/message";
 
@@ -129,7 +130,7 @@ export function useChatStream(
         if (assistant?.usage) setThreadUsage(turnThreadId, assistant.usage as never);
         clearStagedActions(sessionId);
         addFailureNotice();
-        if (snapshot.toolCalls.some((tool) => !["suggest_connections", "ask_questions"].includes(tool.tool) && !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")) || snapshot.subagents.some((agent) => (agent.toolCalls ?? []).some((tool) => !tool.tool.startsWith("get_") && !tool.tool.startsWith("list_") && !tool.tool.startsWith("search_")))) {
+        if (snapshot.toolCalls.some((tool) => !["suggest_connections", "ask_questions"].includes(tool.tool) && !isCairnReadTool(tool.tool)) || snapshot.subagents.some((agent) => (agent.toolCalls ?? []).some((tool) => !isCairnReadTool(tool.tool)))) {
           useCairnStore.getState().hydrateFromElectron(true).catch((error) => console.error("[useChatStream] post-write hydrate failed", error));
         }
         onTurnFinishedRef.current?.(turnThreadId);
