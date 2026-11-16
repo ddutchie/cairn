@@ -24,8 +24,8 @@ import { registerContractHandle, sendIpcEvent } from "./registry";
 
 import fs from "fs";
 import path from "path";
-import { execFile } from "child_process";
 import { handle, type DbContext } from "./result-helpers";
+import { gitSafe } from "../lib/git-exec";
 import * as q from "../db/queries";
 import { newId } from "../db/utils";
 import { indexCodebase, reindexFile } from "../lib/codebase-index";
@@ -47,22 +47,6 @@ import {
 // Kept as a re-export: unit tests (and any external caller) import the guard
 // from here; the implementation lives in the shared PTY manager.
 export { isSafePath };
-
-function execGit(args: string[], cwd: string, timeout = 10_000): Promise<{ stdout: string; stderr: string; error?: Error | null; status: number }> {
-  return new Promise((resolve) => {
-    const maxBuffer = 20 * 1024 * 1024; // 20MB
-    execFile("git", args, { cwd, encoding: "utf-8", timeout, maxBuffer }, (error, stdout, stderr) => {
-      const code = error ? (error as { code?: number | string }).code : 0;
-      const status = typeof code === "number" ? code : (error ? 1 : 0);
-      resolve({
-        stdout: stdout ?? "",
-        stderr: stderr ?? "",
-        error,
-        status,
-      });
-    });
-  });
-}
 
 // ── Register handlers ─────────────────────────────────────────────────────────
 
@@ -281,13 +265,13 @@ export function registerAgentHandlers(ctx: DbContext): void {
 
       // ── 1. Tracked changes: staged + unstaged vs HEAD ────────────────────
       // Falls back to --cached only if HEAD doesn't exist yet (initial repo).
-      let trackedResult = await execGit(["diff", "HEAD", "--unified=3"], realPath);
+      let trackedResult = await gitSafe(["diff", "HEAD", "--unified=3"], realPath);
       if (trackedResult.status !== 0) {
         // No HEAD yet — show only what's staged
-        trackedResult = await execGit(["diff", "--cached", "--unified=3"], realPath);
+        trackedResult = await gitSafe(["diff", "--cached", "--unified=3"], realPath);
       }
       if (trackedResult.status !== 0) {
-        const errMsg = trackedResult.stderr.trim() || (trackedResult.error ? trackedResult.error.message : `git diff failed with exit code ${trackedResult.status}`);
+        const errMsg = trackedResult.stderr || `git diff failed with exit code ${trackedResult.status}`;
         throw new Error(errMsg);
       }
       if (trackedResult.stdout) parts.push(trackedResult.stdout.trim());
@@ -296,16 +280,16 @@ export function registerAgentHandlers(ctx: DbContext): void {
       // git diff HEAD misses files that have never been git-added.
       // We enumerate them and synthesise a unified diff header so the
       // renderer's parse-diff library handles them identically to real hunks.
-      const untrackedResult = await execGit(
+      const untrackedResult = await gitSafe(
         ["ls-files", "-z", "--others", "--exclude-standard"],
         realPath
       );
       if (untrackedResult.status !== 0) {
-        const errMsg = untrackedResult.stderr.trim() || (untrackedResult.error ? untrackedResult.error.message : `git ls-files failed with exit code ${untrackedResult.status}`);
+        const errMsg = untrackedResult.stderr || `git ls-files failed with exit code ${untrackedResult.status}`;
         throw new Error(errMsg);
       }
 
-      const untrackedFiles = (untrackedResult.stdout ?? "")
+      const untrackedFiles = untrackedResult.stdout
         .split("\0")
         .filter(Boolean);
 

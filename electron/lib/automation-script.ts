@@ -22,11 +22,9 @@
  * PIDs cleaned up on app shutdown (killTrackedBashProcesses).
  */
 
-import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
-import { DEFAULT_MAX_BYTES } from "./truncation";
-import { getBashExecutable, killProcessTree, trackPid, untrackPid } from "./coding-tools/bash";
+import { DEFAULT_MAX_BYTES, getBashExecutable, killTree, spawnTracked } from "./proc";
 import { formatBytesBinary } from "../../shared/format/number";
 
 export const RUN_SCRIPT_TOOL_NAME = "run_script";
@@ -82,10 +80,6 @@ const PATH_SEP_RE = process.platform === "win32" ? /[\\/]/ : /[/]/;
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const UPDATE_THROTTLE_MS = 150;
-
-function fmt(bytes: number): string {
-  return formatBytesBinary(bytes);
-}
 
 /**
  * Resolve `name` to a concrete script file + interpreter kind. Throws with a
@@ -224,14 +218,10 @@ export async function runAutomationScript(
     let lastUpdateMs = 0;
     const flushUpdate = () => { lastUpdateMs = Date.now(); onUpdate?.(output); };
 
-    const child = spawn(cmd, spawnArgs, {
+    const child = spawnTracked(cmd, spawnArgs, {
       cwd: context.cwd,
-      detached: process.platform !== "win32",
       env,
-      stdio: ["ignore", "pipe", "pipe"],
     });
-
-    if (child.pid) trackPid(child.pid);
 
     const onData = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
@@ -239,7 +229,7 @@ export async function runAutomationScript(
         const available = DEFAULT_MAX_BYTES - Buffer.byteLength(output, "utf8");
         if (available <= 0) {
           truncated = true;
-          output += `\n\n[Truncated: showed ${fmt(DEFAULT_MAX_BYTES)} of more. Use smaller script output.]`;
+          output += `\n\n[Truncated: showed ${formatBytesBinary(DEFAULT_MAX_BYTES)} of more. Use smaller script output.]`;
         } else {
           output += text.slice(0, available);
           if (Buffer.byteLength(text, "utf8") > available) truncated = true;
@@ -250,7 +240,7 @@ export async function runAutomationScript(
     child.stdout?.on("data", onData);
     child.stderr?.on("data", onData);
 
-    const doKill = () => { if (child.pid) killProcessTree(child.pid); };
+    const doKill = () => { if (child.pid) killTree(child.pid); };
 
     const timer = setTimeout(() => {
       doKill();
@@ -268,7 +258,6 @@ export async function runAutomationScript(
     child.on("close", (code) => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abortHandler);
-      if (child.pid) untrackPid(child.pid);
       if (signal?.aborted) return; // already rejected above
       flushUpdate();
       if (code !== 0 && code !== null) {
@@ -281,7 +270,6 @@ export async function runAutomationScript(
     child.on("error", (err) => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abortHandler);
-      if (child.pid) untrackPid(child.pid);
       reject(new Error(`Failed to run script "${args.name}": ${err.message}`));
     });
   });

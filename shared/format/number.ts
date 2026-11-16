@@ -53,7 +53,7 @@ export function formatBytesSI(n: number): string {
 
 /**
  * Binary compact, no space: 500→"500B", 2048→"2.0KB", 5242880→"5.0MB".
- * Matches the truncation hints in automation-script and coding-tools/bash.
+ * Matches the truncation hint in automation-script.
  */
 export function formatBytesBinary(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
