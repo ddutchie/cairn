@@ -8,9 +8,7 @@
 import { registerContractHandle } from "./registry";
 import { handle } from "./result-helpers";
 import type { DbContext } from "./result-helpers";
-import { isLocalEndpoint, normaliseBaseUrl } from "../lib/llm";
-import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
-import { resolveLlmApiKey } from "../lib/secure-store";
+import { resolveConnection } from "../lib/llm-config";
 import { getEngineHost } from "./engine-bridge";
 import { routeFromConfig } from "../agent/route";
 import { runOneShot } from "../agent/one-shot";
@@ -26,40 +24,9 @@ export function resolveAIConfig(config?: {
   model: string;
   apiKey: string;
 } {
-  // Persist the connection (provider/baseUrl/model + a keychain-ref apiKey only;
-  // cacheLlmConnection scrubs any raw key). The renderer sends a ref, not a key.
-  cacheLlmConnection("ai", config);
-
-  let reqConfig = config;
-  const isLocal = config?.baseUrl ? isLocalEndpoint(normaliseBaseUrl(config.baseUrl)) : false;
-  if (!reqConfig?.apiKey && !isLocal) {
-    const cached = getCachedConfig().aiConfig;
-    // Only reuse the cached key when it belongs to the SAME endpoint: a
-    // keyless request at a different baseUrl must never inherit another
-    // endpoint's key. An empty request baseUrl inherits the cached endpoint
-    // (and its key) whole, as before.
-    const reqUrl = (reqConfig?.baseUrl ?? "").trim();
-    const cachedUrl = (cached?.baseUrl ?? "").trim();
-    const sameEndpoint = !reqUrl || !cachedUrl || normaliseBaseUrl(cachedUrl) === normaliseBaseUrl(reqUrl);
-    if (cached?.apiKey && sameEndpoint) {
-      reqConfig = {
-        ...reqConfig,
-        provider: reqConfig?.provider || cached.provider,
-        baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-        model: reqConfig?.model || cached.model,
-        apiKey: cached.apiKey,
-      };
-    }
-  }
-
-  return {
-    provider: reqConfig?.provider ?? "openai",
-    baseUrl: normaliseBaseUrl(reqConfig?.baseUrl ?? "https://api.openai.com"),
-    model: reqConfig?.model ?? "gpt-5.6-luna",
-    // Resolve the keychain ref (or pass a literal through) to the real key used
-    // for this request only. Never stored anywhere from here on.
-    apiKey: resolveLlmApiKey(reqConfig?.apiKey),
-  };
+  // Single home for the chat cached-key rule (lib/llm-config.ts): the cached
+  // key is reused only for the same endpoint, never for local.
+  return resolveConnection("ai", config);
 }
 
 // Re-export for backward compatibility (prd.ts and others import LLMConfig from here)

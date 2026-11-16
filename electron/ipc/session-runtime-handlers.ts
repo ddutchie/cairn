@@ -19,17 +19,17 @@ import { approvedPlanContext, buildAgentSystemPrompt } from "../lib/coding-sessi
 import { sandboxPolicyNote } from "../agent/sandbox";
 import { getSandboxMode } from "../agent/host-store";
 import { normaliseBaseUrl } from "../lib/llm";
+import { DEFAULT_LLM, resolveAgentLlmConfig } from "../lib/llm-config";
 import type { DbContext } from "./handlers";
 import * as q from "../db/queries";
 import { ts } from "../db/utils";
-import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { validateAttachmentDataUrl } from "../../shared/models/pdf-attach";
 import { assertSafeId } from "./path-safety";
 import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { errMsg } from "../host-shared/errors";
-import { isApprovalMode, approvalModeFromAutoApprove, type ApprovalMode } from "../../shared/agent/approval-mode";
+import type { ApprovalMode } from "../../shared/agent/approval-mode";
 import { rejectPrompt, answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
@@ -274,74 +274,9 @@ export function registerSessionRuntimeHandlers(
       return;
     }
 
-    // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
-    // by the cache layer, never a raw key). Mode + autoApprove are co-persisted
-    // so old renderers reading `autoApprove` and new code reading `mode` stay aligned.
-    cacheLlmConnection("agent", {
-      baseUrl: req.config?.baseUrl,
-      model: req.config?.model,
-      apiKey: req.config?.apiKey,
-      maxSteps: req.config?.maxSteps,
-      temperature: req.config?.temperature,
-      maxTokens: req.config?.maxTokens,
-      autoApprove: req.config?.autoApprove,
-      mode: (req.config as { mode?: ApprovalMode })?.mode,
-    } as never);
-
-    let reqConfig = req.config;
-    const cached = getCachedConfig().agentConfig;
-    if (!reqConfig?.apiKey && cached?.apiKey) {
-      reqConfig = {
-        ...reqConfig,
-        baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-        model: reqConfig?.model || cached.model,
-        apiKey: cached.apiKey,
-        maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-        // Temperature is renderer-authoritative (it resolves the capability gate
-        // and the plan-mode override). Never fall back to a cached 0.3: an
-        // explicit 0 must survive, and unset/unsupported must stay omitted.
-        temperature: reqConfig?.temperature,
-        maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
-        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
-      } as typeof reqConfig;
-    } else if (cached) {
-      reqConfig = {
-        ...reqConfig,
-        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
-      } as typeof reqConfig;
-    }
-
-    const _reqMode = (reqConfig as { mode?: unknown })?.mode;
-    const _reqModeValid = typeof _reqMode === "string" && isApprovalMode(_reqMode as ApprovalMode) ? _reqMode as ApprovalMode : undefined;
-    const _cachedMode = (cached as { mode?: unknown })?.mode;
-    const _cachedModeValid = typeof _cachedMode === "string" && isApprovalMode(_cachedMode as ApprovalMode) ? _cachedMode as ApprovalMode : undefined;
-    // Resolve ApprovalMode from explicit mode, then legacy autoApprove, then cached mode, then default.
-    const resolvedMode: ApprovalMode = _reqModeValid
-      ?? (typeof reqConfig?.autoApprove === "boolean" ? approvalModeFromAutoApprove(reqConfig.autoApprove) : undefined)
-      ?? _cachedModeValid
-      ?? (typeof cached?.autoApprove === "boolean" ? approvalModeFromAutoApprove(cached.autoApprove) : undefined)
-      ?? "interactive";
-    const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
-      model:       reqConfig?.model       || "gpt-5.6-luna",
-      apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
-      maxSteps:    reqConfig?.maxSteps    ?? 20,
-      // The renderer resolved the effective temperature (capability-gated;
-      // undefined = omit → vendor default).
-      temperature: reqConfig?.temperature,
-      maxTokens:   reqConfig?.maxTokens,
-      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : _cachedModeValid ? _cachedModeValid === "auto" : cached?.autoApprove !== undefined ? cached.autoApprove : false,
-      mode: resolvedMode,
-      isReasoningModel: reqConfig?.isReasoningModel,
-      // No provider coercion: a custom local endpoint (Ollama, LM Studio,
-      // user-run llama.cpp) keeps its own baseUrl and plain "openai" shape.
-      provider: reqConfig?.provider,
-      contextWindow: reqConfig?.contextWindow,
-      reasoningEffort: reqConfig?.reasoningEffort,
-      apiMode: reqConfig?.apiMode,
-    };
+    // Connection + behavioural fields resolved in one place (lib/llm-config.ts):
+    // cache-then-merge, mode precedence, renderer-authoritative temperature.
+    const { llmConfig } = resolveAgentLlmConfig(req.config);
 
     let session = sessions.get(sessionId);
     if (!session) {
@@ -418,71 +353,8 @@ export function registerSessionRuntimeHandlers(
       return;
     }
 
-    // Cache the connection + behavioural fields (apiKey scrubbed to a ref-or-clear
-    // by the cache layer, never a raw key). Mode + autoApprove are co-persisted.
-    cacheLlmConnection("agent", {
-      baseUrl: req.config?.baseUrl,
-      model: req.config?.model,
-      apiKey: req.config?.apiKey,
-      maxSteps: req.config?.maxSteps,
-      temperature: req.config?.temperature,
-      maxTokens: req.config?.maxTokens,
-      autoApprove: req.config?.autoApprove,
-      mode: (req.config as { mode?: ApprovalMode })?.mode,
-    } as never);
-
-    let reqConfig = req.config;
-    const cached = getCachedConfig().agentConfig;
-    if (!reqConfig?.apiKey && cached?.apiKey) {
-      reqConfig = {
-        ...reqConfig,
-        baseUrl: reqConfig?.baseUrl || cached.baseUrl,
-        model: reqConfig?.model || cached.model,
-        apiKey: cached.apiKey,
-        maxSteps: reqConfig?.maxSteps || cached.maxSteps,
-        // Temperature is renderer-authoritative (it resolves the capability gate
-        // and the plan-mode override). Never fall back to a cached 0.3: an
-        // explicit 0 must survive, and unset/unsupported must stay omitted.
-        temperature: reqConfig?.temperature,
-        maxTokens: reqConfig?.maxTokens ?? (cached as { maxTokens?: number }).maxTokens,
-        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
-      } as typeof reqConfig;
-    } else if (cached) {
-      reqConfig = {
-        ...reqConfig,
-        autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : cached.autoApprove,
-        mode: (reqConfig as { mode?: ApprovalMode })?.mode ?? (cached as { mode?: ApprovalMode })?.mode,
-      } as typeof reqConfig;
-    }
-
-    const _reqMode2 = (reqConfig as { mode?: unknown })?.mode;
-    const _reqModeValid2 = typeof _reqMode2 === "string" && isApprovalMode(_reqMode2 as ApprovalMode) ? _reqMode2 as ApprovalMode : undefined;
-    const _cachedMode2 = (cached as { mode?: unknown })?.mode;
-    const _cachedModeValid2 = typeof _cachedMode2 === "string" && isApprovalMode(_cachedMode2 as ApprovalMode) ? _cachedMode2 as ApprovalMode : undefined;
-    const resolvedMode2: ApprovalMode = _reqModeValid2
-      ?? (typeof reqConfig?.autoApprove === "boolean" ? approvalModeFromAutoApprove(reqConfig.autoApprove) : undefined)
-      ?? _cachedModeValid2
-      ?? (typeof cached?.autoApprove === "boolean" ? approvalModeFromAutoApprove(cached.autoApprove) : undefined)
-      ?? "interactive";
-    const llmConfig: AgentLLMConfig = {
-      baseUrl:     normaliseBaseUrl(reqConfig?.baseUrl || "https://api.openai.com"),
-      model:       reqConfig?.model       || "gpt-5.6-luna",
-      apiKey:      resolveLlmApiKey(reqConfig?.apiKey),
-      maxSteps:    reqConfig?.maxSteps    ?? 20,
-      // The renderer resolved the effective temperature (capability-gated;
-      // undefined = omit → vendor default).
-      temperature: reqConfig?.temperature,
-      maxTokens:   reqConfig?.maxTokens,
-      autoApprove: reqConfig?.autoApprove !== undefined ? reqConfig.autoApprove : _cachedModeValid2 ? _cachedModeValid2 === "auto" : cached?.autoApprove !== undefined ? cached.autoApprove : false,
-      mode: resolvedMode2,
-      isReasoningModel: reqConfig?.isReasoningModel,
-      // Same no-coercion rule as session:prompt (see above).
-      provider: reqConfig?.provider,
-      contextWindow: reqConfig?.contextWindow,
-      reasoningEffort: reqConfig?.reasoningEffort,
-      apiMode: reqConfig?.apiMode,
-    };
+    // Same connection resolution as session:prompt (lib/llm-config.ts).
+    const { llmConfig } = resolveAgentLlmConfig(req.config);
 
     let session = sessions.get(sessionId);
     if (!session) {
@@ -545,8 +417,8 @@ export function registerSessionRuntimeHandlers(
     const sessionRow = q.getCodingSessionById(ctx.db, sessionId) as { cwd?: string } | undefined;
     const cwd = sessionRow?.cwd ?? "/";
     const llmConfig: AgentLLMConfig = {
-      baseUrl: normaliseBaseUrl(req.config?.baseUrl || "https://api.openai.com"),
-      model: req.config?.model || "gpt-5.6-luna",
+      baseUrl: normaliseBaseUrl(req.config?.baseUrl || DEFAULT_LLM.baseUrl),
+      model: req.config?.model || DEFAULT_LLM.model,
       apiKey: resolveLlmApiKey(req.config?.apiKey),
       maxSteps: 20,
       temperature: 0.1,

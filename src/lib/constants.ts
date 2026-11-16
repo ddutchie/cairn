@@ -5,6 +5,7 @@
 
 import type { ColumnType, Priority, ProjectStatus } from "@/types";
 import type { AIConfig, AgentConfig } from "@/store";
+import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from "../../shared/models/defaults";
 
 /** Default board columns created with every new project (renderer-side copy). */
 export const DEFAULT_COLUMNS = [
@@ -116,8 +117,8 @@ export const STATUS_COLORS: Record<string, string> = {
 /** Default AI/LLM config values. */
 export const DEFAULT_AI_CONFIG: AIConfig = {
   provider:     "openai",
-  baseUrl:      "https://api.openai.com",
-  model:        "gpt-5.6-luna",
+  baseUrl:      DEFAULT_LLM_BASE_URL,
+  model:        DEFAULT_LLM_MODEL,
   apiKey:       "",
   maxSteps:     30,
   contextLimit: 128000,
@@ -134,8 +135,8 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 
 /** Default Coding Agent config values. */
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
-  baseUrl:      "https://api.openai.com",
-  model:        "gpt-5.6-luna",
+  baseUrl:      DEFAULT_LLM_BASE_URL,
+  model:        DEFAULT_LLM_MODEL,
   apiKey:       "",
   maxSteps:     30,
   contextLimit: 128000,

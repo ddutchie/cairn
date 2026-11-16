@@ -14,6 +14,7 @@ import { registerContractHandle } from "./registry";
 import { handle, type DbContext } from "./result-helpers";
 import { generatePrd } from "../lib/prd";
 import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl, type LLMConfig } from "../lib/llm";
+import { DEFAULT_LLM } from "../lib/llm-config";
 import { getCachedConfig, cacheLlmConnection } from "../lib/config-cache";
 import { resolveLlmApiKey } from "../lib/secure-store";
 import { fetchProvidersManifest } from "../lib/community-registry";
@@ -36,8 +37,8 @@ function resolveConfig(
     apiKey: config?.apiKey || cached?.apiKey || "",
   };
 
-  const baseUrl = normaliseBaseUrl(mergedConfig.baseUrl || "https://api.openai.com");
-  const model = mergedConfig.model || "gpt-5.6-luna";
+  const baseUrl = normaliseBaseUrl(mergedConfig.baseUrl || DEFAULT_LLM.baseUrl);
+  const model = mergedConfig.model || DEFAULT_LLM.model;
   const keyRef = mergedConfig.apiKey || "";
   const isLocal = isLocalEndpoint(baseUrl);
   if (!keyRef && !isLocal) {
@@ -121,7 +122,7 @@ export function registerAiHandlers(ctx: DbContext): void {
     "ai:fetchModels",
     async (_e, args) =>
       handle(async () => {
-        const url = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
+        const url = normaliseBaseUrl(args.baseUrl || DEFAULT_LLM.baseUrl);
         const realKey = resolveLlmApiKey(args.apiKey);
         const headers: Record<string, string> = {};
         if (realKey) headers["Authorization"] = `Bearer ${realKey}`;
@@ -151,7 +152,7 @@ export function registerAiHandlers(ctx: DbContext): void {
     "ai:probeProtocols",
     async (_e, args) =>
       handle(async () => {
-        const url = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
+        const url = normaliseBaseUrl(args.baseUrl || DEFAULT_LLM.baseUrl);
         const realKey = resolveLlmApiKey(args.apiKey);
         const probe = async (protocol: ProbeProtocol): Promise<ProtocolAvailability> => {
           const req = protocolProbeRequest(protocol, args.model);
@@ -191,7 +192,7 @@ export function registerAiHandlers(ctx: DbContext): void {
     "ai:fetchKeyInfo",
     async (_e, args) =>
       handle(async () => {
-        const baseUrl = normaliseBaseUrl(args.baseUrl || "https://api.openai.com");
+        const baseUrl = normaliseBaseUrl(args.baseUrl || DEFAULT_LLM.baseUrl);
         const realKey = resolveLlmApiKey(args.apiKey);
         // No key → nothing to query (credit endpoints are all authed).
         if (!realKey) return null;

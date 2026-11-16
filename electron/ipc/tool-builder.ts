@@ -23,7 +23,8 @@ import { registerIpcOn, sendIpcEvent } from "./registry";
 import type { IpcEventArgs } from "../../shared/ipc/contract";
 import type { ToolBuilderPromptRequest } from "../../shared/types/tool-builder";
 import { getCachedConfig } from "../lib/config-cache";
-import { isLocalEndpoint, normaliseBaseUrl, buildApiUrl } from "../lib/llm";
+import { resolveConnection, DEFAULT_LLM } from "../lib/llm-config";
+import { isLocalEndpoint, buildApiUrl } from "../lib/llm";
 import { newId } from "../db/utils";
 import * as q from "../db/queries";
 import * as builder from "../lib/tool-builder";
@@ -71,15 +72,19 @@ interface AIConfig {
 }
 
 function resolveConfig(): AIConfig {
+  // Cache-only connection (the builder sends no per-request config): same
+  // endpoint/model/key resolution as the chat resolver, then the builder's own
+  // Auto max-tokens semantics on top.
+  const conn = resolveConnection("ai", undefined);
   const cached = getCachedConfig().aiConfig;
   return {
-    provider: cached?.provider ?? "openai",
-    baseUrl: normaliseBaseUrl(cached?.baseUrl ?? "https://api.openai.com"),
-    model: cached?.model ?? "gpt-5.6-luna",
+    provider: conn.provider,
+    baseUrl: conn.baseUrl,
+    model: conn.model,
     // The cached apiKey is a `secret://llm:<providerId>/apiKey` reference since the
-    // v2.5.9 keychain migration — resolve it to the real key here (same as chat.ts /
-  // session runtime). Sending the raw ref as a bearer token 401s the provider.
-    apiKey: secrets.resolveLlmApiKey(cached?.apiKey),
+    // v2.5.9 keychain migration — resolved to the real key above (same as chat.ts /
+    // session runtime). Sending the raw ref as a bearer token 401s the provider.
+    apiKey: conn.apiKey,
     // Same Auto semantics as the chat/agent loops: Auto sends a generous 32K
     // cap (AUTO_OUTPUT_TOKEN_CAP) instead of omitting the field — omitting lets
     // the endpoint apply a tiny server-side default that truncates long tool
