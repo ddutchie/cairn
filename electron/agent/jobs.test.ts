@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { JobRegistry } from "./jobs";
-
-const until = async (cond: () => boolean) => { for (const end = Date.now() + 5_000; !cond() && Date.now() < end;) await new Promise((r) => setTimeout(r, 20)); };
+import { until } from "./test-harness";
 
 function make() {
   const settled: Array<{ id: string; status: string; tail: string }> = [];

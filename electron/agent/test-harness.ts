@@ -1,5 +1,5 @@
 /** Shared fixtures for the agent kernel tests: faux model, tools, driver. */
-import { createModels, fauxProvider, Type, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, Type, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent } from "./events";
 import { Gate } from "./gate";
 import type { Profile, StreamFn, TurnOptions } from "./loop";
@@ -89,3 +89,16 @@ export const ofType = <T extends AgentEvent["type"]>(events: AgentEvent[], type:
   events.filter((e): e is Extract<AgentEvent, { type: T }> => e.type === type);
 export const toolResults = (history: Message[]): ToolResultMessage[] =>
   history.filter((m): m is ToolResultMessage => m.role === "toolResult");
+
+/** Build a faux tool call with an explicit id (defaults to "c1" for single-call steps). */
+export const call = (name: string, args: Record<string, unknown>, id = "c1") =>
+  fauxToolCall(name, args as never, { id });
+/** Pack tool calls into a faux assistant message that requests them. */
+export const toolUse = (...calls: ReturnType<typeof call>[]) =>
+  fauxAssistantMessage(calls, { stopReason: "toolUse" });
+/** One short poll interval for `until`. */
+export const tick = () => new Promise((r) => setTimeout(r, 20));
+/** Wait for a condition instead of guessing how long the machine needs. */
+export const until = async (cond: () => boolean, ms = 3_000) => {
+  for (const end = Date.now() + ms; !cond() && Date.now() < end;) await tick();
+};

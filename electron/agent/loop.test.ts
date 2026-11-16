@@ -9,12 +9,10 @@ import { createReviewerState, type Reviewer } from "./reviewer";
 import { presetRules, type Rule } from "./rules";
 import { defineTool } from "./tools";
 import { Type } from "@earendil-works/pi-ai";
-import { drive, makeHarness, makeTools, ofType, toolResults, types, type Harness } from "./test-harness";
+import { call, drive, makeHarness, makeTools, ofType, toolResults, toolUse, types, type Harness } from "./test-harness";
 
-const call = (name: string, args: Record<string, unknown>, id: string) => fauxToolCall(name, args as never, { id });
 const fail = (msg: string) => fauxAssistantMessage([], { stopReason: "error", errorMessage: msg });
 const noWait = async () => {};
-const toolUse = (...calls: ReturnType<typeof call>[]) => fauxAssistantMessage(calls, { stopReason: "toolUse" });
 
 /** Approve/deny every ask as it appears. */
 const answer = (gate: Gate, decision: { approved: boolean; grant?: "tool" | "command" }) => (ev: AgentEvent) => {
