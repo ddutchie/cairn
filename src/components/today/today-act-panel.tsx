@@ -78,8 +78,9 @@ const SEND_LINES: Record<string, string> = {
 function shownText(prompt: string): string {
   const mine = prompt.match(/\n\nMy message: ([\s\S]*?)(?:\n\n|$)/);
   if (mine) return mine[1].trim();
+  // Older sessions stored the whole prompt; newer ones store only what was typed.
   const first = prompt.split("\n", 1)[0];
-  return SEND_LINES[first] ?? first;
+  return SEND_LINES[first] ?? prompt.trim();
 }
 
 /** A reply as the thread shows it: the <draft> block is lifted into the draft box. */
@@ -87,6 +88,17 @@ function replyTurn(reply: string): { text: string; draft: string | null } {
   const m = reply.match(DRAFT_RE);
   const rest = reply.replace(DRAFT_RE, "").trim();
   return { text: rest || (m ? "Updated the draft above." : reply), draft: m ? m[1] : null };
+}
+
+/**
+ * A chat kept while its reply was still running: this panel is gone, so nothing here would add the
+ * reply to the chat list. Load the thread now, and again once the turn ends.
+ */
+function reloadWhenTurnEnds(sessionId: string, threadId: string): void {
+  const reload = () => void useCairnStore.getState().reloadThreadMessages(threadId);
+  const fold = createSessionEventFold({ onTurnEnd: () => { off(); reload(); } });
+  const off = sessionClient.onEvent((e) => { if (e.sessionId === sessionId) fold(e.event); });
+  reload();
 }
 
 function openUrl(url?: string) {
@@ -104,7 +116,7 @@ function itemBrief(t: TodayActTarget): string {
   ].filter(Boolean).join("\n");
 }
 
-export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraft, onDone, onUndoDone, onClose }: {
+export function TodayActPanel({ workspaceId, projectId, date, target, done: doneAtOpen = false, cairnDraft, onSaveDraft, onDone, onUndoDone, onClose }: {
   workspaceId: string;
   /** Scopes the panel's chat (its connectors and board): the item's project, else the open one. */
   projectId?: string;
@@ -114,6 +126,10 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   onSaveDraft: (draftId: string, text: string | null) => void;
   onDone: () => void;
   onUndoDone: () => void;
+  /** The item is already marked done in Today: the panel opens showing it. */
+  done?: boolean;
+  /** Cairn's own text for the item's draft (`target.draft` may already hold your edit). */
+  cairnDraft?: string;
   onClose: () => void;
 }) {
   const aiConfig = useCairnStore((s) => s.aiConfig);
@@ -127,15 +143,19 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const [turns, setTurns] = useState<Turn[]>([]);
   const [ask, setAsk] = useState("");
   // Done by hand (Mark done), or by a send call that finished; "Not done after all" undoes either.
-  const [manualDone, setManualDone] = useState(false);
-  const [undoneCall, setUndoneCall] = useState<string | null>(null);
+  // Done holds once set: a send's tool call is gone from the live calls when the turn ends, and the
+  // panel must not look unsent then (a second Send would post twice). "Not done after all" clears it.
+  const [done, setDone] = useState(doneAtOpen);
+  const [sentWith, setSentWith] = useState<string | null>(null);
+  const markDone = () => { setDone(true); onDone(); };
+  const undo = () => { setDone(false); setSentWith(null); onUndoDone(); };
   const [copied, setCopied] = useState(false);
   const [kept, setKept] = useState(false);
   // Send (or Add to the board) was asked for: from then on a Cairn write counts as the send too.
   const [sendAsked, setSendAsked] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   // The open dialog shows this item's chat: its approvals appear here, not in the bell.
-  useSessionOnScreen(sessionId, scrollRef);
+  const onScreenRef = useSessionOnScreen(sessionId);
   const textRef = useRef(text);
   useEffect(() => { textRef.current = text; }, [text]);
 
@@ -150,6 +170,13 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   // Assistant replies: a <draft> block replaces the draft; the rest shows in the thread.
   const saveDraftRef = useRef(onSaveDraft);
   useEffect(() => { saveDraftRef.current = onSaveDraft; });
+  // The draft box saves on blur; closing with Esc can skip the blur, so an unsaved edit is saved on close too.
+  const draftAtOpen = useRef(target.draft?.draft);
+  useEffect(() => () => {
+    const d = target.draft;
+    if (d && textRef.current !== draftAtOpen.current) saveDraftRef.current(d.id, textRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on close
+  }, []);
   useEffect(() => {
     if (!hasElectron()) return;
     let content = "";
@@ -164,6 +191,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
         if (turn.draft !== null) {
           setText(turn.draft);
           if (target.draft) saveDraftRef.current(target.draft.id, turn.draft);
+          draftAtOpen.current = turn.draft;
         }
         setTurns((t) => [...t, { role: "assistant", text: turn.text }]);
       },
@@ -175,11 +203,19 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   // a card, writing a note) only counts once Send was asked for: otherwise it's just a change.
   const sendCall = toolCalls.find((tc) => tc.status === "done" && tc.ok !== false && !tc.error
     && WRITE_VERB.test(operationWords(tc.tool)) && (sendAsked || toolServer(tc.tool) !== ""));
-  const sendKey = sendCall ? sendCall.callId ?? sendCall.tool : null;
-  const sent = manualDone || (!!sendKey && sendKey !== undoneCall);
+  const sendKey = sendCall ? sendCall.callId ?? `${sendCall.tool}#${toolCalls.indexOf(sendCall)}` : null;
+  const sent = done;
+  // Each send call marks the item done once; undoing it isn't undone by the same call again.
+  const countedCalls = useRef(new Set<string>());
   const onDoneRef = useRef(onDone);
   useEffect(() => { onDoneRef.current = onDone; });
-  useEffect(() => { if (sendKey) onDoneRef.current(); }, [sendKey]);
+  useEffect(() => {
+    if (!sendKey || !sendCall || countedCalls.current.has(sendKey)) return;
+    countedCalls.current.add(sendKey);
+    setDone(true);
+    setSentWith(operationWords(sendCall.tool));
+    onDoneRef.current();
+  }, [sendKey, sendCall]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -188,8 +224,11 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const prompt = useCallback((shown: string, message: string) => {
     if (isLoading) return;
     setTurns((t) => [...t, { role: "user", text: shown }]);
+    // The transcript keeps what the user asked; the instructions around it go to the model only,
+    // so a chat kept in the chat list reads like a chat.
     sendStream({
-      message,
+      message: shown,
+      context: message,
       threadId,
       projectId,
       workspaceId,
@@ -211,6 +250,8 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   }, [isLoading, sendStream, threadId, projectId, workspaceId, aiConfig]);
 
   const revise = (instruction: string) => {
+    // A question or rewrite after a send isn't a send: its Cairn writes are just changes.
+    setSendAsked(false);
     const current = textRef.current.trim();
     prompt(instruction, [
       "You're helping me act on one item from my Today brief. You can look things up, and when I ask, change things in Cairn (edit, move or add cards, write notes). Don't send or post anything outside Cairn: I do that with the Send button.",
@@ -248,6 +289,8 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const keepInChat = () => {
     const st = useCairnStore.getState();
     st.keepThread(threadId, workspaceId, projectId, target.title);
+    // The chat list shows what the session holds, earlier turns and your messages included.
+    void st.reloadThreadMessages(threadId);
     // The ref first: closing unmounts the panel before the effect that copies `kept` could run.
     keptRef.current = true;
     setKept(true);
@@ -264,7 +307,12 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const loadingRef = useRef(isLoading);
   useEffect(() => { loadingRef.current = isLoading; }, [isLoading]);
   const keepRef = useRef(() => {});
-  useEffect(() => { keepRef.current = () => { useCairnStore.getState().keepThread(threadId, workspaceId, projectId, target.title); }; });
+  useEffect(() => {
+    keepRef.current = () => {
+      useCairnStore.getState().keepThread(threadId, workspaceId, projectId, target.title);
+      reloadWhenTurnEnds(sessionId, threadId);
+    };
+  });
   useEffect(() => () => {
     if (keptRef.current) return;
     if (loadingRef.current) { keepRef.current(); return; }
@@ -315,7 +363,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
 
   const canSend = !!route && (route.channel === "board" || route.tools.length > 0);
   const liveCalls = useMemo(() => toolCalls.map((tc) => toConversationToolCall(tc as never)), [toolCalls]);
-  const edited = !!target.draft && text !== target.draft.draft;
+  const edited = !!target.draft && text !== (cairnDraft ?? target.draft.draft);
   // Something to send: a draft, a picked answer, or a draft Cairn wrote in this chat. Otherwise the
   // dialog is a plain question about the item, with no "Goes to" and no empty draft box.
   const sending = !!target.draft || !!target.answer || text.trim() !== "";
@@ -332,7 +380,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
           className="flex flex-col h-[min(760px,85vh)] p-0 gap-0 overflow-hidden"
         >
           {/* header (right padding leaves room for the dialog's close button) */}
-          <div className="pl-5 pr-12 pt-4 pb-3 border-b border-[var(--border-subtle)]">
+          <div ref={onScreenRef} className="pl-5 pr-12 pt-4 pb-3 border-b border-[var(--border-subtle)]">
             <div className="flex items-center gap-1.5">
               <span className="text-2xs text-[var(--text-tertiary)] truncate flex-1">{target.crumb} · {target.source}</span>
               {target.url && <IconButton label="Open the source" size="sm" onClick={() => openUrl(target.url)}><ExternalLink size={12} /></IconButton>}
@@ -349,11 +397,11 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
             {sent && (
               <div className="rounded-lg border border-[color-mix(in_srgb,var(--success)_35%,transparent)] bg-[color-mix(in_srgb,var(--success)_8%,var(--surface-2))] px-3 py-2.5 text-xs">
-                <div className="flex items-center gap-1.5 font-semibold"><Check size={13} className="text-[var(--success)]" /> Done{sendCall ? ` · ${operationWords(sendCall.tool)}` : ""}</div>
+                <div className="flex items-center gap-1.5 font-semibold"><Check size={13} className="text-[var(--success)]" /> Done{sentWith ? ` · ${sentWith}` : ""}</div>
                 <p className="text-2xs text-[var(--text-secondary)] mt-1">Marked done in Today.</p>
                 <div className="flex gap-3 mt-1.5">
                   {target.url && <button type="button" className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:underline" onClick={() => openUrl(target.url)}>Open the source</button>}
-                  <button type="button" className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:underline" onClick={() => { setManualDone(false); setUndoneCall(sendKey); onUndoDone(); }}>Not done after all</button>
+                  <button type="button" className="text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:underline" onClick={undo}>Not done after all</button>
                 </div>
               </div>
             )}
@@ -374,7 +422,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
                   <button
                     type="button"
                     className="ml-auto hover:text-[var(--text-primary)] hover:underline"
-                    onClick={() => { setText(target.draft!.draft); onSaveDraft(target.draft!.id, null); }}
+                    onClick={() => { setText(cairnDraft ?? target.draft!.draft); onSaveDraft(target.draft!.id, null); }}
                   >
                     Use Cairn&apos;s draft
                   </button>
@@ -383,7 +431,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                onBlur={() => { if (target.draft) onSaveDraft(target.draft.id, text); }}
+                onBlur={() => { if (target.draft) { onSaveDraft(target.draft.id, text); draftAtOpen.current = text; } }}
                 placeholder="No draft yet. Ask Cairn to write one below, or type it here."
                 aria-label="Draft"
                 rows={Math.min(14, Math.max(6, text.split("\n").length + 1))}
@@ -478,7 +526,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
                 <DialogClose asChild><Button size="sm" variant="accent">Back to Today</Button></DialogClose>
               ) : !sending ? (
                 <>
-                  <Button size="sm" variant="accent" onClick={() => { setManualDone(true); onDone(); }}><Check size={12} /> Mark done</Button>
+                  <Button size="sm" variant="accent" onClick={markDone}><Check size={12} /> Mark done</Button>
                   {cardId && <Button size="sm" variant="outline" onClick={openCard}><Kanban size={12} /> Open the card</Button>}
                   {!cardId && target.url && <Button size="sm" variant="outline" onClick={() => openUrl(target.url)}><ExternalLink size={12} /> Open the source</Button>}
                 </>
@@ -497,7 +545,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
                   <Button size="sm" variant="accent" disabled={!route || !text.trim()} onClick={() => void copyAndOpen()}>
                     <Copy size={12} /> {copied ? "Copied" : target.url ? "Copy and open" : "Copy"}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => { setManualDone(true); onDone(); }}>Mark done</Button>
+                  <Button size="sm" variant="ghost" onClick={markDone}>Mark done</Button>
                   <span className="ml-auto text-2xs text-[var(--text-tertiary)] text-right leading-snug">
                     {route ? <>Nothing here can send this,<br />so you send it</> : "Checking your connectors…"}
                   </span>

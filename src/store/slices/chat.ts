@@ -59,6 +59,8 @@ export interface ChatSlice {
    * its existing id, so its engine session opens in the chat panel as is.
    */
   keepThread: (threadId: ID, workspaceId: ID, projectId?: ID, title?: string) => ChatThread;
+  /** Replace one thread's in-memory messages with its session log (a chat kept from outside the chat panel). */
+  reloadThreadMessages: (threadId: ID) => Promise<void>;
   compactChatThread: (threadId: ID) => Promise<void>;
   clearThreadMessages: (threadId: ID) => Promise<void>;
   clearAllThreads: (workspaceId: ID, projectId?: ID) => Promise<void>;
@@ -469,6 +471,15 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     const existing = get().chatThreads.find((t) => t.id === threadId);
     if (existing) return existing;
     return saveThread(set, get, { ...buildThread(workspaceId, projectId), id: threadId, title });
+  },
+
+  async reloadThreadMessages(threadId) {
+    const res = await ipcResult((e) => e.chat.sessionMessages(threadId));
+    if ("error" in res) return;
+    const rows = (unwrapSessionPayload(res.data).messages as ChatMessage[])
+      .filter((m) => !(m.role === "assistant" && !m.content?.trim() && !m.reasoning?.trim() && String(m.id).includes("-trailing")))
+      .map((m) => ({ ...m, threadId }));
+    set((s) => ({ chatMessages: [...s.chatMessages.filter((m) => m.threadId !== threadId), ...rows] }));
   },
 
   async compactChatThread(threadId) {

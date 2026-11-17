@@ -53,6 +53,8 @@ export interface EnginePromptArgs {
   projectId?: string;
   workspaceId?: string;
   systemPrompt: string;
+  /** Model-only context for this prompt only; the logged prompt stays what was asked. */
+  context?: string;
   /** Model-only context kept visible across the session (see `PromptRequest.standingContext`). */
   standingContext?: readonly string[];
   llmConfig: AgentLLMConfig;
@@ -70,6 +72,8 @@ export interface EnginePromptArgs {
   allowTools?: ReadonlySet<string>;
   /** Connector scope when it differs from `projectId`: Today reads every included project's connectors. */
   externalProjectIds?: readonly string[];
+  /** Connectors left out of the scope by id (apps turned off for Today): never connected or offered. */
+  externalExclude?: readonly string[];
   /** Cut each connector result to this many characters (Today). */
   externalResultChars?: number;
   /** Headless runs: keep only the tools this returns true for (Today's read-only toolset). */
@@ -158,7 +162,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
         broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "question", { callId: tool.callId, questions, nonce }));
       }),
     },
-    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.externalProjectIds ?? a.projectId ?? "", maxResultChars: a.externalResultChars },
+    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.externalExclude?.length ? { projects: a.externalProjectIds ?? [a.projectId ?? ""], exclude: a.externalExclude } : a.externalProjectIds ?? a.projectId ?? "", maxResultChars: a.externalResultChars },
     fs: { cwd: a.cwd, rgPath, observed, sandbox: () => ({ mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }), jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
     sessions: role === "automation-dev" || !a.workspaceId ? undefined : {
@@ -212,7 +216,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   // cache for the whole conversation on every switch.
   const modeNote = planning ? PLAN_MODE_PROMPT : st.planning ? PLAN_MODE_ENDED : "";
   st.planning = planning;
-  const context = modeNote ? `<session_context>\n${modeNote}\n</session_context>` : undefined;
+  const context = [modeNote, a.context].filter(Boolean).map((text) => `<session_context>\n${text}\n</session_context>`).join("\n\n") || undefined;
   // The skill list is context, not part of the tool definition: there it would re-write the cache
   // whenever a skill file changed.
   const skills = tools.some((t) => t.name === "skill") ? skillCatalog({ cwd: a.cwd, contextWindow: a.llmConfig.contextWindow }) : undefined;

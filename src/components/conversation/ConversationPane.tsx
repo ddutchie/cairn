@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect } from "react";
 import { ConversationComposer, type ConversationComposerProps } from "./ConversationComposer";
 import { ConversationEmptyState } from "./ConversationEmptyState";
 import { ConversationHeader } from "./ConversationHeader";
@@ -87,8 +87,7 @@ export function ConversationPane({
   ), [isLoading, waitingOnUser]);
 
   // While this pane is visible, approval notices for its session stay out of the bell.
-  const rootRef = useRef<HTMLDivElement>(null);
-  useSessionOnScreen(sessionId === "chat-" ? null : sessionId, rootRef);
+  const rootRef = useSessionOnScreen(sessionId === "chat-" ? null : sessionId);
   return (
     <div ref={rootRef} className={cn("flex flex-1 min-h-0 flex-col overflow-hidden", className)} data-session-profile={profile}>
       <ConversationHeader title={title ?? profile} usage={usage} contextLimit={contextLimit ?? 128000} actions={actions} schedule={{ sessionId, pollKey: isLoading }} />

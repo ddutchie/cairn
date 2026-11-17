@@ -102,6 +102,8 @@ export interface ChatRequest {
   images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
   /** When true, run the dispatch → research/write subagent loop instead of the single-agent tool loop. */
   useSubagents?: boolean;
+  /** Text only the model sees with this message (instructions around what the user typed). */
+  context?: string;
 }
 
 export function buildSystemPrompt(req: ChatRequest): string {

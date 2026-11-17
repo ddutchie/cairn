@@ -620,6 +620,8 @@ export async function runAutomation(
   };
   if (today) {
     const now = new Date();
+    // Marks first: pruning can delete the previous brief's marks file after a long gap.
+    const marks = todayPrevious ? readTodayMarks(workspacePath, automation, todayPrevious.date) : null;
     try {
       pruneTodayFiles(workspacePath, automation, now);
       // A refresh overwrites the day's file: keep the version it replaces for the history.
@@ -627,7 +629,6 @@ export async function runAutomation(
         snapshotTodayBrief(workspacePath, automation, todayPrevious);
       }
     } catch (err) { console.warn("[heartbeat] Today history upkeep failed:", err); }
-    const marks = todayPrevious ? readTodayMarks(workspacePath, automation, todayPrevious.date) : null;
     todaySession = { brief: startRefresh(todayPrevious, marks, now), finished: false };
     saveToday(todaySession.brief);
     automationTools.push(...todayBriefTools(todaySession, saveToday));
@@ -727,6 +728,7 @@ export async function runAutomation(
       workspaceId: automation.workspaceId,
       // Today reads the connectors of every project it covers.
       externalProjectIds: today ? todayProjects.map((p) => p.id) : undefined,
+      externalExclude: todaySettings?.excludedApps,
       externalResultChars: today ? TODAY_RESULT_CHARS : undefined,
       usageSource: today ? "today" : undefined,
       systemPrompt: buildSystemPrompt(req),
@@ -761,6 +763,8 @@ export async function runAutomation(
   // A failed coding turn (provider error, abnormal end) is a run ERROR, not
   // "exhausted" — the coding loop resolves ok:false with the error message.
   if (!codingResult.ok) {
+    // Today: close what the run found so far, so the file isn't left "gathering" and the view hears the run ended.
+    if (todaySession && !todaySession.finished) saveToday(finishBrief(todaySession.brief, {}, new Date()));
     finaliseLog("error", result.error ?? "Agent turn failed.");
     updateAutomationRun(db, run.id, {
       status: "error",

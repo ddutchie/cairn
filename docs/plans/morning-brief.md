@@ -1,6 +1,6 @@
 # Morning brief and connected apps — plan
 
-**Status:** in progress (preview on `feature/today-brief`)
+**Status:** Today shipped in 3.2.0 (out of preview). Still open: connector tiers 2–3 (calendar without consent, on-device apps, signed-in web apps) and honouring MCP `readOnlyHint`.
 **Started:** 2026-11-16
 **Scope:** A daily, AI-written brief page (top to-dos, new updates, "push your work
 forward" suggestion) built from Cairn's own data plus connected apps, and a

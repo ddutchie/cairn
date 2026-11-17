@@ -14,11 +14,11 @@ import { TODAY_COMMUNITY_ID } from "../../shared/today/brief";
 import { emptyBrief, finishBrief, upsertItems } from "../../shared/today/brief-edit";
 
 describe("todayAllowsTool", () => {
-  it("allows Cairn and engine reads", () => {
-    for (const t of ["list_tasks", "get_item", "search_notes", "read", "grep", "web_fetch"]) expect(todayAllowsTool(t)).toBe(true);
+  it("allows Cairn reads and MCP resources", () => {
+    for (const t of ["list_tasks", "get_item", "search_notes", "read_mcp_resource"]) expect(todayAllowsTool(t)).toBe(true);
   });
-  it("denies local writes and shell", () => {
-    for (const t of ["create_task", "edit_note", "bash", "write", "edit", "delete"]) expect(todayAllowsTool(t)).toBe(false);
+  it("denies local writes, shell, local file reads and web fetches", () => {
+    for (const t of ["create_task", "edit_note", "bash", "write", "edit", "delete", "read", "grep", "glob", "web_fetch"]) expect(todayAllowsTool(t)).toBe(false);
   });
   it("allows read-like connector tools", () => {
     for (const t of ["mcp__slack__search_messages", "mcp__workiq__ask_work_iq", "mcp__github__list_pull_requests", "mcp__atlassian__searchJiraIssuesUsingJql", "mcp__atlassian__getJiraIssue"]) {

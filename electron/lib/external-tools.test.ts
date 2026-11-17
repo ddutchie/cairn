@@ -8,7 +8,7 @@ vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }));
 
-import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs, checkRequirements, getExternalToolDefs } from "./external-tools";
+import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs, checkRequirements, getExternalToolDefs, listScopedConnectors } from "./external-tools";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, saveMcpServer, saveCustomService, setToolAttachment } from "../db/queries";
 import * as mcpClient from "./mcp-client";
@@ -147,6 +147,14 @@ describe("checkRequirements", () => {
   });
 
   afterEach(() => { db.close(); });
+
+  it("resolves each project on its own and leaves excluded connectors out", () => {
+    createProject(db, { id: "proj-2", workspaceId: "ws-1", name: "Q" });
+    setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    setToolAttachment(db, { projectId: "proj-2", toolType: "mcp", toolId: "m-linear", enabled: false });
+    expect(listScopedConnectors(db, "ws-1", ["proj-1", "proj-2"]).map((c) => c.id)).toEqual(["m-linear"]);
+    expect(listScopedConnectors(db, "ws-1", { projects: ["proj-1", "proj-2"], exclude: ["m-linear"] })).toEqual([]);
+  });
 
   it("flags a connector as attached when it is enabled + project-attached", () => {
     setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });

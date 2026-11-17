@@ -51,9 +51,14 @@ export function findTodayAutomation(db: Database.Database, workspaceId: string):
   return listAutomations(db, workspaceId).find((a) => isTodayAutomation(a) && !a.projectId) ?? null;
 }
 
-/** Engine tools that only read (files in the run folder, the web). */
+/**
+ * Engine tools a Today run keeps. Local file reads (`read`, `grep`, `glob`) and `web_fetch` are left
+ * out: the run reads untrusted messages, and with both it could be talked into reading a file and
+ * fetching a URL that carries its contents away, with nobody there to approve. Cairn's own facts
+ * come in the prompt, so the brief doesn't need them.
+ */
 const ENGINE_READ_TOOLS = new Set([
-  "read", "read_image", "grep", "glob", "web_fetch", "skill", "todo_write", "codebase_query",
+  "skill", "todo_write",
   "read_mcp_resource", "list_mcp_resources", "list_mcp_resource_templates",
 ]);
 

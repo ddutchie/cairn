@@ -159,15 +159,21 @@ export function filterDisabledMcpDefs(defs: OpenAIToolDef[], disabledTools: stri
 
 /**
  * A connector scope: one project, or several (Today reads every included
- * project's connectors). Global attachments are always in scope.
+ * project's connectors). Global attachments are always in scope. `exclude`
+ * drops connectors by id (apps the user turned off for Today): they are never
+ * connected, described or called.
  */
-export type ToolScope = string | readonly string[];
+export type ToolScope = string | readonly string[] | { readonly projects: readonly string[]; readonly exclude: readonly string[] };
 
 /**
  * Load the in-scope MCP + service runtime configs for a project (or projects).
  */
 function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId: ToolScope) {
-  const ids = (typeof projectId === "string" ? [projectId] : [...projectId]).filter(Boolean);
+  const scope = typeof projectId === "string" || Array.isArray(projectId)
+    ? { projects: typeof projectId === "string" ? [projectId] : [...(projectId as readonly string[])], exclude: [] as readonly string[] }
+    : projectId as { projects: readonly string[]; exclude: readonly string[] };
+  const excluded = new Set(scope.exclude);
+  const ids = scope.projects.filter(Boolean);
   const global = q.getToolAttachments(db, GLOBAL_TOOL_SCOPE) as AttachmentRow[];
   // Each project resolves on its own (global attachments plus its own, where its disables win),
   // then the projects are combined: one project turning a connector off doesn't take it from another.
@@ -179,10 +185,10 @@ function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId
 
   const mcpServers = q
     .getMcpServers(db, workspaceId)
-    .filter((s) => s.enabled && attached.mcp.has(s.id));
+    .filter((s) => s.enabled && attached.mcp.has(s.id) && !excluded.has(s.id));
   const customServices = q
     .getCustomServices(db, workspaceId)
-    .filter((s) => s.enabled && attached.service.has(s.id));
+    .filter((s) => s.enabled && attached.service.has(s.id) && !excluded.has(s.id));
 
   return { mcpServers, customServices };
 }

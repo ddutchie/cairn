@@ -50,6 +50,17 @@ describe("parseTodayBrief", () => {
 });
 
 describe("decisions", () => {
+  it("turns a decision with one answer into a to-do, and a to-do keeps no answers", () => {
+    const b = parseTodayBrief(JSON.stringify({
+      needYou: [
+        { id: "a", kind: "decision", question: "Ship?", choices: [{ label: "Yes", draftId: "d1" }] },
+        { id: "b", kind: "todo", question: "Reply", choices: [{ label: "Yes", draftId: "d1" }, { label: "No" }] },
+      ],
+      prepared: [{ id: "d1", title: "Reply", draft: "Hi" }],
+    }), NOW);
+    expect(b!.needYou.map((n) => [n.kind, n.choices.length])).toEqual([["todo", 0], ["todo", 0]]);
+  });
+
   it("reads kind, question, facts and choices, and drops choice drafts that don't exist", () => {
     const b = parseTodayBrief(JSON.stringify({
       headline: "Decide on the P4 interview first.",

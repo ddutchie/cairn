@@ -31,6 +31,8 @@ export interface ChatStreamRequest {
   approvalPolicy?: import("../../shared/agent/chat-approval").ChatApprovalPolicy;
   images?: Array<{ name: string; dataUrl: string; kind?: "image" | "pdf" }>;
   useSubagents?: boolean;
+  /** Text only the model sees with this message; the transcript keeps just `message`. */
+  context?: string;
 }
 
 export interface UseChatStreamResult {
@@ -144,6 +146,7 @@ export function useChatStream(
       projectId: req.projectId ?? undefined, workspaceId: req.workspaceId ?? undefined,
       attachments: req.images, history: req.history, systemPrompt: req.systemPrompt,
       personality: req.personality, approvalPolicy: req.approvalPolicy, useSubagents: req.useSubagents, config: req.config,
+      ...(req.context ? { context: req.context } : {}),
     }).catch(() => {}), `chat-${req.threadId}`);
     setThreadUsage(req.threadId, undefined);
   }

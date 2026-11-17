@@ -197,10 +197,11 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     if (order.length < 2) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
-      const at = viewing ? order.indexOf(viewing.key) : 0;
+      // Keys that belong to a field or a widget stay there (chat composer, menus, lists, tabs, sliders).
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox'], [role='tablist'], [role='slider'], [role='grid'], [role='tree']")) return;
+      const at = viewing ? Math.max(0, order.indexOf(viewing.key)) : 0;
       if (e.key === "Escape" && viewing) void select(null);
       else if (e.key === "ArrowLeft" && at < order.length - 1) void select(order[at + 1]);
       else if (e.key === "ArrowRight" && at > 0) void select(order[at - 1]);
@@ -218,6 +219,7 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
 
   // `rebuild` looks back the full window instead of only since the last run.
   const run = async (rebuild = false) => {
+    selectSeq.current++; // a day still loading from the rail doesn't reopen over the refresh
     setViewing(null);
     setState((s) => (s ? { ...s, running: true } : s));
     setLiveTool({ tool: null });
@@ -273,12 +275,12 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
       onExport={() => todayClient.export(workspaceId)}
     />
   );
-  // The rail appears once there's something to look back at.
-  if (order.length < 2) return view;
+  // The rail appears once there's something to look back at. The brief keeps the same place in the
+  // tree either way, so the rail arriving doesn't remount it (and drop its dialogs and animation).
   return (
     <div className="flex items-start gap-4">
       <div className="min-w-0 flex-1">{view}</div>
-      <TodayRail days={days} liveDate={liveDate} selectedKey={viewing?.key ?? null} onSelect={(k) => void select(k)} onPeek={setPeek} />
+      {order.length >= 2 && <TodayRail days={days} liveDate={liveDate} selectedKey={viewing?.key ?? null} onSelect={(k) => void select(k)} onPeek={setPeek} />}
     </div>
   );
 }
@@ -561,8 +563,8 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
         style={stack ? { background: "color-mix(in srgb, var(--surface) 60%, var(--background))" } : undefined}
       >
         <div className="min-w-0">
-          <div className="text-xs text-[var(--text-tertiary)] font-mono">
-            {d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }).toUpperCase()}
+          <div className="text-xs text-[var(--text-tertiary)]">
+            {d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
             {isToday && !past && ` · ${formatClock(nowMin)}`}
             {!isToday && !past && <span className="text-[var(--warning)] font-sans"> · from an earlier day</span>}
             {past && ` · ${formatClock(d.getHours() * 60 + d.getMinutes())}`}
@@ -700,6 +702,8 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
           projectId={act.projectId ?? activeProjectId ?? undefined}
           date={brief.date}
           target={act}
+          done={dismissed.has(act.doneId)}
+          cairnDraft={act.draft ? original(act.draft.id) : undefined}
           onSaveDraft={(id, text) => setEdit(id, text === null || text === original(id) ? null : text)}
           onDone={() => setDismissed(act.doneId, true)}
           onUndoDone={() => setDismissed(act.doneId, false)}

@@ -125,10 +125,13 @@ export function registerAutomationHandlers(ctx: DbContext): void {
   registerContractHandle("today:get", (_e, { workspaceId }) => handle(() => todayState(workspaceId)));
   registerContractHandle("today:enable", (_e, req) => handle(() => {
     enableToday(ctx.db, ctx.workspacePath, req);
+    // The automation row changed: other windows and the Automations list reload (only db:* channels broadcast on their own).
+    broadcastEvent("db:changed", null);
     return todayState(req.workspaceId);
   }));
   registerContractHandle("today:disable", (_e, { workspaceId }) => handle(() => {
     disableToday(ctx.db, workspaceId);
+    broadcastEvent("db:changed", null);
     return todayState(workspaceId);
   }));
   registerContractHandle("today:settings", (_e, { workspaceId, settings }) => handle(() => {

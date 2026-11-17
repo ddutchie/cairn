@@ -57,6 +57,8 @@ interface AgentPromptRequest {
   personality?: ChatRequest["personality"];
   approvalPolicy?: ChatRequest["approvalPolicy"];
   useSubagents?: boolean;
+  /** Chat: text only the model sees with this prompt. */
+  context?: string;
   config?: {
     provider?: string;
     baseUrl?: string;
@@ -250,6 +252,7 @@ export function registerSessionRuntimeHandlers(
         personality: req.personality,
         approvalPolicy: req.approvalPolicy,
         useSubagents: req.useSubagents,
+        context: typeof req.context === "string" ? req.context : undefined,
         config: req.config,
       };
       await runEngineChat(ctx, chatReq);

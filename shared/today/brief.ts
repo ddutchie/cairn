@@ -150,9 +150,11 @@ export function normalizeNeed(x: Record<string, unknown>, fallbackId: string): T
     const label = str(c.label);
     return label ? [{ label, draftId: str(c.draftId) }] : [];
   }).slice(0, 3);
-  const kind = str(x.kind) === "todo" || choices.length === 0 ? "todo" : "decision";
+  // A decision needs two answers; anything less is a to-do, and a to-do has no answers (its draft
+  // links would otherwise hide drafts from Prepared for you).
+  const kind = str(x.kind) === "todo" || choices.length < 2 ? "todo" : "decision";
   return {
-    id: str(x.id) ?? fallbackId, kind, title, body: str(x.body), why: str(x.why), facts: strList(x.facts, 3), choices,
+    id: str(x.id) ?? fallbackId, kind, title, body: str(x.body), why: str(x.why), facts: strList(x.facts, 3), choices: kind === "todo" ? [] : choices,
     source: str(x.source) ?? "Cairn", url: str(x.url), age: str(x.age), draftId: str(x.draftId), projectId: str(x.projectId),
     since: dateStr(x.since),
   };
