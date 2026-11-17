@@ -209,6 +209,8 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     // ── Boot sequence ────────────────────────────────────────
     snapshot:              () => Promise.resolve(snap),
     hasData:               () => Promise.resolve(true),
+    changes:               { get: () => Promise.resolve(null) },
+    command:               { list: () => Promise.resolve([]), create: noop, update: noop, delete: noop },
     needsWorkspaceSetup:   () => Promise.resolve(needsSetup),
 
     // ── Workspace ─────────────────────────────────────────────
@@ -302,6 +304,8 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     // ── App helpers ───────────────────────────────────────────
     mcpServerPath:         () => Promise.resolve("/mock/mcp-server"),
     latestChangelog:       () => Promise.resolve(null),
+    llmLeftovers:          () => Promise.resolve([]),
+    clearLlmLeftovers:     noop,
     revealNote:            noop,
     openExternal:          () => {},
     uploadAsset:           () => Promise.resolve({ assetUrl: "" }),
@@ -309,13 +313,30 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     selectWorkspaceFolder: () => Promise.resolve(null),
     getWorkspacePath:      () => Promise.resolve("/mock/workspace"),
     needsWorkspaceSetup:   () => Promise.resolve(needsSetup),
+    isDev:                 () => Promise.resolve(true),
     setTheme:              noop,
     setAccent:             noop,
     initWorkspace:         () => Promise.resolve({ ok: true }),
     rescanWorkspace:       () => Promise.resolve({ projectsCreated: 0, createdProjects: [] }),
+    rollbackImport:        noop,
     probeWorkspaceFolder:  () => Promise.resolve({ isObsidianVault: false, vaultName: "Notes", noteCount: 0, skippedCount: 0, projects: [], excludedFolders: [] }),
     relaunch:              noop,
     resetAllData:          noop,
+    getAiSettings:         () => Promise.resolve(null),
+    saveAiSettings:        noop,
+    getAgentSettings:      () => Promise.resolve(null),
+    saveAgentSettings:     noop,
+    getTheme:              () => Promise.resolve(null),
+    saveTheme:             noop,
+    getFontScale:          () => Promise.resolve(null),
+    saveFontScale:         noop,
+    checkMigrations:       () => Promise.resolve([]),
+    runMigration:          noop,
+    onMigrationProgress:   makeListener("app.migrationProgress"),
+    onQuickCapture:        makeListener("app.quickCapture"),
+    onSpellcheckContext:   makeListener("spellcheck.context"),
+    spellcheckReplace:     noop,
+    spellcheckAddWord:     noop,
     platform:              "darwin",
 
     // ── Auto-updater ──────────────────────────────────────────
