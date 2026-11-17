@@ -47,6 +47,7 @@ export function projectFacts(
       projectId: p.id, name: p.name,
       dueToday: dueToday.slice(0, MAX_CARDS), overdue: overdue.slice(0, MAX_CARDS),
       inReview: inReview.slice(0, MAX_CARDS), stale: stale.slice(0, MAX_CARDS),
+      counts: { dueToday: dueToday.length, overdue: overdue.length, inReview: inReview.length, stale: stale.length },
       failingAutomations, notesChanged: getNotesChangedSince(db, p.id, since),
     };
   });

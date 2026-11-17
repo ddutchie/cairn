@@ -115,6 +115,8 @@ export function TodayView() {
 function TodayPanel({ workspaceId }: { workspaceId: string }) {
   const [state, setState] = useState<TodayState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A run's last brief save failed: the brief on screen may be older than what the run found.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [liveTool, setLiveTool] = useState<TodayRunActivity | null>(null);
 
   const refresh = useCallback(async () => {
@@ -129,6 +131,7 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
     }
   }, [workspaceId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads the brief from the main process on open
   useEffect(() => { void refresh(); }, [refresh]);
 
   // Each brief tool call saves the brief: reload so items arrive as the run finds them.
@@ -136,6 +139,7 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
   const [historyTick, setHistoryTick] = useState(0);
   useEffect(() => todayClient.onUpdated((ev) => {
     if (ev.workspaceId !== workspaceId) return;
+    setSaveError(ev.saveError ? `Couldn't save the brief: ${ev.saveError}` : null);
     void refresh();
     if (ev.status === "ready") setHistoryTick((n) => n + 1);
   }), [workspaceId, refresh]);
@@ -179,9 +183,13 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
   // Newest first; ← steps back through every saved version, → forward to the live brief.
   const order = useMemo(() => days.flatMap((d) => [d.latest, ...d.versions].map((e) => e.key)), [days]);
 
+  // Only the latest pick lands: a slow snapshot can't reopen a day after you've moved on.
+  const selectSeq = useRef(0);
   const select = useCallback(async (key: string | null) => {
+    const seq = ++selectSeq.current;
     if (key === null || key === liveDate) { setViewing(null); return; }
     const snap = await todayClient.snapshot(workspaceId, key).catch(() => null);
+    if (seq !== selectSeq.current) return;
     if (snap) setViewing({ key, ...snap });
     else setHistory((h) => h.filter((e) => e.key !== key)); // pruned since the list was read
   }, [workspaceId, liveDate]);
@@ -193,7 +201,7 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
       const t = e.target as HTMLElement | null;
       if (t?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
       const at = viewing ? order.indexOf(viewing.key) : 0;
-      if (e.key === "Escape" && viewing) setViewing(null);
+      if (e.key === "Escape" && viewing) void select(null);
       else if (e.key === "ArrowLeft" && at < order.length - 1) void select(order[at + 1]);
       else if (e.key === "ArrowRight" && at > 0) void select(order[at - 1]);
       else return;
@@ -244,14 +252,14 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
     hasLive: !!state.brief,
     versions: viewingDay ? [viewingDay.latest, ...viewingDay.versions] : [],
     onPick: (key) => void select(key),
-    onBack: () => setViewing(null),
+    onBack: () => void select(null),
   } : null;
   const view = (
     <BriefView
       state={viewing ? { ...state, brief: viewing.brief, marks: viewing.marks, running: false, activity: null, lastError: null } : state}
       workspaceId={workspaceId}
       liveTool={viewing ? null : liveTool}
-      error={viewing ? null : error}
+      error={viewing ? null : (error ?? saveError)}
       past={past}
       peek={peek}
       stack={stack}
@@ -301,6 +309,7 @@ export function useTodayBadge(workspaceId: string | null) {
       setBadge({ enabled: st.enabled, running: st.running, unseen: !!gen && todaySeenAt(workspaceId) !== gen, automationId: st.automationId });
     } catch { /* off-Electron or no workspace: no badge */ }
   }, [workspaceId]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads the badge from the main process
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     const onSeen = () => void load();
@@ -326,6 +335,12 @@ function TodaySetup({ state, onEnable }: {
   const [time, setTime] = useState(state.time);
   const [weekdaysOnly, setWeekdaysOnly] = useState(state.weekdaysOnly);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const turnOn = async (runNow: boolean) => {
+    setBusy(true);
+    setFailed(null);
+    try { await onEnable(time, weekdaysOnly, runNow); } catch (e) { setFailed(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
   const connectors = state.apps;
 
   return (
@@ -368,13 +383,14 @@ function TodaySetup({ state, onEnable }: {
       </div>
 
       <div className="flex gap-2 mt-5">
-        <Button variant="accent" disabled={busy} onClick={async () => { setBusy(true); try { await onEnable(time, weekdaysOnly, true); } finally { setBusy(false); } }}>
+        <Button variant="accent" disabled={busy} onClick={() => void turnOn(true)}>
           <Play size={12} /> Turn on and run now
         </Button>
-        <Button variant="outline" disabled={busy} onClick={async () => { setBusy(true); try { await onEnable(time, weekdaysOnly, false); } finally { setBusy(false); } }}>
+        <Button variant="outline" disabled={busy} onClick={() => void turnOn(false)}>
           Turn on
         </Button>
       </div>
+      {failed && <p className="text-xs text-[var(--danger)] mt-3">Couldn&apos;t turn Today on: {failed}</p>}
       <p className="text-2xs text-[var(--text-tertiary)] mt-3">It also appears in Automations as &ldquo;Today&rdquo;, with its run history.</p>
     </div>
   );
@@ -708,8 +724,12 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
   const [time, setTime] = useState(state.time);
   const [weekdaysOnly, setWeekdaysOnly] = useState(state.weekdaysOnly);
   const [exported, setExported] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const attempt = async (what: string, fn: () => Promise<void>): Promise<boolean> => {
+    try { await fn(); setFailed(null); return true; } catch (e) { setFailed(`${what}: ${e instanceof Error ? e.message : String(e)}`); return false; }
+  };
   const scheduleChanged = time !== state.time || weekdaysOnly !== state.weekdaysOnly;
-  const close = () => { setOpen(false); setTime(state.time); setWeekdaysOnly(state.weekdaysOnly); };
+  const close = () => { setOpen(false); setFailed(null); setTime(state.time); setWeekdaysOnly(state.weekdaysOnly); };
   return (
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Settings2 size={12} /> Settings</Button>
@@ -722,15 +742,16 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
         subtitle="One brief for this workspace"
         footer={
           <>
-            <Button variant="ghost" size="sm" className="mr-auto text-[var(--danger)]" onClick={() => { void onDisable(); setOpen(false); }}>Turn off Today</Button>
+            <Button variant="ghost" size="sm" className="mr-auto text-[var(--danger)]" onClick={async () => { if (await attempt("Couldn't turn Today off", onDisable)) setOpen(false); }}>Turn off Today</Button>
             <Button variant="ghost" size="sm" onClick={close}>Cancel</Button>
-            <Button variant="accent" size="sm" onClick={async () => { if (scheduleChanged) await onSchedule(time, weekdaysOnly); setOpen(false); }}>
+            <Button variant="accent" size="sm" onClick={async () => { if (!scheduleChanged || await attempt("Couldn't save the schedule", () => onSchedule(time, weekdaysOnly))) close(); }}>
               <Check size={11} className="mr-1" /> Save
             </Button>
           </>
         }
       >
         <div className="space-y-5">
+          {failed && <p role="alert" className="text-xs text-[var(--danger)]">{failed}</p>}
           <div>
             <label className="text-sm text-[var(--text-tertiary)] block mb-1.5" htmlFor="today-time">Schedule</label>
             <div className="flex flex-wrap items-center gap-4 text-xs">
@@ -755,14 +776,14 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
             title="Projects"
             hint="Today reads the board of each project that's on, and the apps attached to it. Changes apply straight away."
             items={state.projects.map((p) => ({ id: p.id, name: p.name, on: !state.settings.excludedProjects.includes(p.id) }))}
-            onToggle={(id, on) => void onSettings({ ...state.settings, excludedProjects: flip(state.settings.excludedProjects, id, on) })}
+            onToggle={(id, on) => void attempt("Couldn't change the projects", () => onSettings({ ...state.settings, excludedProjects: flip(state.settings.excludedProjects, id, on) }))}
           />
           <SettingsList
             title="Apps"
             hint="Apps that are off aren't offered to the run at all."
             empty="No apps are attached to the projects that are on."
             items={state.apps.map((a) => ({ id: a.id, name: a.name, on: !state.settings.excludedApps.includes(a.id) }))}
-            onToggle={(id, on) => void onSettings({ ...state.settings, excludedApps: flip(state.settings.excludedApps, id, on) })}
+            onToggle={(id, on) => void attempt("Couldn't change the apps", () => onSettings({ ...state.settings, excludedApps: flip(state.settings.excludedApps, id, on) }))}
           />
           <div className="border-t border-[var(--border-subtle)] pt-4 space-y-4">
             <SettingsAction
@@ -847,11 +868,12 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
       </div>
       <div className="grid gap-2.5 grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3">
         {facts.map((f) => {
-          const chips: Array<{ label: string; list: string[]; warn?: boolean }> = [
-            { label: "due today", list: f.dueToday.map((c) => c.title) },
-            { label: "overdue", list: f.overdue.map((c) => `${c.title} · due ${c.dueDate}`), warn: true },
-            { label: "in review", list: f.inReview.map((c) => c.title) },
-            { label: "stale 5d+", list: f.stale.map((c) => `${c.title} · ${c.days}d`) },
+          // Card lists stop at a few; the count is the full one.
+          const chips: Array<{ label: string; list: string[]; count?: number; warn?: boolean }> = [
+            { label: "due today", list: f.dueToday.map((c) => c.title), count: f.counts?.dueToday },
+            { label: "overdue", list: f.overdue.map((c) => `${c.title} · due ${c.dueDate}`), count: f.counts?.overdue, warn: true },
+            { label: "in review", list: f.inReview.map((c) => c.title), count: f.counts?.inReview },
+            { label: "stale 5d+", list: f.stale.map((c) => `${c.title} · ${c.days}d`), count: f.counts?.stale },
             { label: f.failingAutomations.length === 1 ? "automation failing" : "automations failing", list: f.failingAutomations.map((a) => `${a.name} · ${a.failures} failed`), warn: true },
             { label: f.notesChanged.length === 1 ? "note changed" : "notes changed", list: f.notesChanged.map((n) => n.title) },
           ].filter((c) => c.list.length > 0);
@@ -863,7 +885,7 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
               <div className="flex flex-wrap gap-1.5 mt-1.5">
                 {chips.length === 0 && <span className="text-2xs text-[var(--text-tertiary)]">Nothing due, in review or stale.</span>}
                 {chips.map((c) => (
-                  <Tooltip key={c.label} content={<span className="block max-w-[260px] whitespace-pre-line">{c.list.join("\n")}</span>}>
+                  <Tooltip key={c.label} content={<span className="block max-w-[260px] whitespace-pre-line">{[...c.list, ...((c.count ?? 0) > c.list.length ? [`and ${c.count! - c.list.length} more`] : [])].join("\n")}</span>}>
                     <span
                       tabIndex={0}
                       className={cn(
@@ -871,7 +893,7 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
                         c.warn ? "border-[color-mix(in_srgb,var(--warning)_45%,transparent)] text-[var(--text-primary)]" : "border-[var(--border)] text-[var(--text-secondary)]",
                       )}
                     >
-                      <span className="font-mono font-semibold">{c.list.length}</span> {c.label}
+                      <span className="font-mono font-semibold">{c.count ?? c.list.length}</span> {c.label}
                     </span>
                   </Tooltip>
                 ))}
@@ -985,7 +1007,7 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
           {ticks.map((t) => (
             <i key={t} className="absolute top-0 bottom-0 w-px bg-[var(--border-subtle)] pointer-events-none" style={{ left: `${dayPct(t)}%` }} />
           ))}
-          {visible.map((b) => {
+          {visible.map((b, bi) => {
             const left = dayPct(b.start);
             const w = dayPct(b.end) - left;
             const mins = b.end - b.start;
@@ -996,7 +1018,7 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
             const sub = [`${formatClock(b.start)}–${formatClock(b.end)}`, formatMinutes(mins), b.event?.location, b.event?.note].filter(Boolean).join(" · ");
             return (
               <Tooltip
-                key={`${b.kind}-${b.start}`}
+                key={`${b.kind}-${b.start}-${b.event?.id ?? bi}`}
                 content={<span className="block max-w-[260px]"><b className="block font-semibold">{title}</b>{sub}</span>}
               >
                 <button
@@ -1034,7 +1056,7 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
             const free = b.kind === "free";
             const cell = cn("py-1.5", i < agenda.length - 1 && "border-b border-[var(--border-subtle)]");
             return (
-              <div key={`${b.kind}-${b.start}`} className="contents">
+              <div key={`${b.kind}-${b.start}-${b.event?.id ?? i}`} className="contents">
                 <span className={cn(cell, "font-mono text-2xs text-[var(--text-secondary)] whitespace-nowrap", b.past && "opacity-45")}>
                   {formatClock(b.start)}–{formatClock(b.end)}
                 </span>

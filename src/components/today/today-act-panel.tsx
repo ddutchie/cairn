@@ -22,9 +22,11 @@ import { ArrowUp, Check, Copy, ExternalLink, Kanban, MessageSquare, Send } from 
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { useChatStream } from "@/hooks/useChatStream";
+import { useSessionOnScreen } from "@/hooks/useSessionOnScreen";
 import { useLiveStream } from "@/lib/conversation/live-stream-store";
 import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import { sessionClient } from "@/lib/ipc/session";
+import { unwrapSessionPayload } from "@/lib/conversation/session";
 import { hasElectron } from "@/lib/ipc/client";
 import { todayClient } from "@/lib/ipc/automations";
 import { appClient } from "@/lib/ipc/app";
@@ -36,7 +38,7 @@ import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { WRITE_VERB, operationWords, type TodayRoute } from "../../../shared/today/route";
+import { WRITE_VERB, operationWords, toolServer, type TodayRoute } from "../../../shared/today/route";
 import type { TodayPrepared } from "../../../shared/today/brief";
 
 /** What the panel acts on: a decision's answer, a to-do, or a prepared draft. */
@@ -66,6 +68,26 @@ const DRAFT_RE = /<draft>\s*([\s\S]*?)\s*<\/draft>/i;
 const QUICK = ["Shorter", "Warmer", "More direct", "Fix the tone"];
 /** For an item with nothing to send yet (a to-do from the board): questions about it. */
 const ASK_QUICK = ["What's the next step?", "Break it into steps", "What's blocking it?"];
+
+const SEND_LINES: Record<string, string> = {
+  "Add this to the project's board now.": "Add it to the board",
+  "Send this reply now.": "Send it",
+};
+
+/** What a stored prompt showed in the thread: the message I typed, not the instructions around it. */
+function shownText(prompt: string): string {
+  const mine = prompt.match(/\n\nMy message: ([\s\S]*?)(?:\n\n|$)/);
+  if (mine) return mine[1].trim();
+  const first = prompt.split("\n", 1)[0];
+  return SEND_LINES[first] ?? first;
+}
+
+/** A reply as the thread shows it: the <draft> block is lifted into the draft box. */
+function replyTurn(reply: string): { text: string; draft: string | null } {
+  const m = reply.match(DRAFT_RE);
+  const rest = reply.replace(DRAFT_RE, "").trim();
+  return { text: rest || (m ? "Updated the draft above." : reply), draft: m ? m[1] : null };
+}
 
 function openUrl(url?: string) {
   if (url && /^https?:\/\//i.test(url)) void appClient.openExternal(url);
@@ -97,7 +119,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const aiConfig = useCairnStore((s) => s.aiConfig);
   const threadId = `today-${workspaceId}-${date}-${target.key}`;
   const sessionId = `chat-${threadId}`;
-  const { isLoading, toolCalls, streamStore, sendStream, stopStream } = useChatStream(threadId);
+  const { isLoading, toolCalls, streamStore, sendStream, syncRunning } = useChatStream(threadId);
   const { content: streaming } = useLiveStream(streamStore);
 
   const [route, setRoute] = useState<TodayRoute | null>(null);
@@ -109,17 +131,21 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const [undoneCall, setUndoneCall] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [kept, setKept] = useState(false);
+  // Send (or Add to the board) was asked for: from then on a Cairn write counts as the send too.
+  const [sendAsked, setSendAsked] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The open dialog shows this item's chat: its approvals appear here, not in the bell.
+  useSessionOnScreen(sessionId, scrollRef);
   const textRef = useRef(text);
   useEffect(() => { textRef.current = text; }, [text]);
 
   useEffect(() => {
     let live = true;
-    todayClient.route({ workspaceId, source: target.source, target: target.draft?.target, kind: target.draft?.kind })
+    todayClient.route({ workspaceId, projectId, source: target.source, target: target.draft?.target, kind: target.draft?.kind })
       .then((r) => { if (live) setRoute(r); })
       .catch((e: unknown) => { if (live) setRoute({ channel: "other", label: "its source", tools: [], error: e instanceof Error ? e.message : String(e) }); });
     return () => { live = false; };
-  }, [workspaceId, target.source, target.draft?.target, target.draft?.kind]);
+  }, [workspaceId, projectId, target.source, target.draft?.target, target.draft?.kind]);
 
   // Assistant replies: a <draft> block replaces the draft; the rest shows in the thread.
   const saveDraftRef = useRef(onSaveDraft);
@@ -134,20 +160,21 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
         const reply = content;
         content = "";
         if (!reply) return;
-        const m = reply.match(DRAFT_RE);
-        if (m) {
-          setText(m[1]);
-          if (target.draft) saveDraftRef.current(target.draft.id, m[1]);
+        const turn = replyTurn(reply);
+        if (turn.draft !== null) {
+          setText(turn.draft);
+          if (target.draft) saveDraftRef.current(target.draft.id, turn.draft);
         }
-        const rest = reply.replace(DRAFT_RE, "").trim();
-        setTurns((t) => [...t, { role: "assistant", text: rest || (m ? "Updated the draft above." : reply) }]);
+        setTurns((t) => [...t, { role: "assistant", text: turn.text }]);
       },
     });
     return sessionClient.onEvent((e) => { if (e.sessionId === sessionId) fold(e.event); });
   }, [sessionId, target.draft]);
 
-  // A connector call that writes and finished cleanly is the send.
-  const sendCall = toolCalls.find((tc) => tc.status === "done" && tc.ok !== false && !tc.error && WRITE_VERB.test(operationWords(tc.tool)));
+  // A connector call that writes and finished cleanly is the send. A Cairn write (editing or moving
+  // a card, writing a note) only counts once Send was asked for: otherwise it's just a change.
+  const sendCall = toolCalls.find((tc) => tc.status === "done" && tc.ok !== false && !tc.error
+    && WRITE_VERB.test(operationWords(tc.tool)) && (sendAsked || toolServer(tc.tool) !== ""));
   const sendKey = sendCall ? sendCall.callId ?? sendCall.tool : null;
   const sent = manualDone || (!!sendKey && sendKey !== undoneCall);
   const onDoneRef = useRef(onDone);
@@ -186,7 +213,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const revise = (instruction: string) => {
     const current = textRef.current.trim();
     prompt(instruction, [
-      "You're helping me act on one item from my Today brief. Don't send, post or change anything.",
+      "You're helping me act on one item from my Today brief. You can look things up, and when I ask, change things in Cairn (edit, move or add cards, write notes). Don't send or post anything outside Cairn: I do that with the Send button.",
       itemBrief(target),
       current ? `Current draft:\n<draft>\n${current}\n</draft>` : "There's no draft yet.",
       `My message: ${instruction}`,
@@ -199,6 +226,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
     const tool = route.tools[0];
     const body = textRef.current.trim();
     const board = route.channel === "board";
+    setSendAsked(true);
     prompt(board ? "Add it to the board" : `Send it${tool ? ` with ${tool.op}` : ""}`, [
       board ? "Add this to the project's board now." : "Send this reply now.",
       itemBrief(target),
@@ -220,32 +248,68 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const keepInChat = () => {
     const st = useCairnStore.getState();
     st.keepThread(threadId, workspaceId, projectId, target.title);
+    // The ref first: closing unmounts the panel before the effect that copies `kept` could run.
+    keptRef.current = true;
     setKept(true);
     st.setActiveChatThreadId(threadId);
     if (!st.chatOpen) st.toggleChat();
     onClose();
   };
 
-  // Off the list unless kept: drop the panel's unread mark and in-memory messages on close.
+  // Off the list unless kept: drop the panel's unread mark and in-memory messages on close. A reply
+  // that's still running is kept instead, so it finishes in the chat list. The session itself stays
+  // on disk either way, which is how reopening the item shows the chat again.
   const keptRef = useRef(kept);
   useEffect(() => { keptRef.current = kept; }, [kept]);
-  const stopRef = useRef(stopStream);
-  useEffect(() => { stopRef.current = stopStream; });
+  const loadingRef = useRef(isLoading);
+  useEffect(() => { loadingRef.current = isLoading; }, [isLoading]);
+  const keepRef = useRef(() => {});
+  useEffect(() => { keepRef.current = () => { useCairnStore.getState().keepThread(threadId, workspaceId, projectId, target.title); }; });
   useEffect(() => () => {
     if (keptRef.current) return;
-    stopRef.current();
+    if (loadingRef.current) { keepRef.current(); return; }
     useCairnStore.setState((s) => ({
       unreadThreadIds: s.unreadThreadIds.filter((id) => id !== threadId),
       chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
     }));
   }, [threadId]);
 
-  // Plan in slot and similar open with a prompt already on its way.
-  const initialSent = useRef(false);
+  // On open: bring back this item's earlier chat, pick up a reply that's still running, then send the
+  // prompt that Plan in slot and similar open with (only when there's no earlier chat).
+  const opened = useRef(false);
+  const syncRunningRef = useRef(syncRunning);
+  useEffect(() => { syncRunningRef.current = syncRunning; });
   useEffect(() => {
-    if (!target.initialPrompt || initialSent.current) return;
-    initialSent.current = true;
-    revise(target.initialPrompt);
+    if (opened.current) return;
+    opened.current = true;
+    // No cancel flag: the guard above makes this run once, and React StrictMode's replay would cancel it.
+    void (async () => {
+      let earlier: Turn[] = [];
+      let lastDraft: string | null = null;
+      if (hasElectron()) {
+        try {
+          const [rows, state] = await Promise.all([
+            sessionClient.getSessionMessages(sessionId).then((r) => unwrapSessionPayload(r).messages as Array<{ role: string; content: string }>),
+            sessionClient.isRunning(sessionId),
+          ]);
+          for (const r of rows) {
+            if (!r.content?.trim()) continue;
+            if (r.role === "user") earlier.push({ role: "user", text: shownText(r.content) });
+            else if (r.role === "assistant") {
+              const turn = replyTurn(r.content);
+              if (turn.draft !== null) lastDraft = turn.draft;
+              earlier.push({ role: "assistant", text: turn.text });
+            }
+          }
+          if (state?.running) syncRunningRef.current(true);
+        } catch { earlier = []; /* a new item has no session yet */ }
+      }
+      if (earlier.length) {
+        setTurns((t) => [...earlier, ...t]);
+        // An item without a saved draft keeps the last one Cairn wrote here.
+        if (lastDraft !== null && !target.draft && !textRef.current.trim()) setText(lastDraft);
+      } else if (target.initialPrompt) revise(target.initialPrompt);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on open
   }, []);
 
@@ -342,6 +406,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
               <section>
                 <div className="flex items-center text-2xs text-[var(--text-tertiary)] mb-1.5">
                   This item&apos;s chat
+                  {isLoading && !kept && <span className="ml-2">· Closing keeps it running in your chat list</span>}
                   <Tooltip content="Add this chat to your chat list and open it there">
                     <button type="button" className="ml-auto hover:text-[var(--text-primary)] hover:underline" onClick={keepInChat}>Keep in chat</button>
                   </Tooltip>

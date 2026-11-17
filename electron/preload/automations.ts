@@ -3,8 +3,9 @@
 import { invokeContract, onIpcEvent } from "./ipc";
 import type { AutomationInput, AutomationPatch, AutomationRequirement, AutomationRunEvent } from "../../shared/types/automations";
 import type { TodaySettings } from "../../shared/today/brief";
+import type { IpcArgs, IpcEvents } from "../../shared/ipc/contract";
 
-type TodayMarkPatch = { done?: Record<string, boolean>; edits?: Record<string, string | null> };
+type TodayMarkPatch = Omit<IpcArgs<"today:mark">[0], "workspaceId" | "date">;
 
 export const automationsApi = {
   // ── Heartbeat automations ─────────────────────
@@ -21,7 +22,7 @@ export const automationsApi = {
     /** Built-in Today automation (the Today view, one per workspace). */
     today: {
       get: (workspaceId: string) => invokeContract("today:get", { workspaceId }),
-      enable: (req: { workspaceId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }) =>
+      enable: (req: IpcArgs<"today:enable">[0]) =>
         invokeContract("today:enable", req),
       disable: (workspaceId: string) => invokeContract("today:disable", { workspaceId }),
       settings: (workspaceId: string, settings: TodaySettings) => invokeContract("today:settings", { workspaceId, settings }),
@@ -29,11 +30,11 @@ export const automationsApi = {
       history: (workspaceId: string) => invokeContract("today:history", { workspaceId }),
       snapshot: (workspaceId: string, key: string) => invokeContract("today:snapshot", { workspaceId, key }),
       run: (workspaceId: string, rebuild?: boolean) => invokeContract("today:run", { workspaceId, rebuild }),
-      route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
+      route: (req: IpcArgs<"today:route">[0]) =>
         invokeContract("today:route", req),
       export: (workspaceId: string) => invokeContract("today:export", { workspaceId }),
       /** A Today run changed the brief. */
-      onUpdated: (cb: (payload: { workspaceId: string; status: "gathering" | "ready" }) => void) => onIpcEvent("today:updated", cb),
+      onUpdated: (cb: (payload: IpcEvents["today:updated"]) => void) => onIpcEvent("today:updated", cb),
     },
     /** Daily automation budget (USD) + today's recorded automation spend. */
     budget: {

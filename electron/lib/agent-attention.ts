@@ -1,19 +1,22 @@
 /**
- * Agent attention — tell the user when a coding session needs them while
- * Cairn is in the background.
+ * Agent attention — tell the user when a session needs them and they can't see it.
  *
  * Inserts an `mcp_notifications` row (target_type "session") when a turn
- * finishes or fails, or when the agent asks for an approval or an answer, but
- * only while no Cairn window is focused. The existing notification poller then
- * raises the native toast and the dock/tray badge, and the in-app bell lists it
- * with a click-through to the session. When a window is focused, the user is
- * already looking at Cairn, so nothing is recorded.
+ * finishes or fails, or when the agent asks for an approval or an answer. A
+ * finished or failed turn is only recorded while no Cairn window is focused.
+ * An approval or a question is also recorded while Cairn is focused, when no
+ * window is showing that session (a chat in the background, a closed panel):
+ * the run is blocked until the user answers. The existing notification poller
+ * raises the native toast and the dock/tray badge while Cairn is in the
+ * background, and the in-app bell lists it with a click-through to the session.
  */
 
 import { BrowserWindow } from "electron";
 import type Database from "better-sqlite3";
 import { insertNotification } from "../mcp/db";
 import { getCodingSessionById } from "../db/sessions-queries";
+import { getChatThreadTitle } from "../db/chat-queries";
+import { isSessionOnScreen } from "./session-on-screen";
 
 export type AttentionKind = "finished" | "failed" | "approval" | "question";
 
@@ -39,17 +42,23 @@ export interface AttentionEvent {
   detail?: string;
 }
 
+/** Kinds that block the run until the user answers. */
+const BLOCKING: ReadonlySet<AttentionKind> = new Set(["approval", "question"]);
+
 /**
- * Record an attention notification for `sessionId` if the app is unfocused.
- * `isFocused` is injectable for tests. Returns true when a row was written.
+ * Record an attention notification for `sessionId` if the user can't see it:
+ * the app is unfocused, or (for an approval or question) no window shows the
+ * session. `isFocused` and `onScreen` are injectable for tests. Returns true
+ * when a row was written.
  */
 export function notifyAgentAttention(
   db: Database.Database,
   ev: AttentionEvent,
   isFocused: () => boolean = anyWindowFocused,
   now: number = Date.now(),
+  onScreen: (sessionId: string) => boolean = isSessionOnScreen,
 ): boolean {
-  if (isFocused()) return false;
+  if (isFocused() && (!BLOCKING.has(ev.kind) || onScreen(ev.sessionId))) return false;
   const key = `${ev.sessionId}:${ev.kind}`;
   const prev = lastSent.get(key);
   if (prev !== undefined && now - prev < COOLDOWN_MS) return false;
@@ -58,10 +67,15 @@ export function notifyAgentAttention(
     for (const [k, t] of lastSent) if (now - t >= COOLDOWN_MS) lastSent.delete(k);
   }
 
-  let name = "Coding session";
+  const chat = ev.sessionId.startsWith("chat-");
+  let name = chat ? "Chat" : "Coding session";
   try {
-    const row = getCodingSessionById(db, ev.sessionId);
-    if (row?.taskTitle) name = row.taskTitle;
+    if (chat) {
+      name = getChatThreadTitle(db, ev.sessionId.slice("chat-".length)) ?? name;
+    } else {
+      const row = getCodingSessionById(db, ev.sessionId);
+      if (row?.taskTitle) name = row.taskTitle;
+    }
   } catch { /* metadata is best-effort */ }
 
   const detail = ev.detail ? ev.detail.replace(/\s+/g, " ").trim().slice(0, 140) : "";

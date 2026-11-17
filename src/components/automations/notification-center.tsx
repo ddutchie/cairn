@@ -98,7 +98,12 @@ export function NotificationCenter({ onClose }: { onClose: () => void }) {
                   if (n.targetType === "note") revealNote(setView, n.targetId!);
                   else if (n.targetType === "task") revealCard(setView, n.targetId!);
                   else if (n.targetType === "automation") setView("automations");
-                  else if (n.targetType === "session") openSession(n.targetId!, "coding");
+                  // Chat sessions are `chat-<threadId>`: open the thread in the chat panel.
+                  else if (n.targetType === "session") {
+                    const id = n.targetId!;
+                    if (id.startsWith("chat-")) { openSession(id.slice("chat-".length), "chat"); const st = useCairnStore.getState(); if (!st.chatOpen) st.toggleChat(); }
+                    else openSession(id, "coding");
+                  }
                   void markNotificationRead(n.id);
                 }
               : undefined;

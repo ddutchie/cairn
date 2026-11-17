@@ -91,6 +91,16 @@ describe("dayBlocks", () => {
     { id: "c", title: "c", start: "12:30", end: "17:30" },
   ];
 
+  it("adds no backwards gap for a meeting after the working day", () => {
+    const d = dayBlocks([
+      { id: "x", title: "x", start: "08:00", end: "19:00" },
+      { id: "y", title: "y", start: "19:30", end: "20:00" },
+    ], 17 * 60 + 45);
+    expect(d.blocks.filter((b) => b.kind === "free")).toEqual([]);
+    expect(d.freeLeft).toBe(0);
+    expect(d.largestFree).toBe(0);
+  });
+
   it("lays out free and meeting blocks and marks the best free block", () => {
     const d = dayBlocks(events, 0);
     expect(d.blocks.map((b) => [b.kind, b.start, b.end])).toEqual([

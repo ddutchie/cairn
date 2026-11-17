@@ -54,6 +54,29 @@ describe("upsertItems", () => {
   });
 });
 
+describe("upsertItems checks", () => {
+  it("rejects a decision with one choice", () => {
+    const b = emptyBrief(now);
+    expect(upsertItems(b, [{ lane: "decision", id: "q1", question: "Ship it?", choices: [{ label: "Yes" }] }], now)[0]).toMatch(/needs 2 or 3/);
+    expect(b.needYou).toEqual([]);
+  });
+
+  it("keeps an item where it was when the lane it moves to is full", () => {
+    const b = emptyBrief(now);
+    upsertItems(b, [{ lane: "draft", id: "d1", title: "Reply", draft: "Hi" }], now);
+    upsertItems(b, Array.from({ length: 6 }, (_, i) => ({ lane: "todo", id: `t${i}`, question: `Do ${i}` })), now);
+    expect(upsertItems(b, [{ lane: "todo", id: "d1", question: "Send the reply" }], now)[0]).toMatch(/lane is full/);
+    expect(b.prepared.map((p) => p.id)).toEqual(["d1"]);
+  });
+
+  it("keeps events with non-Latin titles at the same time apart, and rejects impossible times", () => {
+    const b = emptyBrief(now);
+    upsertItems(b, [{ lane: "event", title: "会議", start: "09:00" }, { lane: "event", title: "面接", start: "09:00" }], now);
+    expect(b.events.map((e) => e.title)).toEqual(["会議", "面接"]);
+    expect(upsertItems(b, [{ lane: "event", title: "Late", start: "29:75" }], now)[0]).toMatch(/skipped/);
+  });
+});
+
 describe("removeItems and finishBrief", () => {
   it("removes by id and reports misses", () => {
     const b = emptyBrief(now);

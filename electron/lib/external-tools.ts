@@ -168,11 +168,14 @@ export type ToolScope = string | readonly string[];
  */
 function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId: ToolScope) {
   const ids = (typeof projectId === "string" ? [projectId] : [...projectId]).filter(Boolean);
-  const rows = [
-    ...q.getToolAttachments(db, GLOBAL_TOOL_SCOPE),
-    ...ids.flatMap((id) => q.getToolAttachments(db, id)),
-  ] as AttachmentRow[];
-  const attached = resolveAttachedToolIds(rows);
+  const global = q.getToolAttachments(db, GLOBAL_TOOL_SCOPE) as AttachmentRow[];
+  // Each project resolves on its own (global attachments plus its own, where its disables win),
+  // then the projects are combined: one project turning a connector off doesn't take it from another.
+  const scopes = ids.length ? ids.map((id) => resolveAttachedToolIds([...global, ...(q.getToolAttachments(db, id) as AttachmentRow[])])) : [resolveAttachedToolIds(global)];
+  const attached = {
+    mcp: new Set(scopes.flatMap((sc) => [...sc.mcp])),
+    service: new Set(scopes.flatMap((sc) => [...sc.service])),
+  };
 
   const mcpServers = q
     .getMcpServers(db, workspaceId)

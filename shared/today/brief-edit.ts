@@ -65,12 +65,27 @@ function withoutId(brief: TodayBrief, id: string): void {
   brief.events = brief.events.filter((e) => e.id !== id);
 }
 
-function put<T extends { id: string }>(list: T[], item: T, limit: number): string | null {
+type Lists = Pick<TodayBrief, "needYou" | "prepared" | "fyi" | "events">;
+
+/**
+ * Put `item` in `lane`, replacing the one with its id wherever it sits. A full lane rejects it
+ * before anything moves, so the item it would have replaced stays where it was.
+ */
+function place<K extends keyof Lists>(brief: TodayBrief, lane: K, item: Lists[K][number], limit: number): string | null {
+  const list = brief[lane] as Array<{ id: string }>;
   const at = list.findIndex((x) => x.id === item.id);
-  if (at >= 0) { list[at] = item; return "updated"; }
+  if (at >= 0) { withoutIdElsewhere(brief, lane, item.id); (brief[lane] as Array<{ id: string }>)[at] = item; return "updated"; }
   if (list.length >= limit) return null;
-  list.push(item);
+  withoutId(brief, item.id);
+  (brief[lane] as Array<{ id: string }>).push(item);
   return "added";
+}
+
+function withoutIdElsewhere(brief: TodayBrief, keep: keyof Lists, id: string): void {
+  if (keep !== "needYou") brief.needYou = brief.needYou.filter((x) => x.id !== id);
+  if (keep !== "prepared") brief.prepared = brief.prepared.filter((x) => x.id !== id);
+  if (keep !== "fyi") brief.fyi = brief.fyi.filter((x) => x.id !== id);
+  if (keep !== "events") brief.events = brief.events.filter((x) => x.id !== id);
 }
 
 /** One line per item: what happened to it, so the model can fix a rejected one. */
@@ -87,32 +102,28 @@ export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<strin
       case "todo": {
         const n = normalizeNeed({ ...raw, kind: lane }, id);
         if (!n) return `${label}: skipped, a ${lane} needs a "question".`;
-        if (lane === "decision" && n.kind === "todo") return `${label}: skipped, a decision needs 2 or 3 "choices".`;
+        if (lane === "decision" && (n.kind === "todo" || n.choices.length < 2)) return `${label}: skipped, a decision needs 2 or 3 "choices".`;
         n.since ??= sinceOf(brief, n.id);
-        withoutId(brief, n.id);
-        result = put(brief.needYou, n, TODAY_LANE_LIMITS.needYou);
+        result = place(brief, "needYou", n, TODAY_LANE_LIMITS.needYou);
         break;
       }
       case "draft": {
         const p = normalizePrepared(raw, id);
         if (!p) return `${label}: skipped, a draft needs a "title" and the "draft" text.`;
         p.since ??= sinceOf(brief, p.id);
-        withoutId(brief, p.id);
-        result = put(brief.prepared, p, TODAY_LANE_LIMITS.prepared);
+        result = place(brief, "prepared", p, TODAY_LANE_LIMITS.prepared);
         break;
       }
       case "fyi": {
         const f = normalizeFyi(raw, id);
         if (!f) return `${label}: skipped, an fyi needs a "title".`;
-        withoutId(brief, f.id);
-        result = put(brief.fyi, f, TODAY_LANE_LIMITS.fyi);
+        result = place(brief, "fyi", f, TODAY_LANE_LIMITS.fyi);
         break;
       }
       case "event": {
         const e = normalizeEvent(raw);
         if (!e) return `${label}: skipped, an event needs a "title" and a "start" as HH:MM.`;
-        withoutId(brief, e.id);
-        result = put(brief.events, e, TODAY_LANE_LIMITS.events);
+        result = place(brief, "events", e, TODAY_LANE_LIMITS.events);
         brief.events.sort(byEventStart);
         break;
       }

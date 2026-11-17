@@ -371,7 +371,7 @@ export function consecutiveFailedRuns(db: Database.Database, automationId: strin
 /** Total recorded automation LLM spend (USD) since `sinceMs`. Rows without a cost count as 0. */
 export function automationSpendSince(db: Database.Database, sinceMs: number): number {
   const row = db
-    .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS total FROM llm_usage WHERE source = 'automation' AND created_at >= ?")
+    .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS total FROM llm_usage WHERE source IN ('automation', 'today') AND created_at >= ?")
     .get(sinceMs) as { total: number };
   return row.total;
 }

@@ -193,7 +193,9 @@ What was built, and what's different from the full design below:
   follow-up.
 - **Storage:** briefs are saved as JSON in the automation's durable
   `out/today/<date>.json`. There's no `briefs` table yet.
-- **Actions:** done and discard are local (localStorage, per day). **Send with
+- **Actions:** done marks and draft edits are saved next to each brief
+  (`out/today/<date>.marks.json`, through `today:mark`); the old localStorage
+  marks are moved over once. **Send with
   Cairn** hands a draft to chat, which asks before posting. There's no overnight
   prep run yet: drafts are written during the same morning run. There's no
   "Since Friday" ledger.
@@ -208,7 +210,7 @@ What was built, and what's different from the full design below:
   **Prepared for you** unless the user asks to see all drafts. Saved briefs
   are re-normalised when read, so version 1 files still load.
 - **Act panel** (`today-act-panel.tsx`): answers, drafts and Ask Cairn open
-  a sheet over Today with its own chat thread (`today-<project>-<date>-<item>`,
+  a dialog over Today with its own chat thread (`today-<workspace>-<date>-<item>`,
   not listed until **Keep in chat**). `today:route` (`shared/today/route.ts`)
   picks the channel from the item's source and lists in-scope connector tools
   whose operation reads like a send on that channel. Send runs one chat turn
@@ -307,8 +309,9 @@ something you work from. Every item has an action. The agent has already done
 the first pass, and the page is built out of Cairn's own concepts (lanes,
 cards, sessions, projects) rather than a newsletter.
 
-- **Today tab in Overview** (`src/components/layout/project-overview/`), first
-  in the tab order. It only shows while the automation is on.
+- **Today view** (superseded the Today tab in Overview): a workspace view with
+  its own sidebar entry above Automations. While Today is off it shows a setup
+  screen.
 - **Header: the cairn is the summary.** A stack of four stones, each one a lane,
   sized by weight. The top stone (accent colour) is today's single focus.
   Clicking a stone jumps to its lane. Next to it, a one-paragraph lede in the

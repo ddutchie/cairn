@@ -26,7 +26,7 @@ describe("todayAllowsTool", () => {
     }
   });
   it("denies connector tools that change things, even with a read verb", () => {
-    for (const t of ["mcp__slack__send_message", "mcp__slack__post_message", "mcp__github__create_pull_request_review", "mcp__outlook__get_and_delete_mail", "mcp__x__do_thing", "mcp__atlassian__editJiraIssue", "mcp__atlassian__createConfluenceContent"]) {
+    for (const t of ["mcp__slack__send_message", "mcp__slack__post_message", "mcp__github__create_pull_request_review", "mcp__outlook__get_and_delete_mail", "mcp__helpdesk__get_and_resolve", "mcp__jira__get_and_complete_task", "mcp__x__do_thing", "mcp__atlassian__editJiraIssue", "mcp__atlassian__createConfluenceContent"]) {
       expect(todayAllowsTool(t)).toBe(false);
     }
   });
@@ -138,14 +138,17 @@ describe("workspace Today", () => {
     const morning = day(16, 7);
     saveTodayBrief(dir, a, morning);
     snapshotTodayBrief(dir, a, morning);
+    // A second version from the same second gets its own file instead of overwriting the first.
+    snapshotTodayBrief(dir, a, { ...morning, headline: "Day 16 again" });
     saveTodayBrief(dir, a, day(16, 12));
     updateTodayMarks(dir, a, "2026-11-01", { done: { t1: true } });
     const keys = listTodayHistory(dir, a).map((h) => h.key);
-    expect(keys).toEqual(["2026-11-16", "2026-11-16@0700", "2026-11-01"]);
-    expect(loadTodaySnapshot(dir, a, "2026-11-16@0700")?.brief.headline).toBe("Day 16");
+    expect(keys.sort()).toEqual(["2026-11-01", "2026-11-16", "2026-11-16@070000", "2026-11-16@070000-2"]);
+    expect(loadTodaySnapshot(dir, a, "2026-11-16@070000")?.brief.headline).toBe("Day 16");
+    expect(loadTodaySnapshot(dir, a, "2026-11-16@070000-2")?.brief.headline).toBe("Day 16 again");
     expect(loadTodaySnapshot(dir, a, "../../etc")).toBeNull();
     expect(pruneTodayFiles(dir, a, new Date(2026, 10, 16), 7)).toBe(2);
-    expect(listTodayHistory(dir, a).map((h) => h.key)).toEqual(["2026-11-16", "2026-11-16@0700"]);
+    expect(listTodayHistory(dir, a).map((h) => h.key).sort()).toEqual(["2026-11-16", "2026-11-16@070000", "2026-11-16@070000-2"]);
   });
 });
 

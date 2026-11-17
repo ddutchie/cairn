@@ -267,6 +267,8 @@ export async function runAutomation(
 ): Promise<void> {
   const { db, workspacePath } = ctx;
   const cached = getCachedConfig().aiConfig;
+  // Taken first, before any skip below, so a skipped run can't leave a rebuild for a later Refresh.
+  const rebuild = isTodayAutomation(automation) && takeTodayRebuild(automation.id);
 
   // A per-project Today row from the preview: the workspace row replaces it
   // (moved over the next time Today is read), so it never runs a brief.
@@ -413,7 +415,6 @@ export async function runAutomation(
   // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
   const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
   if (today) {
-    const rebuild = takeTodayRebuild(automation.id);
     recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild);
   }
 
@@ -606,9 +607,16 @@ export async function runAutomation(
 
   // Today builds its brief through tools. Each change is saved and pushed, so the view fills in while the run gathers.
   let todaySession: TodayBriefSession | null = null;
-  const saveToday = (brief: TodayBriefSession["brief"]) => {
-    try { saveTodayBrief(workspacePath, automation, brief); } catch (err) { console.warn("[heartbeat] failed to save Today brief:", err); }
-    try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status }); } catch { /* best-effort */ }
+  // Returns why the save failed, or null; the session remembers it so a failed last save fails the run.
+  const saveToday = (brief: TodayBriefSession["brief"]): string | null => {
+    let saveError: string | null = null;
+    try { saveTodayBrief(workspacePath, automation, brief); } catch (err) {
+      saveError = errMsg(err);
+      console.warn("[heartbeat] failed to save Today brief:", err);
+    }
+    if (todaySession) todaySession.saveError = saveError ?? undefined;
+    try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status, ...(saveError ? { saveError } : {}) }); } catch { /* best-effort */ }
+    return saveError;
   };
   if (today) {
     const now = new Date();
@@ -662,15 +670,18 @@ export async function runAutomation(
     const nonce = data.nonce as string | undefined;
     const trusted = argsByCall.get(callId) ?? {};
     emitRun("toolConfirmRequired", { tool: toolName, callId, label: data.label });
-    // Today is read-only and unattended: decide every ask here, never wait on the user.
-    if (today) {
-      const allowed = data.escalation !== true && todayToolFilter(todaySettings!)(toolName);
-      respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: allowed });
-      return;
-    }
     // Only a routine ask may be answered for the user. One raised for a protected path, a repeated
     // call, a rule or a hook, or to leave the shell sandbox, is asked whatever the approval mode.
     const routine = (data.by === undefined || data.by === "mode") && data.escalation !== true;
+    // Today is read-only and unattended: decide every ask here, never wait on the user. Anything but a
+    // routine ask is denied (nobody is there to review it), and so is a resource read from an app that's off.
+    if (today) {
+      const server = typeof trusted.server === "string" ? trusted.server : null;
+      const appOff = !!server && todaySettings!.excludedApps.includes(server);
+      const allowed = routine && !appOff && todayToolFilter(todaySettings!)(toolName);
+      respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: allowed });
+      return;
+    }
     if (routine && shouldAutoAllowAutomationTool(automation, toolName, trusted, connectorTools)) {
       respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: true });
       return;
@@ -768,6 +779,14 @@ export async function runAutomation(
     if (unfinished) saveToday(finishBrief(todaySession.brief, {}, new Date()));
     const b = todaySession.brief;
     const empty = b.needYou.length + b.prepared.length + b.fyi.length + b.events.length === 0;
+    if (todaySession.saveError) {
+      const error = `The brief couldn't be saved: ${todaySession.saveError}`;
+      finaliseLog("error", error);
+      updateAutomationRun(db, run.id, { status: "error", resultNoteId: null, error, scratch: finalScratch() });
+      insertNotification(db, "automation_run", `Automation failed: "${automation.name}"`, error, completionTarget());
+      cleanupRuns();
+      return;
+    }
     if (unfinished) {
       const error = empty
         ? "The run ended without building a brief. Try again, or pick a more capable model."

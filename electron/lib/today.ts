@@ -14,7 +14,8 @@
  *   - `today.json`: the settings;
  *   - `out/today/<date>.json`: the day's brief, saved after every brief tool call;
  *   - `out/today/<date>.marks.json`: what the user marked done and the drafts they edited;
- *   - `out/today/history/<date>@<HHMM>.json`: the version a same-day refresh replaced.
+ *   - `out/today/history/<date>@<HHMMSS>.json`: the version a same-day refresh replaced (`-2`, `-3`… when
+ *     two land in the same second; older builds wrote `@<HHMM>`).
  * Files older than `TODAY_KEEP_DAYS` are deleted when a run starts.
  */
 
@@ -327,13 +328,25 @@ export function updateTodayMarks(
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** Keep the version a same-day refresh is about to replace, as `history/<date>@<HHMM>.json`. */
+/** A history snapshot's key after the date: `@HHMM` (older builds) or `@HHMMSS`, then `-N` when it collided. */
+const SNAPSHOT_KEY = /@\d{4}(?:\d{2})?(?:-\d+)?/.source;
+const DATE_KEY = /\d{4}-\d{2}-\d{2}/.source;
+
+/** Keep the version a same-day refresh is about to replace, as `history/<date>@<HHMMSS>.json`. Never overwrites one. */
 export function snapshotTodayBrief(workspacePath: string, automation: Automation, brief: TodayBrief): void {
   const at = new Date(brief.generatedAt);
-  const stamp = Number.isNaN(at.getTime()) ? "0000" : `${pad(at.getHours())}${pad(at.getMinutes())}`;
+  const stamp = Number.isNaN(at.getTime()) ? "000000" : `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
   const dir = historyDir(workspacePath, automation);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${brief.date}@${stamp}.json`), JSON.stringify(brief, null, 2), "utf8");
+  for (let n = 1; ; n++) {
+    const file = path.join(dir, `${brief.date}@${stamp}${n > 1 ? `-${n}` : ""}.json`);
+    try {
+      fs.writeFileSync(file, JSON.stringify(brief, null, 2), { encoding: "utf8", flag: "wx" });
+      return;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST" || n >= 100) throw err;
+    }
+  }
 }
 
 /** Delete briefs, marks and snapshots from before the last `keepDays` days. Returns how many files went. */
@@ -373,7 +386,7 @@ export function listTodayHistory(workspacePath: string, automation: Automation):
     } catch { /* none yet */ }
   };
   add(todayDir(workspacePath, automation), /^\d{4}-\d{2}-\d{2}\.json$/);
-  add(historyDir(workspacePath, automation), /^\d{4}-\d{2}-\d{2}@\d{4}\.json$/);
+  add(historyDir(workspacePath, automation), new RegExp(`^${DATE_KEY}${SNAPSHOT_KEY}[.]json$`));
   return files.flatMap(({ key, file }) => {
     const b = readBriefFile(file);
     if (!b) return [];
@@ -387,7 +400,7 @@ export function listTodayHistory(workspacePath: string, automation: Automation):
 
 /** One saved version by its history key, with that day's marks. */
 export function loadTodaySnapshot(workspacePath: string, automation: Automation, key: string): { brief: TodayBrief; marks: TodayMarks } | null {
-  const m = key.match(/^(\d{4}-\d{2}-\d{2})(@\d{4})?$/);
+  const m = key.match(new RegExp(`^(${DATE_KEY})(${SNAPSHOT_KEY})?$`));
   if (!m) return null;
   const file = m[2] ? path.join(historyDir(workspacePath, automation), `${key}.json`) : path.join(todayDir(workspacePath, automation), `${key}.json`);
   const brief = readBriefFile(file);

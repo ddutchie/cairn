@@ -13,6 +13,7 @@
 import { registerContractHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { onSession, rejectBusy, rejectPrompt } from "./session-guards";
 import { handle } from "./result-helpers";
+import { forgetWindowSessions, markSessionOnScreen } from "../lib/session-on-screen";
 import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/chat-prompt";
 import { emitSessionChip } from "./engine-commands";
@@ -204,6 +205,23 @@ export function registerSessionRuntimeHandlers(
   registerContractHandle("session:schedule-list", (_event, req) => handle(async () => {
     return subagentResult(() => listEngineSchedules(ctx, req.sessionId));
   }));
+
+  // ── session:on-screen ────────────────────────────────────────────────────
+  // Surfaces report the session they show, so an approval in a chat the user
+  // isn't looking at still reaches the notification bell. A window's reports
+  // are dropped when it reloads or closes.
+  const trackedWindows = new Set<number>();
+  registerIpcOn("session:on-screen", (event, { sessionId, onScreen }: { sessionId: string; onScreen: boolean }) => {
+    const sender = event.sender;
+    const windowId = sender.id;
+    if (!trackedWindows.has(windowId)) {
+      trackedWindows.add(windowId);
+      const forget = () => forgetWindowSessions(windowId);
+      sender.on("did-start-navigation", (details) => { if (details.isMainFrame && !details.isSameDocument) forget(); });
+      sender.once("destroyed", () => { forget(); trackedWindows.delete(windowId); });
+    }
+    markSessionOnScreen(windowId, sessionId, onScreen);
+  });
 
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {

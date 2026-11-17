@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { ConversationComposer, type ConversationComposerProps } from "./ConversationComposer";
 import { ConversationEmptyState } from "./ConversationEmptyState";
 import { ConversationHeader } from "./ConversationHeader";
@@ -14,6 +14,7 @@ import type { ConnectorMeta } from "@/components/shared/ConnectorToolCard";
 import type { VirtuosoHandle } from "react-virtuoso";
 import type { ConversationUsage } from "./ConversationHeader";
 import { cn } from "@/lib/utils";
+import { useSessionOnScreen } from "@/hooks/useSessionOnScreen";
 import { WorkLoader } from "@/components/ui/work-loader";
 
 export interface ConversationProjectionState {
@@ -85,8 +86,11 @@ export function ConversationPane({
     <div aria-live="polite" aria-atomic="true" className="px-3 py-3 text-xs text-[var(--text-tertiary)]">{isLoading && <span className="inline-flex items-center gap-1.5"><WorkLoader phase={waitingOnUser ? "waiting" : "working"} size={18} />Cairn is working…</span>}<span className="sr-only">{isLoading ? "Working" : ""}</span></div>
   ), [isLoading, waitingOnUser]);
 
+  // While this pane is visible, approval notices for its session stay out of the bell.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useSessionOnScreen(sessionId === "chat-" ? null : sessionId, rootRef);
   return (
-    <div className={cn("flex flex-1 min-h-0 flex-col overflow-hidden", className)} data-session-profile={profile}>
+    <div ref={rootRef} className={cn("flex flex-1 min-h-0 flex-col overflow-hidden", className)} data-session-profile={profile}>
       <ConversationHeader title={title ?? profile} usage={usage} contextLimit={contextLimit ?? 128000} actions={actions} schedule={{ sessionId, pollKey: isLoading }} />
       <span aria-live="polite" aria-atomic="true" className="sr-only">{isLoading ? "Working" : ""}</span>
       <ConversationTranscript

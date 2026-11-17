@@ -119,7 +119,8 @@ export interface TodayBrief {
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 const arr = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : [];
-const HHMM = /^\d{1,2}:\d{2}$/;
+/** A real local clock time, "7:05" to "23:59". */
+const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/;
 const PREPARED_KINDS = new Set(["reply", "review", "cards", "note", "other"]);
 const SOURCE_STATUS = new Set(["ok", "empty", "error", "skipped"]);
 const TONES = new Set(["good", "warn", "neutral"]);
@@ -188,7 +189,8 @@ export function normalizeEvent(x: Record<string, unknown>): TodayEvent | null {
   if (!title || !start || !HHMM.test(start)) return null;
   const end = str(x.end);
   return {
-    id: str(x.id) ?? `${start}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`,
+    // Letters and digits in any script, so "会議" and "面接" at the same time stay two events.
+    id: str(x.id) ?? `${start}-${title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 40)}`,
     title, start, end: end && HHMM.test(end) ? end : undefined, location: str(x.location), url: str(x.url), note: str(x.note),
   };
 }
@@ -338,7 +340,9 @@ export function dayBlocks(
   const free: Array<{ s: number; e: number }> = [];
   let cursor = dayStart;
   for (const m of meetings) {
-    if (m.s - cursor >= minFree) free.push({ s: cursor, e: Math.min(m.s, dayEnd) });
+    // Clip to the working day first: a meeting after dayEnd must not add a gap that ends before it starts.
+    const gapEnd = Math.min(m.s, dayEnd);
+    if (gapEnd - cursor >= minFree) free.push({ s: cursor, e: gapEnd });
     cursor = Math.max(cursor, m.en);
   }
   if (dayEnd - cursor >= minFree) free.push({ s: cursor, e: dayEnd });
@@ -401,6 +405,8 @@ export interface TodayProjectFacts {
   inReview: TodayFactCard[];
   /** In progress or in review, unchanged for 5+ days. */
   stale: TodayFactCard[];
+  /** How many cards each list has in all; the lists stop at a few. Missing on facts saved by an older build. */
+  counts?: { dueToday: number; overdue: number; inReview: number; stale: number };
   /** Automations whose latest runs failed. */
   failingAutomations: Array<{ id: string; name: string; failures: number }>;
   /** Notes changed since yesterday. */

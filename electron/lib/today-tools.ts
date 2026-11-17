@@ -20,6 +20,8 @@ export interface TodayBriefSession {
   brief: TodayBrief;
   /** True once `today_finish` ran. */
   finished: boolean;
+  /** Why the last save failed; cleared by the next save that works. */
+  saveError?: string;
 }
 
 const ITEM_SCHEMA = {
@@ -54,14 +56,22 @@ const ITEM_SCHEMA = {
   required: ["lane"],
 };
 
-export function todayBriefTools(session: TodayBriefSession, onChange: (brief: TodayBrief) => void): AgentTool[] {
+/**
+ * `onChange` saves the brief and returns why it couldn't, or null. A failed save fails the tool call,
+ * so the model hears about it; the brief in memory keeps the change, and the next save writes it all.
+ */
+export function todayBriefTools(session: TodayBriefSession, onChange: (brief: TodayBrief) => string | null): AgentTool[] {
   const tool = (name: string, description: string, parameters: Record<string, unknown>, run: (args: Record<string, unknown>) => string) =>
     defineTool({
       name, description, parameters: fromJsonSchema(parameters),
       risk: () => ({ class: "WRITE_LOCAL" }),
       execute: async (args) => ({ content: run(args as Record<string, unknown>) }),
     });
-  const changed = (lines: string[]) => { onChange(session.brief); return lines.join("\n"); };
+  const saved = () => {
+    const error = onChange(session.brief);
+    if (error) throw new Error(`The brief changed but couldn't be saved: ${error}`);
+  };
+  const changed = (lines: string[]) => { saved(); return lines.join("\n"); };
   return [
     tool("today_read",
       "Read the Today brief as it stands: the ids, lanes and titles of every item. Call it first on a refresh, so you update items already there instead of adding copies.",
@@ -102,7 +112,7 @@ export function todayBriefTools(session: TodayBriefSession, onChange: (brief: To
       (a) => {
         finishBrief(session.brief, a, new Date());
         session.finished = true;
-        onChange(session.brief);
+        saved();
         return `Brief finished: ${session.brief.needYou.length} need you, ${session.brief.prepared.length} drafts, ${session.brief.fyi.length} FYI, ${session.brief.events.length} events.`;
       }),
   ];

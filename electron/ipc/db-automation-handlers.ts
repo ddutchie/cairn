@@ -167,11 +167,12 @@ export function registerAutomationHandlers(ctx: DbContext): void {
     return { runId };
   }));
 
-  registerContractHandle("today:route", (_e, { workspaceId, source, target, kind }) => handle(async () => {
+  registerContractHandle("today:route", (_e, { workspaceId, source, target, kind, projectId }) => handle(async () => {
     const channel = channelFor(source, target, kind);
     const base = { channel, label: channelLabel(channel) };
     try {
-      const scope = todayScope(workspaceId);
+      // The item's chat runs in one project, so the send tools must come from that project's scope too.
+      const scope = projectId ? projectId : todayScope(workspaceId);
       const defs = await getExternalToolDefs(ctx.db, workspaceId, scope);
       const names: Record<string, string> = {};
       for (const c of listScopedConnectors(ctx.db, workspaceId, scope)) names[c.id] = c.name;

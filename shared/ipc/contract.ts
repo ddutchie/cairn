@@ -343,8 +343,9 @@ export interface IpcContract {
   /** `rebuild` ignores when the last brief ran and looks back 24 hours (72 on a Monday). */
   "today:run": { args: [req: { workspaceId: string; rebuild?: boolean }]; result: { runId: string } | { skipped: true } };
   /** Where a Today item goes, and which in-scope connector tools could send it there. */
+  /** `projectId` scopes the connectors to the project the item's chat runs in; without it, every included project. */
   "today:route": {
-    args: [req: { workspaceId: string; source: string; target?: string; kind?: string }];
+    args: [req: { workspaceId: string; source: string; target?: string; kind?: string; projectId?: string }];
     result: TodayRoute;
   };
   /** Save a debug bundle (prompt, brief, recent runs, the last run's log and session events) via a save dialog. Null when cancelled. */
@@ -749,7 +750,8 @@ export interface SpellcheckContext {
 export interface IpcEvents {
   "automation:run": AutomationRunEvent;
   /** A Today run changed the brief (each brief tool call), so the view reloads. */
-  "today:updated": { workspaceId: string; status: "gathering" | "ready" };
+  /** `saveError` is set when the brief couldn't be written to disk (cleared by the next save that works). */
+  "today:updated": { workspaceId: string; status: "gathering" | "ready"; saveError?: string };
   /** Unread notification count changed (bell + badge). */
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
@@ -811,6 +813,8 @@ export interface IpcSends {
   "user-style:abort": undefined;
   "session:prompt": unknown;
   "session:abort": { sessionId: string };
+  /** A surface in this window started or stopped showing a session (for approval notices). */
+  "session:on-screen": { sessionId: string; onScreen: boolean };
   "session:clear": { sessionId: string };
   "session:destroy": { sessionId: string };
   "session:compact-now": unknown;
@@ -842,6 +846,7 @@ const SEND_CHANNELS: { [S in IpcSendChannel]: true } = {
   "user-style:abort": true,
   "session:prompt": true,
   "session:abort": true,
+  "session:on-screen": true,
   "session:clear": true,
   "session:destroy": true,
   "session:compact-now": true,

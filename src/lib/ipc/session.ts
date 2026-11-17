@@ -30,6 +30,8 @@ export const sessionClient = {
   runningIds: () => session((s) => s.runningIds()),
   /** Abort the current in-flight turn for this session. */
   abort: (sessionId: string) => send((s) => s.abort(sessionId)),
+  /** Tell the main process this window started or stopped showing a session (approval notices skip shown ones). */
+  setOnScreen: (sessionId: string, onScreen: boolean) => send((s) => s.setOnScreen(sessionId, onScreen)),
   /** Clear message history for a session (start fresh). */
   clear: (sessionId: string) => send((s) => s.clear(sessionId)),
   /** Destroy a session when the tab is closed. */

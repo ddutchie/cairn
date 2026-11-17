@@ -10,6 +10,7 @@ import type {
 } from "../../../shared/types/automations";
 import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../../../shared/today/brief";
 import { domainCall, type ElectronApi } from "./client";
+import type { IpcArgs, IpcEvents } from "../../../shared/ipc/contract";
 
 const automation = <T>(fn: (api: ElectronApi["automation"]) => Promise<T>) => domainCall("automation", fn);
 
@@ -45,7 +46,7 @@ export const automationsClient = {
     automation((a) => a.env.delete(automationId, name)),
   /** Subscribe to live run activity; returns the unsubscribe function (a no-op off-Electron). */
   onRunEvent: (cb: (event: AutomationRunEvent) => void): (() => void) =>
-    window.electron?.automation.onRunEvent(cb) ?? (() => {}),
+    window.electron?.automation?.onRunEvent(cb) ?? (() => {}),
   files: (id: string) => automation((a) => a.files(id)),
   checkRequirements: (workspaceId: string, projectId: string, requires: AutomationRequirement[]) =>
     automation((a) => a.checkRequirements(workspaceId, projectId, requires)),
@@ -54,13 +55,13 @@ export const automationsClient = {
 /** The built-in Today automation behind the Today view (one per workspace). */
 export const todayClient = {
   get: (workspaceId: string): Promise<TodayState> => automation((a) => a.today.get(workspaceId)),
-  enable: (req: { workspaceId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }): Promise<TodayState> =>
+  enable: (req: IpcArgs<"today:enable">[0]): Promise<TodayState> =>
     automation((a) => a.today.enable(req)),
   disable: (workspaceId: string): Promise<TodayState> => automation((a) => a.today.disable(workspaceId)),
   /** Which projects and apps Today reads. */
   settings: (workspaceId: string, settings: TodaySettings): Promise<TodayState> => automation((a) => a.today.settings(workspaceId, settings)),
   /** Mark items done or not, and set or drop (null) draft edits, for one day. */
-  mark: (workspaceId: string, date: string, patch: { done?: Record<string, boolean>; edits?: Record<string, string | null> }): Promise<TodayMarks> =>
+  mark: (workspaceId: string, date: string, patch: Omit<IpcArgs<"today:mark">[0], "workspaceId" | "date">): Promise<TodayMarks> =>
     automation((a) => a.today.mark(workspaceId, date, patch)),
   /** Saved versions, newest first. */
   history: (workspaceId: string): Promise<TodayHistoryEntry[]> => automation((a) => a.today.history(workspaceId)),
@@ -69,11 +70,11 @@ export const todayClient = {
   /** Starts a run now; `skipped` when one is already running. */
   run: (workspaceId: string, rebuild?: boolean) => automation((a) => a.today.run(workspaceId, rebuild)),
   /** Where an item goes and which connector tools could send it. Connects to the in-scope servers, so it can take a moment. */
-  route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
+  route: (req: IpcArgs<"today:route">[0]) =>
     automation((a) => a.today.route(req)),
   /** Saves a debug bundle through a save dialog; null when cancelled. */
   export: (workspaceId: string) => automation((a) => a.today.export(workspaceId)),
   /** A Today run changed the brief; returns the unsubscribe function (a no-op off-Electron). */
-  onUpdated: (cb: (event: { workspaceId: string; status: "gathering" | "ready" }) => void): (() => void) =>
-    window.electron?.automation.today.onUpdated(cb) ?? (() => {}),
+  onUpdated: (cb: (event: IpcEvents["today:updated"]) => void): (() => void) =>
+    window.electron?.automation?.today?.onUpdated(cb) ?? (() => {}),
 };
