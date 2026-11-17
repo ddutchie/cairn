@@ -174,23 +174,30 @@ matches where the tab lives and how connectors are attached (project or
 global). It shows in Automations as "Today", with run history, the run log and
 the daily budget, like any other automation.
 
-### Preview implementation (`feature/today-brief`)
+### First implementation (parts superseded by "Workspace Today" and "As shipped in 3.2.0")
 
-What was built, and what's different from the full design below:
+What was built first, and what's different from the full design below:
 
 - **Gathering is agent-driven, not adapter-driven.** The Today automation
   runs the normal heartbeat runner with a fixed recipe (`TODAY_RECIPE` in
   `electron/lib/today.ts`). The agent uses whatever connector tools are
   attached (Slack, Work IQ, GitHub, Atlassian…) and ends with one JSON
   object. `shared/today/brief.ts` parses and normalises it. There are no
-  per-connector adapters yet.
+  per-connector adapters yet. (Superseded: the run now builds the brief with
+  brief tools; see "Workspace Today".)
 - **Read-only gate:** the automation runs in `ask` mode, and the runner
-  answers every ask itself (`todayAllowsTool`). Cairn and engine read tools
-  pass. Connector tools pass only when their operation name reads like a read
-  (`search_`, `get_`, `list_`, `ask`…) and contains no write verb. Everything
-  else is denied. MCP tools carry no reliable read-only flag in Cairn yet,
-  so this is a name heuristic. Honouring MCP `readOnlyHint` annotations is the
-  follow-up.
+  answers every ask itself (`todayAllowsTool`, `todayToolFilter`). Cairn read
+  tools, the brief tools, `skill`, `todo_write` and the MCP resource tools
+  pass. Local file reads (`read`, `grep`, `glob`) and `web_fetch` are left out:
+  the run reads untrusted messages, and with both it could be talked into
+  reading a file and sending it to a URL. Connector tools pass only when their
+  operation name reads like a read (`search_`, `get_`, `list_`, `ask`…) and
+  contains no write verb (`WRITE_VERB` in `shared/today/route.ts`). Asks
+  raised by a hook, a rule or a sandbox escalation are denied, since nobody is
+  there to review them. MCP tools carry no reliable read-only flag in Cairn
+  yet, so this is a name heuristic. Honouring MCP `readOnlyHint` annotations
+  is the follow-up, and custom services (which record an HTTP method) could be
+  limited to GET.
 - **Storage:** briefs are saved as JSON in the automation's durable
   `out/today/<date>.json`. There's no `briefs` table yet.
 - **Actions:** done marks and draft edits are saved next to each brief
@@ -212,12 +219,21 @@ What was built, and what's different from the full design below:
 - **Act panel** (`today-act-panel.tsx`): answers, drafts and Ask Cairn open
   a dialog over Today with its own chat thread (`today-<workspace>-<date>-<item>`,
   not listed until **Keep in chat**). `today:route` (`shared/today/route.ts`)
-  picks the channel from the item's source and lists in-scope connector tools
-  whose operation reads like a send on that channel. Send runs one chat turn
-  with the `safe` approval policy, so the send call's approval card (tool and
-  arguments) shows in the panel. A finished write call marks the item done.
-  This is the same name heuristic as the read-only gate; MCP
-  `readOnlyHint`/`destructiveHint` annotations would replace both.
+  picks the channel from the item's source and lists connector tools in the
+  item's project scope whose operation reads like a send on that channel.
+  Send runs one chat turn with the `safe` approval policy, so the send call's
+  approval card (tool and arguments) shows in the panel.
+  - The chat can change Cairn when asked (cards, notes) but sends nothing
+    outside Cairn until **Send**. The message logged is what the user typed;
+    the instructions around it go as model-only `context` on the chat prompt.
+  - A finished connector write marks the item done, and so does a Cairn write
+    after **Send** (board items). Done is latched in the panel, so it holds
+    after the turn ends and the live tool calls clear.
+  - Reopening an item restores its chat from the session log and picks up a
+    reply still running. Closing mid-reply keeps the thread in the chat list
+    and reloads it when the turn ends (`reloadThreadMessages`).
+  - The send check is the same name heuristic as the read-only gate; MCP
+    `readOnlyHint`/`destructiveHint` annotations would replace both.
 
 ### Workspace Today (built on `feature/today-brief`)
 
@@ -229,10 +245,11 @@ workspace belongs to one user.
   per-project Today rows are deleted when the workspace one is turned on.
   Settings live in the automation folder (`today.json`): the projects to
   include, which apps to read (by connector server id), and the schedule.
-- **Connector scope:** the union of the global connectors and those attached
-  to the included projects. App toggles filter the toolset by server id
-  (`toolFilter`), so an app that's turned off isn't offered to the model at
-  all.
+- **Connector scope:** each included project resolves its own attachments
+  (global plus its own, where its disables win), then the projects are
+  combined. Apps turned off are dropped from the scope itself
+  (`ToolScope` `{ projects, exclude }` in `electron/lib/external-tools.ts`), so
+  they're never connected, described in the system prompt or called.
 - **Brief tools, not one JSON answer:** the run gets `today_read`,
   `today_upsert` (one item at a time: a decision, to-do, draft, FYI or event,
   each with a stable id built from its source), `today_remove` and
@@ -252,6 +269,36 @@ workspace belongs to one user.
   and unread.
 - **Usage:** Today runs record usage as their own source, **Today brief**, not
   as "automation".
+
+### As shipped in 3.2.0
+
+- **Carry-over and history:** a new day's run starts from the last brief's
+  open decisions, to-dos and drafts (with `since` and draft edits). A
+  same-day refresh first saves the version it replaces as
+  `history/<date>@<HHMMSS>[-N].json` (never overwritten). Files older than
+  30 days (`TODAY_KEEP_DAYS`) are pruned when a run starts; the previous
+  brief's marks are read before that.
+- **Look-back:** each run looks back from the start of the last run that
+  finished (`todayLookBackFrom`), so a failed run doesn't narrow the next.
+  **Rebuild brief** forces 24 hours (72 on a Monday); the flag is taken at
+  the very start of the run, before any skip.
+- **Cost and speed:** low reasoning effort (`todayReasoningEffort`), connector
+  results cut at 16,000 characters, at least 30 steps. Today's spend
+  (`source = 'today'`) counts toward the daily automation budget.
+- **Failure:** a brief that can't be saved fails the tool call and the run,
+  and Today shows why (`saveError` on `today:updated`). A run that fails or
+  stops early closes what it found. Today is retried once after a failure and
+  never auto-paused, unlike other automations.
+- **Approval notices:** an approval or question in a session no window is
+  showing goes to the notification bell even while Cairn is focused
+  (`session:on-screen`, `electron/lib/session-on-screen.ts`). The Today run
+  itself never waits on the user.
+- **Debug export:** `cairn-today-debug/3` holds the last run's setup (model,
+  effort, system prompt, tools), its exact prompt and per-step timings.
+- **Known gaps:** no wall-clock limit on a stalled run (all automations); the
+  brief's date uses the computer's timezone while the schedule uses the one
+  saved at setup; reopening an item doesn't show an approval card that was
+  pending when it closed.
 
 ### Gathering from MCP: deterministic first, agent as fallback
 
