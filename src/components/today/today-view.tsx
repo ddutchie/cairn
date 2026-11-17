@@ -15,7 +15,8 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Download, ExternalLink, MessageSquare, Pencil, Play, RefreshCw, RotateCcw, Settings2, X } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, MessageSquare, NotebookText, Pencil, Play, RefreshCw, RotateCcw, Settings2, X } from "lucide-react";
+import { MarkdownContent } from "@/components/conversation/MarkdownContent";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -479,6 +480,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
         {state.running ? <MiniStack size={13} busy /> : <RefreshCw size={12} />} {state.running ? "Gathering" : brief ? "Refresh" : "Run now"}
       </Button>
       <TodaySettings key={`${state.time}-${state.weekdaysOnly}`} state={state} onSchedule={onSchedule} onSettings={onSettings} onDisable={onDisable} onExport={onExport} onRebuild={() => onRun(true)} />
+      {brief?.note && !state.running && <RunNote note={brief.note} at={brief.generatedAt} />}
       <span className="text-2xs text-[var(--text-tertiary)] ml-1">
         {state.running ? (liveTool?.tool ? runStep(liveTool.tool, liveTool.args, liveTool.label) : "Starting the run") : (
           <>
@@ -712,6 +714,26 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
       )}
     </div>
     </ProjectNames.Provider>
+  );
+}
+
+/** The run's closing message (what it did, what failed), behind a button so the brief stays one page. */
+function RunNote({ note, at }: { note: string; at: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><NotebookText size={12} /> Run notes</Button>
+      <ModalShell
+        open={open}
+        onClose={() => setOpen(false)}
+        size="md"
+        scrollable
+        title={<span className="flex items-center gap-2"><NotebookText size={14} className="text-[var(--text-tertiary)]" /> Run notes</span>}
+        subtitle={`What Cairn said when it finished, ${formatRelative(at)}`}
+      >
+        <div className="text-sm text-[var(--text-secondary)]"><MarkdownContent content={note} /></div>
+      </ModalShell>
+    </>
   );
 }
 

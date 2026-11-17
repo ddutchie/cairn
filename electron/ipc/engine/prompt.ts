@@ -211,6 +211,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   a.onSetup?.({
     model: route.model, api: route.api, baseUrl: route.baseUrl, contextWindow: route.contextWindow, maxTokens: route.maxTokens,
     reasoningEffort: a.llmConfig.reasoningEffort, systemPrompt, tools: tools.map((t) => t.name),
+    toolDefs: tools.map((t) => ({ name: t.name, description: t.description, parameters: JSON.parse(JSON.stringify(t.parameters ?? {})) as unknown })),
   });
   // Mode changes travel with the prompt. In the system prompt they would re-write the provider's
   // cache for the whole conversation on every switch.

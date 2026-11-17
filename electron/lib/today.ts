@@ -99,39 +99,62 @@ export function todayReasoningEffort(chat: string | undefined): "off" | "low" {
 
 export const TODAY_RESULT_CHARS = 16_000;
 
-export const TODAY_RECIPE = `You are preparing the user's Today brief: one short page, read in under a minute, that says what needs them across their projects and apps. Work read-only: tools that send, post, create, edit or delete aren't available to you.
+/**
+ * Today's own system prompt. Runs used to get the chat assistant's, which tells the model to call
+ * get_context first, write without asking and reply in markdown: wrong for an unattended, read-only
+ * run. Fixed text, so the provider can cache it; everything that changes per run is in the prompt.
+ */
+export const TODAY_SYSTEM_PROMPT = `You are Cairn's Today brief builder. You run unattended, usually before the user starts work, so there's nobody to ask: decide for yourself and keep going.
 
-Build the brief with the brief tools as you go:
+You can only read. Tools that send, post, create, edit or delete aren't available, so don't look for them and never try to send anything. You write the brief only through the today_* tools. After today_finish, end with a short note for the user, at most 5 bullets: what you changed and what failed or was missing. Cairn shows it as the run's notes. Keep anything else you write to a sentence.
+
+Use only what tool results and the project facts say. Never invent a name, time, id or number. When something can't be found, say so in today_finish's sources rather than guessing.`;
+
+export const TODAY_RECIPE = `Prepare the user's Today brief: one short page, read in under a minute, that says what needs them across their projects and apps. The sections below say what to gather; "Now" at the end gives the date, the time zone and the exact time to look back to.
+
+## How to build it
 - Call today_read first. On a refresh it lists what is already there: update those items by id instead of adding copies, and remove the ones that no longer hold.
+- Then make all your searches in one round, in parallel (calendar, communication, work tracking), and follow up only where a result needs it.
 - Call today_upsert as soon as you have items (several per call). The user watches them arrive, so don't save everything for the end.
 - Call today_remove for items that were handled or are no longer true.
-- Call today_finish once, last, with the headline, the lede and every app you tried.
+- Call today_finish once, last, with the headline, the lede and a source for each area below.
+- Keep your thinking short: decide, then put the item text straight into today_upsert. Don't plan every call or re-read these instructions.
 
-Items with "carriedSince" are still open from an earlier day. Don't look each one up: the searches below show what changed. Remove one if those results or the project facts show it was handled (answered, merged, closed, moved on), update it if something changed, and otherwise leave it as it is. Don't add a second copy of a carried item.
+## Calendar
+- Read the user's whole calendar for today on every run, whatever the last brief covered. The calendar is a picture of the day, not a list of changes.
+- Use whichever connected tool can read the calendar: a calendar or events tool if there is one, or an assistant-style tool you can ask about the user's schedule. Ask about today's meetings in a call of its own, not combined with mail or messages, and ask for start and end times.
+- Add each meeting as an "event" with title, start and end as local 24-hour HH:MM (10:35 AM is "10:35", 1 PM is "13:00"), and location when given. Leave out declined and cancelled meetings and all-day entries. On a refresh, update events by id and remove the ones that are gone.
+- Use note only for a clash or something to prepare. Don't add up free time or count meetings: Cairn works that out from the events.
+- If no connected tool can read a calendar, add no events and record the calendar source as "error" with the note "no calendar app connected". If a tool answers that it can't reach the calendar right now, ask once more with a shorter question; if it still can't, record that.
 
-How to work:
-- Work in a few rounds. After today_read, make all your searches in one round, in parallel, then follow up only where a result needs it.
-- Keep your thinking short. Don't plan every call or write items out in your thinking: decide, then put the item text straight into today_upsert.
-- Don't re-read these instructions in your thinking.
+## Communication
+- Search messages and mail since the look-back time in "Now": chat apps (Slack, Teams and the like), email, and assistant-style tools that can search them.
+- Look for what waits on the user: mentions, direct messages, questions asked of them, requests, and things they promised.
+- Keep each call narrow: to the user (mentions, DMs, their inbox), since the look-back time, at most 20 results. Don't list every channel. When a tool takes a Unix timestamp, use the one in "Now"; don't work one out yourself.
 
-What to gather:
-1. The project facts below come from Cairn's board, notes and automations. Don't search the board for them again; turn what matters into items. A card due today or overdue is a todo (id "card-<cardId>", with its projectId). A failing automation is an fyi with tone "warn". A card stuck in review can be a decision ("Merge or send it back?").
-2. Use every connected app tool that can search or read (for example Slack, Outlook, Teams or Work IQ, GitHub, Jira, Confluence) for what happened since the last brief (see "Now"; roughly the last 24 hours when there was none, 72 on a Monday):
-   - what waits on the user: mentions, direct messages, review requests, assigned issues, questions asked of them, things they promised;
-   - today's meetings, with times (lane "event");
-   - progress worth knowing that needs no action (lane "fyi").
-   If an app fails or finds nothing, record that in today_finish's sources and move on.
-   Keep each call narrow: filter by date (since the last brief) and to the user (mentions, DMs, assigned to them), ask for at most 20 results, and don't list every channel or project. Results over 16,000 characters are cut; narrow the call rather than paging through.
-   Call get_item only for cards you will turn into an item; the project facts already have their titles and dates.
-3. For up to 4 items that need a written answer (a reply, review notes, a card breakdown), write the draft yourself (lane "draft") and link it from the decision choice it carries out with draftId. Never send anything.
+## Work tracking
+- Search issue trackers and code hosts (Jira, GitHub, Linear and the like) for what changed since the look-back time: issues assigned to the user, review requests, and comments or status changes on their items.
+- Results over 16,000 characters are cut: narrow the call rather than paging through.
 
-How to write it:
+## Projects (from Cairn)
+- The project facts at the end come from Cairn's boards, notes and automations. Don't search the board for them again; turn what matters into items.
+- A card due today or overdue is a todo (id "card-<cardId>", with its projectId). A card stuck in review can be a decision ("Merge or send it back?"). A failing automation is an fyi with tone "warn".
+- Call get_item only for cards you will turn into an item; the facts already have their titles and dates.
+
+## Carried items
+Items with "carriedSince" are still open from an earlier day. Don't look each one up: the searches above show what changed. Remove one if those results or the project facts show it was handled (answered, merged, closed, moved on), update it if something changed, and otherwise leave it as it is. Don't add a second copy.
+
+## Drafts
+For up to 4 items that need a written answer (a reply, review notes, a card breakdown), write the draft yourself (lane "draft") and link it from the decision choice it carries out with draftId.
+
+## How to write items
 - A "decision" is something the user has to choose: the question is yes/no or either/or, with 2 or 3 choices of 2–5 words, the one you'd recommend first. Anything else is a "todo": the action, verb first, with no choices.
 - body: at most 30 words. why: one sentence on why it ranks there. facts: up to 3 chips of 2–6 words (who asked, when, what's at stake).
 - Give every item an id built from where it came from, and its projectId when it clearly belongs to a project.
-- Use real names, ids and numbers from tool results. Never invent anything you didn't see.
+- Progress worth knowing that needs no action is "fyi".
 - Keep at most 6 decisions and to-dos, 5 drafts and 8 fyi items, most urgent first.
-- headline: at most 10 words, verb first, naming the first decision. lede: at most 25 words of context, no counts (Cairn shows those). Don't add up free time or count meetings: Cairn works that out from the events.`;
+- headline: at most 10 words, verb first, naming the first decision. lede: at most 25 words of context, no counts (Cairn shows those).
+- sources in today_finish: one entry for the calendar, then one for each app you searched, with "ok", "empty" or "error" and a short note.`;
 
 /**
  * Where a run's "since the last brief" starts: when the last run that finished properly started.
@@ -158,12 +181,42 @@ export function takeTodayRebuild(automationId: string): boolean { return pending
  */
 export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt: string | null, now: Date = new Date(), rebuild = false): string {
   const when = (d: Date) => `${d.toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
-  const last = rebuild
-    ? "The user asked for a rebuild: ignore when the last brief ran and look back the last 24 hours (72 on a Monday), as if there were no earlier brief. Items already in the brief stay unless what you find shows they were handled."
-    : lastBriefAt && !Number.isNaN(new Date(lastBriefAt).getTime())
-      ? `The last brief ran ${when(new Date(lastBriefAt))}: look for what changed since then.`
-      : "There's no earlier brief.";
-  return `${TODAY_RECIPE}\n\n## Now\n${when(now)} local time. ${last}\n\n## Project facts (from Cairn)\n${factsForPrompt(facts)}`;
+  const last = lastBriefAt ? new Date(lastBriefAt) : null;
+  const fromLast = !rebuild && last !== null && !Number.isNaN(last.getTime());
+  // Cairn works the look-back time out, in every form a tool may want: a model's own Unix time can be
+  // a year out (a Slack search once started from the year before).
+  const since = fromLast && last ? last : new Date(now.getTime() - (now.getDay() === 1 ? 72 : 24) * HOUR_MS);
+  const why = rebuild
+    ? "The user asked for a rebuild: look back the full window, as if there were no earlier brief. Items already in the brief stay unless what you find shows they were handled."
+    : fromLast ? "That's when the last brief ran: look for what changed since then." : "There's no earlier brief, so this looks back 24 hours (72 on a Monday).";
+  return `${TODAY_RECIPE}
+
+## Now
+- Today: ${when(now)} local time (${timeZoneLabel(now)}). Today's date is ${localDate(now)}.
+- Look back to: ${when(since)} local time, ${isoWithOffset(since)}, Unix ${Math.floor(since.getTime() / 1000)}. ${why}
+
+## Project facts (from Cairn)
+${factsForPrompt(facts)}`;
+}
+
+const HOUR_MS = 3_600_000;
+
+/** "Europe/London, UTC+00:00": the zone name when the runtime knows it, and the offset. */
+function timeZoneLabel(d: Date): string {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return [zone, `UTC${utcOffset(d)}`].filter(Boolean).join(", ");
+}
+
+function utcOffset(d: Date): string {
+  const m = -d.getTimezoneOffset();
+  const pad = (n: number) => String(Math.floor(Math.abs(n))).padStart(2, "0");
+  return `${m < 0 ? "-" : "+"}${pad(m / 60)}:${pad(m % 60)}`;
+}
+
+/** Local time as ISO 8601 with its offset, e.g. 2026-11-16T20:33:00-05:00. */
+function isoWithOffset(d: Date): string {
+  const t = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:00`;
+  return `${localDate(d)}T${t}${utcOffset(d)}`;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────
@@ -565,6 +618,7 @@ export function buildTodayDebugExport(
       lastRunPrompt: runLog?.recipe ?? null,
       lastRunSteps: sessionEvents ? summariseRunSteps(sessionEvents) : null,
       // What the next run would be sent, built now.
+      nextSystemPrompt: TODAY_SYSTEM_PROMPT,
       nextPrompt: todayPrompt(projectFacts(db, workspaceId, included), todayLookBackFrom(db, a.id)),
       brief,
       marks: brief ? readTodayMarks(workspacePath, a, brief.date) : null,

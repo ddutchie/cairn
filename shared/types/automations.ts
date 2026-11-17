@@ -159,6 +159,8 @@ export interface RunSetup {
   reasoningEffort?: string;
   systemPrompt: string;
   tools: string[];
+  /** Each tool's description and JSON schema, so a run can be replayed outside the app (Today only). */
+  toolDefs?: { name: string; description: string; parameters: unknown }[];
 }
 
 /** A persisted per-run transcript — the inspectable record of a run. */

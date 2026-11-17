@@ -114,6 +114,8 @@ export interface TodayBrief {
   sources: TodaySourceStatus[];
   /** Optional hint about a missing source that would have helped. */
   gap?: string;
+  /** The run's closing message: what it did and what failed, in its own words (shown behind a button). */
+  note?: string;
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
@@ -263,8 +265,12 @@ export function parseTodayBrief(text: string, now: Date = new Date()): TodayBrie
     focusId: focusItem?.id,
     events, needYou, prepared, fyi, sources,
     gap: str(o.gap),
+    note: str(o.note)?.slice(0, TODAY_NOTE_CHARS),
   };
 }
+
+/** Longest run note kept with a brief. */
+export const TODAY_NOTE_CHARS = 4000;
 
 /** Keep at most `n` sentences and `maxWords` words; a model that rambles still fits the header. */
 export function firstSentences(text: string, n: number, maxWords: number): string {

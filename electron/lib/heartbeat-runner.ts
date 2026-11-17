@@ -76,13 +76,13 @@ import type { SessionProjection } from "../../shared/agent/session-projection";
 import { errMsg } from "../host-shared/errors";
 import {
   TODAY_RESULT_CHARS, includedProjects, isTodayAutomation, loadLatestTodayBrief, pruneTodayFiles, readTodayMarks, readTodaySettings, saveTodayBrief,
-  snapshotTodayBrief, takeTodayRebuild, todayLookBackFrom, todayPrompt, todayReasoningEffort, todayToolFilter,
+  snapshotTodayBrief, takeTodayRebuild, TODAY_SYSTEM_PROMPT, todayLookBackFrom, todayPrompt, todayReasoningEffort, todayToolFilter,
 } from "./today";
 import { projectFacts } from "./today-facts";
 import { todayBriefTools, type TodayBriefSession } from "./today-tools";
 import { finishBrief, startRefresh } from "../../shared/today/brief-edit";
 import { noteRunActivity } from "./run-activity";
-import { localDate } from "../../shared/today/brief";
+import { localDate, TODAY_NOTE_CHARS } from "../../shared/today/brief";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -564,8 +564,11 @@ export async function runAutomation(
   // run scripts, call connectors) — not just a data-only chat turn.
   const runDirForAgent = runDir ?? workspacePath;
   let finalContent = "";
+  // The last assistant message with text: Today keeps it with the brief as the run's note.
+  let lastMessage = "";
   const fold = createSessionEventFold({
     onText: (text) => { finalContent += text; emitRun("token", { delta: text }); },
+    onAssistantMessage: (m) => { if (m.text.trim()) lastMessage = m.text.trim(); },
     onReasoning: (text) => { log.thoughts += text; emitRun("thought", { delta: text }); },
     onToolCall: (call) => {
       const label = externalToolLabel(call.name, db);
@@ -731,7 +734,8 @@ export async function runAutomation(
       externalExclude: todaySettings?.excludedApps,
       externalResultChars: today ? TODAY_RESULT_CHARS : undefined,
       usageSource: today ? "today" : undefined,
-      systemPrompt: buildSystemPrompt(req),
+      // Today has its own: the chat assistant's tells the model to write without asking and reply in markdown.
+      systemPrompt: today ? TODAY_SYSTEM_PROMPT : buildSystemPrompt(req),
       llmConfig: {
         baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai",
         maxSteps, temperature: req.config?.temperature,
@@ -745,7 +749,8 @@ export async function runAutomation(
       extraTools: automationTools,
       // Today never sees a tool that writes, so no saved "always allow" grant can let one run.
       toolFilter: todaySettings ? todayToolFilter(todaySettings) : undefined,
-      onSetup: (setup) => { log.setup = setup; },
+      // Today keeps the tool schemas too, for its export (scripts/today-replay.mjs replays a run from it).
+      onSetup: (setup) => { log.setup = today ? setup : { ...setup, toolDefs: undefined }; },
       autoApprove: automation.approvalMode !== "ask",
       signal: abortCtrl.signal,
       tap: tapWithErrors,
@@ -780,7 +785,10 @@ export async function runAutomation(
   // Today: a run that never called today_finish still shows what it found, but the run is an error so the view can say why.
   if (todaySession) {
     const unfinished = !todaySession.finished;
-    if (unfinished) saveToday(finishBrief(todaySession.brief, {}, new Date()));
+    if (unfinished) finishBrief(todaySession.brief, {}, new Date());
+    // The closing message comes after today_finish, so it's saved with a second write.
+    todaySession.brief.note = lastMessage ? lastMessage.slice(0, TODAY_NOTE_CHARS) : undefined;
+    saveToday(todaySession.brief);
     const b = todaySession.brief;
     const empty = b.needYou.length + b.prepared.length + b.fyi.length + b.events.length === 0;
     if (todaySession.saveError) {

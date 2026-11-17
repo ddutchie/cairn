@@ -177,8 +177,27 @@ describe("todayLookBackFrom", () => {
     const now = new Date(2026, 10, 16, 20, 0);
     expect(todayPrompt([], "2026-11-16T19:00:00Z", now)).toContain("look for what changed since then");
     const rebuilt = todayPrompt([], "2026-11-16T19:00:00Z", now, true);
-    expect(rebuilt).toContain("look back the last 24 hours (72 on a Monday)");
-    expect(rebuilt).not.toContain("The last brief ran");
+    expect(rebuilt).toContain("The user asked for a rebuild");
+    expect(rebuilt).not.toContain("That's when the last brief ran");
+  });
+
+  it("gives the exact look-back time, so the model never works out Unix time itself", () => {
+    const last = "2026-11-16T19:00:00Z";
+    const now = new Date(2026, 10, 17, 7, 0); // a Tuesday
+    const p = todayPrompt([], last, now);
+    expect(p).toContain(`Unix ${Date.parse(last) / 1000}`);
+    expect(p).toContain("Today's date is 2026-11-17");
+    // No earlier brief: 24 hours back, 72 on a Monday.
+    expect(todayPrompt([], null, now)).toContain(`Unix ${Math.floor(now.getTime() / 1000) - 24 * 3600}`);
+    const monday = new Date(2026, 10, 16, 7, 0);
+    expect(todayPrompt([], null, monday)).toContain(`Unix ${Math.floor(monday.getTime() / 1000) - 72 * 3600}`);
+  });
+
+  it("asks for the calendar without naming one app", () => {
+    const p = todayPrompt([], null, new Date(2026, 10, 17, 7, 0));
+    expect(p).toContain("## Calendar");
+    expect(p).toContain("## Communication");
+    expect(p).not.toContain("Work IQ");
   });
 
   it("runs Today on low effort unless reasoning is off", () => {

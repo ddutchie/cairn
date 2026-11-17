@@ -39,7 +39,7 @@ export function emptyBrief(now: Date): TodayBrief {
 export function startRefresh(previous: TodayBrief | null, marks: TodayMarks | null, now: Date): TodayBrief {
   if (!previous) return emptyBrief(now);
   if (previous.date === localDate(now)) {
-    return { ...structuredClone(previous), status: "gathering", generatedAt: now.toISOString(), sources: [] };
+    return { ...structuredClone(previous), status: "gathering", generatedAt: now.toISOString(), sources: [], note: undefined };
   }
   const done = new Set(marks?.done ?? []);
   const edits = marks?.edits ?? {};
