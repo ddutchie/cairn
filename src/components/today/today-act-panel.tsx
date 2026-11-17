@@ -22,7 +22,7 @@ import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useLiveStream } from "@/lib/conversation/live-stream-store";
-import { createSessionEventFold } from "../../../../shared/agent/session-event-fold";
+import { createSessionEventFold } from "../../../shared/agent/session-event-fold";
 import { sessionClient } from "@/lib/ipc/session";
 import { hasElectron } from "@/lib/ipc/client";
 import { todayClient } from "@/lib/ipc/automations";
@@ -35,8 +35,8 @@ import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { WRITE_VERB, operationWords, type TodayRoute } from "../../../../shared/today/route";
-import type { TodayPrepared } from "../../../../shared/today/brief";
+import { WRITE_VERB, operationWords, type TodayRoute } from "../../../shared/today/route";
+import type { TodayPrepared } from "../../../shared/today/brief";
 
 /** What the panel acts on: a decision's answer, a to-do, or a prepared draft. */
 export interface TodayActTarget {
@@ -55,6 +55,8 @@ export interface TodayActTarget {
   context?: string;
   /** Sent once when the panel opens (Plan in slot). */
   initialPrompt?: string;
+  /** The Cairn project the item belongs to; its connectors are the ones the panel's chat can use. */
+  projectId?: string;
 }
 
 interface Turn { role: "user" | "assistant"; text: string }
@@ -79,7 +81,8 @@ function itemBrief(t: TodayActTarget): string {
 
 export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraft, onDone, onUndoDone, onClose }: {
   workspaceId: string;
-  projectId: string;
+  /** Scopes the panel's chat (its connectors and board): the item's project, else the open one. */
+  projectId?: string;
   date: string;
   target: TodayActTarget;
   /** Save an edited draft (null puts Cairn's back). Only called for items with a draft. */
@@ -89,7 +92,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   onClose: () => void;
 }) {
   const aiConfig = useCairnStore((s) => s.aiConfig);
-  const threadId = `today-${projectId}-${date}-${target.key}`;
+  const threadId = `today-${workspaceId}-${date}-${target.key}`;
   const sessionId = `chat-${threadId}`;
   const { isLoading, toolCalls, streamStore, sendStream, stopStream } = useChatStream(threadId);
   const { content: streaming } = useLiveStream(streamStore);
@@ -109,11 +112,11 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
 
   useEffect(() => {
     let live = true;
-    todayClient.route({ workspaceId, projectId, source: target.source, target: target.draft?.target, kind: target.draft?.kind })
+    todayClient.route({ workspaceId, source: target.source, target: target.draft?.target, kind: target.draft?.kind })
       .then((r) => { if (live) setRoute(r); })
       .catch((e: unknown) => { if (live) setRoute({ channel: "other", label: "its source", tools: [], error: e instanceof Error ? e.message : String(e) }); });
     return () => { live = false; };
-  }, [workspaceId, projectId, target.source, target.draft?.target, target.draft?.kind]);
+  }, [workspaceId, target.source, target.draft?.target, target.draft?.kind]);
 
   // Assistant replies: a <draft> block replaces the draft; the rest shows in the thread.
   const saveDraftRef = useRef(onSaveDraft);

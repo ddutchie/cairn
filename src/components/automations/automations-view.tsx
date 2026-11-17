@@ -15,7 +15,7 @@ import { sessionClient } from "@/lib/ipc/session";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { IconButton } from "@/components/ui/icon-button";
-import { MiniStack } from "@/components/layout/project-overview/today-stack";
+import { MiniStack } from "@/components/today/today-stack";
 import { TODAY_COMMUNITY_ID } from "../../../shared/today/brief";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { Tooltip } from "@/components/ui/tooltip";

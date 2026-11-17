@@ -158,12 +158,19 @@ export function filterDisabledMcpDefs(defs: OpenAIToolDef[], disabledTools: stri
 }
 
 /**
- * Load the in-scope MCP + service runtime configs for a project.
+ * A connector scope: one project, or several (Today reads every included
+ * project's connectors). Global attachments are always in scope.
  */
-function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId: string) {
+export type ToolScope = string | readonly string[];
+
+/**
+ * Load the in-scope MCP + service runtime configs for a project (or projects).
+ */
+function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId: ToolScope) {
+  const ids = (typeof projectId === "string" ? [projectId] : [...projectId]).filter(Boolean);
   const rows = [
     ...q.getToolAttachments(db, GLOBAL_TOOL_SCOPE),
-    ...(projectId ? q.getToolAttachments(db, projectId) : []),
+    ...ids.flatMap((id) => q.getToolAttachments(db, id)),
   ] as AttachmentRow[];
   const attached = resolveAttachedToolIds(rows);
 
@@ -175,6 +182,15 @@ function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId
     .filter((s) => s.enabled && attached.service.has(s.id));
 
   return { mcpServers, customServices };
+}
+
+/** The connectors in scope, by id and display name (Today's settings sheet and route check). */
+export function listScopedConnectors(db: Database.Database, workspaceId: string, projectId: ToolScope): Array<{ id: string; name: string; kind: "mcp" | "service" }> {
+  const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
+  return [
+    ...mcpServers.map((s) => ({ id: s.id, name: s.name || s.id, kind: "mcp" as const })),
+    ...customServices.map((s) => ({ id: s.id, name: s.name || s.id, kind: "service" as const })),
+  ];
 }
 
 /** Restrict in-scope connectors to the names declared by a connector-aware recipe. */
@@ -235,7 +251,7 @@ export function checkRequirements(
 export async function getExternalToolDefs(
   db: Database.Database,
   workspaceId: string,
-  projectId: string,
+  projectId: ToolScope,
   requires?: ExternalToolRequirement[],
 ): Promise<OpenAIToolDef[]> {
   const scoped = loadScopedConfigs(db, workspaceId, projectId);
@@ -285,7 +301,7 @@ export interface ExternalMcpServerMeta {
 export async function getExternalMcpServerMeta(
   db: Database.Database,
   workspaceId: string,
-  projectId: string,
+  projectId: ToolScope,
 ): Promise<ExternalMcpServerMeta[]> {
   const { mcpServers } = loadScopedConfigs(db, workspaceId, projectId);
   return mcpServers.flatMap((server) => {
@@ -302,7 +318,7 @@ export async function getExternalMcpServerMeta(
 export async function requestExternalMcpResource(
   db: Database.Database,
   workspaceId: string,
-  projectId: string,
+  projectId: ToolScope,
   serverId: string,
   request: mcpClient.McpResourceRequest,
   signal?: AbortSignal,
@@ -353,7 +369,7 @@ export { isExternalToolName };
 export async function executeExternalTool(
   db: Database.Database,
   workspaceId: string,
-  projectId: string,
+  projectId: ToolScope,
   name: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,

@@ -157,10 +157,10 @@ HeartbeatScheduler (cron "0 7 * * 1-5", workspace tz)
         │     └── web:<connectorId> (Tier 3 extractor)
         ├── rank + write: runOneShot(JSON schema)   electron/agent/one-shot.ts
         └── persist: briefs table + optional note   electron/db/brief-queries.ts
-Renderer: Overview → Today tab (TodayPanel) ← ipc brief:get / brief:generate
+Renderer: Today view (TodayView, sidebar entry) ← ipc brief:get / brief:generate
 ```
 
-### Entry point: an always-visible Overview tab, run by an automation
+### Entry point: an always-visible Overview tab, run by an automation (superseded by "Workspace Today")
 
 **Decided (2026-11-16):** the **Today tab is always shown** in Overview, next
 to Summary. When Today is off, the tab shows its setup (refresh time, weekdays,
@@ -216,6 +216,40 @@ What was built, and what's different from the full design below:
   arguments) shows in the panel. A finished write call marks the item done.
   This is the same name heuristic as the read-only gate; MCP
   `readOnlyHint`/`destructiveHint` annotations would replace both.
+
+### Workspace Today (built on `feature/today-brief`)
+
+**Decided (2026-11-16):** Today becomes a workspace view with its own sidebar
+entry, not an Overview tab. In practice there's one brief per person, since a
+workspace belongs to one user.
+
+- **One automation per workspace:** a Today row with `projectId` null. The old
+  per-project Today rows are deleted when the workspace one is turned on.
+  Settings live in the automation folder (`today.json`): the projects to
+  include, which apps to read (by connector server id), and the schedule.
+- **Connector scope:** the union of the global connectors and those attached
+  to the included projects. App toggles filter the toolset by server id
+  (`toolFilter`), so an app that's turned off isn't offered to the model at
+  all.
+- **Brief tools, not one JSON answer:** the run gets `today_read`,
+  `today_upsert` (one item at a time: a decision, to-do, draft, FYI or event,
+  each with a stable id built from its source), `today_remove` and
+  `today_finish` (headline, lede, focus, sources and gaps). Each call saves the
+  brief and sends `today:updated`, so the view fills in while the run gathers.
+  Items the user already finished or dismissed keep that state across
+  refreshes (a same-day run starts from the saved brief; `startRefresh` in
+  `shared/today/brief-edit.ts`). There's no JSON fallback: the recipe and the tool descriptions
+  tell the model how to use them. Writes go only to the brief file, so the gate
+  allows them.
+- **Cairn computes the project facts:** due today, overdue, in review, stale
+  for 5+ days, failing automations and recently edited notes, for each included
+  project. These show in **Your projects**, and the model gets them as context.
+  The model doesn't need to search the board to find them.
+- **Sidebar entry:** Today sits above Automations (in both the rail and the
+  expanded sidebar) and shows whether a run is gathering or a brief is ready
+  and unread.
+- **Usage:** Today runs record usage as their own source, **Today brief**, not
+  as "automation".
 
 ### Gathering from MCP: deterministic first, agent as fallback
 
@@ -315,7 +349,7 @@ cards, sessions, projects) rather than a newsletter.
 ## Phases
 
 1. **Native brief:** the Tier 0 sources, `briefs` table, the built-in
-   Today automation (toggle, schedule, settings), the Overview Today tab (header
+   Today automation (toggle, schedule, settings), the Today view (header
    stack, lanes, ledger) and the writer step. Usable on its own.
 1b. **Overnight prep:** the 02:00 prep run (drafts only, read-only connectors,
    nightly token budget) and inline Post/Edit/Discard through the approval gate.
@@ -336,9 +370,8 @@ Each phase gets a changelog entry. Phase 1 gets a What's New card.
 
 ## Open questions
 
-- **Scope:** should there be one brief per workspace, or one across all
-  workspaces with project tags (like the "Axiom" and "Quality" tags)? The
-  proposal is one per workspace, with an "all workspaces" option later.
+- **Scope:** decided: one brief per workspace, with project chips on items
+  (see "Workspace Today"). An "all workspaces" option may come later.
 - **Tier 3 go/no-go:** given the ToS and Conditional Access concerns, do we
   build it at all, or stop at Tier 2 and document "ask IT to approve the MCP
   app"?

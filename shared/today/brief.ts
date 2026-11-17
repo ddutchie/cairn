@@ -1,20 +1,23 @@
 /**
  * Today brief: the structured result of the built-in "Today" automation.
  *
- * The automation's agent run ends with one JSON object (see the recipe in
- * `electron/lib/today.ts`); `parseTodayBrief` pulls it out of the final message
- * and normalises it so the renderer never has to guard against a model that
- * dropped a field. Pure, no Node or Electron APIs.
+ * The run builds the brief item by item with the brief tools
+ * (`electron/lib/today-tools.ts`, edits in `./brief-edit.ts`); every item goes
+ * through the normalisers here, so the renderer never has to guard against a
+ * model that dropped a field. `parseTodayBrief` re-reads a saved brief file.
+ * Pure, no Node or Electron APIs.
  */
 
 export const TODAY_BRIEF_VERSION = 2;
 
-/** Marks the automation row that powers a project's Today tab. */
+/** Marks the automation row that powers a workspace's Today view. */
 export const TODAY_COMMUNITY_ID = "cairn:today";
 
 export type TodayTone = "good" | "warn" | "neutral";
 
 export interface TodayEvent {
+  /** Stable id ("HH:MM-title" when the model gave none), so a refresh updates rather than duplicates. */
+  id: string;
   title: string;
   /** "HH:MM" local time. */
   start: string;
@@ -52,6 +55,8 @@ export interface TodayNeedItem {
   age?: string;
   /** Id of a `prepared` draft that answers this item. */
   draftId?: string;
+  /** Cairn project the item belongs to, when it belongs to one. */
+  projectId?: string;
 }
 
 export interface TodayPrepared {
@@ -64,14 +69,17 @@ export interface TodayPrepared {
   draft: string;
   source: string;
   url?: string;
+  projectId?: string;
 }
 
 export interface TodayFyi {
+  id: string;
   title: string;
   detail?: string;
   tone: TodayTone;
   source: string;
   url?: string;
+  projectId?: string;
 }
 
 export interface TodaySourceStatus {
@@ -83,7 +91,9 @@ export interface TodaySourceStatus {
 
 export interface TodayBrief {
   version: number;
-  /** ISO time the run finished. */
+  /** "gathering" while a run is still adding items; "ready" once it called `today_finish`. */
+  status: "gathering" | "ready";
+  /** ISO time of the last change. */
   generatedAt: string;
   /** Local date the brief is for, "YYYY-MM-DD". */
   date: string;
@@ -122,10 +132,91 @@ export function extractJsonObject(text: string): string | null {
   return start >= 0 && end > start ? text.slice(start, end + 1) : null;
 }
 
+const strList = (v: unknown, max: number): string[] =>
+  (Array.isArray(v) ? v : []).map(str).filter((f): f is string => !!f).slice(0, max);
+
+/** A decision or to-do. Null when the question (or title) is missing. */
+export function normalizeNeed(x: Record<string, unknown>, fallbackId: string): TodayNeedItem | null {
+  const title = str(x.question) ?? str(x.title);
+  if (!title) return null;
+  const choices: TodayChoice[] = arr(x.choices).flatMap((c) => {
+    const label = str(c.label);
+    return label ? [{ label, draftId: str(c.draftId) }] : [];
+  }).slice(0, 3);
+  const kind = str(x.kind) === "todo" || choices.length === 0 ? "todo" : "decision";
+  return {
+    id: str(x.id) ?? fallbackId, kind, title, body: str(x.body), why: str(x.why), facts: strList(x.facts, 3), choices,
+    source: str(x.source) ?? "Cairn", url: str(x.url), age: str(x.age), draftId: str(x.draftId), projectId: str(x.projectId),
+  };
+}
+
+/** A drafted reply, review or note. Null without a title and the draft text. */
+export function normalizePrepared(x: Record<string, unknown>, fallbackId: string): TodayPrepared | null {
+  const title = str(x.title);
+  const draft = str(x.draft);
+  if (!title || !draft) return null;
+  const kind = str(x.kind);
+  return {
+    id: str(x.id) ?? fallbackId, title, draft,
+    kind: (kind && PREPARED_KINDS.has(kind) ? kind : "other") as TodayPrepared["kind"],
+    target: str(x.target), source: str(x.source) ?? "Cairn", url: str(x.url), projectId: str(x.projectId),
+  };
+}
+
+export function normalizeFyi(x: Record<string, unknown>, fallbackId: string): TodayFyi | null {
+  const title = str(x.title);
+  if (!title) return null;
+  const tone = str(x.tone);
+  return {
+    id: str(x.id) ?? fallbackId, title, detail: str(x.detail), source: str(x.source) ?? "Cairn", url: str(x.url),
+    tone: (tone && TONES.has(tone) ? tone : "neutral") as TodayTone, projectId: str(x.projectId),
+  };
+}
+
+/** A meeting. Null without a title and an "HH:MM" start. */
+export function normalizeEvent(x: Record<string, unknown>): TodayEvent | null {
+  const title = str(x.title);
+  const start = str(x.start);
+  if (!title || !start || !HHMM.test(start)) return null;
+  const end = str(x.end);
+  return {
+    id: str(x.id) ?? `${start}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`,
+    title, start, end: end && HHMM.test(end) ? end : undefined, location: str(x.location), url: str(x.url), note: str(x.note),
+  };
+}
+
+export function normalizeSource(x: Record<string, unknown>): TodaySourceStatus | null {
+  const name = str(x.name);
+  if (!name) return null;
+  const status = str(x.status);
+  return {
+    name, note: str(x.note),
+    status: (status && SOURCE_STATUS.has(status) ? status : "ok") as TodaySourceStatus["status"],
+    items: typeof x.items === "number" && Number.isFinite(x.items) ? x.items : undefined,
+  };
+}
+
+export const byEventStart = (a: TodayEvent, b: TodayEvent): number => toMinutes(a.start) - toMinutes(b.start);
+
+/** Drop draft links that point at no draft, so a choice never offers a missing reply. */
+export function pruneDraftLinks(brief: Pick<TodayBrief, "needYou" | "prepared">): void {
+  const draftIds = new Set(brief.prepared.map((p) => p.id));
+  for (const n of brief.needYou) {
+    if (n.draftId && !draftIds.has(n.draftId)) n.draftId = undefined;
+    for (const c of n.choices) if (c.draftId && !draftIds.has(c.draftId)) c.draftId = undefined;
+  }
+}
+
+/** The headline when the run gave none. */
+export function fallbackHeadline(needYou: TodayNeedItem[], focusId?: string): string {
+  const focusItem = needYou.find((n) => n.id === focusId) ?? needYou[0];
+  return focusItem ? `Start with: ${focusItem.title}` : "Nothing needs you right now.";
+}
+
 /**
- * Parse and normalise the automation's final message. Returns null when no
- * usable JSON object is present. Items missing their required text are
- * dropped; ids are filled in when the model left them out.
+ * Normalise a saved brief file (any version). Returns null when the text holds
+ * no JSON object. Items missing their required text are dropped; ids are
+ * filled in when missing.
  */
 export function parseTodayBrief(text: string, now: Date = new Date()): TodayBrief | null {
   const raw = extractJsonObject(text);
@@ -139,71 +230,23 @@ export function parseTodayBrief(text: string, now: Date = new Date()): TodayBrie
     return null;
   }
 
-  const needYou: TodayNeedItem[] = arr(o.needYou).flatMap((x, i) => {
-    const title = str(x.question) ?? str(x.title);
-    if (!title) return [];
-    const choices: TodayChoice[] = arr(x.choices).flatMap((c) => {
-      const label = str(c.label);
-      return label ? [{ label, draftId: str(c.draftId) }] : [];
-    }).slice(0, 3);
-    const facts = (Array.isArray(x.facts) ? x.facts : []).map(str).filter((f): f is string => !!f).slice(0, 3);
-    const kind = str(x.kind) === "todo" || choices.length === 0 ? "todo" : "decision";
-    return [{
-      id: str(x.id) ?? `need-${i + 1}`, kind, title, body: str(x.body), why: str(x.why), facts, choices,
-      source: str(x.source) ?? "Cairn", url: str(x.url), age: str(x.age), draftId: str(x.draftId),
-    }];
-  });
-  const prepared: TodayPrepared[] = arr(o.prepared).flatMap((x, i) => {
-    const title = str(x.title);
-    const draft = str(x.draft);
-    if (!title || !draft) return [];
-    const kind = str(x.kind);
-    return [{
-      id: str(x.id) ?? `draft-${i + 1}`, title, draft,
-      kind: (kind && PREPARED_KINDS.has(kind) ? kind : "other") as TodayPrepared["kind"],
-      target: str(x.target), source: str(x.source) ?? "Cairn", url: str(x.url),
-    }];
-  });
-  const fyi: TodayFyi[] = arr(o.fyi).flatMap((x) => {
-    const title = str(x.title);
-    if (!title) return [];
-    const tone = str(x.tone);
-    return [{
-      title, detail: str(x.detail), source: str(x.source) ?? "Cairn", url: str(x.url),
-      tone: (tone && TONES.has(tone) ? tone : "neutral") as TodayTone,
-    }];
-  });
-  const events: TodayEvent[] = arr(o.events).flatMap((x) => {
-    const title = str(x.title);
-    const start = str(x.start);
-    if (!title || !start || !HHMM.test(start)) return [];
-    const end = str(x.end);
-    return [{ title, start, end: end && HHMM.test(end) ? end : undefined, location: str(x.location), url: str(x.url), note: str(x.note) }];
-  }).sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
-  const sources: TodaySourceStatus[] = arr(o.sources).flatMap((x) => {
-    const name = str(x.name);
-    if (!name) return [];
-    const status = str(x.status);
-    return [{
-      name, note: str(x.note),
-      status: (status && SOURCE_STATUS.has(status) ? status : "ok") as TodaySourceStatus["status"],
-      items: typeof x.items === "number" && Number.isFinite(x.items) ? x.items : undefined,
-    }];
-  });
-
-  const draftIds = new Set(prepared.map((p) => p.id));
-  for (const n of needYou) {
-    if (n.draftId && !draftIds.has(n.draftId)) n.draftId = undefined;
-    for (const c of n.choices) if (c.draftId && !draftIds.has(c.draftId)) c.draftId = undefined;
-  }
+  const needYou = arr(o.needYou).flatMap((x, i) => normalizeNeed(x, `need-${i + 1}`) ?? []);
+  const prepared = arr(o.prepared).flatMap((x, i) => normalizePrepared(x, `draft-${i + 1}`) ?? []);
+  const fyi = arr(o.fyi).flatMap((x, i) => normalizeFyi(x, `fyi-${i + 1}`) ?? []);
+  const events = arr(o.events).flatMap((x) => normalizeEvent(x) ?? []).sort(byEventStart);
+  const sources = arr(o.sources).flatMap((x) => normalizeSource(x) ?? []);
+  pruneDraftLinks({ needYou, prepared });
   const focus = str(o.focusId);
   const focusItem = needYou.find((n) => n.id === focus) ?? needYou[0];
+  const date = str(o.date);
 
   return {
     version: TODAY_BRIEF_VERSION,
+    // Files from before the brief tools have no status: they were written once, finished.
+    status: str(o.status) === "gathering" ? "gathering" : "ready",
     generatedAt: now.toISOString(),
-    date: localDate(now),
-    headline: str(o.headline) ?? (focusItem ? `Start with: ${focusItem.title}` : "Nothing needs you right now."),
+    date: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : localDate(now),
+    headline: str(o.headline) ?? fallbackHeadline(needYou, focus),
     lede: firstSentences(str(o.lede) ?? summaryLede(needYou.length, prepared.length), 2, 40),
     focusId: focusItem?.id,
     events, needYou, prepared, fyi, sources,
@@ -231,7 +274,7 @@ export function linkedDraftIds(brief: Pick<TodayBrief, "needYou">): Set<string> 
   return ids;
 }
 
-function summaryLede(need: number, prepared: number): string {
+export function summaryLede(need: number, prepared: number): string {
   if (need === 0 && prepared === 0) return "Nothing needs you right now.";
   return `${need} ${need === 1 ? "thing needs" : "things need"} you and ${prepared} ${prepared === 1 ? "draft is" : "drafts are"} ready.`;
 }
@@ -331,9 +374,50 @@ export function formatClock(m: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(Math.round(m % 60)).padStart(2, "0")}`;
 }
 
+/** A board card Cairn counted for a project's facts. */
+export interface TodayFactCard {
+  id: string;
+  title: string;
+  /** "YYYY-MM-DD", for due and overdue cards. */
+  dueDate?: string;
+  /** Days since the card last changed, for stale cards. */
+  days?: number;
+}
+
+/** What Cairn itself knows about one project today: computed, never written by the model. */
+export interface TodayProjectFacts {
+  projectId: string;
+  name: string;
+  dueToday: TodayFactCard[];
+  overdue: TodayFactCard[];
+  inReview: TodayFactCard[];
+  /** In progress or in review, unchanged for 5+ days. */
+  stale: TodayFactCard[];
+  /** Automations whose latest runs failed. */
+  failingAutomations: Array<{ id: string; name: string; failures: number }>;
+  /** Notes changed since yesterday. */
+  notesChanged: Array<{ id: string; title: string }>;
+}
+
+/** Which projects and apps Today reads. Stored as exclusions, so a new project or app is read by default. */
+export interface TodaySettings {
+  excludedProjects: string[];
+  /** Connector ids (MCP server or custom service) Today leaves out. */
+  excludedApps: string[];
+}
+
+export const DEFAULT_TODAY_SETTINGS: TodaySettings = { excludedProjects: [], excludedApps: [] };
+
+/** A connector Today could read, for the settings sheet. */
+export interface TodayApp {
+  id: string;
+  name: string;
+  kind: "mcp" | "service";
+}
+
 /** Today state returned to the renderer by `today:get`. */
 export interface TodayState {
-  /** The project's Today automation, or null when Today is off and was never set up. */
+  /** The workspace's Today automation, or null when Today is off and was never set up. */
   automationId: string | null;
   enabled: boolean;
   /** "HH:MM" refresh time. */
@@ -345,6 +429,13 @@ export interface TodayState {
   brief: TodayBrief | null;
   /** Error of the latest run when it failed or produced no brief. */
   lastError: string | null;
+  settings: TodaySettings;
+  /** Every project in the workspace, for the settings sheet. */
+  projects: Array<{ id: string; name: string }>;
+  /** Facts for each included project, computed now. */
+  facts: TodayProjectFacts[];
+  /** Connectors in scope for the included projects. */
+  apps: TodayApp[];
 }
 
 /** Cron expression for a refresh time ("HH:MM"). */

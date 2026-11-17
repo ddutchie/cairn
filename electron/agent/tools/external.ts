@@ -1,6 +1,7 @@
 /** User-configured MCP servers and custom HTTP services, exposed as `mcp__<id>__*` / `svc__*` tools. */
 import type Database from "better-sqlite3";
 import { createHostStore } from "../host-store";
+import type { ToolScope } from "../../lib/external-tools";
 import { approvalPreview } from "../../../shared/agent/tool-risk";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tool-types";
@@ -9,7 +10,8 @@ import { fail, fromJsonSchema, renderValue } from "./schema";
 export interface ExternalToolDeps {
   db: Database.Database;
   workspaceId: string;
-  projectId: string;
+  /** One project, or several (Today); global connectors are always included. */
+  projectId: ToolScope;
 }
 
 export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]> {

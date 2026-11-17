@@ -1,0 +1,109 @@
+/**
+ * The tools a Today run builds its brief with. They write only the brief file
+ * (`out/today/<date>.json` in the Today automation's folder), so the read-only
+ * gate lets them through. Each call saves and calls `onChange`, which tells
+ * the renderer to reload: the view fills in while the run is still gathering.
+ */
+
+import { defineTool, fromJsonSchema, type AgentTool } from "../agent/index";
+import type { TodayBrief } from "../../shared/today/brief";
+import { TODAY_LANES, briefOutline, finishBrief, removeItems, upsertItems } from "../../shared/today/brief-edit";
+
+export const TODAY_TOOL_NAMES = ["today_read", "today_upsert", "today_remove", "today_finish"] as const;
+
+export function isTodayBriefTool(name: string): boolean {
+  return (TODAY_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+export interface TodayBriefSession {
+  /** The brief as it stands; tools edit it in place. */
+  brief: TodayBrief;
+  /** True once `today_finish` ran. */
+  finished: boolean;
+}
+
+const ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    lane: { type: "string", enum: [...TODAY_LANES], description: "decision: the user has to choose (give choices). todo: an action to take, no choice. draft: text you wrote for the user to send. fyi: progress worth knowing, no action. event: a meeting today." },
+    id: { type: "string", description: "Stable id built from where the item came from, e.g. \"slack-C08AB-1712345.67\", \"jira-CAIRN-212\", \"card-<cardId>\", \"mail-<messageId>\". Reuse it to update an item; a refresh later today keeps the user's done and dismissed state by id. Optional for events." },
+    projectId: { type: "string", description: "The Cairn project this belongs to (ids are in the project facts), when it clearly belongs to one." },
+    question: { type: "string", description: "decision/todo: the question (yes/no or either/or) or the action, verb first." },
+    body: { type: "string", description: "decision/todo: at most 30 words of context." },
+    why: { type: "string", description: "decision/todo: one sentence on why it ranks here." },
+    facts: { type: "array", items: { type: "string" }, description: "decision/todo: up to 3 chips of 2–6 words (who asked, when, what's at stake). Start one with \"⚠ \" only for a real problem." },
+    choices: {
+      type: "array",
+      items: { type: "object", properties: { label: { type: "string" }, draftId: { type: "string", description: "Id of the draft that carries this choice out." } }, required: ["label"] },
+      description: "decision: 2 or 3 short answers (2–5 words), the one you'd recommend first.",
+    },
+    age: { type: "string", description: "decision/todo: how long it has waited, e.g. \"3d\", \"12h\"." },
+    title: { type: "string", description: "draft/fyi/event: the title." },
+    kind: { type: "string", enum: ["reply", "review", "cards", "note", "other"], description: "draft: what it is." },
+    target: { type: "string", description: "draft: where it would go, e.g. \"#release in Slack\", \"Jira CAIRN-212\", \"reply to Kitty's email\"." },
+    draft: { type: "string", description: "draft: the full text, ready to send. Never send it yourself." },
+    detail: { type: "string", description: "fyi: one short sentence." },
+    tone: { type: "string", enum: ["good", "warn", "neutral"], description: "fyi: good news, a warning, or neutral." },
+    start: { type: "string", description: "event: start as local HH:MM." },
+    end: { type: "string", description: "event: end as local HH:MM." },
+    location: { type: "string", description: "event: room or call." },
+    note: { type: "string", description: "event: only for a clash or something to prepare." },
+    source: { type: "string", description: "The app it came from, e.g. \"Slack\", \"Outlook\", \"Jira\", \"Board\"." },
+    url: { type: "string", description: "Link to the original, when the tool result gave one." },
+  },
+  required: ["lane"],
+};
+
+export function todayBriefTools(session: TodayBriefSession, onChange: (brief: TodayBrief) => void): AgentTool[] {
+  const tool = (name: string, description: string, parameters: Record<string, unknown>, run: (args: Record<string, unknown>) => string) =>
+    defineTool({
+      name, description, parameters: fromJsonSchema(parameters),
+      risk: () => ({ class: "WRITE_LOCAL" }),
+      execute: async (args) => ({ content: run(args as Record<string, unknown>) }),
+    });
+  const changed = (lines: string[]) => { onChange(session.brief); return lines.join("\n"); };
+  return [
+    tool("today_read",
+      "Read the Today brief as it stands: the ids, lanes and titles of every item. Call it first on a refresh, so you update items already there instead of adding copies.",
+      { type: "object", properties: {} },
+      () => JSON.stringify(briefOutline(session.brief))),
+    tool("today_upsert",
+      "Add or update items on the Today brief, several per call. An id that already exists is replaced, even in another lane. The user sees each item as soon as you add it, so add items as you find them rather than all at the end. Items that fail a check come back with the reason; fix and resend them.",
+      { type: "object", properties: { items: { type: "array", items: ITEM_SCHEMA, minItems: 1, maxItems: 12 } }, required: ["items"] },
+      (a) => changed(upsertItems(session.brief, Array.isArray(a.items) ? a.items as Record<string, unknown>[] : [], new Date()))),
+    tool("today_remove",
+      "Remove items from the Today brief by id: something already handled, no longer true, or weaker than an item you need room for.",
+      { type: "object", properties: { ids: { type: "array", items: { type: "string" }, minItems: 1 } }, required: ["ids"] },
+      (a) => changed(removeItems(session.brief, Array.isArray(a.ids) ? a.ids.filter((x): x is string => typeof x === "string") : [], new Date()))),
+    tool("today_finish",
+      "Finish the brief: the header lines and which apps you read. Call it once, last. Until you do, the brief shows as still gathering.",
+      {
+        type: "object",
+        properties: {
+          headline: { type: "string", description: "At most 10 words, verb first, naming the first decision (\"Decide on Edan's P4 interview first.\")." },
+          lede: { type: "string", description: "At most 25 words of context. No counts: Cairn shows those." },
+          focusId: { type: "string", description: "Id of the decision or to-do to start with." },
+          sources: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" }, status: { type: "string", enum: ["ok", "empty", "error", "skipped"] },
+                items: { type: "number" }, note: { type: "string" },
+              },
+              required: ["name", "status"],
+            },
+            description: "One entry per app you tried, including Cairn, with how it went.",
+          },
+          gap: { type: "string", description: "Optional: one sentence on a missing app that would have helped." },
+        },
+        required: ["headline", "lede", "sources"],
+      },
+      (a) => {
+        finishBrief(session.brief, a, new Date());
+        session.finished = true;
+        onChange(session.brief);
+        return `Brief finished: ${session.brief.needYou.length} need you, ${session.brief.prepared.length} drafts, ${session.brief.fyi.length} FYI, ${session.brief.events.length} events.`;
+      }),
+  ];
+}

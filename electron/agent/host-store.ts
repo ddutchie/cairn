@@ -88,6 +88,7 @@ import type { SessionProfileId } from "../../shared/agent/session-profile";
 import type { ApprovalGrant } from "../db/approval-grant-queries";
 import type {
   getExternalToolDefs as getExternalToolDefsType,
+  ToolScope,
   executeExternalTool as executeExternalToolType,
   getExternalMcpServerMeta as getExternalMcpServerMetaType,
 } from "../lib/external-tools";
@@ -273,22 +274,22 @@ export interface HostStore {
   ): ReturnType<typeof generatePrdImpl>;
   getExternalToolDefs(
     workspaceId: string,
-    projectId: string,
+    projectId: ToolScope,
   ): ReturnType<typeof getExternalToolDefsType>;
   executeExternalTool(
     workspaceId: string,
-    projectId: string,
+    projectId: ToolScope,
     name: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): ReturnType<typeof executeExternalToolType>;
   getExternalMcpServerMeta(
     workspaceId: string,
-    projectId: string,
+    projectId: ToolScope,
   ): ReturnType<typeof getExternalMcpServerMetaType>;
   requestExternalMcpResource(
     workspaceId: string,
-    projectId: string,
+    projectId: ToolScope,
     serverId: string,
     request: McpResourceRequest,
     signal?: AbortSignal,
@@ -500,7 +501,7 @@ export function createHostStore(db: Database.Database): HostStore {
 
     async getExternalToolDefs(
       workspaceId: string,
-      projectId: string,
+      projectId: ToolScope,
     ): ReturnType<typeof getExternalToolDefsType> {
       const { getExternalToolDefs } = await import("../lib/external-tools");
       return getExternalToolDefs(db, workspaceId, projectId);
@@ -508,7 +509,7 @@ export function createHostStore(db: Database.Database): HostStore {
 
     async executeExternalTool(
       workspaceId: string,
-      projectId: string,
+      projectId: ToolScope,
       name: string,
       args: Record<string, unknown>,
       signal?: AbortSignal,
@@ -519,7 +520,7 @@ export function createHostStore(db: Database.Database): HostStore {
 
     async getExternalMcpServerMeta(
       workspaceId: string,
-      projectId: string,
+      projectId: ToolScope,
     ): ReturnType<typeof getExternalMcpServerMetaType> {
       const { getExternalMcpServerMeta } = await import("../lib/external-tools");
       return getExternalMcpServerMeta(db, workspaceId, projectId);
@@ -527,7 +528,7 @@ export function createHostStore(db: Database.Database): HostStore {
 
     async requestExternalMcpResource(
       workspaceId: string,
-      projectId: string,
+      projectId: ToolScope,
       serverId: string,
       request: McpResourceRequest,
       signal?: AbortSignal,

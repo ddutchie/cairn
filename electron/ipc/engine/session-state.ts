@@ -16,7 +16,7 @@ import type { ModelRoute } from "../../agent/provider";
 import type { Rule } from "../../agent/rules";
 import type { AgentTool } from "../../agent/tool-types";
 
-export interface UsageMeta { source: "chat" | "coding" | "automation" | "writing-style"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
+export interface UsageMeta { source: "chat" | "coding" | "automation" | "writing-style" | "today"; workspaceId: string; projectId?: string; provider?: string; model: string; baseUrl: string }
 
 export interface PendingQuestion { nonce: string; questions: unknown; resolve(answers: string): void; reject(err: Error): void }
 

@@ -16,7 +16,8 @@ export type UsageSource =
   | "flow-ai-summary"
   | "summary"
   | "tool-builder"
-  | "writing-style";
+  | "writing-style"
+  | "today";
 
 /** Human label for a source, used by the renderer (kept here so it never drifts). */
 export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
@@ -33,6 +34,7 @@ export const USAGE_SOURCE_LABELS: Record<UsageSource, string> = {
   summary: "Compaction",
   "tool-builder": "Tool builder",
   "writing-style": "Writing style",
+  today: "Today brief",
 };
 
 export interface UsageTotals {

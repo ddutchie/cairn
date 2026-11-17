@@ -16,7 +16,7 @@
  */
 
 import type { NoteSnippet } from "../notes/search";
-import type { TodayState } from "../today/brief";
+import type { TodaySettings, TodayState } from "../today/brief";
 import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type { WireProtocol } from "../models/model-catalog";
@@ -323,25 +323,26 @@ export interface IpcContract {
   "db:automation:budget:set": { writes: true; args: [req: { usd: number | null }]; result: { budgetUsd: number | null } };
   /** `skipped` when the automation is already running. */
   "db:automation:runNow": { writes: true; args: [req: { id: string }]; result: { runId: string } | { skipped: true } };
-  // ── Today (built-in automation behind Overview → Today) ─────────────────
-  "today:get": { args: [req: { workspaceId: string; projectId: string }]; result: TodayState };
-  /** Creates or re-enables the project's Today automation with this schedule. */
+  // ── Today (built-in automation behind the Today view, one per workspace) ─
+  "today:get": { args: [req: { workspaceId: string }]; result: TodayState };
+  /** Creates or re-enables the workspace's Today automation with this schedule. */
   "today:enable": {
-    writes: true;
-    args: [req: { workspaceId: string; projectId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }];
+    args: [req: { workspaceId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }];
     result: TodayState;
   };
-  "today:disable": { writes: true; args: [req: { workspaceId: string; projectId: string }]; result: TodayState };
+  "today:disable": { args: [req: { workspaceId: string }]; result: TodayState };
+  /** Which projects and apps Today reads. */
+  "today:settings": { args: [req: { workspaceId: string; settings: TodaySettings }]; result: TodayState };
   /** Starts a run now; `skipped` when one is already running or Today is off. */
-  "today:run": { writes: true; args: [req: { workspaceId: string; projectId: string }]; result: { runId: string } | { skipped: true } };
+  "today:run": { args: [req: { workspaceId: string }]; result: { runId: string } | { skipped: true } };
   /** Where a Today item goes, and which in-scope connector tools could send it there. */
   "today:route": {
-    args: [req: { workspaceId: string; projectId: string; source: string; target?: string; kind?: string }];
+    args: [req: { workspaceId: string; source: string; target?: string; kind?: string }];
     result: TodayRoute;
   };
-  /** Save a debug bundle (recipe, brief, recent runs, the last run's log and session events) via a save dialog. Null when cancelled. */
+  /** Save a debug bundle (prompt, brief, recent runs, the last run's log and session events) via a save dialog. Null when cancelled. */
   "today:export": {
-    args: [req: { workspaceId: string; projectId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }];
+    args: [req: { workspaceId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }];
     result: { filePath: string } | null;
   };
   /** Approve/deny a tool call a running automation is waiting on. */
@@ -740,6 +741,8 @@ export interface SpellcheckContext {
 
 export interface IpcEvents {
   "automation:run": AutomationRunEvent;
+  /** A Today run changed the brief (each brief tool call), so the view reloads. */
+  "today:updated": { workspaceId: string; status: "gathering" | "ready" };
   /** Unread notification count changed (bell + badge). */
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
@@ -959,9 +962,10 @@ const CHANNELS: ChannelRecord = {
   "db:automation:budget:set": "write",
   "db:automation:runNow": "write",
   "today:get": "read",
-  "today:enable": "write",
-  "today:disable": "write",
-  "today:run": "write",
+  "today:enable": "read",
+  "today:disable": "read",
+  "today:settings": "read",
+  "today:run": "read",
   "today:export": "read",
   "today:route": "read",
   "automation:approve": "read",

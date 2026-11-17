@@ -1,19 +1,22 @@
 "use client";
 
 /**
- * Overview → Today. Renders the brief the built-in Today automation writes
- * (`electron/lib/today.ts`): a headline naming the first decision, four
- * stat tiles, the cairn stack, the day strip (free time first), and the three
- * lanes (Need you as decisions, Prepared for you, Moving without you). A draft
- * that answers a decision sits on that decision's choice, not in Prepared. When Today is off
- * the tab shows its setup instead.
+ * The Today view: one brief per workspace, written by the built-in Today
+ * automation (`electron/lib/today.ts`). A headline naming the first decision,
+ * four stat tiles, the cairn stack, the day strip (free time first), the three
+ * lanes (Need you as decisions, Prepared for you, Moving without you), and
+ * Your projects (facts Cairn computes itself). A draft that answers a decision
+ * sits on that decision's choice, not in Prepared. Items carry the project
+ * they belong to. While a run gathers, items arrive one tool call at a time
+ * (`today:updated`). When Today is off the view shows its setup instead.
  *
  * Every action here is local or goes through chat: drafts are copied, or handed
  * to a chat session that asks before it posts anything.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, Download, ExternalLink, MessageSquare, Pencil, Play, RefreshCw, Settings2, X } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { todayClient, automationsClient } from "@/lib/ipc/automations";
@@ -28,13 +31,16 @@ import { TodayActPanel, type TodayActTarget } from "./today-act-panel";
 import { CairnStack, MiniStack, TODAY_SEEN_EVENT, markTodaySeen, todaySeenAt, type StackLane } from "./today-stack";
 import {
   dayBlocks, formatClock, formatMinutes, linkedDraftIds, localDate,
-  type TodayDay, type TodayFyi, type TodayNeedItem, type TodayPrepared, type TodayState,
-} from "../../../../shared/today/brief";
+  type TodayDay, type TodayFyi, type TodayNeedItem, type TodayPrepared, type TodayProjectFacts, type TodaySettings as TodaySettingsValue, type TodayState,
+} from "../../../shared/today/brief";
+
+/** Project id → name, for the project chip on each item. */
+const ProjectNames = createContext<Map<string, string>>(new Map());
 
 type Lane = StackLane;
 
-const DISMISS_KEY = (projectId: string, date: string) => `today:dismissed:${projectId}:${date}`;
-const EDITS_KEY = (projectId: string, date: string) => `today:edits:${projectId}:${date}`;
+const DISMISS_KEY = (workspaceId: string, date: string) => `today:dismissed:ws:${workspaceId}:${date}`;
+const EDITS_KEY = (workspaceId: string, date: string) => `today:edits:ws:${workspaceId}:${date}`;
 
 function readJson<T>(key: string, fallback: T): T {
   try { return (JSON.parse(localStorage.getItem(key) ?? "null") as T | null) ?? fallback; } catch { return fallback; }
@@ -95,21 +101,36 @@ function openUrl(url?: string) {
   if (url && /^https?:\/\//i.test(url)) void appClient.openExternal(url);
 }
 
-export function TodayPanel({ workspaceId, projectId, projectName }: { workspaceId: string; projectId: string; projectName: string }) {
+/** The Today view: the active workspace's brief. */
+export function TodayView() {
+  const workspaceId = useCairnStore((s) => s.activeWorkspaceId);
+  return (
+    <div className="@container flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="max-w-[1240px] mx-auto w-full px-4 pt-4 md:px-7 md:pt-6 pb-8">
+        {workspaceId ? <TodayPanel key={workspaceId} workspaceId={workspaceId} /> : <Empty>Open a workspace to see Today.</Empty>}
+      </div>
+    </div>
+  );
+}
+
+function TodayPanel({ workspaceId }: { workspaceId: string }) {
   const [state, setState] = useState<TodayState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveTool, setLiveTool] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setState(await todayClient.get(workspaceId, projectId));
+      setState(await todayClient.get(workspaceId));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [workspaceId, projectId]);
+  }, [workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Each brief tool call saves the brief: reload so items arrive as the run finds them.
+  useEffect(() => todayClient.onUpdated((ev) => { if (ev.workspaceId === workspaceId) void refresh(); }), [workspaceId, refresh]);
 
   // Live progress: which tool the run is on, and a refetch when it ends.
   useEffect(() => {
@@ -121,23 +142,23 @@ export function TodayPanel({ workspaceId, projectId, projectName }: { workspaceI
       if (ev.event === "tool" && ev.status === "start") setLiveTool(ev.label ?? ev.tool ?? null);
       if (ev.event === "finished") {
         setLiveTool(null);
-        // The brief is saved just after `finished` is sent.
+        // The run row is closed just after `finished` is sent.
         window.setTimeout(() => void refresh(), 600);
       }
     });
   }, [state?.automationId, refresh]);
 
-  // Fallback while a run is in flight (e.g. a scheduled run started before this tab opened).
+  // Fallback while a run is in flight (e.g. a scheduled run started before this view opened).
   useEffect(() => {
     if (!state?.running) return;
-    const t = window.setInterval(() => void refresh(), 5000);
+    const t = window.setInterval(() => void refresh(), 8000);
     return () => window.clearInterval(t);
   }, [state?.running, refresh]);
 
   const run = async () => {
     setState((s) => (s ? { ...s, running: true } : s));
     setLiveTool("Starting");
-    try { await todayClient.run(workspaceId, projectId); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await todayClient.run(workspaceId); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     void refresh();
   };
 
@@ -149,10 +170,9 @@ export function TodayPanel({ workspaceId, projectId, projectName }: { workspaceI
     return (
       <TodaySetup
         state={state}
-        projectName={projectName}
         onEnable={async (time, weekdaysOnly, runNow) => {
           const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          setState(await todayClient.enable({ workspaceId, projectId, time, weekdaysOnly, timezone: tz }));
+          setState(await todayClient.enable({ workspaceId, time, weekdaysOnly, timezone: tz }));
           if (runNow) await run();
         }}
       />
@@ -160,77 +180,77 @@ export function TodayPanel({ workspaceId, projectId, projectName }: { workspaceI
   }
 
   return (
-    <TodayView
+    <BriefView
       state={state}
       workspaceId={workspaceId}
-      projectId={projectId}
       liveTool={liveTool}
       error={error}
       onRun={run}
       onSchedule={async (time, weekdaysOnly) => {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        setState(await todayClient.enable({ workspaceId, projectId, time, weekdaysOnly, timezone: tz }));
+        setState(await todayClient.enable({ workspaceId, time, weekdaysOnly, timezone: tz }));
       }}
-      onDisable={async () => setState(await todayClient.disable(workspaceId, projectId))}
+      onSettings={async (settings) => setState(await todayClient.settings(workspaceId, settings))}
+      onDisable={async () => setState(await todayClient.disable(workspaceId))}
       onExport={async () => {
         const date = state.brief?.date;
-        return todayClient.export({ workspaceId, projectId, local: date ? readLocalState(projectId, date) : undefined });
+        return todayClient.export({ workspaceId, local: date ? readLocalState(workspaceId, date) : undefined });
       }}
     />
   );
 }
 
 /**
- * What the Overview tab strip shows for Today: whether it's on, whether a run
- * is gathering, and whether the latest brief hasn't been opened yet.
+ * What the sidebar shows for Today: whether it's on, whether a run is
+ * gathering, and whether the latest brief hasn't been opened yet.
  */
-export function useTodayBadge(workspaceId: string | null, projectId: string | null) {
+export function useTodayBadge(workspaceId: string | null) {
   const [badge, setBadge] = useState<{ enabled: boolean; running: boolean; unseen: boolean; automationId: string | null }>(
     { enabled: false, running: false, unseen: false, automationId: null },
   );
   const load = useCallback(async () => {
-    if (!workspaceId || !projectId) return;
+    if (!workspaceId) return;
     try {
-      const st = await todayClient.get(workspaceId, projectId);
-      const gen = st.brief?.generatedAt;
-      setBadge({ enabled: st.enabled, running: st.running, unseen: !!gen && todaySeenAt(projectId) !== gen, automationId: st.automationId });
-    } catch { /* off-Electron or no project: no badge */ }
-  }, [workspaceId, projectId]);
+      const st = await todayClient.get(workspaceId);
+      const gen = st.brief?.status === "ready" ? st.brief.generatedAt : undefined;
+      setBadge({ enabled: st.enabled, running: st.running, unseen: !!gen && todaySeenAt(workspaceId) !== gen, automationId: st.automationId });
+    } catch { /* off-Electron or no workspace: no badge */ }
+  }, [workspaceId]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     const onSeen = () => void load();
     window.addEventListener(TODAY_SEEN_EVENT, onSeen);
-    const off = automationsClient.onRunEvent((ev) => {
+    const offRun = automationsClient.onRunEvent((ev) => {
       if (!badge.automationId || ev.automationId !== badge.automationId) return;
       if (ev.event === "started") setBadge((b) => ({ ...b, running: true }));
       if (ev.event === "finished") window.setTimeout(() => void load(), 600);
     });
-    return () => { window.removeEventListener(TODAY_SEEN_EVENT, onSeen); off(); };
-  }, [load, badge.automationId]);
+    // Only the finish changes the badge; the gathering updates in between don't.
+    const offUpdate = todayClient.onUpdated((ev) => { if (ev.workspaceId === workspaceId && ev.status === "ready") void load(); });
+    return () => { window.removeEventListener(TODAY_SEEN_EVENT, onSeen); offRun(); offUpdate(); };
+  }, [load, badge.automationId, workspaceId]);
   return badge;
 }
 
 // ── Setup (Today is off) ────────────────────────────────────────────────────
 
-function TodaySetup({ state, projectName, onEnable }: {
+function TodaySetup({ state, onEnable }: {
   state: TodayState;
-  projectName: string;
   onEnable: (time: string, weekdaysOnly: boolean, runNow: boolean) => Promise<void>;
 }) {
-  const mcpServers = useCairnStore((s) => s.mcpServers);
   const [time, setTime] = useState(state.time);
   const [weekdaysOnly, setWeekdaysOnly] = useState(state.weekdaysOnly);
   const [busy, setBusy] = useState(false);
-  const connectors = mcpServers.filter((s) => s.enabled);
+  const connectors = state.apps;
 
   return (
     <div className="max-w-[640px] mx-auto py-10">
       <CairnStack counts={{ need: 3, prep: 2, fyi: 4 }} className="mb-6" />
       <h2 className="text-lg font-semibold">Start each day with Today</h2>
       <p className="text-sm text-[var(--text-secondary)] mt-2 leading-relaxed">
-        Each morning Cairn reads {projectName}&apos;s board and your connected apps, then sorts what it finds into what needs you,
-        what it has already drafted for you, and what is moving without you. It only reads: nothing is sent, posted or changed
-        until you act on it.
+        Each morning Cairn reads the boards of your {state.projects.length === 1 ? "project" : `${state.projects.length} projects`} and
+        your connected apps, then sorts what it finds into what needs you, what it has already drafted for you, and what is moving
+        without you. It only reads: nothing is sent, posted or changed until you act on it.
       </p>
 
       <div className="mt-6 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 p-4 space-y-4">
@@ -257,7 +277,7 @@ function TodaySetup({ state, projectName, onEnable }: {
             )}
           </div>
           <p className="text-2xs text-[var(--text-tertiary)] mt-2">
-            Uses the connectors attached to this project (or to all projects). Gathered content is sent to your configured model.
+            Uses the connectors attached to your projects or to all projects. You can leave projects and apps out later. Gathered content is sent to your configured model.
           </p>
         </div>
       </div>
@@ -277,27 +297,30 @@ function TodaySetup({ state, projectName, onEnable }: {
 
 // ── The brief ───────────────────────────────────────────────────────────────
 
-function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSchedule, onDisable, onExport }: {
+function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onSettings, onDisable, onExport }: {
   state: TodayState;
   workspaceId: string;
-  projectId: string;
   liveTool: string | null;
   error: string | null;
   onRun: () => void;
   onSchedule: (time: string, weekdaysOnly: boolean) => Promise<void>;
+  onSettings: (settings: TodaySettingsValue) => Promise<void>;
   onDisable: () => Promise<void>;
   onExport: () => Promise<{ filePath: string } | null>;
 }) {
   const brief = state.brief;
-  const { ids: dismissed, toggle, set: setDismissed } = useDismissed(projectId, brief?.date);
+  const projectNames = useMemo(() => new Map(state.projects.map((p) => [p.id, p.name])), [state.projects]);
+  const activeProjectId = useCairnStore((s) => s.activeProjectId);
+  const gathering = state.running && brief?.status === "gathering";
+  const { ids: dismissed, toggle, set: setDismissed } = useDismissed(workspaceId, brief?.date);
   // The item open in the act panel; `doneId` is what "done" marks in Today.
   const [act, setAct] = useState<(TodayActTarget & { doneId: string }) | null>(null);
-  const { edits, setEdit } = useDraftEdits(projectId, brief?.date);
+  const { edits, setEdit } = useDraftEdits(workspaceId, brief?.date);
   // A brief the user hasn't opened yet stacks itself in once, then counts as seen.
-  // Captured once per mount: a brief that lands while the tab is open differs from it too.
-  const [seenAtMount] = useState(() => todaySeenAt(projectId));
-  const unseen = !!brief && seenAtMount !== brief.generatedAt;
-  useEffect(() => { if (brief) markTodaySeen(projectId, brief.generatedAt); }, [projectId, brief]);
+  // Captured once per mount: a brief that lands while the view is open differs from it too.
+  const [seenAtMount] = useState(() => todaySeenAt(workspaceId));
+  const unseen = !!brief && brief.status === "ready" && seenAtMount !== brief.generatedAt;
+  useEffect(() => { if (brief?.status === "ready") markTodaySeen(workspaceId, brief.generatedAt); }, [workspaceId, brief]);
   const [flash, setFlash] = useState<Lane | "day" | null>(null);
   const [showAllDrafts, setShowAllDrafts] = useState(false);
   const nowMs = useNow(60_000);
@@ -320,7 +343,7 @@ function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSc
       <Button variant="accent" size="sm" onClick={onRun} disabled={state.running}>
         {state.running ? <MiniStack size={13} busy /> : <RefreshCw size={12} />} {state.running ? "Gathering" : brief ? "Refresh" : "Run now"}
       </Button>
-      <TodaySettings key={`${state.time}-${state.weekdaysOnly}`} state={state} onSchedule={onSchedule} onDisable={onDisable} onExport={onExport} />
+      <TodaySettings key={`${state.time}-${state.weekdaysOnly}`} state={state} onSchedule={onSchedule} onSettings={onSettings} onDisable={onDisable} onExport={onExport} />
       <span className="text-2xs text-[var(--text-tertiary)] ml-1">
         {state.running && liveTool ? `Reading: ${liveTool}` : (
           <>
@@ -338,7 +361,7 @@ function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSc
         <CairnStack counts={{ need: 0, prep: 0, fyi: 0 }} muted={!state.running} busy={state.running} className="mb-6" />
         <h2 className="text-lg font-semibold">{state.running ? "Writing your first brief" : "No brief yet"}</h2>
         <p className="text-sm text-[var(--text-secondary)] mt-2">
-          {state.running ? "Cairn is reading your board and connected apps. This usually takes a minute or two." : "Today is on. Run it now or wait for the next scheduled run."}
+          {state.running ? "Cairn is reading your boards and connected apps. Items appear here as it finds them." : "Today is on. Run it now or wait for the next scheduled run."}
         </p>
         {(state.lastError || error) && <p className="text-xs text-[var(--danger)] mt-3">{error ?? state.lastError}</p>}
         {header}
@@ -366,6 +389,7 @@ function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSc
   const hasDay = brief.events.length > 0;
 
   return (
+    <ProjectNames.Provider value={projectNames}>
     <div className="pb-6">
       <div className="grid gap-8 items-end pb-5 border-b border-[var(--border-subtle)] grid-cols-1 @3xl:grid-cols-[1fr_300px]">
         <div className="min-w-0">
@@ -375,9 +399,13 @@ function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSc
             {!isToday && <span className="text-[var(--warning)] font-sans"> · from an earlier day</span>}
           </div>
           <h2 className="text-2xl leading-tight mt-2 mb-1.5 max-w-[24ch] font-normal tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            {brief.headline}
+            {gathering ? "Gathering your brief" : brief.headline}
           </h2>
-          <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[58ch]">{brief.lede}</p>
+          <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[58ch]">
+            {gathering
+              ? `Items arrive as Cairn finds them${liveTool ? `. Reading ${liveTool}` : ""}. The headline comes last.`
+              : brief.lede}
+          </p>
           {(state.lastError || error) && <p className="text-xs text-[var(--danger)] mt-2">Last run: {error ?? state.lastError}</p>}
           <div className="grid gap-2.5 mt-4 grid-cols-2 @xl:grid-cols-[repeat(4,minmax(0,150px))]">
             <KpiTile label="Decisions" value={String(openDecisions)} detail={`of ${openNeed.length} that need you`} onClick={() => jump("need")} />
@@ -479,9 +507,11 @@ function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSc
         </LaneBox>
         <LaneBox id="fyi" title="Moving without you" count={brief.fyi.length} tone="var(--stone-1)" flash={flash === "fyi"}>
           {brief.fyi.length === 0 && <Empty>Quiet.</Empty>}
-          {brief.fyi.map((f, i) => <FyiRow key={i} item={f} />)}
+          {brief.fyi.map((f) => <FyiRow key={f.id} item={f} />)}
         </LaneBox>
       </div>
+
+      <ProjectsSection facts={state.facts} />
 
       <div className="mt-6 flex flex-wrap items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] text-xs">
         <span className="text-2xs text-[var(--text-tertiary)] mr-1">Built from</span>
@@ -496,7 +526,7 @@ function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSc
         <TodayActPanel
           key={`${act.key}-${act.answer ?? ""}`}
           workspaceId={workspaceId}
-          projectId={projectId}
+          projectId={act.projectId ?? activeProjectId ?? undefined}
           date={brief.date}
           target={act}
           onSaveDraft={(id, text) => setEdit(id, text === null || text === original(id) ? null : text)}
@@ -506,24 +536,27 @@ function TodayView({ state, workspaceId, projectId, liveTool, error, onRun, onSc
         />
       )}
     </div>
+    </ProjectNames.Provider>
   );
 }
 
-function TodaySettings({ state, onSchedule, onDisable, onExport }: {
+function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport }: {
   state: TodayState;
   onSchedule: (time: string, weekdaysOnly: boolean) => Promise<void>;
+  onSettings: (settings: TodaySettingsValue) => Promise<void>;
   onDisable: () => Promise<void>;
   onExport: () => Promise<{ filePath: string } | null>;
 }) {
+  const flip = (list: string[], id: string, on: boolean) => (on ? list.filter((x) => x !== id) : [...list, id]);
   const [time, setTime] = useState(state.time);
   const [weekdaysOnly, setWeekdaysOnly] = useState(state.weekdaysOnly);
   const [exported, setExported] = useState<string | null>(null);
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm"><Settings2 size={12} /> Schedule</Button>
+        <Button variant="ghost" size="sm"><Settings2 size={12} /> Settings</Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[280px] p-3 space-y-3">
+      <PopoverContent align="start" className="w-[300px] p-3 space-y-3 max-h-[70vh] overflow-y-auto">
         <div className="flex items-center gap-2 text-xs">
           <span className="text-[var(--text-secondary)] w-20">Refresh at</span>
           <input
@@ -538,8 +571,21 @@ function TodaySettings({ state, onSchedule, onDisable, onExport }: {
         </label>
         <div className="flex justify-between pt-1">
           <Button size="xs" variant="ghost" className="text-[var(--danger)]" onClick={() => void onDisable()}>Turn off Today</Button>
-          <Button size="xs" variant="accent" onClick={() => void onSchedule(time, weekdaysOnly)}>Save</Button>
+          <Button size="xs" variant="accent" onClick={() => void onSchedule(time, weekdaysOnly)}>Save schedule</Button>
         </div>
+        <SettingsList
+          title="Projects"
+          hint="Today reads the board of each project that's on, and the apps attached to it."
+          items={state.projects.map((p) => ({ id: p.id, name: p.name, on: !state.settings.excludedProjects.includes(p.id) }))}
+          onToggle={(id, on) => void onSettings({ ...state.settings, excludedProjects: flip(state.settings.excludedProjects, id, on) })}
+        />
+        <SettingsList
+          title="Apps"
+          hint="Apps that are off aren't offered to the run at all."
+          empty="No apps are attached to the projects that are on."
+          items={state.apps.map((a) => ({ id: a.id, name: a.name, on: !state.settings.excludedApps.includes(a.id) }))}
+          onToggle={(id, on) => void onSettings({ ...state.settings, excludedApps: flip(state.settings.excludedApps, id, on) })}
+        />
         <div className="border-t border-[var(--border-subtle)] pt-2.5">
           <Button
             size="xs"
@@ -554,11 +600,84 @@ function TodaySettings({ state, onSchedule, onDisable, onExport }: {
             <Download size={11} /> Export data
           </Button>
           <p className="text-2xs text-[var(--text-tertiary)] mt-1.5 leading-relaxed break-all">
-            {exported ?? "Saves the recipe, the brief, recent runs and the last run's log and session events as one JSON file, for debugging. It holds the content Cairn read."}
+            {exported ?? "Saves the prompt, the brief, recent runs and the last run's log and session events as one JSON file, for debugging. It holds the content Cairn read."}
           </p>
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function SettingsList({ title, hint, empty, items, onToggle }: {
+  title: string; hint: string; empty?: string;
+  items: Array<{ id: string; name: string; on: boolean }>;
+  onToggle: (id: string, on: boolean) => void;
+}) {
+  return (
+    <div className="border-t border-[var(--border-subtle)] pt-2.5">
+      <div className="text-xs font-medium text-[var(--text-primary)]">{title}</div>
+      <p className="text-2xs text-[var(--text-tertiary)] mt-0.5 mb-1.5 leading-relaxed">{hint}</p>
+      {items.length === 0 && empty && <p className="text-2xs text-[var(--text-tertiary)]">{empty}</p>}
+      <div className="space-y-1">
+        {items.map((it) => (
+          <label key={it.id} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] min-w-0">
+            <Toggle checked={it.on} onCheckedChange={(on) => onToggle(it.id, on)} label={it.name} />
+            <span className="truncate">{it.name}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Your projects (computed by Cairn) ───────────────────────────────────────
+
+function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
+  const { setActiveProject, setView } = useCairnStore(useShallow((s) => ({ setActiveProject: s.setActiveProject, setView: s.setView })));
+  if (facts.length === 0) return null;
+  const open = (projectId: string) => { setActiveProject(projectId); setView("board"); };
+  return (
+    <section className="mt-6">
+      <div className="flex items-baseline gap-2 mb-2 px-1">
+        <h3 className="text-sm font-semibold">Your projects</h3>
+        <span className="text-2xs text-[var(--text-tertiary)]">From your boards, notes and automations, worked out by Cairn</span>
+      </div>
+      <div className="grid gap-2.5 grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3">
+        {facts.map((f) => {
+          const chips: Array<{ label: string; list: string[]; warn?: boolean }> = [
+            { label: "due today", list: f.dueToday.map((c) => c.title) },
+            { label: "overdue", list: f.overdue.map((c) => `${c.title} · due ${c.dueDate}`), warn: true },
+            { label: "in review", list: f.inReview.map((c) => c.title) },
+            { label: "stale 5d+", list: f.stale.map((c) => `${c.title} · ${c.days}d`) },
+            { label: f.failingAutomations.length === 1 ? "automation failing" : "automations failing", list: f.failingAutomations.map((a) => `${a.name} · ${a.failures} failed`), warn: true },
+            { label: f.notesChanged.length === 1 ? "note changed" : "notes changed", list: f.notesChanged.map((n) => n.title) },
+          ].filter((c) => c.list.length > 0);
+          return (
+            <div key={f.projectId} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 px-3 py-2.5 min-w-0">
+              <button type="button" onClick={() => open(f.projectId)} className={cn("text-sm font-medium hover:text-[var(--accent)] truncate max-w-full text-left rounded", FOCUS_RING)}>
+                {f.name}
+              </button>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {chips.length === 0 && <span className="text-2xs text-[var(--text-tertiary)]">Nothing due, in review or stale.</span>}
+                {chips.map((c) => (
+                  <Tooltip key={c.label} content={<span className="block max-w-[260px] whitespace-pre-line">{c.list.join("\n")}</span>}>
+                    <span
+                      tabIndex={0}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-2xs",
+                        c.warn ? "border-[color-mix(in_srgb,var(--warning)_45%,transparent)] text-[var(--text-primary)]" : "border-[var(--border)] text-[var(--text-secondary)]",
+                      )}
+                    >
+                      <span className="font-mono font-semibold">{c.list.length}</span> {c.label}
+                    </span>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -770,10 +889,17 @@ function LaneBox({ id, title, count, tone, note, flash, children }: {
   );
 }
 
-function ItemMeta({ kind, source, age, children }: { kind: string; source: string; age?: string; children?: React.ReactNode }) {
+function ProjectChip({ projectId }: { projectId?: string }) {
+  const name = useContext(ProjectNames).get(projectId ?? "");
+  if (!name) return null;
+  return <span className="shrink-0 max-w-[12ch] truncate px-1.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)]">{name}</span>;
+}
+
+function ItemMeta({ kind, source, age, projectId, children }: { kind: string; source: string; age?: string; projectId?: string; children?: React.ReactNode }) {
   return (
     <div className="flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)] mb-1 min-w-0">
       <span className="font-medium text-[var(--text-secondary)] shrink-0">{kind}</span>
+      <ProjectChip projectId={projectId} />
       <span className="truncate">· {source}</span>
       {age && <span className="ml-auto font-mono shrink-0">{age}</span>}
       {children}
@@ -795,7 +921,7 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
   const decision = item.kind === "decision" && item.choices.length > 0;
   const itemDraft = draftFor(item.draftId);
   const base = {
-    key: item.id, title: item.title, source: item.source, url: item.url,
+    key: item.id, title: item.title, source: item.source, url: item.url, projectId: item.projectId,
     context: [item.body, item.why].filter(Boolean).join(" "),
     crumb: `Need you · ${decision ? "Decision" : "To do"}`,
   };
@@ -808,7 +934,7 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
         done && "opacity-45",
       )}
     >
-      <ItemMeta kind={decision ? "Decision" : "To do"} source={item.source} age={item.age}>
+      <ItemMeta kind={decision ? "Decision" : "To do"} source={item.source} age={item.age} projectId={item.projectId}>
         <IconButton label={done ? "Mark not done" : "Mark done"} size="sm" pressed={done} onClick={onToggle} className="-my-1 shrink-0">
           <Check size={12} />
         </IconButton>
@@ -1000,12 +1126,12 @@ function DraftCard({ item, done, onDismiss, onAct, slot, edited, onEdit }: {
   }
   const kindLabel = { reply: "Reply draft", review: "Review notes", cards: "Card breakdown", note: "Note draft", other: "Draft" }[item.kind];
   const target: TodayActTarget = {
-    key: item.id, title: item.title, source: item.source, url: item.url, draft: item,
+    key: item.id, title: item.title, source: item.source, url: item.url, draft: item, projectId: item.projectId,
     crumb: `Prepared for you · ${kindLabel}`,
   };
   return (
     <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5">
-      <ItemMeta kind={edited ? `${kindLabel} · edited` : kindLabel} source={item.target ?? item.source}>
+      <ItemMeta kind={edited ? `${kindLabel} · edited` : kindLabel} source={item.target ?? item.source} projectId={item.projectId}>
         <IconButton label="Discard draft" size="sm" onClick={onDismiss} className="-my-1 ml-auto shrink-0"><X size={12} /></IconButton>
       </ItemMeta>
       <div className="text-sm font-medium leading-snug">{item.title}</div>
@@ -1047,7 +1173,10 @@ function FyiRow({ item }: { item: TodayFyi }) {
       <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: dot }} />
       <span className="min-w-0">
         <span className="block text-xs text-[var(--text-primary)]">{item.title}</span>
-        <span className="block text-2xs text-[var(--text-tertiary)] mt-0.5">{[item.detail, item.source].filter(Boolean).join(" · ")}</span>
+        <span className="flex gap-1.5 text-2xs text-[var(--text-tertiary)] mt-0.5 min-w-0">
+          <ProjectChip projectId={item.projectId} />
+          <span className="min-w-0">{[item.detail, item.source].filter(Boolean).join(" · ")}</span>
+        </span>
       </span>
     </>
   );

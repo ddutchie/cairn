@@ -2,6 +2,7 @@
 
 import { invokeContract, onIpcEvent } from "./ipc";
 import type { AutomationInput, AutomationPatch, AutomationRequirement, AutomationRunEvent } from "../../shared/types/automations";
+import type { TodaySettings } from "../../shared/today/brief";
 
 export const automationsApi = {
   // ── Heartbeat automations ─────────────────────
@@ -15,17 +16,20 @@ export const automationsApi = {
     recentRuns: (workspaceId: string, projectId?: string | null, limit?: number) =>
       invokeContract("db:automation:recentRuns", { workspaceId, projectId: projectId ?? null, limit }),
     runNow: (id: string) => invokeContract("db:automation:runNow", { id }),
-    /** Built-in Today automation (Overview → Today). */
+    /** Built-in Today automation (the Today view, one per workspace). */
     today: {
-      get: (workspaceId: string, projectId: string) => invokeContract("today:get", { workspaceId, projectId }),
-      enable: (req: { workspaceId: string; projectId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }) =>
+      get: (workspaceId: string) => invokeContract("today:get", { workspaceId }),
+      enable: (req: { workspaceId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }) =>
         invokeContract("today:enable", req),
-      disable: (workspaceId: string, projectId: string) => invokeContract("today:disable", { workspaceId, projectId }),
-      run: (workspaceId: string, projectId: string) => invokeContract("today:run", { workspaceId, projectId }),
-      route: (req: { workspaceId: string; projectId: string; source: string; target?: string; kind?: string }) =>
+      disable: (workspaceId: string) => invokeContract("today:disable", { workspaceId }),
+      settings: (workspaceId: string, settings: TodaySettings) => invokeContract("today:settings", { workspaceId, settings }),
+      run: (workspaceId: string) => invokeContract("today:run", { workspaceId }),
+      route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
         invokeContract("today:route", req),
-      export: (req: { workspaceId: string; projectId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
+      export: (req: { workspaceId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
         invokeContract("today:export", req),
+      /** A Today run changed the brief. */
+      onUpdated: (cb: (payload: { workspaceId: string; status: "gathering" | "ready" }) => void) => onIpcEvent("today:updated", cb),
     },
     /** Daily automation budget (USD) + today's recorded automation spend. */
     budget: {

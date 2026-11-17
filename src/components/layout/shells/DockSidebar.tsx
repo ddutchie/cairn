@@ -27,6 +27,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { IconButton } from "@/components/ui/icon-button";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useTodayBadge } from "@/components/today/today-view";
+import { MiniStack } from "@/components/today/today-stack";
 
 export function DockSidebar() {
   const {
@@ -82,6 +85,14 @@ export function DockSidebar() {
   );
 
   const workspace = useMemo(() => workspaces.find((w) => w.id === activeWorkspaceId), [workspaces, activeWorkspaceId]);
+  // Today's state for its sidebar entry: off, gathering, or a brief not opened yet.
+  const today = useTodayBadge(activeWorkspaceId ?? null);
+  const todayHint = !today.enabled
+    ? "Today: turn on a daily brief from your projects and apps"
+    : today.running ? "Today: gathering your brief" : today.unseen ? "Today: a new brief is ready" : "Today: your daily brief";
+  const todayIcon = (px: number) => (
+    <MiniStack size={px} muted={!today.enabled} busy={today.running} dot={today.unseen && !isView(activeView, "today")} />
+  );
   const projects = useMemo(() => (activeWorkspaceId ? allProjects.filter((p) => p.workspaceId === activeWorkspaceId) : []), [activeWorkspaceId, allProjects]);
   const openCounts = useMemo(() => countOpenCardsByProject(cards), [cards]);
   const activeMetrics = useProjectMetrics(activeProjectId);
@@ -224,6 +235,7 @@ export function DockSidebar() {
           {!hiddenViews.has("agent") && <IconButton label="Agent" data-tutorial="agent-view" tooltip={`Agent (${shortcutMap.get("agent") ?? ""})`} tooltipSide="right" onClick={() => setView("agent")} className={cn("size-auto p-2", isView(activeView, "agent") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Terminal size={15} /></IconButton>}
           <div className="flex-1" aria-hidden="true" />
           <div className="mt-auto w-full flex flex-col items-center gap-1 pt-2 border-t border-[var(--border)]">
+            <IconButton label="Today" tooltip={todayHint} tooltipSide="right" onClick={() => setView("today")} className={cn("size-auto p-2", isView(activeView, "today") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>{todayIcon(15)}</IconButton>
             <IconButton label="Automations" data-tutorial="automations-view" tooltipSide="right" onClick={() => setView("automations")} className={cn("size-auto p-2", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Zap size={15} /></IconButton>
             {hiddenViews.has("calendar") && <IconButton label="Calendar" tooltipSide="right" onClick={() => setView("calendar-all")} className={cn("size-auto p-2", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></IconButton>}
             {!hiddenViews.has("graph") && <IconButton label="Knowledge Graph" tooltipSide="right" onClick={() => setView("graph")} className={cn("size-auto p-2", isView(activeView, "graph") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={15} /></IconButton>}
@@ -471,7 +483,15 @@ export function DockSidebar() {
               <div className="overflow-hidden">
                 <div className="px-2 pb-2 space-y-0.5">
                   <RunningChatPins />
-                  {/* Automations — prominent, above workspace views */}
+                  {/* Today and Automations — prominent, above workspace views */}
+                  <Tooltip content={todayHint} side="right">
+                    <button onClick={() => setView("today")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "today") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                      {todayIcon(13)}<span>Today</span>
+                      {today.enabled && (today.running || today.unseen) && (
+                        <span className="ml-auto text-2xs text-[var(--text-tertiary)]">{today.running ? "Gathering" : "Ready"}</span>
+                      )}
+                    </button>
+                  </Tooltip>
                   <button data-tutorial="automations-view" onClick={() => setView("automations")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                     <Zap size={13} /><span>Automations</span>
                   </button>

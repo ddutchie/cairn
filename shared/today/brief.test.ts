@@ -86,9 +86,9 @@ describe("decisions", () => {
 
 describe("dayBlocks", () => {
   const events = [
-    { title: "a", start: "09:00", end: "09:15" },
-    { title: "b", start: "11:00", end: "12:00" },
-    { title: "c", start: "12:30", end: "17:30" },
+    { id: "a", title: "a", start: "09:00", end: "09:15" },
+    { id: "b", title: "b", start: "11:00", end: "12:00" },
+    { id: "c", title: "c", start: "12:30", end: "17:30" },
   ];
 
   it("lays out free and meeting blocks and marks the best free block", () => {
@@ -114,7 +114,7 @@ describe("dayBlocks", () => {
   });
 
   it("merges overlapping meetings for the free-time maths", () => {
-    const d = dayBlocks([{ title: "x", start: "09:00", end: "10:00" }, { title: "y", start: "09:30", end: "10:30" }], 0, { dayStart: 540, dayEnd: 660 });
+    const d = dayBlocks([{ id: "x", title: "x", start: "09:00", end: "10:00" }, { id: "y", title: "y", start: "09:30", end: "10:30" }], 0, { dayStart: 540, dayEnd: 660 });
     expect(d.blocks.filter((b) => b.kind === "free").map((b) => [b.start, b.end])).toEqual([[630, 660]]);
   });
 

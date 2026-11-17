@@ -12,6 +12,8 @@ export interface EngineAutomationArgs extends Omit<EnginePromptArgs, "chat" | "r
   tap: HostSend;
   /** Unattended mode: `yolo` when approvals are automatic, otherwise every ask reaches the tap. */
   autoApprove: boolean;
+  /** The usage row's source; "automation" unless the run is Today. */
+  usageSource?: "automation" | "today";
 }
 
 /** A headless coding run (automations): same engine and tools, events delivered to `tap` only. */
@@ -20,7 +22,7 @@ export async function runEngineAutomation(a: EngineAutomationArgs): Promise<void
   try {
     await runEnginePrompt({
       ...a,
-      usageSource: "automation",
+      usageSource: a.usageSource ?? "automation",
       forceSandbox: true,
       noQuestions: true,
       profile: { id: "automation", interactive: true, mode: a.autoApprove ? "yolo" : "ask", externalAlwaysAsks: a.autoApprove },

@@ -74,7 +74,12 @@ import { getSecretValue } from "./secure-store";
 import { toSlug } from "../host-shared/text-utils";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 import { errMsg } from "../host-shared/errors";
-import { isTodayAutomation, saveTodayBrief, todayAllowsTool, TODAY_RECIPE } from "./today";
+import {
+  includedProjects, isTodayAutomation, loadLatestTodayBrief, readTodaySettings, saveTodayBrief, todayPrompt, todayToolFilter,
+} from "./today";
+import { projectFacts } from "./today-facts";
+import { todayBriefTools, type TodayBriefSession } from "./today-tools";
+import { finishBrief, startRefresh } from "../../shared/today/brief-edit";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -386,8 +391,11 @@ export async function runAutomation(
     /* fall back to the row */
   }
   // Today's recipe belongs to the app, not the row: a row saved by an older
-  // build keeps its old text, so the current one is used on every run.
-  if (isTodayAutomation(automation)) recipe = TODAY_RECIPE;
+  // build keeps its old text, so the current one is used on every run, with
+  // today's date and Cairn's facts for every included project.
+  const todaySettings = today ? readTodaySettings(workspacePath, automation) : null;
+  const todayProjects = todaySettings ? includedProjects(db, automation.workspaceId, todaySettings) : [];
+  if (today) recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects));
 
   const req: ChatRequest = {
     message: recipe,
@@ -573,6 +581,18 @@ export async function runAutomation(
   if (writeRunFileHandler) addTool(writeRunFileToolDefinition as never, () => ({ class: "WRITE_LOCAL" }), (a) => writeRunFileHandler(a));
   if (deliverFileHandler) addTool(deliverFileToolDefinition as never, () => ({ class: "WRITE_LOCAL" }), (a) => deliverFileHandler(a));
 
+  // Today builds its brief through tools. Each change is saved and pushed, so the view fills in while the run gathers.
+  let todaySession: TodayBriefSession | null = null;
+  const saveToday = (brief: TodayBriefSession["brief"]) => {
+    try { saveTodayBrief(workspacePath, automation, brief); } catch (err) { console.warn("[heartbeat] failed to save Today brief:", err); }
+    try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status }); } catch { /* best-effort */ }
+  };
+  if (today) {
+    todaySession = { brief: startRefresh(loadLatestTodayBrief(workspacePath, automation), new Date()), finished: false };
+    saveToday(todaySession.brief);
+    automationTools.push(...todayBriefTools(todaySession, saveToday));
+  }
+
   // Aborted by session:abort (which stops the engine run) or by the run_script handler's own signal.
   const abortCtrl = new AbortController();
 
@@ -612,7 +632,7 @@ export async function runAutomation(
     emitRun("toolConfirmRequired", { tool: toolName, callId, label: data.label });
     // Today is read-only and unattended: decide every ask here, never wait on the user.
     if (today) {
-      const allowed = data.escalation !== true && todayAllowsTool(toolName);
+      const allowed = data.escalation !== true && todayToolFilter(todaySettings!)(toolName);
       respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: allowed });
       return;
     }
@@ -662,6 +682,9 @@ export async function runAutomation(
       cwd: runDirForAgent,
       projectId: automation.projectId ?? undefined,
       workspaceId: automation.workspaceId,
+      // Today reads the connectors of every project it covers.
+      externalProjectIds: today ? todayProjects.map((p) => p.id) : undefined,
+      usageSource: today ? "today" : undefined,
       systemPrompt: buildSystemPrompt(req),
       llmConfig: {
         baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai",
@@ -669,7 +692,7 @@ export async function runAutomation(
       } as never,
       extraTools: automationTools,
       // Today never sees a tool that writes, so no saved "always allow" grant can let one run.
-      toolFilter: today ? todayAllowsTool : undefined,
+      toolFilter: todaySettings ? todayToolFilter(todaySettings) : undefined,
       autoApprove: automation.approvalMode !== "ask",
       signal: abortCtrl.signal,
       tap: tapWithErrors,
@@ -699,14 +722,16 @@ export async function runAutomation(
     return;
   }
 
-  // Today: the final message is the brief. A run that produced none is an error, so the tab can say why.
-  if (today) {
-    let saved = false;
-    try { saved = saveTodayBrief(workspacePath, automation, projectName, finalContent) !== null; } catch (err) {
-      console.warn("[heartbeat] failed to save Today brief:", err);
-    }
-    if (!saved) {
-      const error = "The run finished without a readable brief. Try again, or pick a more capable model.";
+  // Today: a run that never called today_finish still shows what it found, but the run is an error so the view can say why.
+  if (todaySession) {
+    const unfinished = !todaySession.finished;
+    if (unfinished) saveToday(finishBrief(todaySession.brief, {}, new Date()));
+    const b = todaySession.brief;
+    const empty = b.needYou.length + b.prepared.length + b.fyi.length + b.events.length === 0;
+    if (unfinished) {
+      const error = empty
+        ? "The run ended without building a brief. Try again, or pick a more capable model."
+        : "The run ended before finishing the brief, so some apps may be missing.";
       finaliseLog("error", error);
       updateAutomationRun(db, run.id, { status: "error", resultNoteId: null, error, scratch: finalScratch() });
       cleanupRuns();

@@ -26,6 +26,7 @@ import { InsightsView } from "@/components/graph/InsightsView";
 import { SearchPanel } from "@/components/search/search-panel";
 import { SettingsView } from "@/components/settings/settings-view";
 import { AutomationsView } from "@/components/automations/automations-view";
+import { TodayView } from "@/components/today/today-view";
 import { UsageView } from "@/components/usage/UsageView";
 import { NotificationCenter } from "@/components/automations/notification-center";
 import { AgentView } from "@/components/agent/AgentView";
@@ -502,6 +503,7 @@ export default function Home() {
       {lastContentView === "flow"      && <IdeaFlowView />}
      {lastContentView === "graph"     && <KnowledgeGraphView />}
       {lastContentView === "insights"  && <InsightsView />}
+      {lastContentView === "today" && <TodayView />}
       {lastContentView === "automations" && <AutomationsView />}
       {lastContentView === "usage" && <UsageView />}
       {lastContentView === "settings"  && <SettingsView />}

@@ -8,7 +8,7 @@ import type {
   Automation, AutomationEnvSpec, AutomationInput, AutomationPatch, AutomationRequirement, AutomationRun, AutomationRunEvent,
   AutomationRunWithAutomation, RunLog,
 } from "../../../shared/types/automations";
-import type { TodayState } from "../../../shared/today/brief";
+import type { TodaySettings, TodayState } from "../../../shared/today/brief";
 import { domainCall, type ElectronApi } from "./client";
 
 const automation = <T>(fn: (api: ElectronApi["automation"]) => Promise<T>) => domainCall("automation", fn);
@@ -51,18 +51,23 @@ export const automationsClient = {
     automation((a) => a.checkRequirements(workspaceId, projectId, requires)),
 };
 
-/** The built-in Today automation behind Overview → Today. */
+/** The built-in Today automation behind the Today view (one per workspace). */
 export const todayClient = {
-  get: (workspaceId: string, projectId: string): Promise<TodayState> => automation((a) => a.today.get(workspaceId, projectId)),
-  enable: (req: { workspaceId: string; projectId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }): Promise<TodayState> =>
+  get: (workspaceId: string): Promise<TodayState> => automation((a) => a.today.get(workspaceId)),
+  enable: (req: { workspaceId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }): Promise<TodayState> =>
     automation((a) => a.today.enable(req)),
-  disable: (workspaceId: string, projectId: string): Promise<TodayState> => automation((a) => a.today.disable(workspaceId, projectId)),
+  disable: (workspaceId: string): Promise<TodayState> => automation((a) => a.today.disable(workspaceId)),
+  /** Which projects and apps Today reads. */
+  settings: (workspaceId: string, settings: TodaySettings): Promise<TodayState> => automation((a) => a.today.settings(workspaceId, settings)),
   /** Starts a run now; `skipped` when one is already running. */
-  run: (workspaceId: string, projectId: string) => automation((a) => a.today.run(workspaceId, projectId)),
+  run: (workspaceId: string) => automation((a) => a.today.run(workspaceId)),
   /** Where an item goes and which connector tools could send it. Connects to the in-scope servers, so it can take a moment. */
-  route: (req: { workspaceId: string; projectId: string; source: string; target?: string; kind?: string }) =>
+  route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
     automation((a) => a.today.route(req)),
   /** Saves a debug bundle through a save dialog; null when cancelled. */
-  export: (req: { workspaceId: string; projectId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
+  export: (req: { workspaceId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
     automation((a) => a.today.export(req)),
+  /** A Today run changed the brief; returns the unsubscribe function (a no-op off-Electron). */
+  onUpdated: (cb: (event: { workspaceId: string; status: "gathering" | "ready" }) => void): (() => void) =>
+    window.electron?.automation.today.onUpdated(cb) ?? (() => {}),
 };
