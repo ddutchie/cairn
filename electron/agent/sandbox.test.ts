@@ -125,7 +125,8 @@ describe("carve-outs", () => {
     const roots = writableRoots(work);
     const ro = readOnlyCarveOuts(roots, work);
     expect(ro).toContain(path.join(fs.realpathSync(work), ".git", "hooks"));
-    expect(seatbeltProfile(roots, false, ro)).toContain(`(subpath "${path.join(fs.realpathSync(work), ".git", "hooks")}")`);
+    // The profile escapes backslashes (Windows paths), so escape the expected path the same way.
+    expect(seatbeltProfile(roots, false, ro)).toContain(`(subpath "${path.join(fs.realpathSync(work), ".git", "hooks").split("\\").join("\\\\")}")`);
     if (process.platform === "darwin") {
       const run = (cmd: string) => { const w = wrapSandboxed({ file: "/bin/bash", args: ["-c", cmd] }, work, { mode: "workspace-write" }); return spawnSync(w.file, w.args, { cwd: work, encoding: "utf8" }); };
       expect(run("echo x > ok.txt").status).toBe(0);

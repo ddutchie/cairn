@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { CAN_SYMLINK } from "./test-support/platform";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -837,7 +838,7 @@ describe("importVaultProjects auto-creates projects from folders", () => {
       "SELECT n.title, n.folder FROM notes n JOIN projects p ON n.project_id = p.id WHERE p.name = 'Research'",
     ).get() as { title: string; folder: string } | undefined;
     expect(row?.title).toBe("Deep");
-    expect(row?.folder).toBe(path.join("papers", "2024"));
+    expect(row?.folder).toBe("papers/2024");
   });
 
   it("is idempotent — a second scan creates no duplicate projects or notes", () => {
@@ -1242,7 +1243,7 @@ describe("re-import 3-way conflict handling (v2.6.8)", () => {
     fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 
-  it("rollback leaves a file outside the workspace alone when a symlink leads to it", () => {
+  it.skipIf(!CAN_SYMLINK)("rollback leaves a file outside the workspace alone when a symlink leads to it", () => {
     seedWorkspaceOnly();
     writeObsidianFile(path.join(tmpDir, "Journal"), "Entry.md", {}, "\n# Entry\n\nAlpha.");
     syncNotesFromDisk(db, tmpDir);

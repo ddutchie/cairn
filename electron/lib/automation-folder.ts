@@ -202,7 +202,7 @@ export function writeRunLog(runDir: string, log: RunLog): void {
   const tmpPath = path.join(runDir, ".run-log.json.tmp");
   try {
     fs.writeFileSync(tmpPath, `${JSON.stringify(log, null, 2)}\n`, "utf8");
-    const fd = fs.openSync(tmpPath, "r");
+    const fd = fs.openSync(tmpPath, "r+");
     try {
       fs.fsyncSync(fd);
     } finally {

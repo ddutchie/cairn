@@ -42,7 +42,7 @@ describe("lsp", () => {
   it("is absent without a language server", () => {
     expect(lspTool({ manager: new LspManager(undefined), cwd })).toBeUndefined();
     expect(findOnPath("definitely-not-a-real-binary-xyz")).toBeUndefined();
-    expect(findOnPath("sh")).toBeTruthy();
+    expect(findOnPath("node")).toBeTruthy();
   });
 
   it("answers definition and references with relative 1-based locations and a source line", async () => {
