@@ -1,6 +1,7 @@
 /** User-configured MCP servers and custom HTTP services, exposed as `mcp__<id>__*` / `svc__*` tools. */
 import type Database from "better-sqlite3";
 import { createHostStore } from "../host-store";
+import type { ToolScope } from "../../lib/external-tools";
 import { approvalPreview } from "../../../shared/agent/tool-risk";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentTool } from "../tool-types";
@@ -9,7 +10,25 @@ import { fail, fromJsonSchema, renderValue } from "./schema";
 export interface ExternalToolDeps {
   db: Database.Database;
   workspaceId: string;
-  projectId: string;
+  /** One project, or several (Today); global connectors are always included. */
+  projectId: ToolScope;
+  /** Cut each result to this many characters, with a note asking for a narrower call (Today's runs). */
+  maxResultChars?: number;
+  /**
+   * Run calls in one step at the same time (Today's runs). Off elsewhere: two writes to one app could
+   * race. Asks are still decided one at a time before anything runs.
+   */
+  parallel?: boolean;
+  /** Refuse a custom service call whose operation doesn't use GET when it runs (Today's runs). */
+  getOnly?: boolean;
+}
+
+/** Keep the head of an oversized result and say how much was cut, so the model can narrow the call. */
+export function capResult(text: string, max?: number): string {
+  if (!max || text.length <= max) return text;
+  return `${text.slice(0, max)}
+
+[result cut: showing ${max} of ${text.length} characters. Narrow the call (a date filter, fewer results, a more specific query) to see the rest.]`;
 }
 
 export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]> {
@@ -21,10 +40,12 @@ export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]
     parameters: fromJsonSchema(parameters),
     // Leaves the device through a connected service; asks unless a rule (e.g. `mcp__github__*`) allows it.
     risk: () => ({ class: "EXTERNAL" }),
+    concurrency: deps.parallel ? "parallel" : "exclusive",
     preview: (args) => approvalPreview(name, args),
     async execute(args, ctx) {
       try {
-        return { content: renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>, ctx.signal)) };
+        const text = renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>, ctx.signal, { getOnly: deps.getOnly }));
+        return { content: capResult(text, deps.maxResultChars) };
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }
@@ -57,7 +78,7 @@ export async function externalExtras(deps: ExternalToolDeps): Promise<{ tools: A
   const request = async (server: string, req: Parameters<typeof store.requestExternalMcpResource>[3], signal?: AbortSignal) => {
     if (!ids.includes(server)) return fail(`No MCP server "${server}" serves resources. Available: ${ids.join(", ")}.`);
     try {
-      return { content: renderValue(await store.requestExternalMcpResource(deps.workspaceId, deps.projectId, server, req, signal)) };
+      return { content: capResult(renderValue(await store.requestExternalMcpResource(deps.workspaceId, deps.projectId, server, req, signal)), deps.maxResultChars) };
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }

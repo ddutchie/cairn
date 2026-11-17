@@ -149,8 +149,24 @@ export interface RunLogTool {
   error?: string;
 }
 
+/** What a run was actually started with: the model settings, system prompt and tools it got. */
+export interface RunSetup {
+  model: string;
+  api: string;
+  baseUrl?: string;
+  contextWindow?: number;
+  maxTokens?: number;
+  reasoningEffort?: string;
+  systemPrompt: string;
+  tools: string[];
+  /** Each tool's description and JSON schema, so a run can be replayed outside the app (Today only). */
+  toolDefs?: { name: string; description: string; parameters: unknown }[];
+}
+
 /** A persisted per-run transcript — the inspectable record of a run. */
 export interface RunLog {
+  /** The model settings, system prompt and tools the run was started with. */
+  setup?: RunSetup;
   automationId: string;
   runId: string;
   startedAt: string;

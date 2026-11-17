@@ -8,7 +8,7 @@ import type { ChatThread, ChatThreadUpsertInput, ChatMessage, ChatToolCallRecord
 import { id, now } from "@/lib/utils";
 import { storage } from "@/lib/storage";
 import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
-import { ipc, ipcAwait, ipcResult } from "../ipc";
+import { ipc, ipcAwait, ipcData, ipcResult } from "../ipc";
 import { sessionClient } from "@/lib/ipc/session";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
 
@@ -18,6 +18,14 @@ function toUpsertInput(t: ChatThread): ChatThreadUpsertInput {
 }
 
 // ── Slice interface ───────────────────────────────────────────────────────────
+
+/**
+ * The latest `reloadThreadMessages` request per thread. Tokens never repeat, so an old response
+ * can't pass for a newer one; clearing a thread drops its entry, so a pending reload can't bring
+ * cleared messages back.
+ */
+let reloadToken = 0;
+const latestReload = new Map<string, number>();
 
 export interface ChatSlice {
   chatThreads: ChatThread[];
@@ -54,6 +62,13 @@ export interface ChatSlice {
   deleteThread: (threadId: ID) => Promise<boolean>;
   renameThread: (threadId: ID, title: string) => void;
   createNewThread: (workspaceId: ID, projectId?: ID) => ChatThread;
+  /**
+   * List a thread that so far ran off the list (a Today act panel's chat) under
+   * its existing id, so its engine session opens in the chat panel as is.
+   */
+  keepThread: (threadId: ID, workspaceId: ID, projectId?: ID, title?: string) => ChatThread;
+  /** Replace one thread's in-memory messages with its session log (a chat kept from outside the chat panel). */
+  reloadThreadMessages: (threadId: ID) => Promise<void>;
   compactChatThread: (threadId: ID) => Promise<void>;
   clearThreadMessages: (threadId: ID) => Promise<void>;
   clearAllThreads: (workspaceId: ID, projectId?: ID) => Promise<void>;
@@ -396,6 +411,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       console.error("[chat] deleteThread: running check failed", err);
       return false;
     }
+    // After the check, so a reload started while it ran can't bring the messages back either.
+    latestReload.delete(threadId);
     const wasActive = get().activeChatThreadId === threadId;
     const deletedThread = get().chatThreads.find((t) => t.id === threadId);
     // Abort any live loop for this thread before deleting — otherwise
@@ -460,6 +477,26 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     return saveThread(set, get, buildThread(workspaceId, projectId));
   },
 
+  keepThread(threadId, workspaceId, projectId, title) {
+    const existing = get().chatThreads.find((t) => t.id === threadId);
+    if (existing) return existing;
+    return saveThread(set, get, { ...buildThread(workspaceId, projectId), id: threadId, title });
+  },
+
+  async reloadThreadMessages(threadId) {
+    // Only the latest reload of a thread applies: an earlier one that answers last is stale.
+    const token = ++reloadToken;
+    latestReload.set(threadId, token);
+    const res = await ipcResult((e) => e.chat.sessionMessages(threadId));
+    if (latestReload.get(threadId) !== token) return;
+    latestReload.delete(threadId);
+    if ("error" in res) return;
+    const rows = (unwrapSessionPayload(res.data).messages as ChatMessage[])
+      .filter((m) => !(m.role === "assistant" && !m.content?.trim() && !m.reasoning?.trim() && String(m.id).includes("-trailing")))
+      .map((m) => ({ ...m, threadId }));
+    set((s) => ({ chatMessages: [...s.chatMessages.filter((m) => m.threadId !== threadId), ...rows] }));
+  },
+
   async compactChatThread(threadId) {
     const messages = get().chatMessages.filter((m) => m.threadId === threadId);
     if (messages.length < 4) {
@@ -521,6 +558,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   async clearThreadMessages(threadId) {
+    latestReload.delete(threadId);
     set((s) => ({
       chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
       chatThreads: s.chatThreads.map((t) =>
@@ -545,6 +583,9 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       console.error("[chat] clearAllThreads: running check failed", err);
       return;
     }
+    // A reload still in flight for one of these must not bring its messages back.
+    for (const id of ids) latestReload.delete(id);
+    const removedMessages = get().chatMessages.filter((m) => ids.has(m.threadId));
     set((s) => {
       const nextTitles: Record<string, string | null> = { ...s.projectedTitles };
       for (const id of ids) delete nextTitles[id];
@@ -560,7 +601,22 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     if (ids.has(storage.get<string>(ACTIVE_CHAT_THREAD_KEY) ?? "")) {
       storage.delete(ACTIVE_CHAT_THREAD_KEY);
     }
-    await ipcAwait((e) => e.chat.clearAllThreads(workspaceId, projectId ?? undefined));
+    // Only the threads cleared here: one kept into this scope since (a Today chat) stays.
+    try {
+      await ipcData((e) => e.chat.clearAllThreads(workspaceId, projectId ?? undefined, [...ids]));
+    } catch (err) {
+      // Nothing was deleted: put the threads back, so they're still listed and a second clear reaches them.
+      console.error("[chat] clearAllThreads failed", err);
+      set((s) => {
+        const present = new Set(s.chatThreads.map((t) => t.id));
+        return {
+          chatThreads: [...s.chatThreads, ...toDelete.filter((t) => !present.has(t.id))],
+          chatMessages: [...s.chatMessages, ...removedMessages.filter((m) => !present.has(m.threadId))],
+        };
+      });
+      get().persist();
+      return;
+    }
     // Create a fresh empty thread so the panel doesn't stay in a null-thread state
     if (workspaceId) {
       const next = get().getOrCreateThread(workspaceId, projectId);

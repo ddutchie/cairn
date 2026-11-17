@@ -8,10 +8,11 @@ vi.mock("electron", () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }));
 
-import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs, checkRequirements, getExternalToolDefs } from "./external-tools";
+import { resolveAttachedToolIds, isExternalToolName, prettifyToolName, externalToolLabel, filterDisabledMcpDefs, checkRequirements, getExternalToolDefs, listScopedConnectors, executeExternalTool } from "./external-tools";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject, saveMcpServer, saveCustomService, setToolAttachment } from "../db/queries";
 import * as mcpClient from "./mcp-client";
+import * as services from "./custom-services";
 
 describe("external-tools scoping", () => {
   it("collects enabled attachments by type", () => {
@@ -148,6 +149,14 @@ describe("checkRequirements", () => {
 
   afterEach(() => { db.close(); });
 
+  it("resolves each project on its own and leaves excluded connectors out", () => {
+    createProject(db, { id: "proj-2", workspaceId: "ws-1", name: "Q" });
+    setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });
+    setToolAttachment(db, { projectId: "proj-2", toolType: "mcp", toolId: "m-linear", enabled: false });
+    expect(listScopedConnectors(db, "ws-1", ["proj-1", "proj-2"]).map((c) => c.id)).toEqual(["m-linear"]);
+    expect(listScopedConnectors(db, "ws-1", { projects: ["proj-1", "proj-2"], exclude: ["m-linear"] })).toEqual([]);
+  });
+
   it("flags a connector as attached when it is enabled + project-attached", () => {
     setToolAttachment(db, { projectId: "proj-1", toolType: "mcp", toolId: "m-linear", enabled: true });
     const status = checkRequirements(db, "ws-1", "proj-1", [{ kind: "mcp", name: "Linear" }]);
@@ -243,5 +252,40 @@ describe("getExternalToolDefs requirement filtering", () => {
     const byName = await getExternalToolDefs(db, "ws-1", "proj-1", [{ kind: "mcp", name: "GitHub" }]);
     expect(byId.map((d) => d.function.name)).toEqual(["mcp__m-github__search"]);
     expect(byName.map((d) => d.function.name)).toEqual(["mcp__m-github__search"]);
+  });
+});
+
+describe("executeExternalTool getOnly (Today)", () => {
+  let db: Database.Database;
+  const save = (method: "GET" | "DELETE") => saveCustomService(db, {
+    id: "svc-rec", workspaceId: "ws-1", name: "Records", apiUrl: "https://records.example.com", method,
+    toolDefinition: JSON.stringify({ name: "get_record", description: "Get", parameters: { type: "object", properties: {} } }),
+    enabled: true, source: "custom",
+  });
+
+  beforeEach(() => {
+    db = new BetterSqlite3(":memory:");
+    applySchema(db);
+    createWorkspace(db, { id: "ws-1", name: "W" });
+    createProject(db, { id: "proj-1", workspaceId: "ws-1", name: "P" });
+    setToolAttachment(db, { projectId: "proj-1", toolType: "service", toolId: "svc-rec", enabled: true });
+    vi.spyOn(services, "callService").mockResolvedValue("ok");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    db.close();
+  });
+
+  it("refuses an operation whose method changed from GET, judged by the config it would be sent with", async () => {
+    save("DELETE");
+    const out = await executeExternalTool(db, "ws-1", "proj-1", "svc__svc-rec__get_record", {}, undefined, { getOnly: true });
+    expect(out).toMatch(/doesn't use GET/);
+    expect(services.callService).not.toHaveBeenCalled();
+  });
+
+  it("sends a GET operation", async () => {
+    save("GET");
+    expect(await executeExternalTool(db, "ws-1", "proj-1", "svc__svc-rec__get_record", {}, undefined, { getOnly: true })).toBe("ok");
   });
 });

@@ -10,9 +10,11 @@
  * Events (main → renderer): session:projection (typed presentation updates).
  */
 
+import { BrowserWindow, webContents } from "electron";
 import { registerContractHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { onSession, rejectBusy, rejectPrompt } from "./session-guards";
 import { handle } from "./result-helpers";
+import { forgetWindowSessions, markSessionOnScreen, setWindowVisibleCheck } from "../lib/session-on-screen";
 import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/chat-prompt";
 import { emitSessionChip } from "./engine-commands";
@@ -56,6 +58,8 @@ interface AgentPromptRequest {
   personality?: ChatRequest["personality"];
   approvalPolicy?: ChatRequest["approvalPolicy"];
   useSubagents?: boolean;
+  /** Chat: text only the model sees with this prompt. */
+  context?: string;
   config?: {
     provider?: string;
     baseUrl?: string;
@@ -205,6 +209,30 @@ export function registerSessionRuntimeHandlers(
     return subagentResult(() => listEngineSchedules(ctx, req.sessionId));
   }));
 
+  // ── session:on-screen ────────────────────────────────────────────────────
+  // Surfaces report the session they show, so an approval in a chat the user
+  // isn't looking at still reaches the notification bell. A window's reports
+  // are dropped when it reloads or closes.
+  const trackedWindows = new Set<number>();
+  // A minimized or hidden window isn't showing its sessions, whatever it last reported.
+  setWindowVisibleCheck((windowId) => {
+    const wc = webContents.fromId(windowId);
+    if (!wc || wc.isDestroyed()) return false;
+    const win = BrowserWindow.fromWebContents(wc);
+    return !win || (win.isVisible() && !win.isMinimized());
+  });
+  registerIpcOn("session:on-screen", (event, { sessionId, onScreen }: { sessionId: string; onScreen: boolean }) => {
+    const sender = event.sender;
+    const windowId = sender.id;
+    if (!trackedWindows.has(windowId)) {
+      trackedWindows.add(windowId);
+      const forget = () => forgetWindowSessions(windowId);
+      sender.on("did-start-navigation", (details) => { if (details.isMainFrame && !details.isSameDocument) forget(); });
+      sender.once("destroyed", () => { forget(); trackedWindows.delete(windowId); });
+    }
+    markSessionOnScreen(windowId, sessionId, onScreen);
+  });
+
   // ── session:abort ────────────────────────────────────────────────────────
   registerIpcOn("session:abort", (_event, { sessionId }: { sessionId: string }) => {
     getEngineHost(ctx).abort(sessionId);
@@ -232,6 +260,7 @@ export function registerSessionRuntimeHandlers(
         personality: req.personality,
         approvalPolicy: req.approvalPolicy,
         useSubagents: req.useSubagents,
+        context: typeof req.context === "string" ? req.context : undefined,
         config: req.config,
       };
       await runEngineChat(ctx, chatReq);

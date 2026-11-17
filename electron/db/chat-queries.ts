@@ -31,6 +31,12 @@ export function upsertChatThread(db: Database.Database, t: {
   return toChatThread(db.prepare("SELECT * FROM chat_threads WHERE id = ?").get(t.id) as DbRow);
 }
 
+/** A chat thread's title, or null when the thread isn't in the list (or has none). */
+export function getChatThreadTitle(db: Database.Database, threadId: string): string | null {
+  const row = db.prepare("SELECT title FROM chat_threads WHERE id = ?").get(threadId) as { title?: string | null } | undefined;
+  return row?.title?.trim() || null;
+}
+
 export function deleteChatThread(db: Database.Database, threadId: string) {
   db.prepare("DELETE FROM chat_threads WHERE id = ?").run(threadId);
 }

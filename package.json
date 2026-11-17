@@ -25,6 +25,7 @@
     "postinstall": "patch-package && node -e \"if(!process.env.CI){require('child_process').execSync('electron-builder install-app-deps',{stdio:'inherit'})}else{console.log('Skipping install-app-deps in CI (handled by npm run rebuild)')}\"",
     "rebuild": "node scripts/rebuild-native.js",
     "build:mcp-binary": "node scripts/build-mcp-binary.js",
+    "today:replay": "node scripts/today-replay.mjs",
     "lint": "eslint",
     "type-check": "tsc --noEmit",
     "type-check:electron": "tsc --noEmit -p tsconfig.electron.json",

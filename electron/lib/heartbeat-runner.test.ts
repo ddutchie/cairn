@@ -43,6 +43,7 @@ engineMock.runEngineAutomation.mockImplementation(async (opts: Record<string, un
 
 vi.mock("./config-cache", () => ({
   getCachedConfig: () => ({ aiConfig: { baseUrl: "https://api.test.invalid", model: "gpt-test" } }),
+  cachedMaxOutputTokens: () => 32_000,
 }));
 
 vi.mock("../ipc/engine-bridge", () => engineMock);

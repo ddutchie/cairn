@@ -1,5 +1,8 @@
 /** Heartbeat automations: CRUD, runs, folder/manifest, env vars. Split out of db-handlers.ts. */
 
+import fs from "node:fs";
+import path from "node:path";
+import { app, dialog } from "electron";
 import { registerContractHandle, broadcastEvent } from "./registry";
 import { handle, getProjectName, type DbContext } from "./result-helpers";
 import * as q from "../db/queries";
@@ -18,13 +21,20 @@ import {
   type AutomationEnv,
 } from "../db/automation-queries";
 import { runAutomationNow, resolveAutomationApproval, listPendingAutomationApprovals } from "../lib/heartbeat-runner";
-import { checkRequirements } from "../lib/external-tools";
+import { checkRequirements, getExternalToolDefs, listScopedConnectors } from "../lib/external-tools";
+import { channelFor, channelLabel, sendCandidates } from "../../shared/today/route";
 import { parseSchedule, computeNextRun } from "../lib/automation-schedule";
 import { automationFolderDir, ensureAutomationDir, listAutomationFolderFiles, readRunLog } from "../lib/automation-folder";
 import { deleteAutomationWithCleanup } from "../lib/automation-delete";
 import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, readAutomationManifest } from "../lib/automation-env";
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { errMsg } from "../host-shared/errors";
+import {
+  buildTodayDebugExport, disableToday, requestTodayRebuild, takeTodayRebuild, enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot,
+  readTodaySettings, updateTodayMarks, writeTodaySettings,
+} from "../lib/today";
+import { hostRoot } from "./engine-bridge";
+import { SESSION_FILE } from "../agent/index";
 
 export function registerAutomationHandlers(ctx: DbContext): void {
   // ── Heartbeat automations ─────────────────────────
@@ -104,6 +114,95 @@ export function registerAutomationHandlers(ctx: DbContext): void {
       send: (channel, payload) => broadcastEvent(channel, payload),
     }, id);
     return runId === null ? { skipped: true as const } : { runId };
+  }));
+
+  // ── Today ─────────────────────────────────────────
+  const todayState = (workspaceId: string) => getTodayState(ctx.db, ctx.workspacePath, workspaceId);
+  const todayScope = (workspaceId: string) => {
+    const a = findTodayAutomation(ctx.db, workspaceId);
+    return includedProjects(ctx.db, workspaceId, readTodaySettings(ctx.workspacePath, a)).map((p) => p.id);
+  };
+  registerContractHandle("today:get", (_e, { workspaceId }) => handle(() => todayState(workspaceId)));
+  registerContractHandle("today:enable", (_e, req) => handle(() => {
+    enableToday(ctx.db, req);
+    // The automation row changed: other windows and the Automations list reload (only db:* channels broadcast on their own).
+    broadcastEvent("db:changed", null);
+    return todayState(req.workspaceId);
+  }));
+  registerContractHandle("today:disable", (_e, { workspaceId }) => handle(() => {
+    disableToday(ctx.db, workspaceId);
+    broadcastEvent("db:changed", null);
+    return todayState(workspaceId);
+  }));
+  registerContractHandle("today:settings", (_e, { workspaceId, settings }) => handle(() => {
+    const a = findTodayAutomation(ctx.db, workspaceId);
+    if (!a) throw new Error("Turn Today on first.");
+    writeTodaySettings(ctx.workspacePath, a, {
+      excludedProjects: [...new Set(settings.excludedProjects)],
+      excludedApps: [...new Set(settings.excludedApps)],
+      webApps: [...new Set(settings.webApps ?? [])],
+    });
+    return todayState(workspaceId);
+  }));
+  const todayRow = (workspaceId: string) => {
+    const a = findTodayAutomation(ctx.db, workspaceId);
+    if (!a) throw new Error("Turn Today on first.");
+    return a;
+  };
+  registerContractHandle("today:mark", (_e, { workspaceId, date, done, edits }) => handle(() =>
+    updateTodayMarks(ctx.workspacePath, todayRow(workspaceId), date, { done, edits })));
+  registerContractHandle("today:history", (_e, { workspaceId }) => handle(() => {
+    const a = findTodayAutomation(ctx.db, workspaceId);
+    return a ? listTodayHistory(ctx.workspacePath, a) : [];
+  }));
+  registerContractHandle("today:snapshot", (_e, { workspaceId, key }) => handle(() =>
+    loadTodaySnapshot(ctx.workspacePath, todayRow(workspaceId), key)));
+  registerContractHandle("today:run", (_e, { workspaceId, rebuild }) => handle(() => {
+    const a = findTodayAutomation(ctx.db, workspaceId);
+    if (!a || !a.enabled) return { skipped: true as const };
+    if (rebuild) requestTodayRebuild(a.id);
+    const runId = runAutomationNow({
+      db: ctx.db,
+      workspacePath: ctx.workspacePath,
+      send: (channel, payload) => broadcastEvent(channel, payload),
+    }, a.id);
+    // A run already going doesn't take the flag; drop it so a later Refresh isn't a rebuild.
+    if (runId === null) { takeTodayRebuild(a.id); return { skipped: true as const }; }
+    return { runId };
+  }));
+
+  registerContractHandle("today:route", (_e, { workspaceId, source, target, kind, projectId }) => handle(async () => {
+    const channel = channelFor(source, target, kind);
+    const base = { channel, label: channelLabel(channel) };
+    try {
+      // The item's chat runs in one project, so the send tools must come from that project's scope too.
+      // A project Today doesn't read (turned off since, or not this workspace's) offers none: copy and open.
+      const included = todayScope(workspaceId);
+      if (projectId && !included.includes(projectId)) return { ...base, tools: [] };
+      const scope = projectId ? projectId : included;
+      const defs = await getExternalToolDefs(ctx.db, workspaceId, scope);
+      const names: Record<string, string> = {};
+      for (const c of listScopedConnectors(ctx.db, workspaceId, scope)) names[c.id] = c.name;
+      return { ...base, tools: sendCandidates(defs.map((d) => ({ name: d.function.name, description: d.function.description })), channel, names) };
+    } catch (err) {
+      return { ...base, tools: [], error: errMsg(err) };
+    }
+  }));
+  registerContractHandle("today:export", (_e, { workspaceId }) => handle(async () => {
+    const readSession = (runId: string) => {
+      try { return fs.readFileSync(path.join(hostRoot(), runId, SESSION_FILE), "utf8"); } catch { return null; }
+    };
+    const { fileName, data } = buildTodayDebugExport(ctx.db, ctx.workspacePath, workspaceId, readSession);
+    const win = ctx.getWin();
+    if (!win || win.isDestroyed()) throw new Error("No window");
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: "Export Today data",
+      defaultPath: path.join(app.getPath("downloads"), fileName),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (canceled || !filePath) return null;
+    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+    return { filePath };
   }));
 
   // Resolve a pending tool approval for a running automation (engine).

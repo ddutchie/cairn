@@ -32,6 +32,13 @@ export function getNotes(db: Database.Database, projectId?: string) {
   return rows.map((row) => toNote(row as DbRow));
 }
 
+/** Titles of a project's notes changed since `sinceIso`, newest first (Today's project facts). */
+export function getNotesChangedSince(db: Database.Database, projectId: string, sinceIso: string, limit = 5): Array<{ id: string; title: string }> {
+  return db
+    .prepare("SELECT id, title FROM notes WHERE project_id = ? AND deleted_at IS NULL AND type = 'note' AND updated_at >= ? ORDER BY updated_at DESC LIMIT ?")
+    .all(projectId, sinceIso, limit) as Array<{ id: string; title: string }>;
+}
+
 /**
  * Find a live (non-archived, non-deleted) note in a project whose title matches
  * `title` under the same normalization ensure_note uses (trim + collapse inner

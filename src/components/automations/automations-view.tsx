@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Play, Pencil, Plus, Trash2, Zap, Clock, Activity, FileText, Kanban, Sparkles, Plug, Eye, Power, Copy, MoreHorizontal } from "lucide-react";
+import { Play, Pencil, Plus, Trash2, Zap, Clock, Activity, FileText, Kanban, Sparkles, Plug, Eye, Power, Copy, MoreHorizontal, Sun } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
   ContextMenuTrigger, CONTEXT_MENU_DANGER,
@@ -15,6 +15,10 @@ import { sessionClient } from "@/lib/ipc/session";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { IconButton } from "@/components/ui/icon-button";
+import { MiniStack } from "@/components/today/today-stack";
+import { TODAY_COMMUNITY_ID } from "../../../shared/today/brief";
+import { humanizedRunStep } from "@/lib/humanize-tool";
+import { connectorForTool, useCommunityConnectorMap } from "@/components/chat/chat-panel/connector-context";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -31,6 +35,8 @@ import { automationsClient } from "@/lib/ipc/automations";
 import { hasElectron } from "@/lib/ipc/client";
 
 export function AutomationsView() {
+  // Connector names for the running chip, resolved as chat resolves them.
+  const connectors = useCommunityConnectorMap();
   const {
     activeWorkspaceId, activeProjectId, projects, setView,
     automations, lastRuns, runsById,
@@ -338,7 +344,9 @@ export function AutomationsView() {
         {automations.map((a) => {
           const lastRun = lastRuns[a.id];
           const isRunning = lastRun?.status === "running";
-          const currentTool = runScratchTool(lastRun);
+          const call = runScratchTool(lastRun);
+          const connector = call ? connectorForTool(call.name, connectors) : undefined;
+          const currentTool = call ? humanizedRunStep(call.name, call.args, connector?.label || connector?.name, call.label) : null;
           const artifacts = runScratchArtifacts(lastRun);
           return (
             <ContextMenu key={a.id}>
@@ -351,6 +359,9 @@ export function AutomationsView() {
                     className="min-w-0 flex-1 text-left group"
                   >
                   <div className="flex items-center gap-2">
+                    {a.communityId === TODAY_COMMUNITY_ID && (
+                      <MiniStack size={16} busy={isRunning} muted={!a.enabled} label="Today, built-in" />
+                    )}
                     <h3 className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
                       {a.name}
                     </h3>
@@ -400,9 +411,16 @@ export function AutomationsView() {
                   <Button variant="ghost" size="sm" disabled={isRunning} onClick={() => void runNow(a.id)}>
                     <Play size={12} /> Run
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(a)}>
-                    <Pencil size={12} /> Edit
-                  </Button>
+                  {/* Today's recipe and settings belong to the Today view, which rewrites the row. */}
+                  {a.communityId === TODAY_COMMUNITY_ID ? (
+                    <Button variant="ghost" size="sm" onClick={() => setView("today")}>
+                      <Sun size={12} /> Open Today
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(a)}>
+                      <Pencil size={12} /> Edit
+                    </Button>
+                  )}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <IconButton label={`More actions for ${a.name}`} tooltip="More actions">
@@ -410,9 +428,11 @@ export function AutomationsView() {
                       </IconButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem disabled={developing} onSelect={() => void develop(a)}>
-                        <Sparkles size={12} /> Develop scripts
-                      </DropdownMenuItem>
+                      {a.communityId !== TODAY_COMMUNITY_ID && (
+                        <DropdownMenuItem disabled={developing} onSelect={() => void develop(a)}>
+                          <Sparkles size={12} /> Develop scripts
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onSelect={() => openDetail(a)}>
                         <Eye size={12} /> View state
                       </DropdownMenuItem>
@@ -455,9 +475,15 @@ export function AutomationsView() {
               <ContextMenuItem disabled={isRunning} onSelect={() => void runNow(a.id)}>
                 <Play size={13} /> Run now
               </ContextMenuItem>
-              <ContextMenuItem onSelect={() => openEdit(a)}>
-                <Pencil size={13} /> Edit
-              </ContextMenuItem>
+              {a.communityId === TODAY_COMMUNITY_ID ? (
+                <ContextMenuItem onSelect={() => setView("today")}>
+                  <Sun size={13} /> Open Today
+                </ContextMenuItem>
+              ) : (
+                <ContextMenuItem onSelect={() => openEdit(a)}>
+                  <Pencil size={13} /> Edit
+                </ContextMenuItem>
+              )}
               <ContextMenuItem onSelect={() => void updateAutomation(a.id, { enabled: !a.enabled })}>
                 <Power size={13} /> {a.enabled ? "Pause" : "Resume"}
               </ContextMenuItem>
@@ -505,9 +531,9 @@ export function AutomationsView() {
         automation={detail}
         onOpenChange={(open) => { if (!open) setDetail(null); }}
         runs={detail ? runsById[detail.id] ?? [] : []}
-        onEdit={detail ? () => { setDetail(null); openEdit(detail); } : undefined}
+        onEdit={detail && detail.communityId !== TODAY_COMMUNITY_ID ? () => { setDetail(null); openEdit(detail); } : undefined}
         onRunNow={detail ? () => void runNow(detail.id) : undefined}
-        onDevelop={detail ? () => void develop(detail) : undefined}
+        onDevelop={detail && detail.communityId !== TODAY_COMMUNITY_ID ? () => void develop(detail) : undefined}
         developing={developing}
         onSyncFromManifest={detail ? () => void syncFromManifest(detail) : undefined}
         syncing={syncing}

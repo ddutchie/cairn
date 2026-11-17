@@ -237,6 +237,20 @@ const FEATURES = [
       "Mobile Access retired: The phone-browser companion is gone; use Settings → Device sync with the Cairn mobile app.",
     ],
   },
+  {
+    id: "v3.2.0-today",
+    version: "v3.2.0",
+    title: "Today, your daily brief",
+    category: "AI",
+    description:
+      "Each morning Cairn reads your boards, notes and connected apps and sorts what it finds into what needs you, what's prepared for you and what's moving without you. It only reads: nothing is sent until you say so.",
+    highlights: [
+      "Decisions, not a digest: Each item is a question with answers as buttons, with a drafted reply where Cairn can write one.",
+      "Act in place: Ask Cairn about an item, rewrite a draft, or send it through a connector after you approve the exact call.",
+      "Your day at a glance: Meetings and free time on one strip, with the best slot for focus marked.",
+      "Look back: Open items carry over, and 30 days of briefs stay on a timeline you can step through.",
+    ],
+  },
 ];
 
 module.exports = { FEATURES };

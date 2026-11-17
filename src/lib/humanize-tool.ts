@@ -180,6 +180,11 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
       ? { pre: args.semantic ? "Found notes related to" : "Explored connections of", obj: short(lookup.note?.(args.nodeId) ?? lookup.task?.(args.nodeId) ?? args.nodeId) }
       : { pre: "Read the knowledge graph" };
     case "codebase_query": return { pre: "Searched the codebase for", obj: `“${short(args.query, "a symbol")}”` };
+    // Today's brief tools.
+    case "today_read": return { pre: "Read the brief so far" };
+    case "today_upsert": return { pre: "Added", obj: count(args.items, "item"), post: "to the brief" };
+    case "today_remove": return { pre: "Removed", obj: count(args.ids, "item"), post: "from the brief" };
+    case "today_finish": return { pre: "Wrote the headline" };
     default: {
       if (/^(?:mcp|svc)__/.test(name)) return humanizeConnectorAction(name, args);
       return { pre: "Used", obj: short(name, "a tool") };
@@ -216,4 +221,18 @@ export function humanizeConnectorTool(name: string, args: ToolArgs = {}, connect
 export function humanizedText(name: string, args?: ToolArgs, lookup?: CairnNameLookup): string {
   const result = humanizeTool(name, args, lookup);
   return [result.pre, result.obj, result.post].filter(Boolean).join(" ");
+}
+
+/**
+ * One line for the step an automation run is on, worded as the chat transcript
+ * words the same call. `connector` is the connector's display name (from
+ * `connectorForTool`, as chat resolves it); without it, a connector call falls
+ * back to the name in the runner's "Slack · Search" label.
+ */
+export function humanizedRunStep(name: string, args?: ToolArgs, connector?: string, runnerLabel?: string): string {
+  const external = /^(?:mcp|svc)__/.test(name);
+  if (external && !connector && runnerLabel?.includes(" · ")) connector = runnerLabel.split(" · ")[0].trim();
+  const r = external && connector ? humanizeConnectorTool(name, args, connector) : humanizeTool(name, args);
+  const step = [r.pre, r.obj, r.post].filter(Boolean).join(" ");
+  return connector ? `${connector} · ${step}` : step;
 }

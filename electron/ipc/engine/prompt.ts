@@ -2,6 +2,7 @@
  * Prompt assembly and the coding-session turn. (F5/B4: split out of
  * `electron/ipc/engine-bridge.ts`; no logic changes.)
  */
+import type { RunSetup } from "../../../shared/types/automations";
 import { randomBytes } from "node:crypto";
 import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "../result-helpers";
@@ -52,6 +53,8 @@ export interface EnginePromptArgs {
   projectId?: string;
   workspaceId?: string;
   systemPrompt: string;
+  /** Model-only context for this prompt only; the logged prompt stays what was asked. */
+  context?: string;
   /** Model-only context kept visible across the session (see `PromptRequest.standingContext`). */
   standingContext?: readonly string[];
   llmConfig: AgentLLMConfig;
@@ -64,9 +67,23 @@ export interface EnginePromptArgs {
   sessionMode?: "plan" | "execute";
   /** Headless runs: tools added to the surface toolset, and the usage row's source. */
   extraTools?: readonly AgentTool[];
-  usageSource?: "automation" | "writing-style";
+  usageSource?: "automation" | "writing-style" | "today";
   /** Run with exactly these tools (by name), whatever the surface offers. */
   allowTools?: ReadonlySet<string>;
+  /** Connector scope when it differs from `projectId`: Today reads every included project's connectors. */
+  externalProjectIds?: readonly string[];
+  /** Connectors left out of the scope by id (apps turned off for Today): never connected or offered. */
+  externalExclude?: readonly string[];
+  /** Cut each connector result to this many characters (Today). */
+  externalResultChars?: number;
+  /** Run connector calls in one step at the same time (Today: read-only, every ask decided by the run). */
+  externalParallel?: boolean;
+  /** Custom service calls must use GET when they run (Today). */
+  externalGetOnly?: boolean;
+  /** Headless runs: keep only the tools this returns true for (Today's read-only toolset). */
+  toolFilter?: (name: string) => boolean;
+  /** Called once the run is assembled, with what is sent: for run logs and debug exports. */
+  onSetup?: (setup: RunSetup) => void;
   /** Skip the user's prompt/tool hooks (internal one-off runs). */
   noHooks?: boolean;
   profile?: Profile;
@@ -149,7 +166,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
         broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "question", { callId: tool.callId, questions, nonce }));
       }),
     },
-    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.projectId ?? "" },
+    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.externalExclude?.length ? { projects: a.externalProjectIds ?? [a.projectId ?? ""], exclude: a.externalExclude } : a.externalProjectIds ?? a.projectId ?? "", maxResultChars: a.externalResultChars, parallel: a.externalParallel, getOnly: a.externalGetOnly },
     fs: { cwd: a.cwd, rgPath, observed, sandbox: () => ({ mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }), jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
     sessions: role === "automation-dev" || !a.workspaceId ? undefined : {
@@ -191,14 +208,20 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
 
   if (a.extraTools?.length) tools.push(...a.extraTools);
   if (a.allowTools) tools = tools.filter((t) => a.allowTools!.has(t.name));
+  if (a.toolFilter) tools = tools.filter((t) => a.toolFilter!(t.name));
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
   const systemPrompt = [a.systemPrompt, mcpInstructions].filter(Boolean).join("\n\n");
+  a.onSetup?.({
+    model: route.model, api: route.api, baseUrl: route.baseUrl, contextWindow: route.contextWindow, maxTokens: route.maxTokens,
+    reasoningEffort: a.llmConfig.reasoningEffort, systemPrompt, tools: tools.map((t) => t.name),
+    toolDefs: tools.map((t) => ({ name: t.name, description: t.description, parameters: JSON.parse(JSON.stringify(t.parameters ?? {})) as unknown })),
+  });
   // Mode changes travel with the prompt. In the system prompt they would re-write the provider's
   // cache for the whole conversation on every switch.
   const modeNote = planning ? PLAN_MODE_PROMPT : st.planning ? PLAN_MODE_ENDED : "";
   st.planning = planning;
-  const context = modeNote ? `<session_context>\n${modeNote}\n</session_context>` : undefined;
+  const context = [modeNote, a.context].filter(Boolean).map((text) => `<session_context>\n${text}\n</session_context>`).join("\n\n") || undefined;
   // The skill list is context, not part of the tool definition: there it would re-write the cache
   // whenever a skill file changed.
   const skills = tools.some((t) => t.name === "skill") ? skillCatalog({ cwd: a.cwd, contextWindow: a.llmConfig.contextWindow }) : undefined;

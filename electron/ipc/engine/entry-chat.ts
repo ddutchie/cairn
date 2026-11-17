@@ -43,6 +43,7 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
       apiMode: req.config?.apiMode,
     } as AgentLLMConfig,
     chat: { req, policy },
+    context: req.context,
   });
 }
 

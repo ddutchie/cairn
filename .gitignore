@@ -111,3 +111,6 @@ scripts/runtime-baselines/
 skills-lock.json
 design-audit/*/
 design-audit/compare.html
+
+# Today debug exports (hold content read from your connected apps)
+today-debug-*.json

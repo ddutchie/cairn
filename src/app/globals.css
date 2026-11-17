@@ -15,6 +15,10 @@
   --surface-3: #222222;
   --border: #2a2a2a;
   --border-subtle: #1f1f1f;
+  /* Today tab: the cairn stack's slabs. Derived, so every theme gets matching blocks. */
+  --stone-1: color-mix(in srgb, var(--text-primary) 16%, var(--surface));
+  --stone-2: color-mix(in srgb, var(--text-primary) 30%, var(--surface));
+  --stone-3: color-mix(in srgb, var(--text-primary) 46%, var(--surface));
   --accent: #8faf6f;
   --accent-hover: #a6c487;
   --accent-dim: color-mix(in srgb, var(--accent) 15%, transparent);
@@ -829,4 +833,19 @@ html[data-window-resizing] [data-chat-margin] {
 [data-settings-flash] { animation: settings-flash 1.6s ease-out; }
 @media (prefers-reduced-motion: reduce) {
   [data-settings-flash] { animation: none; background-color: var(--accent-dim); }
+}
+
+/* Today stack (today-stack.tsx): busy = the top block bobs and a light sweeps it
+   while a run gathers; drop = slabs stack bottom-up once when a new brief lands. */
+@keyframes cairn-stack-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12%); } }
+@keyframes cairn-stack-shine { 0%, 100% { opacity: 0; } 50% { opacity: 0.45; } }
+@keyframes cairn-stack-drop { from { transform: translateY(-40%); opacity: 0; } to { transform: none; opacity: 1; } }
+.cairn-stack .cairn-slab { transform-box: fill-box; transform-origin: center; }
+.cairn-stack.is-busy .cairn-slab.is-top { animation: cairn-stack-bob 1.4s ease-in-out infinite; }
+.cairn-stack.is-busy .cairn-shine { animation: cairn-stack-shine 1.6s ease-in-out infinite; }
+.cairn-stack.is-drop .cairn-slab { animation: cairn-stack-drop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@media (prefers-reduced-motion: reduce) {
+  .cairn-stack.is-busy .cairn-slab.is-top,
+  .cairn-stack.is-drop .cairn-slab { animation: none; }
+  .cairn-stack.is-busy .cairn-shine { animation: none; opacity: 0.25; }
 }

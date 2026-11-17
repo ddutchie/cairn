@@ -33,6 +33,7 @@ import {
 } from "../db/automation-queries";
 import { errMsg } from "../host-shared/errors";
 import { insertNotification } from "../mcp/db";
+import { isTodayAutomation } from "./today";
 
 /** Pause an automation after this many failed runs in a row. */
 export const PAUSE_AFTER_FAILURES = 3;
@@ -198,13 +199,21 @@ export class HeartbeatScheduler {
   private applyFailurePolicy(db: Database.Database, runId: string, automation: Automation): void {
     const run = getAutomationRunById(db, runId);
     if (run?.status !== "error") return;
-    const fails = consecutiveFailedRuns(db, automation.id);
     const current = getAutomationById(db, automation.id);
+    const today = !!current && isTodayAutomation(current);
+    // Today counts only today's failures: a failed yesterday must not cost this morning its retry.
+    const midnight = new Date(this.opts.now?.() ?? Date.now());
+    midnight.setHours(0, 0, 0, 0);
+    const fails = consecutiveFailedRuns(db, automation.id, today ? midnight.toISOString() : undefined);
     if (!current?.enabled) return;
     // A retry counts as a run; when the last allowed run failed there's nothing
     // left to retry with (the next tick would just disable it silently).
     if (current.maxRuns !== null && current.runCount >= current.maxRuns) return;
-    if (fails >= PAUSE_AFTER_FAILURES) {
+    // Today shows its own error and has Refresh, and each run is a full brief: one retry for a
+    // passing failure, never a pause (a paused Today would just stop arriving each morning).
+    if (today) {
+      if (fails > 1) return;
+    } else if (fails >= PAUSE_AFTER_FAILURES) {
       updateAutomation(db, automation.id, { enabled: false, nextRunAt: current.nextRunAt });
       const last = run.error ? ` Last error: ${run.error.slice(0, 160)}` : "";
       insertNotification(db, "automation_run", `Automation paused: "${automation.name}"`, `Paused after ${fails} failed runs in a row. Fix the cause, then turn it back on.${last}`, { type: "automation", id: automation.id });

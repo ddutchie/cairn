@@ -3,7 +3,7 @@ import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { applySchema } from "../db/schema";
 import { createWorkspace, createProject } from "../db/queries";
-import { createAutomation, createAutomationRun, getAutomationById, listAutomationRuns, setAutomationDailyBudget, updateAutomationRun, type Automation, type AutomationRun } from "../db/automation-queries";
+import { createAutomation, createAutomationRun, getAutomationById, listAutomationRuns, setAutomationDailyBudget, updateAutomation, updateAutomationRun, type Automation, type AutomationRun } from "../db/automation-queries";
 import { HeartbeatScheduler } from "./heartbeat-scheduler";
 
 const T0 = new Date("2026-08-03T12:00:00Z");
@@ -207,6 +207,30 @@ describe("HeartbeatScheduler — failure policy and budget", () => {
     expect(getAutomationById(db, id)!.enabled).toBe(false);
     const n = db.prepare("SELECT title FROM mcp_notifications").all() as Array<{ title: string }>;
     expect(n.map((x) => x.title)).toContain('Automation paused: "Test automation"');
+  });
+
+  it("gives Today one retry a day: yesterday's failures don't count, a second one today does", async () => {
+    const { id } = makeAutomation({ communityId: "cairn:today", projectId: null });
+    const fail = (createdAt: string) => {
+      const r = createAutomationRun(db, id, "running");
+      updateAutomationRun(db, r.id, { status: "error", finishedAt: createdAt });
+      db.prepare("UPDATE automation_runs SET created_at = ? WHERE id = ?").run(createdAt, r.id);
+    };
+    const retryAt = new Date(T0.getTime() + 5 * 60_000).toISOString();
+    fail(new Date(T0.getTime() - 26 * 3_600_000).toISOString());
+    fail(new Date(T0.getTime() - 25 * 3_600_000).toISOString());
+    const s = makeScheduler(failing);
+    await s.tick();
+    await flush();
+    expect(getAutomationById(db, id)!.enabled).toBe(true);
+    expect(getAutomationById(db, id)!.nextRunAt).toBe(retryAt);
+
+    // The retry fails too: no third run today, and Today is never paused.
+    updateAutomation(db, id, { nextRunAt: new Date(T0.getTime() - 60_000).toISOString() });
+    await s.tick();
+    await flush();
+    expect(getAutomationById(db, id)!.enabled).toBe(true);
+    expect(getAutomationById(db, id)!.nextRunAt).not.toBe(retryAt);
   });
 
   it("does not retry 'once' automations", async () => {

@@ -93,12 +93,17 @@ export function describeCron(expr: string): string | null {
   return null;
 }
 
-/** Read the currently-executing tool from a run's scratch JSON (set by the runner). */
-export function runScratchTool(run: AutomationRun | undefined): string | null {
+/** The tool call a run is on, from its scratch JSON (set by the runner). */
+export function runScratchTool(run: AutomationRun | undefined): { name: string; label?: string; args?: Record<string, unknown> } | null {
   if (!run?.scratch) return null;
   try {
-    const scratch = JSON.parse(run.scratch) as { currentTool?: string };
-    return typeof scratch.currentTool === "string" && scratch.currentTool ? scratch.currentTool : null;
+    const s = JSON.parse(run.scratch) as { currentTool?: unknown; currentToolLabel?: unknown; currentToolArgs?: unknown };
+    if (typeof s.currentTool !== "string" || !s.currentTool) return null;
+    return {
+      name: s.currentTool,
+      label: typeof s.currentToolLabel === "string" ? s.currentToolLabel : undefined,
+      args: s.currentToolArgs && typeof s.currentToolArgs === "object" ? s.currentToolArgs as Record<string, unknown> : undefined,
+    };
   } catch {
     return null;
   }

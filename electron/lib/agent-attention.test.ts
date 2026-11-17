@@ -6,6 +6,7 @@ vi.mock("electron", () => ({ BrowserWindow: { getAllWindows: () => [] } }));
 
 import { applySchema } from "../db/schema";
 import { notifyAgentAttention, _resetAgentAttention } from "./agent-attention";
+import { _resetSessionsOnScreen, forgetWindowSessions, isSessionOnScreen, markSessionOnScreen, setWindowVisibleCheck } from "./session-on-screen";
 
 describe("notifyAgentAttention", () => {
   let db: Database.Database;
@@ -36,5 +37,47 @@ describe("notifyAgentAttention", () => {
     notifyAgentAttention(db, { sessionId: "s1", kind: "finished" }, off, 6_000);
     notifyAgentAttention(db, { sessionId: "s1", kind: "approval" }, off, 40_000);
     expect(rows().map((r) => r.tool)).toEqual(["agent_approval", "agent_finished", "agent_approval"]);
+  });
+
+  it("records an approval while focused when no window shows the session", () => {
+    const focused = () => true;
+    expect(notifyAgentAttention(db, { sessionId: "s1", kind: "approval" }, focused, 1_000, () => true)).toBe(false);
+    expect(notifyAgentAttention(db, { sessionId: "s1", kind: "approval" }, focused, 2_000, () => false)).toBe(true);
+    // A finished turn still waits for Cairn to be in the background.
+    expect(notifyAgentAttention(db, { sessionId: "s1", kind: "finished" }, focused, 3_000, () => false)).toBe(false);
+    expect(rows().map((r) => r.tool)).toEqual(["agent_approval"]);
+  });
+
+  it("names a chat session by its thread title", () => {
+    db.pragma("foreign_keys = OFF");
+    db.prepare("INSERT INTO chat_threads (id, workspace_id, title, created_at, updated_at) VALUES ('t1', 'w1', 'Plan the launch', 0, 0)").run();
+    notifyAgentAttention(db, { sessionId: "chat-t1", kind: "approval", detail: "Post to Slack" }, () => false);
+    notifyAgentAttention(db, { sessionId: "chat-t2", kind: "approval" }, () => false);
+    expect(rows().map((r) => r.body)).toEqual(["Plan the launch — Post to Slack", "Chat"]);
+  });
+});
+
+describe("sessions on screen", () => {
+  beforeEach(() => _resetSessionsOnScreen());
+
+  it("counts each window's reports and forgets a window at once", () => {
+    markSessionOnScreen(1, "s1", true);
+    markSessionOnScreen(1, "s1", true);
+    markSessionOnScreen(1, "s1", false);
+    expect(isSessionOnScreen("s1")).toBe(true);
+    markSessionOnScreen(1, "s1", false);
+    expect(isSessionOnScreen("s1")).toBe(false);
+    markSessionOnScreen(2, "s2", true);
+    forgetWindowSessions(2);
+    expect(isSessionOnScreen("s2")).toBe(false);
+  });
+
+  it("ignores a minimized window's reports but keeps them for restore", () => {
+    let minimized = true;
+    setWindowVisibleCheck((id) => id !== 1 || !minimized);
+    markSessionOnScreen(1, "s1", true);
+    expect(isSessionOnScreen("s1")).toBe(false);
+    minimized = false;
+    expect(isSessionOnScreen("s1")).toBe(true);
   });
 });

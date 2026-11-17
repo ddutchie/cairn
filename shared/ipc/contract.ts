@@ -16,6 +16,8 @@
  */
 
 import type { NoteSnippet } from "../notes/search";
+import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../today/brief";
+import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type { WireProtocol } from "../models/model-catalog";
 import type { ProbeProtocol, ProtocolAvailability } from "../chat/protocol-probe";
@@ -130,9 +132,13 @@ export interface IpcContract {
   "db:chat:deleteThread": { writes: true; args: [req: { threadId: string }]; result: void };
   /** Wipes the thread's session logs (incl. subagent children) and cached agent. */
   "db:chat:clearThreadMessages": { writes: true; args: [req: { threadId: string }]; result: void };
+  /**
+   * Deletes the scope's threads. With `threadIds`, only those of them: the renderer passes the threads
+   * it cleared, so a thread added to the scope while the clear runs is kept.
+   */
   "db:chat:clearAllThreads": {
     writes: true;
-    args: [req: { workspaceId: string; projectId?: string | null }];
+    args: [req: { workspaceId: string; projectId?: string | null; threadIds?: string[] }];
     result: { deletedThreads: number; deletedMessages: number };
   };
   /** Compact the thread's session log (summary node + retained tail). */
@@ -321,6 +327,36 @@ export interface IpcContract {
   "db:automation:budget:set": { writes: true; args: [req: { usd: number | null }]; result: { budgetUsd: number | null } };
   /** `skipped` when the automation is already running. */
   "db:automation:runNow": { writes: true; args: [req: { id: string }]; result: { runId: string } | { skipped: true } };
+  // ── Today (built-in automation behind the Today view, one per workspace) ─
+  "today:get": { args: [req: { workspaceId: string }]; result: TodayState };
+  /** Creates or re-enables the workspace's Today automation with this schedule. */
+  "today:enable": {
+    args: [req: { workspaceId: string; time: string; weekdaysOnly: boolean; timezone?: string | null }];
+    result: TodayState;
+  };
+  "today:disable": { args: [req: { workspaceId: string }]; result: TodayState };
+  /** Which projects and apps Today reads. */
+  "today:settings": { args: [req: { workspaceId: string; settings: TodaySettings }]; result: TodayState };
+  /** Mark items done or not, and set or drop draft edits, for one day's brief. */
+  "today:mark": { args: [req: { workspaceId: string; date: string; done?: Record<string, boolean>; edits?: Record<string, string | null> }]; result: TodayMarks };
+  /** Every saved version, newest first: each day's brief and the versions same-day refreshes replaced. */
+  "today:history": { args: [req: { workspaceId: string }]; result: TodayHistoryEntry[] };
+  /** One saved version by its history key, with that day's marks. Null when it's gone. */
+  "today:snapshot": { args: [req: { workspaceId: string; key: string }]; result: { brief: TodayBrief; marks: TodayMarks } | null };
+  /** Starts a run now; `skipped` when one is already running or Today is off. */
+  /** `rebuild` ignores when the last brief ran and looks back 24 hours (72 on a Monday). */
+  "today:run": { args: [req: { workspaceId: string; rebuild?: boolean }]; result: { runId: string } | { skipped: true } };
+  /** Where a Today item goes, and which in-scope connector tools could send it there. */
+  /** `projectId` scopes the connectors to the project the item's chat runs in; without it, every included project. */
+  "today:route": {
+    args: [req: { workspaceId: string; source: string; target?: string; kind?: string; projectId?: string }];
+    result: TodayRoute;
+  };
+  /** Save a debug bundle (prompt, brief, recent runs, the last run's log and session events) via a save dialog. Null when cancelled. */
+  "today:export": {
+    args: [req: { workspaceId: string }];
+    result: { filePath: string } | null;
+  };
   /** Approve/deny a tool call a running automation is waiting on. */
   "automation:approve": {
     args: [req: { callId: string; approved: boolean; grant?: "session" | "always" }];
@@ -717,6 +753,10 @@ export interface SpellcheckContext {
 
 export interface IpcEvents {
   "automation:run": AutomationRunEvent;
+  /** A Today run changed the brief (each brief tool call), so the view reloads. */
+  /** `saveError` is set when the brief couldn't be written to disk (cleared by the next save that works). */
+  /** `brief` comes with gathering saves, so a view shows them without rebuilding its whole state. */
+  "today:updated": { workspaceId: string; status: "gathering" | "ready"; saveError?: string; brief?: TodayBrief };
   /** Unread notification count changed (bell + badge). */
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
@@ -778,6 +818,8 @@ export interface IpcSends {
   "user-style:abort": undefined;
   "session:prompt": unknown;
   "session:abort": { sessionId: string };
+  /** A surface in this window started or stopped showing a session (for approval notices). */
+  "session:on-screen": { sessionId: string; onScreen: boolean };
   "session:clear": { sessionId: string };
   "session:destroy": { sessionId: string };
   "session:compact-now": unknown;
@@ -809,6 +851,7 @@ const SEND_CHANNELS: { [S in IpcSendChannel]: true } = {
   "user-style:abort": true,
   "session:prompt": true,
   "session:abort": true,
+  "session:on-screen": true,
   "session:clear": true,
   "session:destroy": true,
   "session:compact-now": true,
@@ -935,6 +978,16 @@ const CHANNELS: ChannelRecord = {
   "db:automation:budget:get": "read",
   "db:automation:budget:set": "write",
   "db:automation:runNow": "write",
+  "today:get": "read",
+  "today:enable": "read",
+  "today:disable": "read",
+  "today:settings": "read",
+  "today:mark": "read",
+  "today:history": "read",
+  "today:snapshot": "read",
+  "today:run": "read",
+  "today:export": "read",
+  "today:route": "read",
   "automation:approve": "read",
   "automation:pendingApprovals": "read",
   "db:automation:folder": "read",

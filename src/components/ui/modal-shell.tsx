@@ -37,6 +37,11 @@ export interface ModalShellProps {
   footer?: React.ReactNode;
   /** Dialog content className override (for edge cases not covered by `size`/`scrollable`). */
   contentClassName?: string;
+  /**
+   * Where focus goes when the dialog closes. Radix returns focus to a `Dialog.Trigger`; a dialog
+   * opened from a plain button with local state has none, so pass that button here.
+   */
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
   children: React.ReactNode;
 }
 
@@ -51,6 +56,7 @@ export function ModalShell({
   scrollable = false,
   footer,
   contentClassName,
+  returnFocusRef,
   children,
 }: ModalShellProps) {
   const handleOpenChange = (o: boolean) => {
@@ -69,6 +75,13 @@ export function ModalShell({
       <DialogContent
         size={size}
         aria-describedby={description ? descId : undefined}
+        onCloseAutoFocus={returnFocusRef ? (e) => {
+          // A button that's gone (its owner remounted) leaves focus to Radix's own fallback.
+          const target = returnFocusRef.current;
+          if (!target?.isConnected) return;
+          e.preventDefault();
+          target.focus();
+        } : undefined}
         className={
           scrollable
             ? `flex flex-col max-h-[80vh] overflow-hidden p-0 gap-0 ${contentClassName ?? ""}`

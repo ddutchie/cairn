@@ -17,8 +17,8 @@ export const chatClient = {
   upsertThread: (input: ChatThreadUpsertInput) => chat((c) => c.upsertThread(input)),
   deleteThread: (threadId: string) => chat((c) => c.deleteThread(threadId)),
   clearThreadMessages: (threadId: string) => chat((c) => c.clearThreadMessages(threadId)),
-  clearAllThreads: (workspaceId: string, projectId?: string) =>
-    chat((c) => c.clearAllThreads(workspaceId, projectId)),
+  clearAllThreads: (workspaceId: string, projectId?: string, threadIds?: string[]) =>
+    chat((c) => c.clearAllThreads(workspaceId, projectId, threadIds)),
   compactThread: (req: IpcArgs<"chat:compactThread">[0]) => chat((c) => c.compactThread(req)),
   summarizeTranscript: (req: IpcArgs<"chat:summarizeTranscript">[0]) =>
     chat((c) => c.summarizeTranscript(req)),

@@ -19,6 +19,8 @@ export const sessionApi = {
     runningIds: () => invokeContract("session:running-ids"),
     /** Abort the current in-flight turn for this session. */
     abort: (sessionId: string) => sendContract("session:abort", { sessionId }),
+    /** This window started or stopped showing a session. */
+    setOnScreen: (sessionId: string, onScreen: boolean) => sendContract("session:on-screen", { sessionId, onScreen }),
     /** Clear message history for a session (start fresh). */
     clear: (sessionId: string) => sendContract("session:clear", { sessionId }),
     /** Destroy a session when the tab is closed. */
