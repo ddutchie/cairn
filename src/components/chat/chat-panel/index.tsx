@@ -547,7 +547,8 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     // A queued message may be sent into a thread that is not on screen: its
     // project, history and input box are that thread's, not the visible one's.
     const background = targetThreadId !== threadId;
-    const clearInput = () => { if (!fromQueue) clearInput(); };
+    // A queued send leaves the input alone: it may hold what the user is typing next.
+    const clearInput = () => { if (!fromQueue) setInput(""); };
 
     const trimmed = content.trim();
     if (!attachments.length) {
