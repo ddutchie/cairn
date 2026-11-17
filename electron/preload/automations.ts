@@ -28,7 +28,7 @@ export const automationsApi = {
       mark: (workspaceId: string, date: string, patch: TodayMarkPatch) => invokeContract("today:mark", { workspaceId, date, ...patch }),
       history: (workspaceId: string) => invokeContract("today:history", { workspaceId }),
       snapshot: (workspaceId: string, key: string) => invokeContract("today:snapshot", { workspaceId, key }),
-      run: (workspaceId: string) => invokeContract("today:run", { workspaceId }),
+      run: (workspaceId: string, rebuild?: boolean) => invokeContract("today:run", { workspaceId, rebuild }),
       route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
         invokeContract("today:route", req),
       export: (workspaceId: string) => invokeContract("today:export", { workspaceId }),

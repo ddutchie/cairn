@@ -340,7 +340,8 @@ export interface IpcContract {
   /** One saved version by its history key, with that day's marks. Null when it's gone. */
   "today:snapshot": { args: [req: { workspaceId: string; key: string }]; result: { brief: TodayBrief; marks: TodayMarks } | null };
   /** Starts a run now; `skipped` when one is already running or Today is off. */
-  "today:run": { args: [req: { workspaceId: string }]; result: { runId: string } | { skipped: true } };
+  /** `rebuild` ignores when the last brief ran and looks back 24 hours (72 on a Monday). */
+  "today:run": { args: [req: { workspaceId: string; rebuild?: boolean }]; result: { runId: string } | { skipped: true } };
   /** Where a Today item goes, and which in-scope connector tools could send it there. */
   "today:route": {
     args: [req: { workspaceId: string; source: string; target?: string; kind?: string }];

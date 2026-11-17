@@ -76,7 +76,7 @@ import type { SessionProjection } from "../../shared/agent/session-projection";
 import { errMsg } from "../host-shared/errors";
 import {
   TODAY_RESULT_CHARS, includedProjects, isTodayAutomation, loadLatestTodayBrief, pruneTodayFiles, readTodayMarks, readTodaySettings, saveTodayBrief,
-  snapshotTodayBrief, todayPrompt, todayToolFilter,
+  snapshotTodayBrief, takeTodayRebuild, todayLookBackFrom, todayPrompt, todayReasoningEffort, todayToolFilter,
 } from "./today";
 import { projectFacts } from "./today-facts";
 import { todayBriefTools, type TodayBriefSession } from "./today-tools";
@@ -412,7 +412,10 @@ export async function runAutomation(
   const todayProjects = todaySettings ? includedProjects(db, automation.workspaceId, todaySettings) : [];
   // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
   const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
-  if (today) recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), todayPrevious?.generatedAt ?? null);
+  if (today) {
+    const rebuild = takeTodayRebuild(automation.id);
+    recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild);
+  }
 
   const req: ChatRequest = {
     message: recipe,
@@ -724,11 +727,12 @@ export async function runAutomation(
         contextWindow: cached.contextLimit, maxTokens: cachedMaxOutputTokens(cached),
         // The active connection's wire protocol and reasoning effort, as chat sends them.
         apiMode: (cached.savedProviders?.find((p) => p.id === cached.activeProviderId)?.apiMode ?? cached.apiMode) as "responses" | "completions" | "anthropic-messages" | undefined,
-        reasoningEffort: cached.reasoningEffort as "off" | "low" | "medium" | "high" | undefined,
+        reasoningEffort: today ? todayReasoningEffort(cached.reasoningEffort) : cached.reasoningEffort as "off" | "low" | "medium" | "high" | undefined,
       } as never,
       extraTools: automationTools,
       // Today never sees a tool that writes, so no saved "always allow" grant can let one run.
       toolFilter: todaySettings ? todayToolFilter(todaySettings) : undefined,
+      onSetup: (setup) => { log.setup = setup; },
       autoApprove: automation.approvalMode !== "ask",
       signal: abortCtrl.signal,
       tap: tapWithErrors,

@@ -30,7 +30,7 @@ import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, rea
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { errMsg } from "../host-shared/errors";
 import {
-  buildTodayDebugExport, disableToday, enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot,
+  buildTodayDebugExport, disableToday, requestTodayRebuild, takeTodayRebuild, enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot,
   readTodaySettings, updateTodayMarks, writeTodaySettings,
 } from "../lib/today";
 import { hostRoot } from "./engine-bridge";
@@ -153,15 +153,18 @@ export function registerAutomationHandlers(ctx: DbContext): void {
   }));
   registerContractHandle("today:snapshot", (_e, { workspaceId, key }) => handle(() =>
     loadTodaySnapshot(ctx.workspacePath, todayRow(workspaceId), key)));
-  registerContractHandle("today:run", (_e, { workspaceId }) => handle(() => {
+  registerContractHandle("today:run", (_e, { workspaceId, rebuild }) => handle(() => {
     const a = findTodayAutomation(ctx.db, workspaceId);
     if (!a || !a.enabled) return { skipped: true as const };
+    if (rebuild) requestTodayRebuild(a.id);
     const runId = runAutomationNow({
       db: ctx.db,
       workspacePath: ctx.workspacePath,
       send: (channel, payload) => broadcastEvent(channel, payload),
     }, a.id);
-    return runId === null ? { skipped: true as const } : { runId };
+    // A run already going doesn't take the flag; drop it so a later Refresh isn't a rebuild.
+    if (runId === null) { takeTodayRebuild(a.id); return { skipped: true as const }; }
+    return { runId };
   }));
 
   registerContractHandle("today:route", (_e, { workspaceId, source, target, kind }) => handle(async () => {

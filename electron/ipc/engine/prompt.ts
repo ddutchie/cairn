@@ -2,6 +2,7 @@
  * Prompt assembly and the coding-session turn. (F5/B4: split out of
  * `electron/ipc/engine-bridge.ts`; no logic changes.)
  */
+import type { RunSetup } from "../../../shared/types/automations";
 import { randomBytes } from "node:crypto";
 import { rgPath } from "@vscode/ripgrep";
 import type { DbContext } from "../result-helpers";
@@ -73,6 +74,8 @@ export interface EnginePromptArgs {
   externalResultChars?: number;
   /** Headless runs: keep only the tools this returns true for (Today's read-only toolset). */
   toolFilter?: (name: string) => boolean;
+  /** Called once the run is assembled, with what is sent: for run logs and debug exports. */
+  onSetup?: (setup: RunSetup) => void;
   /** Skip the user's prompt/tool hooks (internal one-off runs). */
   noHooks?: boolean;
   profile?: Profile;
@@ -201,6 +204,10 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
   const profile = a.profile ?? (planning ? { id: "coding", interactive: true, mode: "plan" } as Profile : undefined) ?? chatProfile?.profile ?? presetProfile(a.sessionId, a.llmConfig.mode, role);
   const route = routeFromConfig(a.llmConfig);
   const systemPrompt = [a.systemPrompt, mcpInstructions].filter(Boolean).join("\n\n");
+  a.onSetup?.({
+    model: route.model, api: route.api, baseUrl: route.baseUrl, contextWindow: route.contextWindow, maxTokens: route.maxTokens,
+    reasoningEffort: a.llmConfig.reasoningEffort, systemPrompt, tools: tools.map((t) => t.name),
+  });
   // Mode changes travel with the prompt. In the system prompt they would re-write the provider's
   // cache for the whole conversation on every switch.
   const modeNote = planning ? PLAN_MODE_PROMPT : st.planning ? PLAN_MODE_ENDED : "";

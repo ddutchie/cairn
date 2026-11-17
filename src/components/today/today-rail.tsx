@@ -43,8 +43,13 @@ export function TodayRail({ days, liveDate, selectedKey, onSelect, onPeek }: {
         const monday = new Date(`${day.date}T00:00`).getDay() === 1;
         return (
           <div key={day.date} className="contents">
-            <RailTick day={day} live={live} selected={selected} monday={monday} onSelect={onSelect} onPeek={onPeek} />
-            {monday && i < days.length - 1 && <div className="h-2 shrink-0" aria-hidden />}
+            <RailTick day={day} live={live} selected={selected} onSelect={onSelect} onPeek={onPeek} />
+            {/* A week ends at its Monday (newest first): its date on its own line, then a gap. */}
+            {monday && (
+              <div className={cn("w-11 shrink-0 font-mono text-2xs leading-none text-[var(--text-tertiary)] text-right pr-1.5", i < days.length - 1 ? "pt-0.5 pb-2" : "pt-0.5")} aria-hidden>
+                {new Date(`${day.date}T00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+              </div>
+            )}
           </div>
         );
       })}
@@ -53,8 +58,8 @@ export function TodayRail({ days, liveDate, selectedKey, onSelect, onPeek }: {
   );
 }
 
-function RailTick({ day, live, selected, monday, onSelect, onPeek }: {
-  day: TodayHistoryDay; live: boolean; selected: boolean; monday: boolean;
+function RailTick({ day, live, selected, onSelect, onPeek }: {
+  day: TodayHistoryDay; live: boolean; selected: boolean;
   onSelect: (key: string | null) => void; onPeek: (on: boolean) => void;
 }) {
   const e = day.latest;
@@ -71,9 +76,6 @@ function RailTick({ day, live, selected, monday, onSelect, onPeek }: {
         onBlur={() => onPeek(false)}
         className={cn("group relative w-11 h-4 shrink-0 flex items-center justify-end gap-[3px] pr-1.5 rounded", FOCUS_RING)}
       >
-        {monday && (
-          <span className="absolute left-0 font-mono text-2xs text-[var(--text-tertiary)]">{new Date(`${day.date}T00:00`).getDate()}</span>
-        )}
         {day.versions.slice(0, 3).map((v) => (
           <span key={v.key} className="size-1 rounded-full bg-[var(--text-tertiary)]" aria-hidden />
         ))}

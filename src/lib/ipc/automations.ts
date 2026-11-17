@@ -67,7 +67,7 @@ export const todayClient = {
   snapshot: (workspaceId: string, key: string): Promise<{ brief: TodayBrief; marks: TodayMarks } | null> =>
     automation((a) => a.today.snapshot(workspaceId, key)),
   /** Starts a run now; `skipped` when one is already running. */
-  run: (workspaceId: string) => automation((a) => a.today.run(workspaceId)),
+  run: (workspaceId: string, rebuild?: boolean) => automation((a) => a.today.run(workspaceId, rebuild)),
   /** Where an item goes and which connector tools could send it. Connects to the in-scope servers, so it can take a moment. */
   route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
     automation((a) => a.today.route(req)),

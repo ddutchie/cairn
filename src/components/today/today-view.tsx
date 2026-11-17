@@ -15,7 +15,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Download, ExternalLink, MessageSquare, Pencil, Play, RefreshCw, Settings2, X } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, MessageSquare, Pencil, Play, RefreshCw, RotateCcw, Settings2, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
@@ -26,7 +26,7 @@ import { appClient } from "@/lib/ipc/app";
 import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Toggle } from "@/components/ui/toggle";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useContainerDims, useFontScale, useNow } from "@/lib/viz/hooks";
 import { TodayActPanel, type TodayActTarget } from "./today-act-panel";
@@ -132,7 +132,13 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
   useEffect(() => { void refresh(); }, [refresh]);
 
   // Each brief tool call saves the brief: reload so items arrive as the run finds them.
-  useEffect(() => todayClient.onUpdated((ev) => { if (ev.workspaceId === workspaceId) void refresh(); }), [workspaceId, refresh]);
+  // A finished update can also change the saved days (sample days added or removed), so the rail reloads too.
+  const [historyTick, setHistoryTick] = useState(0);
+  useEffect(() => todayClient.onUpdated((ev) => {
+    if (ev.workspaceId !== workspaceId) return;
+    void refresh();
+    if (ev.status === "ready") setHistoryTick((n) => n + 1);
+  }), [workspaceId, refresh]);
 
   // Live progress: which tool the run is on, and a refetch when it ends.
   useEffect(() => {
@@ -168,7 +174,7 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
     let alive = true;
     todayClient.history(workspaceId).then((h) => { if (alive) setHistory(h); }).catch(() => { /* no rail */ });
     return () => { alive = false; };
-  }, [workspaceId, liveReadyAt]);
+  }, [workspaceId, liveReadyAt, historyTick]);
   const days = useMemo(() => groupTodayHistory(history), [history]);
   // Newest first; ← steps back through every saved version, → forward to the live brief.
   const order = useMemo(() => days.flatMap((d) => [d.latest, ...d.versions].map((e) => e.key)), [days]);
@@ -202,11 +208,12 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
     [viewing, state?.brief, state?.marks],
   );
 
-  const run = async () => {
+  // `rebuild` looks back the full window instead of only since the last run.
+  const run = async (rebuild = false) => {
     setViewing(null);
     setState((s) => (s ? { ...s, running: true } : s));
     setLiveTool({ tool: null });
-    try { await todayClient.run(workspaceId); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await todayClient.run(workspaceId, rebuild); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     void refresh();
   };
 
@@ -228,6 +235,9 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   const viewingDay = viewing ? days.find((d) => d.date === viewing.brief.date) : undefined;
+  // Where the shown brief sits among the saved versions (0 = the live one), and how many are behind it.
+  const stackIndex = viewing ? Math.max(0, order.indexOf(viewing.key)) : 0;
+  const stack = order.length >= 2 ? { index: stackIndex, behind: Math.min(3, order.length - 1 - stackIndex) } : null;
   const past: PastView | null = viewing && comparison ? {
     key: viewing.key,
     comparison,
@@ -244,6 +254,7 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
       error={viewing ? null : error}
       past={past}
       peek={peek}
+      stack={stack}
       onRun={run}
       onSchedule={async (time, weekdaysOnly) => {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -371,16 +382,18 @@ function TodaySetup({ state, onEnable }: {
 
 // ── The brief ───────────────────────────────────────────────────────────────
 
-function BriefView({ state, workspaceId, liveTool, error, past, peek, onRun, onSchedule, onSettings, onDisable, onExport }: {
+function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onRun, onSchedule, onSettings, onDisable, onExport }: {
   state: TodayState;
   workspaceId: string;
   liveTool: TodayRunActivity | null;
   error: string | null;
   /** Set when this is a saved brief opened from the rail: read-only, with a banner instead of the controls. */
   past: PastView | null;
-  /** The rail is hovered: earlier briefs show as cards stacked behind this one. */
+  /** The rail is hovered: the stack of earlier briefs fans out a little. */
   peek: boolean;
-  onRun: () => void;
+  /** With saved history: where this brief sits (0 = live) and how many earlier ones are stacked behind it. */
+  stack: { index: number; behind: number } | null;
+  onRun: (rebuild?: boolean) => void;
   onSchedule: (time: string, weekdaysOnly: boolean) => Promise<void>;
   onSettings: (settings: TodaySettingsValue) => Promise<void>;
   onDisable: () => Promise<void>;
@@ -391,6 +404,24 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, onRun, onS
   const activeProjectId = useCairnStore((s) => s.activeProjectId);
   const gathering = state.running && brief?.status === "gathering";
   const readOnly = !!past;
+  // Changing day moves the card: an earlier brief rises from the stack, a newer one drops in from the front.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const shownIndex = stack?.index ?? 0;
+  const lastIndex = useRef(shownIndex);
+  useEffect(() => {
+    const from = lastIndex.current;
+    lastIndex.current = shownIndex;
+    const el = cardRef.current;
+    if (from === shownIndex || !el || typeof el.animate !== "function") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const older = shownIndex > from;
+    el.animate(
+      older
+        ? [{ transform: "translateY(-22px) scale(0.955)", opacity: 0.35 }, { transform: "none", opacity: 1 }]
+        : [{ transform: "translateY(18px) scale(1.012)", opacity: 0 }, { transform: "none", opacity: 1 }],
+      { duration: 340, easing: "cubic-bezier(.2,.8,.2,1)" },
+    );
+  }, [shownIndex]);
   const connectors = useCommunityConnectorMap();
   const runStep = (tool: string, args?: Record<string, unknown>, label?: string) => {
     const c = connectorForTool(tool, connectors);
@@ -426,10 +457,10 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, onRun, onS
 
   const header = (
     <div className="flex flex-wrap items-center gap-2 mt-4">
-      <Button variant="accent" size="sm" onClick={onRun} disabled={state.running}>
+      <Button variant="accent" size="sm" onClick={() => onRun()} disabled={state.running}>
         {state.running ? <MiniStack size={13} busy /> : <RefreshCw size={12} />} {state.running ? "Gathering" : brief ? "Refresh" : "Run now"}
       </Button>
-      <TodaySettings key={`${state.time}-${state.weekdaysOnly}`} state={state} onSchedule={onSchedule} onSettings={onSettings} onDisable={onDisable} onExport={onExport} />
+      <TodaySettings key={`${state.time}-${state.weekdaysOnly}`} state={state} onSchedule={onSchedule} onSettings={onSettings} onDisable={onDisable} onExport={onExport} onRebuild={() => onRun(true)} />
       <span className="text-2xs text-[var(--text-tertiary)] ml-1">
         {state.running ? (liveTool?.tool ? runStep(liveTool.tool, liveTool.args, liveTool.label) : "Starting the run") : (
           <>
@@ -489,21 +520,29 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, onRun, onS
           onBack={past.onBack}
         />
       )}
-      <div className="relative isolate">
-      {[0, 1, 2].map((i) => (
+      {/* The brief is the front card; one edge shows above it for each earlier brief (up to three). */}
+      <div className={cn("relative isolate", stack && "pt-7")}>
+      {stack && [0, 1, 2].map((i) => (
         <div
           key={i}
           aria-hidden
-          className="absolute inset-x-0 top-0 h-full -z-10 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] pointer-events-none transition-[transform,opacity] duration-300 ease-out"
+          className="absolute inset-x-0 bottom-0 top-7 -z-10 origin-top rounded-2xl border border-[var(--border-subtle)] pointer-events-none transition-[transform,opacity] duration-300 ease-out"
           style={{
-            opacity: peek ? [1, 0.6, 0.3][i] : 0,
-            transform: peek ? `translateY(${[-14, -26, -36][i]}px) scale(${[0.975, 0.95, 0.925][i]})` : "none",
+            background: "color-mix(in srgb, var(--surface) 40%, var(--background))",
+            opacity: i < stack.behind ? [0.95, 0.65, 0.4][i] : 0,
+            transform: `translateY(${(peek ? [-11, -20, -27] : [-7, -13, -18])[i]}px) scale(${[0.975, 0.95, 0.925][i]})`,
           }}
         />
       ))}
       <div
-        className="grid gap-8 items-end pb-5 border-b border-[var(--border-subtle)] grid-cols-1 @3xl:grid-cols-[1fr_300px] bg-[var(--background)] rounded-2xl transition-transform duration-300 ease-out"
-        style={{ transform: peek ? "translateY(4px)" : "none" }}
+        ref={cardRef}
+        className={cn(
+          "grid gap-8 items-end grid-cols-1 @3xl:grid-cols-[1fr_300px]",
+          stack
+            ? "rounded-2xl border border-[var(--border-subtle)] shadow-elev-1 px-5 pt-4 pb-5"
+            : "pb-5 border-b border-[var(--border-subtle)]",
+        )}
+        style={stack ? { background: "color-mix(in srgb, var(--surface) 60%, var(--background))" } : undefined}
       >
         <div className="min-w-0">
           <div className="text-xs text-[var(--text-tertiary)] font-mono">
@@ -656,71 +695,119 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, onRun, onS
   );
 }
 
-function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport }: {
+function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onRebuild }: {
   state: TodayState;
   onSchedule: (time: string, weekdaysOnly: boolean) => Promise<void>;
   onSettings: (settings: TodaySettingsValue) => Promise<void>;
   onDisable: () => Promise<void>;
   onExport: () => Promise<{ filePath: string } | null>;
+  onRebuild: () => void;
 }) {
   const flip = (list: string[], id: string, on: boolean) => (on ? list.filter((x) => x !== id) : [...list, id]);
+  const [open, setOpen] = useState(false);
   const [time, setTime] = useState(state.time);
   const [weekdaysOnly, setWeekdaysOnly] = useState(state.weekdaysOnly);
   const [exported, setExported] = useState<string | null>(null);
+  const scheduleChanged = time !== state.time || weekdaysOnly !== state.weekdaysOnly;
+  const close = () => { setOpen(false); setTime(state.time); setWeekdaysOnly(state.weekdaysOnly); };
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm"><Settings2 size={12} /> Settings</Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[300px] p-3 space-y-3 max-h-[70vh] overflow-y-auto">
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-[var(--text-secondary)] w-20">Refresh at</span>
-          <input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value || "07:00")}
-            className="h-7 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 text-xs text-[var(--text-primary)]"
+    <>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Settings2 size={12} /> Settings</Button>
+      <ModalShell
+        open={open}
+        onClose={close}
+        size="md"
+        scrollable
+        title={<span className="flex items-center gap-2"><Settings2 size={14} className="text-[var(--text-tertiary)]" /> Today settings</span>}
+        subtitle="One brief for this workspace"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" className="mr-auto text-[var(--danger)]" onClick={() => { void onDisable(); setOpen(false); }}>Turn off Today</Button>
+            <Button variant="ghost" size="sm" onClick={close}>Cancel</Button>
+            <Button variant="accent" size="sm" onClick={async () => { if (scheduleChanged) await onSchedule(time, weekdaysOnly); setOpen(false); }}>
+              <Check size={11} className="mr-1" /> Save
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-5">
+          <div>
+            <label className="text-sm text-[var(--text-tertiary)] block mb-1.5" htmlFor="today-time">Schedule</label>
+            <div className="flex flex-wrap items-center gap-4 text-xs">
+              <input
+                id="today-time"
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value || "07:00")}
+                className="h-8 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 text-sm text-[var(--text-primary)]"
+              />
+              <label className="flex items-center gap-2 text-[var(--text-secondary)]">
+                <Toggle checked={weekdaysOnly} onCheckedChange={setWeekdaysOnly} label="Weekdays only" /> Weekdays only
+              </label>
+              {state.nextRunAt && (
+                <span className="ml-auto text-2xs text-[var(--text-tertiary)]">
+                  Next run {new Date(state.nextRunAt).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
+          </div>
+          <SettingsList
+            title="Projects"
+            hint="Today reads the board of each project that's on, and the apps attached to it. Changes apply straight away."
+            items={state.projects.map((p) => ({ id: p.id, name: p.name, on: !state.settings.excludedProjects.includes(p.id) }))}
+            onToggle={(id, on) => void onSettings({ ...state.settings, excludedProjects: flip(state.settings.excludedProjects, id, on) })}
           />
+          <SettingsList
+            title="Apps"
+            hint="Apps that are off aren't offered to the run at all."
+            empty="No apps are attached to the projects that are on."
+            items={state.apps.map((a) => ({ id: a.id, name: a.name, on: !state.settings.excludedApps.includes(a.id) }))}
+            onToggle={(id, on) => void onSettings({ ...state.settings, excludedApps: flip(state.settings.excludedApps, id, on) })}
+          />
+          <div className="border-t border-[var(--border-subtle)] pt-4 space-y-4">
+            <SettingsAction
+              title="Rebuild brief"
+              hint={state.running ? "A run is gathering now." : "Looks back 24 hours (72 on a Monday) instead of only since the last run, to find what earlier runs missed. Items you marked done stay done."}
+            >
+              <Button size="sm" variant="outline" disabled={state.running} onClick={() => { onRebuild(); setOpen(false); }}>
+                <RotateCcw size={12} /> Rebuild
+              </Button>
+            </SettingsAction>
+            <SettingsAction
+              title="Export data"
+              hint={exported ?? "The last run's settings, prompt, steps and the content Cairn read, as one JSON file, for debugging."}
+              breakAll={!!exported}
+            >
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const r = await onExport();
+                    if (r) setExported(r.filePath);
+                  } catch (e) { setExported(`Export failed: ${e instanceof Error ? e.message : String(e)}`); }
+                }}
+              >
+                <Download size={12} /> Export
+              </Button>
+            </SettingsAction>
+          </div>
         </div>
-        <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-          <Toggle checked={weekdaysOnly} onCheckedChange={setWeekdaysOnly} label="Weekdays only" /> Weekdays only
-        </label>
-        <div className="flex justify-between pt-1">
-          <Button size="xs" variant="ghost" className="text-[var(--danger)]" onClick={() => void onDisable()}>Turn off Today</Button>
-          <Button size="xs" variant="accent" onClick={() => void onSchedule(time, weekdaysOnly)}>Save schedule</Button>
-        </div>
-        <SettingsList
-          title="Projects"
-          hint="Today reads the board of each project that's on, and the apps attached to it."
-          items={state.projects.map((p) => ({ id: p.id, name: p.name, on: !state.settings.excludedProjects.includes(p.id) }))}
-          onToggle={(id, on) => void onSettings({ ...state.settings, excludedProjects: flip(state.settings.excludedProjects, id, on) })}
-        />
-        <SettingsList
-          title="Apps"
-          hint="Apps that are off aren't offered to the run at all."
-          empty="No apps are attached to the projects that are on."
-          items={state.apps.map((a) => ({ id: a.id, name: a.name, on: !state.settings.excludedApps.includes(a.id) }))}
-          onToggle={(id, on) => void onSettings({ ...state.settings, excludedApps: flip(state.settings.excludedApps, id, on) })}
-        />
-        <div className="border-t border-[var(--border-subtle)] pt-2.5">
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={async () => {
-              try {
-                const r = await onExport();
-                if (r) setExported(r.filePath);
-              } catch (e) { setExported(`Export failed: ${e instanceof Error ? e.message : String(e)}`); }
-            }}
-          >
-            <Download size={11} /> Export data
-          </Button>
-          <p className="text-2xs text-[var(--text-tertiary)] mt-1.5 leading-relaxed break-all">
-            {exported ?? "Saves the prompt, the brief, recent runs and the last run's log and session events as one JSON file, for debugging. It holds the content Cairn read."}
-          </p>
-        </div>
-      </PopoverContent>
-    </Popover>
+      </ModalShell>
+    </>
+  );
+}
+
+/** A settings row with a title and one line on the left, its button on the right. */
+function SettingsAction({ title, hint, breakAll, children }: { title: string; hint: string; breakAll?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <div className="text-sm text-[var(--text-tertiary)]">{title}</div>
+        <p className={cn("text-2xs text-[var(--text-tertiary)] mt-0.5 leading-relaxed", breakAll && "break-all")}>{hint}</p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
   );
 }
 
@@ -730,11 +817,11 @@ function SettingsList({ title, hint, empty, items, onToggle }: {
   onToggle: (id: string, on: boolean) => void;
 }) {
   return (
-    <div className="border-t border-[var(--border-subtle)] pt-2.5">
-      <div className="text-xs font-medium text-[var(--text-primary)]">{title}</div>
-      <p className="text-2xs text-[var(--text-tertiary)] mt-0.5 mb-1.5 leading-relaxed">{hint}</p>
+    <div>
+      <div className="text-sm text-[var(--text-tertiary)]">{title}</div>
+      <p className="text-2xs text-[var(--text-tertiary)] mt-0.5 mb-2 leading-relaxed">{hint}</p>
       {items.length === 0 && empty && <p className="text-2xs text-[var(--text-tertiary)]">{empty}</p>}
-      <div className="space-y-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
         {items.map((it) => (
           <label key={it.id} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] min-w-0">
             <Toggle checked={it.on} onCheckedChange={(on) => onToggle(it.id, on)} label={it.name} />

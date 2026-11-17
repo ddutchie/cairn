@@ -16,8 +16,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as RadixDialog from "@radix-ui/react-dialog";
-import { ArrowUp, Check, Copy, ExternalLink, MessageSquare, Send, X } from "lucide-react";
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { revealCard } from "@/lib/events";
+import { ArrowUp, Check, Copy, ExternalLink, Kanban, MessageSquare, Send } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { useChatStream } from "@/hooks/useChatStream";
@@ -63,6 +64,8 @@ interface Turn { role: "user" | "assistant"; text: string }
 
 const DRAFT_RE = /<draft>\s*([\s\S]*?)\s*<\/draft>/i;
 const QUICK = ["Shorter", "Warmer", "More direct", "Fix the tone"];
+/** For an item with nothing to send yet (a to-do from the board): questions about it. */
+const ASK_QUICK = ["What's the next step?", "Break it into steps", "What's blocking it?"];
 
 function openUrl(url?: string) {
   if (url && /^https?:\/\//i.test(url)) void appClient.openExternal(url);
@@ -249,26 +252,28 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
   const canSend = !!route && (route.channel === "board" || route.tools.length > 0);
   const liveCalls = useMemo(() => toolCalls.map((tc) => toConversationToolCall(tc as never)), [toolCalls]);
   const edited = !!target.draft && text !== target.draft.draft;
+  // Something to send: a draft, a picked answer, or a draft Cairn wrote in this chat. Otherwise the
+  // dialog is a plain question about the item, with no "Goes to" and no empty draft box.
+  const sending = !!target.draft || !!target.answer || text.trim() !== "";
+  const cardId = target.key.startsWith("card-") ? target.key.slice(5) : null;
+  const setView = useCairnStore((s) => s.setView);
+  const openCard = () => { if (cardId) { revealCard(setView, cardId); onClose(); } };
 
   return (
-    <RadixDialog.Root open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-50 bg-[color-mix(in_srgb,black_35%,transparent)]" />
-        <RadixDialog.Content
+    // The same centred dialog as Project settings (ModalShell's pieces), with a scrolling body.
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+        <DialogContent
+          size="lg"
           aria-describedby={undefined}
-          className={cn(
-            "fixed top-3 right-3 bottom-3 z-50 w-[min(460px,calc(100vw-24px))] flex flex-col overflow-hidden",
-            "bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-elev-3 focus:outline-none animate-slide-in-up",
-          )}
+          className="flex flex-col h-[min(760px,85vh)] p-0 gap-0 overflow-hidden"
         >
-          {/* header */}
-          <div className="px-3.5 pt-3 pb-2.5 border-b border-[var(--border-subtle)]">
+          {/* header (right padding leaves room for the dialog's close button) */}
+          <div className="pl-5 pr-12 pt-4 pb-3 border-b border-[var(--border-subtle)]">
             <div className="flex items-center gap-1.5">
               <span className="text-2xs text-[var(--text-tertiary)] truncate flex-1">{target.crumb} · {target.source}</span>
               {target.url && <IconButton label="Open the source" size="sm" onClick={() => openUrl(target.url)}><ExternalLink size={12} /></IconButton>}
-              <RadixDialog.Close asChild><IconButton label="Close" size="sm"><X size={13} /></IconButton></RadixDialog.Close>
             </div>
-            <RadixDialog.Title className="text-base font-semibold leading-snug mt-1">{target.title}</RadixDialog.Title>
+            <DialogTitle className="text-base font-semibold leading-snug mt-1">{target.title}</DialogTitle>
             {target.answer && (
               <span className="inline-flex items-center gap-1.5 mt-1.5 text-2xs text-[var(--text-secondary)] rounded-full px-2.5 py-0.5 border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,var(--surface-2))]">
                 Your answer: <b className="font-medium text-[var(--text-primary)]">{target.answer}</b>
@@ -277,7 +282,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
           </div>
 
           {/* body */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-3.5 py-3 flex flex-col gap-3">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
             {sent && (
               <div className="rounded-lg border border-[color-mix(in_srgb,var(--success)_35%,transparent)] bg-[color-mix(in_srgb,var(--success)_8%,var(--surface-2))] px-3 py-2.5 text-xs">
                 <div className="flex items-center gap-1.5 font-semibold"><Check size={13} className="text-[var(--success)]" /> Done{sendCall ? ` · ${operationWords(sendCall.tool)}` : ""}</div>
@@ -289,11 +294,14 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
               </div>
             )}
 
+            {sending && (
             <section>
               <div className="text-2xs text-[var(--text-tertiary)] mb-1">Goes to</div>
               <RouteBox route={route} target={target} />
             </section>
+            )}
 
+            {sending && (
             <section>
               <div className="flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)] mb-1">
                 Draft
@@ -321,6 +329,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
                 )}
               />
             </section>
+            )}
 
             {target.context && (
               <section>
@@ -367,11 +376,11 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
           </div>
 
           {/* footer */}
-          <div className="border-t border-[var(--border-subtle)] px-3.5 pt-2.5 pb-3 flex flex-col gap-2">
+          <div className="border-t border-[var(--border-subtle)] px-5 pt-3 pb-4 flex flex-col gap-2">
             {!sent && (
               <>
                 <div className="flex flex-wrap gap-1">
-                  {(text.trim() ? QUICK : ["Write a reply for this"]).map((q) => (
+                  {(!sending ? ASK_QUICK : text.trim() ? QUICK : ["Write a reply for this"]).map((q) => (
                     <button
                       key={q}
                       type="button"
@@ -391,7 +400,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
                   <input
                     value={ask}
                     onChange={(e) => setAsk(e.target.value)}
-                    placeholder="Ask Cairn to change the draft, or ask about this…"
+                    placeholder={sending ? "Ask Cairn to change the draft, or ask about this…" : "Ask Cairn about this…"}
                     aria-label="Ask Cairn"
                     className="flex-1 min-w-0 bg-transparent text-xs outline-none"
                   />
@@ -401,7 +410,13 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
             )}
             <div className="flex items-center gap-1.5">
               {sent ? (
-                <RadixDialog.Close asChild><Button size="sm" variant="accent">Back to Today</Button></RadixDialog.Close>
+                <DialogClose asChild><Button size="sm" variant="accent">Back to Today</Button></DialogClose>
+              ) : !sending ? (
+                <>
+                  <Button size="sm" variant="accent" onClick={() => { setManualDone(true); onDone(); }}><Check size={12} /> Mark done</Button>
+                  {cardId && <Button size="sm" variant="outline" onClick={openCard}><Kanban size={12} /> Open the card</Button>}
+                  {!cardId && target.url && <Button size="sm" variant="outline" onClick={() => openUrl(target.url)}><ExternalLink size={12} /> Open the source</Button>}
+                </>
               ) : canSend ? (
                 <>
                   <Button size="sm" variant="accent" disabled={isLoading || !text.trim()} onClick={send}>
@@ -425,9 +440,8 @@ export function TodayActPanel({ workspaceId, projectId, date, target, onSaveDraf
               )}
             </div>
           </div>
-        </RadixDialog.Content>
-      </RadixDialog.Portal>
-    </RadixDialog.Root>
+        </DialogContent>
+    </Dialog>
   );
 }
 

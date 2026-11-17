@@ -82,6 +82,15 @@ export function todayToolFilter(settings: TodaySettings): (name: string) => bool
 }
 
 /** Today cuts each connector result to this many characters: a brief needs the gist, and a 90K-character search fills the context. */
+/**
+ * Today's reasoning effort: low, whatever chat uses (off stays off). The brief is a sort-and-draft job; on
+ * high, a model spends most of the run planning in its thinking and writing each item twice. Sent
+ * explicitly, since with no effort a reasoning model uses its own default, which can be high.
+ */
+export function todayReasoningEffort(chat: string | undefined): "off" | "low" {
+  return chat === "off" ? "off" : "low";
+}
+
 export const TODAY_RESULT_CHARS = 16_000;
 
 export const TODAY_RECIPE = `You are preparing the user's Today brief: one short page, read in under a minute, that says what needs them across their projects and apps. Work read-only: tools that send, post, create, edit or delete aren't available to you.
@@ -92,7 +101,12 @@ Build the brief with the brief tools as you go:
 - Call today_remove for items that were handled or are no longer true.
 - Call today_finish once, last, with the headline, the lede and every app you tried.
 
-Items with "carriedSince" are still open from an earlier day. Check each one against its source: remove it if it was handled (answered, merged, closed, moved on), update it if something changed, and leave it if it still waits on the user. Don't add a second copy of a carried item.
+Items with "carriedSince" are still open from an earlier day. Don't look each one up: the searches below show what changed. Remove one if those results or the project facts show it was handled (answered, merged, closed, moved on), update it if something changed, and otherwise leave it as it is. Don't add a second copy of a carried item.
+
+How to work:
+- Work in a few rounds. After today_read, make all your searches in one round, in parallel, then follow up only where a result needs it.
+- Keep your thinking short. Don't plan every call or write items out in your thinking: decide, then put the item text straight into today_upsert.
+- Don't re-read these instructions in your thinking.
 
 What to gather:
 1. The project facts below come from Cairn's board, notes and automations. Don't search the board for them again; turn what matters into items. A card due today or overdue is a todo (id "card-<cardId>", with its projectId). A failing automation is an fyi with tone "warn". A card stuck in review can be a decision ("Merge or send it back?").
@@ -113,12 +127,36 @@ How to write it:
 - Keep at most 6 decisions and to-dos, 5 drafts and 8 fyi items, most urgent first.
 - headline: at most 10 words, verb first, naming the first decision. lede: at most 25 words of context, no counts (Cairn shows those). Don't add up free time or count meetings: Cairn works that out from the events.`;
 
-/** The run's prompt: the fixed recipe, then the date, when the last brief ran, and Cairn's project facts. */
-export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt: string | null, now: Date = new Date()): string {
+/**
+ * Where a run's "since the last brief" starts: when the last run that finished properly started.
+ * A failed or cut-off run still saves a brief, but it may not have reached every app, so its time
+ * would hide what it missed. Null when no run has finished yet (the prompt then looks back 24–72 hours).
+ */
+export function todayLookBackFrom(db: Database.Database, automationId: string, excludeRunId?: string): string | null {
+  return listAutomationRuns(db, automationId, 50).find((r) => r.id !== excludeRunId && r.status === "done")?.startedAt ?? null;
+}
+
+// Workspaces whose next Today run is a rebuild (set by "Rebuild", taken by the run it starts).
+const pendingRebuilds = new Set<string>();
+
+/** Marks the next Today run of this automation as a rebuild. */
+export function requestTodayRebuild(automationId: string): void { pendingRebuilds.add(automationId); }
+
+/** True once for the run after `requestTodayRebuild`; false for every other run. */
+export function takeTodayRebuild(automationId: string): boolean { return pendingRebuilds.delete(automationId); }
+
+/**
+ * The run's prompt: the fixed recipe, then the date, when the last brief ran, and Cairn's project facts.
+ * A rebuild ignores when the last brief ran and looks back the full window, so what earlier runs missed
+ * is found again; the items already in the brief stay and are checked like any other.
+ */
+export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt: string | null, now: Date = new Date(), rebuild = false): string {
   const when = (d: Date) => `${d.toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
-  const last = lastBriefAt && !Number.isNaN(new Date(lastBriefAt).getTime())
-    ? `The last brief ran ${when(new Date(lastBriefAt))}: look for what changed since then.`
-    : "There's no earlier brief.";
+  const last = rebuild
+    ? "The user asked for a rebuild: ignore when the last brief ran and look back the last 24 hours (72 on a Monday), as if there were no earlier brief. Items already in the brief stay unless what you find shows they were handled."
+    : lastBriefAt && !Number.isNaN(new Date(lastBriefAt).getTime())
+      ? `The last brief ran ${when(new Date(lastBriefAt))}: look for what changed since then.`
+      : "There's no earlier brief.";
   return `${TODAY_RECIPE}\n\n## Now\n${when(now)} local time. ${last}\n\n## Project facts (from Cairn)\n${factsForPrompt(facts)}`;
 }
 
@@ -416,6 +454,53 @@ export function getTodayState(db: Database.Database, workspacePath: string, work
  * run's log and engine session events. `readSession` returns the session's
  * JSONL text for a run id, or null.
  */
+/** One model step of a run, for the debug export: how long it took and where its output went. */
+export interface TodayRunStep {
+  step: number;
+  /** Seconds from the prompt or the last tool result to this reply. */
+  seconds: number | null;
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  thinkingChars: number;
+  textChars: number;
+  calls: string[];
+  stopReason?: string;
+}
+
+/** Per-step timing and token use from a run's session events (`{ time, event }` lines). */
+export function summariseRunSteps(events: readonly unknown[]): { steps: TodayRunStep[]; totals: Record<string, number> } {
+  const steps: TodayRunStep[] = [];
+  let since: number | null = null;
+  for (const raw of events) {
+    if (!raw || typeof raw !== "object") continue;
+    const { time, event } = raw as { time?: number; event?: { type?: string; message?: Record<string, unknown> } };
+    if (!event) continue;
+    if (event.type === "user/message" || event.type === "tool/result") { if (typeof time === "number") since = time; continue; }
+    if (event.type !== "assistant/message" || !event.message) continue;
+    const m = event.message as { content?: Array<Record<string, unknown>>; usage?: Record<string, number>; stopReason?: string };
+    const blocks = Array.isArray(m.content) ? m.content : [];
+    const chars = (type: string, key: string) => blocks.filter((b) => b.type === type).reduce((n, b) => n + String(b[key] ?? "").length, 0);
+    steps.push({
+      step: steps.length + 1,
+      seconds: typeof time === "number" && since !== null ? Math.round((time - since) / 100) / 10 : null,
+      input: m.usage?.input, output: m.usage?.output, cacheRead: m.usage?.cacheRead,
+      thinkingChars: chars("thinking", "thinking"),
+      textChars: chars("text", "text"),
+      calls: blocks.filter((b) => b.type === "toolCall").map((b) => String(b.name ?? "")),
+      stopReason: m.stopReason,
+    });
+  }
+  const sum = (f: (s: TodayRunStep) => number | null | undefined) => Math.round(steps.reduce((n, s) => n + (f(s) ?? 0), 0) * 10) / 10;
+  return {
+    steps,
+    totals: {
+      steps: steps.length, modelSeconds: sum((s) => s.seconds), outputTokens: sum((s) => s.output),
+      thinkingChars: sum((s) => s.thinkingChars), toolCalls: sum((s) => s.calls.length),
+    },
+  };
+}
+
 export function buildTodayDebugExport(
   db: Database.Database, workspacePath: string, workspaceId: string,
   readSession: (runId: string) => string | null,
@@ -443,11 +528,12 @@ export function buildTodayDebugExport(
   const brief = loadLatestTodayBrief(workspacePath, a);
   const settings = readTodaySettings(workspacePath, a);
   const included = includedProjects(db, workspaceId, settings);
+  const runLog = last?.runDir ? readRunLog(last.runDir) : null;
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   return {
     fileName: `today-debug-${brief?.date ?? "none"}-${stamp}.json`,
     data: {
-      kind: "cairn-today-debug/2",
+      kind: "cairn-today-debug/3",
       exportedAt: new Date().toISOString(),
       workspaceId,
       settings,
@@ -456,14 +542,18 @@ export function buildTodayDebugExport(
         id: a.id, enabled: a.enabled, scheduleExpr: a.scheduleExpr, timezone: a.timezone,
         approvalMode: a.approvalMode, nextRunAt: a.nextRunAt,
       },
-      // What runs: the current prompt, not the (possibly older) text saved on the row.
-      prompt: todayPrompt(projectFacts(db, workspaceId, included), brief?.generatedAt ?? null),
+      // The last run as it was sent: model settings, system prompt, tools and prompt, then how each step went.
+      lastRunSetup: runLog?.setup ?? null,
+      lastRunPrompt: runLog?.recipe ?? null,
+      lastRunSteps: sessionEvents ? summariseRunSteps(sessionEvents) : null,
+      // What the next run would be sent, built now.
+      nextPrompt: todayPrompt(projectFacts(db, workspaceId, included), todayLookBackFrom(db, a.id)),
       brief,
       marks: brief ? readTodayMarks(workspacePath, a, brief.date) : null,
       history: listTodayHistory(workspacePath, a),
       savedFile,
       runs: runs.map((r) => ({ id: r.id, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, error: r.error, runDir: r.runDir })),
-      lastRun: last ? { runLog: last.runDir ? readRunLog(last.runDir) : null, sessionEvents } : null,
+      lastRun: last ? { runLog, sessionEvents } : null,
     },
   };
 }

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot, migrateLegacyToday, pruneTodayFiles,
-  readTodayMarks, readTodaySettings, saveTodayBrief, snapshotTodayBrief, todayAllowsTool, todayToolFilter, updateTodayMarks, writeTodaySettings,
+  readTodayMarks, readTodaySettings, saveTodayBrief, snapshotTodayBrief, requestTodayRebuild, takeTodayRebuild, todayAllowsTool, todayLookBackFrom, todayPrompt, todayReasoningEffort, todayToolFilter, updateTodayMarks, writeTodaySettings,
 } from "./today";
 import { factsForPrompt, projectFacts } from "./today-facts";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
@@ -146,6 +146,42 @@ describe("workspace Today", () => {
     expect(loadTodaySnapshot(dir, a, "../../etc")).toBeNull();
     expect(pruneTodayFiles(dir, a, new Date(2026, 10, 16), 7)).toBe(2);
     expect(listTodayHistory(dir, a).map((h) => h.key)).toEqual(["2026-11-16", "2026-11-16@0700"]);
+  });
+});
+
+describe("todayLookBackFrom", () => {
+  it("starts from the last run that finished, skipping failed runs and the one starting now", () => {
+    const db = makeDb();
+    seedWorkspace(db);
+    const auto = createAutomation(db, {
+      workspaceId: "ws1", projectId: null, name: "Today", instructions: "x", scheduleKind: "cron", scheduleExpr: "cron 0 7 * * 1-5",
+      enabled: true, nextRunAt: new Date().toISOString(), approvalMode: "auto", source: "custom",
+    });
+    expect(todayLookBackFrom(db, auto.id)).toBeNull();
+    const done = createAutomationRun(db, auto.id);
+    updateAutomationRun(db, done.id, { status: "done" });
+    const failed = createAutomationRun(db, auto.id);
+    updateAutomationRun(db, failed.id, { status: "error", error: "output limit" });
+    const current = createAutomationRun(db, auto.id, "running");
+    expect(todayLookBackFrom(db, auto.id, current.id)).toBe(done.startedAt);
+  });
+
+  it("makes only the next run a rebuild, which ignores the last brief's time", () => {
+    expect(takeTodayRebuild("a1")).toBe(false);
+    requestTodayRebuild("a1");
+    expect(takeTodayRebuild("a1")).toBe(true);
+    expect(takeTodayRebuild("a1")).toBe(false);
+    const now = new Date(2026, 10, 16, 20, 0);
+    expect(todayPrompt([], "2026-11-16T19:00:00Z", now)).toContain("look for what changed since then");
+    const rebuilt = todayPrompt([], "2026-11-16T19:00:00Z", now, true);
+    expect(rebuilt).toContain("look back the last 24 hours (72 on a Monday)");
+    expect(rebuilt).not.toContain("The last brief ran");
+  });
+
+  it("runs Today on low effort unless reasoning is off", () => {
+    expect(todayReasoningEffort("high")).toBe("low");
+    expect(todayReasoningEffort(undefined)).toBe("low");
+    expect(todayReasoningEffort("off")).toBe("off");
   });
 });
 
