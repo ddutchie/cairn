@@ -5,22 +5,26 @@
 import { describe, expect, it } from "vitest";
 import { killTree, platformShell, runProcess, spawnTracked } from "./proc";
 
+// Real children are `node -e` scripts so the tests need no POSIX shell utilities.
+const NODE = process.execPath;
+const node = (script: string) => ({ file: NODE, args: ["-e", script] });
 const SH = "/bin/sh";
 
 describe("runProcess", () => {
   it("captures stdout/stderr separately with the exit code", async () => {
-    const r = await runProcess({ file: SH, args: ["-c", "echo out; echo err >&2; exit 3"] });
-    expect(r).toMatchObject({ code: 3, stdout: "out\n", stderr: "err\n", timedOut: false, aborted: false, truncated: false });
+    const r = await runProcess(node('console.log("out"); console.error("err"); process.exit(3)'));
+    expect(r).toMatchObject({ code: 3, stdout: expect.stringMatching(/^out\r?\n$/), stderr: expect.stringMatching(/^err\r?\n$/), timedOut: false, aborted: false, truncated: false });
   });
 
-  it("reports the signal when the child dies from one", async () => {
-    const r = await runProcess({ file: SH, args: ["-c", "kill -TERM $$"] });
+  // Windows has no POSIX signals: a self-kill exits with a plain code there.
+  it.runIf(process.platform !== "win32")("reports the signal when the child dies from one", async () => {
+    const r = await runProcess(node('process.kill(process.pid, "SIGTERM"); setTimeout(() => {}, 5000)'));
     expect(r.code).toBeNull();
     expect(r.signal).toBe("SIGTERM");
   });
 
   it("merges stderr into stdout when combine is set", async () => {
-    const r = await runProcess({ file: SH, args: ["-c", "echo out; echo err >&2"], combine: true });
+    const r = await runProcess({ ...node('console.log("out"); console.error("err")'), combine: true });
     expect(r.stdout).toContain("out");
     expect(r.stdout).toContain("err");
     expect(r.stderr).toBe("");
@@ -28,24 +32,24 @@ describe("runProcess", () => {
   });
 
   it("delivers stdin to the child", async () => {
-    const r = await runProcess({ file: SH, args: ["-c", "cat"], stdin: "hello-stdin" });
+    const r = await runProcess({ ...node('process.stdin.pipe(process.stdout)'), stdin: "hello-stdin" });
     expect(r).toMatchObject({ code: 0, stdout: "hello-stdin" });
   });
 
   it("keeps the tail when output exceeds the cap", async () => {
-    const r = await runProcess({ file: SH, args: ["-c", "seq 1 2000"], maxChars: 100, keep: "tail" });
+    const r = await runProcess({ ...node('for (let i = 1; i <= 2000; i++) console.log(i)'), maxChars: 100, keep: "tail" });
     expect(r.code).toBe(0);
     expect(r.truncated).toBe(true);
     expect(r.stdout.length).toBeLessThanOrEqual(100);
     expect(r.stdout).toContain("2000");
-    expect(r.stdout).not.toContain("\n1\n");
+    expect(r.stdout).not.toMatch(/\n1\r?\n/);
   });
 
   it("keeps the head and stops the child when the cap is hit with killOnCap", async () => {
-    const r = await runProcess({ file: SH, args: ["-c", "while true; do echo hello; done"], maxChars: 100, keep: "head", killOnCap: true });
+    const r = await runProcess({ ...node('setInterval(() => console.log("hello".repeat(20)), 1)'), maxChars: 100, keep: "head", killOnCap: true });
     expect(r.truncated).toBe(true);
     expect(r.stdout.startsWith("hello")).toBe(true);
-  });
+  }, 20_000); // killing a process tree via taskkill is slow on a loaded Windows box
 
   it("reports a spawn failure instead of rejecting", async () => {
     const r = await runProcess({ file: "/nonexistent-cairn-binary-xyz" });
@@ -56,19 +60,19 @@ describe("runProcess", () => {
   it("resolves already-aborted without spawning", async () => {
     const ctl = new AbortController();
     ctl.abort();
-    const r = await runProcess({ file: SH, args: ["-c", "echo hi"], signal: ctl.signal });
+    const r = await runProcess({ ...node('console.log("hi")'), signal: ctl.signal });
     expect(r).toMatchObject({ aborted: true, stdout: "" });
   });
 
   it("aborts a running child", async () => {
     const ctl = new AbortController();
-    const p = runProcess({ file: SH, args: ["-c", "sleep 30; echo done"], signal: ctl.signal });
+    const p = runProcess({ ...node('setTimeout(() => console.log("done"), 30000)'), signal: ctl.signal });
     setTimeout(() => ctl.abort(), 50);
     const r = await p;
     expect(r.aborted).toBe(true);
     expect(r.timedOut).toBe(false);
     expect(r.stdout).not.toContain("done");
-  });
+  }, 20_000); // killing a process tree via taskkill is slow on a loaded Windows box
 
   it.runIf(process.platform !== "win32")("times out and kills the whole process group", async () => {
     // The grandchild prints its pid; after the timeout it must be dead, which
@@ -88,12 +92,12 @@ describe("runProcess", () => {
 
 describe("spawnTracked + killTree", () => {
   it("streams output like a bare spawn", async () => {
-    const child = spawnTracked(SH, ["-c", "echo hi"]);
+    const child = spawnTracked(NODE, ["-e", 'console.log("hi")']);
     let out = "";
     child.stdout?.on("data", (d: Buffer) => { out += d.toString("utf8"); });
     const code = await new Promise((resolve) => { child.on("error", () => resolve(-1)); child.on("close", resolve); });
     expect(code).toBe(0);
-    expect(out).toBe("hi\n");
+    expect(out.trim()).toBe("hi");
   });
 
   it.runIf(process.platform !== "win32")("killTree stops a sleeping child", async () => {

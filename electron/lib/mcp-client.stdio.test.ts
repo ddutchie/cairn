@@ -27,7 +27,8 @@ s.tool("slow", "Slow work", { ms: z.number(), tick: z.number().optional(), marke
 s.connect(new StdioServerTransport());
 `;
 
-const cfg = { id: "echo", transport: "stdio" as const, command: process.execPath, args: ["-e", SERVER], env: { ELECTRON_RUN_AS_NODE: "1" } };
+// Bare `node`, not process.execPath: the validator rejects paths containing spaces (Windows: C:/Program Files/nodejs).
+const cfg = { id: "echo", transport: "stdio" as const, command: "node", args: ["-e", SERVER], env: { ELECTRON_RUN_AS_NODE: "1" } };
 
 describe("stdio MCP servers", () => {
   afterAll(() => mcpClient.disposeAll());

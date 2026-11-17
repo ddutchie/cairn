@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
@@ -14,6 +14,16 @@ import { turnsOf } from "./tools/sessions";
 
 const cwd = mkdtempSync(path.join(os.tmpdir(), "hooks-"));
 const config = (hooks: Record<string, unknown>): HookConfig => parseHookConfig(JSON.stringify({ hooks }), cwd);
+// Hook commands run under /bin/sh on POSIX and powershell.exe on Windows, so the
+// fixtures are tiny node scripts (bare `node`, on PATH in both) rather than shell syntax.
+let scriptN = 0;
+const nodeCmd = (js: string) => {
+  const file = path.join(cwd, `hook-${scriptN++}.js`);
+  writeFileSync(file, js);
+  return `node "${file}"`;
+};
+const blockWith = (reason: string) => nodeCmd(`console.error(${JSON.stringify(reason)}); process.exit(2);`);
+const printJson = (json: string) => nodeCmd(`console.log(${JSON.stringify(json)});`);
 const cmd = (command: string, matcher?: string) => [{ matcher, hooks: [{ type: "command", command }] }];
 const hooksFor = (hooks: Record<string, unknown>) => createHooks({ sessionId: "s1", cwd, configs: [config(hooks)] })!;
 
@@ -35,21 +45,21 @@ describe("parseHookConfig", () => {
 
 describe("hook commands", () => {
   it("exit code 2 blocks a tool with the stderr reason; matchers filter by tool name", async () => {
-    const h = hooksFor({ PreToolUse: cmd("echo no rm here >&2; exit 2", "bash") });
+    const h = hooksFor({ PreToolUse: cmd(blockWith("no rm here"), "bash") });
     expect(await h.preTool!({ name: "bash", args: { command: "rm" }, callId: "c" })).toEqual({ decision: "deny", reason: "no rm here" });
     expect(await h.preTool!({ name: "read", args: {}, callId: "c" })).toEqual({});
   });
   it("reads permissionDecision and additionalContext from JSON output, and sends the event on stdin", async () => {
     const h = hooksFor({
-      PreToolUse: cmd(`echo '{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"check it"}}'`),
-      UserPromptSubmit: cmd(`cat > "${cwd}/stdin.json"; echo '{"additionalContext":"today is Friday"}'`),
+      PreToolUse: cmd(printJson('{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"check it"}}')),
+      UserPromptSubmit: cmd(nodeCmd(`require("fs").writeFileSync(${JSON.stringify(path.join(cwd, "stdin.json"))}, require("fs").readFileSync(0)); console.log('{"additionalContext":"today is Friday"}');`)),
     });
     expect(await h.preTool!({ name: "bash", args: {}, callId: "c" })).toEqual({ decision: "ask", reason: "check it" });
     expect(await h.userPrompt!("hello")).toEqual({ context: "today is Friday" });
     expect(JSON.parse(readFileSync(path.join(cwd, "stdin.json"), "utf8"))).toMatchObject({ hook_event_name: "UserPromptSubmit", prompt: "hello", session_id: "s1" });
   });
   it("ignores a hook that crashes with another exit code", async () => {
-    expect(await hooksFor({ Stop: cmd("exit 1") }).stop!()).toEqual({});
+    expect(await hooksFor({ Stop: cmd(nodeCmd("process.exit(1);")) }).stop!()).toEqual({});
   });
 });
 
@@ -62,7 +72,7 @@ describe("hooks in the loop", () => {
   };
 
   it("a PreToolUse deny stops the tool from running and tells the model", async () => {
-    const t = run({ PreToolUse: cmd("echo blocked by policy >&2; exit 2") }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
+    const t = run({ PreToolUse: cmd(blockWith("blocked by policy")) }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
     const events = await t.events;
     expect(t.executed).toHaveLength(0);
     expect(ofType(events, "tool/result")[0]).toMatchObject({ isError: true });
@@ -72,14 +82,14 @@ describe("hooks in the loop", () => {
 
   it("a PreToolUse ask is the ask's source even when the mode would have asked anyway", async () => {
     // A headless run answers routine `mode` asks itself; a hook's ask must still reach a person.
-    const t = run({ PreToolUse: cmd(`echo '{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"check it"}}'`) },
+    const t = run({ PreToolUse: cmd(printJson('{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"check it"}}')) },
       [fauxAssistantMessage([call("bash", { command: "make" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")], "ask");
     const asked = ofType(await t.events, "approval/asked")[0];
     expect(asked.ask).toMatchObject({ source: "hook", reason: "check it" });
   });
 
   it("a PreToolUse ask upgrades an allowed call to an approval", async () => {
-    const t = run({ PreToolUse: cmd(`echo '{"hookSpecificOutput":{"permissionDecision":"ask"}}'`) }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
+    const t = run({ PreToolUse: cmd(printJson('{"hookSpecificOutput":{"permissionDecision":"ask"}}')) }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
     const events: string[] = [];
     const gen = (async () => { for (const e of await t.events) events.push(e.type); })();
     await gen.catch(() => undefined);
@@ -87,16 +97,16 @@ describe("hooks in the loop", () => {
   });
 
   it("PostToolUse context is appended to the result; a block replaces it", async () => {
-    const withContext = run({ PostToolUse: cmd(`echo '{"additionalContext":"remember the lint rules"}'`) }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
+    const withContext = run({ PostToolUse: cmd(printJson('{"additionalContext":"remember the lint rules"}')) }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
     expect(ofType(await withContext.events, "tool/result")[0].text).toContain("remember the lint rules");
-    const blocked = run({ PostToolUse: cmd("echo leaked a secret >&2; exit 2") }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
+    const blocked = run({ PostToolUse: cmd(blockWith("leaked a secret")) }, [fauxAssistantMessage([call("echo", { text: "a" })], { stopReason: "toolUse" }), fauxAssistantMessage("ok")]);
     const result = ofType(await blocked.events, "tool/result")[0];
     expect(result).toMatchObject({ isError: true });
     expect(result.text).toContain("leaked a secret");
   });
 
   it("a blocked prompt ends the turn without calling the model", async () => {
-    const t = run({ UserPromptSubmit: cmd("echo off limits >&2; exit 2") }, [fauxAssistantMessage("never")]);
+    const t = run({ UserPromptSubmit: cmd(blockWith("off limits")) }, [fauxAssistantMessage("never")]);
     const events = await t.events;
     expect(types(events)).toEqual(["turn/start", "user/message", "error", "turn/end"]);
     expect(toolResults(t.h.history)).toHaveLength(0);
@@ -104,7 +114,7 @@ describe("hooks in the loop", () => {
   });
 
   it("keeps a blocked prompt away from the model on later turns, including after a restart", async () => {
-    const t = run({ UserPromptSubmit: cmd("echo off limits >&2; exit 2") }, []);
+    const t = run({ UserPromptSubmit: cmd(blockWith("off limits")) }, []);
     const events = await t.events;
     expect(t.h.history).toEqual([]);
     expect(events.find((e) => e.type === "user/message")).toMatchObject({ content: expect.any(String), blocked: true });
@@ -123,7 +133,7 @@ describe("hooks in the loop", () => {
 
   it("an empty reply is reported, not sent back to work by a Stop hook", async () => {
     const thinking = [{ type: "thinking" as const, thinking: "Let me consider this." }];
-    const t = run({ Stop: cmd(`echo keep going >&2; exit 2`) }, [fauxAssistantMessage(thinking), fauxAssistantMessage("never")]);
+    const t = run({ Stop: cmd(blockWith("keep going")) }, [fauxAssistantMessage(thinking), fauxAssistantMessage("never")]);
     const events = await t.events;
     expect(ofType(events, "assistant/message")).toHaveLength(1);
     expect(ofType(events, "error")[0].message).toContain("finished without a reply");
@@ -131,7 +141,7 @@ describe("hooks in the loop", () => {
   });
 
   it("a Stop hook sends the model back to work, a limited number of times", async () => {
-    const t = run({ Stop: cmd(`echo tests are failing >&2; exit 2`) }, [fauxAssistantMessage("one"), fauxAssistantMessage("two"), fauxAssistantMessage("three"), fauxAssistantMessage("four"), fauxAssistantMessage("five")]);
+    const t = run({ Stop: cmd(blockWith("tests are failing")) }, [fauxAssistantMessage("one"), fauxAssistantMessage("two"), fauxAssistantMessage("three"), fauxAssistantMessage("four"), fauxAssistantMessage("five")]);
     const events = await t.events;
     expect(ofType(events, "assistant/message")).toHaveLength(4);
     expect(t.h.history.some((m) => m.role === "user" && JSON.stringify(m.content).includes("continue: tests are failing"))).toBe(true);

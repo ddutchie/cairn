@@ -19,10 +19,14 @@ const REQUEST_TIMEOUT_MS = 60_000;
 
 /** Absolute path of `command` on PATH, if any. */
 export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const exts = process.platform === "win32" ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean)] : [""];
   for (const dir of (env.PATH ?? "").split(path.delimiter)) {
     if (!dir) continue;
-    const candidate = path.join(dir, command);
-    try { accessSync(candidate, constants.X_OK); if (statSync(candidate).isFile()) return candidate; } catch { /* keep looking */ }
+    // Windows resolves a bare name through PATHEXT (`node` -> `node.exe`, `tsserver` -> `tsserver.cmd`).
+    for (const ext of exts) {
+      const candidate = path.join(dir, command + ext);
+      try { accessSync(candidate, constants.X_OK); if (statSync(candidate).isFile()) return candidate; } catch { /* keep looking */ }
+    }
   }
   return undefined;
 }
