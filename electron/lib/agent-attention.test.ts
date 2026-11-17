@@ -6,7 +6,7 @@ vi.mock("electron", () => ({ BrowserWindow: { getAllWindows: () => [] } }));
 
 import { applySchema } from "../db/schema";
 import { notifyAgentAttention, _resetAgentAttention } from "./agent-attention";
-import { _resetSessionsOnScreen, forgetWindowSessions, isSessionOnScreen, markSessionOnScreen } from "./session-on-screen";
+import { _resetSessionsOnScreen, forgetWindowSessions, isSessionOnScreen, markSessionOnScreen, setWindowVisibleCheck } from "./session-on-screen";
 
 describe("notifyAgentAttention", () => {
   let db: Database.Database;
@@ -70,5 +70,14 @@ describe("sessions on screen", () => {
     markSessionOnScreen(2, "s2", true);
     forgetWindowSessions(2);
     expect(isSessionOnScreen("s2")).toBe(false);
+  });
+
+  it("ignores a minimized window's reports but keeps them for restore", () => {
+    let minimized = true;
+    setWindowVisibleCheck((id) => id !== 1 || !minimized);
+    markSessionOnScreen(1, "s1", true);
+    expect(isSessionOnScreen("s1")).toBe(false);
+    minimized = false;
+    expect(isSessionOnScreen("s1")).toBe(true);
   });
 });

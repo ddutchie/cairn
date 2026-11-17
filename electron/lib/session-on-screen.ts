@@ -32,13 +32,24 @@ export function forgetWindowSessions(windowId: number): void {
   shown.delete(windowId);
 }
 
-/** Is any window showing `sessionId`? */
+/**
+ * Whether a window can be seen at all. A minimized or hidden window keeps its reports (the renderer
+ * doesn't report again on restore) but doesn't count as showing anything. Set by the IPC layer,
+ * which can look windows up; until then every window counts as visible.
+ */
+let windowVisible: (windowId: number) => boolean = () => true;
+export function setWindowVisibleCheck(check: (windowId: number) => boolean): void {
+  windowVisible = check;
+}
+
+/** Is any visible window showing `sessionId`? */
 export function isSessionOnScreen(sessionId: string): boolean {
-  for (const sessions of shown.values()) if (sessions.has(sessionId)) return true;
+  for (const [windowId, sessions] of shown) if (sessions.has(sessionId) && windowVisible(windowId)) return true;
   return false;
 }
 
 /** Test hook. */
 export function _resetSessionsOnScreen(): void {
   shown.clear();
+  windowVisible = () => true;
 }

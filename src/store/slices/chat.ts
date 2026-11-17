@@ -19,6 +19,9 @@ function toUpsertInput(t: ChatThread): ChatThreadUpsertInput {
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
+/** Latest `reloadThreadMessages` request per thread. */
+const reloadSeq = new Map<string, number>();
+
 export interface ChatSlice {
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
@@ -474,7 +477,12 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   async reloadThreadMessages(threadId) {
+    // Only the latest reload of a thread applies: an earlier one that answers last is stale.
+    const seq = (reloadSeq.get(threadId) ?? 0) + 1;
+    reloadSeq.set(threadId, seq);
     const res = await ipcResult((e) => e.chat.sessionMessages(threadId));
+    if (reloadSeq.get(threadId) !== seq) return;
+    reloadSeq.delete(threadId);
     if ("error" in res) return;
     const rows = (unwrapSessionPayload(res.data).messages as ChatMessage[])
       .filter((m) => !(m.role === "assistant" && !m.content?.trim() && !m.reasoning?.trim() && String(m.id).includes("-trailing")))

@@ -150,7 +150,8 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
   const markDone = () => { setDone(true); onDone(); };
   const undo = () => { setDone(false); setSentWith(null); onUndoDone(); };
   const [copied, setCopied] = useState(false);
-  const [kept, setKept] = useState(false);
+  // A chat kept earlier (Keep in chat, or closed while replying) is still in the chat list on reopen.
+  const [kept, setKept] = useState(() => useCairnStore.getState().chatThreads.some((t) => t.id === threadId));
   // Send (or Add to the board) was asked for: from then on a Cairn write counts as the send too.
   const [sendAsked, setSendAsked] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -177,6 +178,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
     if (d && textRef.current !== draftAtOpen.current) saveDraftRef.current(d.id, textRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on close
   }, []);
+  const turnEnds = useRef(0);
   useEffect(() => {
     if (!hasElectron()) return;
     let content = "";
@@ -184,6 +186,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
       onTurnStart: () => { content = ""; },
       onAssistantMessage: (m) => { content = m.text; },
       onTurnEnd: () => {
+        turnEnds.current += 1;
         const reply = content;
         content = "";
         if (!reply) return;
@@ -201,21 +204,33 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
 
   // A connector call that writes and finished cleanly is the send. A Cairn write (editing or moving
   // a card, writing a note) only counts once Send was asked for: otherwise it's just a change.
-  const sendCall = toolCalls.find((tc) => tc.status === "done" && tc.ok !== false && !tc.error
-    && WRITE_VERB.test(operationWords(tc.tool)) && (sendAsked || toolServer(tc.tool) !== ""));
-  const sendKey = sendCall ? sendCall.callId ?? `${sendCall.tool}#${toolCalls.indexOf(sendCall)}` : null;
+  // The item is marked done when the turn ends, and only if every such write in it succeeded: a board
+  // request can make several cards, and one that failed leaves the item open.
   const sent = done;
-  // Each send call marks the item done once; undoing it isn't undone by the same call again.
-  const countedCalls = useRef(new Set<string>());
+  const turnWrites = useRef<{ ok: string[]; failed: boolean; last: string | null }>({ ok: [], failed: false, last: null });
+  useEffect(() => {
+    for (const tc of toolCalls) {
+      if (tc.status !== "done" || !WRITE_VERB.test(operationWords(tc.tool)) || !(sendAsked || toolServer(tc.tool) !== "")) continue;
+      if (tc.ok === false || tc.error) { turnWrites.current.failed = true; continue; }
+      const key = tc.callId ?? `${tc.tool}#${toolCalls.indexOf(tc)}`;
+      if (!turnWrites.current.ok.includes(key)) turnWrites.current.ok.push(key);
+      turnWrites.current.last = operationWords(tc.tool);
+    }
+  }, [toolCalls, sendAsked]);
   const onDoneRef = useRef(onDone);
   useEffect(() => { onDoneRef.current = onDone; });
+  const wasLoading = useRef(isLoading);
   useEffect(() => {
-    if (!sendKey || !sendCall || countedCalls.current.has(sendKey)) return;
-    countedCalls.current.add(sendKey);
+    const ended = wasLoading.current && !isLoading;
+    wasLoading.current = isLoading;
+    if (!ended) return;
+    const { ok, failed, last } = turnWrites.current;
+    turnWrites.current = { ok: [], failed: false, last: null };
+    if (!ok.length || failed) return;
     setDone(true);
-    setSentWith(operationWords(sendCall.tool));
+    setSentWith(last);
     onDoneRef.current();
-  }, [sendKey, sendCall]);
+  }, [isLoading]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -327,6 +342,9 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
   const opened = useRef(false);
   const syncRunningRef = useRef(syncRunning);
   useEffect(() => { syncRunningRef.current = syncRunning; });
+  // Mounted, StrictMode replay included: a dialog closed before the history loads sends nothing.
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     if (opened.current) return;
     opened.current = true;
@@ -336,6 +354,7 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
       let lastDraft: string | null = null;
       if (hasElectron()) {
         try {
+          const endsBefore = turnEnds.current;
           const [rows, state] = await Promise.all([
             sessionClient.getSessionMessages(sessionId).then((r) => unwrapSessionPayload(r).messages as Array<{ role: string; content: string }>),
             sessionClient.isRunning(sessionId),
@@ -349,9 +368,11 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
               earlier.push({ role: "assistant", text: turn.text });
             }
           }
-          if (state?.running) syncRunningRef.current(true);
+          // A turn that ended while this loaded isn't running any more.
+          if (state?.running && turnEnds.current === endsBefore) syncRunningRef.current(true);
         } catch { earlier = []; /* a new item has no session yet */ }
       }
+      if (!mounted.current) return;
       if (earlier.length) {
         setTurns((t) => [...earlier, ...t]);
         // An item without a saved draft keeps the last one Cairn wrote here.

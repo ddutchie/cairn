@@ -10,10 +10,11 @@
  * Events (main → renderer): session:projection (typed presentation updates).
  */
 
+import { BrowserWindow, webContents } from "electron";
 import { registerContractHandle, registerIpcOn, broadcastEvent } from "./registry";
 import { onSession, rejectBusy, rejectPrompt } from "./session-guards";
 import { handle } from "./result-helpers";
-import { forgetWindowSessions, markSessionOnScreen } from "../lib/session-on-screen";
+import { forgetWindowSessions, markSessionOnScreen, setWindowVisibleCheck } from "../lib/session-on-screen";
 import type { AgentSession, AgentLLMConfig } from "../lib/session-runtime-types";
 import type { ChatRequest } from "../lib/chat-prompt";
 import { emitSessionChip } from "./engine-commands";
@@ -213,6 +214,13 @@ export function registerSessionRuntimeHandlers(
   // isn't looking at still reaches the notification bell. A window's reports
   // are dropped when it reloads or closes.
   const trackedWindows = new Set<number>();
+  // A minimized or hidden window isn't showing its sessions, whatever it last reported.
+  setWindowVisibleCheck((windowId) => {
+    const wc = webContents.fromId(windowId);
+    if (!wc || wc.isDestroyed()) return false;
+    const win = BrowserWindow.fromWebContents(wc);
+    return !win || (win.isVisible() && !win.isMinimized());
+  });
   registerIpcOn("session:on-screen", (event, { sessionId, onScreen }: { sessionId: string; onScreen: boolean }) => {
     const sender = event.sender;
     const windowId = sender.id;

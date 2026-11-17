@@ -732,6 +732,22 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
   const attempt = async (what: string, fn: () => Promise<void>): Promise<boolean> => {
     try { await fn(); setFailed(null); return true; } catch (e) { setFailed(`${what}: ${e instanceof Error ? e.message : String(e)}`); return false; }
   };
+  // Toggles apply one at a time, each to the settings the last one left, so a quick second click
+  // doesn't overwrite the first with a stale list.
+  const latest = useRef(state.settings);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const pending = useRef(0);
+  useEffect(() => { if (pending.current === 0) latest.current = state.settings; }, [state.settings]);
+  const change = (what: string, edit: (s: TodaySettingsValue) => TodaySettingsValue) => {
+    pending.current += 1;
+    queue.current = queue.current.then(async () => {
+      const before = latest.current;
+      const next = edit(before);
+      latest.current = next;
+      if (!(await attempt(what, () => onSettings(next)))) latest.current = before;
+      pending.current -= 1;
+    });
+  };
   const scheduleChanged = time !== state.time || weekdaysOnly !== state.weekdaysOnly;
   const close = () => { setOpen(false); setFailed(null); setTime(state.time); setWeekdaysOnly(state.weekdaysOnly); };
   return (
@@ -780,14 +796,14 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
             title="Projects"
             hint="Today reads the board of each project that's on, and the apps attached to it. Changes apply straight away."
             items={state.projects.map((p) => ({ id: p.id, name: p.name, on: !state.settings.excludedProjects.includes(p.id) }))}
-            onToggle={(id, on) => void attempt("Couldn't change the projects", () => onSettings({ ...state.settings, excludedProjects: flip(state.settings.excludedProjects, id, on) }))}
+            onToggle={(id, on) => change("Couldn't change the projects", (s) => ({ ...s, excludedProjects: flip(s.excludedProjects, id, on) }))}
           />
           <SettingsList
             title="Apps"
             hint="Apps that are off aren't offered to the run at all."
             empty="No apps are attached to the projects that are on."
             items={state.apps.map((a) => ({ id: a.id, name: a.name, on: !state.settings.excludedApps.includes(a.id) }))}
-            onToggle={(id, on) => void attempt("Couldn't change the apps", () => onSettings({ ...state.settings, excludedApps: flip(state.settings.excludedApps, id, on) }))}
+            onToggle={(id, on) => change("Couldn't change the apps", (s) => ({ ...s, excludedApps: flip(s.excludedApps, id, on) }))}
           />
           <div className="border-t border-[var(--border-subtle)] pt-4 space-y-4">
             <SettingsAction
