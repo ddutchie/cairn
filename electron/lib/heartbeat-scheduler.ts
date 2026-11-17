@@ -199,15 +199,19 @@ export class HeartbeatScheduler {
   private applyFailurePolicy(db: Database.Database, runId: string, automation: Automation): void {
     const run = getAutomationRunById(db, runId);
     if (run?.status !== "error") return;
-    const fails = consecutiveFailedRuns(db, automation.id);
     const current = getAutomationById(db, automation.id);
+    const today = !!current && isTodayAutomation(current);
+    // Today counts only today's failures: a failed yesterday must not cost this morning its retry.
+    const midnight = new Date(this.opts.now?.() ?? Date.now());
+    midnight.setHours(0, 0, 0, 0);
+    const fails = consecutiveFailedRuns(db, automation.id, today ? midnight.toISOString() : undefined);
     if (!current?.enabled) return;
     // A retry counts as a run; when the last allowed run failed there's nothing
     // left to retry with (the next tick would just disable it silently).
     if (current.maxRuns !== null && current.runCount >= current.maxRuns) return;
     // Today shows its own error and has Refresh, and each run is a full brief: one retry for a
     // passing failure, never a pause (a paused Today would just stop arriving each morning).
-    if (isTodayAutomation(current)) {
+    if (today) {
       if (fails > 1) return;
     } else if (fails >= PAUSE_AFTER_FAILURES) {
       updateAutomation(db, automation.id, { enabled: false, nextRunAt: current.nextRunAt });

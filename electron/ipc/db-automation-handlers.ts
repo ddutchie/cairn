@@ -124,7 +124,7 @@ export function registerAutomationHandlers(ctx: DbContext): void {
   };
   registerContractHandle("today:get", (_e, { workspaceId }) => handle(() => todayState(workspaceId)));
   registerContractHandle("today:enable", (_e, req) => handle(() => {
-    enableToday(ctx.db, ctx.workspacePath, req);
+    enableToday(ctx.db, req);
     // The automation row changed: other windows and the Automations list reload (only db:* channels broadcast on their own).
     broadcastEvent("db:changed", null);
     return todayState(req.workspaceId);
@@ -176,7 +176,10 @@ export function registerAutomationHandlers(ctx: DbContext): void {
     const base = { channel, label: channelLabel(channel) };
     try {
       // The item's chat runs in one project, so the send tools must come from that project's scope too.
-      const scope = projectId ? projectId : todayScope(workspaceId);
+      // A project Today doesn't read (turned off since, or not this workspace's) offers none: copy and open.
+      const included = todayScope(workspaceId);
+      if (projectId && !included.includes(projectId)) return { ...base, tools: [] };
+      const scope = projectId ? projectId : included;
       const defs = await getExternalToolDefs(ctx.db, workspaceId, scope);
       const names: Record<string, string> = {};
       for (const c of listScopedConnectors(ctx.db, workspaceId, scope)) names[c.id] = c.name;

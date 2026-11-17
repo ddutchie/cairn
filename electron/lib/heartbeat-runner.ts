@@ -270,17 +270,6 @@ export async function runAutomation(
   // Taken first, before any skip below, so a skipped run can't leave a rebuild for a later Refresh.
   const rebuild = isTodayAutomation(automation) && takeTodayRebuild(automation.id);
 
-  // A per-project Today row from the preview: the workspace row replaces it
-  // (moved over the next time Today is read), so it never runs a brief.
-  if (isTodayAutomation(automation) && automation.projectId) {
-    updateAutomationRun(db, run.id, {
-      status: "skipped",
-      finishedAt: new Date().toISOString(),
-      error: "Today is now one brief per workspace. Open Today to move this schedule over.",
-    });
-    return;
-  }
-
   if (!cached?.baseUrl || !cached?.model) {
     updateAutomationRun(db, run.id, {
       status: "skipped",
@@ -629,7 +618,8 @@ export async function runAutomation(
       console.warn("[heartbeat] failed to save Today brief:", err);
     }
     if (todaySession) todaySession.saveError = saveError ?? undefined;
-    try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status, ...(saveError ? { saveError } : {}) }); } catch { /* best-effort */ }
+    // While gathering, the brief rides along, so views show it without rebuilding their whole state.
+    try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status, ...(saveError ? { saveError } : {}), ...(brief.status === "gathering" ? { brief } : {}) }); } catch { /* best-effort */ }
     return saveError;
   };
   if (today) {

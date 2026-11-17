@@ -424,8 +424,8 @@ export interface TodayProjectFacts {
   inReview: TodayFactCard[];
   /** In progress or in review, unchanged for 5+ days. */
   stale: TodayFactCard[];
-  /** How many cards each list has in all; the lists stop at a few. Missing on facts saved by an older build. */
-  counts?: { dueToday: number; overdue: number; inReview: number; stale: number };
+  /** How many cards each list has in all; the lists stop at a few. */
+  counts: { dueToday: number; overdue: number; inReview: number; stale: number };
   /** Automations whose latest runs failed. */
   failingAutomations: Array<{ id: string; name: string; failures: number }>;
   /** Notes changed since yesterday. */
@@ -462,7 +462,7 @@ export const EMPTY_TODAY_MARKS: TodayMarks = { done: [], edits: {} };
 
 /** One saved version of a brief, for the history: a day's final brief, or the version a refresh replaced. */
 export interface TodayHistoryEntry {
-  /** "YYYY-MM-DD" for a day's brief, "YYYY-MM-DD@HHMM" for an earlier version of that day. */
+  /** "YYYY-MM-DD" for a day's brief, "YYYY-MM-DD@HHMMSS" for an earlier version of that day. */
   key: string;
   date: string;
   generatedAt: string;

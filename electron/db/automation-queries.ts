@@ -353,13 +353,13 @@ export function bumpAutomationRunCount(db: Database.Database, id: string): void 
 
 // ── Reliability: failure streaks, spend, budget ──────────────────────────────
 
-/** Number of most-recent finished runs that ended in "error", newest first, stopping at the first non-error. */
-export function consecutiveFailedRuns(db: Database.Database, automationId: string): number {
+/** Number of most-recent finished runs that ended in "error", newest first, stopping at the first non-error (only runs created since `sinceIso`, when given). */
+export function consecutiveFailedRuns(db: Database.Database, automationId: string, sinceIso?: string): number {
   const rows = db
     .prepare(`SELECT status FROM automation_runs
-              WHERE automation_id = ? AND status NOT IN ('pending', 'running')
+              WHERE automation_id = ? AND status NOT IN ('pending', 'running') AND created_at >= ?
               ORDER BY created_at DESC, rowid DESC LIMIT 20`)
-    .all(automationId) as Array<{ status: string }>;
+    .all(automationId, sinceIso ?? "") as Array<{ status: string }>;
   let n = 0;
   for (const r of rows) {
     if (r.status !== "error") break;

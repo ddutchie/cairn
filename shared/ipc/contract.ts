@@ -755,7 +755,8 @@ export interface IpcEvents {
   "automation:run": AutomationRunEvent;
   /** A Today run changed the brief (each brief tool call), so the view reloads. */
   /** `saveError` is set when the brief couldn't be written to disk (cleared by the next save that works). */
-  "today:updated": { workspaceId: string; status: "gathering" | "ready"; saveError?: string };
+  /** `brief` comes with gathering saves, so a view shows them without rebuilding its whole state. */
+  "today:updated": { workspaceId: string; status: "gathering" | "ready"; saveError?: string; brief?: TodayBrief };
   /** Unread notification count changed (bell + badge). */
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */

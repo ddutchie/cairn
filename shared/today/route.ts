@@ -28,13 +28,22 @@ export function operationWords(name: string): string {
  * anywhere (`message_send`), so an unusual name errs on the side of a write.
  */
 export function isWriteOperation(op: string): boolean {
+  return holdsVerb(op, WRITE_VERB);
+}
+
+/** Does an operation deliver a message (`send_message`, `slack_post_message`)? The same verb-position rule: `get_post` doesn't. */
+export function isSendOperation(op: string): boolean {
+  return holdsVerb(op, SEND_VERB);
+}
+
+function holdsVerb(op: string, re: RegExp): boolean {
   const words = op.toLowerCase().split(/[_-]+/).filter(Boolean);
   if (!words.length) return false;
-  const verb = (w: string | undefined) => !!w && WRITE_VERB.test(w);
+  const verb = (w: string | undefined) => !!w && re.test(w);
   if (verb(words[0])) return true;
   for (let i = 1; i < words.length - 1; i++) if ((words[i] === "and" || words[i] === "then") && verb(words[i + 1])) return true;
   if (READ_VERB.test(words[0])) return false;
-  return WRITE_VERB.test(op);
+  return re.test(op);
 }
 
 /**
@@ -112,7 +121,7 @@ export function sendCandidates(
   const words = channel === "other" ? null : CHANNEL_WORDS[channel];
   const scored = defs.flatMap((d) => {
     const op = operationWords(d.name);
-    if (!SEND_VERB.test(op)) return [];
+    if (!isSendOperation(op)) return [];
     const id = toolServer(d.name);
     const server = serverNames[id] ?? id;
     const inName = words ? words.test(server) || words.test(op) : true;

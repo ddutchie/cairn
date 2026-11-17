@@ -15,7 +15,7 @@
  *   - `out/today/<date>.json`: the day's brief, saved after every brief tool call;
  *   - `out/today/<date>.marks.json`: what the user marked done and the drafts they edited;
  *   - `out/today/history/<date>@<HHMMSS>.json`: the version a same-day refresh replaced (`-2`, `-3`… when
- *     two land in the same second; older builds wrote `@<HHMM>`).
+ *     two land in the same second).
  * Files older than `TODAY_KEEP_DAYS` are deleted when a run starts.
  */
 
@@ -29,14 +29,13 @@ import {
   type TodayBrief, type TodayHistoryEntry, type TodayMarks, type TodaySettings, type TodayState,
 } from "../../shared/today/brief";
 import { isCairnReadTool, isExternalToolName } from "../../shared/agent/tool-names";
-import { READ_VERB, WRITE_VERB, isWebOperation, looksLikeWebApp, operationWords, toolServer } from "../../shared/today/route";
+import { READ_VERB, isWebOperation, isWriteOperation, looksLikeWebApp, operationWords, toolServer } from "../../shared/today/route";
 import {
   createAutomation, deleteAutomation, getAutomationById, hasInFlightRun, listAutomationRuns, listAutomations, updateAutomation,
 } from "../db/automation-queries";
 import { getProjects } from "../db/workspace-queries";
 import { automationFolderDir, automationOutDir, readRunLog } from "./automation-folder";
 import { computeNextRun, parseSchedule } from "./automation-schedule";
-import { deleteAutomationWithCleanup } from "./automation-delete";
 import { listScopedConnectors } from "./external-tools";
 import { factsForPrompt, projectFacts } from "./today-facts";
 import { currentRunActivity } from "./run-activity";
@@ -48,7 +47,7 @@ export function isTodayAutomation(a: Pick<Automation, "communityId">): boolean {
 
 /** The workspace's Today row. */
 export function findTodayAutomation(db: Database.Database, workspaceId: string): Automation | null {
-  return listAutomations(db, workspaceId).find((a) => isTodayAutomation(a) && !a.projectId) ?? null;
+  return listAutomations(db, workspaceId).find(isTodayAutomation) ?? null;
 }
 
 /**
@@ -77,8 +76,9 @@ export function todayAllowsTool(name: string): boolean {
   if (!isExternalToolName(name)) return false;
   // camelCase operations (Atlassian's `searchJiraIssuesUsingJql`) become snake_case words first.
   const op = operationWords(name);
-  // Web search tools are the user's choice (see todayToolFilter), never offered by default.
-  if (WRITE_VERB.test(op) || isWebOperation(op)) return false;
+  // Web search tools are the user's choice (see todayToolFilter), never offered by default. The verb
+  // decides, as in the act panel: `get_schedule` and `list_merge_requests` are reads.
+  if (isWriteOperation(op) || isWebOperation(op)) return false;
   return READ_VERB.test(op);
 }
 
@@ -101,14 +101,13 @@ export function todayToolFilter(
     const op = operationWords(name);
     // A web search app needs the user's say-so for every tool, not only the ones with "web" in the name.
     if (isWebOperation(op) || connectors.webServers.has(server)) {
-      if (!webOn.has(server) || WRITE_VERB.test(op)) return false;
+      if (!webOn.has(server) || isWriteOperation(op)) return false;
       return isWebOperation(op) || READ_VERB.test(op);
     }
     return todayAllowsTool(name);
   };
 }
 
-/** Today cuts each connector result to this many characters: a brief needs the gist, and a 90K-character search fills the context. */
 /**
  * Today's reasoning effort: low, whatever chat uses (off stays off). The brief is a sort-and-draft job; on
  * high, a model spends most of the run planning in its thinking and writing each item twice. Sent
@@ -118,6 +117,7 @@ export function todayReasoningEffort(chat: string | undefined): "off" | "low" {
   return chat === "off" ? "off" : "low";
 }
 
+/** Today cuts each connector result to this many characters: a brief needs the gist, and a 90K-character search fills the context. */
 export const TODAY_RESULT_CHARS = 16_000;
 
 /**
@@ -297,28 +297,8 @@ function nextRun(expr: string, timezone?: string | null): string {
 }
 
 /** Create or re-enable the workspace's Today automation with the given schedule. */
-export function enableToday(db: Database.Database, workspacePath: string, input: TodayEnableInput): Automation {
-  migrateLegacyToday(db, workspacePath, input.workspaceId);
+export function enableToday(db: Database.Database, input: TodayEnableInput): Automation {
   return upsertTodayRow(db, input);
-}
-
-/**
- * The preview made one Today row per project. Fold them into the workspace
- * row: it takes the schedule of the first enabled one (and is on when any
- * was), then the old rows are deleted with their folders. Their briefs were
- * per project, so they aren't kept. Safe to call on every read.
- */
-export function migrateLegacyToday(db: Database.Database, workspacePath: string, workspaceId: string): void {
-  const legacy = listAutomations(db, workspaceId).filter((a) => isTodayAutomation(a) && a.projectId);
-  if (legacy.length === 0) return;
-  if (!findTodayAutomation(db, workspaceId)) {
-    const src = legacy.find((a) => a.enabled) ?? legacy[0];
-    const { time, weekdaysOnly } = parseTodayCron(src.scheduleExpr);
-    const row = upsertTodayRow(db, { workspaceId, time, weekdaysOnly, timezone: src.timezone });
-    if (!legacy.some((a) => a.enabled)) updateAutomation(db, row.id, { enabled: false });
-  }
-  // Today rows hold no secrets; a folder that can't be removed keeps its row, and the next read retries.
-  for (const a of legacy) deleteAutomationWithCleanup(db, workspacePath, a.id, { purgeSecrets: () => {} });
 }
 
 function upsertTodayRow(db: Database.Database, input: TodayEnableInput): Automation {
@@ -417,8 +397,8 @@ export function updateTodayMarks(
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** A history snapshot's key after the date: `@HHMM` (older builds) or `@HHMMSS`, then `-N` when it collided. */
-const SNAPSHOT_KEY = /@\d{4}(?:\d{2})?(?:-\d+)?/.source;
+/** A history snapshot's key after the date: `@HHMMSS`, then `-N` when it collided. */
+const SNAPSHOT_KEY = /@\d{6}(?:-\d+)?/.source;
 const DATE_KEY = /\d{4}-\d{2}-\d{2}/.source;
 
 /** Keep the version a same-day refresh is about to replace, as `history/<date>@<HHMMSS>.json`. Never overwrites one. */
@@ -459,7 +439,7 @@ function readBriefFile(file: string): TodayBrief | null {
     const text = fs.readFileSync(file, "utf8");
     const saved = JSON.parse(text) as { generatedAt?: unknown };
     const at = typeof saved.generatedAt === "string" ? new Date(saved.generatedAt) : null;
-    // Re-normalise on read, so a brief saved by an older build gets today's shape.
+    // Normalised on read like the run's output: the file is on disk and may have been edited.
     return parseTodayBrief(text, at && !Number.isNaN(at.getTime()) ? at : new Date());
   } catch {
     return null;
@@ -515,7 +495,6 @@ export function loadLatestTodayBrief(workspacePath: string, automation: Automati
 // ── State ─────────────────────────────────────────────────────────────────
 
 export function getTodayState(db: Database.Database, workspacePath: string, workspaceId: string): TodayState {
-  migrateLegacyToday(db, workspacePath, workspaceId);
   const a = findTodayAutomation(db, workspaceId);
   const fresh = a ? getAutomationById(db, a.id) ?? a : null;
   const settings = readTodaySettings(workspacePath, fresh);

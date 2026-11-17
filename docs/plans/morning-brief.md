@@ -241,8 +241,7 @@ What was built first, and what's different from the full design below:
 entry, not an Overview tab. In practice there's one brief per person, since a
 workspace belongs to one user.
 
-- **One automation per workspace:** a Today row with `projectId` null. The old
-  per-project Today rows are deleted when the workspace one is turned on.
+- **One automation per workspace:** a Today row with `projectId` null.
   Settings live in the automation folder (`today.json`): the projects to
   include, which apps to read (by connector server id), and the schedule.
 - **Connector scope:** each included project resolves its own attachments

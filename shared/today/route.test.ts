@@ -42,6 +42,10 @@ describe("sendCandidates", () => {
     expect(operationWords("mcp__atlassian__addCommentToJiraIssue")).toBe("add_Comment_To_Jira_Issue");
     expect(sendCandidates(defs, "jira").map((t) => t.server)).toEqual(["atlassian"]);
   });
+  it("doesn't offer a read with a send-like noun as a send tool", () => {
+    const defs = [{ name: "mcp__blog__get_post" }, { name: "mcp__blog__list_post_comments" }, { name: "mcp__blog__create_post" }, { name: "mcp__blog__post_comment" }];
+    expect(sendCandidates(defs, "other").map((t) => t.op)).toEqual(["create_post", "post_comment"]);
+  });
   it("matches on the server's name when tool names carry an id", () => {
     const ids = [{ name: "mcp__K7q__send_message" }, { name: "mcp__Z2p__send_message" }];
     const names = { K7q: "Outlook Mail", Z2p: "Slack" };

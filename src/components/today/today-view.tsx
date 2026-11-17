@@ -45,14 +45,6 @@ const ProjectNames = createContext<Map<string, string>>(new Map());
 
 type Lane = StackLane;
 
-// Marks used to live in localStorage; read once to move them to the brief folder.
-const LEGACY_KEYS = (workspaceId: string, date: string) =>
-  [`today:dismissed:ws:${workspaceId}:${date}`, `today:edits:ws:${workspaceId}:${date}`] as const;
-
-function readJson<T>(key: string, fallback: T): T {
-  try { return (JSON.parse(localStorage.getItem(key) ?? "null") as T | null) ?? fallback; } catch { return fallback; }
-}
-
 type MarkPatch = { done?: Record<string, boolean>; edits?: Record<string, string | null> };
 
 function applyPatch(m: TodayMarks, patch: MarkPatch): TodayMarks {
@@ -77,18 +69,6 @@ function useMarks(workspaceId: string, date: string | undefined, initial: TodayM
     if (!date || readOnly) return;
     setMarks((m) => applyPatch(m, patch));
     todayClient.mark(workspaceId, date, patch).then(setMarks).catch(() => { /* kept locally until the next refresh */ });
-  }, [workspaceId, date, readOnly]);
-
-  // One-time move of marks this browser kept before they were stored with the brief.
-  useEffect(() => {
-    if (!date || readOnly) return;
-    const [doneKey, editsKey] = LEGACY_KEYS(workspaceId, date);
-    const done = readJson<string[]>(doneKey, []);
-    const edits = readJson<Record<string, string>>(editsKey, {});
-    if (done.length === 0 && Object.keys(edits).length === 0) return;
-    todayClient.mark(workspaceId, date, { done: Object.fromEntries(done.map((id) => [id, true])), edits })
-      .then((m) => { setMarks(m); localStorage.removeItem(doneKey); localStorage.removeItem(editsKey); })
-      .catch(() => { /* try again next time */ });
   }, [workspaceId, date, readOnly]);
 
   const ids = useMemo(() => new Set(marks.done), [marks.done]);
@@ -142,7 +122,10 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
   useEffect(() => todayClient.onUpdated((ev) => {
     if (ev.workspaceId !== workspaceId) return;
     setSaveError(ev.saveError ? `Couldn't save the brief: ${ev.saveError}` : null);
-    void refresh();
+    // A gathering save carries its brief: show it as is. The finished brief reloads everything.
+    const gathering = ev.status === "gathering" ? ev.brief : undefined;
+    if (gathering) setState((s) => (s ? { ...s, brief: gathering, running: true } : s));
+    else void refresh();
     if (ev.status === "ready") setHistoryTick((n) => n + 1);
   }), [workspaceId, refresh]);
 
@@ -942,10 +925,10 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
         {facts.map((f) => {
           // Card lists stop at a few; the count is the full one.
           const chips: Array<{ label: string; list: string[]; count?: number; warn?: boolean }> = [
-            { label: "due today", list: f.dueToday.map((c) => c.title), count: f.counts?.dueToday },
-            { label: "overdue", list: f.overdue.map((c) => `${c.title} · due ${c.dueDate}`), count: f.counts?.overdue, warn: true },
-            { label: "in review", list: f.inReview.map((c) => c.title), count: f.counts?.inReview },
-            { label: "stale 5d+", list: f.stale.map((c) => `${c.title} · ${c.days}d`), count: f.counts?.stale },
+            { label: "due today", list: f.dueToday.map((c) => c.title), count: f.counts.dueToday },
+            { label: "overdue", list: f.overdue.map((c) => `${c.title} · due ${c.dueDate}`), count: f.counts.overdue, warn: true },
+            { label: "in review", list: f.inReview.map((c) => c.title), count: f.counts.inReview },
+            { label: "stale 5d+", list: f.stale.map((c) => `${c.title} · ${c.days}d`), count: f.counts.stale },
             { label: f.failingAutomations.length === 1 ? "automation failing" : "automations failing", list: f.failingAutomations.map((a) => `${a.name} · ${a.failures} failed`), warn: true },
             { label: f.notesChanged.length === 1 ? "note changed" : "notes changed", list: f.notesChanged.map((n) => n.title) },
           ].filter((c) => c.list.length > 0);

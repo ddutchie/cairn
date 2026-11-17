@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import {
-  enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot, migrateLegacyToday, pruneTodayFiles,
+  enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot, pruneTodayFiles,
   readTodayMarks, readTodaySettings, saveTodayBrief, snapshotTodayBrief, requestTodayRebuild, takeTodayRebuild, todayAllowsTool, todayLookBackFrom, todayPrompt, todayReasoningEffort, todayToolFilter, updateTodayMarks, writeTodaySettings,
 } from "./today";
 import { factsForPrompt, projectFacts } from "./today-facts";
@@ -50,53 +50,33 @@ describe("workspace Today", () => {
     return db;
   };
 
-  const legacyRow = (db: ReturnType<typeof seed>, projectId: string, enabled: boolean, expr = "cron 15 6 * * 1-5") =>
-    createAutomation(db, {
-      workspaceId: "ws1", projectId, name: "Today", instructions: "old", scheduleKind: "cron", scheduleExpr: expr,
-      enabled, nextRunAt: new Date().toISOString(), approvalMode: "ask", source: "custom", communityId: TODAY_COMMUNITY_ID,
-    });
   const todayRows = (db: ReturnType<typeof seed>) => listAutomations(db, "ws1").filter((x) => x.communityId === TODAY_COMMUNITY_ID);
 
-  it("keeps one row per workspace and drops the preview's per-project rows", () => {
+  it("keeps one row per workspace", () => {
     const db = seed();
-    const dir = tmp();
-    legacyRow(db, "p1", true);
-    const a = enableToday(db, dir, { workspaceId: "ws1", time: "08:30", weekdaysOnly: false });
+    const a = enableToday(db, { workspaceId: "ws1", time: "08:30", weekdaysOnly: false });
     expect(a.projectId).toBeNull();
+    expect(enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true }).id).toBe(a.id);
     expect(todayRows(db).map((x) => x.id)).toEqual([a.id]);
-    expect(enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true }).id).toBe(a.id);
     expect(findTodayAutomation(db, "ws1")?.scheduleExpr).toBe("cron 0 7 * * 1-5");
-  });
-
-  it("moves an old per-project schedule to the workspace row on first read", () => {
-    const db = seed();
-    const dir = tmp();
-    legacyRow(db, "p1", false, "cron 0 9 * * *");
-    legacyRow(db, "p2", true);
-    const st = getTodayState(db, dir, "ws1");
-    expect(todayRows(db)).toHaveLength(1);
-    expect(st).toMatchObject({ enabled: true, time: "06:15", weekdaysOnly: true });
-    migrateLegacyToday(db, dir, "ws1");
-    expect(todayRows(db)).toHaveLength(1);
-  });
-
-  it("keeps a moved schedule off when every old row was off", () => {
-    const db = seed();
-    legacyRow(db, "p1", false);
-    expect(getTodayState(db, tmp(), "ws1").enabled).toBe(false);
-    expect(todayRows(db).map((x) => x.projectId)).toEqual([null]);
   });
 
   it("stores settings as exclusions and reads only the included projects", () => {
     const db = seed();
     const dir = tmp();
-    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     expect(includedProjects(db, "ws1", readTodaySettings(dir, a)).map((p) => p.id)).toEqual(["p1", "p2"]);
     writeTodaySettings(dir, a, { excludedProjects: ["p2"], excludedApps: ["K7q"], webApps: [] });
     const st = getTodayState(db, dir, "ws1");
     expect(st.settings).toEqual({ excludedProjects: ["p2"], excludedApps: ["K7q"], webApps: [] });
     expect(st.projects.map((p) => p.id)).toEqual(["p1", "p2"]);
     expect(st.facts.map((f) => f.projectId)).toEqual(["p1"]);
+  });
+
+  it("judges a tool by its verb, so a read whose nouns look like verbs still reaches the run", () => {
+    const allow = todayToolFilter({ excludedProjects: [], excludedApps: [], webApps: [] });
+    for (const name of ["mcp__graph__getSchedule", "mcp__gitlab__list_merge_requests", "mcp__blog__get_post", "mcp__jira__get_status_update"]) expect(allow(name)).toBe(true);
+    for (const name of ["mcp__slack__post_message", "mcp__mail__get_and_send", "mcp__graph__sendMail", "mcp__slack__slack_post_message"]) expect(allow(name)).toBe(false);
   });
 
   it("leaves out the tools of apps the user turned off", () => {
@@ -110,7 +90,7 @@ describe("workspace Today", () => {
   it("shows a brief left gathering by a stopped run as ready", () => {
     const db = seed();
     const dir = tmp();
-    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     saveTodayBrief(dir, a, emptyBrief(new Date()));
     expect(getTodayState(db, dir, "ws1").brief?.status).toBe("ready");
   });
@@ -118,7 +98,7 @@ describe("workspace Today", () => {
   it("keeps marks per day with the brief", () => {
     const db = seed();
     const dir = tmp();
-    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     updateTodayMarks(dir, a, "2026-11-16", { done: { n1: true, n2: true }, edits: { d1: "Mine" } });
     expect(updateTodayMarks(dir, a, "2026-11-16", { done: { n2: false }, edits: { d1: null } })).toEqual({ done: ["n1"], edits: {} });
     expect(readTodayMarks(dir, a, "2026-11-17")).toEqual({ done: [], edits: {} });
@@ -128,7 +108,7 @@ describe("workspace Today", () => {
   it("lists days and the versions refreshes replaced, and prunes old files", () => {
     const db = seed();
     const dir = tmp();
-    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     const day = (d: number, h: number) => {
       const b = emptyBrief(new Date(2026, 10, d, h, 0));
       upsertItems(b, [{ lane: "todo", id: `t${d}`, question: "Do it" }], new Date(2026, 10, d, h, 0));
