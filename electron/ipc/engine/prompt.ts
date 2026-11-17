@@ -78,6 +78,8 @@ export interface EnginePromptArgs {
   externalResultChars?: number;
   /** Run connector calls in one step at the same time (Today: read-only, every ask decided by the run). */
   externalParallel?: boolean;
+  /** Custom service calls must use GET when they run (Today). */
+  externalGetOnly?: boolean;
   /** Headless runs: keep only the tools this returns true for (Today's read-only toolset). */
   toolFilter?: (name: string) => boolean;
   /** Called once the run is assembled, with what is sent: for run logs and debug exports. */
@@ -164,7 +166,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
         broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "question", { callId: tool.callId, questions, nonce }));
       }),
     },
-    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.externalExclude?.length ? { projects: a.externalProjectIds ?? [a.projectId ?? ""], exclude: a.externalExclude } : a.externalProjectIds ?? a.projectId ?? "", maxResultChars: a.externalResultChars, parallel: a.externalParallel },
+    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.externalExclude?.length ? { projects: a.externalProjectIds ?? [a.projectId ?? ""], exclude: a.externalExclude } : a.externalProjectIds ?? a.projectId ?? "", maxResultChars: a.externalResultChars, parallel: a.externalParallel, getOnly: a.externalGetOnly },
     fs: { cwd: a.cwd, rgPath, observed, sandbox: () => ({ mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }), jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
     sessions: role === "automation-dev" || !a.workspaceId ? undefined : {

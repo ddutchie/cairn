@@ -8,7 +8,7 @@ import type { ChatThread, ChatThreadUpsertInput, ChatMessage, ChatToolCallRecord
 import { id, now } from "@/lib/utils";
 import { storage } from "@/lib/storage";
 import { ACTIVE_CHAT_THREAD_KEY } from "@/lib/constants";
-import { ipc, ipcAwait, ipcResult } from "../ipc";
+import { ipc, ipcAwait, ipcData, ipcResult } from "../ipc";
 import { sessionClient } from "@/lib/ipc/session";
 import { unwrapSessionPayload } from "@/lib/conversation/session";
 
@@ -401,7 +401,6 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   async deleteThread(threadId) {
-    latestReload.delete(threadId);
     // Authoritative check against the main process (the UI's running-ids poll
     // can be up to 2s stale). A running turn must be stopped first.
     // Fail closed: an unknown running state must not authorize deletion.
@@ -412,6 +411,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       console.error("[chat] deleteThread: running check failed", err);
       return false;
     }
+    // After the check, so a reload started while it ran can't bring the messages back either.
+    latestReload.delete(threadId);
     const wasActive = get().activeChatThreadId === threadId;
     const deletedThread = get().chatThreads.find((t) => t.id === threadId);
     // Abort any live loop for this thread before deleting — otherwise
@@ -584,6 +585,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     }
     // A reload still in flight for one of these must not bring its messages back.
     for (const id of ids) latestReload.delete(id);
+    const removedMessages = get().chatMessages.filter((m) => ids.has(m.threadId));
     set((s) => {
       const nextTitles: Record<string, string | null> = { ...s.projectedTitles };
       for (const id of ids) delete nextTitles[id];
@@ -600,7 +602,21 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       storage.delete(ACTIVE_CHAT_THREAD_KEY);
     }
     // Only the threads cleared here: one kept into this scope since (a Today chat) stays.
-    await ipcAwait((e) => e.chat.clearAllThreads(workspaceId, projectId ?? undefined, [...ids]));
+    try {
+      await ipcData((e) => e.chat.clearAllThreads(workspaceId, projectId ?? undefined, [...ids]));
+    } catch (err) {
+      // Nothing was deleted: put the threads back, so they're still listed and a second clear reaches them.
+      console.error("[chat] clearAllThreads failed", err);
+      set((s) => {
+        const present = new Set(s.chatThreads.map((t) => t.id));
+        return {
+          chatThreads: [...s.chatThreads, ...toDelete.filter((t) => !present.has(t.id))],
+          chatMessages: [...s.chatMessages, ...removedMessages.filter((m) => !present.has(m.threadId))],
+        };
+      });
+      get().persist();
+      return;
+    }
     // Create a fresh empty thread so the panel doesn't stay in a null-thread state
     if (workspaceId) {
       const next = get().getOrCreateThread(workspaceId, projectId);

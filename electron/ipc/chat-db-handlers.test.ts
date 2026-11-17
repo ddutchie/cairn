@@ -1,6 +1,6 @@
 /**
  * db:chat:clearAllThreads deletes only the threads the renderer cleared, and never one outside the
- * scope it names, even when that thread's id is passed.
+ * scope it names, even when that thread's id is passed. Only an absent list clears the whole scope.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -48,5 +48,20 @@ describe("db:chat:clearAllThreads", () => {
     expect(res.data?.deletedThreads).toBe(1);
     expect(getChatThreads(db, "ws1").map((t) => t.id).sort()).toEqual(["kept-since", "other-project"]);
     expect(destroyEngineSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes nothing for an empty list, and refuses a list that isn't an array", async () => {
+    upsertChatThread(db, { id: "stays", scope: "project", workspaceId: "ws1", projectId: "p1" });
+    expect((await clearAll({ workspaceId: "ws1", projectId: "p1", threadIds: [] })).data?.deletedThreads).toBe(0);
+    expect((await clearAll({ workspaceId: "ws1", projectId: "p1", threadIds: null })).error).toBeTruthy();
+    expect((await clearAll({ workspaceId: "ws1", projectId: "p1", threadIds: "stays" })).error).toBeTruthy();
+    expect(getChatThreads(db, "ws1").map((t) => t.id)).toContain("stays");
+  });
+
+  it("clears the whole scope when no list is given", async () => {
+    const res = await clearAll({ workspaceId: "ws1", projectId: "p1" });
+    expect(res.data?.deletedThreads).toBeGreaterThan(0);
+    expect(getChatThreads(db, "ws1").filter((t) => t.projectId === "p1")).toEqual([]);
+    expect(getChatThreads(db, "ws1").map((t) => t.id)).toEqual(["other-project"]);
   });
 });

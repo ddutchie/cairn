@@ -40,7 +40,9 @@ export function registerChatDbHandlers(ctx: DbContext): void {
 
   registerContractHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId, threadIds }) => handle(async () => {
     // The scope stays the guard: a listed id outside it is never deleted.
-    const only = Array.isArray(threadIds) ? new Set(threadIds) : null;
+    // Only an absent list clears the whole scope: a malformed one must not widen the delete.
+    if (threadIds !== undefined && !Array.isArray(threadIds)) throw new Error("threadIds must be an array");
+    const only = threadIds ? new Set(threadIds) : null;
     const threads = q.getChatThreads(ctx.db, workspaceId).filter((t) => (!projectId || t.projectId === projectId) && (!only || only.has(t.id)));
     // Ids come from SQLite, but filter for path-safety anyway — a corrupt row
     // (e.g. from a compromised sync peer or a manual DB edit) must not turn

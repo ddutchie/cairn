@@ -19,6 +19,8 @@ export interface ExternalToolDeps {
    * race. Asks are still decided one at a time before anything runs.
    */
   parallel?: boolean;
+  /** Refuse a custom service call whose operation doesn't use GET when it runs (Today's runs). */
+  getOnly?: boolean;
 }
 
 /** Keep the head of an oversized result and say how much was cut, so the model can narrow the call. */
@@ -42,7 +44,7 @@ export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]
     preview: (args) => approvalPreview(name, args),
     async execute(args, ctx) {
       try {
-        const text = renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>, ctx.signal));
+        const text = renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>, ctx.signal, { getOnly: deps.getOnly }));
         return { content: capResult(text, deps.maxResultChars) };
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));

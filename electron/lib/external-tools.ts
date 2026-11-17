@@ -404,6 +404,7 @@ export async function executeExternalTool(
   name: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
+  opts: { getOnly?: boolean } = {},
 ): Promise<string> {
   const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
 
@@ -431,6 +432,13 @@ export async function executeExternalTool(
     const svc = customServices.find((s) => s.id === svcParsed.serviceId);
     if (!svc) {
       return `Error: service ${svcParsed.serviceId} is not enabled/attached for this project`;
+    }
+    // Checked against the config the call is sent with: an edit during the run can change an
+    // operation's method without changing its name.
+    if (opts.getOnly) {
+      let isGet = false;
+      try { isGet = normalizeOperations(svc as never).some((op) => op.method === "GET" && namespaceServiceTool(svc.id, op.toolName) === name); } catch { /* broken definition: not a GET */ }
+      if (!isGet) return `Error: "${name}" doesn't use GET, and this run only reads`;
     }
     return services.callService(
       svcToRuntimeConfig(svc),
