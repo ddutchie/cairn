@@ -582,6 +582,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
       console.error("[chat] clearAllThreads: running check failed", err);
       return;
     }
+    // A reload still in flight for one of these must not bring its messages back.
+    for (const id of ids) latestReload.delete(id);
     set((s) => {
       const nextTitles: Record<string, string | null> = { ...s.projectedTitles };
       for (const id of ids) delete nextTitles[id];

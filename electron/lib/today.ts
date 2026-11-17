@@ -87,13 +87,22 @@ export function todayAllowsTool(name: string): boolean {
  * left out unless the user turned its app on in Today's settings (`webApps`): a search can carry what
  * the run read in their other apps to that service, so it's their choice, and off until they make it.
  */
-export function todayToolFilter(settings: TodaySettings): (name: string) => boolean {
+export function todayToolFilter(
+  settings: TodaySettings,
+  connectors: { webServers: ReadonlySet<string>; writeTools: ReadonlySet<string> } = { webServers: new Set(), writeTools: new Set() },
+): (name: string) => boolean {
   const off = new Set(settings.excludedApps);
   const webOn = new Set(settings.webApps);
   return (name) => {
-    if (isExternalToolName(name) && off.has(toolServer(name))) return false;
-    if (isExternalToolName(name) && isWebOperation(operationWords(name))) {
-      return webOn.has(toolServer(name)) && !WRITE_VERB.test(operationWords(name));
+    if (!isExternalToolName(name)) return todayAllowsTool(name);
+    const server = toolServer(name);
+    // An app that's off, and a custom service operation that doesn't use GET, are never offered.
+    if (off.has(server) || connectors.writeTools.has(name)) return false;
+    const op = operationWords(name);
+    // A web search app needs the user's say-so for every tool, not only the ones with "web" in the name.
+    if (isWebOperation(op) || connectors.webServers.has(server)) {
+      if (!webOn.has(server) || WRITE_VERB.test(op)) return false;
+      return isWebOperation(op) || READ_VERB.test(op);
     }
     return todayAllowsTool(name);
   };

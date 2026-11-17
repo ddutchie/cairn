@@ -202,6 +202,19 @@ describe("todayLookBackFrom", () => {
     expect(p).not.toContain("Work IQ");
   });
 
+  it("needs the user's say-so for every tool of a web search app, and leaves out non-GET service operations", () => {
+    const facts = { webServers: new Set(["W1"]), writeTools: new Set(["svc__S1__search_orders"]) };
+    const off = todayToolFilter({ excludedProjects: [], excludedApps: [], webApps: [] }, facts);
+    // A web app's tool named like a plain lookup still needs webApps.
+    expect(off("mcp__W1__search")).toBe(false);
+    const on = todayToolFilter({ excludedProjects: [], excludedApps: [], webApps: ["W1"] }, facts);
+    expect(on("mcp__W1__search")).toBe(true);
+    expect(on("mcp__W1__send_feedback")).toBe(false);
+    // A POST operation named like a search is left out; the service's GET ones stay.
+    expect(on("svc__S1__search_orders")).toBe(false);
+    expect(on("svc__S1__list_orders")).toBe(true);
+  });
+
   it("offers a web search app only once the user turns it on", () => {
     const off = todayToolFilter({ excludedProjects: [], excludedApps: [], webApps: [] });
     expect(off("svc__B1__brave_web_search")).toBe(false);

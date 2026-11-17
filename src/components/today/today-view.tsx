@@ -730,11 +730,13 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
 /** The run's closing message (what it did, what failed), behind a button so the brief stays one page. */
 function RunNote({ note, at }: { note: string; at: string }) {
   const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><NotebookText size={12} /> Run notes</Button>
+      <Button ref={button} variant="ghost" size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><NotebookText size={12} /> Run notes</Button>
       <ModalShell
         open={open}
+        returnFocusRef={button}
         onClose={() => setOpen(false)}
         size="md"
         scrollable
@@ -780,13 +782,15 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
       pending.current -= 1;
     });
   };
+  const settingsButton = useRef<HTMLButtonElement>(null);
   const scheduleChanged = time !== state.time || weekdaysOnly !== state.weekdaysOnly;
   const close = () => { setOpen(false); setFailed(null); setTime(state.time); setWeekdaysOnly(state.weekdaysOnly); };
   return (
     <>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Settings2 size={12} /> Settings</Button>
+      <Button ref={settingsButton} variant="ghost" size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Settings2 size={12} /> Settings</Button>
       <ModalShell
         open={open}
+        returnFocusRef={settingsButton}
         onClose={close}
         size="md"
         scrollable

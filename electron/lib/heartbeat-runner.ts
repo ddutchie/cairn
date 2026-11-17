@@ -36,7 +36,7 @@ import {
   type AutomationRun,
 } from "../db/automation-queries";
 import { isReadTool, isExternalTool, standingRuleTarget, standingRuleCoversTool, recordStandingAllowance } from "./automation-approval";
-import { getExternalToolDefs, checkRequirements, externalToolLabel } from "./external-tools";
+import { getExternalToolDefs, checkRequirements, externalToolLabel, todayConnectorFacts } from "./external-tools";
 import { createSessionEventFold } from "../../shared/agent/session-event-fold";
 import {
   automationFolderDir,
@@ -412,6 +412,11 @@ export async function runAutomation(
   // today's date and Cairn's facts for every included project.
   const todaySettings = today ? readTodaySettings(workspacePath, automation) : null;
   const todayProjects = todaySettings ? includedProjects(db, automation.workspaceId, todaySettings) : [];
+  // One filter for the toolset and the approval check: read-only, apps that are off left out, web apps
+  // only when the user turned them on, and custom service operations that don't use GET left out.
+  const todayFilter = todaySettings
+    ? todayToolFilter(todaySettings, todayConnectorFacts(db, automation.workspaceId, { projects: todayProjects.map((p) => p.id), exclude: todaySettings.excludedApps }))
+    : null;
   // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
   const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
   if (today) {
@@ -682,7 +687,7 @@ export async function runAutomation(
     if (today) {
       const server = typeof trusted.server === "string" ? trusted.server : null;
       const appOff = !!server && todaySettings!.excludedApps.includes(server);
-      const allowed = routine && !appOff && todayToolFilter(todaySettings!)(toolName);
+      const allowed = routine && !appOff && todayFilter!(toolName);
       respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: allowed });
       return;
     }
@@ -750,7 +755,7 @@ export async function runAutomation(
       } as never,
       extraTools: automationTools,
       // Today never sees a tool that writes, so no saved "always allow" grant can let one run.
-      toolFilter: todaySettings ? todayToolFilter(todaySettings) : undefined,
+      toolFilter: todayFilter ?? undefined,
       // Today keeps the tool schemas too, for its export (scripts/today-replay.mjs replays a run from it).
       onSetup: (setup) => { log.setup = today ? setup : { ...setup, toolDefs: undefined }; },
       autoApprove: automation.approvalMode !== "ask",

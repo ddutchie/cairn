@@ -83,21 +83,42 @@ function answerFromExport(name, argText) {
 }
 
 // ── simulated brief tools ──────────────────────────────────────────────────
-const brief = { items: new Map(), removed: [], finish: null };
+// The brief starts from the recorded today_read (what the run saw first) and every later read shows
+// it as the run left it, so a model that reads after an update sees its own changes.
+const LISTS = { decision: "needYou", todo: "needYou", draft: "drafts", fyi: "fyi", event: "events" };
+const brief = { outline: { needYou: [], drafts: [], fyi: [], events: [] }, removed: [], finish: null };
+try {
+  const first = JSON.parse(recorded.get("today_read")?.[0]?.text ?? "{}");
+  for (const list of Object.values(LISTS)) if (Array.isArray(first[list])) brief.outline[list] = first[list];
+  brief.outline = { ...first, ...brief.outline };
+} catch { /* no recorded read: start empty */ }
+const allLists = () => [...new Set(Object.values(LISTS))];
+const dropId = (id) => { for (const l of allLists()) brief.outline[l] = brief.outline[l].filter((x) => x.id !== id); };
 function briefTool(name, a) {
-  if (name === "today_read") {
-    const rec = recorded.get("today_read")?.[0];
-    return rec ? rec.text : JSON.stringify({ items: [] });
-  }
+  if (name === "today_read") return JSON.stringify(brief.outline);
   if (name === "today_upsert") {
-    for (const item of a.items ?? []) brief.items.set(item.id ?? `item-${brief.items.size}`, item);
-    return JSON.stringify({ ok: true, saved: (a.items ?? []).length });
+    const lines = (a.items ?? []).map((item, i) => {
+      const list = LISTS[item.lane];
+      if (!list) return `${item.id ?? `item ${i + 1}`}: skipped, unknown lane.`;
+      const id = item.id ?? `${item.start ?? ""}-${item.title ?? i}`;
+      const at = brief.outline[list].findIndex((x) => x.id === id);
+      const kept = at >= 0 ? brief.outline[list][at] : undefined;
+      const next = { ...item, id, ...(kept?.carriedSince ? { carriedSince: kept.carriedSince } : {}) };
+      dropId(id);
+      if (at >= 0) brief.outline[list].splice(at, 0, next); else brief.outline[list].push(next);
+      return `${id}: ${at >= 0 ? "updated" : "added"}.`;
+    });
+    return lines.join("\n");
   }
   if (name === "today_remove") {
-    for (const id of a.ids ?? []) { brief.items.delete(id); brief.removed.push(id); }
-    return JSON.stringify({ ok: true });
+    // As in the app: a carried item goes only with a reason.
+    return (a.ids ?? []).map((id) => {
+      const carried = allLists().some((l) => brief.outline[l].some((x) => x.id === id && x.carriedSince));
+      if (carried && !String(a.reason ?? "").trim()) return `${id}: kept. It's carried from an earlier day; give the reason.`;
+      dropId(id); brief.removed.push(id); return `${id}: removed.`;
+    }).join("\n");
   }
-  if (name === "today_finish") { brief.finish = a; return JSON.stringify({ ok: true }); }
+  if (name === "today_finish") { brief.finish = a; return "Brief finished."; }
   return null;
 }
 
@@ -115,7 +136,8 @@ const tools = defs.map((t) => ({ type: "function", function: { name: t.name, des
 
 const model = process.env.TODAY_LLM_MODEL || setup.model;
 const base = (process.env.TODAY_LLM_BASE_URL || setup.baseUrl || "").replace(/\/+$/, "");
-const url = /(^|\/)v\d+(\/|$)/.test(new URL(/^https?:\/\//.test(base) ? base : `https://${base}`).pathname) ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+// Built only when there is an endpoint: --dry needs none.
+const url = !base ? "(no endpoint)" : /(^|\/)v\d+(\/|$)/.test(new URL(/^https?:\/\//.test(base) ? base : `https://${base}`).pathname) ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
 const effort = opt("--effort") ?? setup.reasoningEffort;
 const maxSteps = Number(opt("--max-steps") ?? 30);
 
@@ -164,21 +186,21 @@ for (let step = 1; step <= maxSteps; step++) {
 }
 
 // ── result ─────────────────────────────────────────────────────────────────
-const byLane = {};
-for (const item of brief.items.values()) (byLane[item.lane ?? "?"] ??= []).push(item);
 console.log(`\n══ brief after ${((Date.now() - started) / 1000).toFixed(1)}s`);
 if (brief.finish) console.log(`headline: ${brief.finish.headline}\nlede: ${brief.finish.lede}`);
 else console.log("(today_finish was never called)");
-for (const [lane, items] of Object.entries(byLane)) {
-  console.log(`\n${lane} (${items.length})`);
-  for (const it of items) console.log(`  - ${it.start ? `${it.start}${it.end ? `–${it.end}` : ""} ` : ""}${it.title ?? it.body ?? it.id}`);
+for (const list of allLists()) {
+  const items = brief.outline[list];
+  if (!items.length) continue;
+  console.log(`\n${list} (${items.length})`);
+  for (const it of items) console.log(`  - ${it.priority ? `[${it.priority}] ` : ""}${it.start ? `${it.start}${it.end ? `–${it.end}` : ""} ` : ""}${it.question ?? it.title ?? it.id}${it.carriedSince ? ` (since ${it.carriedSince})` : ""}`);
 }
 if (brief.removed.length) console.log(`\nremoved: ${brief.removed.join(", ")}`);
-for (const s of brief.finish?.sources ?? []) console.log(`source ${s.name}: ${s.status}${s.note ? ` · ${s.note}` : ""}`);
+for (const src of brief.finish?.sources ?? []) console.log(`source ${src.name}: ${src.status}${src.note ? ` · ${src.note}` : ""}`);
 
 const out = opt("--out");
 if (out) {
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  fs.writeFileSync(out, JSON.stringify({ model, url, effort, transcript, brief: { items: [...brief.items.values()], removed: brief.removed, finish: brief.finish } }, null, 2));
+  fs.writeFileSync(out, JSON.stringify({ model, url, effort, transcript, brief: { ...brief.outline, removed: brief.removed, finish: brief.finish } }, null, 2));
   console.log(`\nwrote ${out}`);
 }

@@ -17,6 +17,8 @@
  * routing on execution is a simple prefix check.
  */
 
+import { namespaceServiceTool, normalizeOperations } from "../../shared/chat/service-exec";
+import { looksLikeWebApp } from "../../shared/today/route";
 import type Database from "better-sqlite3";
 import * as q from "../db/queries";
 import * as mcpClient from "./mcp-client";
@@ -191,6 +193,26 @@ function loadScopedConfigs(db: Database.Database, workspaceId: string, projectId
     .filter((s) => s.enabled && attached.service.has(s.id) && !excluded.has(s.id));
 
   return { mcpServers, customServices };
+}
+
+/**
+ * What Today's tool filter needs to know beyond a tool's name: the connectors that are web search
+ * apps (all of their tools need the user's say-so), and the custom service operations that don't use
+ * GET (a POST named "search" still sends data, so Today leaves those out).
+ */
+export function todayConnectorFacts(db: Database.Database, workspaceId: string, projectId: ToolScope): { webServers: Set<string>; writeTools: Set<string> } {
+  const { mcpServers, customServices } = loadScopedConfigs(db, workspaceId, projectId);
+  const webServers = new Set(
+    [...mcpServers.map((s) => ({ id: s.id, name: s.name || s.id })), ...customServices.map((s) => ({ id: s.id, name: s.name || s.id }))]
+      .filter((c) => looksLikeWebApp(c.name)).map((c) => c.id),
+  );
+  const writeTools = new Set<string>();
+  for (const s of customServices) {
+    try {
+      for (const op of normalizeOperations(s as never)) if (op.method !== "GET") writeTools.add(namespaceServiceTool(s.id, op.toolName));
+    } catch { /* a service with a broken definition offers no tools anyway */ }
+  }
+  return { webServers, writeTools };
 }
 
 /** The connectors in scope, by id and display name (Today's settings sheet and route check). */

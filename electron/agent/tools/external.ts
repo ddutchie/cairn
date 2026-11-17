@@ -76,7 +76,7 @@ export async function externalExtras(deps: ExternalToolDeps): Promise<{ tools: A
   const request = async (server: string, req: Parameters<typeof store.requestExternalMcpResource>[3], signal?: AbortSignal) => {
     if (!ids.includes(server)) return fail(`No MCP server "${server}" serves resources. Available: ${ids.join(", ")}.`);
     try {
-      return { content: renderValue(await store.requestExternalMcpResource(deps.workspaceId, deps.projectId, server, req, signal)) };
+      return { content: capResult(renderValue(await store.requestExternalMcpResource(deps.workspaceId, deps.projectId, server, req, signal)), deps.maxResultChars) };
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
