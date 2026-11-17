@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import {
   PRESETS, createRuleStore, findRule, grantRule, isProtectedPath, offeredGrants, ruleMatches, tokenizeSimpleCommand,
   type CallView, type Rule,
@@ -103,7 +104,7 @@ describe("grants", () => {
     expect(ruleMatches(inside, write("/ws/src/b.ts"), ctx)).toBe(true);
     expect(ruleMatches(inside, write("/home/u/.zshrc"), ctx)).toBe(false);
     const outside = grantRule(write("/tmp/out/a.txt"), "tool", "/ws");
-    expect(outside.match).toEqual({ tool: "write", path: { within: "/tmp/out" } });
+    expect(outside.match).toEqual({ tool: "write", path: { within: path.resolve("/tmp/out") } });
     expect(ruleMatches(outside, write("/tmp/out/b.txt"), ctx)).toBe(true);
     expect(ruleMatches(outside, write("/tmp/elsewhere/b.txt"), ctx)).toBe(false);
     // A file directly in a filesystem root: "its folder" would be the whole disk, so no grant is offered.

@@ -30,12 +30,12 @@ function tmpRoot(): string {
 
 describe("automation folder paths", () => {
   it("resolves the project root as a slugged folder under the workspace", () => {
-    expect(projectRootDir("/ws", "Research / Docs")).toBe(path.join("/ws", "Research Docs"));
+    expect(projectRootDir("/ws", "Research / Docs")).toBe(path.resolve("/ws", "Research Docs"));
   });
 
   it("resolves the automation folder under the project root (project-scoped)", () => {
     const dir = automationFolderDir("/ws", "aut-1", "My Project");
-    expect(dir).toBe(path.join("/ws", "My Project", ".automations", "aut-1"));
+    expect(dir).toBe(path.resolve("/ws", "My Project", ".automations", "aut-1"));
   });
 
   it("resolves the automation folder at the workspace root when there is no project", () => {

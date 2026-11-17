@@ -60,8 +60,10 @@ export function parseHookConfig(raw: string, projectDir: string): HookConfig {
 interface HookResult { code: number | null; stdout: string; stderr: string }
 
 function runCommand(h: HookCommand, payload: unknown, cwd: string, signal?: AbortSignal): Promise<HookResult> {
-  // Shell choice is unchanged: /bin/sh on POSIX, powershell.exe on Windows.
-  const shell = process.platform === "win32" ? { file: "powershell.exe", args: ["-NoProfile", "-Command", h.command] } : { file: "/bin/sh", args: ["-c", h.command] };
+  // Shell choice is unchanged: /bin/sh on POSIX, powershell.exe on Windows. `-Command` would otherwise
+  // report any native failure as exit 1, so a hook's exit code 2 (block) must be forwarded explicitly.
+  const shell = process.platform === "win32" ? { file: "powershell.exe", args: ["-NoProfile", "-Command", `${h.command}
+if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }`] } : { file: "/bin/sh", args: ["-c", h.command] };
   return runProcess({
     file: shell.file,
     args: shell.args,

@@ -4,6 +4,7 @@ import path from "node:path";
 import { rgPath } from "@vscode/ripgrep";
 import { validateToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
+import { CAN_SYMLINK } from "../../test-support/platform";
 import { TOOL_SCHEMAS } from "../../lib/tool-schemas";
 import type { AgentTool, ToolContext, ToolOutput } from "../tool-types";
 import { bashTool } from "./bash";
@@ -27,7 +28,7 @@ async function workspace() {
 }
 
 describe("fs tools", () => {
-  it("judges a call by where a symlink really leads", async () => {
+  it.skipIf(!CAN_SYMLINK)("judges a call by where a symlink really leads", async () => {
     const dir = await workspace();
     const outside = await mkdtemp(path.join(os.tmpdir(), "agent-outside-"));
     await mkdir(path.join(outside, ".ssh"));
@@ -89,7 +90,7 @@ describe("fs tools", () => {
   it("globs and greps with ripgrep", async () => {
     const dir = await workspace();
     const t = fsTools({ cwd: dir, rgPath });
-    expect(text(await run(get(t, "glob"), { pattern: "**/*.ts" }))).toBe("src/a.ts");
+    expect(text(await run(get(t, "glob"), { pattern: "**/*.ts" }))).toBe(path.join("src", "a.ts"));
     expect(text(await run(get(t, "glob"), { pattern: "*.zzz" }))).toBe("No files matched");
     expect(text(await run(get(t, "grep"), { pattern: "needle" }))).toContain("needle here");
     expect(text(await run(get(t, "grep"), { pattern: "needle", output_mode: "files_with_matches" }))).toContain("notes.md");
@@ -100,8 +101,8 @@ describe("fs tools", () => {
     const dir = await workspace();
     const t = fsTools({ cwd: dir, rgPath });
     expect(get(t, "write").risk({ file_path: "src/x.ts", content: "" })).toEqual({ class: "WRITE_LOCAL", paths: [path.join(dir, "src/x.ts")] });
-    // Outside the working directory the real location is reported (`/etc` is a link on macOS).
-    expect(get(t, "read").risk({ file_path: "/etc/hosts" })).toEqual({ class: "READ", paths: [await realpath("/etc/hosts")] });
+    // Outside the working directory the real location is reported (`/etc` is a link on macOS; the node binary exists on every platform).
+    expect(get(t, "read").risk({ file_path: process.execPath })).toEqual({ class: "READ", paths: [await realpath(process.execPath)] });
   });
 
   it("readOnly mode omits the mutating tools", () => {
