@@ -6,6 +6,8 @@
 // Build-time only: the session factory's SOURCE is embedded into the page
 // script (the page itself stays import-free). See src/test-utils/session-mock.
 import { buildSessionMock } from "../../src/test-utils/session-mock";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export const WS_ID = "ws-cairn-hq";
 export const PROJ_A = "proj-cairn-core";
@@ -206,6 +208,63 @@ export const SCREENSHOT_SNAPSHOT = {
     { id: TAG_MIGRATION, name: "migration", color: "#6366f1", workspaceId: WS_ID },
   ],
 };
+
+/** Authored card due dates, pinned on first buildScreenshotMock() call so the
+ *  relative-date rewrite below is idempotent across the light + dark passes. */
+const ORIG_DUE_DATES = new Map<string, string | null>();
+
+/**
+ * A real slice of the Cairn repo for the Agent file-tree screenshot: the mock
+ * code directory ("/tmp/cairn-demo") is backed by the actual checkout, walked at
+ * mock-build time (Node side) and embedded as plain data. Bounded (top-level
+ * entries + two levels, caps per dir) so the injected script stays small and
+ * deterministic in shape. Falls back to a small static tree when the repo
+ * layout can't be read (e.g. unfamiliar cwd).
+ */
+const MOCK_CODE_ROOT = "/tmp/cairn-demo";
+function buildAgentTree(): { dirs: Record<string, Array<{ name: string; type: "file" | "dir"; path: string }>>; files: Record<string, string> } {
+  const skip = /^(node_modules|\.git|\.next|dist[^/]*|coverage|playwright-report|screenshots|\.turbo|\.DS_Store|.*\.log|ffmpeg2pass.*|logs|spill|out|scratch|remotion|electron-recordings|design|design-audit|build-resources|electron-native|pkg-native|playwright-electron-report|\.agents|\.claude|\.impeccable|\.cairn-sessions|\.opencode|patches|mobile|test-results|vitest-native)$/;
+  const toMockPath = (rel: string) => path.posix.join(MOCK_CODE_ROOT, rel);
+  try {
+    // Both runners (Playwright, vitest) launch with the repo root as cwd.
+    const root = process.cwd();
+    if (!fs.existsSync(path.join(root, "package.json"))) throw new Error("no repo");
+    const dirs: Record<string, Array<{ name: string; type: "file" | "dir"; path: string }>> = {};
+    const files: Record<string, string> = {};
+    const read = (rel: string, cap: number) => {
+      const abs = path.join(root, rel);
+      const st = fs.readdirSync(abs, { withFileTypes: true })
+        .filter((d) => !skip.test(d.name))
+        .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || (a.name < b.name ? -1 : 1))
+        .slice(0, cap);
+      const key = toMockPath(rel);
+      dirs[key] = st.map((d) => ({ name: d.name, type: d.isDirectory() ? "dir" as const : "file" as const, path: path.posix.join(key, d.name) }));
+      return st.filter((d) => d.isDirectory()).map((d) => (rel ? rel + "/" + d.name : d.name));
+    };
+    const top = read("", 26);
+    for (const sub of top.slice(0, 8)) for (const deep of read(sub, 18).slice(0, 4)) read(deep, 12);
+    // A few real file previews so an opened file looks like code, not lorem.
+    for (const rel of ["package.json", "AGENTS.md", "electron/agent/tools/index.ts", "src/lib/utils.ts"]) {
+      try {
+        const abs = path.join(root, rel);
+        const raw = fs.readFileSync(abs, "utf8");
+        if (/\.(png|ico|icns|zip|node|wasm)$/.test(rel)) continue;
+        files[toMockPath(rel)] = raw.split("\n").slice(0, 60).join("\n").slice(0, 6000);
+      } catch { /* skip unreadable */ }
+    }
+    return { dirs, files };
+  } catch {
+    const dirs: Record<string, Array<{ name: string; type: "file" | "dir"; path: string }>> = {
+      [MOCK_CODE_ROOT]: [
+        { name: "electron", type: "dir", path: MOCK_CODE_ROOT + "/electron" },
+        { name: "src", type: "dir", path: MOCK_CODE_ROOT + "/src" },
+        { name: "package.json", type: "file", path: MOCK_CODE_ROOT + "/package.json" },
+        { name: "AGENTS.md", type: "file", path: MOCK_CODE_ROOT + "/AGENTS.md" },
+      ],
+    };
+    return { dirs, files: {} };
+  }
+}
 
 export const SCREENSHOT_GRAPH = {
   nodes: [
@@ -774,14 +833,37 @@ export const SCREENSHOT_FLOW = {
  * Extends buildIpcMock with the richer SCREENSHOT_* fixtures.
  */
 export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): string {
+  // Mock due dates must sit relative to the REAL current date: the calendar
+  // renders the current month and "overdue" is computed against Date.now().
+  // Fixed 2026-08 due dates would all read as overdue and leave the month grid
+  // empty. Spread them across past/future so board, calendar and Today facts
+  // look alive whenever the screenshots are (re)generated.
+  {
+    const dueOffsets = [0, 2, 5, 9, -1, -4, 13, 21, -11, 4, 7, -7, 1, 11, 16, -16, 26, 6, -2, 30, -25, 3];
+    const dayMs = 86_400_000;
+    const today = new Date(); today.setHours(12, 0, 0, 0);
+    type DueCard = { id: string; dueDate: string | null };
+    // Pin the authored due dates on first call: this function mutates the
+    // module-level fixture, and the light + dark passes call it twice in one
+    // process — without this the second pass would shift already-shifted dates.
+    if (ORIG_DUE_DATES.size === 0) {
+      for (const c of SCREENSHOT_SNAPSHOT.cards as DueCard[]) ORIG_DUE_DATES.set(c.id, c.dueDate);
+    }
+    let i = 0;
+    for (const c of SCREENSHOT_SNAPSHOT.cards as DueCard[]) {
+      const orig = ORIG_DUE_DATES.get(c.id);
+      if (orig) c.dueDate = new Date(today.getTime() + dueOffsets[i++ % dueOffsets.length] * dayMs).toISOString().slice(0, 10);
+    }
+  }
   const snapshot = JSON.stringify(SCREENSHOT_SNAPSHOT);
   const graph = JSON.stringify(SCREENSHOT_GRAPH);
   const flow = JSON.stringify(SCREENSHOT_FLOW);
 
   // Mock usage — realistic 30-day series so UsageView (cost page) is populated
-  // in screenshots. Deterministic (anchored to NOW) so the PNGs don't flicker.
+  // in screenshots. Anchored to the real current date (like the card due dates
+  // above) so the chart's day labels match the viewer's month.
   const usageDay = (d: Date) => d.toISOString().slice(0, 10);
-  const base = new Date(NOW);
+  const base = new Date();
   const series = Array.from({ length: 30 }, (_, i) => {
     const d = new Date(base);
     d.setDate(base.getDate() - (29 - i));
@@ -866,6 +948,28 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
   });
   const usageOverviewJson = JSON.stringify(usageOverview);
   const usageRecentJson = JSON.stringify(usageRecent);
+  // Thread groups rolled up from the recent rows (mirrors the main-process
+  // usage:threads rollup: one group per sessionId, newest activity first).
+  const usageThreads = (() => {
+    const by = new Map();
+    for (const r of usageRecent) {
+      if (!r.sessionId) continue;
+      let g = by.get(r.sessionId);
+      if (!g) {
+        g = { sessionId: r.sessionId, source: r.source, title: "Session " + r.sessionId, models: [], promptTokens: 0, completionTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, costUsd: 0, requests: 0, firstAt: r.createdAt, lastAt: r.createdAt, hasEstimated: false };
+        by.set(r.sessionId, g);
+      }
+      g.promptTokens += r.promptTokens; g.completionTokens += r.completionTokens;
+      g.reasoningTokens += r.reasoningTokens; g.cacheReadTokens += (r.cacheReadTokens || 0);
+      g.costUsd = Number((g.costUsd + (r.costUsd || 0)).toFixed(4)); g.requests += 1;
+      if (r.createdAt < g.firstAt) g.firstAt = r.createdAt;
+      if (r.createdAt > g.lastAt) g.lastAt = r.createdAt;
+      if (!g.models.includes(r.model)) g.models.push(r.model);
+      if (r.costEstimated) g.hasEstimated = true;
+    }
+    return [...by.values()].sort((a, b) => b.lastAt - a.lastAt);
+  })();
+  const usageThreadsJson = JSON.stringify(usageThreads);
 
   // Mock automations — 4 recipes with recent runs so Automations panels are populated
   const automations = [
@@ -883,6 +987,78 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
   ];
   const automationsJson = JSON.stringify(automations);
   const automationRunsJson = JSON.stringify(automationRuns);
+
+  // Today — one ready brief so the Today view screenshots populated. Shapes
+  // mirror shared/today/brief.ts (TodayState / TodayBrief / TodayProjectFacts).
+  // Dated at the real today (like card due dates above) so the header, the
+  // day strip and "since …" tags read current.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const nowIso = new Date().toISOString();
+  const nextRun = new Date(); nextRun.setDate(nextRun.getDate() + 1); nextRun.setHours(7, 0, 0, 0);
+  const todayBrief = {
+    version: 1, status: "ready" as const, generatedAt: nowIso, date: todayStr,
+    headline: "Decide on the Q3 bets first.",
+    lede: "Two decisions need you, one draft is ready to send, and the morning is meeting-light.",
+    focusId: "tn-1",
+    events: [
+      { id: "09:30-standup", title: "Team standup", start: "09:30", end: "09:45" },
+      { id: "14:00-design-review", title: "Design review", start: "14:00", end: "15:00", location: "Room B" },
+    ],
+    needYou: [
+      { id: "tn-1", kind: "decision" as const, title: "Which Q3 bet ships first?", body: "Offline AI and the graph views both want the sprint. Pick one to staff fully.", why: "Blocks sprint planning", facts: ["Asked yesterday", "Maya is waiting"], choices: [{ label: "Offline AI first", draftId: "tp-1" }, { label: "Graph views first" }], source: "Slack", age: "3h", projectId: PROJ_A, priority: "high" as const },
+      { id: "tn-2", kind: "todo" as const, title: "Reply to the QR pairing thread", body: "Leo asked whether the token TTL stays at 5 minutes.", why: "Waiting 2 days", facts: [], choices: [], source: "GitHub", age: "2d", projectId: PROJ_B, since: yesterdayStr },
+    ],
+    prepared: [
+      { id: "tp-1", title: "Reply: offline AI first", kind: "reply" as const, target: "#product in Slack", draft: "We're staffing offline AI first — it unblocks the mobile story and demos well. Graph views follow in the next sprint.", source: "Slack", projectId: PROJ_A },
+      { id: "tp-2", title: "Weekly review draft", kind: "review" as const, draft: "Shipped the screenshot harness and the Sage rebrand. Next: widget gallery and mobile pairing.", source: "Cairn", projectId: PROJ_A },
+    ],
+    fyi: [
+      { id: "tf-1", title: "Sprint velocity at 34 points", detail: "Up from 28 last sprint.", tone: "good" as const, source: "Linear", projectId: PROJ_A },
+    ],
+    sources: [
+      { name: "Slack", status: "ok" as const, items: 4 },
+      { name: "GitHub", status: "ok" as const, items: 3 },
+      { name: "Calendar", status: "ok" as const, items: 2 },
+    ],
+    note: "Read 3 apps and your boards. One connector was slow, nothing failed.",
+  };
+  const todayState = {
+    automationId: "auto-today", enabled: true, time: "07:00", weekdaysOnly: true,
+    nextRunAt: nextRun.toISOString(),
+    running: false, activity: null, brief: todayBrief,
+    marks: { done: [], edits: {} }, lastError: null,
+    settings: { excludedProjects: [], excludedApps: [], webApps: [] },
+    projects: [
+      { id: PROJ_A, name: "Cairn — Personal Knowledge Base" },
+      { id: PROJ_B, name: "Mobile Companion" },
+      { id: PROJ_C, name: "Design System" },
+    ],
+    facts: [
+      { projectId: PROJ_A, name: "Cairn — Personal Knowledge Base",
+        dueToday: [{ id: "card-4", title: "Ship the shared-workspaces beta" }],
+        overdue: [{ id: "card-6", title: "Port the coding agent onto the new agent engine" }],
+        inReview: [{ id: "card-9", title: "Verify the heartbeat automation runner" }],
+        stale: [{ id: "card-22", title: "Implement WAL for offline storage", days: 6 }],
+        counts: { dueToday: 1, overdue: 1, inReview: 1, stale: 1 },
+        failingAutomations: [], notesChanged: [{ id: "note-vision", title: "Product Vision" }] },
+      { projectId: PROJ_B, name: "Mobile Companion",
+        dueToday: [], overdue: [], inReview: [{ id: "card-39", title: "Security review for QR pairing" }], stale: [],
+        counts: { dueToday: 0, overdue: 0, inReview: 1, stale: 0 },
+        failingAutomations: [], notesChanged: [] },
+    ],
+    apps: [
+      { id: "slack", name: "Slack", kind: "mcp" as const },
+      { id: "github", name: "GitHub", kind: "mcp" as const },
+      { id: "calendar", name: "Calendar", kind: "mcp" as const },
+    ],
+  };
+  const todayStateJson = JSON.stringify(todayState);
+
+  // Real repo slice for the Agent file tree (see buildAgentTree above).
+  const agentTree = buildAgentTree();
+  const agentDirsJson = JSON.stringify(agentTree.dirs);
+  const agentFilesJson = JSON.stringify(agentTree.files);
 
   // Chat — 2 threads with tool-call rich history so the drawer/panel looks alive
   const chatThreads = [
@@ -918,6 +1094,10 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
   const needsSetup = ${needsSetup};
   const usageOverviewData = ${usageOverviewJson};
   const usageRecentData = ${usageRecentJson};
+  const usageThreadsData = ${usageThreadsJson};
+  const todayStateData = ${todayStateJson};
+  const agentDirsData = ${agentDirsJson};
+  const agentFilesData = ${agentFilesJson};
   const automationsData = ${automationsJson};
   const automationRunsData = ${automationRunsJson};
   const chatThreadsData = ${chatThreadsJson};
@@ -948,8 +1128,8 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
     flow:      { get: () => Promise.resolve(flowData), node: { create: noop, update: noop, delete: noop, summarize: noop }, edge: { create: noop, delete: noop }, url: { fetch: () => Promise.resolve({ title: "", description: "" }) } },
     tag:       { list: () => Promise.resolve(snap.tags), create: noop, update: noop, delete: noop },
     chat:      { threads: (wid) => Promise.resolve(chatThreadsData.filter(t => !wid || t.workspaceId===wid)), sessionMessages: (tid) => Promise.resolve(chatMessagesData[tid] || []), upsertThread: noop, deleteThread: noop, clearThreadMessages: noop, clearAllThreads: noop, stream: () => {}, abort: () => {}, onToken: makeListener("chat.onToken"), onDone: makeListener("chat.onDone"), onToolCall: makeListener("chat.onToolCall"), onToolCallDone: makeListener("chat.onToolCallDone"), onUsage: makeListener("chat.onUsage") },
-    usage:     { overview: () => Promise.resolve(usageOverviewData), recent: () => Promise.resolve(usageRecentData), clear: () => Promise.resolve({ deleted: 0, ok: true }) },
-    automation: { list: (wid) => Promise.resolve(automationsData.filter(a => !wid || a.workspaceId===wid)), get: (id) => Promise.resolve(automationsData.find(a=>a.id===id) || null), create: noop, update: (id,patch) => Promise.resolve(Object.assign({}, automationsData.find(a=>a.id===id) || {}, patch, { id })), delete: noop, runs: (aid, lim) => Promise.resolve(automationRunsData.filter(r=>r.automationId===aid).slice(0, lim||20)), recentRuns: (wid, pid, lim) => Promise.resolve(automationRunsData.filter(r=> !wid || automationsData.find(a=>a.id===r.automationId)?.workspaceId===wid).slice(0, lim||8)), runNow: (id) => Promise.resolve({ runId: "run-now-" + id }), runningCount: () => Promise.resolve(automationRunsData.filter(r=>r.status==="running").length), onRunEvent: makeListener("automation:run"), env: { get: () => Promise.resolve([]), set: () => Promise.resolve([]), delete: () => Promise.resolve([]) }, checkRequirements: () => Promise.resolve([]), preview: () => Promise.resolve({ nextRunAt: new Date(Date.now()+3600*1000).toISOString() }) },
+    usage:     { overview: () => Promise.resolve(usageOverviewData), recent: (args) => Promise.resolve((() => { let rows = usageRecentData; if (args && args.sessionId) rows = rows.filter(r => r.sessionId === args.sessionId); else if (args && args.noSession) rows = rows.filter(r => !r.sessionId); return rows.slice(0, (args && args.limit) || 100); })()), threads: () => Promise.resolve(usageThreadsData), clear: () => Promise.resolve({ deleted: 0, ok: true }) },
+    automation: { list: (wid) => Promise.resolve(automationsData.filter(a => !wid || a.workspaceId===wid)), get: (id) => Promise.resolve(automationsData.find(a=>a.id===id) || null), create: noop, update: (id,patch) => Promise.resolve(Object.assign({}, automationsData.find(a=>a.id===id) || {}, patch, { id })), delete: noop, runs: (aid, lim) => Promise.resolve(automationRunsData.filter(r=>r.automationId===aid).slice(0, lim||20)), recentRuns: (wid, pid, lim) => Promise.resolve(automationRunsData.filter(r=> !wid || automationsData.find(a=>a.id===r.automationId)?.workspaceId===wid).slice(0, lim||8)), runNow: (id) => Promise.resolve({ runId: "run-now-" + id }), runningCount: () => Promise.resolve(automationRunsData.filter(r=>r.status==="running").length), onRunEvent: makeListener("automation:run"), env: { get: () => Promise.resolve([]), set: () => Promise.resolve([]), delete: () => Promise.resolve([]) }, checkRequirements: () => Promise.resolve([]), preview: () => Promise.resolve({ nextRunAt: new Date(Date.now()+3600*1000).toISOString() }), approve: noop, folder: () => Promise.resolve({ folder: "/mock/automations/auto-mock" }), syncFromManifest: noop, runLog: () => Promise.resolve({ log: {} }), files: () => Promise.resolve([]), budget: { get: () => Promise.resolve({ budgetUsd: null, spentTodayUsd: 3.42 }) }, today: { get: () => Promise.resolve(todayStateData), enable: () => Promise.resolve(todayStateData), disable: () => Promise.resolve(Object.assign({}, todayStateData, { enabled: false })), settings: (wid, s) => Promise.resolve(Object.assign({}, todayStateData, { settings: s })), mark: () => Promise.resolve({ done: [], edits: {} }), history: () => Promise.resolve([]), snapshot: () => Promise.resolve(null), run: () => Promise.resolve({ skipped: false }), route: () => Promise.resolve({ target: null, tools: [] }), export: () => Promise.resolve(null), onUpdated: makeListener("today:updated") } },
     graph:     { get: () => Promise.resolve(graphData), neighbors: () => Promise.resolve({ nodes: [], edges: [] }), recompute: noop },
     ai:        { generatePrd: noop },
     mcpServerPath: () => Promise.resolve("/mock/mcp-server"), latestChangelog: () => Promise.resolve(null),
@@ -975,7 +1155,7 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
     updater: { onUpdateAvailable: makeListener("updater.onUpdateAvailable"), onUpdateDownloaded: makeListener("updater.onUpdateDownloaded"), install: noop },
     onDbChanged: makeListener("onDbChanged"), onMcpUnreadCount: makeListener("onMcpUnreadCount"), markMcpNotificationsRead: noop,
     onAiWriteStarted: makeListener("onAiWriteStarted"), onAiWriteEnded: makeListener("onAiWriteEnded"),
-    agent: { getCodingAgents: () => Promise.resolve([]), saveCodingAgent: noop, deleteCodingAgent: noop, setDefaultAgent: noop, readDir: () => Promise.resolve([]), readFile: () => Promise.resolve(""), readFileBase64: () => Promise.resolve(""), writeFile: noop, validateDirectory: () => Promise.resolve(true), gitDiff: () => Promise.resolve(""), pickDirectory: () => Promise.resolve(null), pickFile: () => Promise.resolve(null), spawn: () => Promise.resolve({ sessionId: "mock-session" }), input: noop, resize: noop, spawnShell: () => Promise.resolve({ sessionId: "mock-shell-session" }), kill: () => Promise.resolve(), onData: makeListener("agent.onData"), onExit: makeListener("agent.onExit"), onModelTerminal: makeListener("agent.onModelTerminal") },
+    agent: { getCodingAgents: () => Promise.resolve([]), saveCodingAgent: noop, deleteCodingAgent: noop, setDefaultAgent: noop, readDir: (dir) => Promise.resolve(agentDirsData[dir] || []), readFile: (p) => Promise.resolve(agentFilesData[p] !== undefined ? agentFilesData[p] : "[preview not available in screenshots]"), readFileBase64: () => Promise.resolve(""), writeFile: noop, validateDirectory: () => Promise.resolve(true), gitDiff: () => Promise.resolve(""), pickDirectory: () => Promise.resolve(null), pickFile: () => Promise.resolve(null), spawn: () => Promise.resolve({ sessionId: "mock-session" }), input: noop, resize: noop, spawnShell: () => Promise.resolve({ sessionId: "mock-shell-session" }), kill: () => Promise.resolve(), onData: makeListener("agent.onData"), onExit: makeListener("agent.onExit"), onModelTerminal: makeListener("agent.onModelTerminal") },
     session: (${buildSessionMock.toString()})({ noop, makeListener }),
     tools: { listMcpServers: () => Promise.resolve([]), saveMcpServer: noop, deleteMcpServer: noop, testMcp: () => Promise.resolve({ ok: true, toolCount: 0, toolNames: [] }), listMcpTools: () => Promise.resolve({ ok: true, tools: [] }), listServices: () => Promise.resolve([]), saveService: noop, deleteService: noop, testService: () => Promise.resolve({ ok: true }), listAttachments: () => Promise.resolve([]), setAttachment: noop, clearAttachment: noop, startMcpAuth: () => Promise.resolve({ status: "already_authorized" }), mcpAuthStatus: () => Promise.resolve({ connected: false }), signOutMcp: noop, cancelMcpAuth: () => Promise.resolve({ cancelled: false }), startServiceAuth: () => Promise.resolve({ status: "already_authorized" }), serviceAuthStatus: () => Promise.resolve({ connected: false }), signOutService: noop, cancelServiceAuth: () => Promise.resolve({ cancelled: false }), onOauthCallback: makeListener("tools.onOauthCallback"), onAuthRequired: makeListener("tools.onAuthRequired") },
     secrets: { available: () => Promise.resolve(false), set: () => Promise.resolve(""), has: () => Promise.resolve(false), delete: noop },

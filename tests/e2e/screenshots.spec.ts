@@ -70,18 +70,19 @@ const SHOTS: Shot[] = [
     // Let ridgeline/beeswarm settle — InsightsView mounts D3 canvases on first paint
     await p.waitForTimeout(800);
   }},
-  { file: "agent.png", view: "agent" },
+  { file: "agent.png", view: "agent", setup: async (p) => {
+    // Open a real file so the editor shows code, not the "No file open" empty state
+    await p.evaluate(() => (window as unknown as { __cairnStoreRef?: { getState: () => { openEditorFile?: (p: string) => void } } }).__cairnStoreRef?.getState()?.openEditorFile?.("/tmp/cairn-demo/package.json"));
+    await p.waitForTimeout(500);
+  } },
+  { file: "today.png", view: "today" },
   { file: "automations.png", view: "automations" },
   { file: "usage.png", view: "usage" },
-  // Chat is a drawer rather than a view — open it over board for the ai-chat shot
-  { file: "ai-chat.png", view: "board", setup: async (p) => {
-    await p.evaluate(() => (window as unknown as { __cairnStoreRef?: { getState: () => { toggleChat?: () => void } } }).__cairnStoreRef?.getState()?.toggleChat?.());
-    await p.waitForTimeout(500);
-  }},
+  // Chat is a full-width center view (setView("chat")), not a drawer
+  { file: "ai-chat.png", view: "chat" },
   // Dashboard/PRD are notes in the real app — boards already show rich cards for those shots
   { file: "dashboard.png", view: "board" },
   { file: "prd-generator.png", view: "board" },
-  { file: "mobile.png", view: "board" }, // mobile is responsive — board as placeholder until dedicated mobile viewport
 ];
 
 // Hides the "Next" affordances and any transient modals before capture.
@@ -234,6 +235,9 @@ async function goToView(page: Page, view: string): Promise<void> {
     await page.waitForTimeout(200);
   } else if (view === "board") {
     await page.waitForSelector('[data-testid="kanban-board"], [class*="kanban"]', { timeout: 5000 }).catch(() => {});
+  } else if (view === "chat") {
+    await page.waitForFunction(() => document.body.innerText.includes("Summarize this project"), { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
   }
 }
 
@@ -261,6 +265,9 @@ test.describe("screenshots", () => {
 
       await page.goto("/", { waitUntil: "domcontentloaded" });
       await page.waitForSelector("[data-testid='sidebar'], nav, aside", { timeout: 20_000 });
+      // Guard: the IPC mock must have installed (a syntax error in the mock
+      // script silently leaves the app unseeded and screenshots come out empty).
+      expect(await page.evaluate(() => !!(window as unknown as { electron?: unknown }).electron), "window.electron mock missing — fixture script failed").toBe(true);
       await page.waitForTimeout(500);
       await setTheme(page, theme);
       await prepareForScreenshots(page);
