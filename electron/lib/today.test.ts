@@ -18,7 +18,7 @@ describe("todayAllowsTool", () => {
     for (const t of ["list_tasks", "get_item", "search_notes", "read_mcp_resource"]) expect(todayAllowsTool(t)).toBe(true);
   });
   it("denies local writes, shell, local file reads and web fetches", () => {
-    for (const t of ["create_task", "edit_note", "bash", "write", "edit", "delete", "read", "grep", "glob", "web_fetch"]) expect(todayAllowsTool(t)).toBe(false);
+    for (const t of ["create_task", "edit_note", "bash", "write", "edit", "delete", "read", "grep", "glob", "web_fetch", "get_today"]) expect(todayAllowsTool(t)).toBe(false);
   });
   it("allows read-like connector tools", () => {
     for (const t of ["mcp__slack__search_messages", "mcp__workiq__ask_work_iq", "mcp__github__list_pull_requests", "mcp__atlassian__searchJiraIssuesUsingJql", "mcp__atlassian__getJiraIssue"]) {

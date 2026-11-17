@@ -22,6 +22,7 @@ import {
 import { executeHandler as executeMcpTool } from "../../mcp/tools";
 import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "../../mcp/tools/consolidated";
 import { lazy } from "../../host-shared/lazy";
+import { get_today } from "../../mcp/tools/today";
 
 /**
  * Execute one chat tool. Consolidated (model-facing) tools are translated onto
@@ -254,6 +255,10 @@ export async function executeTool(
       // Creates a fresh note; result carries the new id, but we can't lock a
       // not-yet-created id, so just delegate (createNote handles its own lock).
       return executeMcpTool(db, workspacePath, name, args);
+    }
+    case "get_today": {
+      // Chat knows the active workspace; MCP falls back to the one with Today set up.
+      return get_today(db, workspacePath, args, req.workspaceId ?? undefined);
     }
     case "ask_questions": {
       // Headless (automation) runs have no window to render the inline form

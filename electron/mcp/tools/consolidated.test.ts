@@ -44,7 +44,7 @@ afterEach(() => {
 
 describe("consolidated toolset", () => {
   it("every advertised tool is either consolidated here or a direct handler", () => {
-    const direct = new Set(["upsert_project", "get_idea_flow", "get_user_writing_style", "update_user_writing_style", "codebase_reindex", "ask_questions", "suggest_connections", "spawn_tasks_from_note"]);
+    const direct = new Set(["upsert_project", "get_idea_flow", "get_user_writing_style", "update_user_writing_style", "get_today", "codebase_reindex", "ask_questions", "suggest_connections", "spawn_tasks_from_note"]);
     for (const name of Object.keys(TOOL_SCHEMAS)) {
       expect(CONSOLIDATED_TOOLS.has(name) || direct.has(name), name).toBe(true);
     }

@@ -36,4 +36,13 @@ describe("tool-inventory", () => {
     for (const n of CHAT_ONLY_TOOLS) expect(names.has(n as string)).toBe(false);
     expect(inv.mcp.length).toBe(Object.keys(TOOL_SCHEMAS).length - CHAT_ONLY_TOOLS.length);
   });
+
+  it("get_today is a read on every Cairn surface: chat, coding and MCP", async () => {
+    const inv = await buildInventory();
+    for (const surface of ["chat", "coding", "mcp"] as const) {
+      const t = inv[surface].find((x) => x.name === "get_today");
+      expect(t, surface).toBeDefined();
+      expect(t?.category, surface).toBe("read");
+    }
+  });
 });

@@ -40,6 +40,7 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   get_graph:              (a) => a.nodeId ? (a.semantic ? "Finding related notes" : `Getting neighbours of ${a.nodeId}`) : "Reading knowledge graph",
   get_user_writing_style:     (a) => (a.mode === "full" ? "Reading your full writing style" : "Reading your writing style cheat sheet"),
   update_user_writing_style:  (a) => a.section ? `Updating writing style (${a.section})` : "Updating writing style",
+  get_today:              (a) => a.date ? `Reading the Today brief for ${a.date}` : "Reading the Today brief",
   codebase_reindex:       (a) => `Indexing codebase folder "${a.folder}"`,
   codebase_query:         (a) => `Codebase ${a.action ?? "query"}: "${a.query}"`,
   ask_questions:          (a) => `Asking ${(a.questions as unknown[])?.length ?? ""} question${(a.questions as unknown[])?.length !== 1 ? "s" : ""}`,
