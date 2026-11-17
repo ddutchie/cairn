@@ -20,6 +20,8 @@ import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { todayClient, automationsClient } from "@/lib/ipc/automations";
+import { humanizedRunStep } from "@/lib/humanize-tool";
+import { connectorForTool, useCommunityConnectorMap } from "@/components/chat/chat-panel/connector-context";
 import { appClient } from "@/lib/ipc/app";
 import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -29,9 +31,11 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useContainerDims, useFontScale, useNow } from "@/lib/viz/hooks";
 import { TodayActPanel, type TodayActTarget } from "./today-act-panel";
 import { CairnStack, MiniStack, TODAY_SEEN_EVENT, markTodaySeen, todaySeenAt, type StackLane } from "./today-stack";
+import { TodayPastBanner, TodayRail } from "./today-rail";
+import { compareTodayBriefs, groupTodayHistory, type TodayComparison } from "../../../shared/today/history";
 import {
-  dayBlocks, formatClock, formatMinutes, linkedDraftIds, localDate,
-  type TodayDay, type TodayFyi, type TodayNeedItem, type TodayPrepared, type TodayProjectFacts, type TodaySettings as TodaySettingsValue, type TodayState,
+  EMPTY_TODAY_MARKS, dayBlocks, formatClock, formatMinutes, linkedDraftIds, localDate,
+  type TodayBrief, type TodayDay, type TodayHistoryEntry, type TodayRunActivity, type TodayFyi, type TodayMarks, type TodayNeedItem, type TodayPrepared, type TodayProjectFacts, type TodaySettings as TodaySettingsValue, type TodayState,
 } from "../../../shared/today/brief";
 
 /** Project id → name, for the project chip on each item. */
@@ -39,62 +43,57 @@ const ProjectNames = createContext<Map<string, string>>(new Map());
 
 type Lane = StackLane;
 
-const DISMISS_KEY = (workspaceId: string, date: string) => `today:dismissed:ws:${workspaceId}:${date}`;
-const EDITS_KEY = (workspaceId: string, date: string) => `today:edits:ws:${workspaceId}:${date}`;
+// Marks used to live in localStorage; read once to move them to the brief folder.
+const LEGACY_KEYS = (workspaceId: string, date: string) =>
+  [`today:dismissed:ws:${workspaceId}:${date}`, `today:edits:ws:${workspaceId}:${date}`] as const;
 
 function readJson<T>(key: string, fallback: T): T {
   try { return (JSON.parse(localStorage.getItem(key) ?? "null") as T | null) ?? fallback; } catch { return fallback; }
 }
 
-/** What this browser keeps for a brief: added to the debug export. */
-function readLocalState(projectId: string, date: string) {
-  return {
-    dismissed: readJson<string[]>(DISMISS_KEY(projectId, date), []),
-    edits: readJson<Record<string, string>>(EDITS_KEY(projectId, date), {}),
-  };
+type MarkPatch = { done?: Record<string, boolean>; edits?: Record<string, string | null> };
+
+function applyPatch(m: TodayMarks, patch: MarkPatch): TodayMarks {
+  const done = new Set(m.done);
+  for (const [id, on] of Object.entries(patch.done ?? {})) { if (on) done.add(id); else done.delete(id); }
+  const edits = { ...m.edits };
+  for (const [id, text] of Object.entries(patch.edits ?? {})) { if (text === null) delete edits[id]; else edits[id] = text; }
+  return { done: [...done], edits };
 }
 
-/** Drafts the user rewrote, by draft id. Kept per day, like done and discard. */
-function useDraftEdits(projectId: string, date: string | undefined) {
-  const key = date ? EDITS_KEY(projectId, date) : null;
-  const [version, setVersion] = useState(0);
-  const edits = useMemo(() => {
-    void version;
-    return key ? readJson<Record<string, string>>(key, {}) : {};
-  }, [key, version]);
-  const setEdit = useCallback((id: string, text: string | null) => {
-    if (!key) return;
-    const next = { ...edits };
-    if (text === null) delete next[id]; else next[id] = text;
-    localStorage.setItem(key, JSON.stringify(next));
-    setVersion((v) => v + 1);
-  }, [key, edits]);
-  return { edits, setEdit };
-}
+/**
+ * Done items and edited drafts for one day, kept in the brief folder by main
+ * (so the next day's run knows what's still open). Updated optimistically;
+ * `readOnly` (an old version from the history) never writes.
+ */
+function useMarks(workspaceId: string, date: string | undefined, initial: TodayMarks, readOnly = false) {
+  const [marks, setMarks] = useState(initial);
+  const [from, setFrom] = useState(initial);
+  // A fresh state from main (a refresh, a brief update) replaces the local copy.
+  if (from !== initial) { setFrom(initial); setMarks(initial); }
+  const send = useCallback((patch: MarkPatch) => {
+    if (!date || readOnly) return;
+    setMarks((m) => applyPatch(m, patch));
+    todayClient.mark(workspaceId, date, patch).then(setMarks).catch(() => { /* kept locally until the next refresh */ });
+  }, [workspaceId, date, readOnly]);
 
-function useDismissed(projectId: string, date: string | undefined) {
-  const key = date ? DISMISS_KEY(projectId, date) : null;
-  const [version, setVersion] = useState(0);
-  const ids = useMemo(() => {
-    void version;
-    if (!key) return new Set<string>();
-    try { return new Set(JSON.parse(localStorage.getItem(key) ?? "[]") as string[]); } catch { return new Set<string>(); }
-  }, [key, version]);
-  const toggle = useCallback((id: string) => {
-    if (!key) return;
-    const next = new Set(ids);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    localStorage.setItem(key, JSON.stringify([...next]));
-    setVersion((v) => v + 1);
-  }, [key, ids]);
-  const set = useCallback((id: string, on: boolean) => {
-    if (!key || ids.has(id) === on) return;
-    const next = new Set(ids);
-    if (on) next.add(id); else next.delete(id);
-    localStorage.setItem(key, JSON.stringify([...next]));
-    setVersion((v) => v + 1);
-  }, [key, ids]);
-  return { ids, toggle, set };
+  // One-time move of marks this browser kept before they were stored with the brief.
+  useEffect(() => {
+    if (!date || readOnly) return;
+    const [doneKey, editsKey] = LEGACY_KEYS(workspaceId, date);
+    const done = readJson<string[]>(doneKey, []);
+    const edits = readJson<Record<string, string>>(editsKey, {});
+    if (done.length === 0 && Object.keys(edits).length === 0) return;
+    todayClient.mark(workspaceId, date, { done: Object.fromEntries(done.map((id) => [id, true])), edits })
+      .then((m) => { setMarks(m); localStorage.removeItem(doneKey); localStorage.removeItem(editsKey); })
+      .catch(() => { /* try again next time */ });
+  }, [workspaceId, date, readOnly]);
+
+  const ids = useMemo(() => new Set(marks.done), [marks.done]);
+  const toggle = useCallback((id: string) => send({ done: { [id]: !ids.has(id) } }), [send, ids]);
+  const set = useCallback((id: string, on: boolean) => { if (ids.has(id) !== on) send({ done: { [id]: on } }); }, [send, ids]);
+  const setEdit = useCallback((id: string, text: string | null) => send({ edits: { [id]: text } }), [send]);
+  return { ids, toggle, set, edits: marks.edits, setEdit };
 }
 
 function openUrl(url?: string) {
@@ -116,11 +115,14 @@ export function TodayView() {
 function TodayPanel({ workspaceId }: { workspaceId: string }) {
   const [state, setState] = useState<TodayState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [liveTool, setLiveTool] = useState<string | null>(null);
+  const [liveTool, setLiveTool] = useState<TodayRunActivity | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setState(await todayClient.get(workspaceId));
+      const next = await todayClient.get(workspaceId);
+      setState(next);
+      // The main process knows what a run is doing, so a view opened mid-run (or reopened) shows it too.
+      setLiveTool((cur) => (next.running ? next.activity ?? cur : null));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -138,8 +140,8 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
     const id = state.automationId;
     return automationsClient.onRunEvent((ev) => {
       if (ev.automationId !== id) return;
-      if (ev.event === "started") { setLiveTool("Starting"); setState((s) => (s ? { ...s, running: true } : s)); }
-      if (ev.event === "tool" && ev.status === "start") setLiveTool(ev.label ?? ev.tool ?? null);
+      if (ev.event === "started") { setLiveTool({ tool: null }); setState((s) => (s ? { ...s, running: true } : s)); }
+      if (ev.event === "tool" && ev.status === "start" && ev.tool) setLiveTool({ tool: ev.tool, label: ev.label, args: ev.args });
       if (ev.event === "finished") {
         setLiveTool(null);
         // The run row is closed just after `finished` is sent.
@@ -155,9 +157,55 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
     return () => window.clearInterval(t);
   }, [state?.running, refresh]);
 
+  // History: the saved days for the rail, and the version open read-only (null = the live brief).
+  const [history, setHistory] = useState<TodayHistoryEntry[]>([]);
+  const [viewing, setViewing] = useState<{ key: string; brief: TodayBrief; marks: TodayMarks } | null>(null);
+  const [peek, setPeek] = useState(false);
+  const liveDate = state?.brief?.date ?? null;
+  // Reload once a run finishes (a ready brief has a new generatedAt); the gathering saves in between don't add days.
+  const liveReadyAt = state?.brief?.status === "ready" ? state.brief.generatedAt : null;
+  useEffect(() => {
+    let alive = true;
+    todayClient.history(workspaceId).then((h) => { if (alive) setHistory(h); }).catch(() => { /* no rail */ });
+    return () => { alive = false; };
+  }, [workspaceId, liveReadyAt]);
+  const days = useMemo(() => groupTodayHistory(history), [history]);
+  // Newest first; ← steps back through every saved version, → forward to the live brief.
+  const order = useMemo(() => days.flatMap((d) => [d.latest, ...d.versions].map((e) => e.key)), [days]);
+
+  const select = useCallback(async (key: string | null) => {
+    if (key === null || key === liveDate) { setViewing(null); return; }
+    const snap = await todayClient.snapshot(workspaceId, key).catch(() => null);
+    if (snap) setViewing({ key, ...snap });
+    else setHistory((h) => h.filter((e) => e.key !== key)); // pruned since the list was read
+  }, [workspaceId, liveDate]);
+
+  useEffect(() => {
+    if (order.length < 2) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
+      const at = viewing ? order.indexOf(viewing.key) : 0;
+      if (e.key === "Escape" && viewing) setViewing(null);
+      else if (e.key === "ArrowLeft" && at < order.length - 1) void select(order[at + 1]);
+      else if (e.key === "ArrowRight" && at > 0) void select(order[at - 1]);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [order, viewing, select]);
+
+  const comparison = useMemo(
+    () => (viewing ? compareTodayBriefs(viewing.brief, viewing.marks, state?.brief ?? null, state?.marks ?? EMPTY_TODAY_MARKS) : null),
+    [viewing, state?.brief, state?.marks],
+  );
+
   const run = async () => {
+    setViewing(null);
     setState((s) => (s ? { ...s, running: true } : s));
-    setLiveTool("Starting");
+    setLiveTool({ tool: null });
     try { await todayClient.run(workspaceId); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     void refresh();
   };
@@ -179,12 +227,23 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
     );
   }
 
-  return (
+  const viewingDay = viewing ? days.find((d) => d.date === viewing.brief.date) : undefined;
+  const past: PastView | null = viewing && comparison ? {
+    key: viewing.key,
+    comparison,
+    hasLive: !!state.brief,
+    versions: viewingDay ? [viewingDay.latest, ...viewingDay.versions] : [],
+    onPick: (key) => void select(key),
+    onBack: () => setViewing(null),
+  } : null;
+  const view = (
     <BriefView
-      state={state}
+      state={viewing ? { ...state, brief: viewing.brief, marks: viewing.marks, running: false, activity: null, lastError: null } : state}
       workspaceId={workspaceId}
-      liveTool={liveTool}
-      error={error}
+      liveTool={viewing ? null : liveTool}
+      error={viewing ? null : error}
+      past={past}
+      peek={peek}
       onRun={run}
       onSchedule={async (time, weekdaysOnly) => {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -192,12 +251,27 @@ function TodayPanel({ workspaceId }: { workspaceId: string }) {
       }}
       onSettings={async (settings) => setState(await todayClient.settings(workspaceId, settings))}
       onDisable={async () => setState(await todayClient.disable(workspaceId))}
-      onExport={async () => {
-        const date = state.brief?.date;
-        return todayClient.export({ workspaceId, local: date ? readLocalState(workspaceId, date) : undefined });
-      }}
+      onExport={() => todayClient.export(workspaceId)}
     />
   );
+  // The rail appears once there's something to look back at.
+  if (order.length < 2) return view;
+  return (
+    <div className="flex items-start gap-4">
+      <div className="min-w-0 flex-1">{view}</div>
+      <TodayRail days={days} liveDate={liveDate} selectedKey={viewing?.key ?? null} onSelect={(k) => void select(k)} onPeek={setPeek} />
+    </div>
+  );
+}
+
+/** A saved brief opened from the rail. */
+interface PastView {
+  key: string;
+  comparison: TodayComparison;
+  hasLive: boolean;
+  versions: TodayHistoryEntry[];
+  onPick: (key: string) => void;
+  onBack: () => void;
 }
 
 /**
@@ -297,11 +371,15 @@ function TodaySetup({ state, onEnable }: {
 
 // ── The brief ───────────────────────────────────────────────────────────────
 
-function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onSettings, onDisable, onExport }: {
+function BriefView({ state, workspaceId, liveTool, error, past, peek, onRun, onSchedule, onSettings, onDisable, onExport }: {
   state: TodayState;
   workspaceId: string;
-  liveTool: string | null;
+  liveTool: TodayRunActivity | null;
   error: string | null;
+  /** Set when this is a saved brief opened from the rail: read-only, with a banner instead of the controls. */
+  past: PastView | null;
+  /** The rail is hovered: earlier briefs show as cards stacked behind this one. */
+  peek: boolean;
   onRun: () => void;
   onSchedule: (time: string, weekdaysOnly: boolean) => Promise<void>;
   onSettings: (settings: TodaySettingsValue) => Promise<void>;
@@ -312,15 +390,23 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
   const projectNames = useMemo(() => new Map(state.projects.map((p) => [p.id, p.name])), [state.projects]);
   const activeProjectId = useCairnStore((s) => s.activeProjectId);
   const gathering = state.running && brief?.status === "gathering";
-  const { ids: dismissed, toggle, set: setDismissed } = useDismissed(workspaceId, brief?.date);
+  const readOnly = !!past;
+  const connectors = useCommunityConnectorMap();
+  const runStep = (tool: string, args?: Record<string, unknown>, label?: string) => {
+    const c = connectorForTool(tool, connectors);
+    return humanizedRunStep(tool, args, c?.label || c?.name, label);
+  };
+  const { ids: marked, toggle, set: setDismissed, edits, setEdit } = useMarks(workspaceId, brief?.date, state.marks, readOnly);
+  // Looking back, what's been resolved since reads as done too.
+  const resolved = past?.comparison.resolved;
+  const dismissed = useMemo(() => (resolved ? new Set([...marked, ...resolved]) : marked), [marked, resolved]);
   // The item open in the act panel; `doneId` is what "done" marks in Today.
   const [act, setAct] = useState<(TodayActTarget & { doneId: string }) | null>(null);
-  const { edits, setEdit } = useDraftEdits(workspaceId, brief?.date);
   // A brief the user hasn't opened yet stacks itself in once, then counts as seen.
   // Captured once per mount: a brief that lands while the view is open differs from it too.
   const [seenAtMount] = useState(() => todaySeenAt(workspaceId));
-  const unseen = !!brief && brief.status === "ready" && seenAtMount !== brief.generatedAt;
-  useEffect(() => { if (brief?.status === "ready") markTodaySeen(workspaceId, brief.generatedAt); }, [workspaceId, brief]);
+  const unseen = !readOnly && !!brief && brief.status === "ready" && seenAtMount !== brief.generatedAt;
+  useEffect(() => { if (!readOnly && brief?.status === "ready") markTodaySeen(workspaceId, brief.generatedAt); }, [workspaceId, brief, readOnly]);
   const [flash, setFlash] = useState<Lane | "day" | null>(null);
   const [showAllDrafts, setShowAllDrafts] = useState(false);
   const nowMs = useNow(60_000);
@@ -345,7 +431,7 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
       </Button>
       <TodaySettings key={`${state.time}-${state.weekdaysOnly}`} state={state} onSchedule={onSchedule} onSettings={onSettings} onDisable={onDisable} onExport={onExport} />
       <span className="text-2xs text-[var(--text-tertiary)] ml-1">
-        {state.running && liveTool ? `Reading: ${liveTool}` : (
+        {state.running ? (liveTool?.tool ? runStep(liveTool.tool, liveTool.args, liveTool.label) : "Starting the run") : (
           <>
             {brief ? `Updated ${formatRelative(brief.generatedAt)}` : "Not run yet"}
             {state.nextRunAt ? ` · next run ${new Date(state.nextRunAt).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : ""}
@@ -391,19 +477,47 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
   return (
     <ProjectNames.Provider value={projectNames}>
     <div className="pb-6">
-      <div className="grid gap-8 items-end pb-5 border-b border-[var(--border-subtle)] grid-cols-1 @3xl:grid-cols-[1fr_300px]">
+      {past && (
+        <TodayPastBanner
+          date={brief.date}
+          generatedAt={brief.generatedAt}
+          versions={past.versions}
+          selectedKey={past.key}
+          comparison={past.comparison}
+          hasLive={past.hasLive}
+          onPick={past.onPick}
+          onBack={past.onBack}
+        />
+      )}
+      <div className="relative isolate">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          aria-hidden
+          className="absolute inset-x-0 top-0 h-full -z-10 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] pointer-events-none transition-[transform,opacity] duration-300 ease-out"
+          style={{
+            opacity: peek ? [1, 0.6, 0.3][i] : 0,
+            transform: peek ? `translateY(${[-14, -26, -36][i]}px) scale(${[0.975, 0.95, 0.925][i]})` : "none",
+          }}
+        />
+      ))}
+      <div
+        className="grid gap-8 items-end pb-5 border-b border-[var(--border-subtle)] grid-cols-1 @3xl:grid-cols-[1fr_300px] bg-[var(--background)] rounded-2xl transition-transform duration-300 ease-out"
+        style={{ transform: peek ? "translateY(4px)" : "none" }}
+      >
         <div className="min-w-0">
           <div className="text-xs text-[var(--text-tertiary)] font-mono">
             {d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }).toUpperCase()}
-            {isToday && ` · ${formatClock(nowMin)}`}
-            {!isToday && <span className="text-[var(--warning)] font-sans"> · from an earlier day</span>}
+            {isToday && !past && ` · ${formatClock(nowMin)}`}
+            {!isToday && !past && <span className="text-[var(--warning)] font-sans"> · from an earlier day</span>}
+            {past && ` · ${formatClock(d.getHours() * 60 + d.getMinutes())}`}
           </div>
           <h2 className="text-2xl leading-tight mt-2 mb-1.5 max-w-[24ch] font-normal tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
             {gathering ? "Gathering your brief" : brief.headline}
           </h2>
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[58ch]">
             {gathering
-              ? `Items arrive as Cairn finds them${liveTool ? `. Reading ${liveTool}` : ""}. The headline comes last.`
+              ? "Items arrive as Cairn finds them, and the headline comes last."
               : brief.lede}
           </p>
           {(state.lastError || error) && <p className="text-xs text-[var(--danger)] mt-2">Last run: {error ?? state.lastError}</p>}
@@ -432,7 +546,7 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
               </>
             )}
           </div>
-          {header}
+          {!past && header}
         </div>
         <div className="flex items-end gap-4">
           <CairnStack
@@ -449,6 +563,7 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
             <LegendRow n={brief.fyi.length} label="Moving without you" onClick={() => jump("fyi")} />
           </div>
         </div>
+      </div>
       </div>
 
       {hasDay && (
@@ -471,7 +586,7 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
               done={dismissed.has(n.id)}
               draftFor={draftFor}
               onToggle={() => toggle(n.id)}
-              onAct={(t) => setAct({ ...t, doneId: n.id })}
+              onAct={(t) => { if (!readOnly) setAct({ ...t, doneId: n.id }); }}
               edited={(id) => edits[id] !== undefined}
               onEdit={setEdit}
               original={original}
@@ -488,7 +603,7 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
               item={p}
               done={dismissed.has(p.id)}
               onDismiss={() => toggle(p.id)}
-              onAct={(t) => setAct({ ...t, doneId: p.id })}
+              onAct={(t) => { if (!readOnly) setAct({ ...t, doneId: p.id }); }}
               slot={p.kind !== "reply" ? bestLabel : null}
               edited={edits[p.id] !== undefined}
               onEdit={(text) => setEdit(p.id, text === original(p.id) ? null : text)}
@@ -511,7 +626,8 @@ function BriefView({ state, workspaceId, liveTool, error, onRun, onSchedule, onS
         </LaneBox>
       </div>
 
-      <ProjectsSection facts={state.facts} />
+      {/* Project facts are worked out now, so they don't belong to an earlier brief. */}
+      {!past && <ProjectsSection facts={state.facts} />}
 
       <div className="mt-6 flex flex-wrap items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] text-xs">
         <span className="text-2xs text-[var(--text-tertiary)] mr-1">Built from</span>
@@ -895,11 +1011,31 @@ function ProjectChip({ projectId }: { projectId?: string }) {
   return <span className="shrink-0 max-w-[12ch] truncate px-1.5 rounded bg-[var(--surface-3)] text-[var(--text-secondary)]">{name}</span>;
 }
 
-function ItemMeta({ kind, source, age, projectId, children }: { kind: string; source: string; age?: string; projectId?: string; children?: React.ReactNode }) {
+/** "Since Mon" on an item still open from an earlier day. */
+function CarriedChip({ since }: { since?: string }) {
+  if (!since) return null;
+  const [y, m, d] = since.split("-").map(Number);
+  const first = new Date(y, m - 1, d);
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - first.getTime()) / 86_400_000);
+  if (days < 1) return null;
+  const label = days < 7 ? first.toLocaleDateString(undefined, { weekday: "short" }) : first.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return (
+    <Tooltip content={`Still open: first in your brief ${days === 1 ? "yesterday" : `${days} days ago`}. Cairn checks it again on each run.`}>
+      <span tabIndex={0} className="shrink-0 px-1.5 rounded border border-[color-mix(in_srgb,var(--warning)_40%,transparent)] text-[var(--text-secondary)]">
+        since {label}
+      </span>
+    </Tooltip>
+  );
+}
+
+function ItemMeta({ kind, source, age, projectId, since, children }: {
+  kind: string; source: string; age?: string; projectId?: string; since?: string; children?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center gap-1.5 text-2xs text-[var(--text-tertiary)] mb-1 min-w-0">
       <span className="font-medium text-[var(--text-secondary)] shrink-0">{kind}</span>
       <ProjectChip projectId={projectId} />
+      <CarriedChip since={since} />
       <span className="truncate">· {source}</span>
       {age && <span className="ml-auto font-mono shrink-0">{age}</span>}
       {children}
@@ -934,7 +1070,7 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
         done && "opacity-45",
       )}
     >
-      <ItemMeta kind={decision ? "Decision" : "To do"} source={item.source} age={item.age} projectId={item.projectId}>
+      <ItemMeta kind={decision ? "Decision" : "To do"} source={item.source} age={item.age} projectId={item.projectId} since={item.since}>
         <IconButton label={done ? "Mark not done" : "Mark done"} size="sm" pressed={done} onClick={onToggle} className="-my-1 shrink-0">
           <Check size={12} />
         </IconButton>
@@ -1131,7 +1267,7 @@ function DraftCard({ item, done, onDismiss, onAct, slot, edited, onEdit }: {
   };
   return (
     <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5">
-      <ItemMeta kind={edited ? `${kindLabel} · edited` : kindLabel} source={item.target ?? item.source} projectId={item.projectId}>
+      <ItemMeta kind={edited ? `${kindLabel} · edited` : kindLabel} source={item.target ?? item.source} projectId={item.projectId} since={item.since}>
         <IconButton label="Discard draft" size="sm" onClick={onDismiss} className="-my-1 ml-auto shrink-0"><X size={12} /></IconButton>
       </ItemMeta>
       <div className="text-sm font-medium leading-snug">{item.title}</div>

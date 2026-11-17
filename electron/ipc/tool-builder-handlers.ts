@@ -22,7 +22,7 @@ import type { DbContext } from "./result-helpers";
 import { registerIpcOn, sendIpcEvent } from "./registry";
 import type { IpcEventArgs } from "../../shared/ipc/contract";
 import type { ToolBuilderPromptRequest } from "../../shared/types/tool-builder";
-import { getCachedConfig } from "../lib/config-cache";
+import { cachedMaxOutputTokens, getCachedConfig } from "../lib/config-cache";
 import { resolveConnection } from "../lib/llm-config";
 import { isLocalEndpoint, buildApiUrl } from "../lib/llm";
 import { fetchJson } from "../lib/llm-http";
@@ -32,7 +32,6 @@ import * as builder from "../lib/tool-builder";
 import * as secrets from "../lib/secure-store";
 import { buildBuilderSystemPrompt, BUILDER_TOOL_DEFS } from "../lib/tool-builder-prompt";
 import { parseToolArgs } from "../../shared/chat/parse-tool-args";
-import { AUTO_OUTPUT_TOKEN_CAP, resolveMaxOutputTokens } from "../../shared/models/model-catalog";
 import { resolveTemperatureForModel } from "../lib/model-pricing";
 import { recordLlmUsage, extractCost, extractCacheTokens } from "../lib/usage-recorder";
 import { errMsg } from "../host-shared/errors";
@@ -86,15 +85,8 @@ function resolveConfig(): AIConfig {
     // v2.5.9 keychain migration — resolved to the real key above (same as chat.ts /
     // session runtime). Sending the raw ref as a bearer token 401s the provider.
     apiKey: conn.apiKey,
-    // Same Auto semantics as the chat/agent loops: Auto sends a generous 32K
-    // cap (AUTO_OUTPUT_TOKEN_CAP) instead of omitting the field — omitting lets
-    // the endpoint apply a tiny server-side default that truncates long tool
-    // definitions. Only a deliberate manual value is sent verbatim; a manual
-    // value that fails to resolve (undefined/invalid) also falls back to the
-    // 32K cap rather than silently omitting max_tokens.
-    maxTokens: cached?.maxOutputAuto === false
-      ? (resolveMaxOutputTokens(cached?.maxOutputTokens) ?? AUTO_OUTPUT_TOKEN_CAP)
-      : (resolveMaxOutputTokens(null, null, cached?.contextLimit) ?? AUTO_OUTPUT_TOKEN_CAP),
+    // Same Auto semantics as the chat/agent loops (see cachedMaxOutputTokens).
+    maxTokens: cachedMaxOutputTokens(cached),
   };
 }
 

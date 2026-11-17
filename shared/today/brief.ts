@@ -57,6 +57,8 @@ export interface TodayNeedItem {
   draftId?: string;
   /** Cairn project the item belongs to, when it belongs to one. */
   projectId?: string;
+  /** "YYYY-MM-DD" of the first brief it was on, when it was carried over from an earlier day. */
+  since?: string;
 }
 
 export interface TodayPrepared {
@@ -70,6 +72,8 @@ export interface TodayPrepared {
   source: string;
   url?: string;
   projectId?: string;
+  /** "YYYY-MM-DD" of the first brief it was on, when it was carried over from an earlier day. */
+  since?: string;
 }
 
 export interface TodayFyi {
@@ -132,6 +136,8 @@ export function extractJsonObject(text: string): string | null {
   return start >= 0 && end > start ? text.slice(start, end + 1) : null;
 }
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const dateStr = (v: unknown): string | undefined => { const d = str(v); return d && DATE.test(d) ? d : undefined; };
 const strList = (v: unknown, max: number): string[] =>
   (Array.isArray(v) ? v : []).map(str).filter((f): f is string => !!f).slice(0, max);
 
@@ -147,6 +153,7 @@ export function normalizeNeed(x: Record<string, unknown>, fallbackId: string): T
   return {
     id: str(x.id) ?? fallbackId, kind, title, body: str(x.body), why: str(x.why), facts: strList(x.facts, 3), choices,
     source: str(x.source) ?? "Cairn", url: str(x.url), age: str(x.age), draftId: str(x.draftId), projectId: str(x.projectId),
+    since: dateStr(x.since),
   };
 }
 
@@ -160,6 +167,7 @@ export function normalizePrepared(x: Record<string, unknown>, fallbackId: string
     id: str(x.id) ?? fallbackId, title, draft,
     kind: (kind && PREPARED_KINDS.has(kind) ? kind : "other") as TodayPrepared["kind"],
     target: str(x.target), source: str(x.source) ?? "Cairn", url: str(x.url), projectId: str(x.projectId),
+    since: dateStr(x.since),
   };
 }
 
@@ -238,14 +246,14 @@ export function parseTodayBrief(text: string, now: Date = new Date()): TodayBrie
   pruneDraftLinks({ needYou, prepared });
   const focus = str(o.focusId);
   const focusItem = needYou.find((n) => n.id === focus) ?? needYou[0];
-  const date = str(o.date);
+  const date = dateStr(o.date);
 
   return {
     version: TODAY_BRIEF_VERSION,
     // Files from before the brief tools have no status: they were written once, finished.
     status: str(o.status) === "gathering" ? "gathering" : "ready",
     generatedAt: now.toISOString(),
-    date: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : localDate(now),
+    date: date ?? localDate(now),
     headline: str(o.headline) ?? fallbackHeadline(needYou, focus),
     lede: firstSentences(str(o.lede) ?? summaryLede(needYou.length, prepared.length), 2, 40),
     focusId: focusItem?.id,
@@ -415,6 +423,31 @@ export interface TodayApp {
   kind: "mcp" | "service";
 }
 
+/** What the user did with a day's brief: items done or discarded, and drafts they rewrote. */
+export interface TodayMarks {
+  done: string[];
+  edits: Record<string, string>;
+}
+
+export const EMPTY_TODAY_MARKS: TodayMarks = { done: [], edits: {} };
+
+/** One saved version of a brief, for the history: a day's final brief, or the version a refresh replaced. */
+export interface TodayHistoryEntry {
+  /** "YYYY-MM-DD" for a day's brief, "YYYY-MM-DD@HHMM" for an earlier version of that day. */
+  key: string;
+  date: string;
+  generatedAt: string;
+  headline: string;
+  counts: { need: number; prepared: number; fyi: number; events: number; carried: number };
+}
+
+/** The step a Today run is on, as the runner reported it. `label` is the connector's "Slack · Search" label. */
+export interface TodayRunActivity {
+  tool: string | null;
+  label?: string;
+  args?: Record<string, unknown>;
+}
+
 /** Today state returned to the renderer by `today:get`. */
 export interface TodayState {
   /** The workspace's Today automation, or null when Today is off and was never set up. */
@@ -425,8 +458,12 @@ export interface TodayState {
   weekdaysOnly: boolean;
   nextRunAt: string | null;
   running: boolean;
+  /** While running: the tool call the run is on (`tool` null while it starts). */
+  activity: TodayRunActivity | null;
   /** Latest saved brief (today or the most recent day). */
   brief: TodayBrief | null;
+  /** Done items and edited drafts for `brief`'s date. */
+  marks: TodayMarks;
   /** Error of the latest run when it failed or produced no brief. */
   lastError: string | null;
   settings: TodaySettings;

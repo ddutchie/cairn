@@ -69,6 +69,8 @@ export interface EnginePromptArgs {
   allowTools?: ReadonlySet<string>;
   /** Connector scope when it differs from `projectId`: Today reads every included project's connectors. */
   externalProjectIds?: readonly string[];
+  /** Cut each connector result to this many characters (Today). */
+  externalResultChars?: number;
   /** Headless runs: keep only the tools this returns true for (Today's read-only toolset). */
   toolFilter?: (name: string) => boolean;
   /** Skip the user's prompt/tool hooks (internal one-off runs). */
@@ -153,7 +155,7 @@ async function runEnginePromptInner(a: EnginePromptArgs): Promise<void> {
         broadcastEvent("session:projection", makeSessionProjection(a.sessionId, "question", { callId: tool.callId, questions, nonce }));
       }),
     },
-    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.externalProjectIds ?? a.projectId ?? "" },
+    external: role === "automation-dev" || !a.workspaceId ? undefined : { db: a.ctx.db, workspaceId: a.workspaceId, projectId: a.externalProjectIds ?? a.projectId ?? "", maxResultChars: a.externalResultChars },
     fs: { cwd: a.cwd, rgPath, observed, sandbox: () => ({ mode: a.forceSandbox ? "workspace-write" : getSandboxMode() }), jobs: { registry: getJobRegistry(), owner: a.sessionId } },
     jobs: { registry: getJobRegistry(), owner: a.sessionId },
     sessions: role === "automation-dev" || !a.workspaceId ? undefined : {

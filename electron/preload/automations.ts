@@ -4,6 +4,8 @@ import { invokeContract, onIpcEvent } from "./ipc";
 import type { AutomationInput, AutomationPatch, AutomationRequirement, AutomationRunEvent } from "../../shared/types/automations";
 import type { TodaySettings } from "../../shared/today/brief";
 
+type TodayMarkPatch = { done?: Record<string, boolean>; edits?: Record<string, string | null> };
+
 export const automationsApi = {
   // ── Heartbeat automations ─────────────────────
   automation: {
@@ -23,11 +25,13 @@ export const automationsApi = {
         invokeContract("today:enable", req),
       disable: (workspaceId: string) => invokeContract("today:disable", { workspaceId }),
       settings: (workspaceId: string, settings: TodaySettings) => invokeContract("today:settings", { workspaceId, settings }),
+      mark: (workspaceId: string, date: string, patch: TodayMarkPatch) => invokeContract("today:mark", { workspaceId, date, ...patch }),
+      history: (workspaceId: string) => invokeContract("today:history", { workspaceId }),
+      snapshot: (workspaceId: string, key: string) => invokeContract("today:snapshot", { workspaceId, key }),
       run: (workspaceId: string) => invokeContract("today:run", { workspaceId }),
       route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
         invokeContract("today:route", req),
-      export: (req: { workspaceId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
-        invokeContract("today:export", req),
+      export: (workspaceId: string) => invokeContract("today:export", { workspaceId }),
       /** A Today run changed the brief. */
       onUpdated: (cb: (payload: { workspaceId: string; status: "gathering" | "ready" }) => void) => onIpcEvent("today:updated", cb),
     },

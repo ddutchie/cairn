@@ -30,7 +30,8 @@ import { applyManifestToAutomation, isValidEnvName, prepareAutomationFolder, rea
 import { hasSecret, setSecret, deleteSecret } from "../lib/secure-store";
 import { errMsg } from "../host-shared/errors";
 import {
-  buildTodayDebugExport, disableToday, enableToday, findTodayAutomation, getTodayState, includedProjects, readTodaySettings, writeTodaySettings,
+  buildTodayDebugExport, disableToday, enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot,
+  readTodaySettings, updateTodayMarks, writeTodaySettings,
 } from "../lib/today";
 import { hostRoot } from "./engine-bridge";
 import { SESSION_FILE } from "../agent/index";
@@ -123,7 +124,7 @@ export function registerAutomationHandlers(ctx: DbContext): void {
   };
   registerContractHandle("today:get", (_e, { workspaceId }) => handle(() => todayState(workspaceId)));
   registerContractHandle("today:enable", (_e, req) => handle(() => {
-    enableToday(ctx.db, req);
+    enableToday(ctx.db, ctx.workspacePath, req);
     return todayState(req.workspaceId);
   }));
   registerContractHandle("today:disable", (_e, { workspaceId }) => handle(() => {
@@ -139,6 +140,19 @@ export function registerAutomationHandlers(ctx: DbContext): void {
     });
     return todayState(workspaceId);
   }));
+  const todayRow = (workspaceId: string) => {
+    const a = findTodayAutomation(ctx.db, workspaceId);
+    if (!a) throw new Error("Turn Today on first.");
+    return a;
+  };
+  registerContractHandle("today:mark", (_e, { workspaceId, date, done, edits }) => handle(() =>
+    updateTodayMarks(ctx.workspacePath, todayRow(workspaceId), date, { done, edits })));
+  registerContractHandle("today:history", (_e, { workspaceId }) => handle(() => {
+    const a = findTodayAutomation(ctx.db, workspaceId);
+    return a ? listTodayHistory(ctx.workspacePath, a) : [];
+  }));
+  registerContractHandle("today:snapshot", (_e, { workspaceId, key }) => handle(() =>
+    loadTodaySnapshot(ctx.workspacePath, todayRow(workspaceId), key)));
   registerContractHandle("today:run", (_e, { workspaceId }) => handle(() => {
     const a = findTodayAutomation(ctx.db, workspaceId);
     if (!a || !a.enabled) return { skipped: true as const };
@@ -163,11 +177,11 @@ export function registerAutomationHandlers(ctx: DbContext): void {
       return { ...base, tools: [], error: errMsg(err) };
     }
   }));
-  registerContractHandle("today:export", (_e, { workspaceId, local }) => handle(async () => {
+  registerContractHandle("today:export", (_e, { workspaceId }) => handle(async () => {
     const readSession = (runId: string) => {
       try { return fs.readFileSync(path.join(hostRoot(), runId, SESSION_FILE), "utf8"); } catch { return null; }
     };
-    const { fileName, data } = buildTodayDebugExport(ctx.db, ctx.workspacePath, workspaceId, readSession, local);
+    const { fileName, data } = buildTodayDebugExport(ctx.db, ctx.workspacePath, workspaceId, readSession);
     const win = ctx.getWin();
     if (!win || win.isDestroyed()) throw new Error("No window");
     const { canceled, filePath } = await dialog.showSaveDialog(win, {

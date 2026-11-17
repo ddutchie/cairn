@@ -12,6 +12,16 @@ export interface ExternalToolDeps {
   workspaceId: string;
   /** One project, or several (Today); global connectors are always included. */
   projectId: ToolScope;
+  /** Cut each result to this many characters, with a note asking for a narrower call (Today's runs). */
+  maxResultChars?: number;
+}
+
+/** Keep the head of an oversized result and say how much was cut, so the model can narrow the call. */
+export function capResult(text: string, max?: number): string {
+  if (!max || text.length <= max) return text;
+  return `${text.slice(0, max)}
+
+[result cut: showing ${max} of ${text.length} characters. Narrow the call (a date filter, fewer results, a more specific query) to see the rest.]`;
 }
 
 export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]> {
@@ -26,7 +36,8 @@ export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]
     preview: (args) => approvalPreview(name, args),
     async execute(args, ctx) {
       try {
-        return { content: renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>, ctx.signal)) };
+        const text = renderValue(await store.executeExternalTool(deps.workspaceId, deps.projectId, name, args as Record<string, unknown>, ctx.signal));
+        return { content: capResult(text, deps.maxResultChars) };
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }

@@ -16,7 +16,7 @@
  */
 
 import type { NoteSnippet } from "../notes/search";
-import type { TodaySettings, TodayState } from "../today/brief";
+import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../today/brief";
 import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
 import type { WireProtocol } from "../models/model-catalog";
@@ -333,6 +333,12 @@ export interface IpcContract {
   "today:disable": { args: [req: { workspaceId: string }]; result: TodayState };
   /** Which projects and apps Today reads. */
   "today:settings": { args: [req: { workspaceId: string; settings: TodaySettings }]; result: TodayState };
+  /** Mark items done or not, and set or drop draft edits, for one day's brief. */
+  "today:mark": { args: [req: { workspaceId: string; date: string; done?: Record<string, boolean>; edits?: Record<string, string | null> }]; result: TodayMarks };
+  /** Every saved version, newest first: each day's brief and the versions same-day refreshes replaced. */
+  "today:history": { args: [req: { workspaceId: string }]; result: TodayHistoryEntry[] };
+  /** One saved version by its history key, with that day's marks. Null when it's gone. */
+  "today:snapshot": { args: [req: { workspaceId: string; key: string }]; result: { brief: TodayBrief; marks: TodayMarks } | null };
   /** Starts a run now; `skipped` when one is already running or Today is off. */
   "today:run": { args: [req: { workspaceId: string }]; result: { runId: string } | { skipped: true } };
   /** Where a Today item goes, and which in-scope connector tools could send it there. */
@@ -342,7 +348,7 @@ export interface IpcContract {
   };
   /** Save a debug bundle (prompt, brief, recent runs, the last run's log and session events) via a save dialog. Null when cancelled. */
   "today:export": {
-    args: [req: { workspaceId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }];
+    args: [req: { workspaceId: string }];
     result: { filePath: string } | null;
   };
   /** Approve/deny a tool call a running automation is waiting on. */
@@ -965,6 +971,9 @@ const CHANNELS: ChannelRecord = {
   "today:enable": "read",
   "today:disable": "read",
   "today:settings": "read",
+  "today:mark": "read",
+  "today:history": "read",
+  "today:snapshot": "read",
   "today:run": "read",
   "today:export": "read",
   "today:route": "read",

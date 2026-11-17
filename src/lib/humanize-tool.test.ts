@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { humanizeConnectorTool, humanizeTool, humanizedText } from "./humanize-tool";
+import { humanizeConnectorTool, humanizeTool, humanizedRunStep, humanizedText } from "./humanize-tool";
 
 describe("humanizeTool", () => {
   it("turns coding tools into concise English summaries", () => {
@@ -84,5 +84,15 @@ describe("humanizeTool", () => {
       expect(humanizedText("patch_note", { noteId: "unknown-id" }, lookup)).toBe("Updated note unknown-id");
       expect(humanizedText("patch_note", { noteId: "n1" })).toBe("Updated note n1");
     });
+  });
+});
+
+describe("humanizedRunStep", () => {
+  it("words a run's step like the chat transcript, naming the connector", () => {
+    expect(humanizedRunStep("today_read")).toBe("Read the brief so far");
+    expect(humanizedRunStep("today_upsert", { items: [{}, {}, {}] })).toBe("Added 3 items to the brief");
+    expect(humanizedRunStep("mcp__tZ7lQzgCms_3__ask_work_iq", { question: "x" }, "Work IQ")).toBe("Work IQ · Ask");
+    expect(humanizedRunStep("mcp__s1__search_messages", { query: "release" }, undefined, "Slack · Search messages")).toBe("Slack · Search messages release");
+    expect(humanizedRunStep("mcp__s1__search_messages")).toBe("Search messages");
   });
 });

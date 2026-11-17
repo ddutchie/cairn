@@ -8,7 +8,7 @@ import type {
   Automation, AutomationEnvSpec, AutomationInput, AutomationPatch, AutomationRequirement, AutomationRun, AutomationRunEvent,
   AutomationRunWithAutomation, RunLog,
 } from "../../../shared/types/automations";
-import type { TodaySettings, TodayState } from "../../../shared/today/brief";
+import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../../../shared/today/brief";
 import { domainCall, type ElectronApi } from "./client";
 
 const automation = <T>(fn: (api: ElectronApi["automation"]) => Promise<T>) => domainCall("automation", fn);
@@ -59,14 +59,20 @@ export const todayClient = {
   disable: (workspaceId: string): Promise<TodayState> => automation((a) => a.today.disable(workspaceId)),
   /** Which projects and apps Today reads. */
   settings: (workspaceId: string, settings: TodaySettings): Promise<TodayState> => automation((a) => a.today.settings(workspaceId, settings)),
+  /** Mark items done or not, and set or drop (null) draft edits, for one day. */
+  mark: (workspaceId: string, date: string, patch: { done?: Record<string, boolean>; edits?: Record<string, string | null> }): Promise<TodayMarks> =>
+    automation((a) => a.today.mark(workspaceId, date, patch)),
+  /** Saved versions, newest first. */
+  history: (workspaceId: string): Promise<TodayHistoryEntry[]> => automation((a) => a.today.history(workspaceId)),
+  snapshot: (workspaceId: string, key: string): Promise<{ brief: TodayBrief; marks: TodayMarks } | null> =>
+    automation((a) => a.today.snapshot(workspaceId, key)),
   /** Starts a run now; `skipped` when one is already running. */
   run: (workspaceId: string) => automation((a) => a.today.run(workspaceId)),
   /** Where an item goes and which connector tools could send it. Connects to the in-scope servers, so it can take a moment. */
   route: (req: { workspaceId: string; source: string; target?: string; kind?: string }) =>
     automation((a) => a.today.route(req)),
   /** Saves a debug bundle through a save dialog; null when cancelled. */
-  export: (req: { workspaceId: string; local?: { dismissed?: string[]; edits?: Record<string, string> } }) =>
-    automation((a) => a.today.export(req)),
+  export: (workspaceId: string) => automation((a) => a.today.export(workspaceId)),
   /** A Today run changed the brief; returns the unsubscribe function (a no-op off-Electron). */
   onUpdated: (cb: (event: { workspaceId: string; status: "gathering" | "ready" }) => void): (() => void) =>
     window.electron?.automation.today.onUpdated(cb) ?? (() => {}),

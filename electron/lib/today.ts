@@ -10,18 +10,22 @@
  *   - reads the connectors of every included project (plus global ones),
  *     minus the apps the user turned off;
  *   - gives the model Cairn's own project facts (`today-facts.ts`).
- * The brief is saved after every brief tool call under the automation's
- * durable `out/today/<date>.json`; `today.json` in the folder holds the
- * settings.
+ * Files, all in the Today automation's folder:
+ *   - `today.json`: the settings;
+ *   - `out/today/<date>.json`: the day's brief, saved after every brief tool call;
+ *   - `out/today/<date>.marks.json`: what the user marked done and the drafts they edited;
+ *   - `out/today/history/<date>@<HHMM>.json`: the version a same-day refresh replaced.
+ * Files older than `TODAY_KEEP_DAYS` are deleted when a run starts.
  */
 
+import { TODAY_KEEP_DAYS } from "../../shared/today/history";
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import type { Automation } from "../../shared/types/automations";
 import {
-  DEFAULT_TODAY_SETTINGS, TODAY_COMMUNITY_ID, parseTodayBrief, parseTodayCron, todayCron,
-  type TodayBrief, type TodaySettings, type TodayState,
+  DEFAULT_TODAY_SETTINGS, EMPTY_TODAY_MARKS, TODAY_COMMUNITY_ID, localDate, parseTodayBrief, parseTodayCron, todayCron,
+  type TodayBrief, type TodayHistoryEntry, type TodayMarks, type TodaySettings, type TodayState,
 } from "../../shared/today/brief";
 import { isCairnReadTool, isExternalToolName } from "../../shared/agent/tool-names";
 import { READ_VERB, WRITE_VERB, operationWords, toolServer } from "../../shared/today/route";
@@ -31,8 +35,10 @@ import {
 import { getProjects } from "../db/workspace-queries";
 import { automationFolderDir, automationOutDir, readRunLog } from "./automation-folder";
 import { computeNextRun, parseSchedule } from "./automation-schedule";
+import { deleteAutomationWithCleanup } from "./automation-delete";
 import { listScopedConnectors } from "./external-tools";
 import { factsForPrompt, projectFacts } from "./today-facts";
+import { currentRunActivity } from "./run-activity";
 import { isTodayBriefTool } from "./today-tools";
 
 export function isTodayAutomation(a: Pick<Automation, "communityId">): boolean {
@@ -75,6 +81,9 @@ export function todayToolFilter(settings: TodaySettings): (name: string) => bool
   return (name) => todayAllowsTool(name) && !(isExternalToolName(name) && off.has(toolServer(name)));
 }
 
+/** Today cuts each connector result to this many characters: a brief needs the gist, and a 90K-character search fills the context. */
+export const TODAY_RESULT_CHARS = 16_000;
+
 export const TODAY_RECIPE = `You are preparing the user's Today brief: one short page, read in under a minute, that says what needs them across their projects and apps. Work read-only: tools that send, post, create, edit or delete aren't available to you.
 
 Build the brief with the brief tools as you go:
@@ -83,13 +92,17 @@ Build the brief with the brief tools as you go:
 - Call today_remove for items that were handled or are no longer true.
 - Call today_finish once, last, with the headline, the lede and every app you tried.
 
+Items with "carriedSince" are still open from an earlier day. Check each one against its source: remove it if it was handled (answered, merged, closed, moved on), update it if something changed, and leave it if it still waits on the user. Don't add a second copy of a carried item.
+
 What to gather:
 1. The project facts below come from Cairn's board, notes and automations. Don't search the board for them again; turn what matters into items. A card due today or overdue is a todo (id "card-<cardId>", with its projectId). A failing automation is an fyi with tone "warn". A card stuck in review can be a decision ("Merge or send it back?").
-2. Use every connected app tool that can search or read (for example Slack, Outlook, Teams or Work IQ, GitHub, Jira, Confluence) for roughly the last 24 hours (72 on a Monday):
+2. Use every connected app tool that can search or read (for example Slack, Outlook, Teams or Work IQ, GitHub, Jira, Confluence) for what happened since the last brief (see "Now"; roughly the last 24 hours when there was none, 72 on a Monday):
    - what waits on the user: mentions, direct messages, review requests, assigned issues, questions asked of them, things they promised;
    - today's meetings, with times (lane "event");
    - progress worth knowing that needs no action (lane "fyi").
    If an app fails or finds nothing, record that in today_finish's sources and move on.
+   Keep each call narrow: filter by date (since the last brief) and to the user (mentions, DMs, assigned to them), ask for at most 20 results, and don't list every channel or project. Results over 16,000 characters are cut; narrow the call rather than paging through.
+   Call get_item only for cards you will turn into an item; the project facts already have their titles and dates.
 3. For up to 4 items that need a written answer (a reply, review notes, a card breakdown), write the draft yourself (lane "draft") and link it from the decision choice it carries out with draftId. Never send anything.
 
 How to write it:
@@ -100,11 +113,13 @@ How to write it:
 - Keep at most 6 decisions and to-dos, 5 drafts and 8 fyi items, most urgent first.
 - headline: at most 10 words, verb first, naming the first decision. lede: at most 25 words of context, no counts (Cairn shows those). Don't add up free time or count meetings: Cairn works that out from the events.`;
 
-/** The run's prompt: the fixed recipe, then today's date and Cairn's project facts. */
-export function todayPrompt(facts: ReturnType<typeof projectFacts>, now: Date = new Date()): string {
-  const day = now.toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const time = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
-  return `${TODAY_RECIPE}\n\n## Now\n${day}, ${time} local time.\n\n## Project facts (from Cairn)\n${factsForPrompt(facts)}`;
+/** The run's prompt: the fixed recipe, then the date, when the last brief ran, and Cairn's project facts. */
+export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt: string | null, now: Date = new Date()): string {
+  const when = (d: Date) => `${d.toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+  const last = lastBriefAt && !Number.isNaN(new Date(lastBriefAt).getTime())
+    ? `The last brief ran ${when(new Date(lastBriefAt))}: look for what changed since then.`
+    : "There's no earlier brief.";
+  return `${TODAY_RECIPE}\n\n## Now\n${when(now)} local time. ${last}\n\n## Project facts (from Cairn)\n${factsForPrompt(facts)}`;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────
@@ -153,15 +168,32 @@ function nextRun(expr: string, timezone?: string | null): string {
   return next.toISOString();
 }
 
+/** Create or re-enable the workspace's Today automation with the given schedule. */
+export function enableToday(db: Database.Database, workspacePath: string, input: TodayEnableInput): Automation {
+  migrateLegacyToday(db, workspacePath, input.workspaceId);
+  return upsertTodayRow(db, input);
+}
+
 /**
- * Create or re-enable the workspace's Today automation with the given
- * schedule. Per-project Today rows from the preview are deleted: the
- * workspace brief replaces them.
+ * The preview made one Today row per project. Fold them into the workspace
+ * row: it takes the schedule of the first enabled one (and is on when any
+ * was), then the old rows are deleted with their folders. Their briefs were
+ * per project, so they aren't kept. Safe to call on every read.
  */
-export function enableToday(db: Database.Database, input: TodayEnableInput): Automation {
-  for (const a of listAutomations(db, input.workspaceId)) {
-    if (isTodayAutomation(a) && a.projectId) deleteAutomation(db, a.id);
+export function migrateLegacyToday(db: Database.Database, workspacePath: string, workspaceId: string): void {
+  const legacy = listAutomations(db, workspaceId).filter((a) => isTodayAutomation(a) && a.projectId);
+  if (legacy.length === 0) return;
+  if (!findTodayAutomation(db, workspaceId)) {
+    const src = legacy.find((a) => a.enabled) ?? legacy[0];
+    const { time, weekdaysOnly } = parseTodayCron(src.scheduleExpr);
+    const row = upsertTodayRow(db, { workspaceId, time, weekdaysOnly, timezone: src.timezone });
+    if (!legacy.some((a) => a.enabled)) updateAutomation(db, row.id, { enabled: false });
   }
+  // Today rows hold no secrets; a folder that can't be removed keeps its row, and the next read retries.
+  for (const a of legacy) deleteAutomationWithCleanup(db, workspacePath, a.id, { purgeSecrets: () => {} });
+}
+
+function upsertTodayRow(db: Database.Database, input: TodayEnableInput): Automation {
   const expr = todayCron(input.time, input.weekdaysOnly);
   const existing = findTodayAutomation(db, input.workspaceId);
   if (existing) {
@@ -214,6 +246,116 @@ export function saveTodayBrief(workspacePath: string, automation: Automation, br
   fs.renameSync(tmp, file);
 }
 
+/** Briefs, marks and snapshots older than this many days are deleted when a run starts. */
+export { TODAY_KEEP_DAYS };
+
+function historyDir(workspacePath: string, automation: Automation): string {
+  return path.join(todayDir(workspacePath, automation), "history");
+}
+
+function marksPath(workspacePath: string, automation: Automation, date: string): string {
+  return path.join(todayDir(workspacePath, automation), `${date}.marks.json`);
+}
+
+export function readTodayMarks(workspacePath: string, automation: Automation, date: string): TodayMarks {
+  try {
+    const o = JSON.parse(fs.readFileSync(marksPath(workspacePath, automation, date), "utf8")) as Partial<TodayMarks>;
+    const done = Array.isArray(o.done) ? o.done.filter((x): x is string => typeof x === "string") : [];
+    const edits: Record<string, string> = {};
+    if (o.edits && typeof o.edits === "object") for (const [k, v] of Object.entries(o.edits)) if (typeof v === "string") edits[k] = v;
+    return { done, edits };
+  } catch {
+    return { done: [], edits: {} };
+  }
+}
+
+/** Mark items done (true) or not (false), and set (text) or drop (null) draft edits, for one day. */
+export function updateTodayMarks(
+  workspacePath: string, automation: Automation, date: string,
+  patch: { done?: Record<string, boolean>; edits?: Record<string, string | null> },
+): TodayMarks {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Invalid date.");
+  const marks = readTodayMarks(workspacePath, automation, date);
+  const done = new Set(marks.done);
+  for (const [id, on] of Object.entries(patch.done ?? {})) { if (on) done.add(id); else done.delete(id); }
+  const edits = { ...marks.edits };
+  for (const [id, text] of Object.entries(patch.edits ?? {})) { if (text === null) delete edits[id]; else edits[id] = text; }
+  const next = { done: [...done], edits };
+  const file = marksPath(workspacePath, automation, date);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(next, null, 2), "utf8");
+  return next;
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Keep the version a same-day refresh is about to replace, as `history/<date>@<HHMM>.json`. */
+export function snapshotTodayBrief(workspacePath: string, automation: Automation, brief: TodayBrief): void {
+  const at = new Date(brief.generatedAt);
+  const stamp = Number.isNaN(at.getTime()) ? "0000" : `${pad(at.getHours())}${pad(at.getMinutes())}`;
+  const dir = historyDir(workspacePath, automation);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${brief.date}@${stamp}.json`), JSON.stringify(brief, null, 2), "utf8");
+}
+
+/** Delete briefs, marks and snapshots from before the last `keepDays` days. Returns how many files went. */
+export function pruneTodayFiles(workspacePath: string, automation: Automation, now: Date = new Date(), keepDays = TODAY_KEEP_DAYS): number {
+  const cutoff = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - keepDays));
+  let removed = 0;
+  for (const dir of [todayDir(workspacePath, automation), historyDir(workspacePath, automation)]) {
+    let files: string[];
+    try { files = fs.readdirSync(dir); } catch { continue; }
+    for (const f of files) {
+      const m = f.match(/^(\d{4}-\d{2}-\d{2})[.@]/);
+      if (!m || m[1] >= cutoff) continue;
+      try { fs.rmSync(path.join(dir, f), { force: true }); removed++; } catch { /* retried next run */ }
+    }
+  }
+  return removed;
+}
+
+function readBriefFile(file: string): TodayBrief | null {
+  try {
+    const text = fs.readFileSync(file, "utf8");
+    const saved = JSON.parse(text) as { generatedAt?: unknown };
+    const at = typeof saved.generatedAt === "string" ? new Date(saved.generatedAt) : null;
+    // Re-normalise on read, so a brief saved by an older build gets today's shape.
+    return parseTodayBrief(text, at && !Number.isNaN(at.getTime()) ? at : new Date());
+  } catch {
+    return null;
+  }
+}
+
+/** Every saved version, newest first: each day's brief and the versions refreshes replaced. */
+export function listTodayHistory(workspacePath: string, automation: Automation): TodayHistoryEntry[] {
+  const files: Array<{ key: string; file: string }> = [];
+  const add = (dir: string, re: RegExp) => {
+    try {
+      for (const f of fs.readdirSync(dir)) if (re.test(f)) files.push({ key: f.replace(/\.json$/, ""), file: path.join(dir, f) });
+    } catch { /* none yet */ }
+  };
+  add(todayDir(workspacePath, automation), /^\d{4}-\d{2}-\d{2}\.json$/);
+  add(historyDir(workspacePath, automation), /^\d{4}-\d{2}-\d{2}@\d{4}\.json$/);
+  return files.flatMap(({ key, file }) => {
+    const b = readBriefFile(file);
+    if (!b) return [];
+    const carried = b.needYou.filter((n) => n.since).length;
+    return [{
+      key, date: b.date, generatedAt: b.generatedAt, headline: b.headline,
+      counts: { need: b.needYou.length, prepared: b.prepared.length, fyi: b.fyi.length, events: b.events.length, carried },
+    }];
+  }).sort((a, b) => (a.generatedAt < b.generatedAt ? 1 : -1));
+}
+
+/** One saved version by its history key, with that day's marks. */
+export function loadTodaySnapshot(workspacePath: string, automation: Automation, key: string): { brief: TodayBrief; marks: TodayMarks } | null {
+  const m = key.match(/^(\d{4}-\d{2}-\d{2})(@\d{4})?$/);
+  if (!m) return null;
+  const file = m[2] ? path.join(historyDir(workspacePath, automation), `${key}.json`) : path.join(todayDir(workspacePath, automation), `${key}.json`);
+  const brief = readBriefFile(file);
+  return brief ? { brief, marks: readTodayMarks(workspacePath, automation, m[1]) } : null;
+}
+
 /** The most recent saved brief, newest date first. */
 export function loadLatestTodayBrief(workspacePath: string, automation: Automation): TodayBrief | null {
   const dir = todayDir(workspacePath, automation);
@@ -224,14 +366,8 @@ export function loadLatestTodayBrief(workspacePath: string, automation: Automati
     return null;
   }
   for (let i = files.length - 1; i >= 0; i--) {
-    try {
-      // Re-normalise on read, so a brief saved by an older build gets today's shape.
-      const text = fs.readFileSync(path.join(dir, files[i]), "utf8");
-      const saved = JSON.parse(text) as { generatedAt?: unknown };
-      const at = typeof saved.generatedAt === "string" ? new Date(saved.generatedAt) : null;
-      const brief = parseTodayBrief(text, at && !Number.isNaN(at.getTime()) ? at : new Date());
-      if (brief) return brief;
-    } catch { /* try the previous day */ }
+    const brief = readBriefFile(path.join(dir, files[i]));
+    if (brief) return brief;
   }
   return null;
 }
@@ -239,6 +375,7 @@ export function loadLatestTodayBrief(workspacePath: string, automation: Automati
 // ── State ─────────────────────────────────────────────────────────────────
 
 export function getTodayState(db: Database.Database, workspacePath: string, workspaceId: string): TodayState {
+  migrateLegacyToday(db, workspacePath, workspaceId);
   const a = findTodayAutomation(db, workspaceId);
   const fresh = a ? getAutomationById(db, a.id) ?? a : null;
   const settings = readTodaySettings(workspacePath, fresh);
@@ -248,8 +385,8 @@ export function getTodayState(db: Database.Database, workspacePath: string, work
   const facts = projectFacts(db, workspaceId, included);
   if (!fresh) {
     return {
-      automationId: null, enabled: false, time: "07:00", weekdaysOnly: true, nextRunAt: null, running: false,
-      brief: null, lastError: null, settings, projects, facts, apps,
+      automationId: null, enabled: false, time: "07:00", weekdaysOnly: true, nextRunAt: null, running: false, activity: null,
+      brief: null, marks: { ...EMPTY_TODAY_MARKS }, lastError: null, settings, projects, facts, apps,
     };
   }
   const { time, weekdaysOnly } = parseTodayCron(fresh.scheduleExpr);
@@ -265,16 +402,12 @@ export function getTodayState(db: Database.Database, workspacePath: string, work
     weekdaysOnly,
     nextRunAt: fresh.enabled ? fresh.nextRunAt : null,
     running,
+    activity: running ? currentRunActivity(fresh.id) : null,
     brief,
+    marks: brief ? readTodayMarks(workspacePath, fresh, brief.date) : { ...EMPTY_TODAY_MARKS },
     lastError: last && (last.status === "error" || last.status === "skipped") ? last.error : null,
     settings, projects, facts, apps,
   };
-}
-
-/** What the renderer keeps locally for a brief (done/discarded ids, edited drafts), added to an export. */
-export interface TodayLocalState {
-  dismissed?: string[];
-  edits?: Record<string, string>;
 }
 
 /**
@@ -285,7 +418,7 @@ export interface TodayLocalState {
  */
 export function buildTodayDebugExport(
   db: Database.Database, workspacePath: string, workspaceId: string,
-  readSession: (runId: string) => string | null, local?: TodayLocalState,
+  readSession: (runId: string) => string | null,
 ): { fileName: string; data: Record<string, unknown> } {
   const a = findTodayAutomation(db, workspaceId);
   if (!a) throw new Error("Today isn't set up for this workspace.");
@@ -324,10 +457,11 @@ export function buildTodayDebugExport(
         approvalMode: a.approvalMode, nextRunAt: a.nextRunAt,
       },
       // What runs: the current prompt, not the (possibly older) text saved on the row.
-      prompt: todayPrompt(projectFacts(db, workspaceId, included)),
+      prompt: todayPrompt(projectFacts(db, workspaceId, included), brief?.generatedAt ?? null),
       brief,
+      marks: brief ? readTodayMarks(workspacePath, a, brief.date) : null,
+      history: listTodayHistory(workspacePath, a),
       savedFile,
-      local: local ?? null,
       runs: runs.map((r) => ({ id: r.id, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, error: r.error, runDir: r.runDir })),
       lastRun: last ? { runLog: last.runDir ? readRunLog(last.runDir) : null, sessionEvents } : null,
     },

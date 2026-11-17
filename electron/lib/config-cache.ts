@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { findUserDataDir } from "../runtime/port-discovery";
-import { resolveMaxOutputTokens } from "../../shared/models/model-catalog";
+import { AUTO_OUTPUT_TOKEN_CAP, resolveMaxOutputTokens } from "../../shared/models/model-catalog";
 
 const CONFIG_CACHE_FILE = "ai-settings-cache.json";
 
@@ -266,6 +266,19 @@ export function saveCachedConfig(type: "ai" | "agent" | "embeddings" | "theme" |
   } catch (err) {
     console.error("[config-cache] Failed to save config:", err);
   }
+}
+
+/**
+ * Max output tokens for a main-process run (automations, the tool builder),
+ * with the chat loop's rule: Auto sends a generous cap (AUTO_OUTPUT_TOKEN_CAP,
+ * bounded by the context window) rather than omitting the field, since an
+ * omitted field lets the endpoint apply a tiny server-side default; a manual
+ * value is sent as set, and one that fails to resolve falls back to the cap.
+ */
+export function cachedMaxOutputTokens(ai: CachedConfig["aiConfig"] | undefined): number {
+  return ai?.maxOutputAuto === false
+    ? (resolveMaxOutputTokens(ai?.maxOutputTokens) ?? AUTO_OUTPUT_TOKEN_CAP)
+    : (resolveMaxOutputTokens(null, null, ai?.contextLimit) ?? AUTO_OUTPUT_TOKEN_CAP);
 }
 
 export function getCachedConfig(): CachedConfig {

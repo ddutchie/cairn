@@ -28,7 +28,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { abortableSleep, DEFAULT_RETRY, isRetryableErrorMessage, retryDelayMs, withJitter, type RetryPolicy } from "../../shared/agent/retry";
 import type { AgentEvent, DecisionSource, UserImage } from "./events";
-import { userContent, withContext, type CompactionResult, type CompactionTrigger } from "./context";
+import { estimateAll, userContent, withContext, type CompactionResult, type CompactionTrigger } from "./context";
 import { Gate, type AskInput } from "./gate";
 import type { TurnHooks } from "./hooks";
 import { callSignature, decide, type Decision, type PolicyMode } from "./policy";
@@ -208,7 +208,9 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
   for (let step = 0; step < maxSteps; step++) {
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
     const threshold = o.compaction?.threshold;
-    if (threshold && lastContextTokens >= threshold) {
+    // The last request's size, plus what arrived since (tool results): one big batch of
+    // results must compact before the request that would carry it, not after it fails.
+    if (threshold && lastContextTokens + estimateAll(sinceLastReply(o.history)) >= threshold) {
       if (yield* tryCompact("threshold")) lastContextTokens = 0;
     }
 
@@ -273,6 +275,12 @@ export async function* runTurn(o: TurnOptions): AsyncGenerator<AgentEvent> {
     if (o.signal?.aborted) { yield { type: "turn/end", reason: "aborted" }; return; }
   }
   yield { type: "turn/end", reason: "max-steps" };
+}
+
+/** Messages after the newest assistant message (the tool results and prompts not yet sent). */
+function sinceLastReply(history: readonly Message[]): readonly Message[] {
+  for (let i = history.length - 1; i >= 0; i--) if (history[i].role === "assistant") return history.slice(i + 1);
+  return [];
 }
 
 const CUT_OFF_NOTICE = "The reply was cut off at the model's output limit. Ask it to continue, or raise the max output tokens in Settings → AI.";

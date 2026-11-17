@@ -194,6 +194,18 @@ describe("runTurn: compaction", () => {
     expect(events.at(-1)).toEqual({ type: "turn/end", reason: "stop" });
   });
 
+  it("counts tool results that arrived since the last reply toward the threshold", async () => {
+    const run = async (text: string) => {
+      const h = makeHarness();
+      const calls: string[] = [];
+      h.faux.setResponses([toolUse(call("echo", { text }, "c1")), fauxAssistantMessage("done")]);
+      await drive(runTurn(h.opts({ compaction: { threshold: 5_000, compact: compact(calls) } })));
+      return calls;
+    };
+    expect(await run("small")).toEqual([]);
+    expect(await run("x".repeat(40_000))).toEqual(["threshold"]);
+  });
+
   it("reports a failing compactor as an error event and carries on", async () => {
     const h = makeHarness();
     h.faux.setResponses([toolUse(call("echo", { text: "x" }, "c1")), fauxAssistantMessage("done")]);

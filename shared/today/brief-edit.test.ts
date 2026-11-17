@@ -87,16 +87,34 @@ describe("startRefresh", () => {
     const b = emptyBrief(now);
     upsertItems(b, [{ lane: "todo", id: "card-1", question: "Ship the beta" }], now);
     finishBrief(b, { headline: "h", lede: "l", sources: [{ name: "Slack", status: "ok" }] }, now);
-    const next = startRefresh(b, new Date(2026, 10, 16, 12, 0));
+    const next = startRefresh(b, null, new Date(2026, 10, 16, 12, 0));
     expect(next.status).toBe("gathering");
     expect(next.needYou.map((n) => n.id)).toEqual(["card-1"]);
     expect(next.sources).toEqual([]);
     expect(b.status).toBe("ready");
   });
 
-  it("starts a new day empty", () => {
+  it("carries open items into a new day, with when they first showed up and the user's edits", () => {
     const b = emptyBrief(now);
-    upsertItems(b, [{ lane: "todo", id: "card-1", question: "Ship the beta" }], now);
-    expect(startRefresh(b, new Date(2026, 10, 17, 7, 0)).needYou).toEqual([]);
+    upsertItems(b, [
+      { lane: "todo", id: "card-1", question: "Ship the beta" },
+      { lane: "todo", id: "card-2", question: "Done already" },
+      { lane: "draft", id: "d1", title: "Reply", draft: "Cairn's text" },
+      { lane: "fyi", id: "f1", title: "CI green" },
+      { lane: "event", title: "Standup", start: "09:30" },
+    ], now);
+    finishBrief(b, { headline: "h", lede: "l" }, now);
+    const next = startRefresh(b, { done: ["card-2"], edits: { d1: "My text" } }, new Date(2026, 10, 17, 7, 0));
+    expect(next.date).not.toBe(b.date);
+    expect(next.needYou.map((n) => [n.id, n.since])).toEqual([["card-1", b.date]]);
+    expect(next.prepared.map((p) => [p.id, p.draft, p.since])).toEqual([["d1", "My text", b.date]]);
+    expect(next.fyi).toEqual([]);
+    expect(next.events).toEqual([]);
+
+    // A day later it keeps the first date, and an update by the run keeps it too.
+    const third = startRefresh(finishBrief(next, {}, new Date(2026, 10, 17, 8, 0)), null, new Date(2026, 10, 18, 7, 0));
+    expect(third.needYou[0].since).toBe(b.date);
+    upsertItems(third, [{ lane: "todo", id: "card-1", question: "Ship the beta today" }], new Date(2026, 10, 18, 7, 5));
+    expect(third.needYou[0]).toMatchObject({ title: "Ship the beta today", since: b.date });
   });
 });

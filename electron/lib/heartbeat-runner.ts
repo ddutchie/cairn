@@ -20,7 +20,7 @@
 import type Database from "better-sqlite3";
 import path from "path";
 import type { OpenAIMessage } from "./llm";
-import { getCachedConfig } from "./config-cache";
+import { cachedMaxOutputTokens, getCachedConfig } from "./config-cache";
 import { resolveLlmApiKey } from "./secure-store";
 import { buildSystemPrompt, type ChatRequest } from "./chat-prompt";
 import { resolveTemperatureForModel } from "./model-pricing";
@@ -75,11 +75,14 @@ import { toSlug } from "../host-shared/text-utils";
 import type { SessionProjection } from "../../shared/agent/session-projection";
 import { errMsg } from "../host-shared/errors";
 import {
-  includedProjects, isTodayAutomation, loadLatestTodayBrief, readTodaySettings, saveTodayBrief, todayPrompt, todayToolFilter,
+  TODAY_RESULT_CHARS, includedProjects, isTodayAutomation, loadLatestTodayBrief, pruneTodayFiles, readTodayMarks, readTodaySettings, saveTodayBrief,
+  snapshotTodayBrief, todayPrompt, todayToolFilter,
 } from "./today";
 import { projectFacts } from "./today-facts";
 import { todayBriefTools, type TodayBriefSession } from "./today-tools";
 import { finishBrief, startRefresh } from "../../shared/today/brief-edit";
+import { noteRunActivity } from "./run-activity";
+import { localDate } from "../../shared/today/brief";
 
 export interface AutomationRunContext {
   db: Database.Database;
@@ -219,6 +222,7 @@ function failRun(ctx: AutomationRunContext, run: AutomationRun, error: string): 
     }
   } catch { /* best-effort */ }
   try {
+    noteRunActivity(run.automationId, "finished", {});
     ctx.send?.("automation:run", { event: "finished", automationId: run.automationId, runId: run.id, exhausted: false, error });
   } catch { /* best-effort */ }
 }
@@ -263,6 +267,17 @@ export async function runAutomation(
 ): Promise<void> {
   const { db, workspacePath } = ctx;
   const cached = getCachedConfig().aiConfig;
+
+  // A per-project Today row from the preview: the workspace row replaces it
+  // (moved over the next time Today is read), so it never runs a brief.
+  if (isTodayAutomation(automation) && automation.projectId) {
+    updateAutomationRun(db, run.id, {
+      status: "skipped",
+      finishedAt: new Date().toISOString(),
+      error: "Today is now one brief per workspace. Open Today to move this schedule over.",
+    });
+    return;
+  }
 
   if (!cached?.baseUrl || !cached?.model) {
     updateAutomationRun(db, run.id, {
@@ -395,7 +410,9 @@ export async function runAutomation(
   // today's date and Cairn's facts for every included project.
   const todaySettings = today ? readTodaySettings(workspacePath, automation) : null;
   const todayProjects = todaySettings ? includedProjects(db, automation.workspaceId, todaySettings) : [];
-  if (today) recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects));
+  // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
+  const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
+  if (today) recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), todayPrevious?.generatedAt ?? null);
 
   const req: ChatRequest = {
     message: recipe,
@@ -447,7 +464,7 @@ export async function runAutomation(
   // Report the tool currently executing into the run's scratch JSON so the
   // Automations view can show a live "running: <tool>" chip while the run is
   // in flight.
-  const currentTool = (tool: string) => {
+  const currentTool = (tool: string, label?: string, args?: unknown) => {
     try {
       const row = getAutomationRunById(db, run.id);
       let scratch: Record<string, unknown> = {};
@@ -455,6 +472,8 @@ export async function runAutomation(
         try { scratch = JSON.parse(row.scratch) as Record<string, unknown>; } catch { /* ignore */ }
       }
       scratch.currentTool = tool;
+      scratch.currentToolLabel = label;
+      scratch.currentToolArgs = args && typeof args === "object" ? args : undefined;
       updateAutomationRun(db, run.id, { scratch: JSON.stringify(scratch) });
     } catch { /* best-effort */ }
   };
@@ -462,6 +481,7 @@ export async function runAutomation(
   // Live run activity streamed to the renderer (the "watch this run" view).
   // Best-effort: no send sink (tests) → nothing streams, the run still records.
   const emitRun = (event: string, payload: Record<string, unknown>) => {
+    noteRunActivity(automation.id, event, payload);
     try {
       ctx.send?.("automation:run", {
         event,
@@ -545,7 +565,7 @@ export async function runAutomation(
     onReasoning: (text) => { log.thoughts += text; emitRun("thought", { delta: text }); },
     onToolCall: (call) => {
       const label = externalToolLabel(call.name, db);
-      currentTool(call.name);
+      currentTool(call.name, label, call.args);
       logTool(call.name, label, call.args);
       emitRun("tool", { tool: call.name, label, args: call.args, status: "start", callId: call.callId });
     },
@@ -588,7 +608,16 @@ export async function runAutomation(
     try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status }); } catch { /* best-effort */ }
   };
   if (today) {
-    todaySession = { brief: startRefresh(loadLatestTodayBrief(workspacePath, automation), new Date()), finished: false };
+    const now = new Date();
+    try {
+      pruneTodayFiles(workspacePath, automation, now);
+      // A refresh overwrites the day's file: keep the version it replaces for the history.
+      if (todayPrevious && todayPrevious.status === "ready" && todayPrevious.date === localDate(now)) {
+        snapshotTodayBrief(workspacePath, automation, todayPrevious);
+      }
+    } catch (err) { console.warn("[heartbeat] Today history upkeep failed:", err); }
+    const marks = todayPrevious ? readTodayMarks(workspacePath, automation, todayPrevious.date) : null;
+    todaySession = { brief: startRefresh(todayPrevious, marks, now), finished: false };
     saveToday(todaySession.brief);
     automationTools.push(...todayBriefTools(todaySession, saveToday));
   }
@@ -684,11 +713,18 @@ export async function runAutomation(
       workspaceId: automation.workspaceId,
       // Today reads the connectors of every project it covers.
       externalProjectIds: today ? todayProjects.map((p) => p.id) : undefined,
+      externalResultChars: today ? TODAY_RESULT_CHARS : undefined,
       usageSource: today ? "today" : undefined,
       systemPrompt: buildSystemPrompt(req),
       llmConfig: {
         baseUrl: cached.baseUrl, model: cached.model, apiKey, provider: provider as "openai",
         maxSteps, temperature: req.config?.temperature,
+        // The chat's context window and output cap. Without them the engine assumes a 128K window and
+        // squeezes the reply to fit, so a long run ends with a 1-token "output limit" reply.
+        contextWindow: cached.contextLimit, maxTokens: cachedMaxOutputTokens(cached),
+        // The active connection's wire protocol and reasoning effort, as chat sends them.
+        apiMode: (cached.savedProviders?.find((p) => p.id === cached.activeProviderId)?.apiMode ?? cached.apiMode) as "responses" | "completions" | "anthropic-messages" | undefined,
+        reasoningEffort: cached.reasoningEffort as "off" | "low" | "medium" | "high" | undefined,
       } as never,
       extraTools: automationTools,
       // Today never sees a tool that writes, so no saved "always allow" grant can let one run.

@@ -9,7 +9,7 @@
 import {
   TODAY_BRIEF_VERSION, byEventStart, fallbackHeadline, firstSentences, localDate, normalizeEvent, normalizeFyi,
   normalizeNeed, normalizePrepared, normalizeSource, pruneDraftLinks, summaryLede,
-  type TodayBrief,
+  type TodayBrief, type TodayMarks,
 } from "./brief";
 
 export const TODAY_LANES = ["decision", "todo", "draft", "fyi", "event"] as const;
@@ -26,13 +26,36 @@ export function emptyBrief(now: Date): TodayBrief {
 }
 
 /**
- * The brief a run starts from. A refresh later the same day keeps the items
- * already there (their ids, and so what the user already finished or
- * dismissed); the run updates or removes them. A new day starts empty.
+ * The brief a run starts from.
+ *   - A refresh later the same day keeps the items already there (their ids,
+ *     and so what the user already finished or dismissed); the run updates or
+ *     removes them.
+ *   - A new day carries over what was still open on the last brief: the
+ *     decisions, to-dos and drafts not marked done, each with `since` (the day
+ *     it first showed up) and the user's edits to drafts. The run checks each
+ *     against its source and removes what was handled. Meetings, FYI and
+ *     sources start empty.
  */
-export function startRefresh(previous: TodayBrief | null, now: Date): TodayBrief {
-  if (!previous || previous.date !== localDate(now)) return emptyBrief(now);
-  return { ...structuredClone(previous), status: "gathering", generatedAt: now.toISOString(), sources: [] };
+export function startRefresh(previous: TodayBrief | null, marks: TodayMarks | null, now: Date): TodayBrief {
+  if (!previous) return emptyBrief(now);
+  if (previous.date === localDate(now)) {
+    return { ...structuredClone(previous), status: "gathering", generatedAt: now.toISOString(), sources: [] };
+  }
+  const done = new Set(marks?.done ?? []);
+  const edits = marks?.edits ?? {};
+  const fresh = emptyBrief(now);
+  fresh.needYou = previous.needYou
+    .filter((n) => !done.has(n.id))
+    .map((n) => ({ ...structuredClone(n), since: n.since ?? previous.date }));
+  fresh.prepared = previous.prepared
+    .filter((p) => !done.has(p.id))
+    .map((p) => ({ ...structuredClone(p), draft: edits[p.id] ?? p.draft, since: p.since ?? previous.date }));
+  return fresh;
+}
+
+/** Where an id sits now, so an update keeps when it first showed up. */
+function sinceOf(brief: TodayBrief, id: string): string | undefined {
+  return brief.needYou.find((n) => n.id === id)?.since ?? brief.prepared.find((p) => p.id === id)?.since;
 }
 
 function withoutId(brief: TodayBrief, id: string): void {
@@ -65,6 +88,7 @@ export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<strin
         const n = normalizeNeed({ ...raw, kind: lane }, id);
         if (!n) return `${label}: skipped, a ${lane} needs a "question".`;
         if (lane === "decision" && n.kind === "todo") return `${label}: skipped, a decision needs 2 or 3 "choices".`;
+        n.since ??= sinceOf(brief, n.id);
         withoutId(brief, n.id);
         result = put(brief.needYou, n, TODAY_LANE_LIMITS.needYou);
         break;
@@ -72,6 +96,7 @@ export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<strin
       case "draft": {
         const p = normalizePrepared(raw, id);
         if (!p) return `${label}: skipped, a draft needs a "title" and the "draft" text.`;
+        p.since ??= sinceOf(brief, p.id);
         withoutId(brief, p.id);
         result = put(brief.prepared, p, TODAY_LANE_LIMITS.prepared);
         break;
@@ -134,10 +159,13 @@ export function briefOutline(brief: TodayBrief): Record<string, unknown> {
     date: brief.date,
     status: brief.status,
     needYou: brief.needYou.map((n) => ({
-      id: n.id, lane: n.kind, question: n.title, source: n.source, projectId: n.projectId,
+      id: n.id, lane: n.kind, question: n.title, source: n.source, url: n.url, projectId: n.projectId,
       choices: n.choices.map((c) => c.label + (c.draftId ? ` → ${c.draftId}` : "")),
+      ...(n.since ? { carriedSince: n.since } : {}),
     })),
-    drafts: brief.prepared.map((p) => ({ id: p.id, title: p.title, target: p.target, projectId: p.projectId })),
+    drafts: brief.prepared.map((p) => ({
+      id: p.id, title: p.title, target: p.target, projectId: p.projectId, ...(p.since ? { carriedSince: p.since } : {}),
+    })),
     fyi: brief.fyi.map((f) => ({ id: f.id, title: f.title, tone: f.tone, projectId: f.projectId })),
     events: brief.events.map((e) => ({ id: e.id, title: e.title, start: e.start, end: e.end })),
   };

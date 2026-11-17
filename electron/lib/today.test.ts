@@ -3,14 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import {
-  enableToday, findTodayAutomation, getTodayState, includedProjects, readTodaySettings, saveTodayBrief, todayAllowsTool, todayToolFilter, writeTodaySettings,
+  enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot, migrateLegacyToday, pruneTodayFiles,
+  readTodayMarks, readTodaySettings, saveTodayBrief, snapshotTodayBrief, todayAllowsTool, todayToolFilter, updateTodayMarks, writeTodaySettings,
 } from "./today";
 import { factsForPrompt, projectFacts } from "./today-facts";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import { createAutomation, createAutomationRun, listAutomations, updateAutomationRun } from "../db/automation-queries";
 import { createCard, createColumn } from "../db/board-queries";
 import { TODAY_COMMUNITY_ID } from "../../shared/today/brief";
-import { emptyBrief } from "../../shared/today/brief-edit";
+import { emptyBrief, finishBrief, upsertItems } from "../../shared/today/brief-edit";
 
 describe("todayAllowsTool", () => {
   it("allows Cairn and engine reads", () => {
@@ -49,23 +50,47 @@ describe("workspace Today", () => {
     return db;
   };
 
+  const legacyRow = (db: ReturnType<typeof seed>, projectId: string, enabled: boolean, expr = "cron 15 6 * * 1-5") =>
+    createAutomation(db, {
+      workspaceId: "ws1", projectId, name: "Today", instructions: "old", scheduleKind: "cron", scheduleExpr: expr,
+      enabled, nextRunAt: new Date().toISOString(), approvalMode: "ask", source: "custom", communityId: TODAY_COMMUNITY_ID,
+    });
+  const todayRows = (db: ReturnType<typeof seed>) => listAutomations(db, "ws1").filter((x) => x.communityId === TODAY_COMMUNITY_ID);
+
   it("keeps one row per workspace and drops the preview's per-project rows", () => {
     const db = seed();
-    createAutomation(db, {
-      workspaceId: "ws1", projectId: "p1", name: "Today", instructions: "old", scheduleKind: "cron", scheduleExpr: "cron 0 7 * * 1-5",
-      enabled: true, nextRunAt: new Date().toISOString(), approvalMode: "ask", source: "custom", communityId: TODAY_COMMUNITY_ID,
-    });
-    const a = enableToday(db, { workspaceId: "ws1", time: "08:30", weekdaysOnly: false });
+    const dir = tmp();
+    legacyRow(db, "p1", true);
+    const a = enableToday(db, dir, { workspaceId: "ws1", time: "08:30", weekdaysOnly: false });
     expect(a.projectId).toBeNull();
-    expect(listAutomations(db, "ws1").filter((x) => x.communityId === TODAY_COMMUNITY_ID).map((x) => x.id)).toEqual([a.id]);
-    expect(enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true }).id).toBe(a.id);
+    expect(todayRows(db).map((x) => x.id)).toEqual([a.id]);
+    expect(enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true }).id).toBe(a.id);
     expect(findTodayAutomation(db, "ws1")?.scheduleExpr).toBe("cron 0 7 * * 1-5");
+  });
+
+  it("moves an old per-project schedule to the workspace row on first read", () => {
+    const db = seed();
+    const dir = tmp();
+    legacyRow(db, "p1", false, "cron 0 9 * * *");
+    legacyRow(db, "p2", true);
+    const st = getTodayState(db, dir, "ws1");
+    expect(todayRows(db)).toHaveLength(1);
+    expect(st).toMatchObject({ enabled: true, time: "06:15", weekdaysOnly: true });
+    migrateLegacyToday(db, dir, "ws1");
+    expect(todayRows(db)).toHaveLength(1);
+  });
+
+  it("keeps a moved schedule off when every old row was off", () => {
+    const db = seed();
+    legacyRow(db, "p1", false);
+    expect(getTodayState(db, tmp(), "ws1").enabled).toBe(false);
+    expect(todayRows(db).map((x) => x.projectId)).toEqual([null]);
   });
 
   it("stores settings as exclusions and reads only the included projects", () => {
     const db = seed();
     const dir = tmp();
-    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     expect(includedProjects(db, "ws1", readTodaySettings(dir, a)).map((p) => p.id)).toEqual(["p1", "p2"]);
     writeTodaySettings(dir, a, { excludedProjects: ["p2"], excludedApps: ["K7q"] });
     const st = getTodayState(db, dir, "ws1");
@@ -85,9 +110,42 @@ describe("workspace Today", () => {
   it("shows a brief left gathering by a stopped run as ready", () => {
     const db = seed();
     const dir = tmp();
-    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     saveTodayBrief(dir, a, emptyBrief(new Date()));
     expect(getTodayState(db, dir, "ws1").brief?.status).toBe("ready");
+  });
+
+  it("keeps marks per day with the brief", () => {
+    const db = seed();
+    const dir = tmp();
+    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    updateTodayMarks(dir, a, "2026-11-16", { done: { n1: true, n2: true }, edits: { d1: "Mine" } });
+    expect(updateTodayMarks(dir, a, "2026-11-16", { done: { n2: false }, edits: { d1: null } })).toEqual({ done: ["n1"], edits: {} });
+    expect(readTodayMarks(dir, a, "2026-11-17")).toEqual({ done: [], edits: {} });
+    expect(() => updateTodayMarks(dir, a, "../x", {})).toThrow();
+  });
+
+  it("lists days and the versions refreshes replaced, and prunes old files", () => {
+    const db = seed();
+    const dir = tmp();
+    const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const day = (d: number, h: number) => {
+      const b = emptyBrief(new Date(2026, 10, d, h, 0));
+      upsertItems(b, [{ lane: "todo", id: `t${d}`, question: "Do it" }], new Date(2026, 10, d, h, 0));
+      return finishBrief(b, { headline: `Day ${d}` }, new Date(2026, 10, d, h, 0));
+    };
+    saveTodayBrief(dir, a, day(1, 7));
+    const morning = day(16, 7);
+    saveTodayBrief(dir, a, morning);
+    snapshotTodayBrief(dir, a, morning);
+    saveTodayBrief(dir, a, day(16, 12));
+    updateTodayMarks(dir, a, "2026-11-01", { done: { t1: true } });
+    const keys = listTodayHistory(dir, a).map((h) => h.key);
+    expect(keys).toEqual(["2026-11-16", "2026-11-16@0700", "2026-11-01"]);
+    expect(loadTodaySnapshot(dir, a, "2026-11-16@0700")?.brief.headline).toBe("Day 16");
+    expect(loadTodaySnapshot(dir, a, "../../etc")).toBeNull();
+    expect(pruneTodayFiles(dir, a, new Date(2026, 10, 16), 7)).toBe(2);
+    expect(listTodayHistory(dir, a).map((h) => h.key)).toEqual(["2026-11-16", "2026-11-16@0700"]);
   });
 });
 
