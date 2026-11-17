@@ -80,7 +80,10 @@ export function updateTodayMarks(
   const next = { done: [...done], edits };
   const file = marksPath(workspacePath, automation, date);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(next, null, 2), "utf8");
+  // Write then rename, as saveTodayBrief does: get_today (MCP) can read while the app saves.
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), "utf8");
+  fs.renameSync(tmp, file);
   return next;
 }
 

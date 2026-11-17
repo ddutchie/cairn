@@ -89,6 +89,39 @@ describe("get_today", () => {
     expect(all.drafts[0].draft).toBe("Shipping at 3pm.");
   });
 
+  it("moves the focus to the first open item when the user marked the focus item done", () => {
+    const { db, dir } = setup();
+    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    saveTodayBrief(dir, a, brief("2026-11-11"));
+    updateTodayMarks(dir, a, "2026-11-11", { done: { "n-release": true } });
+    expect(get_today(db, dir, {}, "ws1")).toMatchObject({ focusId: "n-low" });
+    expect(get_today(db, dir, { includeDone: true }, "ws1")).toMatchObject({ focusId: "n-release" });
+    updateTodayMarks(dir, a, "2026-11-11", { done: { "n-low": true } });
+    expect((get_today(db, dir, {}, "ws1") as Out).focusId).toBeUndefined();
+    // Saved by write-then-rename, so a reader never sees half a file.
+    expect(fs.readdirSync(path.join(dir, ".automations", a.id, "out", "today")).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("returns the sources, and gives no free time when the calendar wasn't read", () => {
+    const { db, dir } = setup();
+    const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    saveTodayBrief(dir, a, brief("2026-11-11", {
+      events: [], gap: "Connect a calendar app",
+      sources: [{ name: "Calendar", status: "error", note: "no calendar app connected" }, { name: "Slack", status: "ok" }],
+    }));
+    const failed = get_today(db, dir, {}, "ws1") as Out;
+    expect(failed.freeTime).toEqual({ unknown: "The calendar wasn't read (error: no calendar app connected), so free time and meetings are unknown." });
+    expect(failed.sources).toEqual([{ name: "Calendar", status: "error", note: "no calendar app connected" }, { name: "Slack", status: "ok" }]);
+    expect(failed.gap).toBe("Connect a calendar app");
+
+    saveTodayBrief(dir, a, brief("2026-11-11", { events: [], sources: [{ name: "Slack", status: "ok" }] }));
+    expect((get_today(db, dir, {}, "ws1") as Out).freeTime).toHaveProperty("unknown");
+
+    // An empty calendar that was read is a free day.
+    saveTodayBrief(dir, a, brief("2026-11-11", { events: [], sources: [{ name: "Work IQ", status: "empty", note: "calendar: no meetings" }] }));
+    expect((get_today(db, dir, {}, "ws1") as Out).freeTime).toMatchObject({ freeLeft: "10h", meetingsLeft: 0, freeBlocks: ["08:00–18:00"] });
+  });
+
   it("reads a past day by date, with that day's marks, and says when the day has no brief", () => {
     const { db, dir } = setup();
     const a = enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });

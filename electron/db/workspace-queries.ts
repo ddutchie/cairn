@@ -71,6 +71,11 @@ export function getAllWorkspaces(db: Database.Database) {
   return db.prepare("SELECT * FROM workspaces ORDER BY created_at").all().map((row) => toWorkspace(row as DbRow));
 }
 
+/** Ids of the workspaces in use (not deleted or archived), oldest first. */
+export function getLiveWorkspaceIds(db: Database.Database): string[] {
+  return (db.prepare("SELECT id FROM workspaces WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY created_at").all() as { id: string }[]).map((r) => r.id);
+}
+
 export function createWorkspace(db: Database.Database, ws: { id: string; name: string; description?: string; icon?: string }) {
   const now = ts();
   db.prepare(`

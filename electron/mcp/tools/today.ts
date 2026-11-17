@@ -10,7 +10,7 @@
 import type Database from "better-sqlite3";
 import { todayDigest } from "../../../shared/today/digest";
 import { getAutomationById, hasInFlightRun } from "../../db/automation-queries";
-import { getProjects } from "../../db/workspace-queries";
+import { getLiveWorkspaceIds, getProjects } from "../../db/workspace-queries";
 import { findTodayAutomation, loadLatestTodayBrief, loadTodaySnapshot, readTodayMarks } from "../../lib/today-files";
 
 export interface GetTodayArgs {
@@ -24,7 +24,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** The active workspace when the caller knows it; otherwise the first one with Today set up, else the first one. */
 function todayWorkspace(db: Database.Database, activeWorkspaceId?: string): string | undefined {
   if (activeWorkspaceId) return activeWorkspaceId;
-  const ids = (db.prepare("SELECT id FROM workspaces WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY created_at").all() as { id: string }[]).map((r) => r.id);
+  const ids = getLiveWorkspaceIds(db);
   return ids.find((id) => findTodayAutomation(db, id)) ?? ids[0];
 }
 
