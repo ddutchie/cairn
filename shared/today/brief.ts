@@ -59,6 +59,16 @@ export interface TodayNeedItem {
   projectId?: string;
   /** "YYYY-MM-DD" of the first brief it was on, when it was carried over from an earlier day. */
   since?: string;
+  /** How soon it needs the user. The lane lists high first and folds what doesn't fit. Absent reads as "normal". */
+  priority?: TodayPriority;
+}
+
+export const TODAY_PRIORITIES = ["high", "normal", "low"] as const;
+export type TodayPriority = (typeof TODAY_PRIORITIES)[number];
+
+/** Sort key: high 0, normal 1, low 2. */
+export function priorityRank(p: TodayPriority | undefined): number {
+  return p === "high" ? 0 : p === "low" ? 2 : 1;
 }
 
 export interface TodayPrepared {
@@ -159,6 +169,7 @@ export function normalizeNeed(x: Record<string, unknown>, fallbackId: string): T
     id: str(x.id) ?? fallbackId, kind, title, body: str(x.body), why: str(x.why), facts: strList(x.facts, 3), choices: kind === "todo" ? [] : choices,
     source: str(x.source) ?? "Cairn", url: str(x.url), age: str(x.age), draftId: str(x.draftId), projectId: str(x.projectId),
     since: dateStr(x.since),
+    priority: (TODAY_PRIORITIES as readonly string[]).includes(str(x.priority) ?? "") ? str(x.priority) as TodayPriority : undefined,
   };
 }
 
@@ -426,15 +437,19 @@ export interface TodaySettings {
   excludedProjects: string[];
   /** Connector ids (MCP server or custom service) Today leaves out. */
   excludedApps: string[];
+  /** Web search apps the user turned on for Today. Off until they do: a search can carry what the run read elsewhere. */
+  webApps: string[];
 }
 
-export const DEFAULT_TODAY_SETTINGS: TodaySettings = { excludedProjects: [], excludedApps: [] };
+export const DEFAULT_TODAY_SETTINGS: TodaySettings = { excludedProjects: [], excludedApps: [], webApps: [] };
 
 /** A connector Today could read, for the settings sheet. */
 export interface TodayApp {
   id: string;
   name: string;
   kind: "mcp" | "service";
+  /** Searches or browses the web: off for Today until the user turns it on. */
+  web?: boolean;
 }
 
 /** What the user did with a day's brief: items done or discarded, and drafts they rewrote. */

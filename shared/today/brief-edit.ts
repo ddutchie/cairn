@@ -9,14 +9,21 @@
 import {
   TODAY_BRIEF_VERSION, byEventStart, fallbackHeadline, firstSentences, localDate, normalizeEvent, normalizeFyi,
   normalizeNeed, normalizePrepared, normalizeSource, pruneDraftLinks, summaryLede,
-  type TodayBrief, type TodayMarks,
+  type TodayBrief, type TodayMarks, priorityRank,
 } from "./brief";
 
 export const TODAY_LANES = ["decision", "todo", "draft", "fyi", "event"] as const;
 export type TodayLane = (typeof TODAY_LANES)[number];
 
 /** Most items a lane keeps; the brief is read in under a minute. */
-export const TODAY_LANE_LIMITS = { needYou: 6, prepared: 5, fyi: 8, events: 20 } as const;
+/**
+ * Most items a lane holds. Need you keeps every open item up to 15 (the view shows the first few and
+ * folds the rest), so a run never has to drop open work to fit a new one in.
+ */
+export const TODAY_LANE_LIMITS = { needYou: 15, prepared: 8, fyi: 10, events: 20 } as const;
+
+/** Need you items the view shows before "Show N more". */
+export const TODAY_NEED_SHOWN = 6;
 
 export function emptyBrief(now: Date): TodayBrief {
   return {
@@ -104,7 +111,11 @@ export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<strin
         if (!n) return `${label}: skipped, a ${lane} needs a "question".`;
         if (lane === "decision" && (n.kind === "todo" || n.choices.length < 2)) return `${label}: skipped, a decision needs 2 or 3 "choices".`;
         n.since ??= sinceOf(brief, n.id);
+        // An update that leaves out priority keeps the one it had.
+        n.priority ??= brief.needYou.find((x) => x.id === n.id)?.priority;
         result = place(brief, "needYou", n, TODAY_LANE_LIMITS.needYou);
+        // High first, then normal, then low; within one priority, the order the run gave.
+        brief.needYou = brief.needYou.map((x, i) => ({ x, i })).sort((a, b) => priorityRank(a.x.priority) - priorityRank(b.x.priority) || a.i - b.i).map(({ x }) => x);
         break;
       }
       case "draft": {
@@ -123,19 +134,29 @@ export function upsertItems(brief: TodayBrief, items: ReadonlyArray<Record<strin
       case "event": {
         const e = normalizeEvent(raw);
         if (!e) return `${label}: skipped, an event needs a "title" and a "start" as HH:MM.`;
+        const day = typeof raw.date === "string" ? raw.date.trim() : "";
+        if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day !== brief.date) return `${label}: skipped, it's on ${day}, not today (${brief.date}). Only today's meetings are events.`;
         result = place(brief, "events", e, TODAY_LANE_LIMITS.events);
         brief.events.sort(byEventStart);
         break;
       }
     }
-    return result ? `${label}: ${result}.` : `${label}: skipped, the ${lane} lane is full. Remove a weaker item first.`;
+    // Never "remove one to make room": removing an open item drops it from tomorrow's brief too.
+    return result ? `${label}: ${result}.` : `${label}: skipped, the ${lane} lane already holds its most. Leave this one out; don't remove an open item to make room.`;
   });
   brief.generatedAt = now.toISOString();
   return results;
 }
 
-export function removeItems(brief: TodayBrief, ids: readonly string[], now: Date): string[] {
+/**
+ * Remove items by id. An item carried from an earlier day is open work the user hasn't marked done,
+ * so it goes only with a `reason` saying what shows it was handled; without one it stays.
+ */
+export function removeItems(brief: TodayBrief, ids: readonly string[], now: Date, reason?: string): string[] {
+  const why = reason?.trim() ?? "";
   const results = ids.map((id) => {
+    const carried = brief.needYou.find((n) => n.id === id)?.since ?? brief.prepared.find((p) => p.id === id)?.since;
+    if (carried && !why) return `${id}: kept. It's carried from ${carried} and still open; remove it only when a result shows it was handled, and say what in "reason".`;
     const before = brief.needYou.length + brief.prepared.length + brief.fyi.length + brief.events.length;
     withoutId(brief, id);
     const after = brief.needYou.length + brief.prepared.length + brief.fyi.length + brief.events.length;
@@ -170,7 +191,7 @@ export function briefOutline(brief: TodayBrief): Record<string, unknown> {
     date: brief.date,
     status: brief.status,
     needYou: brief.needYou.map((n) => ({
-      id: n.id, lane: n.kind, question: n.title, source: n.source, url: n.url, projectId: n.projectId,
+      id: n.id, lane: n.kind, question: n.title, priority: n.priority ?? "normal", source: n.source, url: n.url, projectId: n.projectId,
       choices: n.choices.map((c) => c.label + (c.draftId ? ` → ${c.draftId}` : "")),
       ...(n.since ? { carriedSince: n.since } : {}),
     })),

@@ -29,7 +29,7 @@ import {
   type TodayBrief, type TodayHistoryEntry, type TodayMarks, type TodaySettings, type TodayState,
 } from "../../shared/today/brief";
 import { isCairnReadTool, isExternalToolName } from "../../shared/agent/tool-names";
-import { READ_VERB, WRITE_VERB, operationWords, toolServer } from "../../shared/today/route";
+import { READ_VERB, WRITE_VERB, isWebOperation, looksLikeWebApp, operationWords, toolServer } from "../../shared/today/route";
 import {
   createAutomation, deleteAutomation, getAutomationById, hasInFlightRun, listAutomationRuns, listAutomations, updateAutomation,
 } from "../db/automation-queries";
@@ -77,14 +77,26 @@ export function todayAllowsTool(name: string): boolean {
   if (!isExternalToolName(name)) return false;
   // camelCase operations (Atlassian's `searchJiraIssuesUsingJql`) become snake_case words first.
   const op = operationWords(name);
-  if (WRITE_VERB.test(op)) return false;
+  // Web search tools are the user's choice (see todayToolFilter), never offered by default.
+  if (WRITE_VERB.test(op) || isWebOperation(op)) return false;
   return READ_VERB.test(op);
 }
 
-/** The toolset filter for a run: read-only, minus the apps the user turned off. */
+/**
+ * The toolset filter for a run: read-only, minus the apps the user turned off. A web search tool is
+ * left out unless the user turned its app on in Today's settings (`webApps`): a search can carry what
+ * the run read in their other apps to that service, so it's their choice, and off until they make it.
+ */
 export function todayToolFilter(settings: TodaySettings): (name: string) => boolean {
   const off = new Set(settings.excludedApps);
-  return (name) => todayAllowsTool(name) && !(isExternalToolName(name) && off.has(toolServer(name)));
+  const webOn = new Set(settings.webApps);
+  return (name) => {
+    if (isExternalToolName(name) && off.has(toolServer(name))) return false;
+    if (isExternalToolName(name) && isWebOperation(operationWords(name))) {
+      return webOn.has(toolServer(name)) && !WRITE_VERB.test(operationWords(name));
+    }
+    return todayAllowsTool(name);
+  };
 }
 
 /** Today cuts each connector result to this many characters: a brief needs the gist, and a 90K-character search fills the context. */
@@ -114,7 +126,7 @@ export const TODAY_RECIPE = `Prepare the user's Today brief: one short page, rea
 
 ## How to build it
 - Call today_read first. On a refresh it lists what is already there: update those items by id instead of adding copies, and remove the ones that no longer hold.
-- Then make all your searches in one round, in parallel (calendar, communication, work tracking), and follow up only where a result needs it.
+- Then make all your searches in one round, in parallel: the calendar, messages, mail and work tracking, each as its own call (a calendar question and a mail question to the same app are two calls in that round). Follow up only where a result needs it.
 - Call today_upsert as soon as you have items (several per call). The user watches them arrive, so don't save everything for the end.
 - Call today_remove for items that were handled or are no longer true.
 - Call today_finish once, last, with the headline, the lede and a source for each area below.
@@ -122,8 +134,9 @@ export const TODAY_RECIPE = `Prepare the user's Today brief: one short page, rea
 
 ## Calendar
 - Read the user's whole calendar for today on every run, whatever the last brief covered. The calendar is a picture of the day, not a list of changes.
+- Only meetings on today's date (see "Now") are events, even late in the day: never add tomorrow's.
 - Use whichever connected tool can read the calendar: a calendar or events tool if there is one, or an assistant-style tool you can ask about the user's schedule. Ask about today's meetings in a call of its own, not combined with mail or messages, and ask for start and end times.
-- Add each meeting as an "event" with title, start and end as local 24-hour HH:MM (10:35 AM is "10:35", 1 PM is "13:00"), and location when given. Leave out declined and cancelled meetings and all-day entries. On a refresh, update events by id and remove the ones that are gone.
+- Add each meeting as an "event" with title, its date (today's, from "Now"), start and end as local 24-hour HH:MM (10:35 AM is "10:35", 1 PM is "13:00"), and location when given. Leave out declined and cancelled meetings and all-day entries. On a refresh, update events by id and remove the ones that are gone.
 - Use note only for a clash or something to prepare. Don't add up free time or count meetings: Cairn works that out from the events.
 - If no connected tool can read a calendar, add no events and record the calendar source as "error" with the note "no calendar app connected". If a tool answers that it can't reach the calendar right now, ask once more with a shorter question; if it still can't, record that.
 
@@ -131,9 +144,15 @@ export const TODAY_RECIPE = `Prepare the user's Today brief: one short page, rea
 - Search messages and mail since the look-back time in "Now": chat apps (Slack, Teams and the like), email, and assistant-style tools that can search them.
 - Look for what waits on the user: mentions, direct messages, questions asked of them, requests, and things they promised.
 - Keep each call narrow: to the user (mentions, DMs, their inbox), since the look-back time, at most 20 results. Don't list every channel. When a tool takes a Unix timestamp, use the one in "Now"; don't work one out yourself.
+- Search each chat or mail app twice, in the same first round, as separate calls:
+  - what's new: mentions, direct messages and mail to the user since the look-back time;
+  - what's still open: questions and requests to the user since the "Still open since" time in "Now", so you can spot the ones they haven't answered. Use whatever filter the tool has (unread, unanswered, waiting on me); if it has none, search the 7 days and judge from the replies in the results.
+  Add the open ones that still need the user. Items already in the brief cover what earlier runs found: update those rather than adding copies.
 
 ## Work tracking
-- Search issue trackers and code hosts (Jira, GitHub, Linear and the like) for what changed since the look-back time: issues assigned to the user, review requests, and comments or status changes on their items.
+- Search issue trackers and code hosts (Jira, GitHub, Linear and the like) twice, in the same round:
+  - what's new: comments, mentions and status changes on the user's items since the look-back time;
+  - what's open, with no date filter: issues assigned to the user that aren't done and reviews waiting on them, highest priority or oldest first, at most 10. Add the ones that are overdue, blocked or due soon; leave the rest out.
 - Results over 16,000 characters are cut: narrow the call rather than paging through.
 
 ## Projects (from Cairn)
@@ -152,7 +171,8 @@ For up to 4 items that need a written answer (a reply, review notes, a card brea
 - body: at most 30 words. why: one sentence on why it ranks there. facts: up to 3 chips of 2–6 words (who asked, when, what's at stake).
 - Give every item an id built from where it came from, and its projectId when it clearly belongs to a project.
 - Progress worth knowing that needs no action is "fyi".
-- Keep at most 6 decisions and to-dos, 5 drafts and 8 fyi items, most urgent first.
+- Give every decision and to-do a priority: "high" (due today, overdue, or someone is waiting on the user), "normal", or "low" (can wait this week). Add every open item that needs the user, most urgent first: the brief shows the high ones first and folds the rest. Up to 15 decisions and to-dos, 8 drafts and 10 fyi items.
+- today_remove is only for items that were handled or are no longer true, with the reason. Never remove an open item to make room for a new one.
 - headline: at most 10 words, verb first, naming the first decision. lede: at most 25 words of context, no counts (Cairn shows those).
 - sources in today_finish: one entry for the calendar, then one for each app you searched, with "ok", "empty" or "error" and a short note.`;
 
@@ -186,6 +206,7 @@ export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt:
   // Cairn works the look-back time out, in every form a tool may want: a model's own Unix time can be
   // a year out (a Slack search once started from the year before).
   const since = fromLast && last ? last : new Date(now.getTime() - (now.getDay() === 1 ? 72 : 24) * HOUR_MS);
+  const week = new Date(now.getTime() - 7 * 24 * HOUR_MS);
   const why = rebuild
     ? "The user asked for a rebuild: look back the full window, as if there were no earlier brief. Items already in the brief stay unless what you find shows they were handled."
     : fromLast ? "That's when the last brief ran: look for what changed since then." : "There's no earlier brief, so this looks back 24 hours (72 on a Monday).";
@@ -194,6 +215,7 @@ export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt:
 ## Now
 - Today: ${when(now)} local time (${timeZoneLabel(now)}). Today's date is ${localDate(now)}.
 - Look back to: ${when(since)} local time, ${isoWithOffset(since)}, Unix ${Math.floor(since.getTime() / 1000)}. ${why}
+- Still open since (7 days back): ${when(week)} local time, ${isoWithOffset(week)}, Unix ${Math.floor(week.getTime() / 1000)}.
 
 ## Project facts (from Cairn)
 ${factsForPrompt(facts)}`;
@@ -230,7 +252,7 @@ export function readTodaySettings(workspacePath: string, automation: Automation 
   try {
     const o = JSON.parse(fs.readFileSync(settingsPath(workspacePath, automation), "utf8")) as Partial<TodaySettings>;
     const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-    return { excludedProjects: ids(o.excludedProjects), excludedApps: ids(o.excludedApps) };
+    return { excludedProjects: ids(o.excludedProjects), excludedApps: ids(o.excludedApps), webApps: ids(o.webApps) };
   } catch {
     return { ...DEFAULT_TODAY_SETTINGS };
   }
@@ -490,7 +512,7 @@ export function getTodayState(db: Database.Database, workspacePath: string, work
   const settings = readTodaySettings(workspacePath, fresh);
   const included = includedProjects(db, workspaceId, settings);
   const projects = getProjects(db, workspaceId).filter((p) => p.status !== "archived").map((p) => ({ id: p.id, name: p.name }));
-  const apps = listScopedConnectors(db, workspaceId, included.map((p) => p.id));
+  const apps = listScopedConnectors(db, workspaceId, included.map((p) => p.id)).map((a) => (looksLikeWebApp(a.name) ? { ...a, web: true } : a));
   const facts = projectFacts(db, workspaceId, included);
   if (!fresh) {
     return {

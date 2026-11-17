@@ -92,15 +92,15 @@ describe("workspace Today", () => {
     const dir = tmp();
     const a = enableToday(db, dir, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
     expect(includedProjects(db, "ws1", readTodaySettings(dir, a)).map((p) => p.id)).toEqual(["p1", "p2"]);
-    writeTodaySettings(dir, a, { excludedProjects: ["p2"], excludedApps: ["K7q"] });
+    writeTodaySettings(dir, a, { excludedProjects: ["p2"], excludedApps: ["K7q"], webApps: [] });
     const st = getTodayState(db, dir, "ws1");
-    expect(st.settings).toEqual({ excludedProjects: ["p2"], excludedApps: ["K7q"] });
+    expect(st.settings).toEqual({ excludedProjects: ["p2"], excludedApps: ["K7q"], webApps: [] });
     expect(st.projects.map((p) => p.id)).toEqual(["p1", "p2"]);
     expect(st.facts.map((f) => f.projectId)).toEqual(["p1"]);
   });
 
   it("leaves out the tools of apps the user turned off", () => {
-    const allow = todayToolFilter({ excludedProjects: [], excludedApps: ["K7q"] });
+    const allow = todayToolFilter({ excludedProjects: [], excludedApps: ["K7q"], webApps: [] });
     expect(allow("mcp__K7q__search_messages")).toBe(false);
     expect(allow("mcp__Z2p__search_messages")).toBe(true);
     expect(allow("today_upsert")).toBe(true);
@@ -187,6 +187,8 @@ describe("todayLookBackFrom", () => {
     const p = todayPrompt([], last, now);
     expect(p).toContain(`Unix ${Date.parse(last) / 1000}`);
     expect(p).toContain("Today's date is 2026-11-17");
+    expect(p).toContain(`Still open since (7 days back): Tuesday, 10 November 2026, 07:00 local time`);
+    expect(p).toContain(`Unix ${Math.floor(now.getTime() / 1000) - 7 * 24 * 3600}.`);
     // No earlier brief: 24 hours back, 72 on a Monday.
     expect(todayPrompt([], null, now)).toContain(`Unix ${Math.floor(now.getTime() / 1000) - 24 * 3600}`);
     const monday = new Date(2026, 10, 16, 7, 0);
@@ -198,6 +200,24 @@ describe("todayLookBackFrom", () => {
     expect(p).toContain("## Calendar");
     expect(p).toContain("## Communication");
     expect(p).not.toContain("Work IQ");
+  });
+
+  it("offers a web search app only once the user turns it on", () => {
+    const off = todayToolFilter({ excludedProjects: [], excludedApps: [], webApps: [] });
+    expect(off("svc__B1__brave_web_search")).toBe(false);
+    const on = todayToolFilter({ excludedProjects: [], excludedApps: [], webApps: ["B1"] });
+    expect(on("svc__B1__brave_web_search")).toBe(true);
+    expect(on("svc__B2__brave_web_search")).toBe(false);
+    const excluded = todayToolFilter({ excludedProjects: [], excludedApps: ["B1"], webApps: ["B1"] });
+    expect(excluded("svc__B1__brave_web_search")).toBe(false);
+  });
+
+  it("leaves out connector tools that reach the open web", () => {
+    expect(todayAllowsTool("svc__abc__brave_web_search")).toBe(false);
+    expect(todayAllowsTool("mcp__s__search_web")).toBe(false);
+    expect(todayAllowsTool("mcp__s__fetch_url")).toBe(false);
+    expect(todayAllowsTool("mcp__slack__slack_search_public")).toBe(true);
+    expect(todayAllowsTool("mcp__atl__searchJiraIssuesUsingJql")).toBe(true);
   });
 
   it("runs Today on low effort unless reasoning is off", () => {

@@ -14,6 +14,11 @@ export interface ExternalToolDeps {
   projectId: ToolScope;
   /** Cut each result to this many characters, with a note asking for a narrower call (Today's runs). */
   maxResultChars?: number;
+  /**
+   * Run calls in one step at the same time (Today's runs). Off elsewhere: two writes to one app could
+   * race. Asks are still decided one at a time before anything runs.
+   */
+  parallel?: boolean;
 }
 
 /** Keep the head of an oversized result and say how much was cut, so the model can narrow the call. */
@@ -33,6 +38,7 @@ export async function externalTools(deps: ExternalToolDeps): Promise<AgentTool[]
     parameters: fromJsonSchema(parameters),
     // Leaves the device through a connected service; asks unless a rule (e.g. `mcp__github__*`) allows it.
     risk: () => ({ class: "EXTERNAL" }),
+    concurrency: deps.parallel ? "parallel" : "exclusive",
     preview: (args) => approvalPreview(name, args),
     async execute(args, ctx) {
       try {

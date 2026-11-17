@@ -45,12 +45,50 @@ describe("upsertItems", () => {
     expect(b.needYou).toHaveLength(0);
   });
 
-  it("caps a lane", () => {
+  it("caps a lane, and never tells the run to remove an open item to make room", () => {
     const b = emptyBrief(now);
-    const items = Array.from({ length: 7 }, (_, i) => ({ lane: "todo", id: `t${i}`, question: `Do ${i}` }));
-    const r = upsertItems(b, items, now);
-    expect(b.needYou).toHaveLength(6);
-    expect(r[6]).toMatch(/lane is full/);
+    const items = Array.from({ length: 16 }, (_, i) => ({ lane: "todo", id: `t${i}`, question: `Do ${i}` }));
+    const r = upsertItems(b, items.slice(0, 12), now);
+    upsertItems(b, items.slice(12), now);
+    expect(b.needYou).toHaveLength(15);
+    const last = upsertItems(b, [{ lane: "todo", id: "t99", question: "One more" }], now)[0];
+    expect(last).toMatch(/holds its most/);
+    expect(last).toMatch(/don't remove an open item/);
+    expect(r).toHaveLength(12);
+  });
+
+  it("lists high priority first and keeps the run's order within a priority", () => {
+    const b = emptyBrief(now);
+    upsertItems(b, [
+      { lane: "todo", id: "a", question: "A" },
+      { lane: "todo", id: "b", question: "B", priority: "low" },
+      { lane: "todo", id: "c", question: "C", priority: "high" },
+      { lane: "todo", id: "d", question: "D" },
+    ], now);
+    expect(b.needYou.map((n) => n.id)).toEqual(["c", "a", "d", "b"]);
+    // An update without priority keeps the one it had.
+    upsertItems(b, [{ lane: "todo", id: "c", question: "C again" }], now);
+    expect(b.needYou[0]).toMatchObject({ id: "c", priority: "high", title: "C again" });
+  });
+
+  it("keeps a carried item unless the removal says how it was handled", () => {
+    const b = emptyBrief(now);
+    upsertItems(b, [{ lane: "todo", id: "old", question: "Old" }, { lane: "todo", id: "new", question: "New" }], now);
+    b.needYou[0].since = "2026-11-16";
+    expect(removeItems(b, ["old", "new"], now)).toEqual([expect.stringMatching(/old: kept/), "new: removed."]);
+    expect(b.needYou.map((n) => n.id)).toEqual(["old"]);
+    expect(removeItems(b, ["old"], now, "Jira says it's Closed")).toEqual(["old: removed."]);
+  });
+
+  it("drops an event that isn't on the brief's day", () => {
+    const b = emptyBrief(now);
+    const r = upsertItems(b, [
+      { lane: "event", title: "Today", start: "09:00", date: b.date },
+      { lane: "event", title: "Tomorrow", start: "10:00", date: "2099-01-01" },
+      { lane: "event", title: "No date", start: "11:00" },
+    ], now);
+    expect(r[1]).toMatch(/not today/);
+    expect(b.events.map((e) => e.title)).toEqual(["Today", "No date"]);
   });
 });
 
@@ -64,8 +102,9 @@ describe("upsertItems checks", () => {
   it("keeps an item where it was when the lane it moves to is full", () => {
     const b = emptyBrief(now);
     upsertItems(b, [{ lane: "draft", id: "d1", title: "Reply", draft: "Hi" }], now);
-    upsertItems(b, Array.from({ length: 6 }, (_, i) => ({ lane: "todo", id: `t${i}`, question: `Do ${i}` })), now);
-    expect(upsertItems(b, [{ lane: "todo", id: "d1", question: "Send the reply" }], now)[0]).toMatch(/lane is full/);
+    upsertItems(b, Array.from({ length: 12 }, (_, i) => ({ lane: "todo", id: `t${i}`, question: `Do ${i}` })), now);
+    upsertItems(b, Array.from({ length: 3 }, (_, i) => ({ lane: "todo", id: `u${i}`, question: `Do ${i}` })), now);
+    expect(upsertItems(b, [{ lane: "todo", id: "d1", question: "Send the reply" }], now)[0]).toMatch(/holds its most/);
     expect(b.prepared.map((p) => p.id)).toEqual(["d1"]);
   });
 

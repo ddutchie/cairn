@@ -140,6 +140,7 @@ export function registerAutomationHandlers(ctx: DbContext): void {
     writeTodaySettings(ctx.workspacePath, a, {
       excludedProjects: [...new Set(settings.excludedProjects)],
       excludedApps: [...new Set(settings.excludedApps)],
+      webApps: [...new Set(settings.webApps ?? [])],
     });
     return todayState(workspaceId);
   }));

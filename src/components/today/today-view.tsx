@@ -34,6 +34,7 @@ import { TodayActPanel, type TodayActTarget } from "./today-act-panel";
 import { CairnStack, MiniStack, TODAY_SEEN_EVENT, markTodaySeen, todaySeenAt, type StackLane } from "./today-stack";
 import { TodayPastBanner, TodayRail } from "./today-rail";
 import { compareTodayBriefs, groupTodayHistory, type TodayComparison } from "../../../shared/today/history";
+import { TODAY_NEED_SHOWN } from "../../../shared/today/brief-edit";
 import {
   EMPTY_TODAY_MARKS, dayBlocks, formatClock, formatMinutes, linkedDraftIds, localDate,
   type TodayBrief, type TodayDay, type TodayHistoryEntry, type TodayRunActivity, type TodayFyi, type TodayMarks, type TodayNeedItem, type TodayPrepared, type TodayProjectFacts, type TodaySettings as TodaySettingsValue, type TodayState,
@@ -459,6 +460,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
   useEffect(() => { if (!readOnly && brief?.status === "ready") markTodaySeen(workspaceId, brief.generatedAt); }, [workspaceId, brief, readOnly]);
   const [flash, setFlash] = useState<Lane | "day" | null>(null);
   const [showAllDrafts, setShowAllDrafts] = useState(false);
+  const [showAllNeed, setShowAllNeed] = useState(false);
   const nowMs = useNow(60_000);
   const jump = (lane: Lane | "day") => {
     const el = document.getElementById(`today-lane-${lane === "focus" ? "need" : lane}`);
@@ -508,6 +510,9 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
 
   const needYou = brief.needYou;
   const focus = needYou.find((n) => n.id === brief.focusId) ?? needYou[0];
+  // The lane is in priority order; past the first few it folds. The focus item always shows.
+  const shownNeed = showAllNeed ? needYou : needYou.filter((n, i) => i < TODAY_NEED_SHOWN || n.id === focus?.id);
+  const foldedNeed = needYou.length - shownNeed.length;
   const openNeed = needYou.filter((n) => !dismissed.has(n.id));
   const openDecisions = openNeed.filter((n) => n.kind === "decision").length;
   const linked = linkedDraftIds(brief);
@@ -637,7 +642,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
       <div className="grid gap-3.5 mt-6 items-start grid-cols-1 @4xl:grid-cols-[1.2fr_1fr_0.85fr]">
         <LaneBox id="need" title="Need you" count={openNeed.length} tone="var(--stone-3)" flash={flash === "need" || flash === "focus"}>
           {needYou.length === 0 && <Empty>Nothing is waiting on you.</Empty>}
-          {needYou.map((n) => (
+          {shownNeed.map((n) => (
             <NeedCard
               key={n.id}
               item={n}
@@ -651,6 +656,11 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
               original={original}
             />
           ))}
+          {(foldedNeed > 0 || showAllNeed) && needYou.length > TODAY_NEED_SHOWN && (
+            <button type="button" className="text-2xs text-[var(--accent)] hover:underline px-1 pt-0.5 self-start" onClick={() => setShowAllNeed((v) => !v)}>
+              {showAllNeed ? "Show fewer" : `Show ${foldedNeed} more`}
+            </button>
+          )}
         </LaneBox>
         <LaneBox id="prep" title="Prepared for you" count={openPrep} tone="var(--stone-2)" note="Nothing sent" flash={flash === "prep"}>
           {lanePrepared.length === 0 && (
@@ -824,8 +834,13 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
             title="Apps"
             hint="Apps that are off aren't offered to the run at all."
             empty="No apps are attached to the projects that are on."
-            items={state.apps.map((a) => ({ id: a.id, name: a.name, on: !state.settings.excludedApps.includes(a.id) }))}
-            onToggle={(id, on) => change("Couldn't change the apps", (s) => ({ ...s, excludedApps: flip(s.excludedApps, id, on) }))}
+            items={state.apps.map((a) => a.web
+              ? { id: a.id, name: a.name, on: state.settings.webApps.includes(a.id) && !state.settings.excludedApps.includes(a.id), hint: "Web search, off until you turn it on. A search can carry what Cairn read in your other apps to this service." }
+              : { id: a.id, name: a.name, on: !state.settings.excludedApps.includes(a.id) })}
+            onToggle={(id, on) => change("Couldn't change the apps", (s) => (state.apps.find((a) => a.id === id)?.web
+              // A web app is on only when it's in webApps; clearing it from excludedApps too keeps one switch.
+              ? { ...s, webApps: on ? [...new Set([...s.webApps, id])] : s.webApps.filter((x) => x !== id), excludedApps: s.excludedApps.filter((x) => x !== id) }
+              : { ...s, excludedApps: flip(s.excludedApps, id, on) }))}
           />
           <div className="border-t border-[var(--border-subtle)] pt-4 space-y-4">
             <SettingsAction
@@ -876,7 +891,7 @@ function SettingsAction({ title, hint, breakAll, children }: { title: string; hi
 
 function SettingsList({ title, hint, empty, items, onToggle }: {
   title: string; hint: string; empty?: string;
-  items: Array<{ id: string; name: string; on: boolean }>;
+  items: Array<{ id: string; name: string; on: boolean; hint?: string }>;
   onToggle: (id: string, on: boolean) => void;
 }) {
   return (
@@ -886,9 +901,12 @@ function SettingsList({ title, hint, empty, items, onToggle }: {
       {items.length === 0 && empty && <p className="text-2xs text-[var(--text-tertiary)]">{empty}</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
         {items.map((it) => (
-          <label key={it.id} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] min-w-0">
+          <label key={it.id} className={cn("flex gap-2 text-xs text-[var(--text-secondary)] min-w-0", it.hint ? "items-start sm:col-span-2" : "items-center")}>
             <Toggle checked={it.on} onCheckedChange={(on) => onToggle(it.id, on)} label={it.name} />
-            <span className="truncate">{it.name}</span>
+            <span className="min-w-0">
+              <span className="block truncate">{it.name}</span>
+              {it.hint && <span className="block text-2xs text-[var(--text-tertiary)] leading-relaxed mt-0.5">{it.hint}</span>}
+            </span>
           </label>
         ))}
       </div>

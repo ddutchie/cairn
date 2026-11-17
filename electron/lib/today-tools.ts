@@ -33,6 +33,8 @@ const ITEM_SCHEMA = {
     question: { type: "string", description: "decision/todo: the question (yes/no or either/or) or the action, verb first." },
     body: { type: "string", description: "decision/todo: at most 30 words of context." },
     why: { type: "string", description: "decision/todo: one sentence on why it ranks here." },
+    priority: { type: "string", enum: ["high", "normal", "low"], description: "decision/todo: high (due today, overdue, or someone is waiting on the user), normal, or low (can wait this week). The brief lists high first and folds what doesn't fit, so add every open item rather than dropping one." },
+    date: { type: "string", description: "event: its date as YYYY-MM-DD. Only today's meetings are accepted." },
     facts: { type: "array", items: { type: "string" }, description: "decision/todo: up to 3 chips of 2–6 words (who asked, when, what's at stake). Start one with \"⚠ \" only for a real problem." },
     choices: {
       type: "array",
@@ -82,9 +84,16 @@ export function todayBriefTools(session: TodayBriefSession, onChange: (brief: To
       { type: "object", properties: { items: { type: "array", items: ITEM_SCHEMA, minItems: 1, maxItems: 12 } }, required: ["items"] },
       (a) => changed(upsertItems(session.brief, Array.isArray(a.items) ? a.items as Record<string, unknown>[] : [], new Date()))),
     tool("today_remove",
-      "Remove items from the Today brief by id: something already handled, no longer true, or weaker than an item you need room for.",
-      { type: "object", properties: { ids: { type: "array", items: { type: "string" }, minItems: 1 } }, required: ["ids"] },
-      (a) => changed(removeItems(session.brief, Array.isArray(a.ids) ? a.ids.filter((x): x is string => typeof x === "string") : [], new Date()))),
+      "Remove items from the Today brief by id, only when they were handled or are no longer true (answered, merged, closed, cancelled). Never remove an open item to make room: a removed item is gone from the next day's brief too. An item carried from an earlier day needs a reason.",
+      {
+        type: "object",
+        properties: {
+          ids: { type: "array", items: { type: "string" }, minItems: 1 },
+          reason: { type: "string", description: "What shows these were handled, e.g. \"Jira says OASIS-12464 is Closed\", \"Liron replied in the thread\"." },
+        },
+        required: ["ids", "reason"],
+      },
+      (a) => changed(removeItems(session.brief, Array.isArray(a.ids) ? a.ids.filter((x): x is string => typeof x === "string") : [], new Date(), typeof a.reason === "string" ? a.reason : undefined))),
     tool("today_finish",
       "Finish the brief: the header lines and which apps you read. Call it once, last. Until you do, the brief shows as still gathering.",
       {

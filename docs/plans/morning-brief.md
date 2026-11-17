@@ -293,8 +293,35 @@ workspace belongs to one user.
   showing goes to the notification bell even while Cairn is focused
   (`session:on-screen`, `electron/lib/session-on-screen.ts`). The Today run
   itself never waits on the user.
+- **Prompt:** Today has its own system prompt (`TODAY_SYSTEM_PROMPT`: unattended,
+  read-only, report gaps rather than guess) instead of chat's. The recipe is in
+  sections (calendar, communication, work tracking, projects, carried items,
+  drafts, writing) and names no single app. The calendar is read for the whole
+  of today on every run, in its own call, today's date only. Work tracking asks
+  for what's new and for what's open (assigned and not done, reviews waiting),
+  and communication looks back 7 days for unanswered questions, so older work
+  isn't missed. Cairn computes the look-back time (local, ISO with offset,
+  Unix seconds); a model's own Unix time was once a year out.
+- **Speed:** the first round's searches go out together and Today's connector
+  calls run in parallel (`externalParallel`; chat keeps them one at a time).
+- **Web search:** a web search connector is off for Today until the user turns
+  it on (`webApps` in Today's settings, with a hint in the Apps list), since a
+  query can carry what the run read elsewhere to that service.
+- **Run notes:** the run's closing message is kept with the brief (`note`) and
+  shown behind **Run notes** in the header.
+- **Priority and lane size:** need items carry `priority` (high, normal, low),
+  kept in that order. Need you holds 15 (`TODAY_LANE_LIMITS`), the view shows
+  `TODAY_NEED_SHOWN` (6) and folds the rest. A full lane turns the new item
+  away instead of telling the run to remove one, and `today_remove` keeps a
+  carried item unless it gets a `reason`. Events carry a `date` and other days
+  are turned away.
 - **Debug export:** `cairn-today-debug/3` holds the last run's setup (model,
-  effort, system prompt, tools), its exact prompt and per-step timings.
+  effort, system prompt, tools with their schemas), its exact prompt, the
+  prompt and system prompt the current build would send next, and per-step
+  timings. `scripts/today-replay.mjs` replays an export against any
+  OpenAI-compatible endpoint (env `TODAY_LLM_BASE_URL` / `_API_KEY` /
+  `_MODEL`), answering connector calls from the recorded results or a fixture
+  file, so prompt and effort changes can be tried without the app.
 - **Known gaps:** no wall-clock limit on a stalled run (all automations); the
   brief's date uses the computer's timezone while the schedule uses the one
   saved at setup; reopening an item doesn't show an approval card that was
@@ -396,6 +423,105 @@ cards, sessions, projects) rather than a newsletter.
 - Raw payloads are trimmed before the prompt and never stored beyond the brief
   row.
 
+### Next: "Worth reading" and your own request (planned, after 3.2.0)
+
+Users want more than what needs them: headlines in their field, and the
+documents a run comes across. Two parts:
+
+- **"Also include" in Today's settings.** A free-text request added to every
+  run ("Give me the latest AI news stories", "Anything new in the Viewer
+  space on Confluence"). Stored with the Today settings, shown in the export.
+- **A "Worth reading" section.** Full width, under the lanes. Each card has a
+  title, source, link and a one-line summary of why it's there, and the site's
+  favicon. No remote images: loading a news site's image tells it who opened
+  the brief. Items come from two places:
+  - the main run, for internal documents it came across (a Confluence page
+    that came up in a search, a doc shared with the user), using a new
+    `reading` lane in `today_upsert`;
+  - a separate web pass, for the user's request when it needs the web.
+
+**Keeping the read-only promise.** Web tools never share a pass with private
+data. The web pass is its own engine session, run alongside the main one, that
+gets only the user's request and the web search apps they turned on. It sees no
+Slack, mail, boards or brief, so a query can't carry their content out, and a
+page that tries to steer it can at worst put junk in "Worth reading". The main
+run keeps web tools out, as it does now unless the user turns them on; once the
+web pass exists, the `webApps` switch moves to "Used only for your request" and
+the main run never gets web tools.
+
+**Work:**
+- `TodaySettings.request` (string, capped) and the settings box with a short
+  hint on what it can and can't reach.
+- `reading` lane in `shared/today/brief.ts` (normalise, cap at about 6, id from
+  the URL), its tool schema and prompt rules ("only what's worth the user's
+  time today; no duplicates of items in other lanes").
+- The web pass in `heartbeat-runner.ts`: a second `runEngineAutomation` with
+  its own session id, the web tools only, a short recipe built from the
+  request, low effort and a small step cap. Its items merge into the brief by
+  id; its failure is a source line, not a failed run.
+- The section in `today-view.tsx`, history and carry-over rules (reading items
+  don't carry to the next day), the export and the replay script (the web pass
+  replays from its own recorded results).
+- Changelog and a What's New highlight.
+
+**Open:** whether the request also steers the main run (for example "watch
+the Viewer space"), or only the web pass. Starting with both: the main run
+reads it as one more thing to gather from the user's apps, and the web pass
+covers what needs the open web.
+
+### Follow-ups and research (after 3.2.0)
+
+Found while testing 3.2.0 against real runs. Ordered by how much each would
+change the brief.
+
+**Research first**
+- **MCP tool annotations instead of verb guessing.** The MCP spec lets a
+  server mark each tool `readOnlyHint`, `destructiveHint` and `openWorldHint`.
+  Cairn doesn't read them today (nothing in `electron/` mentions them), so
+  Today's gate guesses from operation names (`WRITE_VERB`, `READ_VERB`,
+  `isWebOperation`) and the web-app switch guesses from the app's name. Find
+  out which of the servers users connect (Slack, Atlassian, Work IQ, GitHub)
+  set the hints and whether they can be trusted, then use them where present:
+  read-only by annotation, web by `openWorldHint`, name rules only as the
+  fallback. Custom services already have an HTTP `method`; GET-only services
+  could be read-only by that.
+- **Connector latency.** In every test run the model took about 10 seconds
+  and Work IQ about 30 per call, so a run is about 40 seconds of waiting. Two
+  Work IQ questions sent at once came back together, which suggests the server
+  answers one at a time. Measure per-server latency from run logs, check
+  whether Work IQ serializes per conversation, and decide between one combined
+  question (faster, but the calendar answer was lost once when combined),
+  starting the calendar call before `today_read`, or showing each lane as its
+  source answers.
+- **How other models handle the prompt.** All tuning so far used one model at
+  low effort. Run the replay script over the same exports with two or three
+  other models and efforts (`--effort`), and check that `reasoningOption` sends
+  effort in the form each API expects.
+- **A repeatable check for prompt changes.** Exports hold personal data and
+  stay out of git, so they can't be test fixtures. Build a few synthetic
+  exports (a quiet day, a busy day, a calendar refusal, no calendar app, a
+  Monday) and a small scorer over the replay output: events only for today,
+  sources for every area, look-back used, no web tools, item caps kept. Run it
+  by hand before changing `TODAY_RECIPE`; CI only if it can run without a key.
+
+**Smaller fixes**
+- **Unanswered questions.** Slack and mail search can't say "unanswered"; the
+  model judges from the replies it sees. Check which tools expose read/replied
+  state and say so in their prompt hint; drop items the user already answered
+  in another app (the same request often arrives in Slack and mail).
+- **Server instructions in run notes.** A server's `initialize` instructions
+  ("tell the user to upgrade this endpoint") end up in the run notes every run.
+  Show them once per server, or as a notice in Settings, not in the brief.
+- **Stale open work.** The open-work search found only issues from 2022–23 and
+  left them out, which was right. If a tracker is full of these, cap by age or
+  ask the user once whether to hide them.
+- **Known gaps carried from 3.2.0:** no wall-clock limit on a stalled run, the
+  brief's date uses the computer's timezone while the schedule uses the saved
+  one, and reopening an item doesn't show an approval that was pending when it
+  closed.
+- **Windows unit tests:** 15 engine tests (hooks, sandbox, ripgrep, LSP) fail
+  on Windows; ddutchie/cairn#306 fixes them.
+
 ## Phases
 
 1. **Native brief:** the Tier 0 sources, `briefs` table, the built-in
@@ -412,6 +538,8 @@ cards, sessions, projects) rather than a newsletter.
    Graph through MSAL with the WAM/Enterprise SSO broker (silent device sign-in).
    Classic Outlook COM and the Windows notification listener come after that as
    Windows-only extras.
+4b. **Worth reading:** the "Also include" request, the `reading` lane and the
+   separate web pass (see "Next: Worth reading and your own request").
 5. **Tier 3 web connectors (experimental):** partitioned sign-in window,
    extractor manifest, health reporting. Outlook and Teams first, since that's
    where enterprise consent blocks Tier 1 most often.

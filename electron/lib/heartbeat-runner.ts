@@ -733,6 +733,8 @@ export async function runAutomation(
       externalProjectIds: today ? todayProjects.map((p) => p.id) : undefined,
       externalExclude: todaySettings?.excludedApps,
       externalResultChars: today ? TODAY_RESULT_CHARS : undefined,
+      // Today's searches go out in one round; run them at once, so the round takes as long as the slowest app.
+      externalParallel: today,
       usageSource: today ? "today" : undefined,
       // Today has its own: the chat assistant's tells the model to write without asking and reply in markdown.
       systemPrompt: today ? TODAY_SYSTEM_PROMPT : buildSystemPrompt(req),

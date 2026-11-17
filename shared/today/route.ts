@@ -37,6 +37,21 @@ export function isWriteOperation(op: string): boolean {
   return WRITE_VERB.test(op);
 }
 
+/**
+ * Connector operations that reach the open web (a web search, a page fetch, a browser). A query to
+ * one can carry text from what a run read to a service outside the user's apps.
+ */
+const WEB_WORD = /(^|_|-)(web|internet|google|bing|brave|duckduckgo|ddg|serp|serper|tavily|perplexity|exa|browse|browser|crawl|scrape|url|http|https)(_|-|$)/i;
+
+export function isWebOperation(op: string): boolean {
+  return WEB_WORD.test(op);
+}
+
+/** A connector whose name says it searches or browses the web ("Brave Web Search", "Tavily"). */
+export function looksLikeWebApp(name: string): boolean {
+  return /\b(web|internet|google search|bing|brave|duckduckgo|serp|serper|tavily|perplexity|exa|browser|crawler)\b/i.test(name);
+}
+
 /** The server part of a connector tool name (`mcp__slack__post` → `slack`). */
 export function toolServer(name: string): string {
   const parts = name.split("__");
