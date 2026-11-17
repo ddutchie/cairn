@@ -27,7 +27,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown";
 import { IconButton } from "@/components/ui/icon-button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { useTodayBadge } from "@/components/today/today-view";
 import { MiniStack } from "@/components/today/today-stack";
 
@@ -484,14 +483,12 @@ export function DockSidebar() {
                 <div className="px-2 pb-2 space-y-0.5">
                   <RunningChatPins />
                   {/* Today and Automations — prominent, above workspace views */}
-                  <Tooltip content={todayHint} side="right">
-                    <button onClick={() => setView("today")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "today") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
-                      {todayIcon(13)}<span>Today</span>
-                      {today.enabled && (today.running || today.unseen) && (
-                        <span className="ml-auto text-2xs text-[var(--text-tertiary)]">{today.running ? "Gathering" : "Ready"}</span>
-                      )}
-                    </button>
-                  </Tooltip>
+                  <button onClick={() => setView("today")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "today") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
+                    {todayIcon(13)}<span>Today</span>
+                    {today.enabled && (today.running || today.unseen) && (
+                      <span className="ml-auto text-2xs text-[var(--text-tertiary)]">{today.running ? "Gathering" : "Ready"}</span>
+                    )}
+                  </button>
                   <button data-tutorial="automations-view" onClick={() => setView("automations")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>
                     <Zap size={13} /><span>Automations</span>
                   </button>
