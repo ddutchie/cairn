@@ -21,6 +21,22 @@ export function operationWords(name: string): string {
   return op.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
 }
 
+/**
+ * Does an operation change something? Words in verb position decide: the first word, and any word
+ * after "and" / "then" (`get_and_resolve`). A name that starts with a read verb is a read whatever
+ * nouns follow (`get_post`, `list_comments`). Any other name is a write if it holds a write verb
+ * anywhere (`message_send`), so an unusual name errs on the side of a write.
+ */
+export function isWriteOperation(op: string): boolean {
+  const words = op.toLowerCase().split(/[_-]+/).filter(Boolean);
+  if (!words.length) return false;
+  const verb = (w: string | undefined) => !!w && WRITE_VERB.test(w);
+  if (verb(words[0])) return true;
+  for (let i = 1; i < words.length - 1; i++) if ((words[i] === "and" || words[i] === "then") && verb(words[i + 1])) return true;
+  if (READ_VERB.test(words[0])) return false;
+  return WRITE_VERB.test(op);
+}
+
 /** The server part of a connector tool name (`mcp__slack__post` → `slack`). */
 export function toolServer(name: string): string {
   const parts = name.split("__");

@@ -38,7 +38,7 @@ import { Button, FOCUS_RING } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { WRITE_VERB, operationWords, toolServer, type TodayRoute } from "../../../shared/today/route";
+import { isWriteOperation, operationWords, toolServer, type TodayRoute } from "../../../shared/today/route";
 import type { TodayPrepared } from "../../../shared/today/brief";
 
 /** What the panel acts on: a decision's answer, a to-do, or a prepared draft. */
@@ -101,6 +101,57 @@ function reloadWhenTurnEnds(sessionId: string, threadId: string): void {
   reload();
 }
 
+/**
+ * Does a finished call count as this item's send? A connector write always does. A Cairn write
+ * (editing or moving a card, writing a note) only once Send was asked for: otherwise it's a change.
+ */
+function countsAsSend(tool: string, sendAsked: boolean): boolean {
+  return isWriteOperation(operationWords(tool)) && (sendAsked || toolServer(tool) !== "");
+}
+
+/** What one item chat's current turn has written so far, and who to tell when it ends. */
+interface SendWatch {
+  sendAsked: boolean;
+  /** Called with the last write's words when a turn ends and every send-like write in it worked. */
+  onSent: (op: string) => void;
+  /** The panel closed while a turn ran: stop watching once that turn ends. */
+  released: boolean;
+  ok: number;
+  failed: boolean;
+  last: string | null;
+  off: () => void;
+}
+const sendWatches = new Map<string, SendWatch>();
+
+/**
+ * Watch an item chat for its send, from the session's own events rather than the panel's render
+ * (the live tool calls are cleared at turn end, and the panel may be closed by then). One watch per
+ * session; a panel that closes mid-turn hands it a callback that still writes the done mark.
+ */
+function watchSends(sessionId: string): SendWatch {
+  const existing = sendWatches.get(sessionId);
+  if (existing) return existing;
+  const w: SendWatch = { sendAsked: false, onSent: () => {}, released: false, ok: 0, failed: false, last: null, off: () => {} };
+  const reset = () => { w.ok = 0; w.failed = false; w.last = null; };
+  const fold = createSessionEventFold({
+    onTurnStart: reset,
+    onToolResult: (r) => {
+      if (!countsAsSend(r.name, w.sendAsked)) return;
+      if (r.ok === false || r.error) w.failed = true;
+      else { w.ok += 1; w.last = operationWords(r.name); }
+    },
+    onTurnEnd: () => {
+      const sent = w.ok > 0 && !w.failed ? w.last : null;
+      reset();
+      if (sent) w.onSent(sent);
+      if (w.released) { w.off(); sendWatches.delete(sessionId); }
+    },
+  });
+  w.off = sessionClient.onEvent((e) => { if (e.sessionId === sessionId) fold(e.event); });
+  sendWatches.set(sessionId, w);
+  return w;
+}
+
 function openUrl(url?: string) {
   if (url && /^https?:\/\//i.test(url)) void appClient.openExternal(url);
 }
@@ -152,8 +203,6 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
   const [copied, setCopied] = useState(false);
   // A chat kept earlier (Keep in chat, or closed while replying) is still in the chat list on reopen.
   const [kept, setKept] = useState(() => useCairnStore.getState().chatThreads.some((t) => t.id === threadId));
-  // Send (or Add to the board) was asked for: from then on a Cairn write counts as the send too.
-  const [sendAsked, setSendAsked] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   // The open dialog shows this item's chat: its approvals appear here, not in the bell.
   const onScreenRef = useSessionOnScreen(sessionId);
@@ -204,33 +253,35 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
 
   // A connector call that writes and finished cleanly is the send. A Cairn write (editing or moving
   // a card, writing a note) only counts once Send was asked for: otherwise it's just a change.
-  // The item is marked done when the turn ends, and only if every such write in it succeeded: a board
-  // request can make several cards, and one that failed leaves the item open.
+  // The item is marked done when a turn ends and every send-like write in it worked: a board
+  // request can make several cards, and one that failed leaves the item open. A turn that ends after
+  // the panel closed still marks it (see watchSends), so reopening can't offer Send twice.
   const sent = done;
-  const turnWrites = useRef<{ ok: string[]; failed: boolean; last: string | null }>({ ok: [], failed: false, last: null });
-  useEffect(() => {
-    for (const tc of toolCalls) {
-      if (tc.status !== "done" || !WRITE_VERB.test(operationWords(tc.tool)) || !(sendAsked || toolServer(tc.tool) !== "")) continue;
-      if (tc.ok === false || tc.error) { turnWrites.current.failed = true; continue; }
-      const key = tc.callId ?? `${tc.tool}#${toolCalls.indexOf(tc)}`;
-      if (!turnWrites.current.ok.includes(key)) turnWrites.current.ok.push(key);
-      turnWrites.current.last = operationWords(tc.tool);
-    }
-  }, [toolCalls, sendAsked]);
   const onDoneRef = useRef(onDone);
   useEffect(() => { onDoneRef.current = onDone; });
-  const wasLoading = useRef(isLoading);
+  const loadingRef = useRef(isLoading);
+  useEffect(() => { loadingRef.current = isLoading; }, [isLoading]);
+  const watchRef = useRef<SendWatch | null>(null);
+  const setSendAsked = (on: boolean) => { if (watchRef.current) watchRef.current.sendAsked = on; };
   useEffect(() => {
-    const ended = wasLoading.current && !isLoading;
-    wasLoading.current = isLoading;
-    if (!ended) return;
-    const { ok, failed, last } = turnWrites.current;
-    turnWrites.current = { ok: [], failed: false, last: null };
-    if (!ok.length || failed) return;
-    setDone(true);
-    setSentWith(last);
-    onDoneRef.current();
-  }, [isLoading]);
+    if (!hasElectron()) return;
+    const w = watchSends(sessionId);
+    watchRef.current = w;
+    w.released = false;
+    w.onSent = (op) => { setDone(true); setSentWith(op); onDoneRef.current(); };
+    return () => {
+      watchRef.current = null;
+      if (loadingRef.current) {
+        // Still replying: keep watching that turn, and mark the item done from Today if it sends.
+        const markFromToday = onDoneRef.current;
+        w.onSent = () => markFromToday();
+        w.released = true;
+      } else {
+        w.off();
+        sendWatches.delete(sessionId);
+      }
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -319,8 +370,6 @@ export function TodayActPanel({ workspaceId, projectId, date, target, done: done
   // on disk either way, which is how reopening the item shows the chat again.
   const keptRef = useRef(kept);
   useEffect(() => { keptRef.current = kept; }, [kept]);
-  const loadingRef = useRef(isLoading);
-  useEffect(() => { loadingRef.current = isLoading; }, [isLoading]);
   const keepRef = useRef(() => {});
   useEffect(() => {
     keepRef.current = () => {

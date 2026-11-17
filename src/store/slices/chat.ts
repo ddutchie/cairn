@@ -19,8 +19,13 @@ function toUpsertInput(t: ChatThread): ChatThreadUpsertInput {
 
 // ── Slice interface ───────────────────────────────────────────────────────────
 
-/** Latest `reloadThreadMessages` request per thread. */
-const reloadSeq = new Map<string, number>();
+/**
+ * The latest `reloadThreadMessages` request per thread. Tokens never repeat, so an old response
+ * can't pass for a newer one; clearing a thread drops its entry, so a pending reload can't bring
+ * cleared messages back.
+ */
+let reloadToken = 0;
+const latestReload = new Map<string, number>();
 
 export interface ChatSlice {
   chatThreads: ChatThread[];
@@ -396,6 +401,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   async deleteThread(threadId) {
+    latestReload.delete(threadId);
     // Authoritative check against the main process (the UI's running-ids poll
     // can be up to 2s stale). A running turn must be stopped first.
     // Fail closed: an unknown running state must not authorize deletion.
@@ -478,11 +484,11 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
 
   async reloadThreadMessages(threadId) {
     // Only the latest reload of a thread applies: an earlier one that answers last is stale.
-    const seq = (reloadSeq.get(threadId) ?? 0) + 1;
-    reloadSeq.set(threadId, seq);
+    const token = ++reloadToken;
+    latestReload.set(threadId, token);
     const res = await ipcResult((e) => e.chat.sessionMessages(threadId));
-    if (reloadSeq.get(threadId) !== seq) return;
-    reloadSeq.delete(threadId);
+    if (latestReload.get(threadId) !== token) return;
+    latestReload.delete(threadId);
     if ("error" in res) return;
     const rows = (unwrapSessionPayload(res.data).messages as ChatMessage[])
       .filter((m) => !(m.role === "assistant" && !m.content?.trim() && !m.reasoning?.trim() && String(m.id).includes("-trailing")))
@@ -551,6 +557,7 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
   },
 
   async clearThreadMessages(threadId) {
+    latestReload.delete(threadId);
     set((s) => ({
       chatMessages: s.chatMessages.filter((m) => m.threadId !== threadId),
       chatThreads: s.chatThreads.map((t) =>

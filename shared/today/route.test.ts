@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { channelFor, operationWords, sendCandidates } from "./route";
+import { channelFor, isWriteOperation, operationWords, sendCandidates } from "./route";
 
 describe("channelFor", () => {
   it("reads the channel from source and target", () => {
@@ -46,5 +46,18 @@ describe("sendCandidates", () => {
     const ids = [{ name: "mcp__K7q__send_message" }, { name: "mcp__Z2p__send_message" }];
     const names = { K7q: "Outlook Mail", Z2p: "Slack" };
     expect(sendCandidates(ids, "email", names).map((t) => [t.name, t.server])).toEqual([["mcp__K7q__send_message", "Outlook Mail"]]);
+  });
+});
+
+describe("isWriteOperation", () => {
+  it("reads a name that starts with a read verb, whatever nouns follow", () => {
+    for (const op of ["get_post", "list_comments", "search_messages", "get_card"]) expect(isWriteOperation(op)).toBe(false);
+  });
+  it("finds writes in verb position", () => {
+    for (const op of ["post_message", "create_card", "send", "get_and_resolve", "find_then_close", "message_send"]) expect(isWriteOperation(op)).toBe(true);
+  });
+  it("works on connector operation words", () => {
+    expect(isWriteOperation(operationWords("mcp__blog__getPost"))).toBe(false);
+    expect(isWriteOperation(operationWords("mcp__slack__postMessage"))).toBe(true);
   });
 });
