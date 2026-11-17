@@ -75,7 +75,13 @@ export function ModalShell({
       <DialogContent
         size={size}
         aria-describedby={description ? descId : undefined}
-        onCloseAutoFocus={returnFocusRef ? (e) => { e.preventDefault(); returnFocusRef.current?.focus(); } : undefined}
+        onCloseAutoFocus={returnFocusRef ? (e) => {
+          // A button that's gone (its owner remounted) leaves focus to Radix's own fallback.
+          const target = returnFocusRef.current;
+          if (!target?.isConnected) return;
+          e.preventDefault();
+          target.focus();
+        } : undefined}
         className={
           scrollable
             ? `flex flex-col max-h-[80vh] overflow-hidden p-0 gap-0 ${contentClassName ?? ""}`

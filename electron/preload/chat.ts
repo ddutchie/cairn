@@ -13,7 +13,7 @@ export const chatApi = {
     upsertThread:  (input: ChatThreadUpsertInput) => invokeContract("db:chat:upsertThread", input),
     deleteThread:  (threadId: string) => invokeContract("db:chat:deleteThread", { threadId }),
     clearThreadMessages: (threadId: string) => invokeContract("db:chat:clearThreadMessages", { threadId }),
-    clearAllThreads: (workspaceId: string, projectId?: string) => invokeContract("db:chat:clearAllThreads", { workspaceId, projectId }),
+    clearAllThreads: (workspaceId: string, projectId?: string, threadIds?: string[]) => invokeContract("db:chat:clearAllThreads", { workspaceId, projectId, threadIds }),
     compactThread: (req: IpcArgs<"chat:compactThread">[0]) => invokeContract("chat:compactThread", req),
     summarizeTranscript: (req: IpcArgs<"chat:summarizeTranscript">[0]) => invokeContract("chat:summarizeTranscript", req),
     // ── Pop-out window ──────────────────────────

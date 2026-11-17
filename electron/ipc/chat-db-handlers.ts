@@ -38,8 +38,10 @@ export function registerChatDbHandlers(ctx: DbContext): void {
     await destroyEngineThread(ctx, threadId);
   }));
 
-  registerContractHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId }) => handle(async () => {
-    const threads = q.getChatThreads(ctx.db, workspaceId).filter((t) => !projectId || t.projectId === projectId);
+  registerContractHandle("db:chat:clearAllThreads", (_e, { workspaceId, projectId, threadIds }) => handle(async () => {
+    // The scope stays the guard: a listed id outside it is never deleted.
+    const only = Array.isArray(threadIds) ? new Set(threadIds) : null;
+    const threads = q.getChatThreads(ctx.db, workspaceId).filter((t) => (!projectId || t.projectId === projectId) && (!only || only.has(t.id)));
     // Ids come from SQLite, but filter for path-safety anyway — a corrupt row
     // (e.g. from a compromised sync peer or a manual DB edit) must not turn
     // this handler into a path-traversal sink.

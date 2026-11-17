@@ -132,9 +132,13 @@ export interface IpcContract {
   "db:chat:deleteThread": { writes: true; args: [req: { threadId: string }]; result: void };
   /** Wipes the thread's session logs (incl. subagent children) and cached agent. */
   "db:chat:clearThreadMessages": { writes: true; args: [req: { threadId: string }]; result: void };
+  /**
+   * Deletes the scope's threads. With `threadIds`, only those of them: the renderer passes the threads
+   * it cleared, so a thread added to the scope while the clear runs is kept.
+   */
   "db:chat:clearAllThreads": {
     writes: true;
-    args: [req: { workspaceId: string; projectId?: string | null }];
+    args: [req: { workspaceId: string; projectId?: string | null; threadIds?: string[] }];
     result: { deletedThreads: number; deletedMessages: number };
   };
   /** Compact the thread's session log (summary node + retained tail). */

@@ -481,7 +481,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
       <Button variant="accent" size="sm" onClick={() => onRun()} disabled={state.running}>
         {state.running ? <MiniStack size={13} busy /> : <RefreshCw size={12} />} {state.running ? "Gathering" : brief ? "Refresh" : "Run now"}
       </Button>
-      <TodaySettings key={`${state.time}-${state.weekdaysOnly}`} state={state} onSchedule={onSchedule} onSettings={onSettings} onDisable={onDisable} onExport={onExport} onRebuild={() => onRun(true)} />
+      <TodaySettings state={state} onSchedule={onSchedule} onSettings={onSettings} onDisable={onDisable} onExport={onExport} onRebuild={() => onRun(true)} />
       {brief?.note && !state.running && <RunNote note={brief.note} at={brief.generatedAt} />}
       <span className="text-2xs text-[var(--text-tertiary)] ml-1">
         {state.running ? (liveTool?.tool ? runStep(liveTool.tool, liveTool.args, liveTool.label) : "Starting the run") : (
@@ -761,6 +761,14 @@ function TodaySettings({ state, onSchedule, onSettings, onDisable, onExport, onR
   const [open, setOpen] = useState(false);
   const [time, setTime] = useState(state.time);
   const [weekdaysOnly, setWeekdaysOnly] = useState(state.weekdaysOnly);
+  // A saved schedule updates the fields in place. Remounting would close the dialog and lose the
+  // button its focus returns to.
+  const [savedSchedule, setSavedSchedule] = useState({ time: state.time, weekdaysOnly: state.weekdaysOnly });
+  if (savedSchedule.time !== state.time || savedSchedule.weekdaysOnly !== state.weekdaysOnly) {
+    setSavedSchedule({ time: state.time, weekdaysOnly: state.weekdaysOnly });
+    setTime(state.time);
+    setWeekdaysOnly(state.weekdaysOnly);
+  }
   const [exported, setExported] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const attempt = async (what: string, fn: () => Promise<void>): Promise<boolean> => {

@@ -599,7 +599,8 @@ export const createChatSlice: StateCreator<CairnStore, [], [], ChatSlice> = (
     if (ids.has(storage.get<string>(ACTIVE_CHAT_THREAD_KEY) ?? "")) {
       storage.delete(ACTIVE_CHAT_THREAD_KEY);
     }
-    await ipcAwait((e) => e.chat.clearAllThreads(workspaceId, projectId ?? undefined));
+    // Only the threads cleared here: one kept into this scope since (a Today chat) stays.
+    await ipcAwait((e) => e.chat.clearAllThreads(workspaceId, projectId ?? undefined, [...ids]));
     // Create a fresh empty thread so the panel doesn't stay in a null-thread state
     if (workspaceId) {
       const next = get().getOrCreateThread(workspaceId, projectId);

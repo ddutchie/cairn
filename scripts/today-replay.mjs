@@ -102,7 +102,8 @@ function briefTool(name, a) {
       if (!list) return `${item.id ?? `item ${i + 1}`}: skipped, unknown lane.`;
       const id = item.id ?? `${item.start ?? ""}-${item.title ?? i}`;
       const at = brief.outline[list].findIndex((x) => x.id === id);
-      const kept = at >= 0 ? brief.outline[list][at] : undefined;
+      // As in the app, an item that moves lane keeps its carried date.
+      const kept = allLists().map((l) => brief.outline[l].find((x) => x.id === id)).find(Boolean);
       const next = { ...item, id, ...(kept?.carriedSince ? { carriedSince: kept.carriedSince } : {}) };
       dropId(id);
       if (at >= 0) brief.outline[list].splice(at, 0, next); else brief.outline[list].push(next);

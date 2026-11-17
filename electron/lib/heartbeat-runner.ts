@@ -414,9 +414,15 @@ export async function runAutomation(
   const todayProjects = todaySettings ? includedProjects(db, automation.workspaceId, todaySettings) : [];
   // One filter for the toolset and the approval check: read-only, apps that are off left out, web apps
   // only when the user turned them on, and custom service operations that don't use GET left out.
-  const todayFilter = todaySettings
-    ? todayToolFilter(todaySettings, todayConnectorFacts(db, automation.workspaceId, { projects: todayProjects.map((p) => p.id), exclude: todaySettings.excludedApps }))
+  const todayFacts = todaySettings
+    ? todayConnectorFacts(db, automation.workspaceId, { projects: todayProjects.map((p) => p.id), exclude: todaySettings.excludedApps })
     : null;
+  const todayFilter = todaySettings ? todayToolFilter(todaySettings, todayFacts!) : null;
+  // Left out of the run's connector scope entirely: apps that are off, and web search apps the user
+  // hasn't turned on. Out of scope, they aren't connected, so no tool or resource read can reach them.
+  const todayExclude = todaySettings
+    ? [...todaySettings.excludedApps, ...[...todayFacts!.webServers].filter((id) => !todaySettings.webApps.includes(id))]
+    : undefined;
   // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
   const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
   if (today) {
@@ -683,10 +689,11 @@ export async function runAutomation(
     // call, a rule or a hook, or to leave the shell sandbox, is asked whatever the approval mode.
     const routine = (data.by === undefined || data.by === "mode") && data.escalation !== true;
     // Today is read-only and unattended: decide every ask here, never wait on the user. Anything but a
-    // routine ask is denied (nobody is there to review it), and so is a resource read from an app that's off.
+    // routine ask is denied (nobody is there to review it), and so is a resource read from an app left
+    // out of scope (turned off, or a web search app the user has not turned on).
     if (today) {
       const server = typeof trusted.server === "string" ? trusted.server : null;
-      const appOff = !!server && todaySettings!.excludedApps.includes(server);
+      const appOff = !!server && todayExclude!.includes(server);
       const allowed = routine && !appOff && todayFilter!(toolName);
       respondEngineAsk(engineCtx, run.id, callId, nonce, { approved: allowed });
       return;
@@ -736,7 +743,7 @@ export async function runAutomation(
       workspaceId: automation.workspaceId,
       // Today reads the connectors of every project it covers.
       externalProjectIds: today ? todayProjects.map((p) => p.id) : undefined,
-      externalExclude: todaySettings?.excludedApps,
+      externalExclude: todayExclude,
       externalResultChars: today ? TODAY_RESULT_CHARS : undefined,
       // Today's searches go out in one round; run them at once, so the round takes as long as the slowest app.
       externalParallel: today,
