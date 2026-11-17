@@ -24,6 +24,7 @@ import {
 } from "./codebase";
 import { getUserStyle, appendUserStyleObservation } from "../../db/queries";
 import { CONSOLIDATED_TOOLS, runConsolidatedTool } from "./consolidated";
+import { get_today } from "./today";
 import { lazy } from "../../host-shared/lazy";
 import {
   RELATIONSHIP_AFFECTING_TOOLS,
@@ -207,6 +208,9 @@ function dispatchTool(db: Database.Database, workspacePath: string, toolName: st
       return search_notes_semantic(db, args);
     case "search_tasks_semantic":
       return search_tasks_semantic(db, args);
+
+    case "get_today":
+      return get_today(db, workspacePath, args);
 
     case "codebase_reindex":
       return codebase_reindex(db, args as Parameters<typeof codebase_reindex>[1]);

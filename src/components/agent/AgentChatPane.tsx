@@ -70,7 +70,7 @@ const READ_ONLY_TOOLS = new Set([
   "list_notes", "get_note", "search_notes",
   "list_tasks", "get_task", "search_tasks", "list_ready_tasks",
   "get_idea_flow",
-  "get_context", "get_item", "get_graph",
+  "get_context", "get_item", "get_graph", "get_today",
 ]);
 
 /** `type` ("note" | "task") from a get_item result, or undefined. */

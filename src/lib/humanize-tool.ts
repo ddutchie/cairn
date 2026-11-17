@@ -179,6 +179,7 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
     case "get_graph": return typeof args.nodeId === "string" && args.nodeId
       ? { pre: args.semantic ? "Found notes related to" : "Explored connections of", obj: short(lookup.note?.(args.nodeId) ?? lookup.task?.(args.nodeId) ?? args.nodeId) }
       : { pre: "Read the knowledge graph" };
+    case "get_today": return typeof args.date === "string" && args.date ? { pre: "Read the Today brief for", obj: args.date } : { pre: "Read the Today brief" };
     case "codebase_query": return { pre: "Searched the codebase for", obj: `“${short(args.query, "a symbol")}”` };
     // Today's brief tools.
     case "today_read": return { pre: "Read the brief so far" };

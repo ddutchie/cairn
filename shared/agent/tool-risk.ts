@@ -35,7 +35,7 @@ export function isShellTool(name: string): boolean {
 export const APPROVAL_SAFE_TOOLS = new Set<string>([
   "read", "read_image", "glob", "grep", "plan", "exit_plan_mode",
   "get_context", "get_item", "search_notes", "search_tasks",
-  "get_user_writing_style", "get_idea_flow", "get_graph", "codebase_query",
+  "get_user_writing_style", "get_idea_flow", "get_graph", "get_today", "codebase_query",
   "ask_questions", "skill",
   // Read-only continuable-child discovery (engine-tool-subagent-control/list-agents).
   "list_agents",
