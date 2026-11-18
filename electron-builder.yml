@@ -118,6 +118,10 @@ win:
   icon: build-resources/icon.ico
 
 nsis:
+  # No spaces: latest.yml lists the installer as Cairn-Setup-<v>.exe, but
+  # `gh release upload` renames "Cairn Setup <v>.exe" to "Cairn.Setup.<v>.exe",
+  # so the updater's download 404'd on Windows. Name file and manifest alike.
+  artifactName: "Cairn-Setup-${version}.${ext}"
   oneClick: false
   perMachine: true                     # installs to Program Files, requires UAC elevation
   allowElevation: true                 # prompt for elevation if not already admin
