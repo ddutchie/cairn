@@ -432,7 +432,21 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     if (id === sessionIdRef.current) setIsLoading(true);
     dispatch();
   };
-  const stop = () => { if (sessionIdRef.current) void sessionClient.abort(sessionIdRef.current).catch(() => {}); resetTransient(true); };
+  const stop = () => {
+    const id = sessionIdRef.current;
+    if (id) void sessionClient.abort(id).catch(() => {});
+    // Stopping wipes the live turn below, and the engine's own turn/end only arrives afterwards
+    // (to an empty transient). Hand what the stopped turn produced to the adapter first, so its
+    // tool calls and partial reply are saved instead of lost ("Send now" stops a running turn).
+    const t = transientsRef.current.get(transientKey(id));
+    if (t && (t.tools.length > 0 || t.text.trim() || t.subagents.length > 0)) {
+      adapterRef.current.onTurnEnd?.("aborted", {
+        toolCalls: t.tools.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item),
+        text: t.text, thought: t.thought, subagents: t.subagents, assistant: t.assistant, stats: t.stats,
+      }, undefined, id ?? undefined);
+    }
+    resetTransient(true);
+  };
   const clearQuestions = () => clearQuestionsFor(sessionIdRef.current);
   const answerQuestions = (answers: string) => {
     const id = sessionIdRef.current;

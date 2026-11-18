@@ -127,6 +127,13 @@ export function useChatStream(
           onTurnFinishedRef.current?.(turnThreadId);
           return;
         }
+        // The late turn/end of a stopped turn (already saved by stop) arrives empty: no blank bubble.
+        if (!snapshot.text.trim() && !snapshot.toolCalls.length && !snapshot.subagents.length) {
+          clearStagedActions(sessionId);
+          addFailureNotice();
+          onTurnFinishedRef.current?.(turnThreadId);
+          return;
+        }
         const assistant = snapshot.assistant;
         addMessage(turnThreadId, "assistant", snapshot.text, assistant?.contextRefs as never, snapshot.toolCalls as never, stagedActions(sessionId), snapshot.thought, undefined, snapshot.subagents, undefined, undefined, undefined, undefined, snapshot.stats as never);
         if (assistant?.usage) setThreadUsage(turnThreadId, assistant.usage as never);

@@ -1,13 +1,12 @@
 "use client";
 
 import { Mountain } from "lucide-react";
-import { CairnRefChip, type CairnRef } from "@/components/shared/cairn-ref-chip";
+import { CairnRefChip, CairnRefOpenButton, type CairnRef } from "@/components/shared/cairn-ref-chip";
 import { ToolCard, ToolPanel, ToolPayload } from "@/components/shared/ToolCard";
 import { cairnNameLookup } from "@/lib/cairn-name-lookup";
-import { humanizeTool } from "@/lib/humanize-tool";
+import { humanizeSearchResult, humanizeTool } from "@/lib/humanize-tool";
 import type { ConversationToolCall } from "@/lib/conversation/message";
 import { prettyToolOutput, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
-import { riskForTool } from "@/lib/tool-risk";
 import { prettifyToolLabel } from "@/lib/utils";
 import { cairnToolView } from "./cairn-tool-views";
 
@@ -25,17 +24,18 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
   const parsed = parseObject(resultText);
   const base = toolCall.viewTitle ? { pre: toolCall.viewTitle } : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
   // A style rule that was already in the guide must not read as "Added".
+  const hitCount = toolCall.ok && (toolCall.name === "search_notes" || toolCall.name === "search_tasks") ? resultCount(resultText) : undefined;
   const summary = toolCall.name === "update_user_writing_style" && toolCall.ok && parsed?.updated === false
     ? { pre: "Writing style already had this", obj: typeof toolCall.args?.section === "string" ? toolCall.args.section : undefined }
-    : base;
+    : hitCount !== undefined
+      ? humanizeSearchResult(toolCall.name === "search_notes" ? "notes" : "tasks", toolCall.args ?? {}, hitCount)
+      : base;
   const args = toolCall.args && Object.keys(toolCall.args).length > 0
     ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2).slice(0, MAX_DETAIL_LENGTH)
     : undefined;
   const output = prettyToolOutput(redactToolOutput(resultText));
   const view = cairnToolView(toolCall);
   const errorMessage = toolCall.ok ? undefined : typeof parsed?.error === "string" ? parsed.error : parsed ? undefined : toolCall.error;
-  // Successful writes open on their own (specialised view or generic panels); reads and failures stay collapsed.
-  const isWrite = toolCall.ok && riskForTool(toolCall.name) !== "READ";
   const raw = (args || output) && (
     <>
       {args && <ToolPayload label="Arguments" value={args} />}
@@ -51,7 +51,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
       brand="Cairn"
       summary={summary}
       tooltip="Cairn workspace tool"
-      defaultExpanded={isWrite}
+      headerAction={cairnRef && toolCall.ok ? <CairnRefOpenButton cairnRef={cairnRef} /> : undefined}
       caption={`Tool: ${prettifyToolLabel(toolCall.name)}`}
     >
       {cairnRef && <div className="mt-1"><CairnRefChip toolName={toolCall.name} cairnRef={cairnRef} ok={toolCall.ok} /></div>}
@@ -69,6 +69,17 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
       ) : raw}
     </ToolCard>
   );
+}
+
+/** Number of hits in a search result (a top-level array, or `{results}`), or undefined when it isn't one. */
+function resultCount(text: string | undefined): number | undefined {
+  if (!text) return undefined;
+  try {
+    const value = JSON.parse(text);
+    if (Array.isArray(value)) return value.length;
+    if (value && typeof value === "object" && Array.isArray((value as { results?: unknown }).results)) return (value as { results: unknown[] }).results.length;
+  } catch { /* not JSON */ }
+  return undefined;
 }
 
 function parseObject(text: string | undefined): Record<string, unknown> | undefined {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { humanizeConnectorTool, humanizeTool, humanizedRunStep, humanizedText } from "./humanize-tool";
+import { humanizeConnectorTool, humanizeSearchResult, humanizeTool, humanizedRunStep, humanizedText } from "./humanize-tool";
 
 describe("humanizeTool", () => {
   it("turns coding tools into concise English summaries", () => {
@@ -94,5 +94,30 @@ describe("humanizedRunStep", () => {
     expect(humanizedRunStep("mcp__tZ7lQzgCms_3__ask_work_iq", { question: "x" }, "Work IQ")).toBe("Work IQ · Ask");
     expect(humanizedRunStep("mcp__s1__search_messages", { query: "release" }, undefined, "Slack · Search messages")).toBe("Slack · Search messages release");
     expect(humanizedRunStep("mcp__s1__search_messages")).toBe("Search messages");
+  });
+
+  it("describes a search by what it asked for, never a placeholder", () => {
+    expect(humanizeTool("search_notes", { query: "login" })).toEqual({ pre: "Searched notes for", obj: "“login”" });
+    expect(humanizeTool("search_notes", { query: "login", mode: "semantic" }).pre).toBe("Searched notes by meaning for");
+    expect(humanizeTool("search_notes", { query: "", folder: "Plans" })).toEqual({ pre: "Listed notes in", obj: "Plans" });
+    expect(humanizeTool("search_notes", { query: "" })).toEqual({ pre: "Listed notes" });
+    expect(humanizeTool("search_tasks", { tag: "bug" })).toEqual({ pre: "Listed tasks tagged", obj: "bug" });
+    expect(humanizeTool("search_tasks", { filter: "ready" })).toEqual({ pre: "Listed ready tasks" });
+    expect(JSON.stringify(humanizeTool("search_notes", {}))).not.toContain("a phrase");
+  });
+
+  it("names an ask_questions call by how many questions it asked", () => {
+    expect(humanizeTool("ask_questions", { questions: [{}, {}] })).toEqual({ pre: "Asked", obj: "2 questions" });
+    expect(humanizeTool("ask_questions", { questions: [{}] }).obj).toBe("1 question");
+  });
+
+  it("words a finished search with its result count", () => {
+    expect(humanizeSearchResult("notes", { query: "login" }, 3)).toEqual({ pre: "Found 3 notes for", obj: "“login”" });
+    expect(humanizeSearchResult("notes", { query: "login" }, 1).pre).toBe("Found 1 note for");
+    expect(humanizeSearchResult("notes", { query: "login" }, 0)).toEqual({ pre: "No notes matched", obj: "“login”" });
+    expect(humanizeSearchResult("tasks", { filter: "ready" }, 2)).toEqual({ pre: "Found 2 ready tasks" });
+    expect(humanizeSearchResult("tasks", { filter: "ready" }, 0)).toEqual({ pre: "No ready tasks" });
+    expect(humanizeSearchResult("notes", { folder: "Plans" }, 4)).toEqual({ pre: "Found 4 notes in", obj: "Plans" });
+    expect(humanizeSearchResult("notes", {}, 0)).toEqual({ pre: "No notes found" });
   });
 });

@@ -15,6 +15,7 @@ import { prettifyToolLabel } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { appClient } from "@/lib/ipc/app";
 import { useCairnStore } from "@/store";
+import { IconButton } from "@/components/ui/icon-button";
 
 // ── Action label lookup ──────────────────────────────────────────────────────
 
@@ -118,6 +119,41 @@ export function extractCairnRef(
 }
 
 
+/** Opens a note or task where the user works with it: the preview pane when the session is centred, else its own view. */
+export function useOpenCairnRef(cairnRef: CairnRef): () => void {
+  const setView = useCairnStore((s) => s.setView);
+  const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
+  const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
+  return () => {
+    if (sessionPresentation === "center") {
+      setActivePreviewItem({ type: cairnRef.type, id: cairnRef.id });
+    } else if (cairnRef.type === "note") {
+      revealNote(setView, cairnRef.id);
+    } else {
+      revealCard(setView, cairnRef.id);
+    }
+  };
+}
+
+/** Small icon button that opens the note or task a collapsed tool card touched. */
+export function CairnRefOpenButton({ cairnRef }: { cairnRef: CairnRef }) {
+  const open = useOpenCairnRef(cairnRef);
+  const isNote = cairnRef.type === "note";
+  return (
+    <IconButton
+      size="sm"
+      variant="outline"
+      label={isNote ? "Open note" : "Open task"}
+      tooltip={`Open ${isNote ? "note" : "task"}: ${cairnRef.title}`}
+      tooltipSide="top"
+      onClick={open}
+      data-testid="cairn-ref-open"
+    >
+      {isNote ? <FileText size={11} /> : <SquareCheck size={11} />}
+    </IconButton>
+  );
+}
+
 export function CairnRefChip({ toolName, cairnRef, ok = true }: {
   /** The MCP tool name — used to look up the action label (e.g. "create_note", "update_task"). */
   toolName: string;
@@ -125,21 +161,9 @@ export function CairnRefChip({ toolName, cairnRef, ok = true }: {
   /** When `false`, the chip is styled as failed (non-clickable, danger border). Agent-only. */
   ok?: boolean;
 }) {
-  const setView = useCairnStore((s) => s.setView);
-  const sessionPresentation = useCairnStore((s) => s.sessionPresentation);
-  const setActivePreviewItem = useCairnStore((s) => s.setActivePreviewItem);
+  const handleClick = useOpenCairnRef(cairnRef);
   const isNote = cairnRef.type === "note";
   const actionLabel = cairnActionLabel(toolName, cairnRef.type);
-
-  function handleClick() {
-    if (sessionPresentation === "center") {
-      setActivePreviewItem({ type: cairnRef.type, id: cairnRef.id });
-    } else if (isNote) {
-      revealNote(setView, cairnRef.id);
-    } else {
-      revealCard(setView, cairnRef.id);
-    }
-  }
 
   return (
     <button
