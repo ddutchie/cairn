@@ -36,7 +36,7 @@ export function PanelHeading({ title, note, action, className }: {
 }) {
   return (
     <div className={cn("flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]", className)}>
-      <h2 className="font-display text-base">{title}</h2>
+      <h2 className="font-display text-base shrink-0 whitespace-nowrap">{title}</h2>
       {note && <span className="text-2xs text-[var(--text-tertiary)] min-w-0 truncate">{note}</span>}
       {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>

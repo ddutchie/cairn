@@ -496,7 +496,7 @@ export function ProjectOverview() {
           </span>
 
           <div id={overviewContentId}>
-          {/* ── at a glance — four facts in one raised strip; each opens where you can act on it ── */}
+          {/* ── at a glance — four facts in one raised strip; none repeats the hero or the ring ── */}
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-elev-1 overflow-hidden divide-y @2xl:divide-y-0 @2xl:divide-x divide-[var(--border-subtle)] flex flex-col @2xl:flex-row mb-6">
             {[
               {
@@ -536,9 +536,9 @@ export function ProjectOverview() {
               title="Needs attention"
               note={needsAttention > 0 ? `${needsAttention} of ${openCards.length} open tasks` : undefined}
             />
-          <div className="grid grid-cols-1 @2xl:grid-cols-3 gap-2.5" role="list" aria-label="Needs attention">
+          <div className="grid grid-cols-1 @xl:grid-cols-2 @5xl:grid-cols-3 gap-2.5" role="list" aria-label="Needs attention">
             {(focus === "pinned" ? [] : filteredQueue).length === 0 ? (
-              <div className="@2xl:col-span-3 rounded-lg border border-dashed border-[var(--border)] p-4 flex items-center gap-3">
+              <div className="@xl:col-span-2 @5xl:col-span-3 rounded-lg border border-dashed border-[var(--border)] p-4 flex items-center gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-[var(--text-primary)]">
                     {focus === "overdue" ? "No overdue tasks" : focus === "today" ? "Nothing due today" : focus === "pinned" ? `${pinnedNotes.length} pinned notes, listed below` : "All caught up"}

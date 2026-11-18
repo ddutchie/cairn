@@ -543,7 +543,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
       <div
         ref={cardRef}
         className={cn(
-          "grid gap-8 items-end grid-cols-1 @3xl:grid-cols-[1fr_300px]",
+          "grid gap-8 items-end grid-cols-1 @3xl:grid-cols-[minmax(0,1fr)_auto]",
           stack
             ? "rounded-2xl border border-[var(--border-subtle)] shadow-elev-1 px-5 pt-4 pb-5"
             : "pb-5 border-b border-[var(--border-subtle)]",
@@ -568,7 +568,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
           {(state.lastError || error) && <p className="text-xs text-[var(--danger)] mt-2">Last run: {error ?? state.lastError}</p>}
           {!past && header}
         </div>
-        <div className="flex items-end gap-4">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           <CairnStack
             key={brief.generatedAt}
             counts={{ need: openNeed.length, prep: openPrep, fyi: brief.fyi.length }}
@@ -944,7 +944,7 @@ function LegendRow({ n, label, hint, accent, onClick }: { n: number; label: stri
       className="grid grid-cols-[24px_1fr] items-center text-left px-1.5 py-1 rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] min-w-0"
     >
       <span className={cn("font-display text-base tabular-nums", accent ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>{n}</span>
-      <span className={cn("truncate", accent && "text-[var(--text-primary)]")}>{label}</span>
+      <span className={cn("whitespace-nowrap", accent && "text-[var(--text-primary)]")}>{label}</span>
     </button>
     </Tooltip>
   );
