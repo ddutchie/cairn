@@ -150,14 +150,18 @@ export function updateProject(db: Database.Database, id: string, patch: Partial<
 }
 
 export function deleteProject(db: Database.Database, id: string) {
-  // Cascade: delete cards, columns, notes (caller deletes .md files first)
-  for (const { id: noteId } of db.prepare("SELECT id FROM notes WHERE project_id = ?").all(id) as { id: string }[]) {
-    onNoteDeleted(db, noteId); // People links to these notes (persona, mentions, action items)
-  }
-  db.prepare("DELETE FROM task_cards WHERE project_id = ?").run(id);
-  db.prepare("DELETE FROM board_columns WHERE project_id = ?").run(id);
-  db.prepare("DELETE FROM notes WHERE project_id = ?").run(id);
-  db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+  // Cascade: delete cards, columns, notes (caller deletes .md files first).
+  // One transaction (a savepoint when the caller already holds one), so the
+  // People cleanup never commits without the deletes.
+  db.transaction(() => {
+    for (const { id: noteId } of db.prepare("SELECT id FROM notes WHERE project_id = ?").all(id) as { id: string }[]) {
+      onNoteDeleted(db, noteId); // People links to these notes (persona, mentions, action items)
+    }
+    db.prepare("DELETE FROM task_cards WHERE project_id = ?").run(id);
+    db.prepare("DELETE FROM board_columns WHERE project_id = ?").run(id);
+    db.prepare("DELETE FROM notes WHERE project_id = ?").run(id);
+    db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+  })();
 }
 
 export function getProjectById(db: Database.Database, id: string) {

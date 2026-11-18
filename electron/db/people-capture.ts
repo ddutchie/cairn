@@ -14,7 +14,7 @@
  */
 
 import type Database from "better-sqlite3";
-import { foldName, formatMeetingDate, parseAttendeeList, type AttendeeRef } from "../../shared/people/parse";
+import { foldName, formatMeetingDate, parseAttendeeList, splitAttendeeValues, type AttendeeRef } from "../../shared/people/parse";
 import type { AttendeeSource, PeopleStatus, Provenance } from "../../shared/types/people";
 import {
   addAttendee, createMeeting, createPerson, getMeeting, getPerson, removeAttendee, setNoteMeeting, updateMeeting,
@@ -127,7 +127,7 @@ function ensureStubPerson(db: Db, workspaceId: string, name: string, email: stri
 
 /** The note's own meeting (`noteMeetingId`), created or revived. */
 function ensureNoteMeeting(db: Db, note: { id: string; workspace_id: string; title: string }, startsAt: string) {
-  const id = noteMeetingId(note.id);
+  const id = noteMeetingId(note.workspace_id, note.id);
   const row = db.prepare("SELECT deleted_at FROM meetings WHERE id = ?").get(id) as { deleted_at: string | null } | undefined;
   if (!row) return createMeeting(db, { id, workspaceId: note.workspace_id, title: note.title, startsAt, source: "note" });
   if (row.deleted_at) {
@@ -141,6 +141,8 @@ export interface CaptureInput {
   noteId: string;
   /** Raw values (strings as written) or parsed refs. */
   attendees: unknown[] | AttendeeRef[];
+  /** People already identified by id (an agent passing person ids); added as confirmed and kept. */
+  personIds?: string[];
   /** ISO date/time of the meeting; null/undefined keeps the current one. */
   date?: string | null;
   /** Which path is writing. Attendees previously added by this path and not listed now are removed. */
@@ -197,10 +199,18 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
     const result: CaptureResult = { meetingId: meeting.id, attendees: [], suggested: [], created: [], removed: [] };
     const keep = new Set<string>();
 
+    for (const pid of input.personIds ?? []) {
+      if (keep.has(pid) || !candidates.some((c) => c.id === pid)) continue;
+      addAttendee(db, { meetingId: meeting.id, personId: pid, source: input.source, provenance: input.provenance });
+      keep.add(pid);
+      result.attendees.push(pid);
+    }
+
     for (const ref of refs) {
       const r = resolveIn(candidates, ref);
       if (r.kind === "dismissed") continue;
       if (r.kind === "match") {
+        if (keep.has(r.personId)) continue;
         addAttendee(db, { meetingId: meeting.id, personId: r.personId, source: input.source, provenance: input.provenance });
         keep.add(r.personId);
         result.attendees.push(r.personId);
@@ -258,20 +268,22 @@ export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unkn
   if (!row) return null;
 
   const people = db.prepare(`
-    SELECT p.id, p.name, n.title AS persona_title FROM meeting_attendees a
+    SELECT p.id, p.name, p.emails, n.title AS persona_title FROM meeting_attendees a
     JOIN people p ON p.id = a.person_id AND p.deleted_at IS NULL
     LEFT JOIN notes n ON n.id = p.persona_note_id AND n.deleted_at IS NULL
     WHERE a.meeting_id = ? AND a.deleted_at IS NULL AND a.status = 'confirmed'
     ORDER BY a.created_at, p.name
-  `).all(row.meeting_id) as { id: string; name: string; persona_title: string | null }[];
+  `).all(row.meeting_id) as { id: string; name: string; emails: string; persona_title: string | null }[];
 
-  const attendees = people.map((p) => (p.persona_title ? `[[${p.persona_title}]]` : p.name));
+  const candidates = loadCandidates(db, row.workspace_id);
+  const attendees = people.map((p) => attendeeReference(candidates, p));
   const attending = new Set(people.map((p) => p.id));
 
-  if (Array.isArray(existing)) {
-    const candidates = loadCandidates(db, row.workspace_id);
+  // A YAML list, or one string ("Chris" / "Ana, Ben") the way capture reads it.
+  const existingValues = Array.isArray(existing) ? existing : typeof existing === "string" ? splitAttendeeValues(existing) : [];
+  if (existingValues.length > 0) {
     const seen = new Set(attendees.map((a) => a.toLowerCase()));
-    for (const raw of existing) {
+    for (const raw of existingValues) {
       if (typeof raw !== "string" || !raw.trim()) continue;
       const [ref] = parseAttendeeList([raw]);
       const r = ref ? resolveIn(candidates, ref) : { kind: "none" as const };
@@ -286,11 +298,39 @@ export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unkn
   return { attendees, date: formatMeetingDate(row.starts_at) };
 }
 
+/**
+ * How to write one attendee so that reading the file back finds the same
+ * person: `[[persona note title]]` when that round-trips (a title with `#` or
+ * `|` doesn't), else the name, else an email. A name two people share falls
+ * back to the email; with none, the name is written and reads back as a
+ * suggestion rather than the wrong person.
+ */
+function attendeeReference(candidates: Candidate[], p: { id: string; name: string; emails: string; persona_title: string | null }): string {
+  const options = [
+    ...(p.persona_title ? [`[[${p.persona_title}]]`] : []),
+    p.name,
+    ...safeArray(p.emails),
+  ];
+  for (const value of options) {
+    const [ref] = parseAttendeeList([value]);
+    const r = ref ? resolveIn(candidates, ref) : null;
+    if (r?.kind === "match" && r.personId === p.id) return value;
+  }
+  return p.name;
+}
+
 /** Note ids whose meeting frontmatter may be stale after changes to these rows. */
 export function notesAffectedBy(db: Db, changed: { meetingIds?: string[]; personIds?: string[]; noteIds?: string[] }): string[] {
   const ids = new Set<string>(changed.noteIds ?? []);
   const meetingIds = new Set<string>(changed.meetingIds ?? []);
-  for (const pid of changed.personIds ?? []) {
+  const personIds = new Set<string>(changed.personIds ?? []);
+  // A persona note's title is how its person is written in other notes' attendees.
+  for (const nid of changed.noteIds ?? []) {
+    for (const r of db.prepare("SELECT id FROM people WHERE persona_note_id = ? AND deleted_at IS NULL").all(nid) as { id: string }[]) {
+      personIds.add(r.id);
+    }
+  }
+  for (const pid of personIds) {
     for (const r of db.prepare("SELECT DISTINCT meeting_id FROM meeting_attendees WHERE person_id = ?").all(pid) as { meeting_id: string }[]) {
       meetingIds.add(r.meeting_id);
     }

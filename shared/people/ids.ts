@@ -44,7 +44,11 @@ export function stubPersonId(workspaceId: string, key: string): string {
   return `stub:${workspaceId}:${key}`;
 }
 
-/** The meeting a note became (attendees added to a plain note): one per note, on every device. */
-export function noteMeetingId(noteId: string): string {
-  return `nmt:${noteId}`;
+/**
+ * The meeting a note became (attendees added to a plain note): one per note per
+ * workspace, on every device. The workspace is part of the id because a note
+ * can move to another workspace (`mergeProject`), and its meeting can't follow.
+ */
+export function noteMeetingId(workspaceId: string, noteId: string): string {
+  return `nmt:${workspaceId}:${noteId}`;
 }

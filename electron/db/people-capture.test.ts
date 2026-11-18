@@ -55,7 +55,7 @@ describe("captureNoteMeeting", () => {
     const n = note("n1");
     const ana = person("Ana Ruiz");
     const r = captureNoteMeeting(db, { noteId: n.id, attendees: ["[[Ana Ruiz]]"], date: "2026-11-10T09:00:00.000Z", source: "frontmatter", provenance: "explicit" });
-    expect(r.meetingId).toBe(noteMeetingId(n.id));
+    expect(r.meetingId).toBe(noteMeetingId("ws1", n.id));
     expect(r.attendees).toEqual([ana.id]);
     const row = db.prepare("SELECT meeting_id FROM notes WHERE id = 'n1'").get() as { meeting_id: string };
     expect(row.meeting_id).toBe(r.meetingId);
@@ -204,5 +204,45 @@ describe("cleanup", () => {
     mergeProject(db, "proj1", "proj2");
     expect(db.prepare("SELECT meeting_id FROM notes WHERE id = 'n1'").get()).toEqual({ meeting_id: r.meetingId });
     expect(getPerson(db, ana.id)?.personaNoteId).toBe(n.id);
+  });
+});
+
+describe("review fixes", () => {
+  it("a note moved to another workspace gets its own meeting there", () => {
+    seedWorkspace(db, "ws2", "Other");
+    seedProject(db, "ws2", "proj2", "Other project");
+    note("n1");
+    const first = captureNoteMeeting(db, { noteId: "n1", attendees: [], source: "frontmatter", provenance: "explicit" });
+    mergeProject(db, "proj1", "proj2");
+    const second = captureNoteMeeting(db, { noteId: "n1", attendees: [], source: "frontmatter", provenance: "explicit" });
+    expect(second.meetingId).not.toBe(first.meetingId);
+    expect((db.prepare("SELECT workspace_id FROM meetings WHERE id = ?").get(second.meetingId) as { workspace_id: string }).workspace_id).toBe("ws2");
+  });
+
+  it("a person added by hand stays when the frontmatter drops them", () => {
+    note("n1");
+    const ana = person("Ana");
+    const r = captureNoteMeeting(db, { noteId: "n1", attendees: ["Ana"], source: "frontmatter", provenance: "explicit" });
+    addAttendee(db, { meetingId: r.meetingId, personId: ana.id, source: "manual", provenance: "explicit" });
+    expect(captureNoteMeeting(db, { noteId: "n1", attendees: [], source: "frontmatter", provenance: "explicit" }).removed).toEqual([]);
+    expect(attending(r.meetingId)).toEqual([{ personId: ana.id, status: "confirmed", source: "manual" }]);
+  });
+
+  it("writes a reference that reads back as the same person", () => {
+    note("n1");
+    const hashTitle = note("p1", "Ana #work");
+    const ana = person("Ana Ruiz", { personaNoteId: hashTitle.id });
+    const dup1 = person("Sam", { emails: ["sam.a@x.io"] });
+    person("Sam");
+    captureNoteMeeting(db, { noteId: "n1", attendees: [], personIds: [ana.id, dup1.id], source: "frontmatter", provenance: "explicit" });
+    expect(renderMeetingFrontmatter(db, "n1")?.attendees).toEqual(["Ana Ruiz", "sam.a@x.io"]);
+  });
+
+  it("renaming a persona note marks its meetings' notes for refresh", () => {
+    note("n1");
+    const persona = note("p-ana", "Ana Ruiz");
+    person("Ana Ruiz", { personaNoteId: persona.id });
+    captureNoteMeeting(db, { noteId: "n1", attendees: ["Ana Ruiz"], source: "frontmatter", provenance: "explicit" });
+    expect(notesAffectedBy(db, { noteIds: ["p-ana"] }).sort()).toEqual(["n1", "p-ana"]);
   });
 });

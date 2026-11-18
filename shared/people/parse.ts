@@ -65,7 +65,7 @@ export function parseAttendeeList(raw: unknown): AttendeeRef[] {
   const items: unknown[] = Array.isArray(raw)
     ? raw
     : typeof raw === "string"
-      ? splitList(raw)
+      ? splitAttendeeValues(raw)
       : [];
   const out: AttendeeRef[] = [];
   const seen = new Set<string>();
@@ -80,8 +80,11 @@ export function parseAttendeeList(raw: unknown): AttendeeRef[] {
   return out;
 }
 
-/** Split "A, B and C; [[D, Jr]]" on commas/semicolons/" and ", keeping wikilinks whole. */
-function splitList(s: string): string[] {
+/**
+ * Split "A, B and C; [[D, Jr]] & E" on commas, semicolons, " and " and "&",
+ * never inside a wikilink. Returns the raw values, trimmed.
+ */
+export function splitAttendeeValues(s: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let cur = "";
@@ -90,11 +93,21 @@ function splitList(s: string): string[] {
     if (two === "[[") { depth++; cur += two; i++; continue; }
     if (two === "]]") { depth = Math.max(0, depth - 1); cur += two; i++; continue; }
     const ch = s[i];
-    if (depth === 0 && (ch === "," || ch === ";")) { parts.push(cur); cur = ""; continue; }
+    if (depth === 0) {
+      if (ch === "," || ch === ";" || ch === "&") { parts.push(cur); cur = ""; continue; }
+      const and = /^\s+and\s+/i.exec(s.slice(i));
+      if (and) { parts.push(cur); cur = ""; i += and[0].length - 1; continue; }
+    }
     cur += ch;
   }
   parts.push(cur);
-  return parts.flatMap((p) => (/\[\[/.test(p) ? [p] : p.split(/\s+and\s+|\s*&\s*/i))).map((p) => p.trim()).filter(Boolean);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+/** A calendar date that exists ("2026-02-30" doesn't). */
+function isRealDate(y: number, m: number, d: number): boolean {
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 }
 
 /**
@@ -107,11 +120,11 @@ export function parseMeetingDate(raw: unknown): string | null {
   if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw.toISOString();
   if (typeof raw !== "string") return null;
   const s = raw.trim();
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (dateOnly) return `${s}T00:00:00.000Z`;
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (!ymd || !isRealDate(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]))) return null;
+  if (s.length === 10) return `${s}T00:00:00.000Z`;
   const spaced = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?$/.exec(s);
   const candidate = spaced ? `${spaced[1]}T${spaced[2]}:${spaced[3] ?? "00"}` : s;
-  if (!/^\d{4}-\d{2}-\d{2}/.test(candidate)) return null;
   const t = Date.parse(candidate);
   return Number.isNaN(t) ? null : new Date(t).toISOString();
 }

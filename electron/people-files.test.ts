@@ -81,7 +81,7 @@ describe("refreshMeetingFrontmatter", () => {
     addAttendee(db, { meetingId: r.meetingId, personId: ben.id, source: "manual", provenance: "explicit" });
 
     const suppressed: string[] = [];
-    expect(refreshMeetingFrontmatter(db, ws, ["n1"], (id) => suppressed.push(id))).toEqual(["n1"]);
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"], (id) => suppressed.push(id)).written).toEqual(["n1"]);
     expect(suppressed).toEqual(["n1"]);
     const fm = fmOf(file);
     expect(fm.attendees).toEqual(["Ana", "Ben"]);
@@ -90,13 +90,13 @@ describe("refreshMeetingFrontmatter", () => {
     expect(matter(fs.readFileSync(file, "utf-8")).content.trim()).toBe("Body stays");
 
     // Nothing changed → no write.
-    expect(refreshMeetingFrontmatter(db, ws, ["n1"])).toEqual([]);
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"]).written).toEqual([]);
   });
 
   it("leaves a note that isn't a meeting alone", () => {
     const file = noteWithFile("n1");
     const before = fs.readFileSync(file, "utf-8");
-    expect(refreshMeetingFrontmatter(db, ws, ["n1"])).toEqual([]);
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"]).written).toEqual([]);
     expect(fs.readFileSync(file, "utf-8")).toBe(before);
   });
 });
@@ -108,5 +108,28 @@ describe("meetingNotesForSync", () => {
     const att = db.prepare("SELECT id FROM meeting_attendees WHERE meeting_id = ?").get(r.meetingId) as { id: string };
     expect(meetingNotesForSync(db, [{ entity: "meeting_attendees", entity_id: att.id }])).toEqual(["n1"]);
     expect(meetingNotesForSync(db, [{ entity: "tags", entity_id: "t1" }])).toEqual([]);
+  });
+});
+
+describe("review fixes", () => {
+  it("keeps attendees Cairn never captured on a note without a meeting", () => {
+    setPeopleEnabled(db, false);
+    const file = noteWithFile("n1", { attendees: ["Ana"] });
+    setPeopleEnabled(db, true);
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"]).written).toEqual([]);
+    expect(fmOf(file).attendees).toEqual(["Ana"]);
+  });
+
+  it("keeps an ambiguous single-string attendee instead of emptying the list", () => {
+    createPerson(db, { workspaceId: "ws1", name: "Chris" });
+    createPerson(db, { workspaceId: "ws1", name: "Chris" });
+    const file = noteWithFile("n1", { attendees: "Chris" });
+    const r = capturePeopleFromFile(db, file, "n1")!;
+    expect(r.suggested).toHaveLength(2);
+    const ana = createPerson(db, { workspaceId: "ws1", name: "Ana" });
+    addAttendee(db, { meetingId: r.meetingId, personId: ana.id, source: "manual", provenance: "explicit" });
+    refreshMeetingFrontmatter(db, ws, ["n1"]);
+    expect(fmOf(file).attendees).toEqual(["Ana", "Chris"]);
+    expect(capturePeopleFromFile(db, file, "n1")?.removed).toEqual([]);
   });
 });

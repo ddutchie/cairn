@@ -45,8 +45,9 @@ export function setNoteFileProjector(fn: NoteFileProjector | null): void {
 }
 
 /**
- * Called after a sync tick with the rows it applied, so main.ts can bring the
- * People layer's `attendees` / `date` frontmatter in line (people-files.ts).
+ * Called after every sync tick with the rows it applied (possibly none), so
+ * main.ts can bring the People layer's `attendees` / `date` frontmatter in line
+ * and retry writes that failed (people-files.ts).
  */
 export type AppliedRowsHook = (applied: readonly { entity: string; entity_id: string; op: string }[]) => void;
 let _appliedHook: AppliedRowsHook | null = null;
@@ -550,7 +551,8 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
         try { project(copyId, "put"); } catch { /* ignore */ }
       }
     }
-    if (_appliedHook && applied.length > 0) {
+    // Called on every tick, even with nothing applied, so the hook can retry its own failures.
+    if (_appliedHook) {
       try {
         _appliedHook(applied);
       } catch (err) {

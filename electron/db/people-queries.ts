@@ -551,6 +551,9 @@ export interface AddAttendeeInput {
  * a second call returns the existing row, upgrading `suggested` to `confirmed`
  * if asked, and re-adding someone who was removed revives their row.
  */
+/** Which source owns an attendee row when several add the same person: the user's own actions win. */
+const SOURCE_RANK: Record<AttendeeSource, number> = { body_line: 0, frontmatter: 1, calendar: 2, declared: 3, manual: 4 };
+
 export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
   if (!getMeeting(db, input.meetingId)) throw new Error(`Meeting not found: ${input.meetingId}`);
   if (!getPerson(db, input.personId)) throw new Error(`Person not found: ${input.personId}`);
@@ -559,11 +562,22 @@ export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
   const id = attendeeRowId(input.meetingId, input.personId);
   const existing = db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row | undefined;
   if (existing && !existing.deleted_at) {
-    if (existing.status !== status && status === "confirmed") {
-      db.prepare("UPDATE meeting_attendees SET status = 'confirmed', updated_at = ? WHERE id = ?").run(now, id);
-      return toAttendee({ ...existing, status: "confirmed", updated_at: now });
-    }
-    return toAttendee(existing);
+    // One row per meeting/person. A stronger source takes it over, so a person
+    // you add by hand stays when the frontmatter or a body line drops them
+    // (each source only removes rows it owns).
+    const source = input.source ?? "manual";
+    const takeOver = SOURCE_RANK[source] > SOURCE_RANK[existing.source as AttendeeSource];
+    const confirm = existing.status !== status && status === "confirmed";
+    if (!takeOver && !confirm) return toAttendee(existing);
+    const next = {
+      ...existing,
+      ...(confirm ? { status: "confirmed" } : {}),
+      ...(takeOver ? { source, provenance: input.provenance ?? "explicit" } : {}),
+      updated_at: now,
+    };
+    db.prepare("UPDATE meeting_attendees SET status = ?, source = ?, provenance = ?, updated_at = ? WHERE id = ?")
+      .run(next.status, next.source, next.provenance, now, id);
+    return toAttendee(next);
   }
   if (existing) {
     db.prepare(`

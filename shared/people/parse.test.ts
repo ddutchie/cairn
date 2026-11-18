@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate,
+  foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate, splitAttendeeValues,
 } from "./parse";
 
 describe("foldName", () => {
@@ -100,5 +100,21 @@ describe("parseChecklist", () => {
       [null, "Plain item", false],
     ]);
     expect(items[0].line).toBe(0);
+  });
+});
+
+describe("review fixes", () => {
+  it("splits and/& outside wikilinks but not inside", () => {
+    expect(splitAttendeeValues("[[Ana]] and Ben & Cal")).toEqual(["[[Ana]]", "Ben", "Cal"]);
+    expect(splitAttendeeValues("[[Smith and Wesson]], Dana")).toEqual(["[[Smith and Wesson]]", "Dana"]);
+    expect(parseAttendeeList("[[Ana]] and Ben").map((r) => r.name)).toEqual(["Ana", "Ben"]);
+    expect(splitAttendeeValues("Brandon")).toEqual(["Brandon"]);
+  });
+
+  it("rejects impossible dates", () => {
+    expect(parseMeetingDate("2026-99-99")).toBeNull();
+    expect(parseMeetingDate("2026-02-30")).toBeNull();
+    expect(parseMeetingDate("2026-02-30 10:00")).toBeNull();
+    expect(parseMeetingDate("2024-02-29")).toBe("2024-02-29T00:00:00.000Z");
   });
 });

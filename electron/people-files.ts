@@ -104,44 +104,53 @@ export function writeMeetingFrontmatter(filePath: string, fm: MeetingFrontmatter
   return true;
 }
 
+/** What a refresh did: notes rewritten, and notes it couldn't write (retry later). */
+export interface RefreshResult {
+  written: string[];
+  failed: string[];
+}
+
 /**
  * Bring the frontmatter of these notes in line with their meetings (after an
- * attendee change in the app, from an agent, or from sync). Notes without a
- * meeting are left alone unless their file still lists attendees from a
- * meeting that's gone. `beforeWrite` lets the caller mark the write as Cairn's
- * own (the file watcher's `suppressNextChange`). Returns the note ids written.
+ * attendee change in the app, from an agent, or from sync). A note with no
+ * meeting is left alone, even when its file lists attendees: Cairn may never
+ * have read them (written while People was off), so it must not delete them;
+ * flows that unlink a meeting on purpose call `writeMeetingFrontmatter(path, null)`.
+ * `beforeWrite` lets the caller mark the write as Cairn's own (the file
+ * watcher's `suppressNextChange`).
  */
 export function refreshMeetingFrontmatter(
   db: Database.Database,
   workspacePath: string,
   noteIds: readonly string[],
   beforeWrite?: (noteId: string) => void,
-): string[] {
-  if (!isPeopleEnabled(db) || noteIds.length === 0) return [];
-  const written: string[] = [];
+): RefreshResult {
+  const result: RefreshResult = { written: [], failed: [] };
+  if (!isPeopleEnabled(db) || noteIds.length === 0) return result;
   const lookup = db.prepare(`
-    SELECT n.id, n.meeting_id, p.name AS project_name FROM notes n
+    SELECT n.id, p.name AS project_name FROM notes n
     JOIN projects p ON p.id = n.project_id
     WHERE n.id = ? AND n.deleted_at IS NULL
   `);
   for (const noteId of new Set(noteIds)) {
-    const note = lookup.get(noteId) as { id: string; meeting_id: string | null; project_name: string } | undefined;
-    if (!note) continue;
-    const filePath = findNoteFilePath(workspacePath, note.project_name, note.id);
-    if (!filePath) continue;
-    const existing = readMeetingProps(filePath);
-    const fm = renderMeetingFrontmatter(db, noteId, existing?.attendees);
-    if (!fm && !existing?.hasAttendees) continue;
-    if (fm && existing?.hasAttendees && sameList(existing.attendees, fm.attendees)
-      && parseMeetingDate(existing.date) === parseMeetingDate(fm.date)) continue;
-    beforeWrite?.(noteId);
     try {
-      if (writeMeetingFrontmatter(filePath, fm)) written.push(noteId);
+      const note = lookup.get(noteId) as { id: string; project_name: string } | undefined;
+      if (!note) continue;
+      const filePath = findNoteFilePath(workspacePath, note.project_name, note.id);
+      if (!filePath) continue;
+      const existing = readMeetingProps(filePath);
+      const fm = renderMeetingFrontmatter(db, noteId, existing?.attendees);
+      if (!fm) continue;
+      if (existing?.hasAttendees && sameList(existing.attendees, fm.attendees)
+        && parseMeetingDate(existing.date) === parseMeetingDate(fm.date)) continue;
+      beforeWrite?.(noteId);
+      if (writeMeetingFrontmatter(filePath, fm)) result.written.push(noteId);
     } catch (err) {
       console.error(`[people] couldn't update frontmatter for note ${noteId}:`, err);
+      result.failed.push(noteId);
     }
   }
-  return written;
+  return result;
 }
 
 function sameList(a: unknown, b: readonly string[]): boolean {
