@@ -67,6 +67,8 @@ type CardSnapshot = {
   title: string; columnId: string; columnName: string; priority: string; dueDate: string; assignee: string; archived: string;
   /** Titles of the cards blocking this one (sorted), so a dependency change reads as names. */
   blockedBy: string[];
+  /** Ids of those cards (sorted): the comparison key, since titles can repeat or be renamed. */
+  blockedByIds: string[];
 };
 
 function cardSnapshot(db: Database.Database, id: string): CardSnapshot | undefined {
@@ -75,13 +77,13 @@ function cardSnapshot(db: Database.Database, id: string): CardSnapshot | undefin
             COALESCE(c.assignee, '') AS assignee, CASE WHEN c.archived_at IS NULL THEN '' ELSE 'archived' END AS archived,
             c.blocked_by_ids AS blockedByIds
      FROM task_cards c LEFT JOIN board_columns b ON b.id = c.column_id WHERE c.id = ? AND c.deleted_at IS NULL`,
-  ).get(id) as (Omit<CardSnapshot, "blockedBy"> & { blockedByIds: string }) | undefined;
+  ).get(id) as (Omit<CardSnapshot, "blockedBy" | "blockedByIds"> & { blockedByIds: string }) | undefined;
   if (!row) return undefined;
   let ids: string[] = [];
   try { ids = list(JSON.parse(row.blockedByIds)); } catch { /* malformed column: no blockers */ }
   const title = db.prepare("SELECT title FROM task_cards WHERE id = ?");
   const { blockedByIds: _raw, ...rest } = row;
-  return { ...rest, blockedBy: ids.map((b) => (title.get(b) as { title: string } | undefined)?.title ?? b).sort() };
+  return { ...rest, blockedByIds: [...ids].sort(), blockedBy: ids.map((b) => (title.get(b) as { title: string } | undefined)?.title ?? b).sort() };
 }
 
 const CARD_FIELD_LABELS: Array<[keyof CardSnapshot, string]> = [
@@ -96,7 +98,7 @@ function cardChanges(id: string, before: CardSnapshot | undefined, after: CardSn
   for (const [key, field] of CARD_FIELD_LABELS) {
     if (before[key] !== after[key]) out.push({ id, title: after.title, field, from: (before[key] as string) || undefined, to: (after[key] as string) || undefined });
   }
-  if (before.blockedBy.join("\u0000") !== after.blockedBy.join("\u0000")) {
+  if (before.blockedByIds.join("\u0000") !== after.blockedByIds.join("\u0000")) {
     out.push({ id, title: after.title, field: "blocked by", from: before.blockedBy.join(", ") || undefined, to: after.blockedBy.join(", ") || undefined });
   }
   return out;

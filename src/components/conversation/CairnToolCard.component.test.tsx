@@ -196,6 +196,9 @@ describe("approval fixes", () => {
     const view = screen.getByTestId("approval-cairn-view").textContent ?? "";
     expect(view).toContain("will delete");
     expect(view).not.toContain("was deleted");
+    const title = screen.getByTestId("approval-title").textContent ?? "";
+    expect(title).toMatch(/^Delete note/);
+    expect(title).not.toContain("Deleted");
   });
 
   it("keeps the full arguments one click away beside the preview", () => {

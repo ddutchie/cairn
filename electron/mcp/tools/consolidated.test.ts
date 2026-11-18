@@ -135,6 +135,13 @@ describe("consolidated toolset", () => {
     ]));
   });
 
+  it("update_tasks sees a blocker swapped for a same-titled card", async () => {
+    createCard(db, { id: "k3", columnId: "c-todo", projectId: "p", workspaceId: "ws", title: "Login bug" });
+    await run("update_tasks", { cardIds: ["k2"], blockedBy: ["k1"] });
+    const swapped = await run("update_tasks", { cardIds: ["k2"], blockedBy: ["k3"], unblockFrom: ["k1"] });
+    expect(swapped.changes).toEqual([{ id: "k2", title: "Refresh tokens", field: "blocked by", from: "Login bug", to: "Login bug" }]);
+  });
+
   it("update_notes reports a rename", async () => {
     const res = await run("update_notes", { noteIds: ["n1"], title: "Auth v2" });
     expect(res.changes).toEqual([{ id: "n1", title: "Auth v2", field: "title", from: "Auth design", to: "Auth v2" }]);

@@ -54,9 +54,13 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   const [pending, setPending] = useState<null | "allow" | "deny" | "always" | "command">(null);
   const risk = riskForTool(toolCall.name);
   const connector = connectorForTool(toolCall.name, connectors);
-  const summary = connector
+  const humanized = connector
     ? humanizeConnectorTool(toolCall.name, toolCall.args, connector.label || connector.name)
     : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
+  // Nothing has happened yet: a delete asks "Delete note", not "Deleted note".
+  const summary = !connector && toolCall.name === "delete"
+    ? { ...humanized, pre: humanized.pre.replace(/^Deleted\b/, "Delete").replace(/^Removed\b/, "Remove") }
+    : humanized;
   // Cairn's own tools show what they are about to change (the same view the settled
   // card uses, built from the arguments alone); connector calls and Cairn tools
   // without a view show their arguments as a key/value tree, not a JSON preview.
