@@ -156,7 +156,7 @@ The language applies to **page-style views**: pages you read and decide from. **
 
 **Toolbar views** (Usage, Automations) open with a compact toolbar and a sans title, like Insights. Their content follows the page rules: display-face panel headings, one raised stat strip, item cards with a light lift.
 
-Known exception: Calendar's overdue banner uses a status fill. It is a transient alert, not a resting tile, so it stays until the Calendar gets its own pass.
+Calendar's overdue banner (`OverdueTray`) already follows the rules: a faint (6%) danger tint, the status named in words, status colour on the icon and text only. It needs no change.
 
 ## Status
 
