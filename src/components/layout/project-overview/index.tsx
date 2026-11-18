@@ -678,8 +678,8 @@ export function ProjectOverview() {
             <section className={SURFACE} style={{ borderLeft: "2px solid color-mix(in srgb, var(--accent) 60%, transparent)" }}>
               <PanelHeading
                 title="Activity"
-                note="Every change in this project, including those made by Cairn and connected apps"
-                action={<span className="text-2xs tabular-nums text-[var(--text-tertiary)]">{activityByDay.reduce((n, g) => n + g.items.length, 0)} events</span>}
+                note="Recently updated notes and tasks, including changes made by Cairn and connected apps"
+                action={<span className="text-2xs tabular-nums text-[var(--text-tertiary)]">{activityByDay.reduce((n, g) => n + g.items.length, 0)} items</span>}
               />
               {activityByDay.length === 0 ? (
                 <EmptyState title="No activity yet — LLM and MCP changes will appear here" className="py-6" />

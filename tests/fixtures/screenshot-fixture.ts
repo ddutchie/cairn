@@ -992,8 +992,10 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
   // mirror shared/today/brief.ts (TodayState / TodayBrief / TodayProjectFacts).
   // Dated at the real today (like card due dates above) so the header, the
   // day strip and "since …" tags read current.
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  // Local calendar day, matching isoAt below (which sets local clock times).
+  const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const todayStr = localDay(new Date());
+  const yesterdayStr = localDay(new Date(Date.now() - 86_400_000));
   const nowIso = new Date().toISOString();
   const nextRun = new Date(); nextRun.setDate(nextRun.getDate() + 1); nextRun.setHours(7, 0, 0, 0);
   const todayBrief = {
@@ -1065,7 +1067,7 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
     { ago: 7, headline: "Last week's loose ends.", lede: "Four items carried over from Friday; none are urgent.", need: 1 },
   ];
   const isoAt = (ago: number, h: number, m = 0) => { const d = new Date(); d.setDate(d.getDate() - ago); d.setHours(h, m, 0, 0); return d.toISOString(); };
-  const dateAt = (ago: number) => { const d = new Date(); d.setDate(d.getDate() - ago); return d.toISOString().slice(0, 10); };
+  const dateAt = (ago: number) => { const d = new Date(); d.setDate(d.getDate() - ago); return localDay(d); };
   const todayHistory: unknown[] = [];
   const todaySnaps: Record<string, unknown> = {};
   todayHistory.push({ key: todayStr, date: todayStr, generatedAt: nowIso, headline: todayBrief.headline, counts: { need: 2, prepared: 2, fyi: 1, events: 2, carried: 1 } });

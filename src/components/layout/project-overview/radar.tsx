@@ -41,7 +41,7 @@ export function ProjectHealthRadar({
 
   return (
     <InstrumentCard>
-      <PanelHeading title="Project health" note="Six measures, each scored 0 to 1" />
+      <PanelHeading title="Project health" note="Six measures, each scored 0 to 100" />
 
       <div className="flex flex-col @3xl:flex-row gap-8 items-center @3xl:items-start">
         <div className="w-full max-w-[280px] aspect-square flex-shrink-0 mr-2 pl-2">

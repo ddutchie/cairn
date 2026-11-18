@@ -62,7 +62,7 @@ Rules:
 ## Patterns
 
 ### Section heading
-`PanelHeading` in `src/components/layout/project-overview/primitives.tsx`. Display-face title, optional quiet note beside it, optional action at the right edge, hairline beneath.
+`PanelHeading` in `src/components/ui/panel.tsx`. Display-face title, optional quiet note beside it, optional action at the right edge, hairline beneath.
 
 ```tsx
 <PanelHeading title="Needs attention" note="10 of 38 open tasks" action={<button …>Open notes</button>} />
