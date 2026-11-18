@@ -43,14 +43,15 @@ export function useCommunityConnectorMap(): Record<string, ChatConnectorMeta> {
 
   return useMemo(() => {
     const map: Record<string, ChatConnectorMeta> = {};
-    if (!manifest) return map;
+    // Every configured server gets a connector card; a community-registry match only adds branding,
+    // so locally configured servers (e.g. a stdio MCP) and an unreachable registry still render as cards.
     for (const server of mcpServers) {
-      const entry = manifest.mcpServers.find((candidate) => candidate.id === server.communityId || candidate.definition.name === server.name);
-      if (entry) map[`mcp__${server.id}__`] = { name: server.name, label: entry.definition.name, kind: "mcp", iconSvg: entry.iconSvg, brandColor: entry.brandColor };
+      const entry = manifest?.mcpServers.find((candidate) => candidate.id === server.communityId || candidate.definition.name === server.name);
+      map[`mcp__${server.id}__`] = { name: server.name, label: entry?.definition.name, kind: "mcp", iconSvg: entry?.iconSvg, brandColor: entry?.brandColor };
     }
     for (const service of customServices) {
-      const entry = manifest.services.find((candidate) => candidate.id === service.communityId || candidate.definition.name === service.name);
-      if (entry) map[`svc__${service.id}__`] = { name: service.name, label: entry.definition.name, kind: "service", iconSvg: entry.iconSvg, brandColor: entry.brandColor };
+      const entry = manifest?.services.find((candidate) => candidate.id === service.communityId || candidate.definition.name === service.name);
+      map[`svc__${service.id}__`] = { name: service.name, label: entry?.definition.name, kind: "service", iconSvg: entry?.iconSvg, brandColor: entry?.brandColor };
     }
     return map;
   }, [manifest, mcpServers, customServices]);
