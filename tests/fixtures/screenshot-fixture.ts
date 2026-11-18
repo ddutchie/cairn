@@ -992,8 +992,10 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
   // mirror shared/today/brief.ts (TodayState / TodayBrief / TodayProjectFacts).
   // Dated at the real today (like card due dates above) so the header, the
   // day strip and "since …" tags read current.
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  // Local calendar day, matching isoAt below (which sets local clock times).
+  const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const todayStr = localDay(new Date());
+  const yesterdayStr = localDay(new Date(Date.now() - 86_400_000));
   const nowIso = new Date().toISOString();
   const nextRun = new Date(); nextRun.setDate(nextRun.getDate() + 1); nextRun.setHours(7, 0, 0, 0);
   const todayBrief = {
@@ -1054,6 +1056,35 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
     ],
   };
   const todayStateJson = JSON.stringify(todayState);
+  // A week of earlier weekday briefs for the history rail and the stack behind
+  // the live card: each opens read-only from its snapshot. Today also has an
+  // earlier version (a same-day refresh), which shows as a dot on its tick.
+  const pastDays: Array<{ ago: number; headline: string; lede: string; need: number }> = [
+    { ago: 1, headline: "Two reviews are waiting on you.", lede: "Security review for QR pairing needs a verdict, and the sprint scope is still open.", need: 2 },
+    { ago: 2, headline: "A quiet day with one real decision.", lede: "Most of the board is moving; only the pricing copy needs you.", need: 1 },
+    { ago: 3, headline: "The beta cut is due at five.", lede: "Three items block the shared-workspaces beta. Two are reviews, one is a call.", need: 3 },
+    { ago: 6, headline: "Start the week with the roadmap.", lede: "Sprint planning is at 10:00 and the roadmap draft is not signed off.", need: 2 },
+    { ago: 7, headline: "Last week's loose ends.", lede: "Four items carried over from Friday; none are urgent.", need: 1 },
+  ];
+  const isoAt = (ago: number, h: number, m = 0) => { const d = new Date(); d.setDate(d.getDate() - ago); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const dateAt = (ago: number) => { const d = new Date(); d.setDate(d.getDate() - ago); return localDay(d); };
+  const todayHistory: unknown[] = [];
+  const todaySnaps: Record<string, unknown> = {};
+  todayHistory.push({ key: todayStr, date: todayStr, generatedAt: nowIso, headline: todayBrief.headline, counts: { need: 2, prepared: 2, fyi: 1, events: 2, carried: 1 } });
+  const earlierKey = `${todayStr}@065500`;
+  const earlierAt = isoAt(0, 6, 55);
+  todayHistory.push({ key: earlierKey, date: todayStr, generatedAt: earlierAt, headline: "Decide on the Q3 bets.", counts: { need: 2, prepared: 1, fyi: 1, events: 2, carried: 1 } });
+  todaySnaps[earlierKey] = { brief: { ...todayBrief, generatedAt: earlierAt, headline: "Decide on the Q3 bets.", prepared: todayBrief.prepared.slice(0, 1) }, marks: { done: [], edits: {} } };
+  for (const d of pastDays) {
+    const date = dateAt(d.ago);
+    const at = isoAt(d.ago, 7, 2);
+    const need = todayBrief.needYou.slice(0, Math.min(d.need, 2)).map((n, i) => ({ ...n, id: `${n.id}-${d.ago}`, age: `${d.ago}d`, ...(i === 1 ? { since: dateAt(d.ago + 1) } : {}) }));
+    const brief = { ...todayBrief, date, generatedAt: at, headline: d.headline, lede: d.lede, focusId: need[0]?.id ?? "", needYou: need, prepared: [{ ...todayBrief.prepared[1], id: `tp-2-${d.ago}` }], fyi: todayBrief.fyi.map((f) => ({ ...f, id: `${f.id}-${d.ago}` })) };
+    todayHistory.push({ key: date, date, generatedAt: at, headline: d.headline, counts: { need: d.need, prepared: 1, fyi: 1, events: 2, carried: Math.max(0, d.need - 1) } });
+    todaySnaps[date] = { brief, marks: { done: need.length > 1 ? [need[1].id] : [], edits: {} } };
+  }
+  const todayHistoryJson = JSON.stringify(todayHistory);
+  const todaySnapsJson = JSON.stringify(todaySnaps);
 
   // Real repo slice for the Agent file tree (see buildAgentTree above).
   const agentTree = buildAgentTree();
@@ -1096,6 +1127,8 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
   const usageRecentData = ${usageRecentJson};
   const usageThreadsData = ${usageThreadsJson};
   const todayStateData = ${todayStateJson};
+  const todayHistoryData = ${todayHistoryJson};
+  const todaySnapsData = ${todaySnapsJson};
   const agentDirsData = ${agentDirsJson};
   const agentFilesData = ${agentFilesJson};
   const automationsData = ${automationsJson};
@@ -1136,7 +1169,7 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
     tag:       { list: () => Promise.resolve(snap.tags), create: noop, update: noop, delete: noop },
     chat:      { threads: (wid) => Promise.resolve(chatThreadsData.filter(t => !wid || t.workspaceId===wid)), sessionMessages: (tid) => Promise.resolve(chatMessagesData[tid] || []), upsertThread: noop, deleteThread: noop, clearThreadMessages: noop, clearAllThreads: noop, compactThread: () => Promise.resolve(null), summarizeTranscript: () => Promise.resolve(null), popOut: noop, popoutReady: noop, popIn: noop, requestPopIn: noop, stream: () => {}, abort: () => {}, onToken: makeListener("chat.onToken"), onDone: makeListener("chat.onDone"), onToolCall: makeListener("chat.onToolCall"), onToolCallDone: makeListener("chat.onToolCallDone"), onUsage: makeListener("chat.onUsage"), onChatPoppedIn: makeListener("chat.onChatPoppedIn"), onChatPoppedOutClosed: makeListener("chat.onChatPoppedOutClosed"), onChatRequestPopIn: makeListener("chat.onChatRequestPopIn"), onChatSessionUpdated: makeListener("chat.onChatSessionUpdated") },
     usage:     { overview: () => Promise.resolve(usageOverviewData), recent: (args) => Promise.resolve((() => { let rows = usageRecentData; if (args && args.sessionId) rows = rows.filter(r => r.sessionId === args.sessionId); else if (args && args.noSession) rows = rows.filter(r => !r.sessionId); return rows.slice(0, (args && args.limit) || 100); })()), threads: () => Promise.resolve(usageThreadsData), clear: () => Promise.resolve({ deleted: 0, ok: true }), setPricing: noop, setNoTemperatureModels: noop, setEndpointProtocols: noop },
-    automation: { list: (wid) => Promise.resolve(automationsData.filter(a => !wid || a.workspaceId===wid)), get: (id) => Promise.resolve(automationsData.find(a=>a.id===id) || null), create: noop, update: (id,patch) => Promise.resolve(Object.assign({}, automationsData.find(a=>a.id===id) || {}, patch, { id })), delete: noop, runs: (aid, lim) => Promise.resolve(automationRunsData.filter(r=>r.automationId===aid).slice(0, lim||20)), recentRuns: (wid, pid, lim) => Promise.resolve(automationRunsData.filter(r=> !wid || automationsData.find(a=>a.id===r.automationId)?.workspaceId===wid).slice(0, lim||8)), runNow: (id) => Promise.resolve({ runId: "run-now-" + id }), runningCount: () => Promise.resolve(automationRunsData.filter(r=>r.status==="running").length), onRunEvent: makeListener("automation:run"), env: { get: () => Promise.resolve([]), set: () => Promise.resolve([]), delete: () => Promise.resolve([]) }, checkRequirements: () => Promise.resolve([]), preview: () => Promise.resolve({ nextRunAt: new Date(Date.now()+3600*1000).toISOString() }), approve: noop, folder: () => Promise.resolve({ folder: "/mock/automations/auto-mock" }), syncFromManifest: noop, runLog: () => Promise.resolve({ log: {} }), files: () => Promise.resolve([]), budget: { get: () => Promise.resolve({ budgetUsd: null, spentTodayUsd: 3.42 }), set: () => Promise.resolve({ budgetUsd: null }) }, pendingApprovals: () => Promise.resolve({ approvals: [] }), today: { get: () => Promise.resolve(todayStateData), enable: () => Promise.resolve(todayStateData), disable: () => Promise.resolve(Object.assign({}, todayStateData, { enabled: false })), settings: (wid, s) => Promise.resolve(Object.assign({}, todayStateData, { settings: s })), mark: () => Promise.resolve({ done: [], edits: {} }), history: () => Promise.resolve([]), snapshot: () => Promise.resolve(null), run: () => Promise.resolve({ skipped: false }), route: () => Promise.resolve({ target: null, tools: [] }), export: () => Promise.resolve(null), onUpdated: makeListener("today:updated") } },
+    automation: { list: (wid) => Promise.resolve(automationsData.filter(a => !wid || a.workspaceId===wid)), get: (id) => Promise.resolve(automationsData.find(a=>a.id===id) || null), create: noop, update: (id,patch) => Promise.resolve(Object.assign({}, automationsData.find(a=>a.id===id) || {}, patch, { id })), delete: noop, runs: (aid, lim) => Promise.resolve(automationRunsData.filter(r=>r.automationId===aid).slice(0, lim||20)), recentRuns: (wid, pid, lim) => Promise.resolve(automationRunsData.filter(r=> !wid || automationsData.find(a=>a.id===r.automationId)?.workspaceId===wid).slice(0, lim||8)), runNow: (id) => Promise.resolve({ runId: "run-now-" + id }), runningCount: () => Promise.resolve(automationRunsData.filter(r=>r.status==="running").length), onRunEvent: makeListener("automation:run"), env: { get: () => Promise.resolve([]), set: () => Promise.resolve([]), delete: () => Promise.resolve([]) }, checkRequirements: () => Promise.resolve([]), preview: () => Promise.resolve({ nextRunAt: new Date(Date.now()+3600*1000).toISOString() }), approve: noop, folder: () => Promise.resolve({ folder: "/mock/automations/auto-mock" }), syncFromManifest: noop, runLog: () => Promise.resolve({ log: {} }), files: () => Promise.resolve([]), budget: { get: () => Promise.resolve({ budgetUsd: null, spentTodayUsd: 3.42 }), set: () => Promise.resolve({ budgetUsd: null }) }, pendingApprovals: () => Promise.resolve({ approvals: [] }), today: { get: () => Promise.resolve(todayStateData), enable: () => Promise.resolve(todayStateData), disable: () => Promise.resolve(Object.assign({}, todayStateData, { enabled: false })), settings: (wid, s) => Promise.resolve(Object.assign({}, todayStateData, { settings: s })), mark: () => Promise.resolve({ done: [], edits: {} }), history: () => Promise.resolve(todayHistoryData), snapshot: (wid, key) => Promise.resolve(todaySnapsData[key] || null), run: () => Promise.resolve({ skipped: false }), route: () => Promise.resolve({ target: null, tools: [] }), export: () => Promise.resolve(null), onUpdated: makeListener("today:updated") } },
     graph:     { get: () => Promise.resolve(graphData), neighbors: () => Promise.resolve({ nodes: [], edges: [] }), recompute: noop },
     ai:        { generatePrd: noop, generateCommitMessage: () => Promise.resolve(""), generatePrDescription: () => Promise.resolve(""), explainArchitecture: () => Promise.resolve(""), fetchModels: () => Promise.resolve([]), fetchKeyInfo: () => Promise.resolve(null), probeProtocols: () => Promise.resolve([]) },
     mcpServerPath: () => Promise.resolve("/mock/mcp-server"), latestChangelog: () => Promise.resolve(null),

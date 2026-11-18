@@ -21,6 +21,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Styling rules
 
+Start with [`docs/design-language.md`](docs/design-language.md) for how views are composed (headings, item cards, hero, colour-for-status, what we removed on purpose). The rules below are the mechanical layer under it.
+
 - **All colours** must use CSS variables: `var(--background)`, `var(--accent)`, `var(--text-primary)`, etc.
 - **Alpha variants**: `color-mix(in srgb, var(--token) X%, transparent)` — never hardcode `rgba()`
 - **Font sizes**: use the type scale only: `text-2xs` (9px: counts, kbd, timestamps), `text-xs` (10.5px: UI default), `text-sm` (12.25px: body, inputs, card titles), `text-base` (14px), then `text-lg`+ for headings (all × `--font-scale`). No arbitrary `text-[Nrem]` sizes, and never `text-[Npx]` (pixel classes don't scale with the font size setting). The only arbitrary sizes left are data-density cases (timeline bars, matrix cells) and display numerals.

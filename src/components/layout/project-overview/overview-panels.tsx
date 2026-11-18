@@ -1,13 +1,12 @@
 "use client";
 
-import { AlertTriangle, FileText, Pin } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { cn, formatRelative } from "@/lib/utils";
 import { COLUMN_COLORS } from "@/lib/constants";
 import { revealNote } from "@/lib/events";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { BoardColumn, Note, TaskCard } from "@/types";
-import { TiltCard } from "./tilt-card";
+import { InstrumentCard, PanelHeading, SURFACE } from "@/components/ui/panel";
 import type { FocusFilter } from "./focus";
 
 /** Task flow: open/done cards per column as bars, with the bottleneck ringed. */
@@ -21,22 +20,11 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
   bottleneck: { name: string; count: number } | null;
 }) {
   return (
-    <TiltCard
-      className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
-      restShadow="0 8px 24px color-mix(in srgb, black 14%, transparent)"
-      activeShadow="0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
-    >
-      <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-sm font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
-          <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-2xs leading-none">
-            ▦
-          </span>
-          Task flow{" "}
-          <span className="font-normal text-[var(--text-tertiary)] text-xs">
-            — {bottleneck ? `${bottleneck.name} is the bottleneck (${bottleneck.count} of ${openCards.length} open)` : `${openCards.length} open`}
-          </span>
-        </h2>
-      </div>
+    <InstrumentCard>
+      <PanelHeading
+        title="Task flow"
+        note={bottleneck ? `${bottleneck.name} is the bottleneck, ${bottleneck.count} of ${openCards.length} open` : `${openCards.length} open`}
+      />
       {flowColumns.length === 0 ? (
         <EmptyState title="No columns yet" className="py-6" />
       ) : (
@@ -67,7 +55,7 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
                 <span
                   className={cn(
                     "flex-1 min-w-0 h-[26px] rounded-full bg-[var(--surface-2)] border overflow-hidden flex items-center p-[3px]",
-                    isBottleneck ? "border-[var(--warning)]/50 ring-1 ring-[var(--warning)]/25" : "border-[var(--border)]",
+                    isBottleneck ? "border-[var(--warning)]/60" : "border-[var(--border-subtle)]",
                   )}
                 >
                   <span
@@ -76,7 +64,6 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
                       width: `${Math.max(pct, count > 0 ? 8 : 0)}%`,
                       background: color,
                       transition: "width .7s cubic-bezier(.4,0,.2,1)",
-                      boxShadow: isBottleneck ? "0 0 10px color-mix(in srgb, var(--warning) 35%, transparent)" : undefined,
                     }}
                   >
                     {pct > 16 ? count : ""}
@@ -95,7 +82,7 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
         <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.review }} /> Review</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.done }} /> Done</span>
       </div>
-    </TiltCard>
+    </InstrumentCard>
   );
 }
 
@@ -107,66 +94,52 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
   wipStatus: string | null;
 }) {
   return (
-    <TiltCard
-      className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[18px]"
-      restShadow="0 8px 24px color-mix(in srgb, black 14%, transparent)"
-      activeShadow="0 14px 32px color-mix(in srgb, black 24%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
-    >
-      <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-sm font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
-          <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
-            <AlertTriangle size={10} />
-          </span>
-          Open by priority
-        </h2>
-      </div>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2.5">
+    <InstrumentCard>
+      <PanelHeading title="Open by priority" />
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-2.5">
         {(
           [
-            { key: "urgent", label: "Urgent", color: "var(--danger)", bg: "color-mix(in srgb,var(--danger) 12%, transparent)" },
-            { key: "high", label: "High", color: "var(--warning)", bg: "color-mix(in srgb,var(--warning) 12%, transparent)" },
-            { key: "medium", label: "Medium", color: "var(--info)", bg: "color-mix(in srgb,var(--info) 12%, transparent)" },
-            { key: "low", label: "Low", color: "var(--text-tertiary)", bg: "var(--surface-2)" },
+            { key: "urgent", label: "Urgent", color: "var(--danger)" },
+            { key: "high", label: "High", color: "var(--warning)" },
+            { key: "medium", label: "Medium", color: "var(--info)" },
+            { key: "low", label: "Low", color: "var(--text-tertiary)" },
           ] as const
-        ).map(({ key, label, color, bg }) => {
-          
+        ).map(({ key, label, color }) => {
           const n = counts[key as keyof typeof counts] ?? 0;
-          const active = n > 0;
+          const tinted = n > 0 && key !== "low";
           return (
             <div
               key={key}
-              className="rounded-xl border p-3.5 text-center"
+              className="rounded-xl border p-3.5 min-w-0"
               style={{
-                background: bg,
-                borderColor: active ? (color === "var(--text-tertiary)" ? "var(--border)" : color) : "var(--border)",
-                boxShadow: active && color !== "var(--text-tertiary)" ? `inset 0 1px 0 color-mix(in srgb, white 6%, transparent)` : undefined,
+                background: tinted ? `color-mix(in srgb, ${color} 10%, var(--surface))` : "var(--surface-2)",
+                borderColor: tinted ? `color-mix(in srgb, ${color} 55%, var(--border))` : "var(--border-subtle)",
               }}
             >
-              <div className="text-[1.35rem] font-bold leading-none tracking-tight" style={{ color: active ? color : "var(--text-tertiary)" }}>
+              <div className="font-display text-3xl leading-none tabular-nums" style={{ color: n > 0 ? (key === "low" ? "var(--text-primary)" : color) : "var(--text-tertiary)" }}>
                 {n}
               </div>
-              <div className="text-xs font-medium text-[var(--text-tertiary)] mt-1">{label}</div>
-              <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{n ? `${n} open` : "—"}</div>
+              <div className="text-xs text-[var(--text-secondary)] mt-1.5">{label}</div>
             </div>
           );
         })}
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-xs text-[var(--text-tertiary)]">
-        <span>WIP — {inProgressCount} in progress</span>
-        <span className="font-semibold text-[var(--text-primary)]">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--text-tertiary)]">
+        <span>{inProgressCount} in progress</span>
+        <span className="text-[var(--text-secondary)]">
           {wipLimit ? (
             <>
-              Limit {wipLimit} ·{" "}
+              Limit {wipLimit},{" "}
               <span className={wipStatus === "over" ? "text-[var(--danger)]" : wipStatus === "at limit" ? "text-[var(--warning)]" : "text-[var(--success)]"}>
                 {wipStatus}
               </span>
             </>
           ) : (
-            <span className="text-[var(--text-tertiary)]">No limit</span>
+            "No WIP limit set"
           )}
         </span>
       </div>
-    </TiltCard>
+    </InstrumentCard>
   );
 }
 
@@ -177,78 +150,46 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
   recentNotes: Note[];
 }) {
   const setView = useCairnStore((s) => s.setView);
+  const row = (note: Note, tone: "primary" | "secondary") => (
+    <li key={note.id} className="border-b border-[var(--border-subtle)] last:border-0">
+      <button type="button" onClick={() => revealNote(setView, note.id)} className="flex w-full items-center gap-3 py-2 text-left group">
+        <span className="flex-1 min-w-0">
+          <span className={cn("block text-sm font-medium truncate group-hover:text-[var(--accent)]", tone === "primary" ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]")}>{note.title}</span>
+          <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || "Empty note"}</span>
+        </span>
+        <span className="text-xs tabular-nums text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
+      </button>
+    </li>
+  );
   return (
-    <TiltCard
-      className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]"
-      restShadow="0 4px 14px color-mix(in srgb, black 12%, transparent)"
-      activeShadow="0 12px 28px color-mix(in srgb, black 18%, transparent)"
-    >
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <h2 className="text-sm font-semibold flex items-center gap-2">
-          <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
-            <FileText size={10} />
-          </span>
-          Notes
-          <span className="font-normal text-[var(--text-tertiary)] text-xs">
-            · {notesCount} total{pinnedNotes.length > 0 ? ` · ${pinnedNotes.length} pinned` : ""} · {recentNotes.length} recent
-          </span>
-        </h2>
-        <button type="button" onClick={() => setView("notes")} className="text-xs font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)]">
-          Open notes
-        </button>
-      </div>
+    <section className={SURFACE}>
+      <PanelHeading
+        title="Notes"
+        note={`${notesCount} total${pinnedNotes.length > 0 ? `, ${pinnedNotes.length} pinned` : ""}`}
+        action={<button type="button" onClick={() => setView("notes")} className="text-xs text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors">Open notes</button>}
+      />
       {notesCount === 0 ? (
         <EmptyState title="No notes yet — capture ideas to see them here" className="py-6" />
       ) : (
-        <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-x-8 gap-y-4">
           <div>
-            <div className="text-xs font-medium text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
-              <Pin size={10} /> Pinned · keeps focus
-            </div>
+            <div className="text-xs font-medium text-[var(--text-secondary)] mb-1">Pinned</div>
             {pinnedNotes.length === 0 ? (
               <p className="text-xs text-[var(--text-tertiary)] py-3">No pinned notes</p>
             ) : (
-              <ul className="list-none m-0 p-0">
-                {pinnedNotes.slice(0, 3).map((note) => (
-                  <li key={note.id} className="flex gap-2.5 items-center py-2 border-b border-[var(--border)]/60 last:border-0">
-                    <span className="w-6 h-6 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] flex-shrink-0">
-                      <Pin size={10} />
-                    </span>
-                    <button type="button" onClick={() => revealNote(setView, note.id)} className="flex-1 min-w-0 text-left group">
-                      <span className="block text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent)] truncate">{note.title}</span>
-                      <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || "Empty note"}</span>
-                    </button>
-                    <span className="text-xs tabular-nums text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
-                  </li>
-                ))}
-              </ul>
+              <ul className="list-none m-0 p-0">{pinnedNotes.slice(0, 3).map((n) => row(n, "primary"))}</ul>
             )}
           </div>
           <div>
-            <div className="text-xs font-medium text-[var(--text-tertiary)] mb-2 flex items-center gap-1.5">
-              <FileText size={10} /> Recent
-            </div>
+            <div className="text-xs font-medium text-[var(--text-secondary)] mb-1">Recent</div>
             {recentNotes.length === 0 ? (
               <p className="text-xs text-[var(--text-tertiary)] py-3">No recent notes</p>
             ) : (
-              <ul className="list-none m-0 p-0">
-                {recentNotes.slice(0, 4).map((note) => (
-                  <li key={note.id} className="flex gap-2.5 items-center py-2 border-b border-[var(--border)]/60 last:border-0">
-                    <span className="w-6 h-6 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] flex-shrink-0">
-                      <FileText size={10} />
-                    </span>
-                    <button type="button" onClick={() => revealNote(setView, note.id)} className="flex-1 min-w-0 text-left group">
-                      <span className="block text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] truncate">{note.title}</span>
-                      <span className="block text-xs text-[var(--text-tertiary)] truncate">{note.contentText.slice(0, 64) || "Empty note"}</span>
-                    </button>
-                    <span className="text-xs tabular-nums text-[var(--text-tertiary)] flex-shrink-0 hidden sm:inline">{formatRelative(note.updatedAt)}</span>
-                  </li>
-                ))}
-              </ul>
+              <ul className="list-none m-0 p-0">{recentNotes.slice(0, 4).map((n) => row(n, "secondary"))}</ul>
             )}
           </div>
         </div>
       )}
-    </TiltCard>
+    </section>
   );
 }

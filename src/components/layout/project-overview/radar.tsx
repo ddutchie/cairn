@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useFontScale } from "@/lib/viz/hooks";
+import { InstrumentCard, PanelHeading } from "@/components/ui/panel";
 
 type RadarAxis = { key: string; label: string; short: string; value: number; color: string };
 
@@ -39,13 +40,8 @@ export function ProjectHealthRadar({
   });
 
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 pl-6 md:p-[18px] md:pl-7" style={{ boxShadow: "0 8px 24px color-mix(in srgb, black 28%, transparent)" }}>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-2xs">⬢</span>
-        <h2 className="text-sm font-semibold tracking-tight">Project health</h2>
-        <span className="text-xs font-normal text-[var(--text-tertiary)]">— 6-axis radar</span>
-        <span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)] hidden sm:inline">0 → 1</span>
-      </div>
+    <InstrumentCard>
+      <PanelHeading title="Project health" note="Six measures, each scored 0 to 100" />
 
       <div className="flex flex-col @3xl:flex-row gap-8 items-center @3xl:items-start">
         <div className="w-full max-w-[280px] aspect-square flex-shrink-0 mr-2 pl-2">
@@ -91,26 +87,26 @@ export function ProjectHealthRadar({
         </div>
 
         <div className="flex-1 min-w-0 w-full">
-          <div className="grid grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-2 gap-x-6 gap-y-4">
             {axes.map((ax) => (
-              <div key={ax.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: ax.color }} />
-                  <span className="text-xs font-semibold text-[var(--text-secondary)] truncate">{ax.label}</span>
+              <div key={ax.key} className="min-w-0">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 self-center" style={{ background: ax.color }} aria-hidden="true" />
+                  <span className="text-xs text-[var(--text-secondary)] truncate">{ax.label}</span>
+                  <span className="ml-auto font-display text-lg leading-none tabular-nums text-[var(--text-primary)]">{Math.round(ax.value * 100)}</span>
                 </div>
                 <div className="mt-1.5 h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
                   <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(ax.value * 100)}%`, background: ax.color }} />
                 </div>
-                <div className="mt-1 text-2xs font-mono text-[var(--text-tertiary)] tabular-nums">{Math.round(ax.value * 100)}%</div>
               </div>
             ))}
           </div>
-          <p className="text-xs leading-relaxed text-[var(--text-tertiary)] mt-3">
-            Six balance axes from live project data — completion, momentum, focus, knowledge, flow, calm (inverse urgent load). 100 is healthiest.
+          <p className="text-xs leading-relaxed text-[var(--text-tertiary)] mt-4 max-w-[62ch]">
+            Six measures from live project data: completion, momentum, focus, knowledge, flow and calm (the inverse of urgent load). Higher is healthier.
           </p>
         </div>
       </div>
-    </div>
+    </InstrumentCard>
   );
 }
 

@@ -100,7 +100,7 @@ function RailPreview({ entry, versions, live }: { entry: TodayHistoryEntry; vers
         {live ? "Today" : dayLabel(entry.date)} · {timeLabel(entry.generatedAt)}
         {versions > 0 && ` · ${versions} earlier ${versions === 1 ? "version" : "versions"} that day`}
       </div>
-      <div className="text-sm text-[var(--text-primary)] leading-snug my-1" style={{ fontFamily: "var(--font-display)" }}>{entry.headline}</div>
+      <div className="font-display text-sm text-[var(--text-primary)] leading-snug my-1">{entry.headline}</div>
       <div className="text-2xs text-[var(--text-secondary)]">
         {c.need} need you · {c.prepared} {c.prepared === 1 ? "draft" : "drafts"}{c.carried ? ` · ${c.carried} carried in` : ""}
       </div>

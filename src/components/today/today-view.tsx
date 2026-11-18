@@ -29,6 +29,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Toggle } from "@/components/ui/toggle";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Tooltip } from "@/components/ui/tooltip";
+import { PanelHeading, SURFACE } from "@/components/ui/panel";
 import { useContainerDims, useFontScale, useNow } from "@/lib/viz/hooks";
 import { TodayActPanel, type TodayActTarget } from "./today-act-panel";
 import { CairnStack, MiniStack, TODAY_SEEN_EVENT, markTodaySeen, todaySeenAt, type StackLane } from "./today-stack";
@@ -460,7 +461,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
   const day = useMemo(() => dayBlocks(events ?? [], nowMin), [events, nowMin]);
 
   const header = (
-    <div className="flex flex-wrap items-center gap-2 mt-4">
+    <div className="flex flex-wrap items-center gap-2 mt-5">
       <Button variant="accent" size="sm" onClick={() => onRun()} disabled={state.running}>
         {state.running ? <MiniStack size={13} busy /> : <RefreshCw size={12} />} {state.running ? "Gathering" : brief ? "Refresh" : "Run now"}
       </Button>
@@ -497,12 +498,9 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
   const shownNeed = showAllNeed ? needYou : needYou.filter((n, i) => i < TODAY_NEED_SHOWN || n.id === focus?.id);
   const foldedNeed = needYou.length - shownNeed.length;
   const openNeed = needYou.filter((n) => !dismissed.has(n.id));
-  const openDecisions = openNeed.filter((n) => n.kind === "decision").length;
   const linked = linkedDraftIds(brief);
   // Drafts as the user left them: an edit replaces Cairn's text everywhere it's used.
   const prepared = brief.prepared.map((p) => (edits[p.id] !== undefined ? { ...p, draft: edits[p.id] } : p));
-  const openDrafts = prepared.filter((p) => !dismissed.has(p.id));
-  const openLinked = openDrafts.filter((p) => linked.has(p.id)).length;
   // Drafts that answer a decision sit on its choices, so the lane lists only the rest.
   const lanePrepared = showAllDrafts ? prepared : prepared.filter((p) => !linked.has(p.id));
   const openPrep = lanePrepared.filter((p) => !dismissed.has(p.id)).length;
@@ -545,7 +543,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
       <div
         ref={cardRef}
         className={cn(
-          "grid gap-8 items-end grid-cols-1 @3xl:grid-cols-[1fr_300px]",
+          "grid gap-8 items-end grid-cols-1 @3xl:grid-cols-[minmax(0,1fr)_auto]",
           stack
             ? "rounded-2xl border border-[var(--border-subtle)] shadow-elev-1 px-5 pt-4 pb-5"
             : "pb-5 border-b border-[var(--border-subtle)]",
@@ -559,43 +557,18 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
             {!isToday && !past && <span className="text-[var(--warning)] font-sans"> · from an earlier day</span>}
             {past && ` · ${formatClock(d.getHours() * 60 + d.getMinutes())}`}
           </div>
-          <h2 className="text-2xl leading-tight mt-2 mb-1.5 max-w-[24ch] font-normal tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="font-display text-4xl leading-[1.08] mt-3 mb-2.5 max-w-[26ch] text-balance font-normal tracking-tight">
             {gathering ? "Gathering your brief" : brief.headline}
           </h2>
-          <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[58ch]">
+          <p className="text-base text-[var(--text-secondary)] leading-relaxed max-w-[62ch] text-pretty">
             {gathering
               ? "Items arrive as Cairn finds them, and the headline comes last."
               : brief.lede}
           </p>
           {(state.lastError || error) && <p className="text-xs text-[var(--danger)] mt-2">Last run: {error ?? state.lastError}</p>}
-          <div className="grid gap-2.5 mt-4 grid-cols-2 @xl:grid-cols-[repeat(4,minmax(0,150px))]">
-            <KpiTile label="Decisions" value={String(openDecisions)} detail={`of ${openNeed.length} that need you`} onClick={() => jump("need")} />
-            <KpiTile
-              label="Drafts ready"
-              value={String(openDrafts.length)}
-              detail={openLinked ? `${openLinked} on decisions · nothing sent` : "nothing sent"}
-              onClick={() => jump(openLinked === openDrafts.length && openLinked > 0 ? "need" : "prep")}
-            />
-            {hasDay && (
-              <>
-                <KpiTile
-                  label={isToday ? "Free time left" : "Free time"}
-                  value={formatMinutes(day.freeLeft)}
-                  detail={day.largestFree ? `largest ${formatMinutes(day.largestFree)}` : "no free block left"}
-                  onClick={() => jump("day")}
-                />
-                <KpiTile
-                  label={isToday ? "Meetings left" : "Meetings"}
-                  value={String(day.meetingsLeft)}
-                  detail={day.nextMeeting ? `${day.nextMeeting.title} · ${day.nextMeeting.start}` : "none left today"}
-                  onClick={() => jump("day")}
-                />
-              </>
-            )}
-          </div>
           {!past && header}
         </div>
-        <div className="flex items-end gap-4">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           <CairnStack
             key={brief.generatedAt}
             counts={{ need: openNeed.length, prep: openPrep, fyi: brief.fyi.length }}
@@ -622,7 +595,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
         />
       )}
 
-      <div className="grid gap-3.5 mt-6 items-start grid-cols-1 @4xl:grid-cols-[1.2fr_1fr_0.85fr]">
+      <div className="grid gap-x-8 gap-y-8 mt-9 items-start grid-cols-1 @4xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <LaneBox id="need" title="Need you" count={openNeed.length} tone="var(--stone-3)" flash={flash === "need" || flash === "focus"}>
           {needYou.length === 0 && <Empty>Nothing is waiting on you.</Empty>}
           {shownNeed.map((n) => (
@@ -645,6 +618,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
             </button>
           )}
         </LaneBox>
+        <div className="space-y-8 min-w-0">
         <LaneBox id="prep" title="Prepared for you" count={openPrep} tone="var(--stone-2)" note="Nothing sent" flash={flash === "prep"}>
           {lanePrepared.length === 0 && (
             <Empty>{linked.size ? "Every draft answers a decision, so each one sits on that decision's choices." : "No drafts this time."}</Empty>
@@ -676,6 +650,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
           {brief.fyi.length === 0 && <Empty>Quiet.</Empty>}
           {brief.fyi.map((f) => <FyiRow key={f.id} item={f} />)}
         </LaneBox>
+        </div>
       </div>
 
       {/* Project facts are worked out now, so they don't belong to an earlier brief. */}
@@ -916,11 +891,8 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
   if (facts.length === 0) return null;
   const open = (projectId: string) => { setActiveProject(projectId); setView("board"); };
   return (
-    <section className="mt-6">
-      <div className="flex items-baseline gap-2 mb-2 px-1">
-        <h3 className="text-sm font-semibold">Your projects</h3>
-        <span className="text-2xs text-[var(--text-tertiary)]">From your boards, notes and automations, worked out by Cairn</span>
-      </div>
+    <section className="mt-9">
+      <PanelHeading title="Your projects" note="From your boards, notes and automations, worked out by Cairn" />
       <div className="grid gap-2.5 grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3">
         {facts.map((f) => {
           // Card lists stop at a few; the count is the full one.
@@ -971,27 +943,10 @@ function LegendRow({ n, label, hint, accent, onClick }: { n: number; label: stri
       onClick={onClick}
       className="grid grid-cols-[24px_1fr] items-center text-left px-1.5 py-1 rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] min-w-0"
     >
-      <span className={cn("font-mono font-semibold", accent ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>{n}</span>
-      <span className={cn("truncate", accent && "text-[var(--text-primary)]")}>{label}</span>
+      <span className={cn("font-display text-base tabular-nums", accent ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>{n}</span>
+      <span className={cn("whitespace-nowrap", accent && "text-[var(--text-primary)]")}>{label}</span>
     </button>
     </Tooltip>
-  );
-}
-
-function KpiTile({ label, value, detail, onClick }: { label: string; value: string; detail: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "text-left rounded-[10px] border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 px-3 py-2 min-w-0 hover:bg-[var(--surface-2)]",
-        FOCUS_RING,
-      )}
-    >
-      <span className="block text-2xs text-[var(--text-tertiary)]">{label}</span>
-      <span className="block text-lg font-semibold leading-tight mt-0.5">{value}</span>
-      <span className="block text-2xs text-[var(--text-secondary)] mt-0.5 truncate">{detail}</span>
-    </button>
   );
 }
 
@@ -1025,23 +980,26 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
   const showNow = nowMin !== null && nowMin > DAY_START && nowMin < DAY_END;
   const visible = day.blocks.filter((b) => b.end > DAY_START && b.start < DAY_END);
   const agenda = day.blocks.filter((b) => !(b.kind === "free" && b.past));
+  const [listOpen, setListOpen] = useState(false);
 
   return (
-    <section id="today-lane-day" className="mt-5">
-      <div className="flex items-baseline gap-2.5 mb-2">
-        <h3 className="text-sm font-semibold">Your day</h3>
-        <span className="text-2xs text-[var(--text-tertiary)]">07:00–19:00 · hover a block for details</span>
-      </div>
+    <section id="today-lane-day" className="mt-8">
       <div
         className={cn(
-          "rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 px-4 pt-3.5 pb-2.5 transition-[outline]",
+          SURFACE,
+          "rounded-2xl p-4 md:p-[18px] transition-[outline]",
           flash && "outline outline-2 outline-offset-2 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
         )}
       >
+        <PanelHeading title="Your day" note="07:00–19:00, hover a block for details" />
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
           <span className="text-base font-semibold">{formatMinutes(day.freeLeft)} free</span>
           <span className="text-xs text-[var(--text-tertiary)]">
             {nowMin !== null ? "left today" : "in the day"}, in {day.freeBlocksLeft} {day.freeBlocksLeft === 1 ? "block" : "blocks"}
+          </span>
+          <span className="text-xs text-[var(--text-tertiary)]">
+            {day.meetingsLeft === 0 ? "No meetings left" : `${day.meetingsLeft} ${day.meetingsLeft === 1 ? "meeting" : "meetings"} left`}
+            {day.nextMeeting ? `, next ${day.nextMeeting.title} at ${day.nextMeeting.start}` : ""}
           </span>
           {best && (
             <span className="ml-auto text-xs text-[var(--text-secondary)] min-w-0 truncate">
@@ -1105,14 +1063,23 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
           )}
         </div>
 
-        {/* The table view: every block in words, so nothing depends on hover or colour. */}
-        <div className="mt-3 border-t border-[var(--border-subtle)] pt-1.5 grid grid-cols-[auto_1fr_auto] gap-x-3.5 text-xs">
+        {/* The table view: every block in words, so nothing depends on hover or colour. Folded so the decisions stay in view. */}
+        <button
+          type="button"
+          aria-expanded={listOpen}
+          aria-controls="today-day-list"
+          onClick={() => setListOpen((v) => !v)}
+          className={cn("mt-2.5 text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:underline rounded-sm", FOCUS_RING)}
+        >
+          {listOpen ? "Hide the list" : `List all ${agenda.length} blocks`}
+        </button>
+        <div id="today-day-list" hidden={!listOpen} className="mt-2 border-t border-[var(--border-subtle)] pt-1.5 grid grid-cols-[auto_1fr_auto] gap-x-3.5 text-xs">
           {agenda.map((b, i) => {
             const free = b.kind === "free";
             const cell = cn("py-1.5", i < agenda.length - 1 && "border-b border-[var(--border-subtle)]");
             return (
               <div key={`${b.kind}-${b.start}-${b.event?.id ?? i}`} className="contents">
-                <span className={cn(cell, "font-mono text-2xs text-[var(--text-secondary)] whitespace-nowrap", b.past && "opacity-45")}>
+                <span className={cn(cell, "text-2xs tabular-nums text-[var(--text-secondary)] whitespace-nowrap", b.past && "opacity-45")}>
                   {formatClock(b.start)}–{formatClock(b.end)}
                 </span>
                 <span className={cn(cell, "min-w-0 truncate", b.past && "opacity-45")}>
@@ -1150,21 +1117,22 @@ function DayTag({ warn, children }: { warn?: boolean; children: React.ReactNode 
 function LaneBox({ id, title, count, tone, note, flash, children }: {
   id: Lane; title: string; count: number; tone: string; note?: string; flash?: boolean; children: React.ReactNode;
 }) {
+  // An open section, not a box: the cards inside already have edges, so a second frame around them only adds noise.
   return (
     <section
       id={`today-lane-${id}`}
       className={cn(
-        "rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 p-3 transition-[outline]",
-        flash && "outline outline-2 outline-offset-2 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
+        "rounded-lg transition-[outline]",
+        flash && "outline outline-2 outline-offset-8 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
       )}
     >
-      <div className="flex items-center gap-2 px-1 pb-2.5">
+      <div className="flex items-center gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
         <span className="w-3 h-2 rounded-full" style={{ background: tone }} />
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <span className="font-mono text-2xs text-[var(--text-tertiary)] bg-[var(--surface-3)] rounded px-1.5">{count}</span>
+        <h3 className="font-display text-base">{title}</h3>
+        <span className="text-2xs tabular-nums text-[var(--text-tertiary)] bg-[var(--surface-3)] rounded-full px-1.5">{count}</span>
         {note && <span className="ml-auto text-2xs text-[var(--text-tertiary)]">{note}</span>}
       </div>
-      <div className="space-y-2">{children}</div>
+      <div className="space-y-2.5">{children}</div>
     </section>
   );
 }
@@ -1229,7 +1197,7 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
   return (
     <div
       className={cn(
-        "rounded-lg border p-2.5",
+        "rounded-lg border p-2.5 shadow-elev-1",
         focus && !done ? "border-[color-mix(in_srgb,var(--accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,var(--surface-2))]" : "border-[var(--border-subtle)] bg-[var(--surface-2)]",
         done && "opacity-45",
       )}
@@ -1239,7 +1207,11 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
           <Check size={12} />
         </IconButton>
       </ItemMeta>
-      <div className={cn("font-medium leading-snug", decision ? "text-base" : "text-sm", done && "line-through")}>{item.title}</div>
+      <div
+        className={cn("leading-snug", focus && decision ? "font-display text-xl tracking-tight" : decision ? "text-base font-medium" : "text-sm font-medium", done && "line-through")}
+      >
+        {item.title}
+      </div>
       {!done && (
         <>
           {item.body && <p className={cn("text-xs text-[var(--text-secondary)] leading-relaxed mt-1", !open && "line-clamp-2")}>{item.body}</p>}
@@ -1430,7 +1402,7 @@ function DraftCard({ item, done, onDismiss, onAct, slot, edited, onEdit }: {
     crumb: `Prepared for you · ${kindLabel}`,
   };
   return (
-    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5">
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5 shadow-elev-1">
       <ItemMeta kind={edited ? `${kindLabel} · edited` : kindLabel} source={item.target ?? item.source} projectId={item.projectId} since={item.since}>
         <IconButton label="Discard draft" size="sm" onClick={onDismiss} className="-my-1 ml-auto shrink-0"><X size={12} /></IconButton>
       </ItemMeta>
