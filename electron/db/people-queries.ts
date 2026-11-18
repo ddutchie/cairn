@@ -116,7 +116,8 @@ function toPerson(r: Row): Person {
     status: r.status as PeopleStatus,
     provenance: r.provenance as Provenance,
     stage: opt(r.stage),
-    isMe: r.is_me === 1,
+    // Two devices can each mark a different person as "me" before they sync; only the canonical one counts.
+    isMe: r.is_me === 1 && (r.canonical_me === undefined || r.canonical_me === r.id),
     agentPrivate: r.agent_private === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -182,8 +183,16 @@ function toMention(r: Row): NoteMention {
 
 // ── People ────────────────────────────────────
 
+/**
+ * Person columns plus the workspace's canonical "me": the oldest live `is_me`
+ * row (then lowest id). `is_me` is only kept unique per device (clearOtherMe),
+ * so after a sync two rows can carry it; readers treat only this one as me.
+ */
+const PERSON_COLS = `*, (SELECT m.id FROM people m WHERE m.workspace_id = people.workspace_id AND m.is_me = 1
+  AND m.deleted_at IS NULL ORDER BY m.created_at, m.id LIMIT 1) AS canonical_me`;
+
 export function getPerson(db: Db, id: string): Person | null {
-  const row = db.prepare("SELECT * FROM people WHERE id = ? AND deleted_at IS NULL").get(id) as Row | undefined;
+  const row = db.prepare(`SELECT ${PERSON_COLS} FROM people WHERE id = ? AND deleted_at IS NULL`).get(id) as Row | undefined;
   return row ? toPerson(row) : null;
 }
 
@@ -204,14 +213,14 @@ export function listPeople(db: Db, workspaceId: string, opts: ListPeopleOptions 
     where.push("EXISTS (SELECT 1 FROM json_each(people.relationship) j WHERE json_extract(j.value, '$.type') = ?)");
     params.push(oneOf(RELATIONSHIP_TYPES, opts.relationship, "relationship type"));
   }
-  const rows = db.prepare(`SELECT * FROM people WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE`).all(...params) as Row[];
+  const rows = db.prepare(`SELECT ${PERSON_COLS} FROM people WHERE ${where.join(" AND ")} ORDER BY name COLLATE NOCASE`).all(...params) as Row[];
   return rows.map(toPerson);
 }
 
 /** The person row for the user themself, if one exists. */
 export function getMe(db: Db, workspaceId: string): Person | null {
   const row = db
-    .prepare("SELECT * FROM people WHERE workspace_id = ? AND is_me = 1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1")
+    .prepare("SELECT *, id AS canonical_me FROM people WHERE workspace_id = ? AND is_me = 1 AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1")
     .get(workspaceId) as Row | undefined;
   return row ? toPerson(row) : null;
 }
@@ -665,4 +674,47 @@ export function setCardOwner(db: Db, cardId: string, personId: string | null): v
 export function listOwnedCardIds(db: Db, personId: string): string[] {
   return (db.prepare("SELECT id FROM task_cards WHERE owner_person_id = ? AND deleted_at IS NULL AND archived_at IS NULL ORDER BY updated_at DESC")
     .all(personId) as { id: string }[]).map((r) => r.id);
+}
+
+// ── Note lifecycle ────────────────────────────
+
+/**
+ * Clean up after a note is deleted: people whose persona it was lose the link,
+ * its mentions are tombstoned, and its checklist index rows go. The meeting it
+ * belonged to stays (other notes or the calendar may still point at it).
+ */
+export function onNoteDeleted(db: Db, noteId: string): void {
+  const now = ts();
+  db.prepare("UPDATE people SET persona_note_id = NULL, updated_at = ? WHERE persona_note_id = ? AND deleted_at IS NULL").run(now, noteId);
+  db.prepare("UPDATE note_mentions SET deleted_at = ?, updated_at = ? WHERE note_id = ? AND deleted_at IS NULL").run(now, now, noteId);
+  db.prepare("DELETE FROM note_action_items WHERE note_id = ?").run(noteId);
+}
+
+/**
+ * Drop People links that point across workspaces after a project's notes and
+ * cards moved (`mergeProject` into a project of another workspace): a note's
+ * meeting, its mentions, a persona link and a card owner must all live in the
+ * project's own workspace. Within one workspace this changes nothing.
+ */
+export function detachForeignPeopleLinks(db: Db, projectId: string): void {
+  const now = ts();
+  db.prepare(`
+    UPDATE notes SET meeting_id = NULL, updated_at = ?
+    WHERE project_id = ? AND meeting_id IS NOT NULL
+      AND meeting_id NOT IN (SELECT id FROM meetings WHERE workspace_id = notes.workspace_id)
+  `).run(now, projectId);
+  db.prepare(`
+    UPDATE note_mentions SET deleted_at = ?, updated_at = ?
+    WHERE deleted_at IS NULL AND note_id IN (SELECT id FROM notes WHERE project_id = ?)
+      AND person_id NOT IN (SELECT p.id FROM people p JOIN notes n ON n.id = note_mentions.note_id WHERE p.workspace_id = n.workspace_id)
+  `).run(now, now, projectId);
+  db.prepare(`
+    UPDATE people SET persona_note_id = NULL, updated_at = ?
+    WHERE deleted_at IS NULL AND persona_note_id IN (SELECT id FROM notes WHERE project_id = ? AND workspace_id != people.workspace_id)
+  `).run(now, projectId);
+  db.prepare(`
+    UPDATE task_cards SET owner_person_id = NULL, updated_at = ?
+    WHERE project_id = ? AND owner_person_id IS NOT NULL
+      AND owner_person_id NOT IN (SELECT id FROM people WHERE workspace_id = task_cards.workspace_id)
+  `).run(now, projectId);
 }

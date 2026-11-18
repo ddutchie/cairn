@@ -282,7 +282,12 @@ export function registerAppHandlers(
 
   // ── Reset all data — wipe every table then relaunch ──────────────────────
   registerContractHandle("app:reset", () => handle(() => {
-    const tables = ["chat_threads", "mcp_notifications", "task_cards", "board_columns", "notes", "tags", "projects", "workspaces"];
+    const tables = [
+      "chat_threads", "mcp_notifications",
+      // People layer (synced tables + device-local caches).
+      "note_mentions", "meeting_attendees", "person_edges", "meetings", "people", "note_action_items", "person_profile_cache",
+      "task_cards", "board_columns", "notes", "tags", "projects", "workspaces",
+    ];
     for (const t of tables) {
       ctx.db.prepare(`DELETE FROM ${t}`).run();
     }

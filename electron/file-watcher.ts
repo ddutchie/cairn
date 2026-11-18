@@ -23,6 +23,7 @@ import type Database from "better-sqlite3";
 import { parseNoteFile, adoptExternalNoteFile, importVaultProjects, isImportPathExcluded, reconcileOwnedNote, touchAdoptedBaseline, flushAdoptedLedger, readImportConfig } from "./notes-files";
 import { findNoteFilePath, noteDir } from "./host-shared/notes-io";
 import * as q from "./db/queries";
+import { capturePeopleFromFile } from "./people-files";
 
 let watcher: FSWatcher | null = null;
 let savedWorkspacePath: string | null = null;
@@ -206,6 +207,19 @@ function maybeImportVaultProjects(db: Database.Database, workspacePath: string):
   }
 }
 
+/**
+ * Read the note's `attendees` / `date` frontmatter into the People layer (a
+ * no-op while the feature flag is off). Never lets a People error stop the
+ * note itself from syncing in.
+ */
+function capturePeopleSafely(db: Database.Database, filePath: string, noteId: string): void {
+  try {
+    capturePeopleFromFile(db, filePath, noteId);
+  } catch (err) {
+    console.error(`[people] couldn't read meeting properties from ${filePath}:`, err);
+  }
+}
+
 function handleFileAdd(filePath: string, workspacePath: string, db: Database.Database, onChanged: () => void): void {
   if (isImportPathExcluded(workspacePath, filePath)) return;
   let note = parseNoteFile(filePath);
@@ -236,6 +250,7 @@ function handleFileAdd(filePath: string, workspacePath: string, db: Database.Dat
     return;
   }
   reconcileOwnedNote(db, workspacePath, filePath, note, readImportConfig(workspacePath));
+  capturePeopleSafely(db, filePath, note.id);
   flushAdoptedLedger(workspacePath);
   onChanged();
 }
@@ -256,6 +271,7 @@ function handleFileChange(filePath: string, workspacePath: string, db: Database.
     return;
   }
   reconcileOwnedNote(db, workspacePath, filePath, note, readImportConfig(workspacePath));
+  capturePeopleSafely(db, filePath, note.id);
   flushAdoptedLedger(workspacePath);
   onChanged();
 }

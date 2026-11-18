@@ -42,6 +42,26 @@ migration, plus how it's built and released.
      `mergeProject` and note delete don't know the new tables yet (dangling
      `persona_note_id`, mentions, `meeting_id` on moved notes). A note conflict
      copy clones `meeting_id`, so a meeting lists both; filter or strip it.
+   W2 as built (`feat/people-w2-capture`): parsers in `shared/people/parse.ts`
+   (attendee values and lists, meeting dates, `Attendees:`/`When:` body lines,
+   checklist owners, `foldName`); the resolver and `captureNoteMeeting` /
+   `renderMeetingFrontmatter` in `electron/db/people-capture.ts` (exact match
+   by Slack id, then email, then folded name/alias/persona title; ambiguous
+   names become suggested attendees; unknown names become one stub per folded
+   name, `stubPersonId`; a note's meeting is `noteMeetingId`); the file side in
+   `electron/people-files.ts`. `attendees`/`date` are NOT Cairn-owned keys, so
+   ordinary saves pass them through untouched; instead of `CAIRN_SHARED_KEYS`
+   in `writeNoteFile`, the file watcher reads them back after external edits
+   (`capturePeopleFromFile`) and a sync hook (`setAppliedRowsHook` in
+   `desktop-sync.ts`, registered in `main.ts`) rewrites them in place when
+   attendee rows arrive. W3/W5 call `refreshMeetingFrontmatter` after their own
+   attendee writes. All of it is a no-op while the flag is off. The review
+   items above are done: canonical `is_me` at read time (oldest wins),
+   `app:reset`, note and project delete (`onNoteDeleted`), cross-workspace
+   `mergeProject` (`detachForeignPeopleLinks`), and conflict copies drop
+   `meeting_id`/`owner_person_id` (`stripCopyLinks`). Body-line and checklist
+   capture passes (writing `note_action_items`) land with W4 indexing, which
+   already owns the per-note reindex hook.
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.

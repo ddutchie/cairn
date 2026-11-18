@@ -44,6 +44,16 @@ export function setNoteFileProjector(fn: NoteFileProjector | null): void {
   _projector = fn;
 }
 
+/**
+ * Called after a sync tick with the rows it applied, so main.ts can bring the
+ * People layer's `attendees` / `date` frontmatter in line (people-files.ts).
+ */
+export type AppliedRowsHook = (applied: readonly { entity: string; entity_id: string; op: string }[]) => void;
+let _appliedHook: AppliedRowsHook | null = null;
+export function setAppliedRowsHook(fn: AppliedRowsHook | null): void {
+  _appliedHook = fn;
+}
+
 // Workspace folder that holds attachment binaries. Registered once by main.ts
 // (it owns ctx.workspacePath, which can change on workspace switch) so BOTH the
 // periodic loop and the manual sync:now handler sync images without threading it.
@@ -538,6 +548,13 @@ export async function syncDesktop(db: Database.Database, projectNote?: NoteFileP
       }
       for (const copyId of conflictCopies) {
         try { project(copyId, "put"); } catch { /* ignore */ }
+      }
+    }
+    if (_appliedHook && applied.length > 0) {
+      try {
+        _appliedHook(applied);
+      } catch (err) {
+        console.error("[sync] applied-rows hook failed:", err);
       }
     }
 

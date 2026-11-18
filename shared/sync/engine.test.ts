@@ -178,6 +178,30 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(copiesB.map((c) => c.content)).toEqual(["A edited this"]);
   });
 
+  it("doesn't carry a note's meeting link onto its conflict copy", () => {
+    // The copy would otherwise become a second note of the same meeting.
+    const clkA = clockFrom(3_500_000);
+    const clkB = clockFrom(3_500_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("notes", { id: "n1", project_id: "p1", workspace_id: "ws1", title: "Sync", content: "common", meeting_id: "m1", created_at: "t", updated_at: "t", content_text: "" });
+    syncFolder(dir, A.engine, B.engine);
+
+    clkA.advance(1);
+    A.engine.put("notes", { id: "n1", content: "A edited this" });
+    clkB.advance(50);
+    B.engine.put("notes", { id: "n1", content: "B edited this" });
+    syncFolder(dir, A.engine, B.engine);
+
+    for (const dev of [A, B]) {
+      const rows = dev.db.prepare("SELECT id, meeting_id FROM notes WHERE deleted_at IS NULL ORDER BY id = 'n1' DESC").all() as { id: string; meeting_id: string | null }[];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toEqual({ id: "n1", meeting_id: "m1" });
+      expect(rows[1].meeting_id).toBeNull();
+    }
+  });
+
   it("never makes a conflict copy OF a conflict copy (no _conflict_…_conflict_ nesting)", () => {
     // Regression for the "31 pending" storm: a conflict-copy row whose body then
     // diverged across devices used to spawn ANOTHER conflict copy, nesting

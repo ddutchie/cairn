@@ -1,0 +1,204 @@
+/**
+ * People layer parsers: names, attendee values, meeting dates, body metadata
+ * lines and checklist owners. Pure (no Node, no DB), so desktop, the MCP
+ * runtime and mobile share one copy. Plan: docs/plans/people-layer.md.
+ */
+
+/** A person reference as written somewhere: a name, an email, or both. */
+export interface AttendeeRef {
+  name?: string;
+  email?: string;
+}
+
+/**
+ * Comparison key for names: case-folded, accents removed, whitespace collapsed.
+ * "Sébastien  Morel" and "sebastien morel" match; "Sebastian" does not.
+ */
+export function foldName(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const EMAIL = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+
+export function isEmail(s: string): boolean {
+  return EMAIL.test(s.trim());
+}
+
+/**
+ * Parse one attendee value from frontmatter, a tool argument or a metadata line:
+ *   "[[Chris Sponagle]]", "[[Chris Sponagle|Chris]]", "[[Folder/Chris Sponagle]]",
+ *   "chris@example.com", "Chris Sponagle <chris@example.com>", "Chris Sponagle".
+ * Wikilinks resolve to the link target (the persona note title), not the alias.
+ * Returns null for empty or unusable values.
+ */
+export function parseAttendeeValue(raw: unknown): AttendeeRef | null {
+  if (typeof raw !== "string") return null;
+  let s = raw.trim().replace(/^@/, "");
+  if (!s) return null;
+
+  const link = /^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/.exec(s);
+  if (!link && s.startsWith("[[")) return null;
+  if (link) {
+    const target = link[1].trim();
+    const name = target.split("/").pop()!.replace(/\.md$/i, "").trim();
+    return name ? { name } : null;
+  }
+
+  const angle = /^(.*?)\s*<([^<>]+)>$/.exec(s);
+  if (angle && isEmail(angle[2])) {
+    const name = angle[1].replace(/^["']|["']$/g, "").trim();
+    return { email: angle[2].trim().toLowerCase(), ...(name ? { name } : {}) };
+  }
+
+  if (isEmail(s)) return { email: s.toLowerCase() };
+  s = s.replace(/^["']|["']$/g, "").replace(/\*\*/g, "").trim();
+  return s ? { name: s } : null;
+}
+
+/** Parse a list of attendee values (array, or a single comma/semicolon-separated string). */
+export function parseAttendeeList(raw: unknown): AttendeeRef[] {
+  const items: unknown[] = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? splitList(raw)
+      : [];
+  const out: AttendeeRef[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const ref = parseAttendeeValue(item);
+    if (!ref) continue;
+    const key = ref.email ?? foldName(ref.name ?? "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+  }
+  return out;
+}
+
+/** Split "A, B and C; [[D, Jr]]" on commas/semicolons/" and ", keeping wikilinks whole. */
+function splitList(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    const two = s.slice(i, i + 2);
+    if (two === "[[") { depth++; cur += two; i++; continue; }
+    if (two === "]]") { depth = Math.max(0, depth - 1); cur += two; i++; continue; }
+    const ch = s[i];
+    if (depth === 0 && (ch === "," || ch === ";")) { parts.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts.flatMap((p) => (/\[\[/.test(p) ? [p] : p.split(/\s+and\s+|\s*&\s*/i))).map((p) => p.trim()).filter(Boolean);
+}
+
+/**
+ * Normalise a meeting date from frontmatter or text to ISO 8601.
+ * Accepts a JS Date (YAML parsers turn `2026-11-11` into one), "2026-11-11",
+ * "2026-11-11 15:00", "2026-11-11T15:00:00Z". Date-only values become midnight
+ * UTC so they sort with timed meetings. Returns null when unparseable.
+ */
+export function parseMeetingDate(raw: unknown): string | null {
+  if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw.toISOString();
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (dateOnly) return `${s}T00:00:00.000Z`;
+  const spaced = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?$/.exec(s);
+  const candidate = spaced ? `${spaced[1]}T${spaced[2]}:${spaced[3] ?? "00"}` : s;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(candidate)) return null;
+  const t = Date.parse(candidate);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
+/** The `date` value Cairn writes: the day only when the time is midnight UTC, else the full ISO time. */
+export function formatMeetingDate(iso: string): string {
+  return iso.endsWith("T00:00:00.000Z") ? iso.slice(0, 10) : iso;
+}
+
+/** Attendees and date found in a note body's metadata lines. */
+export interface BodyMeetingLines {
+  attendees: AttendeeRef[];
+  date: string | null;
+}
+
+/**
+ * Read `**Attendees:** A, B` and `**When:** 2026-11-11` style lines from the
+ * first part of a note body (bold or plain label, optional list bullet; also
+ * "Participants" and "Date"). Used by migration and import to suggest attendees,
+ * never applied silently. Returns null when the body has no attendee line.
+ */
+export function parseBodyMeetingLines(markdown: string): BodyMeetingLines | null {
+  const head = markdown.split(/\r?\n/).slice(0, 40);
+  let attendees: AttendeeRef[] | null = null;
+  let date: string | null = null;
+  for (const line of head) {
+    // The label needs a colon ("**Attendees:**", "**Attendees**:", "Attendees:"), so prose like "When we met" never matches.
+    const m = /^\s*(?:[-*]\s+)?(?:\*\*|__)?(attendees|participants|when|date)(?:\s*:\s*(?:\*\*|__)|(?:\*\*|__)\s*:|\s*:)\s*(.+)$/i.exec(line);
+    if (!m) continue;
+    const label = m[1].toLowerCase();
+    const value = m[2].trim();
+    if ((label === "attendees" || label === "participants") && attendees === null) {
+      attendees = parseAttendeeList(value);
+    } else if ((label === "when" || label === "date") && date === null) {
+      date = parseMeetingDate(value.replace(/[,(].*$/, "").trim()) ?? parseLooseDate(value);
+    }
+  }
+  return attendees && attendees.length ? { attendees, date } : null;
+}
+
+/** First YYYY-MM-DD anywhere in the text (e.g. "Tue 2026-11-11, 15:00 CET"). */
+function parseLooseDate(s: string): string | null {
+  const m = /(\d{4}-\d{2}-\d{2})/.exec(s);
+  return m ? parseMeetingDate(m[1]) : null;
+}
+
+/** One checklist line with an owner. */
+export interface ChecklistItem {
+  /** 0-based line index in the body. */
+  line: number;
+  /** The full line as written (used for a stable key and for ticking it). */
+  raw: string;
+  done: boolean;
+  /** Owner as written ("Chris", "Team"); null when the line names no owner. */
+  owner: AttendeeRef | null;
+  /** The task text without the owner prefix. */
+  text: string;
+}
+
+/**
+ * Checklist lines in a note body, with their owner when the line starts with one:
+ *   "- [ ] **Chris** - validate the hospital PR"
+ *   "- [ ] [[Chris Sponagle]]: viewpoint APIs"
+ *   "- [x] @Chris to send the deck"
+ * Lines without an owner are returned with `owner: null`.
+ */
+export function parseChecklist(markdown: string): ChecklistItem[] {
+  const out: ChecklistItem[] = [];
+  const lines = markdown.split(/\r?\n/);
+  let fence = false;
+  lines.forEach((raw, line) => {
+    if (/^\s*(```|~~~)/.test(raw)) { fence = !fence; return; }
+    if (fence) return;
+    const m = /^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/.exec(raw);
+    if (!m) return;
+    const done = m[1] !== " ";
+    const rest = m[2].trim();
+    const owned =
+      /^\*\*([^*]+)\*\*(?:\s*[-–—:]\s*|\s+to\s+|\s+|$)(.*)$/.exec(rest) ??
+      /^(\[\[[^\]]+\]\])(?:\s*[-–—:]\s*|\s+to\s+|\s+|$)(.*)$/.exec(rest) ??
+      /^@([\p{L}\p{N}_.-]+)(?:\s*[-–—:]\s*|\s+to\s+|\s+|$)(.*)$/u.exec(rest);
+    if (owned) {
+      const owner = parseAttendeeValue(owned[1]);
+      out.push({ line, raw, done, owner, text: owned[2].trim() || rest });
+    } else {
+      out.push({ line, raw, done, owner: null, text: rest });
+    }
+  });
+  return out;
+}

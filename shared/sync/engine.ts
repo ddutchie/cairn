@@ -243,6 +243,16 @@ function totalChanges(db: SyncDb): number {
   return Number(row?.n ?? 0);
 }
 
+/**
+ * A conflicted copy is a side copy for the user to resolve, not a second
+ * meeting record: drop its meeting link (and a card copy's owner) so the
+ * People timeline doesn't list the meeting's notes twice.
+ */
+function stripCopyLinks(entity: string, clone: Record<string, unknown>): void {
+  if (entity === "notes" && "meeting_id" in clone) clone.meeting_id = null;
+  if (entity === "task_cards" && "owner_person_id" in clone) clone.owner_person_id = null;
+}
+
 function tableColumns(db: SyncDb, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 }
@@ -1216,6 +1226,7 @@ export class SyncEngine {
     if (entity === "notes") {
       clone.title = `${local.title ?? "Untitled"} (conflicted copy — ${this.deviceId})`;
     }
+    stripCopyLinks(entity, clone);
     clone.hlc = stamp;
     clone.deleted_at = null;
     this.writeRow(entity, clone);
@@ -1247,6 +1258,7 @@ export class SyncEngine {
     const observed = this.observationSnapshot(entity, copyId);
     const clone: Record<string, unknown> = { ...row, id: copyId, hlc: stamp, deleted_at: null };
     clone.title = `${row.title ?? "Untitled"} (conflicted copy — ${losingOrigin})`;
+    stripCopyLinks(entity, clone);
     this.writeRow(entity, clone);
     this.setPutVersion(entity, copyId, stamp, observed);
     this.appendOplog({ hlc: stamp, origin: this.deviceId, entity, entity_id: copyId, op: "put", payload: readRow(this.db, entity, copyId) ?? null, observed });

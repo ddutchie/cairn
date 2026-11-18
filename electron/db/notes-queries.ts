@@ -10,6 +10,7 @@
  */
 
 import type Database from "better-sqlite3";
+import { onNoteDeleted } from "./people-queries";
 import { ts } from "./utils";
 import { toNote, j, type DbRow } from "../host-shared/db-mappers";
 import { normalizeNoteTitle, stripMarkdown } from "../host-shared/text-utils";
@@ -219,9 +220,12 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
  */
 export function deleteNote(db: Database.Database, id: string) {
   const now = ts();
-  db.prepare(
-    "UPDATE notes SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at IS NULL",
-  ).run(now, now, id);
+  db.transaction(() => {
+    const res = db.prepare(
+      "UPDATE notes SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at IS NULL",
+    ).run(now, now, id);
+    if (res.changes > 0) onNoteDeleted(db, id);
+  })();
 }
 
 /**

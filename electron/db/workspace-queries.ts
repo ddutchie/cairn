@@ -14,6 +14,7 @@ import { ts, newId } from "./utils";
 import { toWorkspace, toProject, j, type DbRow } from "../host-shared/db-mappers";
 import type { SessionProfileId } from "../../shared/agent/session-profile";
 import { getOrCreateFlow } from "./flow-queries";
+import { detachForeignPeopleLinks, onNoteDeleted } from "./people-queries";
 import type { MergedNoteMove, ProjectMergeResult as MergeProjectResult } from "../../shared/types/workspace";
 
 export interface SessionProfileRow {
@@ -150,6 +151,9 @@ export function updateProject(db: Database.Database, id: string, patch: Partial<
 
 export function deleteProject(db: Database.Database, id: string) {
   // Cascade: delete cards, columns, notes (caller deletes .md files first)
+  for (const { id: noteId } of db.prepare("SELECT id FROM notes WHERE project_id = ?").all(id) as { id: string }[]) {
+    onNoteDeleted(db, noteId); // People links to these notes (persona, mentions, action items)
+  }
   db.prepare("DELETE FROM task_cards WHERE project_id = ?").run(id);
   db.prepare("DELETE FROM board_columns WHERE project_id = ?").run(id);
   db.prepare("DELETE FROM notes WHERE project_id = ?").run(id);
@@ -268,6 +272,8 @@ export function mergeProject(db: Database.Database, sourceId: string, targetId: 
     db.prepare(
       "UPDATE notes SET project_id = ?, workspace_id = ?, updated_at = ?, version = version + 1 WHERE project_id = ?",
     ).run(targetId, targetWs, now, sourceId);
+    // Moving into another workspace: People links can't follow (meetings and people are per workspace).
+    if (source.workspaceId !== targetWs) detachForeignPeopleLinks(db, targetId);
 
     // ── 3. Idea flow: move source flow's nodes/edges into the target flow ──
     let flowNodeCount = 0;
