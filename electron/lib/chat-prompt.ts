@@ -37,6 +37,18 @@ export const TOOL_LABELS: Record<string, (args: ToolArgs) => string> = {
   delete:                 (a) => `Deleting ${String(a.type ?? "item").replace("flow_", "Idea Flow ")}`,
   get_idea_flow:          () => "Reading Idea Flow",
   edit_idea_flow:         (a) => `Editing Idea Flow (${(a.ops as unknown[] | undefined)?.length ?? 0} change${(a.ops as unknown[] | undefined)?.length === 1 ? "" : "s"})`,
+  people:                 (a) => {
+    const who = typeof a.name === "string" && a.name ? ` ${a.name}` : "";
+    switch (a.action) {
+      case "query":         return who ? `Finding people named${who}` : "Listing people";
+      case "get":           return `Reading${who || " a person"}`;
+      case "timeline":      return `Reading${who || " a person"}'s timeline`;
+      case "relationships": return "Reading relationships";
+      case "upsert":        return `Saving person${who}`;
+      case "link":          return a.remove ? `Unlinking ${a.link ?? ""}`.trim() : `Linking ${a.link ?? ""}${who}`.trim();
+      default:              return "People";
+    }
+  },
   get_graph:              (a) => a.nodeId ? (a.semantic ? "Finding related notes" : `Getting neighbours of ${a.nodeId}`) : "Reading knowledge graph",
   get_user_writing_style:     (a) => (a.mode === "full" ? "Reading your full writing style" : "Reading your writing style cheat sheet"),
   update_user_writing_style:  (a) => a.section ? `Updating writing style (${a.section})` : "Updating writing style",

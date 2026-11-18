@@ -38,6 +38,11 @@ const sDueDate     = z.string().optional().describe("ISO date e.g. 2026-05-01, o
 const sTagMode    = z.enum(["add", "remove", "set"]).optional().describe("How tagNames apply: add (default), remove, or set (replace all)");
 const sIdList     = z.array(z.string());
 
+// People layer args (hidden while the feature is off — see toolSchemasFor).
+const sAttendees  = z.array(z.string()).optional().describe("Meeting notes: who attended (names, emails or person ids). Makes the note a meeting; replaces the attendees you declared before");
+const sMeetDate   = sStrOpt.describe("Meeting notes: when it happened (YYYY-MM-DD or ISO datetime)");
+const sOwner      = sStrOpt.describe("Person who owns this task (name, email or person id), or empty to clear");
+
 export const TOOL_SCHEMAS = {
 
   // ── Context & reads ──────────────────────────────────────────────────────────
@@ -95,6 +100,8 @@ export const TOOL_SCHEMAS = {
       tagNames:   sTagNames,
       isPinned:   sBoolOpt,
       overwrite:  sBoolOpt.describe("Allow replacing content with much shorter content"),
+      attendees:  sAttendees,
+      date:       sMeetDate,
     }),
   },
 
@@ -119,6 +126,8 @@ export const TOOL_SCHEMAS = {
       isPinned:      sBoolOpt,
       linkCardIds:   sIdList.optional().describe("Card ids to link to these notes"),
       unlinkCardIds: sIdList.optional().describe("Card ids to unlink from these notes"),
+      attendees:     sAttendees,
+      date:          sMeetDate,
     }),
   },
 
@@ -136,6 +145,7 @@ export const TOOL_SCHEMAS = {
       dueDate:     sDueDate,
       tagNames:    sTagNames,
       linkNoteIds: sIdList.optional().describe("Notes to link to the new card"),
+      owner:       sOwner,
     }),
   },
 
@@ -157,6 +167,7 @@ export const TOOL_SCHEMAS = {
       unlinkNoteIds: sIdList.optional().describe("Note ids to unlink from these cards"),
       blockedBy:     sIdList.optional().describe("Cards that block these (same project; circular deps rejected)"),
       unblockFrom:   sIdList.optional().describe("Blockers to remove"),
+      owner:         sOwner,
     }),
   },
 
@@ -208,6 +219,34 @@ export const TOOL_SCHEMAS = {
       projectId: sId,
       ops:       z.array(z.object({ op: z.enum(["add_node", "update_node", "add_edge", "delete_node", "delete_edge"]) }).passthrough()),
       layout:    z.enum(["LR", "TB"]).optional().describe("Auto-arrange afterwards (LR or TB)"),
+    }),
+  },
+
+  // ── People ────────────────────────────────────────────────────────────────────
+
+  people: {
+    description: "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom). Writes: 'upsert' (create or update a person) and 'link' (an edge between two people, an attendee on a meeting note, or a mention). Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.",
+    schema: z.object({
+      action:       z.enum(["query", "get", "timeline", "relationships", "upsert", "link"]),
+      personId:     sIdOpt.describe("get/timeline/relationships/upsert: the person (or pass name)"),
+      name:         sStrOpt.describe("query: name filter; get/upsert: the person's name"),
+      relationship: sStrOpt.describe("query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)"),
+      status:       z.enum(["confirmed", "suggested", "dismissed"]).optional().describe("query: filter; upsert/link: status of what you write (default confirmed for stated facts)"),
+      provenance:   z.enum(["explicit", "convention", "inferred"]).optional().describe("upsert/link: explicit = stated in text, inferred = your judgment"),
+      aliases:      z.array(z.string()).optional().describe("upsert: other names (added to existing)"),
+      emails:       z.array(z.string()).optional().describe("upsert: email addresses (added to existing)"),
+      relationships: z.array(z.object({
+        type:  z.enum(["direct_report", "manager", "peer", "stakeholder", "mentor", "buddy", "recruiter", "candidate", "other"]),
+        label: sStrOpt,
+      })).optional().describe("upsert: relationship(s) to the user (replaces the list)"),
+      cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe("upsert: 1:1 cadence, empty to clear"),
+      personaNoteId: sIdOpt.describe("upsert: the note about this person"),
+      link:         z.enum(["edge", "attendee", "mention"]).optional().describe("link: what to link"),
+      edgeType:     z.enum(["manager_of", "mentor_of", "buddy_of", "stakeholder_of", "partner"]).optional().describe("link edge: personId <edgeType> otherPersonId"),
+      otherPersonId: sIdOpt.describe("link edge: the other person"),
+      noteId:       sIdOpt.describe("link attendee/mention: the note"),
+      remove:       sBoolOpt.describe("link: remove instead of add"),
+      limit:        z.number().optional().default(25),
     }),
   },
 
@@ -339,6 +378,38 @@ export const CHAT_EXCLUDED_TOOLS: ToolName[] = [
 
 // Chat-only tools (not exposed via MCP)
 export const CHAT_ONLY_TOOLS: ToolName[] = ["spawn_tasks_from_note", "ask_questions", "suggest_connections"];
+
+/** Tools that exist only while the People layer is on (`feature.people`). */
+export const PEOPLE_TOOLS: ReadonlySet<string> = new Set(["people"]);
+
+/** Arguments of other tools that exist only while the People layer is on. */
+export const PEOPLE_TOOL_ARGS: Readonly<Partial<Record<ToolName, readonly string[]>>> = {
+  ensure_note:  ["attendees", "date"],
+  update_notes: ["attendees", "date"],
+  create_task:  ["owner"],
+  update_tasks: ["owner"],
+};
+
+export type ToolSchemaEntry = { description: string; schema: z.ZodObject<z.ZodRawShape> };
+
+/**
+ * The tool schemas a session gets. With `people` off, the `people` tool and the
+ * People arguments are left out, so the feature is invisible until launch.
+ * Read once when a session (or the MCP server) starts: the tool list never
+ * changes mid-session (prompt-cache rule in AGENTS.md).
+ */
+export function toolSchemasFor(opts: { people: boolean }): Record<string, ToolSchemaEntry> {
+  const out: Record<string, ToolSchemaEntry> = {};
+  for (const [name, entry] of Object.entries(TOOL_SCHEMAS) as Array<[ToolName, ToolSchemaEntry]>) {
+    if (opts.people) { out[name] = entry; continue; }
+    if (PEOPLE_TOOLS.has(name)) continue;
+    const drop = PEOPLE_TOOL_ARGS[name];
+    out[name] = drop
+      ? { description: entry.description, schema: entry.schema.omit(Object.fromEntries(drop.map((k) => [k, true])) as Record<string, true>) }
+      : entry;
+  }
+  return out;
+}
 
 export type ToolCategory = "read" | "write" | "delete";
 

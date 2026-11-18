@@ -13,7 +13,8 @@
 
 import { describe, it, expect } from "vitest";
 import { TOOL_SCHEMAS } from "../../electron/lib/tool-schemas";
-import { APPROVAL_SAFE_TOOLS, riskForTool, approvalGrantScope, approvalPreview, isShellTool, needsApproval, needsApprovalForCall, type RiskClass, type GrantScope } from "./tool-risk";
+import { shouldAskForTool } from "./approval-mode";
+import { APPROVAL_SAFE_TOOLS, riskForCall, riskForTool, approvalGrantScope, approvalPreview, isShellTool, needsApproval, needsApprovalForCall, type RiskClass, type GrantScope } from "./tool-risk";
 
 // Sets local to this test file — the same shape tool-risk.ts uses
 // internally, re-declared here so the coverage assertion doesn't have to
@@ -23,6 +24,7 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "create_task", "update_tasks", "task_progress", "spawn_tasks_from_note",
   "upsert_project", "delete", "edit_idea_flow",
   "codebase_reindex", "suggest_connections", "update_user_writing_style",
+  "people",
 ]);
 const EXEC_TOOLS = new Set<string>(["bash", "subagent"]);
 // engine coding-stack tools are registered by mountCodingStack, not
@@ -129,6 +131,19 @@ describe("tool-risk classifier — set membership", () => {
       expect(needsApproval(name), `${name} should be gate-free (read-only)`).toBe(false);
       expect(riskForTool(name)).toBe("READ");
     }
+  });
+
+  it("people reads are free; its writes ask like other Cairn writes", () => {
+    for (const action of ["query", "get", "timeline", "relationships"]) {
+      expect(needsApprovalForCall("people", { action })).toBe(false);
+      expect(riskForCall("people", { action })).toBe("READ");
+      expect(shouldAskForTool("people", "interactive", { action })).toBe(false);
+    }
+    for (const action of ["upsert", "link", undefined]) {
+      expect(needsApprovalForCall("people", { action })).toBe(true);
+      expect(riskForCall("people", { action })).toBe("WRITE_LOCAL");
+    }
+    expect(approvalPreview("people", { action: "link", link: "attendee", name: "Ana Ruiz" })).toBe("link attendee Ana Ruiz");
   });
 
   it("layout_idea_flow and codebase_reindex are WRITE (they mutate local data)", () => {

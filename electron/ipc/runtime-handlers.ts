@@ -102,7 +102,8 @@ export function registerRuntimeHandlers(ctx: DbContext): void {
   registerContractHandle("runtime:tools:inventory", () => handle(async () => {
     try {
       const { buildInventory } = await import("../lib/tool-inventory");
-      return { surfaces: await buildInventory() };
+      const { isPeopleEnabled } = await import("../db/people-queries");
+      return { surfaces: await buildInventory({ people: isPeopleEnabled(ctx.db) }) };
     } catch (err) {
       return { surfaces: null, error: errMsg(err) };
     }

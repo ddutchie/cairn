@@ -17,6 +17,10 @@
  * constructed here.
  */
 import type Database from "better-sqlite3";
+import { isPeopleEnabled } from "../../db/people-queries";
+import { isCairnReadTool } from "../../../shared/agent/tool-names";
+import { PEOPLE_READ_ACTIONS } from "../../../shared/agent/tool-risk";
+import { scrubAgentPrivate } from "./people-privacy";
 
 type Args = Record<string, any>;
 /** Run one internal (per-operation) handler by name. */
@@ -34,8 +38,10 @@ export const CONSOLIDATED_TOOLS: ReadonlySet<string> = new Set([
   "get_context", "get_item", "search_notes", "search_tasks",
   "ensure_note", "edit_note", "update_notes",
   "create_task", "update_tasks", "task_progress",
-  "delete", "edit_idea_flow", "get_graph", "codebase_query",
+  "delete", "edit_idea_flow", "get_graph", "codebase_query", "people",
 ]);
+
+
 
 const isErr = (r: unknown): r is { error: string } =>
   !!r && typeof r === "object" && !Array.isArray(r) && typeof (r as { error?: unknown }).error === "string";
@@ -168,6 +174,50 @@ function notesMatching(db: Database.Database, ids: string[], f: { projectId?: st
   ).map((r) => r.id));
 }
 
+/** ensure_note without the People arguments: plain, or from a template. */
+async function ensureNote(args: Args, call: HandlerCall): Promise<unknown> {
+  const plain = withoutPeopleArgs(args);
+  if (!args.templateId) return call("ensure_note", plain);
+  const created = await call("instantiate_template", {
+    projectId: args.projectId, templateId: args.templateId, title: args.title, folder: args.folder,
+  }) as Args;
+  if (isErr(created) || (!args.tagNames && args.isPinned === undefined)) return created;
+  const tagged = await call("ensure_note", { projectId: args.projectId, title: created.title, tagNames: args.tagNames, isPinned: args.isPinned });
+  return isErr(tagged) ? { ...created, error: tagged.error } : created;
+}
+
+// ── People arguments ───────────────────────────────────────────────────────
+
+/** Apply `attendees` / `date` to the notes a note tool just wrote (People layer on only). */
+async function applyNoteMeeting(db: Database.Database, call: HandlerCall, noteIds: string[], args: Args, errors: string[]): Promise<unknown> {
+  if ((args.attendees === undefined && args.date === undefined) || !isPeopleEnabled(db)) return undefined;
+  let last: unknown;
+  for (const noteId of noteIds) {
+    last = await call("set_note_attendees", { noteId, attendees: args.attendees, date: args.date });
+    if (isErr(last)) errors.push(`attendees ${noteId}: ${last.error}`);
+  }
+  return isErr(last) ? undefined : (last as Args | undefined)?.meeting;
+}
+
+/** Apply `owner` to cards a task tool just wrote (People layer on only). */
+async function applyCardOwner(db: Database.Database, call: HandlerCall, cardIds: string[], args: Args, errors: string[]): Promise<unknown> {
+  if (args.owner === undefined || !isPeopleEnabled(db)) return undefined;
+  let last: unknown;
+  for (const cardId of cardIds) {
+    last = await call("set_card_owner", { cardId, owner: args.owner });
+    if (isErr(last)) errors.push(`owner ${cardId}: ${last.error}`);
+  }
+  return isErr(last) ? undefined : (last as Args | undefined)?.owner;
+}
+
+const PEOPLE_ARG_KEYS = ["attendees", "date", "owner"];
+const withoutPeopleArgs = (a: Args): Args => Object.fromEntries(Object.entries(a).filter(([k]) => !PEOPLE_ARG_KEYS.includes(k)));
+
+/** True for a call that only reads: its result is scrubbed of private persona notes. */
+function isReadCall(name: string, args: Args): boolean {
+  return name === "people" ? PEOPLE_READ_ACTIONS.has(String(args.action)) : isCairnReadTool(name);
+}
+
 // ── Dispatcher ─────────────────────────────────────────────────────────────
 
 export async function runConsolidatedTool(
@@ -177,7 +227,27 @@ export async function runConsolidatedTool(
   call: HandlerCall,
   opts: ConsolidatedOptions,
 ): Promise<unknown> {
+  const result = await runTool(db, name, args, call, opts);
+  return isReadCall(name, args) ? scrubAgentPrivate(db, result, args) : result;
+}
+
+async function runTool(
+  db: Database.Database,
+  name: string,
+  args: Args,
+  call: HandlerCall,
+  opts: ConsolidatedOptions,
+): Promise<unknown> {
   switch (name) {
+    case "people": {
+      let workspaceId: string | undefined;
+      if (typeof args.personId === "string" && args.personId) {
+        workspaceId = (db.prepare("SELECT workspace_id AS ws FROM people WHERE id = ?").get(args.personId) as { ws: string } | undefined)?.ws;
+      }
+      workspaceId ??= resolveWorkspaceId(db, opts, { nodeId: typeof args.noteId === "string" ? args.noteId : undefined });
+      return call("people", { ...args, workspaceId });
+    }
+
     case "get_context": {
       if (!args.projectId) return call(opts.surface === "chat" ? "get_active_context" : "get_cairn_context", {});
       const pack = await call("get_project_context_pack", { projectId: args.projectId });
@@ -247,13 +317,11 @@ export async function runConsolidatedTool(
     }
 
     case "ensure_note": {
-      if (!args.templateId) return call("ensure_note", args);
-      const created = await call("instantiate_template", {
-        projectId: args.projectId, templateId: args.templateId, title: args.title, folder: args.folder,
-      }) as Args;
-      if (isErr(created) || (!args.tagNames && args.isPinned === undefined)) return created;
-      const tagged = await call("ensure_note", { projectId: args.projectId, title: created.title, tagNames: args.tagNames, isPinned: args.isPinned });
-      return isErr(tagged) ? { ...created, error: tagged.error } : created;
+      const note = await ensureNote(args, call);
+      if (isErr(note) || typeof (note as Args)?.id !== "string") return note;
+      const errors: string[] = [];
+      const meeting = await applyNoteMeeting(db, call, [(note as Args).id], args, errors);
+      return summarize({ ...(note as Args), ...(meeting !== undefined ? { meeting } : {}) }, errors);
     }
 
     case "edit_note":
@@ -284,13 +352,15 @@ export async function runConsolidatedTool(
         for (const cardId of list(args.linkCardIds)) await step(`link ${id}→${cardId}`, "link_note_to_task", { noteId: id, cardId });
         for (const cardId of list(args.unlinkCardIds)) await step(`unlink ${id}→${cardId}`, "unlink_note_from_task", { noteId: id, cardId });
       }
+      const meeting = await applyNoteMeeting(db, call, ids.filter((id) => noteRow(db, id)), args, errors);
       const notes = ids.map((id) => noteRow(db, id)).filter(Boolean).map((n) => ({ id: n!.id, title: n!.title }));
       // A single note keeps the {id,title} top-level shape so chips can open it.
       // Renames report old and new title (an empty list when the title was already that); other fields are not measured.
       const renamed = oldTitle !== undefined && notes[0]
         ? { changes: notes[0].title !== oldTitle ? [{ id: notes[0].id, title: notes[0].title, field: "title", from: oldTitle, to: notes[0].title } satisfies ToolChange] : [] }
         : {};
-      return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...renamed } : { updated: notes, ...renamed }, errors);
+      const met = meeting !== undefined ? { meeting } : {};
+      return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...renamed, ...met } : { updated: notes, ...renamed, ...met }, errors);
     }
 
     case "create_task": {
@@ -299,7 +369,7 @@ export async function runConsolidatedTool(
         columnId = columnOfType(db, args.projectId, args.columnType ?? "backlog") ?? firstColumn(db, args.projectId);
         if (!columnId) return { error: `Project ${args.projectId} has no board columns` };
       }
-      const { columnType: _ct, linkNoteIds: _l, ...rest } = args;
+      const { columnType: _ct, linkNoteIds: _l, ...rest } = withoutPeopleArgs(args);
       const card = await call("create_task", { ...rest, columnId }) as Args;
       if (isErr(card)) return card;
       const errors: string[] = [];
@@ -307,7 +377,8 @@ export async function runConsolidatedTool(
         const r = await call("link_note_to_task", { noteId, cardId: card.id });
         if (isErr(r)) errors.push(`link ${noteId}: ${r.error}`);
       }
-      return summarize(card, errors);
+      const owner = await applyCardOwner(db, call, [card.id], args, errors);
+      return summarize(owner !== undefined ? { ...card, owner } : card, errors);
     }
 
     case "update_tasks": {
@@ -341,6 +412,7 @@ export async function runConsolidatedTool(
         for (const noteId of list(args.linkNoteIds)) await step(`link ${noteId}→${id}`, "link_note_to_task", { noteId, cardId: id });
         for (const noteId of list(args.unlinkNoteIds)) await step(`unlink ${noteId}→${id}`, "unlink_note_from_task", { noteId, cardId: id });
       }
+      const owner = await applyCardOwner(db, call, ids.filter((id) => cardRow(db, id)), args, errors);
       const cards = ids.map((id) => cardRow(db, id)).filter(Boolean).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.columnId }));
       const changes = ids.flatMap((id) => cardChanges(id, beforeCards.get(id), cardSnapshot(db, id)));
       // A measured call always reports its list (empty = nothing changed), so a no-op is not shown as a change.
@@ -348,7 +420,8 @@ export async function runConsolidatedTool(
       // trustworthy when none were requested; otherwise leave `changes` out and the view falls back.
       const unmeasured = args.description !== undefined || list(args.tagNames).length > 0 || list(args.linkNoteIds).length > 0 || list(args.unlinkNoteIds).length > 0;
       const extra = ids.some((id) => beforeCards.get(id)) && (changes.length > 0 || !unmeasured) ? { changes } : {};
-      return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...extra } : { updated: cards, ...extra }, errors);
+      const own = owner !== undefined ? { owner } : {};
+      return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...extra, ...own } : { updated: cards, ...extra, ...own }, errors);
     }
 
     case "task_progress":

@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { buildMcpServer } from "./mcp-server";
-import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS } from "./lib/tool-schemas";
+import { CHAT_ONLY_TOOLS, PEOPLE_TOOLS, toolSchemasFor } from "./lib/tool-schemas";
 
 async function listTools() {
   // tools/list never touches the workspace binding.
@@ -22,10 +22,14 @@ async function listTools() {
 }
 
 describe("MCP tools/list", () => {
-  it("advertises every Cairn tool except the chat-only ones", async () => {
-    const names = (await listTools()).map((t) => t.name).sort();
-    const expected = Object.keys(TOOL_SCHEMAS).filter((n) => !(CHAT_ONLY_TOOLS as string[]).includes(n)).sort();
+  it("advertises every Cairn tool except the chat-only ones (People hidden while off)", async () => {
+    const tools = await listTools();
+    const names = tools.map((t) => t.name).sort();
+    const expected = Object.keys(toolSchemasFor({ people: false })).filter((n) => !(CHAT_ONLY_TOOLS as string[]).includes(n)).sort();
     expect(names).toEqual(expected);
+    for (const n of PEOPLE_TOOLS) expect(names).not.toContain(n);
+    const ensure = tools.find((t) => t.name === "ensure_note");
+    expect(Object.keys(ensure?.inputSchema.properties ?? {})).not.toContain("attendees");
   });
 
   it("strips schema noise that costs tokens without guiding the model", async () => {

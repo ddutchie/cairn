@@ -126,7 +126,8 @@ export async function previewEnginePrompt(ctx: DbContext, cwd: string): Promise<
     const text = buildAgentSystemPrompt({ projectName: "Project", cwd: cwd || ctx.workspacePath || process.cwd(), mode: "execute", role: "default" });
     const chat = buildSystemPrompt({ message: "", threadId: "preview", projectId: "", workspaceId: "" } as never);
     const { buildInventory } = await import("../lib/tool-inventory");
-    const tools = (await buildInventory()).coding.map((t) => ({ name: t.name, description: t.description })).sort((a, b) => a.name.localeCompare(b.name));
+    const { isPeopleEnabled } = await import("../db/people-queries");
+    const tools = (await buildInventory({ people: isPeopleEnabled(ctx.db) })).coding.map((t) => ({ name: t.name, description: t.description })).sort((a, b) => a.name.localeCompare(b.name));
     return {
       text,
       sections: [{ name: "coding", order: 0, text, index: 0 }, { name: "chat", order: 1, text: chat, index: 1 }],

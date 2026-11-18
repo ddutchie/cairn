@@ -62,7 +62,18 @@ const CAIRN_WRITE_TOOLS = new Set<string>([
   "upsert_project", "delete", "edit_idea_flow",
   // codebase_reindex writes the local semantic index → mutating (local data).
   "codebase_reindex", "suggest_connections", "update_user_writing_style",
+  // People layer: one tool for reads and writes; its read actions are READ per call (riskForCall).
+  "people",
 ]);
+
+/** `people` actions that only read: no approval, and their results are privacy-scrubbed like other reads. */
+export const PEOPLE_READ_ACTIONS: ReadonlySet<string> = new Set(["query", "get", "timeline", "relationships"]);
+
+/** Risk of one call: like riskForTool, except `people` reads are READ. */
+export function riskForCall(name: string, args: Record<string, unknown> = {}): RiskClass {
+  if (name === "people" && PEOPLE_READ_ACTIONS.has(String(args.action))) return "READ";
+  return riskForTool(name);
+}
 
 /** Mutating engine coding-stack tools (fs/editor/todo). bash is EXEC, not here.
  * The retired `str_replace_editor` alias was removed from this set in Q6 —
@@ -83,7 +94,7 @@ export function needsApproval(name: string): boolean {
  * renderer card use this so they never diverge.
  */
 export function needsApprovalForCall(name: string, args: Record<string, unknown> = {}): boolean {
-  void args;
+  if (name === "people") return !PEOPLE_READ_ACTIONS.has(String(args.action));
   return needsApproval(name);
 }
 
@@ -152,6 +163,9 @@ export function approvalPreview(name: string, args: Record<string, unknown> = {}
                     ? args.description ?? args.title ?? ""
                   : name === "add_task_progress" || name === "task_progress"
                     ? args.message ?? ""
+                  : name === "people"
+                    // "link attendee Ana Ruiz", "upsert Ana Ruiz".
+                    ? [args.action, args.link ?? args.edgeType, args.name ?? args.personId].filter((v) => typeof v === "string" && v).join(" ")
                   : name === "delete"
                     // Say what is being deleted: "note n_123".
                     ? `${String(args.type ?? "item")} ${String(args.id ?? "")}`.trim()

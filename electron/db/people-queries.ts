@@ -789,3 +789,17 @@ export function detachForeignPeopleLinks(db: Db, projectId: string): void {
       AND owner_person_id NOT IN (SELECT id FROM people WHERE workspace_id = task_cards.workspace_id)
   `).run(now, projectId);
 }
+
+/**
+ * Notes no agent may read: the persona notes of people marked private
+ * (`agent_private`). Every agent read path filters these out
+ * (`scrubAgentPrivate` in `electron/mcp/tools/people-privacy.ts`); the user
+ * still sees them in the app.
+ */
+export function agentHiddenNoteIds(db: Db): Set<string> {
+  const rows = db.prepare(`
+    SELECT persona_note_id AS id FROM people
+    WHERE agent_private = 1 AND deleted_at IS NULL AND persona_note_id IS NOT NULL
+  `).all() as { id: string }[];
+  return new Set(rows.map((r) => r.id));
+}
