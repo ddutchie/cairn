@@ -5,10 +5,11 @@ import { applySchemaThrough, applySchema } from "./schema";
 import BetterSqlite3 from "better-sqlite3";
 import {
   addAttendee, addEdge, addMention, createMeeting, createPerson, deleteMeeting, deletePerson, edgeRole, getMe,
-  getPerson, getRelations, isPeopleEnabled, listAttendees, listMeetingNoteIds, listOwnedCardIds, listPeople,
-  listPersonMeetings, listPersonMentionNoteIds, listRelated, removeEdge, setCardOwner, setNoteMeeting,
-  setPeopleEnabled, updatePerson, upsertMeetingByExternalId,
+  getMeeting, getPerson, getRelations, isPeopleEnabled, listAttendees, listMeetingNoteIds, listOwnedCardIds, listPeople,
+  listPersonMeetings, listPersonMentionNoteIds, listRelated, removeAttendee, removeEdge, removeMention, setCardOwner,
+  setNoteMeeting, setPeopleEnabled, updatePerson, upsertMeetingByExternalId,
 } from "./people-queries";
+import { attendeeRowId, calendarMeetingId, edgeRowId, mentionRowId } from "../../shared/people/ids";
 import { createNote } from "./notes-queries";
 import { PEOPLE_SYNC_TABLES } from "../../shared/sync/people-schema";
 import { SYNCABLE_TABLES } from "../../shared/sync/schema";
@@ -232,8 +233,8 @@ describe("meetings", () => {
   });
 
   it("upserts calendar meetings by external id", () => {
-    const a = upsertMeetingByExternalId(db, { workspaceId: "ws1", title: "1:1", startsAt: "2026-11-18T10:00:00Z", externalId: "evt-1", seriesKey: "s1" });
-    const b = upsertMeetingByExternalId(db, { workspaceId: "ws1", title: "1:1 (moved)", startsAt: "2026-11-18T11:00:00Z", externalId: "evt-1" });
+    const a = upsertMeetingByExternalId(db, { workspaceId: "ws1", title: "1:1", startsAt: "2026-11-18T10:00:00Z", externalId: "evt-1", seriesKey: "s1" })!;
+    const b = upsertMeetingByExternalId(db, { workspaceId: "ws1", title: "1:1 (moved)", startsAt: "2026-11-18T11:00:00Z", externalId: "evt-1" })!;
     expect(b.id).toBe(a.id);
     expect(b).toMatchObject({ title: "1:1 (moved)", startsAt: "2026-11-18T11:00:00Z", source: "calendar", seriesKey: "s1" });
   });
@@ -246,6 +247,71 @@ describe("meetings", () => {
     deleteMeeting(db, m.id);
     expect(db.prepare("SELECT meeting_id FROM notes WHERE id = 'n1'").get()).toEqual({ meeting_id: null });
     expect(() => setNoteMeeting(db, "missing", null)).toThrow(/Note not found/);
+  });
+});
+
+describe("deterministic ids (concurrent adds converge)", () => {
+  it("gives the same fact the same row id on every device", () => {
+    expect(attendeeRowId("m1", "p1")).toBe("att:m1:p1");
+    expect(mentionRowId("n1", "p1")).toBe("men:n1:p1");
+    expect(edgeRowId("partner", "b", "a")).toBe(edgeRowId("partner", "a", "b"));
+    expect(edgeRowId("manager_of", "b", "a")).not.toBe(edgeRowId("manager_of", "a", "b"));
+    expect(calendarMeetingId("ws1", "evt-1")).toBe("cal:ws1:evt-1");
+  });
+
+  it("uses those ids when adding", () => {
+    const a = person("A");
+    const b = person("B");
+    const m = createMeeting(db, { workspaceId: "ws1", title: "Sync", startsAt: "2026-11-11T15:00:00Z" });
+    createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Notes" });
+    expect(addAttendee(db, { meetingId: m.id, personId: a.id }).id).toBe(attendeeRowId(m.id, a.id));
+    expect(addMention(db, "n1", a.id).id).toBe(mentionRowId("n1", a.id));
+    expect(addEdge(db, { workspaceId: "ws1", sourceId: b.id, targetId: a.id, type: "partner" }).id).toBe(edgeRowId("partner", a.id, b.id));
+  });
+
+  it("revives a removed attendee, mention and edge instead of adding a second row", () => {
+    const a = person("A");
+    const b = person("B");
+    const m = createMeeting(db, { workspaceId: "ws1", title: "Sync", startsAt: "2026-11-11T15:00:00Z" });
+    createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Notes" });
+
+    addAttendee(db, { meetingId: m.id, personId: a.id });
+    removeAttendee(db, m.id, a.id);
+    expect(listPersonMeetings(db, a.id)).toEqual([]);
+    const back = addAttendee(db, { meetingId: m.id, personId: a.id, source: "calendar" });
+    expect(back.source).toBe("calendar");
+    expect(listPersonMeetings(db, a.id).map((x) => x.id)).toEqual([m.id]);
+
+    addMention(db, "n1", a.id);
+    removeMention(db, "n1", a.id);
+    addMention(db, "n1", a.id, "wikilink");
+    expect(listPersonMentionNoteIds(db, a.id)).toEqual(["n1"]);
+
+    const e = addEdge(db, { workspaceId: "ws1", sourceId: a.id, targetId: b.id, type: "manager_of", label: "old" });
+    removeEdge(db, e.id);
+    const e2 = addEdge(db, { workspaceId: "ws1", sourceId: a.id, targetId: b.id, type: "manager_of" });
+    expect(e2).toMatchObject({ id: e.id, label: undefined });
+    expect(getRelations(db, a.id)).toHaveLength(1);
+
+    for (const t of ["meeting_attendees", "note_mentions", "person_edges"]) {
+      expect((db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n).toBe(1);
+    }
+  });
+
+  it("doesn't bring back a calendar meeting the user deleted", () => {
+    const m = upsertMeetingByExternalId(db, { workspaceId: "ws1", title: "1:1", startsAt: "2026-11-18T10:00:00Z", externalId: "evt-9" })!;
+    deleteMeeting(db, m.id);
+    expect(upsertMeetingByExternalId(db, { workspaceId: "ws1", title: "1:1", startsAt: "2026-11-18T10:00:00Z", externalId: "evt-9" })).toBeNull();
+    expect(getMeeting(db, m.id)).toBeNull();
+  });
+
+  it("doesn't touch tombstoned cards or notes when a person or meeting is deleted", () => {
+    const p = person("Chris");
+    seedCard("c1");
+    setCardOwner(db, "c1", p.id);
+    db.prepare("UPDATE task_cards SET deleted_at = 'x', version = 5 WHERE id = 'c1'").run();
+    deletePerson(db, p.id);
+    expect(db.prepare("SELECT owner_person_id, version FROM task_cards WHERE id = 'c1'").get()).toEqual({ owner_person_id: p.id, version: 5 });
   });
 });
 

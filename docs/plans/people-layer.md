@@ -30,6 +30,21 @@ migration, plus how it's built and released.
    mobile migration v10, `shared/types/people.ts`, `electron/db/people-queries.ts`
    (+ tests), protocol 5, and the flag (`app_kv` key `feature.people`,
    `isPeopleEnabled`). Deletes are tombstones, like notes.
+
+   After review (PR #312): rows that stand for a pair or an outside record get
+   deterministic ids (`shared/people/ids.ts`: attendees, mentions, edges,
+   calendar meetings), so concurrent adds on two devices converge on one row
+   and re-adding revives the tombstone. `people.aliases`/`emails` union-merge
+   like `tag_ids`. Deferred, with owners:
+   - **Before launch (W2/W5):** `is_me` is only unique per device; two devices
+     can each mark a different "me". Resolve at read time (one canonical me).
+   - **W2:** `app:reset` (`electron/ipc/handlers.ts`), `deleteProject` /
+     `mergeProject` and note delete don't know the new tables yet (dangling
+     `persona_note_id`, mentions, `meeting_id` on moved notes). A note conflict
+     copy clones `meeting_id`, so a meeting lists both; filter or strip it.
+   - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
+     forwarded ops with this device's protocol version, so a v4 device seen
+     only through a v5 relay is never flagged "behind". Stamp only own ops.
 2. **Launch** (desktop 3.3.0 + mobile minor): everything below, flag on.
 
 Between the two, workstream PRs merge to `main` continuously behind the flag,

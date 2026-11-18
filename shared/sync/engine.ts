@@ -205,6 +205,10 @@ const ARRAY_MERGE_COLUMNS: Record<string, string[]> = {
   notes: ["tag_ids", "linked_note_ids", "linked_card_ids"],
   task_cards: ["tag_ids", "linked_note_ids", "blocked_by_ids"],
   projects: ["tag_ids"],
+  // People layer (protocol 5): a nickname added on the phone and an email added
+  // on the desktop both survive. Shipped with the schema so every v5 peer
+  // merges these columns the same way.
+  people: ["aliases", "emails"],
 };
 
 /** Column carrying free-text body that gets conflict-copy treatment. */

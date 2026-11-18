@@ -22,6 +22,7 @@ import {
   type PersonEdge, type PersonEdgeRole, type PersonEdgeType, type PersonPatch, type PersonRelation,
   type Provenance, type Relationship, type RelationshipType,
 } from "../../shared/types/people";
+import { attendeeRowId, calendarMeetingId, edgeRowId, mentionRowId } from "../../shared/people/ids";
 
 type Db = Database.Database;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -304,7 +305,7 @@ export function deletePerson(db: Db, id: string): void {
     db.prepare("UPDATE meeting_attendees SET deleted_at = ?, updated_at = ? WHERE person_id = ? AND deleted_at IS NULL").run(now, now, id);
     db.prepare("UPDATE note_mentions SET deleted_at = ?, updated_at = ? WHERE person_id = ? AND deleted_at IS NULL").run(now, now, id);
     db.prepare(
-      "UPDATE task_cards SET owner_person_id = NULL, updated_at = ?, version = version + 1 WHERE owner_person_id = ?",
+      "UPDATE task_cards SET owner_person_id = NULL, updated_at = ?, version = version + 1 WHERE owner_person_id = ? AND deleted_at IS NULL",
     ).run(now, id);
     db.prepare("UPDATE note_action_items SET owner_person_id = NULL WHERE owner_person_id = ?").run(id);
     db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(id);
@@ -326,9 +327,10 @@ export interface AddEdgeInput {
 }
 
 /**
- * Add a person-to-person edge. Idempotent: an existing live edge between the
- * same two people of the same type is returned (for `partner`, in either
- * direction) and its label/end date updated when given.
+ * Add a person-to-person edge. Idempotent: the row id comes from (type, source,
+ * target) (`edgeRowId`; `partner` in either direction is one row), so a live
+ * edge is returned with its label/end date updated when given, and a removed
+ * one is revived.
  */
 export function addEdge(db: Db, input: AddEdgeInput): PersonEdge {
   const type = oneOf(PERSON_EDGE_TYPES, input.type, "edge type");
@@ -337,20 +339,29 @@ export function addEdge(db: Db, input: AddEdgeInput): PersonEdge {
     if (!getPerson(db, pid)) throw new Error(`Person not found: ${pid}`);
   }
   const now = ts();
-  const existing = db.prepare(`
-    SELECT * FROM person_edges
-    WHERE type = ? AND deleted_at IS NULL
-      AND ((source_id = ? AND target_id = ?) OR (? = 'partner' AND source_id = ? AND target_id = ?))
-    LIMIT 1
-  `).get(type, input.sourceId, input.targetId, type, input.targetId, input.sourceId) as Row | undefined;
-  if (existing) {
+  const id = edgeRowId(type, input.sourceId, input.targetId);
+  const existing = db.prepare("SELECT * FROM person_edges WHERE id = ?").get(id) as Row | undefined;
+  if (existing && !existing.deleted_at) {
     if (input.label !== undefined || input.endedAt !== undefined) {
       db.prepare("UPDATE person_edges SET label = COALESCE(?, label), ended_at = COALESCE(?, ended_at), updated_at = ? WHERE id = ?")
-        .run(input.label ?? null, input.endedAt ?? null, now, existing.id);
+        .run(input.label ?? null, input.endedAt ?? null, now, id);
     }
-    return toEdge(db.prepare("SELECT * FROM person_edges WHERE id = ?").get(existing.id) as Row);
+    return toEdge(db.prepare("SELECT * FROM person_edges WHERE id = ?").get(id) as Row);
   }
-  const id = newId();
+  if (existing) {
+    // Revive the removed edge with the new facts (an UPDATE, so sync sends a put that has seen the delete).
+    db.prepare(`
+      UPDATE person_edges SET deleted_at = NULL, workspace_id = ?, source_id = ?, target_id = ?, label = ?, ended_at = ?,
+        status = ?, provenance = ?, source_note_id = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      input.workspaceId, input.sourceId, input.targetId, input.label?.trim() || null, input.endedAt ?? null,
+      oneOf(PEOPLE_STATUSES, input.status ?? "confirmed", "status"),
+      oneOf(PROVENANCES, input.provenance ?? "explicit", "provenance"),
+      input.sourceNoteId ?? null, now, id,
+    );
+    return toEdge(db.prepare("SELECT * FROM person_edges WHERE id = ?").get(id) as Row);
+  }
   db.prepare(`
     INSERT INTO person_edges (id, workspace_id, source_id, target_id, type, label, ended_at, status, provenance,
       source_note_id, created_at, updated_at)
@@ -467,19 +478,21 @@ export function createMeeting(db: Db, input: CreateMeetingInput): Meeting {
 }
 
 /**
- * Create or update the meeting for a calendar event, matched on
- * (workspace, externalId), so repeated Today runs never duplicate it.
+ * Create or update the meeting for a calendar event. The id comes from
+ * (workspace, externalId) (`calendarMeetingId`), so repeated Today runs, on
+ * this device or another, always write the same row. Returns null when the
+ * user deleted that meeting: a calendar refresh doesn't bring it back.
  */
-export function upsertMeetingByExternalId(db: Db, input: CreateMeetingInput & { externalId: string }): Meeting {
-  const row = db
-    .prepare("SELECT id FROM meetings WHERE workspace_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1")
-    .get(input.workspaceId, input.externalId) as { id: string } | undefined;
-  if (!row) return createMeeting(db, { ...input, source: input.source ?? "calendar" });
+export function upsertMeetingByExternalId(db: Db, input: Omit<CreateMeetingInput, "id"> & { externalId: string }): Meeting | null {
+  const id = calendarMeetingId(input.workspaceId, input.externalId);
+  const row = db.prepare("SELECT deleted_at FROM meetings WHERE id = ?").get(id) as { deleted_at: string | null } | undefined;
+  if (!row) return createMeeting(db, { ...input, id, source: input.source ?? "calendar" });
+  if (row.deleted_at) return null;
   db.prepare(`
     UPDATE meetings SET title = ?, starts_at = ?, ends_at = ?, series_key = COALESCE(?, series_key), updated_at = ?
     WHERE id = ?
-  `).run(input.title.trim(), input.startsAt, input.endsAt ?? null, input.seriesKey ?? null, ts(), row.id);
-  return getMeeting(db, row.id)!;
+  `).run(input.title.trim(), input.startsAt, input.endsAt ?? null, input.seriesKey ?? null, ts(), id);
+  return getMeeting(db, id)!;
 }
 
 export function updateMeeting(
@@ -512,7 +525,7 @@ export function deleteMeeting(db: Db, id: string): void {
   db.transaction(() => {
     db.prepare("UPDATE meetings SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL").run(now, now, id);
     db.prepare("UPDATE meeting_attendees SET deleted_at = ?, updated_at = ? WHERE meeting_id = ? AND deleted_at IS NULL").run(now, now, id);
-    db.prepare("UPDATE notes SET meeting_id = NULL, updated_at = ?, version = version + 1 WHERE meeting_id = ?").run(now, id);
+    db.prepare("UPDATE notes SET meeting_id = NULL, updated_at = ?, version = version + 1 WHERE meeting_id = ? AND deleted_at IS NULL").run(now, id);
   })();
 }
 
@@ -525,25 +538,30 @@ export interface AddAttendeeInput {
 }
 
 /**
- * Add a person to a meeting. Idempotent per (meeting, person): a second call
- * returns the existing row, upgrading `suggested` to `confirmed` if asked.
+ * Add a person to a meeting. Idempotent per (meeting, person) (`attendeeRowId`):
+ * a second call returns the existing row, upgrading `suggested` to `confirmed`
+ * if asked, and re-adding someone who was removed revives their row.
  */
 export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
   if (!getMeeting(db, input.meetingId)) throw new Error(`Meeting not found: ${input.meetingId}`);
   if (!getPerson(db, input.personId)) throw new Error(`Person not found: ${input.personId}`);
   const status = oneOf(PEOPLE_STATUSES, input.status ?? "confirmed", "status");
   const now = ts();
-  const existing = db
-    .prepare("SELECT * FROM meeting_attendees WHERE meeting_id = ? AND person_id = ? AND deleted_at IS NULL LIMIT 1")
-    .get(input.meetingId, input.personId) as Row | undefined;
-  if (existing) {
+  const id = attendeeRowId(input.meetingId, input.personId);
+  const existing = db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row | undefined;
+  if (existing && !existing.deleted_at) {
     if (existing.status !== status && status === "confirmed") {
-      db.prepare("UPDATE meeting_attendees SET status = 'confirmed', updated_at = ? WHERE id = ?").run(now, existing.id);
+      db.prepare("UPDATE meeting_attendees SET status = 'confirmed', updated_at = ? WHERE id = ?").run(now, id);
       return toAttendee({ ...existing, status: "confirmed", updated_at: now });
     }
     return toAttendee(existing);
   }
-  const id = newId();
+  if (existing) {
+    db.prepare(`
+      UPDATE meeting_attendees SET deleted_at = NULL, status = ?, source = ?, provenance = ?, updated_at = ? WHERE id = ?
+    `).run(status, input.source ?? "manual", input.provenance ?? "explicit", now, id);
+    return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
+  }
   db.prepare(`
     INSERT INTO meeting_attendees (id, meeting_id, person_id, status, source, provenance, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -572,7 +590,7 @@ export function listAttendees(db: Db, meetingId: string, statuses: PeopleStatus[
 /** Meetings a person attended (confirmed), newest first. */
 export function listPersonMeetings(db: Db, personId: string, limit = 100): Meeting[] {
   const rows = db.prepare(`
-    SELECT m.* FROM meetings m
+    SELECT DISTINCT m.* FROM meetings m
     JOIN meeting_attendees a ON a.meeting_id = m.id AND a.deleted_at IS NULL AND a.status = 'confirmed'
     WHERE a.person_id = ? AND m.deleted_at IS NULL
     ORDER BY m.starts_at DESC
@@ -603,14 +621,16 @@ export function listMeetingNoteIds(db: Db, meetingId: string): string[] {
 
 // ── Mentions ──────────────────────────────────
 
-/** Record that a note mentions a person. Idempotent per (note, person). */
+/** Record that a note mentions a person. Idempotent per (note, person) (`mentionRowId`); revives a removed mention. */
 export function addMention(db: Db, noteId: string, personId: string, source: MentionSource = "manual"): NoteMention {
-  const existing = db
-    .prepare("SELECT * FROM note_mentions WHERE note_id = ? AND person_id = ? AND deleted_at IS NULL LIMIT 1")
-    .get(noteId, personId) as Row | undefined;
-  if (existing) return toMention(existing);
-  const id = newId();
+  const id = mentionRowId(noteId, personId);
   const now = ts();
+  const existing = db.prepare("SELECT * FROM note_mentions WHERE id = ?").get(id) as Row | undefined;
+  if (existing && !existing.deleted_at) return toMention(existing);
+  if (existing) {
+    db.prepare("UPDATE note_mentions SET deleted_at = NULL, source = ?, updated_at = ? WHERE id = ?").run(source, now, id);
+    return toMention(db.prepare("SELECT * FROM note_mentions WHERE id = ?").get(id) as Row);
+  }
   db.prepare("INSERT INTO note_mentions (id, note_id, person_id, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(id, noteId, personId, source, now, now);
   return toMention(db.prepare("SELECT * FROM note_mentions WHERE id = ?").get(id) as Row);
@@ -625,7 +645,7 @@ export function removeMention(db: Db, noteId: string, personId: string): void {
 /** Live note ids that mention a person, newest note first. */
 export function listPersonMentionNoteIds(db: Db, personId: string): string[] {
   return (db.prepare(`
-    SELECT n.id FROM note_mentions m JOIN notes n ON n.id = m.note_id AND n.deleted_at IS NULL
+    SELECT DISTINCT n.id, n.updated_at FROM note_mentions m JOIN notes n ON n.id = m.note_id AND n.deleted_at IS NULL
     WHERE m.person_id = ? AND m.deleted_at IS NULL
     ORDER BY n.updated_at DESC
   `).all(personId) as { id: string }[]).map((r) => r.id);
