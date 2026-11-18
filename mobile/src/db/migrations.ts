@@ -11,6 +11,7 @@
  */
 
 import type * as SQLite from "expo-sqlite";
+import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES_SQL } from "@cairn/shared/sync/people-schema";
 
 /**
  * Ordered migrations. Index N (0-based) becomes user_version N+1 once applied.
@@ -195,6 +196,18 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
       );
       CREATE INDEX IF NOT EXISTS idx_attachments_name ON attachments(workspace_id, name);
     `),
+  // v10: People layer tables (sync protocol 5) and the two columns they add to
+  // notes and task_cards. Fresh installs have them from the base schema; this
+  // back-fills existing installs. Capture triggers come free from
+  // SYNCABLE_TABLES (MOBILE_TRIGGERS_SQL runs on every launch), which is why
+  // the tables must exist on every device before SYNCABLE_TABLES lists them.
+  (db) => {
+    db.execSync(PEOPLE_SYNC_TABLES_SQL);
+    for (const { table, column, ddl } of PEOPLE_ADDED_COLUMNS) {
+      const cols = db.getAllSync<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name);
+      if (!cols.includes(column)) db.execSync(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    }
+  },
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

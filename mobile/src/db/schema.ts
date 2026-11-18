@@ -15,6 +15,7 @@
  */
 
 import { SYNCABLE_TABLES } from "@cairn/shared/sync/schema";
+import { PEOPLE_SYNC_TABLES_SQL } from "@cairn/shared/sync/people-schema";
 
 export const MOBILE_SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -93,7 +94,8 @@ CREATE TABLE IF NOT EXISTS notes (
   folder           TEXT NOT NULL DEFAULT '',
   version          INTEGER NOT NULL DEFAULT 0,
   hlc              TEXT,
-  deleted_at       TEXT
+  deleted_at       TEXT,
+  meeting_id       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task_cards (
@@ -115,8 +117,12 @@ CREATE TABLE IF NOT EXISTS task_cards (
   blocked_by_ids   TEXT NOT NULL DEFAULT '[]',
   version          INTEGER NOT NULL DEFAULT 0,
   hlc              TEXT,
-  deleted_at       TEXT
+  deleted_at       TEXT,
+  owner_person_id  TEXT
 );
+
+-- People layer tables (synced; DDL shared with desktop so columns match).
+${PEOPLE_SYNC_TABLES_SQL}
 
 -- Single-row writing-style table, synced from desktop (id is the fixed
 -- constant 'global'). Columns match desktop's user_style exactly. Captured by

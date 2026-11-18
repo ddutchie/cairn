@@ -9,6 +9,7 @@ dropped, move it to `../archive/` so this directory only holds live work.
 - `ui-consistency-pass.md` — UI consistency audit (2026-11-01).
 - `unified-agent-session.md` — decided: fork instead of a merged session type.
 - `morning-brief.md` — daily brief and connected-apps strategy: Today shipped in 3.2.0; connector tiers 2–3 still open.
+- `people-layer.md` — People as a first-class entity, attendee auto-capture, 1:1 loop (draft for review, 2026-11-18).
 - `apple-foundation-models-provider.md`, `iphone-duo.md`, `local-embeddings.md`
   (in progress), `mcp-payload-optimization.md`, `mobile-app-viability.md` (draft),
   `mobile-capture-and-widgets.md`, `mobile-skia-graph.md`, `sync-attachments.md`,

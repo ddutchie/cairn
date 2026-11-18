@@ -142,11 +142,18 @@ const RESTORABLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * but cannot publish or fetch images — stamping it `behind` surfaces the
  * "device needs updating" hint so a missing image has an explanation.
  *
+ * Protocol 5 (people layer schema release): added the `people`,
+ * `person_edges`, `meetings`, `meeting_attendees` and `note_mentions`
+ * entities, plus `notes.meeting_id` and `task_cards.owner_person_id`. An older
+ * peer ignores them and stays convergent, but would show none of the people
+ * data; stamping it `behind` tells the user to update before the People layer
+ * launches (docs/plans/people-layer.md, "Release shape").
+ *
  * The point of stamping it now, while only two historical shapes exist, is that
  * a peer can be *told* it is behind instead of us inferring capability from
  * which optional fields happen to be present.
  */
-export const SYNC_PROTOCOL_VERSION = 4;
+export const SYNC_PROTOCOL_VERSION = 5;
 
 /** sync_state key prefix for the highest protocol version seen from a peer. */
 const PEER_PROTOCOL_PREFIX = "peer_protocol:";
@@ -198,6 +205,10 @@ const ARRAY_MERGE_COLUMNS: Record<string, string[]> = {
   notes: ["tag_ids", "linked_note_ids", "linked_card_ids"],
   task_cards: ["tag_ids", "linked_note_ids", "blocked_by_ids"],
   projects: ["tag_ids"],
+  // People layer (protocol 5): a nickname added on the phone and an email added
+  // on the desktop both survive. Shipped with the schema so every v5 peer
+  // merges these columns the same way.
+  people: ["aliases", "emails"],
 };
 
 /** Column carrying free-text body that gets conflict-copy treatment. */
