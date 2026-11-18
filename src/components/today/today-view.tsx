@@ -460,7 +460,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
   const day = useMemo(() => dayBlocks(events ?? [], nowMin), [events, nowMin]);
 
   const header = (
-    <div className="flex flex-wrap items-center gap-2 mt-4">
+    <div className="flex flex-wrap items-center gap-2 mt-5">
       <Button variant="accent" size="sm" onClick={() => onRun()} disabled={state.running}>
         {state.running ? <MiniStack size={13} busy /> : <RefreshCw size={12} />} {state.running ? "Gathering" : brief ? "Refresh" : "Run now"}
       </Button>
@@ -568,31 +568,6 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
               : brief.lede}
           </p>
           {(state.lastError || error) && <p className="text-xs text-[var(--danger)] mt-2">Last run: {error ?? state.lastError}</p>}
-          <div className="flex flex-wrap gap-y-3 mt-6">
-            <LedgerItem label="Decisions" value={String(openDecisions)} detail={`of ${openNeed.length} that need you`} onClick={() => jump("need")} />
-            <LedgerItem
-              label="Drafts ready"
-              value={String(openDrafts.length)}
-              detail={openLinked ? `${openLinked} on decisions · nothing sent` : "nothing sent"}
-              onClick={() => jump(openLinked === openDrafts.length && openLinked > 0 ? "need" : "prep")}
-            />
-            {hasDay && (
-              <>
-                <LedgerItem
-                  label={isToday ? "Free time left" : "Free time"}
-                  value={formatMinutes(day.freeLeft)}
-                  detail={day.largestFree ? `largest ${formatMinutes(day.largestFree)}` : "no free block left"}
-                  onClick={() => jump("day")}
-                />
-                <LedgerItem
-                  label={isToday ? "Meetings left" : "Meetings"}
-                  value={String(day.meetingsLeft)}
-                  detail={day.nextMeeting ? `${day.nextMeeting.title} · ${day.nextMeeting.start}` : "none left today"}
-                  onClick={() => jump("day")}
-                />
-              </>
-            )}
-          </div>
           {!past && header}
         </div>
         <div className="flex items-end gap-4">
@@ -918,9 +893,9 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
   if (facts.length === 0) return null;
   const open = (projectId: string) => { setActiveProject(projectId); setView("board"); };
   return (
-    <section className="mt-6">
-      <div className="flex items-baseline gap-2 mb-2 px-1">
-        <h3 className="text-sm font-semibold">Your projects</h3>
+    <section className="mt-9">
+      <div className="flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
+        <h3 className="text-base" style={{ fontFamily: "var(--font-display)" }}>Your projects</h3>
         <span className="text-2xs text-[var(--text-tertiary)]">From your boards, notes and automations, worked out by Cairn</span>
       </div>
       <div className="grid gap-2.5 grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3">
@@ -980,24 +955,6 @@ function LegendRow({ n, label, hint, accent, onClick }: { n: number; label: stri
   );
 }
 
-/** One figure of the day's ledger: set in the display face, divided from its neighbours by a hairline, no box. */
-function LedgerItem({ label, value, detail, onClick }: { label: string; value: string; detail: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "group text-left min-w-0 pr-6 mr-6 border-r border-[var(--border)] last:border-r-0 last:mr-0 last:pr-0 rounded-sm",
-        FOCUS_RING,
-      )}
-    >
-      <span className="block text-3xl leading-none tracking-tight tabular-nums group-hover:text-[var(--accent)]" style={{ fontFamily: "var(--font-display)" }}>{value}</span>
-      <span className="block text-xs font-medium text-[var(--text-primary)] mt-1.5">{label}</span>
-      <span className="block text-2xs text-[var(--text-tertiary)] mt-0.5 max-w-[22ch] truncate">{detail}</span>
-    </button>
-  );
-}
-
 const DAY_START = 7 * 60;
 const DAY_END = 19 * 60;
 const dayPct = (m: number) => ((Math.max(DAY_START, Math.min(DAY_END, m)) - DAY_START) / (DAY_END - DAY_START)) * 100;
@@ -1032,20 +989,24 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
 
   return (
     <section id="today-lane-day" className="mt-8">
-      <div className="flex items-baseline gap-2.5 mb-2">
+      <div className="flex items-baseline gap-2.5 pb-2 mb-3 border-b border-[var(--border-subtle)]">
         <h3 className="text-base" style={{ fontFamily: "var(--font-display)" }}>Your day</h3>
-        <span className="text-2xs text-[var(--text-tertiary)]">07:00–19:00 · hover a block for details</span>
+        <span className="text-2xs text-[var(--text-tertiary)]">07:00–19:00, hover a block for details</span>
       </div>
       <div
         className={cn(
-          "rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 px-4 pt-3.5 pb-2.5 transition-[outline]",
-          flash && "outline outline-2 outline-offset-2 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
+          "rounded-lg transition-[outline]",
+          flash && "outline outline-2 outline-offset-8 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
         )}
       >
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
           <span className="text-base font-semibold">{formatMinutes(day.freeLeft)} free</span>
           <span className="text-xs text-[var(--text-tertiary)]">
             {nowMin !== null ? "left today" : "in the day"}, in {day.freeBlocksLeft} {day.freeBlocksLeft === 1 ? "block" : "blocks"}
+          </span>
+          <span className="text-xs text-[var(--text-tertiary)]">
+            {day.meetingsLeft === 0 ? "No meetings left" : `${day.meetingsLeft} ${day.meetingsLeft === 1 ? "meeting" : "meetings"} left`}
+            {day.nextMeeting ? `, next ${day.nextMeeting.title} at ${day.nextMeeting.start}` : ""}
           </span>
           {best && (
             <span className="ml-auto text-xs text-[var(--text-secondary)] min-w-0 truncate">
