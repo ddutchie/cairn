@@ -111,7 +111,7 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
       {entries.map(([key, child]) => {
         const nested = child !== null && typeof child === "object";
         return nested ? (
-          <details key={key} open={depth < 1} className="border-l border-[var(--border)] pl-2">
+          <details key={key} open={depth < 2} className="border-l border-[var(--border)] pl-2">
             <summary className="cursor-pointer text-[var(--text-secondary)]">{key} <span className="text-[var(--text-tertiary)]">{Array.isArray(child) ? `[${child.length}]` : "{…}"}</span></summary>
             <JsonTree value={child} depth={depth + 1} />
           </details>
