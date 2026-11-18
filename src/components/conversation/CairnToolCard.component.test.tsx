@@ -13,6 +13,13 @@ function renderCall(toolCall: ToolCall) {
   return render(<ConversationToolCall toolCall={toolCall} />, { wrapper: TooltipProvider });
 }
 
+/** Cards start collapsed; open one the way a user does. */
+function renderOpen(toolCall: ToolCall) {
+  const view = renderCall(toolCall);
+  fireEvent.click(screen.getByTestId("cairn-tool-summary").closest("button")!);
+  return view;
+}
+
 describe("Cairn tool card", () => {
   it("renders a Cairn data tool as a collapsed 'Cairn · action' card", () => {
     renderCall(call({ name: "get_today", args: { date: "2026-11-18" }, output: "{}" }));
@@ -42,7 +49,7 @@ describe("Cairn tool card", () => {
 
 describe("Cairn tool views", () => {
   it("shows a writing-style addition as a + line instead of the raw JSON", () => {
-    const { container } = renderCall(call({
+    const { container } = renderOpen(call({
       name: "update_user_writing_style",
       args: { section: "5", content: "Plain hyphens" },
       output: JSON.stringify({ ok: true, updated: true, section: "5", content: "Plain hyphens" }),
@@ -54,7 +61,7 @@ describe("Cairn tool views", () => {
   });
 
   it("marks an already-present style rule as unchanged", () => {
-    renderCall(call({
+    renderOpen(call({
       name: "update_user_writing_style",
       args: { content: "Dup" },
       output: JSON.stringify({ ok: true, updated: false, message: "Already in the guide.", content: "Dup" }),
@@ -63,7 +70,7 @@ describe("Cairn tool views", () => {
   });
 
   it("lists from → to rows per task from the result's changes", () => {
-    renderCall(call({
+    renderOpen(call({
       name: "update_tasks",
       args: { cardIds: ["a"], columnType: "review" },
       output: JSON.stringify({ id: "a", title: "Fix login", updated: true, changes: [{ id: "a", title: "Fix login", field: "column", from: "Todo", to: "Review" }] }),
@@ -74,7 +81,7 @@ describe("Cairn tool views", () => {
   });
 
   it("summarises idea-flow ops with correct plurals", () => {
-    renderCall(call({
+    renderOpen(call({
       name: "edit_idea_flow",
       args: { ops: [{ op: "add_node", data: { label: "A" } }, { op: "add_node", data: { label: "B" } }, { op: "add_edge" }] },
       output: JSON.stringify({ results: [] }),
@@ -130,12 +137,12 @@ describe("review fixes", () => {
   });
 
   it("says a no-op update changed nothing instead of echoing the request", () => {
-    renderCall(call({ name: "update_tasks", args: { cardIds: ["a"], columnType: "review" }, output: JSON.stringify({ id: "a", title: "A", updated: true, changes: [] }) }));
+    renderOpen(call({ name: "update_tasks", args: { cardIds: ["a"], columnType: "review" }, output: JSON.stringify({ id: "a", title: "A", updated: true, changes: [] }) }));
     expect(screen.getByText(/No changes/)).toBeTruthy();
   });
 
   it("labels argument-derived rows 'Requested', not 'Changes'", () => {
-    renderCall(call({ name: "update_tasks", args: { cardIds: ["a"], title: "ship_api", columnType: "in_progress" }, output: JSON.stringify({ id: "a", updated: true }) }));
+    renderOpen(call({ name: "update_tasks", args: { cardIds: ["a"], title: "ship_api", columnType: "in_progress" }, output: JSON.stringify({ id: "a", updated: true }) }));
     expect(screen.getByText("Requested")).toBeTruthy();
     expect(screen.getByText("ship_api")).toBeTruthy(); // titles keep their underscores
     expect(screen.getByText("in progress")).toBeTruthy(); // enum labels do not
@@ -150,20 +157,20 @@ describe("review fixes", () => {
   });
 
   it("treats a whitespace-only oldString as a patch, not an append", () => {
-    renderCall(call({ name: "edit_note", args: { noteId: "n", oldString: "\n\n", newString: "\n--\n" }, output: JSON.stringify({ id: "n", title: "T" }) }));
+    renderOpen(call({ name: "edit_note", args: { noteId: "n", oldString: "\n\n", newString: "\n--\n" }, output: JSON.stringify({ id: "n", title: "T" }) }));
     expect(screen.getByText("Edit")).toBeTruthy();
     expect(screen.queryByText("Appended")).toBeNull();
   });
 
   it("keeps a line of replacement visible when the removed text is long", () => {
     const removed = Array.from({ length: 12 }, (_, i) => `old ${i}`).join("\n");
-    const { container } = renderCall(call({ name: "edit_note", args: { noteId: "n", oldString: removed, newString: "the new line" }, output: JSON.stringify({ id: "n", title: "T" }) }));
+    const { container } = renderOpen(call({ name: "edit_note", args: { noteId: "n", oldString: removed, newString: "the new line" }, output: JSON.stringify({ id: "n", title: "T" }) }));
     expect(container.textContent).toContain("the new line");
     expect(container.textContent).toContain("more lines");
   });
 
   it("does not report a note or move for a claim", () => {
-    renderCall(call({ name: "task_progress", args: { action: "claim", cardId: "a", agent: "Claude", message: "ignored", moveTo: "done" }, output: JSON.stringify({ ok: true }) }));
+    renderOpen(call({ name: "task_progress", args: { action: "claim", cardId: "a", agent: "Claude", message: "ignored", moveTo: "done" }, output: JSON.stringify({ ok: true }) }));
     expect(screen.queryByText("ignored")).toBeNull();
     expect(screen.queryByText("moved to")).toBeNull();
   });
@@ -173,13 +180,26 @@ describe("review fixes", () => {
     expect(screen.getByTestId("cairn-tool-summary").textContent).toContain("Writing style already had this");
   });
 
-  it("auto-expands a successful write that has no specialised view", () => {
+  it("keeps a successful write collapsed, with a button that opens the note it touched", () => {
     renderCall(call({ name: "update_notes", args: { noteIds: ["n"], linkCardIds: ["k"] }, output: JSON.stringify({ id: "n", title: "T", updated: true }) }));
-    expect(screen.getAllByRole("button")[0].getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("cairn-tool-summary").closest("button")?.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByTestId("cairn-ref-open")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open note" })).toBeTruthy();
+  });
+
+  it("opening the item from the collapsed card does not expand it", () => {
+    renderCall(call({ name: "create_task", args: { projectId: "p", title: "T" }, output: JSON.stringify({ id: "k1", title: "T" }) }));
+    fireEvent.click(screen.getByTestId("cairn-ref-open"));
+    expect(screen.getByTestId("cairn-tool-summary").closest("button")?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("offers no open button for a failed or item-less call", () => {
+    renderCall(call({ name: "create_task", ok: false, args: {}, output: JSON.stringify({ id: "k1", title: "T" }) }));
+    expect(screen.queryByTestId("cairn-ref-open")).toBeNull();
   });
 
   it("masks secrets in the specialised view the same as the raw call", () => {
-    const { container } = renderCall(call({ name: "edit_note", args: { noteId: "n", token: "sk-live-abcdefghijklmnopqrstuvwxyz123456", newString: "x" }, output: JSON.stringify({ id: "n", title: "T" }) }));
+    const { container } = renderOpen(call({ name: "edit_note", args: { noteId: "n", token: "sk-live-abcdefghijklmnopqrstuvwxyz123456", newString: "x" }, output: JSON.stringify({ id: "n", title: "T" }) }));
     expect(container.textContent).not.toContain("sk-live-abcdefghijklmnopqrstuvwxyz123456");
   });
 
@@ -215,3 +235,21 @@ describe("approval fixes", () => {
     expect(screen.getByTestId("approval-cairn-args").textContent).toContain("Details only in args");
   });
 });
+
+describe("search headers", () => {
+  it("says how many hits a finished search found", () => {
+    renderCall(call({ name: "search_notes", args: { query: "login" }, output: JSON.stringify([{ id: "n1", title: "A" }, { id: "n2", title: "B" }]) }));
+    expect(screen.getByTestId("cairn-tool-summary").textContent).toContain("Found 2 notes for “login”");
+  });
+
+  it("says when nothing matched, and a folder listing needs no query", () => {
+    renderCall(call({ name: "search_notes", args: { query: "zzz" }, output: "[]" }));
+    expect(screen.getByTestId("cairn-tool-summary").textContent).toContain("No notes matched “zzz”");
+  });
+
+  it("does not claim a count for a failed search", () => {
+    renderCall(call({ name: "search_notes", ok: false, args: { query: "x" }, error: "boom" }));
+    expect(screen.getByTestId("cairn-tool-summary").textContent).not.toContain("Found");
+  });
+});
+

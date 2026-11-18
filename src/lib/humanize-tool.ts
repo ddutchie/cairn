@@ -55,6 +55,37 @@ function nodeLabel(data: unknown): string | undefined {
 }
 
 /** Convert a tool event into a short, human-readable transcript sentence. */
+type SearchArgs = Record<string, unknown>;
+
+/** What a notes/tasks search asked for, from its arguments alone ("Searched notes for “x”", "Listed notes in Plans"). */
+function searchCall(noun: "notes" | "tasks", args: SearchArgs): HumanizedTool {
+  const query = typeof args.query === "string" ? args.query.trim() : "";
+  if (query) return { pre: `Searched ${noun} ${args.mode === "semantic" ? "by meaning " : ""}for`, obj: `“${short(query)}”` };
+  if (typeof args.filter === "string" && args.filter.trim()) return { pre: `Listed ${args.filter.trim()} ${noun}` };
+  if (typeof args.folder === "string" && args.folder.trim()) return { pre: `Listed ${noun} in`, obj: short(args.folder) };
+  if (typeof args.tag === "string" && args.tag.trim()) return { pre: `Listed ${noun} tagged`, obj: short(args.tag) };
+  return { pre: `Listed ${noun}` };
+}
+
+/** The same search once its result is known: a count, or "No notes matched". */
+export function humanizeSearchResult(noun: "notes" | "tasks", args: SearchArgs, count: number): HumanizedTool {
+  const query = typeof args.query === "string" ? args.query.trim() : "";
+  const singular = noun === "notes" ? "note" : "task";
+  if (query) {
+    return count === 0
+      ? { pre: `No ${noun} matched`, obj: `“${short(query)}”` }
+      : { pre: `Found ${count} ${count === 1 ? singular : noun} for`, obj: `“${short(query)}”` };
+  }
+  const word = count === 1 ? singular : noun;
+  const filter = typeof args.filter === "string" ? args.filter.trim() : "";
+  const folder = typeof args.folder === "string" ? args.folder.trim() : "";
+  const tag = typeof args.tag === "string" ? args.tag.trim() : "";
+  const lead = count === 0 ? `No ${filter ? `${filter} ` : ""}${noun}` : `Found ${count} ${filter ? `${filter} ` : ""}${word}`;
+  if (folder) return { pre: `${lead} in`, obj: short(folder) };
+  if (tag) return { pre: `${lead} tagged`, obj: short(tag) };
+  return { pre: count === 0 && !filter ? `No ${noun} found` : lead };
+}
+
 export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNameLookup = {}): HumanizedTool {
   const named = (kind: keyof CairnNameLookup, id: unknown, fallback: string): string => {
     if (typeof id !== "string" || !id.trim()) return fallback;
@@ -133,10 +164,8 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
       return project ? { pre: "Re-laid out the idea flow for", obj: short(project) } : { pre: "Re-laid out the idea flow" };
     }
     case "generate_prd": return { pre: "Drafted PRD", obj: short(args.title, "a plan") };
-    case "search_notes": return { pre: args.mode === "semantic" ? "Searched notes by meaning for" : "Searched notes for", obj: `“${short(args.query, "a phrase")}”` };
-    case "search_tasks": return typeof args.filter === "string"
-      ? { pre: `Listed ${args.filter} tasks` }
-      : { pre: args.mode === "semantic" ? "Searched tasks by meaning for" : "Searched tasks for", obj: `“${short(args.query, "a phrase")}”` };
+    case "search_notes": return searchCall("notes", args);
+    case "search_tasks": return searchCall("tasks", args);
     // ── Consolidated toolset (v3.1.3+); the per-operation names above stay for older transcripts ──
     case "get_context": return typeof args.projectId === "string" && args.projectId.trim()
       ? { pre: "Read project context for", obj: named("project", args.projectId, "a project") }
@@ -180,6 +209,7 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
       ? { pre: args.semantic ? "Found notes related to" : "Explored connections of", obj: short(lookup.note?.(args.nodeId) ?? lookup.task?.(args.nodeId) ?? args.nodeId) }
       : { pre: "Read the knowledge graph" };
     case "get_today": return typeof args.date === "string" && args.date ? { pre: "Read the Today brief for", obj: args.date } : { pre: "Read the Today brief" };
+    case "ask_questions": return { pre: "Asked", obj: count(args.questions, "question") };
     case "get_idea_flow": return { pre: "Read the idea flow" };
     case "get_user_writing_style": return { pre: "Read the writing style" };
     case "update_user_writing_style": return typeof args.section === "string" && args.section.trim()

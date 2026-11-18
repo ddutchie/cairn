@@ -23,6 +23,7 @@ export function ToolCard({
   tooltip,
   caption,
   defaultExpanded = false,
+  headerAction,
   children,
 }: {
   testId?: string;
@@ -37,12 +38,15 @@ export function ToolCard({
   /** Muted line at the top of the expanded body. */
   caption?: string;
   defaultExpanded?: boolean;
+  /** Small control beside the collapsed chip (for example "open the note this call created"). */
+  headerAction?: ReactNode;
   /** Expanded panels (ToolPayload, ChangeList, chips…). */
   children?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
     <div data-testid={testId} className="max-w-xl">
+      <div className="flex items-center gap-1">
       <Tooltip content={tooltip}>
         <button
           type="button"
@@ -59,6 +63,8 @@ export function ToolCard({
           {expanded ? <ChevronDown size={9} className="shrink-0 text-[var(--text-tertiary)]" /> : <ChevronRight size={9} className="shrink-0 text-[var(--text-tertiary)]" />}
         </button>
       </Tooltip>
+      {headerAction}
+      </div>
       {expanded && (
         <div className="mt-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
           {caption && <p className="text-2xs text-[var(--text-tertiary)]">{caption}</p>}
@@ -105,7 +111,7 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
       {entries.map(([key, child]) => {
         const nested = child !== null && typeof child === "object";
         return nested ? (
-          <details key={key} open={depth < 1} className="border-l border-[var(--border)] pl-2">
+          <details key={key} open={depth < 2} className="border-l border-[var(--border)] pl-2">
             <summary className="cursor-pointer text-[var(--text-secondary)]">{key} <span className="text-[var(--text-tertiary)]">{Array.isArray(child) ? `[${child.length}]` : "{…}"}</span></summary>
             <JsonTree value={child} depth={depth + 1} />
           </details>
