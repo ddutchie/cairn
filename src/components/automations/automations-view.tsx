@@ -12,6 +12,7 @@ import { cn, id, formatRelative } from "@/lib/utils";
 import { revealNote, revealCard } from "@/lib/events";
 import { buildAutomationDevPrompt } from "@/lib/automation-dev-prompt";
 import { sessionClient } from "@/lib/ipc/session";
+import { ViewToolbar } from "@/components/ui/view-toolbar";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { IconButton } from "@/components/ui/icon-button";
@@ -310,21 +311,16 @@ export function AutomationsView() {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0">
-        <h1 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
-          <Zap size={14} className="text-[var(--accent)]" /> Automations
-        </h1>
-        <span className="text-xs text-[var(--text-tertiary)] hidden sm:inline ml-1">
-          Background tasks that run while Cairn is open
-        </span>
-        <div className="ml-auto flex items-center gap-2">
+      <ViewToolbar
+        title={<span className="flex items-center gap-1.5"><Zap size={14} className="text-[var(--accent)]" /> Automations</span>}
+        description="Background tasks that run while Cairn is open"
+        actions={<>
           <AutomationBudgetControl />
           <Button variant="accent" size="sm" onClick={openCreate}>
             <Plus size={13} /> New automation
           </Button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">

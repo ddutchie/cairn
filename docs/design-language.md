@@ -137,6 +137,7 @@ Do not bring these back without a reason specific to the view:
 | Tokens, type scale, elevation | `src/app/globals.css` |
 | Buttons, `FOCUS_RING` | `src/components/ui/button.tsx` |
 | Other primitives | `src/components/ui/` |
+| `ViewToolbar` | `src/components/ui/view-toolbar.tsx` |
 | `PanelHeading`, `SURFACE`, `InstrumentCard`, `TiltCard` | `src/components/ui/panel.tsx`, `src/components/ui/tilt-card.tsx` |
 | `CollapsibleSection` (a `SURFACE` with a foldable body) | `src/components/layout/project-overview/primitives.tsx` |
 | Today view and its parts | `src/components/today/` |
@@ -154,7 +155,7 @@ Do not bring these back without a reason specific to the view:
 
 The language applies to **page-style views**: pages you read and decide from. **Working surfaces** (Board, Notes, Agent, Calendar, Idea Flow, Knowledge Graph, Insights) are dense tools whose canvases, editors and columns have their own layout needs. They share tokens, type scale, elevation and primitives, but do not need display-face page headlines, hero areas or instrument cards.
 
-**Toolbar views** (Usage, Automations) open with a compact toolbar and a sans title, like Insights. Their content follows the page rules: display-face panel headings, one raised stat strip, item cards with a light lift.
+**Toolbar views** (Usage, Automations, Knowledge Graph, Insights) use `ViewToolbar` (`src/components/ui/view-toolbar.tsx`): one height, rule and surface, an optional sans title and description at the left, `actions` at the right. Don't hand-roll the strip. Their content follows the page rules: display-face panel headings, one raised stat strip, item cards with a light lift.
 
 Calendar's overdue banner (`OverdueTray`) keeps a faint danger tint with the status in words; its chips are neutral with a danger hairline and the "was Nov 17" line in danger text, so the banner no longer reads as a wall of pink.
 
@@ -167,8 +168,9 @@ Calendar's overdue banner (`OverdueTray`) keeps a faint danger tint with the sta
 | Usage | Aligned: one raised stat strip with status dots and display numerals, `SURFACE` panels with display-face headings. |
 | Automations | Aligned: toolbar title, item cards with a light lift. |
 | Settings | Aligned: display-face section title. |
+| Knowledge Graph, Insights | Toolbar unified with Usage and Automations through `ViewToolbar`; canvases untouched. |
 | Board | Working surface. Card priority is a dot before the title, not a left stripe. |
 | Calendar | Working surface. Overdue chips are neutral with a danger hairline. |
-| Notes, Flow, Knowledge Graph, Insights, Agent | Working surfaces, checked and left as they are: they are editors, canvases and chat, with no stat tiles, stripes or fills that break the rules. |
+| Notes, Flow, Agent | Working surfaces, checked and left as they are: they are editors, canvases and chat, with no stat tiles, stripes or fills that break the rules. |
 
 When you align a view, update this table.

@@ -18,6 +18,7 @@ import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals, type UsageRece
 import { modelLogoUrl, prewarmModelCatalog, getModelCatalogVersion, subscribeModelCatalog } from "@/lib/models-dev";
 import { providerLogoUrl, endpointLogoSlug } from "../../../shared/models/model-catalog";
 import { IconButton } from "@/components/ui/icon-button";
+import { ViewToolbar } from "@/components/ui/view-toolbar";
 import { SURFACE } from "@/components/ui/panel";
 
 const MODEL_PALETTE = [
@@ -309,11 +310,10 @@ export function UsageView() {
 
   return (
     <div className="@container flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
-      {/* Toolbar — mirrors InsightsView / KnowledgeGraphView chrome */}
-      <div className="flex items-center gap-x-2 gap-y-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
-        <div className="text-sm font-semibold text-[var(--text-primary)] mr-1">Usage</div>
-        <div className="hidden @lg:block text-xs text-[var(--text-tertiary)] mr-2">AI spend across chat, agents &amp; automations</div>
-        <div className="ml-auto flex items-center justify-end gap-2 flex-wrap min-w-0">
+      <ViewToolbar
+        title="Usage"
+        description="AI spend across chat, agents &amp; automations"
+        actions={<>
           <Segmented<UsageMetric>
             options={[
               { value: "tokens", label: "Tokens" },
@@ -390,8 +390,8 @@ export function UsageView() {
           >
             <RefreshSpin size={11} spinning={loading} />
           </IconButton>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Content — full-bleed scroll area */}
       <div className="flex-1 min-h-0 overflow-y-auto">
