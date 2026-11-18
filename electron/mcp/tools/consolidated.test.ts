@@ -111,6 +111,49 @@ describe("consolidated toolset", () => {
     expect(getCardById(db, "k1")!.assignee).toBe("Alex");
   });
 
+  it("update_tasks reports what changed (from → to), and only that", async () => {
+    // k1 already has priority medium; asking for medium again must not appear as a change.
+    const res = await run("update_tasks", { cardIds: ["k1", "k2"], columnType: "in_progress", priority: "medium" });
+    expect(res.changes).toEqual([
+      { id: "k1", title: "Login bug", field: "column", from: "c-todo", to: "c-prog" },
+      { id: "k2", title: "Refresh tokens", field: "column", from: "c-todo", to: "c-prog" },
+    ]);
+    const mixed = await run("update_tasks", { cardIds: ["k1"], priority: "high", columnType: "in_progress" });
+    expect(mixed.changes).toEqual([{ id: "k1", title: "Login bug", field: "priority", from: "medium", to: "high" }]);
+    // A measured no-op reports an explicit empty list.
+    expect((await run("update_tasks", { cardIds: ["k1"], priority: "high" })).changes).toEqual([]);
+  });
+
+  it("update_tasks reports a move between same-named columns and a blocker change", async () => {
+    createColumn(db, { id: "c-twin", projectId: "p", workspaceId: "ws", name: "c-todo", type: "todo", order: 9 });
+    const moved = await run("update_tasks", { cardIds: ["k1"], columnId: "c-twin" });
+    expect(moved.changes).toEqual([{ id: "k1", title: "Login bug", field: "column", from: "c-todo", to: "c-todo" }]);
+    const blocked = await run("update_tasks", { cardIds: ["k2"], blockedBy: ["k1"], priority: "high" });
+    expect(blocked.changes).toEqual(expect.arrayContaining([
+      { id: "k2", title: "Refresh tokens", field: "priority", from: "medium", to: "high" },
+      { id: "k2", title: "Refresh tokens", field: "blocked by", from: undefined, to: "Login bug" },
+    ]));
+  });
+
+  it("update_tasks sees a blocker swapped for a same-titled card", async () => {
+    createCard(db, { id: "k3", columnId: "c-todo", projectId: "p", workspaceId: "ws", title: "Login bug" });
+    await run("update_tasks", { cardIds: ["k2"], blockedBy: ["k1"] });
+    const swapped = await run("update_tasks", { cardIds: ["k2"], blockedBy: ["k3"], unblockFrom: ["k1"] });
+    expect(swapped.changes).toEqual([{ id: "k2", title: "Refresh tokens", field: "blocked by", from: "Login bug", to: "Login bug" }]);
+  });
+
+  it("update_tasks does not claim 'no changes' when it could not measure the requested fields", async () => {
+    const res = await run("update_tasks", { cardIds: ["k1"], description: "New details" });
+    expect(res.changes).toBeUndefined();
+    const tagged = await run("update_tasks", { cardIds: ["k1"], tagNames: ["bug"] });
+    expect(tagged.changes).toBeUndefined();
+  });
+
+  it("update_notes reports a rename", async () => {
+    const res = await run("update_notes", { noteIds: ["n1"], title: "Auth v2" });
+    expect(res.changes).toEqual([{ id: "n1", title: "Auth v2", field: "title", from: "Auth design", to: "Auth v2" }]);
+  });
+
   it("task_progress claims then logs", async () => {
     const claimed = await run("task_progress", { cardId: "k1", action: "claim", agent: "Claude Code" });
     expect(claimed.error).toBeUndefined();

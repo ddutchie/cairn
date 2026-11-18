@@ -15,6 +15,9 @@ import { cairnNameLookup } from "@/lib/cairn-name-lookup";
 import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-risk";
 import { registerBuiltinToolViews } from "@/lib/tool-views";
 import type { ConversationToolCall } from "@/lib/conversation/message";
+import { CairnToolCard } from "./CairnToolCard";
+import { cairnToolView } from "./cairn-tool-views";
+import { isCairnTool } from "@/lib/cairn-tool-names";
 import { useCairnStore } from "@/store";
 
 registerBuiltinToolViews();
@@ -51,12 +54,20 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   const [pending, setPending] = useState<null | "allow" | "deny" | "always" | "command">(null);
   const risk = riskForTool(toolCall.name);
   const connector = connectorForTool(toolCall.name, connectors);
-  const summary = connector
+  const humanized = connector
     ? humanizeConnectorTool(toolCall.name, toolCall.args, connector.label || connector.name)
     : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
-  // Connector calls show their arguments as a key/value tree (below), not a JSON preview.
-  const preview = connector ? "" : approvalPreview(toolCall.name, toolCall.args);
-  const connectorArgs = connector && toolCall.args && Object.keys(toolCall.args).length > 0
+  // Nothing has happened yet: a delete asks "Delete note", not "Deleted note".
+  const summary = !connector && toolCall.name === "delete"
+    ? { ...humanized, pre: humanized.pre.replace(/^Deleted\b/, "Delete").replace(/^Removed\b/, "Remove") }
+    : humanized;
+  // Cairn's own tools show what they are about to change (the same view the settled
+  // card uses, built from the arguments alone); connector calls and Cairn tools
+  // without a view show their arguments as a key/value tree, not a JSON preview.
+  const cairn = !connector && isCairnTool(toolCall.name);
+  const cairnPreview = cairn ? cairnToolView({ ...toolCall, ok: true, output: undefined }, { pending: true }) : null;
+  const preview = connector || cairn ? "" : approvalPreview(toolCall.name, toolCall.args);
+  const connectorArgs = (connector || cairn) && toolCall.args && Object.keys(toolCall.args).length > 0
     ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2)
     : undefined;
   const scope = approvalScopeLabel(toolCall.name);
@@ -104,7 +115,15 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
         </div>
         <span className="text-2xs font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
       </div>
-      {connector && (connectorArgs
+      {cairnPreview && <div data-testid="approval-cairn-view" className="max-h-56 overflow-auto">{cairnPreview}</div>}
+      {/* A Cairn tool's preview is a summary; the full (redacted) arguments stay one click away so nothing is approved unseen. */}
+      {cairnPreview && connectorArgs && (
+        <details data-testid="approval-cairn-args" className="mt-1">
+          <summary className="cursor-pointer select-none text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">All arguments</summary>
+          <div className="max-h-48 overflow-auto"><ToolPayload label="Arguments" value={connectorArgs} /></div>
+        </details>
+      )}
+      {(connector || (cairn && !cairnPreview)) && (connectorArgs
         ? <div className="max-h-48 overflow-auto"><ToolPayload label="Arguments" value={connectorArgs} /></div>
         : <p data-testid="approval-no-args" className="mt-1.5 text-2xs text-[var(--text-tertiary)]">No arguments.</p>)}
       {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-2xs leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
@@ -196,6 +215,7 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
   if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-xs text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
   if (toolCall.name === "get_user_writing_style" && writingStyleNeedsSetup(toolCall.output)) return <WritingStylePromptChip output={toolCall.output} />;
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
+  if (isCairnTool(toolCall.name)) return <CairnToolCard toolCall={toolCall} cairnRef={ref} />;
   if (ref) return <CairnRefChip toolName={toolCall.name} cairnRef={ref} ok={toolCall.ok} />;
   const connector = connectorForTool(toolCall.name, connectors);
   if (connector) return <ConnectorToolCard toolCall={{ tool: toolCall.name, args: toolCall.args, output: toolCall.output, ok: toolCall.ok, externalRef: toolCall.externalRef }} connector={connector} />;

@@ -180,6 +180,13 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
       ? { pre: args.semantic ? "Found notes related to" : "Explored connections of", obj: short(lookup.note?.(args.nodeId) ?? lookup.task?.(args.nodeId) ?? args.nodeId) }
       : { pre: "Read the knowledge graph" };
     case "get_today": return typeof args.date === "string" && args.date ? { pre: "Read the Today brief for", obj: args.date } : { pre: "Read the Today brief" };
+    case "get_idea_flow": return { pre: "Read the idea flow" };
+    case "get_user_writing_style": return { pre: "Read the writing style" };
+    case "update_user_writing_style": return typeof args.section === "string" && args.section.trim()
+      ? { pre: "Added to writing style", obj: short(args.section) }
+      : { pre: "Added to writing style" };
+    case "suggest_connections": return { pre: "Suggested connections" };
+    case "codebase_reindex": return { pre: "Reindexed the codebase" };
     case "codebase_query": return { pre: "Searched the codebase for", obj: `“${short(args.query, "a symbol")}”` };
     // Today's brief tools.
     case "today_read": return { pre: "Read the brief so far" };

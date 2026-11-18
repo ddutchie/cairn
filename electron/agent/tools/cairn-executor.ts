@@ -398,9 +398,10 @@ export async function executeTool(
       }
       const { row, updated, reason } = host.appendUserStyleObservation(section, content);
       if (!updated) {
-        return { ok: true, updated: false, message: reason ?? "No change.", style: row };
+        return { ok: true, updated: false, message: reason ?? "No change.", section, content: content.trim() };
       }
-      return { ok: true, updated: true, message: section ? `Appended to "${section}".` : "Appended to the guide.", style: row };
+      void row; // the guide itself is not echoed back: it can be long and the model already has what it appended
+      return { ok: true, updated: true, message: section ? `Appended to "${section}".` : "Appended to the guide.", section, content: content.trim() };
     }
 
     default:
