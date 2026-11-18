@@ -142,6 +142,13 @@ describe("consolidated toolset", () => {
     expect(swapped.changes).toEqual([{ id: "k2", title: "Refresh tokens", field: "blocked by", from: "Login bug", to: "Login bug" }]);
   });
 
+  it("update_tasks does not claim 'no changes' when it could not measure the requested fields", async () => {
+    const res = await run("update_tasks", { cardIds: ["k1"], description: "New details" });
+    expect(res.changes).toBeUndefined();
+    const tagged = await run("update_tasks", { cardIds: ["k1"], tagNames: ["bug"] });
+    expect(tagged.changes).toBeUndefined();
+  });
+
   it("update_notes reports a rename", async () => {
     const res = await run("update_notes", { noteIds: ["n1"], title: "Auth v2" });
     expect(res.changes).toEqual([{ id: "n1", title: "Auth v2", field: "title", from: "Auth design", to: "Auth v2" }]);

@@ -344,7 +344,10 @@ export async function runConsolidatedTool(
       const cards = ids.map((id) => cardRow(db, id)).filter(Boolean).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.columnId }));
       const changes = ids.flatMap((id) => cardChanges(id, beforeCards.get(id), cardSnapshot(db, id)));
       // A measured call always reports its list (empty = nothing changed), so a no-op is not shown as a change.
-      const extra = ids.some((id) => beforeCards.get(id)) ? { changes } : {};
+      // Description, tag and note-link updates are not in the snapshot, so an empty list is only
+      // trustworthy when none were requested; otherwise leave `changes` out and the view falls back.
+      const unmeasured = args.description !== undefined || list(args.tagNames).length > 0 || list(args.linkNoteIds).length > 0 || list(args.unlinkNoteIds).length > 0;
+      const extra = ids.some((id) => beforeCards.get(id)) && (changes.length > 0 || !unmeasured) ? { changes } : {};
       return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...extra } : { updated: cards, ...extra }, errors);
     }
 

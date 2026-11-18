@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConversationToolCall } from "./ConversationToolCall";
@@ -187,6 +187,15 @@ describe("review fixes", () => {
     renderCall(call({ name: "get_graph", args: {}, output: "[]" }));
     await userEvent.click(screen.getByRole("button"));
     expect(screen.getByText("[]")).toBeTruthy();
+  });
+});
+
+describe("failed calls", () => {
+  it("does not present a failed delete or edit as applied", () => {
+    renderCall(call({ name: "delete", args: { type: "note", id: "n1" }, ok: false, output: JSON.stringify({ error: "Note not found" }) }));
+    fireEvent.click(screen.getByRole("button", { name: /failed/ }));
+    expect(document.body.textContent).not.toContain("was deleted");
+    expect(document.body.textContent).toContain("Note not found");
   });
 });
 

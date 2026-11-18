@@ -317,11 +317,16 @@ const VIEWS: Record<string, View> = {
  * wording is future tense. A failed call still gets its view when it returned a
  * structured result (e.g. the part of a bulk update that did apply).
  */
+/** A failed call keeps its specialised view only when the result lists what was applied (partial bulk updates). */
+function reportsApplied(out: Rec): boolean {
+  return ["changes", "updated", "results"].some((k) => Array.isArray(out[k]) && (out[k] as unknown[]).length > 0);
+}
+
 export function cairnToolView(tc: ConversationToolCall, opts: { pending?: boolean } = {}): ReactNode | null {
   const view = VIEWS[tc.name];
   if (!view) return null;
   const out = parse(tc.output ?? (tc.ok ? undefined : tc.error));
-  if (!tc.ok && !out) return null;
+  if (!tc.ok && !(out && reportsApplied(out))) return null;
   try {
     // Same redaction as the Raw call panel, so a secret in an argument is masked here too.
     const args = (redactTranscriptValue(tc.args ?? {}) as Rec | undefined) ?? {};
