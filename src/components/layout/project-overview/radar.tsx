@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useFontScale } from "@/lib/viz/hooks";
+import { PanelHeading } from "./primitives";
 
 type RadarAxis = { key: string; label: string; short: string; value: number; color: string };
 
@@ -39,13 +40,8 @@ export function ProjectHealthRadar({
   });
 
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 pl-6 md:p-[18px] md:pl-7" style={{ boxShadow: "0 8px 24px color-mix(in srgb, black 28%, transparent)" }}>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)] text-2xs">⬢</span>
-        <h2 className="text-sm font-semibold tracking-tight">Project health</h2>
-        <span className="text-xs font-normal text-[var(--text-tertiary)]">— 6-axis radar</span>
-        <span className="ml-auto text-2xs font-mono text-[var(--text-tertiary)] hidden sm:inline">0 → 1</span>
-      </div>
+    <section>
+      <PanelHeading title="Project health" note="Six measures, each scored 0 to 1" />
 
       <div className="flex flex-col @3xl:flex-row gap-8 items-center @3xl:items-start">
         <div className="w-full max-w-[280px] aspect-square flex-shrink-0 mr-2 pl-2">
@@ -110,7 +106,7 @@ export function ProjectHealthRadar({
           </p>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 

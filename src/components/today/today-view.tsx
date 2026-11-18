@@ -497,12 +497,9 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
   const shownNeed = showAllNeed ? needYou : needYou.filter((n, i) => i < TODAY_NEED_SHOWN || n.id === focus?.id);
   const foldedNeed = needYou.length - shownNeed.length;
   const openNeed = needYou.filter((n) => !dismissed.has(n.id));
-  const openDecisions = openNeed.filter((n) => n.kind === "decision").length;
   const linked = linkedDraftIds(brief);
   // Drafts as the user left them: an edit replaces Cairn's text everywhere it's used.
   const prepared = brief.prepared.map((p) => (edits[p.id] !== undefined ? { ...p, draft: edits[p.id] } : p));
-  const openDrafts = prepared.filter((p) => !dismissed.has(p.id));
-  const openLinked = openDrafts.filter((p) => linked.has(p.id)).length;
   // Drafts that answer a decision sit on its choices, so the lane lists only the rest.
   const lanePrepared = showAllDrafts ? prepared : prepared.filter((p) => !linked.has(p.id));
   const openPrep = lanePrepared.filter((p) => !dismissed.has(p.id)).length;
@@ -559,7 +556,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
             {!isToday && !past && <span className="text-[var(--warning)] font-sans"> · from an earlier day</span>}
             {past && ` · ${formatClock(d.getHours() * 60 + d.getMinutes())}`}
           </div>
-          <h2 className="text-4xl leading-[1.08] mt-3 mb-2.5 max-w-[26ch] text-balance font-normal tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="font-display text-4xl leading-[1.08] mt-3 mb-2.5 max-w-[26ch] text-balance font-normal tracking-tight">
             {gathering ? "Gathering your brief" : brief.headline}
           </h2>
           <p className="text-base text-[var(--text-secondary)] leading-relaxed max-w-[62ch] text-pretty">
@@ -895,7 +892,7 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
   return (
     <section className="mt-9">
       <div className="flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
-        <h3 className="text-base" style={{ fontFamily: "var(--font-display)" }}>Your projects</h3>
+        <h3 className="font-display text-base">Your projects</h3>
         <span className="text-2xs text-[var(--text-tertiary)]">From your boards, notes and automations, worked out by Cairn</span>
       </div>
       <div className="grid gap-2.5 grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3">
@@ -948,7 +945,7 @@ function LegendRow({ n, label, hint, accent, onClick }: { n: number; label: stri
       onClick={onClick}
       className="grid grid-cols-[24px_1fr] items-center text-left px-1.5 py-1 rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] min-w-0"
     >
-      <span className={cn("text-base tabular-nums", accent ? "text-[var(--accent)]" : "text-[var(--text-primary)]")} style={{ fontFamily: "var(--font-display)" }}>{n}</span>
+      <span className={cn("font-display text-base tabular-nums", accent ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>{n}</span>
       <span className={cn("truncate", accent && "text-[var(--text-primary)]")}>{label}</span>
     </button>
     </Tooltip>
@@ -990,7 +987,7 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
   return (
     <section id="today-lane-day" className="mt-8">
       <div className="flex items-baseline gap-2.5 pb-2 mb-3 border-b border-[var(--border-subtle)]">
-        <h3 className="text-base" style={{ fontFamily: "var(--font-display)" }}>Your day</h3>
+        <h3 className="font-display text-base">Your day</h3>
         <span className="text-2xs text-[var(--text-tertiary)]">07:00–19:00, hover a block for details</span>
       </div>
       <div
@@ -1135,7 +1132,7 @@ function LaneBox({ id, title, count, tone, note, flash, children }: {
     >
       <div className="flex items-center gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
         <span className="w-3 h-2 rounded-full" style={{ background: tone }} />
-        <h3 className="text-base" style={{ fontFamily: "var(--font-display)" }}>{title}</h3>
+        <h3 className="font-display text-base">{title}</h3>
         <span className="text-2xs tabular-nums text-[var(--text-tertiary)] bg-[var(--surface-3)] rounded-full px-1.5">{count}</span>
         {note && <span className="ml-auto text-2xs text-[var(--text-tertiary)]">{note}</span>}
       </div>
@@ -1215,8 +1212,7 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
         </IconButton>
       </ItemMeta>
       <div
-        className={cn("leading-snug", focus && decision ? "text-xl tracking-tight" : decision ? "text-base font-medium" : "text-sm font-medium", done && "line-through")}
-        style={focus && decision ? { fontFamily: "var(--font-display)" } : undefined}
+        className={cn("leading-snug", focus && decision ? "font-display text-xl tracking-tight" : decision ? "text-base font-medium" : "text-sm font-medium", done && "line-through")}
       >
         {item.title}
       </div>

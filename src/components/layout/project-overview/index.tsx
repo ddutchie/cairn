@@ -10,7 +10,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 */
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { FileText, Kanban, Calendar, AlertTriangle, Clock3, Zap, Activity, Diamond, MessageSquare, Code2, Folder, FolderCode, CheckCircle2 } from "lucide-react";
+import { FileText, Kanban, Calendar, MessageSquare, Code2, Folder, FolderCode } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon } from "@/lib/workspace-icons";
@@ -21,7 +21,7 @@ import { CairnEvents, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
 import { sortTagsByUsage, capTags } from "@/lib/tag-utils";
-import { Button } from "@/components/ui/button";
+import { Button, FOCUS_RING } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
@@ -31,11 +31,10 @@ import { ProjectSettingsButton } from "./project-settings";
 import { ReviewButton } from "./review-button";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { useAgentSessionActions } from "@/components/agent/useAgentSessionActions";
-import { CollapsibleSection } from "./primitives";
+import { CollapsibleSection, PanelHeading } from "./primitives";
 import { RecentActivityFeed, RecentAutomationRunsFeed, ShippedFeed, AtRiskFeed } from "./sections";
 import type { TaskCard } from "@/types";
 import { ProjectHealthRadar, useRadarAxes } from "./radar";
-import { TiltCard } from "./tilt-card";
 import { TaskFlowPanel, PriorityPanel, NotesSummaryPanel } from "./overview-panels";
 import type { FocusFilter } from "./focus";
 import { HeaderToolIcons } from "./header-tool-icons";
@@ -312,39 +311,31 @@ export function ProjectOverview() {
           <div className="flex flex-col @4xl:flex-row flex-wrap gap-5 items-start mb-4">
             <div className="flex gap-4 items-start min-w-0 flex-1 min-w-[280px] w-full @4xl:w-auto">
               <div
-                className="w-[52px] h-[52px] rounded-xl flex items-center justify-center flex-shrink-0 border border-[var(--border)]"
-                style={{
-                  background: "linear-gradient(180deg, var(--surface-2), var(--surface-3))",
-                  boxShadow: "0 4px 12px color-mix(in srgb, black 18%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)",
-                  color: "var(--text-secondary)",
-                }}
+                className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 border border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--text-secondary)]"
                 aria-hidden="true"
               >
-                <ProjectIcon name={project.icon} size={22} />
+                <ProjectIcon name={project.icon} size={20} />
               </div>
               <div className="min-w-0 flex-1">
-                <h1 className="text-[1.75rem] md:text-[2rem] font-bold tracking-tight leading-[0.95] truncate">
-                  {project.name}{" "}
-                  <span className="font-normal italic" style={{ fontFamily: "var(--font-display)", color: "var(--accent)", letterSpacing: "-0.02em" }}>
-                    {bottleneck ? `— ${bottleneck.name.toLowerCase()} holds ${bottleneck.count}` : `— ${instrumentPct}% complete`}
-                  </span>
+                <h1 className="font-display text-3xl md:text-4xl font-normal leading-[1.08] tracking-tight text-balance break-words">
+                  {project.name}
                 </h1>
                 {(() => {
                   if (project.description?.trim()) {
                     return (
-                      <p className="text-sm text-[var(--text-secondary)] mt-2 max-w-[48ch] leading-[1.55] break-words">
+                      <p className="text-base text-[var(--text-secondary)] mt-2.5 max-w-[62ch] leading-relaxed text-pretty break-words">
                         {project.description}
                       </p>
                     );
                   }
                   const recent = activityByDay[0]?.items[0];
                   const ctxLine = (() => {
-                    if (needsAttention > 0) return `${needsAttention} needing attention · ${bottleneck ? `${bottleneck.count} in ${bottleneck.name}` : `${openCards.length} open`} · ${plural(notes.length, "note")}`;
-                    if (bottleneck) return `${bottleneck.name} is the bottleneck — ${bottleneck.count} of ${openCards.length} open · ${plural(notes.length, "note")} · ${pinnedNotes.length} pinned`;
-                    if (notes.length) return `${plural(notes.length, "note")} · ${recent ? `last edit ${formatRelative(recent.updatedAt)}` : "no recent activity"}`;
+                    if (needsAttention > 0) return `${needsAttention} of ${openCards.length} open tasks need attention${bottleneck ? `, and ${bottleneck.name} is holding ${bottleneck.count}` : ""}.`;
+                    if (bottleneck) return `${bottleneck.name} is the bottleneck: ${bottleneck.count} of ${openCards.length} open tasks.`;
+                    if (notes.length) return `${plural(notes.length, "note")}, ${recent ? `last edited ${formatRelative(recent.updatedAt)}` : "no recent activity"}.`;
                     return "Add notes and tasks to see your project context here";
                   })();
-                  return <p className="text-sm text-[var(--text-secondary)] mt-2 max-w-[52ch] leading-[1.55] break-words">{ctxLine}</p>;
+                  return <p className="text-base text-[var(--text-secondary)] mt-2.5 max-w-[62ch] leading-relaxed text-pretty break-words">{ctxLine}</p>;
                 })()}
                 <div className="flex items-center gap-2 flex-wrap mt-3">
                   <span
@@ -392,99 +383,30 @@ export function ProjectOverview() {
               </div>
             </div>
 
-            {/* instrument — lift + tilt on hover */}
-            <TiltCard
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full @4xl:w-[360px] flex-shrink-0"
-              restShadow="0 6px 20px color-mix(in srgb, black 16%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
-              activeShadow="0 14px 36px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)"
-            >
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0"
-                style={{
-                  background: "radial-gradient(520px 180px at 85% -10%, color-mix(in srgb,var(--accent) 14%, transparent), transparent 60%)",
-                }}
-              />
-              <div className="relative flex justify-between items-start gap-4">
-                <div>
-                  <div className="text-xs font-medium" style={{ color: needsAttention > 0 ? "var(--warning)" : "var(--text-tertiary)" }}>
-                    {progressLabel}
-                  </div>
-                  <div className="text-[2rem] font-bold tracking-tight leading-none mt-1 flex items-baseline gap-1.5">
-                    {instrumentPct}
-                    <span className="text-xs font-medium text-[var(--text-tertiary)]">%</span>
-                  </div>
-                  <div className="text-xs text-[var(--text-tertiary)] mt-1">
-                    <span className="font-mono font-semibold text-[var(--text-primary)]">
-                      {instrumentDone} / {instrumentTotal}
-                    </span>{" "}
-                    done{instrumentTotal > 0 ? ` · ${Math.round((instrumentDone / instrumentTotal) * 100)}%` : ""} ·{" "}
-                    <span className="text-[var(--text-secondary)]">
-                      {openCards.length} open · {doneCards.length} done
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className="w-[74px] h-[74px] rounded-full grid place-items-center flex-shrink-0 border border-[var(--border)] relative"
-                  style={{
-                    background: "radial-gradient(120px 80px at 30% 30%, var(--surface-3), var(--surface-2))",
-                    boxShadow: "inset 0 1px 0 color-mix(in srgb, white 6%, transparent), 0 4px 10px color-mix(in srgb, black 22%, transparent)",
-                  }}
-                  aria-hidden="true"
-                >
-                  <svg width={74} height={74} viewBox="0 0 74 74" className="-rotate-90">
-                    <circle cx={37} cy={37} r={26} stroke="var(--surface-3)" strokeWidth={5} fill="none" />
-                    <circle
-                      cx={37}
-                      cy={37}
-                      r={26}
-                      stroke="var(--accent)"
-                      strokeWidth={5}
-                      fill="none"
-                      strokeLinecap="round"
-                      strokeDasharray={163.36}
-                      strokeDashoffset={163.36 - (instrumentPct / 100) * 163.36}
-                      style={{ filter: "drop-shadow(0 0 6px color-mix(in srgb,var(--accent) 35%, transparent))", transition: "stroke-dashoffset .6s cubic-bezier(.4,0,.2,1)" }}
-                    />
-                  </svg>
-                  <span className="absolute inset-0 grid place-items-center text-xs font-bold font-mono text-[var(--text-primary)]">
-                    {instrumentPct}%
-                  </span>
-                </div>
+            {/* progress — the number once, then what it is made of */}
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] p-4 w-full @4xl:w-[340px] flex-shrink-0">
+              <div className="text-xs font-medium" style={{ color: needsAttention > 0 ? "var(--warning)" : "var(--text-tertiary)" }}>
+                {progressLabel}
               </div>
-              <div className="relative mt-3 h-[6px] rounded-full bg-[var(--surface-3)] overflow-hidden flex items-center">
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${instrumentPct}%`,
-                    background: "linear-gradient(90deg,var(--accent), var(--accent-hover))",
-                    boxShadow: "0 0 10px color-mix(in srgb,var(--accent) 35%, transparent)",
-                    transition: "width .7s cubic-bezier(.4,0,.2,1)",
-                  }}
-                />
-                <div className="pointer-events-none absolute inset-0 flex justify-between px-px">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <i key={i} className="w-px h-full bg-[var(--border-subtle)]" />
-                  ))}
-                </div>
+              <div className="font-display text-5xl leading-none tracking-tight tabular-nums mt-2 flex items-baseline gap-1">
+                {instrumentPct}
+                <span className="text-lg text-[var(--text-tertiary)]">%</span>
               </div>
-              <div className="relative mt-2 flex justify-between text-xs text-[var(--text-tertiary)]">
-                <span>
-                  Started <b className="text-[var(--text-primary)] font-semibold">{formatDate(project.createdAt)}</b>
-                </span>
-                <span>
-                  {project.dueDate ? (
-                    <>Target <b className="text-[var(--text-primary)] font-semibold">{formatDate(project.dueDate)}</b></>
-                  ) : (
-                    <span className="text-[var(--text-tertiary)]">No target date</span>
-                  )}
-                </span>
+              <div className="text-sm text-[var(--text-secondary)] mt-2">
+                {instrumentDone} of {instrumentTotal} done, {openCards.length} open
               </div>
-              <div className="relative grid grid-cols-2 gap-2 mt-3.5">
-                <Button size="lg" onClick={() => setView("board")}>View board</Button>
-                <Button size="lg" variant="accent" onClick={() => setView("insights")}>Open insights</Button>
+              <div className="mt-3 h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden" role="progressbar" aria-valuenow={instrumentPct} aria-valuemin={0} aria-valuemax={100} aria-label="Project progress">
+                <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${instrumentPct}%`, transition: "width .7s cubic-bezier(.4,0,.2,1)" }} />
               </div>
-            </TiltCard>
+              <div className="mt-2 flex justify-between text-xs text-[var(--text-tertiary)]">
+                <span>Started {formatDate(project.createdAt)}</span>
+                <span>{project.dueDate ? `Target ${formatDate(project.dueDate)}` : "No target date"}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-4">
+                <Button size="sm" onClick={() => setView("board")}>View board</Button>
+                <Button size="sm" variant="accent" onClick={() => setView("insights")}>Open insights</Button>
+              </div>
+            </div>
           </div>
 
           {/* sentinel for pin detection */}
@@ -493,7 +415,7 @@ export function ProjectOverview() {
           <div
             ref={focusBarRef}
             className={cn(
-              "sticky top-2 z-[5] flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] mb-4 flex-wrap transition-shadow",
+              "sticky top-2 z-[5] flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] mb-9 flex-wrap transition-shadow",
               isFocusPinned && "shadow-elev-2"
             )}
             style={{ backdropFilter: "blur(8px)" }}
@@ -507,12 +429,12 @@ export function ProjectOverview() {
             {(["all", "today", "overdue", "pinned"] as FocusFilter[]).map((k) => {
               const label =
                 k === "all"
-                  ? `All · ${focusCounts.all} open`
+                  ? `All ${focusCounts.all}`
                   : k === "today"
-                    ? `Due today · ${focusCounts.today}`
+                    ? `Due today ${focusCounts.today}`
                     : k === "overdue"
-                      ? `Overdue · ${focusCounts.overdue}`
-                      : `Pinned · ${focusCounts.pinned}`;
+                      ? `Overdue ${focusCounts.overdue}`
+                      : `Pinned ${focusCounts.pinned}`;
               const active = focus === k;
               return (
                 <button
@@ -533,7 +455,7 @@ export function ProjectOverview() {
               );
             })}
             <span className="ml-auto text-xs text-[var(--text-tertiary)] tabular-nums hidden sm:inline" aria-live="polite">
-              {focus === "all" ? "Showing all" : `Filtered: ${focusLabel[focus]}`} · {filteredQueue.length || focusCounts[focus]} items
+              {focus === "all" ? "Showing all" : `Filtered to ${focusLabel[focus]}`}, {filteredQueue.length || focusCounts[focus]} items
             </span>
           </div>
           <span className="sr-only" aria-live="polite" aria-atomic="true">
@@ -541,75 +463,26 @@ export function ProjectOverview() {
           </span>
 
           <div id={overviewContentId}>
-          {/* ── KPI strip — inline stats, not 4 template cards — shares one hairline container ── */}
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden divide-y @2xl:divide-y-0 @2xl:divide-x divide-[var(--border)] flex flex-col @2xl:flex-row mb-4" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
-            <div className="flex-1 p-3.5 relative">
-              <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--danger)]" />
-              <div className="text-xs font-medium text-[var(--text-tertiary)]">Needs attention</div>
-              <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
-                {needsAttention}
-                <span className="text-sm font-medium text-[var(--text-tertiary)]">/ {openCards.length}</span>
-              </div>
-              <div className="text-xs mt-2 text-[var(--text-tertiary)]">
-                <span className={cn(needsAttention > 0 ? "text-[var(--danger)] font-semibold" : "text-[var(--success)] font-semibold")}>
-                  {needsAttention > 0 ? `${overdueCount} overdue · ${todayCount} today` : "All caught up"}
-                </span>
-              </div>
-            </div>
-            <div className="flex-1 p-3.5 relative">
-              <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--success)]" />
-              <div className="text-xs font-medium text-[var(--text-tertiary)]">Completion</div>
-              <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
-                {instrumentPct}%<span className="text-sm font-medium text-[var(--text-tertiary)]">{instrumentDone}/{instrumentTotal}</span>
-              </div>
-              <div className="text-xs mt-2 text-[var(--text-tertiary)]">
-                {instrumentTotal > 0 ? `${instrumentDone} done · ${openCards.length} open` : "No tasks yet"}
-              </div>
-            </div>
-            <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
-              <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--info)]" />
-              <div className="text-xs font-medium text-[var(--text-tertiary)]">Knowledge</div>
-              <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
-                {notes.length}
-                <span className="text-sm font-medium text-[var(--text-tertiary)]">notes</span>
-              </div>
-              <div className="text-xs mt-2 text-[var(--text-tertiary)]">
-                {pinnedNotes.length} pinned{notes.length > 0 && recentNotes[0] && <span> · {formatRelative(recentNotes[0].updatedAt)}</span>}
-              </div>
-            </div>
-            <div className="flex-1 p-3.5 relative bg-[var(--surface-2)]">
-              <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--warning)]" />
-              <div className="text-xs font-medium text-[var(--text-tertiary)]">
-                Bottleneck
-              </div>
-              <div className="text-2xl font-bold tracking-tight leading-none mt-2 flex items-baseline gap-1.5">
-                {bottleneck ? bottleneck.count : "—"}
-                <span className="text-sm font-medium text-[var(--text-tertiary)]">{bottleneck ? `in ${bottleneck.name}` : "—"}</span>
-              </div>
-              <div className="text-xs mt-2 text-[var(--text-tertiary)]">
-                {bottleneck ? `${openCards.length} open total` : "No column stands out"}
-              </div>
-            </div>
-          </div>
-
           {/* ── attention queue — filtered by Focus, honest empty states ── */}
-          <div className="grid grid-cols-1 @2xl:grid-cols-3 gap-3 mb-4" role="list" aria-label="Needs attention">
+          <section className="mb-9">
+            <PanelHeading
+              title="Needs attention"
+              note={needsAttention > 0 ? `${needsAttention} of ${openCards.length} open tasks` : undefined}
+            />
+          <div className="grid grid-cols-1 @2xl:grid-cols-3 gap-2.5" role="list" aria-label="Needs attention">
             {(focus === "pinned" ? [] : filteredQueue).length === 0 ? (
-              <div className="@2xl:col-span-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] shadow-elev-1 p-4 flex items-center gap-3">
-                <span className="w-8 h-8 rounded-full grid place-items-center bg-[var(--success)]/15 text-[var(--success)] border border-[var(--success)]/20">
-                  <Kanban size={14} />
-                </span>
+              <div className="@2xl:col-span-3 rounded-lg border border-dashed border-[var(--border)] p-4 flex items-center gap-3">
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--text-primary)]">
-                    {focus === "overdue" ? "No overdue tasks" : focus === "today" ? "Nothing due today" : focus === "pinned" ? `${pinnedNotes.length} pinned notes — see below` : "All caught up"}
+                  <span className="block text-sm font-medium text-[var(--text-primary)]">
+                    {focus === "overdue" ? "No overdue tasks" : focus === "today" ? "Nothing due today" : focus === "pinned" ? `${pinnedNotes.length} pinned notes, listed below` : "All caught up"}
                   </span>
                   <span className="block text-xs text-[var(--text-tertiary)]">
-                    {focus === "all" && openCards.length > 0 ? `${openCards.length} open · ${bottleneck ? `${bottleneck.count} in ${bottleneck.name}` : "no bottleneck"}` : focus === "pinned" ? "Scroll to Pinned keeps focus" : "No action needed — nice."}
+                    {focus === "all" && openCards.length > 0 ? `${openCards.length} open${bottleneck ? `, ${bottleneck.count} in ${bottleneck.name}` : ""}` : focus === "pinned" ? "Pinned notes keep their place under Notes" : "Nothing needs you right now."}
                   </span>
                 </span>
-                <button type="button" onClick={() => (focus === "pinned" ? setView("notes") : setView("board"))} className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--muted)]">
+                <Button size="sm" className="ml-auto" onClick={() => (focus === "pinned" ? setView("notes") : setView("board"))}>
                   {focus === "pinned" ? "Open notes" : "View board"}
-                </button>
+                </Button>
               </div>
             ) : (
               (focus === "pinned" ? [] : filteredQueue).map(({ card, label, tone }) => {
@@ -621,66 +494,28 @@ export function ProjectOverview() {
                     type="button"
                     role="listitem"
                     onClick={() => revealCard(setView, card.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border text-left transition-all",
-                      tone === "overdue"
-                        ? "border-[var(--danger)]/25 hover:border-[var(--danger)]/40"
-                        : tone === "today"
-                          ? "border-[var(--warning)]/25 hover:border-[var(--warning)]/40"
-                          : "border-[var(--border)] hover:border-[var(--border)]",
-                      "bg-[var(--surface)] hover:translate-y-[-1px] hover:shadow-elev-2",
-                    )}
-                    style={{
-                      background:
-                        tone === "overdue"
-                          ? "linear-gradient(180deg, color-mix(in srgb,var(--danger) 7%, var(--surface)), var(--surface))"
-                          : tone === "today"
-                            ? "linear-gradient(180deg, color-mix(in srgb,var(--warning) 7%, var(--surface)), var(--surface))"
-                            : undefined,
-                    }}
+                    className={cn("w-full text-left rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3 transition-colors hover:bg-[var(--surface-3)]", FOCUS_RING)}
                   >
-                    <span
-                      className="w-[34px] h-[34px] rounded-[10px] grid place-items-center flex-shrink-0 border text-sm"
-                      style={{
-                        background:
-                          tone === "overdue"
-                            ? "color-mix(in srgb,var(--danger) 14%, transparent)"
-                            : tone === "today"
-                              ? "color-mix(in srgb,var(--warning) 14%, transparent)"
-                              : "var(--accent-dim)",
-                        color: tone === "overdue" ? "var(--danger)" : tone === "today" ? "var(--warning)" : "var(--accent)",
-                        borderColor:
-                          tone === "overdue"
-                            ? "color-mix(in srgb,var(--danger) 18%, transparent)"
-                            : tone === "today"
-                              ? "color-mix(in srgb,var(--warning) 18%, transparent)"
-                              : "color-mix(in srgb,var(--accent) 18%, transparent)",
-                      }}
-                      aria-hidden="true"
-                    >
-                      {tone === "overdue" ? <AlertTriangle size={14} /> : tone === "today" ? <Clock3 size={14} /> : <Diamond size={12} />}
-                    </span>
-                    <span className="min-w-0 flex-1 text-left">
-                      <span className={cn("text-xs font-medium", tone === "overdue" ? "text-[var(--danger)]" : tone === "today" ? "text-[var(--warning)]" : "text-[var(--text-tertiary)]")}>
+                    <span className="flex items-center gap-2 text-2xs">
+                      <span className={cn("font-medium", tone === "overdue" ? "text-[var(--danger)]" : tone === "today" ? "text-[var(--warning)]" : "text-[var(--text-secondary)]")}>
                         {label}
                       </span>
-                      <span className="block text-sm font-semibold text-[var(--text-primary)] truncate">{card.title}</span>
-                      <span className="block text-xs text-[var(--text-tertiary)] truncate">
-                        {col?.name ?? "—"} · {card.priority} priority
-                      </span>
+                      <span className="ml-auto truncate text-[var(--text-tertiary)]">{col?.name ?? "No column"}</span>
                     </span>
-                    <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-secondary)] group-hover:bg-[var(--text-primary)] group-hover:text-[var(--background)] flex-shrink-0">
-                      Open
+                    <span className="block text-sm font-medium text-[var(--text-primary)] truncate mt-1">{card.title}</span>
+                    <span className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)] mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prioColor }} aria-hidden="true" />
+                      {card.priority} priority
                     </span>
-                    <span className="w-0.5 self-stretch rounded-full flex-shrink-0" style={{ background: prioColor }} aria-hidden="true" />
                   </button>
                 );
               })
             )}
-            </div>
+          </div>
+          </section>
 
           {/* ── bento: task flow + priority ───────────────────── */}
-          <div className="grid grid-cols-1 @4xl:grid-cols-[1.55fr_0.95fr] gap-3.5 mb-3.5 [&>*]:min-w-0">
+          <div className="grid grid-cols-1 @4xl:grid-cols-[1.55fr_0.95fr] gap-x-8 gap-y-9 mb-9 [&>*]:min-w-0">
             <TaskFlowPanel
               flowColumns={flowColumns}
               focus={focus}
@@ -700,25 +535,24 @@ export function ProjectOverview() {
           </div>
 
           {/* ── project health radar — 6-axis instrument, same data as KPIs but shape reads balance at a glance ── */}
-          <TiltCard className="mb-3.5" dropShadow="drop-shadow(0 12px 24px color-mix(in srgb, black 16%, transparent))">
+          <div className="mb-9">
             <ProjectHealthRadar axes={radarAxes} size={280} />
-          </TiltCard>
+          </div>
 
           {/* ── notes summary — single CTA, replaces two All notes links ── */}
-          <div className="mb-3.5">
+          <div className="mb-9">
             <NotesSummaryPanel notesCount={notes.length} pinnedNotes={pinnedNotes} recentNotes={recentNotes} />
           </div>
           {/* ── delivery: shipped this week + at risk ── */}
           {metrics && (
-            <div className="grid grid-cols-1 @4xl:grid-cols-2 gap-3.5 mb-3.5 [&>*]:min-w-0">
+            <div className="grid grid-cols-1 @4xl:grid-cols-2 gap-x-8 gap-y-9 mb-9 [&>*]:min-w-0">
               <CollapsibleSection
                 title="Shipped this week"
-                icon={<CheckCircle2 size={12} />}
                 collapsed={isCollapsed("shipped")}
                 onToggle={() => toggleSection("shipped")}
                 collapsedView={<span className="text-xs text-[var(--text-secondary)]">{metrics.shippedCards.length} done in 7 days</span>}
               >
-                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
+                <div>
                   {metrics.shippedCards.length === 0 ? (
                     <EmptyState title="Nothing finished in the last 7 days" className="py-4" />
                   ) : (
@@ -734,12 +568,11 @@ export function ProjectOverview() {
               </CollapsibleSection>
               <CollapsibleSection
                 title="At risk"
-                icon={<AlertTriangle size={12} />}
                 collapsed={isCollapsed("atRisk")}
                 onToggle={() => toggleSection("atRisk")}
                 collapsedView={<span className="text-xs text-[var(--text-secondary)]">{metrics.atRisk.length} need attention</span>}
               >
-                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
+                <div>
                   {metrics.atRisk.length === 0 ? (
                     <EmptyState title="Nothing overdue, blocked or stale" className="py-4" />
                   ) : (
@@ -753,19 +586,13 @@ export function ProjectOverview() {
           )}
 
           {/* ── activity log — full width, trace LLM/MCP changes ── */}
-          <div className="mb-3.5">
-            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)", borderLeft: "2px solid color-mix(in srgb, var(--accent) 60%, transparent)" }}>
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <h2 className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md grid place-items-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-tertiary)]">
-                    <Activity size={10} />
-                  </span>
-                  Activity log <span className="font-normal text-[var(--text-tertiary)] text-xs">· full history · trace MCP / LLM</span>
-                </h2>
-                <span className="text-2xs text-[var(--text-tertiary)] font-mono tabular-nums">
-                  {activityByDay.reduce((n, g) => n + g.items.length, 0)} events
-                </span>
-              </div>
+          <div className="mb-9">
+            <section>
+              <PanelHeading
+                title="Activity"
+                note="Every change in this project, including those made by Cairn and connected apps"
+                action={<span className="text-2xs tabular-nums text-[var(--text-tertiary)]">{activityByDay.reduce((n, g) => n + g.items.length, 0)} events</span>}
+              />
               {activityByDay.length === 0 ? (
                 <EmptyState title="No activity yet — LLM and MCP changes will appear here" className="py-6" />
               ) : (
@@ -773,38 +600,35 @@ export function ProjectOverview() {
                   <RecentActivityFeed activityByDay={activityByDay} />
                 </div>
               )}
-            </div>
+            </section>
           </div>
 
           {/* ── runs + sessions — full width stacked ── */}
-          <div className="grid grid-cols-1 gap-3.5 mb-3.5">
+          <div className="grid grid-cols-1 gap-9 mb-9">
             <CollapsibleSection
               title="Recent runs"
-              icon={<Zap size={12} />}
               collapsed={isCollapsed("runs")}
               onToggle={() => toggleSection("runs")}
               action={{ label: "All automations", onClick: () => setView("automations") }}
               collapsedView={<span className="text-xs text-[var(--text-secondary)]">{recentProjectRuns.length} runs · last 5</span>}
             >
-              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
+              <div>
                 {recentProjectRuns.length === 0 ? (
                   <EmptyState title="No runs yet" className="py-4" />
                 ) : (
                   <RecentAutomationRunsFeed runs={recentProjectRuns.slice(0, 5)} setView={setView} />
                 )}
-                <p className="text-2xs text-[var(--text-tertiary)] mt-3">Status pills are labeled + color — distinguishable without hue alone.</p>
               </div>
             </CollapsibleSection>
 
             <CollapsibleSection
               title="Recent sessions"
-              icon={<Diamond size={12} />}
               collapsed={isCollapsed("sessions")}
               onToggle={() => toggleSection("sessions")}
               action={{ label: "Open sessions", onClick: () => { if (activeChatThreadId) openSession(activeChatThreadId, "chat", "center"); else setSessionPresentation("center"); setView("chat"); } }}
               collapsedView={<span className="text-xs text-[var(--text-secondary)]">Resume where you left</span>}
             >
-              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
+              <div>
                 <SessionBrowser variant="preview" limit={4} activeSessionId={activeSessionId} />
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <Button variant="default" size="sm" className="w-full" onClick={() => setView("chat")}>

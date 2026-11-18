@@ -7,26 +7,41 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 // Shared UI primitives used across the Project Overview sections.
 
-export function SectionHeader({
-  title, icon, action,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  action?: { label: string; onClick: () => void };
+/**
+ * The heading every Overview block shares: display face, a hairline rule
+ * beneath, an optional quiet note, and an optional action on the right. It is
+ * the same heading the Today lanes use (see docs/design-language.md).
+ */
+export function PanelHeading({ title, note, action, className }: {
+  title: React.ReactNode;
+  note?: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-        {icon}{title}
-      </div>
-      {action && (
-        <button onClick={action.onClick}
-          className="text-sm text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
-          {action.label}<ArrowRight size={10} />
-        </button>
-      )}
+    <div className={cn("flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]", className)}>
+      <h2 className="font-display text-base">{title}</h2>
+      {note && <span className="text-2xs text-[var(--text-tertiary)] min-w-0 truncate">{note}</span>}
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>
   );
+}
+
+function HeadingAction({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="text-xs text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors">
+      {label}
+    </button>
+  );
+}
+
+export function SectionHeader({
+  title, action,
+}: {
+  title: string;
+  action?: { label: string; onClick: () => void };
+}) {
+  return <PanelHeading title={title} action={action && <HeadingAction {...action} />} />;
 }
 
 /**
@@ -36,10 +51,9 @@ export function SectionHeader({
  * parent owns the collapsed state.
  */
 export function CollapsibleSection({
-  title, icon, action, collapsed, onToggle, collapsedView, children,
+  title, action, collapsed, onToggle, collapsedView, children,
 }: {
   title: string;
-  icon: React.ReactNode;
   action?: { label: string; onClick: () => void };
   collapsed: boolean;
   onToggle: () => void;
@@ -50,27 +64,20 @@ export function CollapsibleSection({
   const bodyId = React.useId();
   return (
     <section>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
         <Tooltip content={collapsed ? `Expand ${title}` : `Collapse ${title}`}>
           <button
             type="button"
             onClick={onToggle}
             aria-expanded={!collapsed}
             aria-controls={bodyId}
-            className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+            className="flex items-center gap-1.5 hover:text-[var(--accent)] transition-colors cursor-pointer"
           >
             <ChevronDown size={11} className={cn("text-[var(--text-tertiary)] transition-transform", collapsed && "-rotate-90")} />
-            <span className="group-hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5">
-              {icon}{title}
-            </span>
+            <h2 className="font-display text-base">{title}</h2>
           </button>
         </Tooltip>
-        {action && (
-          <button onClick={action.onClick}
-            className="text-sm text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors flex items-center gap-1">
-            {action.label}<ArrowRight size={10} />
-          </button>
-        )}
+        {action && <div className="ml-auto"><HeadingAction {...action} /></div>}
       </div>
       {collapsed
         ? (collapsedView ?? null)
