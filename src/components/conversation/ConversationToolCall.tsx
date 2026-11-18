@@ -15,6 +15,8 @@ import { cairnNameLookup } from "@/lib/cairn-name-lookup";
 import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-risk";
 import { registerBuiltinToolViews } from "@/lib/tool-views";
 import type { ConversationToolCall } from "@/lib/conversation/message";
+import { CairnToolCard } from "./CairnToolCard";
+import { isCairnTool } from "@/lib/cairn-tool-names";
 import { useCairnStore } from "@/store";
 
 registerBuiltinToolViews();
@@ -196,6 +198,7 @@ export function ConversationToolCall({ toolCall, sessionId, connectors }: Conver
   if (toolCall.running) return <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] w-fit"><Spinner size={9} tone="accent" /><span className="text-xs text-[var(--text-secondary)]">{prettifyToolLabel(toolCall.label)}</span></div>;
   if (toolCall.name === "get_user_writing_style" && writingStyleNeedsSetup(toolCall.output)) return <WritingStylePromptChip output={toolCall.output} />;
   const ref = toolCall.cairnRef ?? extractCairnRef(toolCall.name, toolCall.output);
+  if (isCairnTool(toolCall.name)) return <CairnToolCard toolCall={toolCall} cairnRef={ref} />;
   if (ref) return <CairnRefChip toolName={toolCall.name} cairnRef={ref} ok={toolCall.ok} />;
   const connector = connectorForTool(toolCall.name, connectors);
   if (connector) return <ConnectorToolCard toolCall={{ tool: toolCall.name, args: toolCall.args, output: toolCall.output, ok: toolCall.ok, externalRef: toolCall.externalRef }} connector={connector} />;
