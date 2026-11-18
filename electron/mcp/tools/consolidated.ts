@@ -59,6 +59,34 @@ function cardRow(db: Database.Database, id: string) {
     .get(id) as { id: string; projectId: string; workspaceId: string; title: string; columnId: string } | undefined;
 }
 
+
+/** One field that a call changed, shown in the transcript as `from → to`. */
+export interface ToolChange { id: string; title: string; field: string; from?: string; to?: string }
+
+type CardSnapshot = { title: string; columnName: string; priority: string; dueDate: string; assignee: string; archived: string };
+
+function cardSnapshot(db: Database.Database, id: string): CardSnapshot | undefined {
+  const row = db.prepare(
+    `SELECT c.title, COALESCE(b.name, '') AS columnName, c.priority, COALESCE(c.due_date, '') AS dueDate,
+            COALESCE(c.assignee, '') AS assignee, CASE WHEN c.archived_at IS NULL THEN '' ELSE 'archived' END AS archived
+     FROM task_cards c LEFT JOIN board_columns b ON b.id = c.column_id WHERE c.id = ? AND c.deleted_at IS NULL`,
+  ).get(id) as CardSnapshot | undefined;
+  return row;
+}
+
+const CARD_FIELD_LABELS: Array<[keyof CardSnapshot, string]> = [
+  ["title", "title"], ["columnName", "column"], ["priority", "priority"], ["dueDate", "due"], ["assignee", "assignee"], ["archived", "archived"],
+];
+
+function cardChanges(id: string, before: CardSnapshot | undefined, after: CardSnapshot | undefined): ToolChange[] {
+  if (!before || !after) return [];
+  const out: ToolChange[] = [];
+  for (const [key, field] of CARD_FIELD_LABELS) {
+    if (before[key] !== after[key]) out.push({ id, title: after.title, field, from: before[key] || undefined, to: after[key] || undefined });
+  }
+  return out;
+}
+
 /** First column of `type` in the project (board order), or undefined. */
 function columnOfType(db: Database.Database, projectId: string, type: string): string | undefined {
   const row = db.prepare('SELECT id FROM board_columns WHERE project_id = ? AND type = ? ORDER BY "order" LIMIT 1')
@@ -226,6 +254,7 @@ export async function runConsolidatedTool(
         if (isErr(r)) errors.push(`${label}: ${r.error}`);
         return r;
       };
+      const oldTitle = args.title !== undefined ? noteRow(db, ids[0])?.title : undefined;
       if (args.title !== undefined) await step(`rename ${ids[0]}`, "rename_note", { noteId: ids[0], newTitle: args.title });
       if (args.folder !== undefined) await step("move", "bulk_move_notes", { noteIds: ids, folder: args.folder });
       for (const id of ids) {
@@ -240,7 +269,10 @@ export async function runConsolidatedTool(
       }
       const notes = ids.map((id) => noteRow(db, id)).filter(Boolean).map((n) => ({ id: n!.id, title: n!.title }));
       // A single note keeps the {id,title} top-level shape so chips can open it.
-      return summarize(notes.length === 1 ? { ...notes[0], updated: true } : { updated: notes }, errors);
+      const renamed = oldTitle !== undefined && notes[0] && notes[0].title !== oldTitle
+        ? { changes: [{ id: notes[0].id, title: notes[0].title, field: "title", from: oldTitle, to: notes[0].title } satisfies ToolChange] }
+        : {};
+      return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...renamed } : { updated: notes, ...renamed }, errors);
     }
 
     case "create_task": {
@@ -273,6 +305,7 @@ export async function runConsolidatedTool(
       for (const k of ["title", "description", "priority", "dueDate", "assignee", "archived"]) {
         if (args[k] !== undefined) scalar[k] = args[k];
       }
+      const beforeCards = new Map(ids.map((id) => [id, cardSnapshot(db, id)] as const));
       for (const id of ids) {
         const card = cardRow(db, id);
         if (!card) { errors.push(`${id}: Task not found`); continue; }
@@ -291,7 +324,9 @@ export async function runConsolidatedTool(
         for (const noteId of list(args.unlinkNoteIds)) await step(`unlink ${noteId}→${id}`, "unlink_note_from_task", { noteId, cardId: id });
       }
       const cards = ids.map((id) => cardRow(db, id)).filter(Boolean).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.columnId }));
-      return summarize(cards.length === 1 ? { ...cards[0], updated: true } : { updated: cards }, errors);
+      const changes = ids.flatMap((id) => cardChanges(id, beforeCards.get(id), cardSnapshot(db, id)));
+      const extra = changes.length > 0 ? { changes } : {};
+      return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...extra } : { updated: cards, ...extra }, errors);
     }
 
     case "task_progress":

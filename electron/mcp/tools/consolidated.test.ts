@@ -111,6 +111,22 @@ describe("consolidated toolset", () => {
     expect(getCardById(db, "k1")!.assignee).toBe("Alex");
   });
 
+  it("update_tasks reports what changed (from → to) and omits unchanged fields", async () => {
+    const res = await run("update_tasks", { cardIds: ["k1", "k2"], columnType: "in_progress", priority: "high" });
+    expect(res.changes).toEqual(expect.arrayContaining([
+      { id: "k1", title: "Login bug", field: "column", from: "c-todo", to: "c-prog" },
+      { id: "k1", title: "Login bug", field: "priority", from: "medium", to: "high" },
+    ]));
+    // A card that is already at the target priority reports no priority change.
+    const again = await run("update_tasks", { cardIds: ["k1"], priority: "high" });
+    expect(again.changes).toBeUndefined();
+  });
+
+  it("update_notes reports a rename", async () => {
+    const res = await run("update_notes", { noteIds: ["n1"], title: "Auth v2" });
+    expect(res.changes).toEqual([{ id: "n1", title: "Auth v2", field: "title", from: "Auth design", to: "Auth v2" }]);
+  });
+
   it("task_progress claims then logs", async () => {
     const claimed = await run("task_progress", { cardId: "k1", action: "claim", agent: "Claude Code" });
     expect(claimed.error).toBeUndefined();

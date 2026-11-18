@@ -8,6 +8,7 @@ import { humanizeTool } from "@/lib/humanize-tool";
 import type { ConversationToolCall } from "@/lib/conversation/message";
 import { prettyToolOutput, redactToolOutput, redactTranscriptValue } from "@/lib/redact-agent-transcript";
 import { prettifyToolLabel } from "@/lib/utils";
+import { cairnToolView } from "./cairn-tool-views";
 
 const MAX_DETAIL_LENGTH = 8_000;
 
@@ -22,6 +23,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
     ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2).slice(0, MAX_DETAIL_LENGTH)
     : undefined;
   const output = prettyToolOutput(redactToolOutput(toolCall.ok ? toolCall.output : toolCall.error ?? toolCall.output));
+  const view = cairnToolView(toolCall);
   return (
     <ToolCard
       testId="cairn-tool-card"
@@ -31,11 +33,27 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
       brand="Cairn"
       summary={summary}
       tooltip="Cairn workspace tool"
+      defaultExpanded={Boolean(view) && !toolCall.name.startsWith("search_")}
       caption={`Tool: ${prettifyToolLabel(toolCall.name)}`}
     >
       {cairnRef && <div className="mt-1"><CairnRefChip toolName={toolCall.name} cairnRef={cairnRef} ok={toolCall.ok} /></div>}
-      {args && <ToolPayload label="Arguments" value={args} />}
-      {output && <ToolPayload label="Result" value={output} />}
+      {view ? (
+        <>
+          {view}
+          {(args || output) && (
+            <details className="mt-1 group">
+              <summary className="cursor-pointer select-none text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">Raw call</summary>
+              {args && <ToolPayload label="Arguments" value={args} />}
+              {output && <ToolPayload label="Result" value={output} />}
+            </details>
+          )}
+        </>
+      ) : (
+        <>
+          {args && <ToolPayload label="Arguments" value={args} />}
+          {output && <ToolPayload label="Result" value={output} />}
+        </>
+      )}
     </ToolCard>
   );
 }
