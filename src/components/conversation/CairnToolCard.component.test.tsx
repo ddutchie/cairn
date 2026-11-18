@@ -89,3 +89,25 @@ describe("Cairn tool views", () => {
     expect(screen.getByText("Arguments")).toBeTruthy();
   });
 });
+
+describe("Cairn approval card", () => {
+  it("previews the pending change instead of a JSON dump", () => {
+    const { container } = render(<ConversationToolCall
+      sessionId="s1"
+      toolCall={call({ name: "edit_note", args: { noteId: "n1", oldString: "old line", newString: "new line" }, confirmRequired: true })}
+    />, { wrapper: TooltipProvider });
+    expect(screen.getByTestId("approval-cairn-view").textContent).toContain("old line");
+    expect(screen.getByTestId("approval-cairn-view").textContent).toContain("new line");
+    expect(screen.queryByTestId("approval-preview")).toBeNull();
+    expect(container.textContent).not.toContain('"oldString"');
+  });
+
+  it("shows an Arguments tree for a Cairn tool without a view", () => {
+    render(<ConversationToolCall
+      sessionId="s1"
+      toolCall={call({ name: "spawn_tasks_from_note", args: { noteId: "n1" }, confirmRequired: true })}
+    />, { wrapper: TooltipProvider });
+    expect(screen.getByText("Arguments")).toBeTruthy();
+    expect(screen.queryByTestId("approval-preview")).toBeNull();
+  });
+});

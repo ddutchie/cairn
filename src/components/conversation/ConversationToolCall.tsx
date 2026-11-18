@@ -16,6 +16,7 @@ import { approvalPreview, approvalScopeLabel, riskForTool } from "@/lib/tool-ris
 import { registerBuiltinToolViews } from "@/lib/tool-views";
 import type { ConversationToolCall } from "@/lib/conversation/message";
 import { CairnToolCard } from "./CairnToolCard";
+import { cairnToolView } from "./cairn-tool-views";
 import { isCairnTool } from "@/lib/cairn-tool-names";
 import { useCairnStore } from "@/store";
 
@@ -56,9 +57,13 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   const summary = connector
     ? humanizeConnectorTool(toolCall.name, toolCall.args, connector.label || connector.name)
     : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
-  // Connector calls show their arguments as a key/value tree (below), not a JSON preview.
-  const preview = connector ? "" : approvalPreview(toolCall.name, toolCall.args);
-  const connectorArgs = connector && toolCall.args && Object.keys(toolCall.args).length > 0
+  // Cairn's own tools show what they are about to change (the same view the settled
+  // card uses, built from the arguments alone); connector calls and Cairn tools
+  // without a view show their arguments as a key/value tree, not a JSON preview.
+  const cairn = !connector && isCairnTool(toolCall.name);
+  const cairnPreview = cairn ? cairnToolView({ ...toolCall, ok: true, output: undefined }) : null;
+  const preview = connector || cairn ? "" : approvalPreview(toolCall.name, toolCall.args);
+  const connectorArgs = (connector || (cairn && !cairnPreview)) && toolCall.args && Object.keys(toolCall.args).length > 0
     ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2)
     : undefined;
   const scope = approvalScopeLabel(toolCall.name);
@@ -106,7 +111,8 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
         </div>
         <span className="text-2xs font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
       </div>
-      {connector && (connectorArgs
+      {cairnPreview && <div data-testid="approval-cairn-view" className="max-h-56 overflow-auto">{cairnPreview}</div>}
+      {(connector || (cairn && !cairnPreview)) && (connectorArgs
         ? <div className="max-h-48 overflow-auto"><ToolPayload label="Arguments" value={connectorArgs} /></div>
         : <p data-testid="approval-no-args" className="mt-1.5 text-2xs text-[var(--text-tertiary)]">No arguments.</p>)}
       {preview && <pre data-testid="approval-preview" className="mt-2 max-h-24 overflow-hidden rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-2xs leading-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words">{preview}</pre>}
