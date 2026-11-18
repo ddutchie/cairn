@@ -83,7 +83,7 @@ export function RecentActivityFeed({ activityByDay }: { activityByDay: ActivityG
     <div className="space-y-4">
       {activityByDay.map(({ label, items }) => (
         <div key={label}>
-          <div className="text-xs font-medium text-[var(--text-tertiary)] mb-1.5 px-2">{label}</div>
+          <div className="text-xs font-medium text-[var(--text-secondary)] mb-1 px-2">{label}</div>
           <div className="space-y-0.5">
             {items.map((item) => (
               <button key={item.id} onClick={item.onClick}
@@ -96,7 +96,7 @@ export function RecentActivityFeed({ activityByDay }: { activityByDay: ActivityG
                 {item.subtitle && (
                   <span className="text-sm text-[var(--text-tertiary)] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{item.subtitle}</span>
                 )}
-                <span className="text-sm text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{formatRelative(item.updatedAt)}</span>
+                <span className="text-xs text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">{new Date(item.updatedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span>
               </button>
             ))}
           </div>

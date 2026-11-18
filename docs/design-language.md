@@ -155,7 +155,7 @@ Do not bring these back without a reason specific to the view:
 | View | State |
 |---|---|
 | Today | Reference for prose pages: open lists, one raised instrument (the day), items with a light lift. |
-| Overview | Reference for instrument pages: raised instruments, at-a-glance strip, status-tinted attention items. Remaining: the radar's six measure tiles and the Activity feed's per-row dates are still the old style. |
+| Overview | Reference for instrument pages: raised instruments, at-a-glance strip, status-tinted attention items. |
 | Board, Notes, Calendar, Flow, Knowledge Graph, Insights, Agent, Automations, Usage, Settings | Not audited. Start with Automations and Usage: they are the closest in shape (lists, stats, status) and will show first whether the item card and section heading cover real cases. |
 
 When you align a view, update this table.

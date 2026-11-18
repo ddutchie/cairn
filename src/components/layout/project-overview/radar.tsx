@@ -87,22 +87,22 @@ export function ProjectHealthRadar({
         </div>
 
         <div className="flex-1 min-w-0 w-full">
-          <div className="grid grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-2 gap-x-6 gap-y-4">
             {axes.map((ax) => (
-              <div key={ax.key} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: ax.color }} />
-                  <span className="text-xs font-semibold text-[var(--text-secondary)] truncate">{ax.label}</span>
+              <div key={ax.key} className="min-w-0">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 self-center" style={{ background: ax.color }} aria-hidden="true" />
+                  <span className="text-xs text-[var(--text-secondary)] truncate">{ax.label}</span>
+                  <span className="ml-auto font-display text-lg leading-none tabular-nums text-[var(--text-primary)]">{Math.round(ax.value * 100)}</span>
                 </div>
                 <div className="mt-1.5 h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
                   <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(ax.value * 100)}%`, background: ax.color }} />
                 </div>
-                <div className="mt-1 text-2xs font-mono text-[var(--text-tertiary)] tabular-nums">{Math.round(ax.value * 100)}%</div>
               </div>
             ))}
           </div>
-          <p className="text-xs leading-relaxed text-[var(--text-tertiary)] mt-3">
-            Six balance axes from live project data — completion, momentum, focus, knowledge, flow, calm (inverse urgent load). 100 is healthiest.
+          <p className="text-xs leading-relaxed text-[var(--text-tertiary)] mt-4 max-w-[62ch]">
+            Six measures from live project data: completion, momentum, focus, knowledge, flow and calm (the inverse of urgent load). Higher is healthier.
           </p>
         </div>
       </div>
