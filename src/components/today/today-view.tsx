@@ -559,18 +559,18 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
             {!isToday && !past && <span className="text-[var(--warning)] font-sans"> · from an earlier day</span>}
             {past && ` · ${formatClock(d.getHours() * 60 + d.getMinutes())}`}
           </div>
-          <h2 className="text-2xl leading-tight mt-2 mb-1.5 max-w-[24ch] font-normal tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-4xl leading-[1.08] mt-3 mb-2.5 max-w-[26ch] text-balance font-normal tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
             {gathering ? "Gathering your brief" : brief.headline}
           </h2>
-          <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[58ch]">
+          <p className="text-base text-[var(--text-secondary)] leading-relaxed max-w-[62ch] text-pretty">
             {gathering
               ? "Items arrive as Cairn finds them, and the headline comes last."
               : brief.lede}
           </p>
           {(state.lastError || error) && <p className="text-xs text-[var(--danger)] mt-2">Last run: {error ?? state.lastError}</p>}
-          <div className="grid gap-2.5 mt-4 grid-cols-2 @xl:grid-cols-[repeat(4,minmax(0,150px))]">
-            <KpiTile label="Decisions" value={String(openDecisions)} detail={`of ${openNeed.length} that need you`} onClick={() => jump("need")} />
-            <KpiTile
+          <div className="flex flex-wrap gap-y-3 mt-6">
+            <LedgerItem label="Decisions" value={String(openDecisions)} detail={`of ${openNeed.length} that need you`} onClick={() => jump("need")} />
+            <LedgerItem
               label="Drafts ready"
               value={String(openDrafts.length)}
               detail={openLinked ? `${openLinked} on decisions · nothing sent` : "nothing sent"}
@@ -578,13 +578,13 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
             />
             {hasDay && (
               <>
-                <KpiTile
+                <LedgerItem
                   label={isToday ? "Free time left" : "Free time"}
                   value={formatMinutes(day.freeLeft)}
                   detail={day.largestFree ? `largest ${formatMinutes(day.largestFree)}` : "no free block left"}
                   onClick={() => jump("day")}
                 />
-                <KpiTile
+                <LedgerItem
                   label={isToday ? "Meetings left" : "Meetings"}
                   value={String(day.meetingsLeft)}
                   detail={day.nextMeeting ? `${day.nextMeeting.title} · ${day.nextMeeting.start}` : "none left today"}
@@ -622,7 +622,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
         />
       )}
 
-      <div className="grid gap-3.5 mt-6 items-start grid-cols-1 @4xl:grid-cols-[1.2fr_1fr_0.85fr]">
+      <div className="grid gap-x-8 gap-y-8 mt-9 items-start grid-cols-1 @4xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <LaneBox id="need" title="Need you" count={openNeed.length} tone="var(--stone-3)" flash={flash === "need" || flash === "focus"}>
           {needYou.length === 0 && <Empty>Nothing is waiting on you.</Empty>}
           {shownNeed.map((n) => (
@@ -645,6 +645,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
             </button>
           )}
         </LaneBox>
+        <div className="space-y-8 min-w-0">
         <LaneBox id="prep" title="Prepared for you" count={openPrep} tone="var(--stone-2)" note="Nothing sent" flash={flash === "prep"}>
           {lanePrepared.length === 0 && (
             <Empty>{linked.size ? "Every draft answers a decision, so each one sits on that decision's choices." : "No drafts this time."}</Empty>
@@ -676,6 +677,7 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
           {brief.fyi.length === 0 && <Empty>Quiet.</Empty>}
           {brief.fyi.map((f) => <FyiRow key={f.id} item={f} />)}
         </LaneBox>
+        </div>
       </div>
 
       {/* Project facts are worked out now, so they don't belong to an earlier brief. */}
@@ -971,26 +973,27 @@ function LegendRow({ n, label, hint, accent, onClick }: { n: number; label: stri
       onClick={onClick}
       className="grid grid-cols-[24px_1fr] items-center text-left px-1.5 py-1 rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)] min-w-0"
     >
-      <span className={cn("font-mono font-semibold", accent ? "text-[var(--accent)]" : "text-[var(--text-primary)]")}>{n}</span>
+      <span className={cn("text-base tabular-nums", accent ? "text-[var(--accent)]" : "text-[var(--text-primary)]")} style={{ fontFamily: "var(--font-display)" }}>{n}</span>
       <span className={cn("truncate", accent && "text-[var(--text-primary)]")}>{label}</span>
     </button>
     </Tooltip>
   );
 }
 
-function KpiTile({ label, value, detail, onClick }: { label: string; value: string; detail: string; onClick: () => void }) {
+/** One figure of the day's ledger: set in the display face, divided from its neighbours by a hairline, no box. */
+function LedgerItem({ label, value, detail, onClick }: { label: string; value: string; detail: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "text-left rounded-[10px] border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 px-3 py-2 min-w-0 hover:bg-[var(--surface-2)]",
+        "group text-left min-w-0 pr-6 mr-6 border-r border-[var(--border)] last:border-r-0 last:mr-0 last:pr-0 rounded-sm",
         FOCUS_RING,
       )}
     >
-      <span className="block text-2xs text-[var(--text-tertiary)]">{label}</span>
-      <span className="block text-lg font-semibold leading-tight mt-0.5">{value}</span>
-      <span className="block text-2xs text-[var(--text-secondary)] mt-0.5 truncate">{detail}</span>
+      <span className="block text-3xl leading-none tracking-tight tabular-nums group-hover:text-[var(--accent)]" style={{ fontFamily: "var(--font-display)" }}>{value}</span>
+      <span className="block text-xs font-medium text-[var(--text-primary)] mt-1.5">{label}</span>
+      <span className="block text-2xs text-[var(--text-tertiary)] mt-0.5 max-w-[22ch] truncate">{detail}</span>
     </button>
   );
 }
@@ -1025,11 +1028,12 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
   const showNow = nowMin !== null && nowMin > DAY_START && nowMin < DAY_END;
   const visible = day.blocks.filter((b) => b.end > DAY_START && b.start < DAY_END);
   const agenda = day.blocks.filter((b) => !(b.kind === "free" && b.past));
+  const [listOpen, setListOpen] = useState(false);
 
   return (
-    <section id="today-lane-day" className="mt-5">
+    <section id="today-lane-day" className="mt-8">
       <div className="flex items-baseline gap-2.5 mb-2">
-        <h3 className="text-sm font-semibold">Your day</h3>
+        <h3 className="text-base" style={{ fontFamily: "var(--font-display)" }}>Your day</h3>
         <span className="text-2xs text-[var(--text-tertiary)]">07:00–19:00 · hover a block for details</span>
       </div>
       <div
@@ -1105,14 +1109,23 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
           )}
         </div>
 
-        {/* The table view: every block in words, so nothing depends on hover or colour. */}
-        <div className="mt-3 border-t border-[var(--border-subtle)] pt-1.5 grid grid-cols-[auto_1fr_auto] gap-x-3.5 text-xs">
+        {/* The table view: every block in words, so nothing depends on hover or colour. Folded so the decisions stay in view. */}
+        <button
+          type="button"
+          aria-expanded={listOpen}
+          aria-controls="today-day-list"
+          onClick={() => setListOpen((v) => !v)}
+          className={cn("mt-2.5 text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:underline rounded-sm", FOCUS_RING)}
+        >
+          {listOpen ? "Hide the list" : `List all ${agenda.length} blocks`}
+        </button>
+        <div id="today-day-list" hidden={!listOpen} className="mt-2 border-t border-[var(--border-subtle)] pt-1.5 grid grid-cols-[auto_1fr_auto] gap-x-3.5 text-xs">
           {agenda.map((b, i) => {
             const free = b.kind === "free";
             const cell = cn("py-1.5", i < agenda.length - 1 && "border-b border-[var(--border-subtle)]");
             return (
               <div key={`${b.kind}-${b.start}-${b.event?.id ?? i}`} className="contents">
-                <span className={cn(cell, "font-mono text-2xs text-[var(--text-secondary)] whitespace-nowrap", b.past && "opacity-45")}>
+                <span className={cn(cell, "text-2xs tabular-nums text-[var(--text-secondary)] whitespace-nowrap", b.past && "opacity-45")}>
                   {formatClock(b.start)}–{formatClock(b.end)}
                 </span>
                 <span className={cn(cell, "min-w-0 truncate", b.past && "opacity-45")}>
@@ -1150,21 +1163,22 @@ function DayTag({ warn, children }: { warn?: boolean; children: React.ReactNode 
 function LaneBox({ id, title, count, tone, note, flash, children }: {
   id: Lane; title: string; count: number; tone: string; note?: string; flash?: boolean; children: React.ReactNode;
 }) {
+  // An open section, not a box: the cards inside already have edges, so a second frame around them only adds noise.
   return (
     <section
       id={`today-lane-${id}`}
       className={cn(
-        "rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] shadow-elev-1 p-3 transition-[outline]",
-        flash && "outline outline-2 outline-offset-2 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
+        "rounded-lg transition-[outline]",
+        flash && "outline outline-2 outline-offset-8 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
       )}
     >
-      <div className="flex items-center gap-2 px-1 pb-2.5">
+      <div className="flex items-center gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
         <span className="w-3 h-2 rounded-full" style={{ background: tone }} />
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <span className="font-mono text-2xs text-[var(--text-tertiary)] bg-[var(--surface-3)] rounded px-1.5">{count}</span>
+        <h3 className="text-base" style={{ fontFamily: "var(--font-display)" }}>{title}</h3>
+        <span className="text-2xs tabular-nums text-[var(--text-tertiary)] bg-[var(--surface-3)] rounded-full px-1.5">{count}</span>
         {note && <span className="ml-auto text-2xs text-[var(--text-tertiary)]">{note}</span>}
       </div>
-      <div className="space-y-2">{children}</div>
+      <div className="space-y-2.5">{children}</div>
     </section>
   );
 }
@@ -1239,7 +1253,12 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
           <Check size={12} />
         </IconButton>
       </ItemMeta>
-      <div className={cn("font-medium leading-snug", decision ? "text-base" : "text-sm", done && "line-through")}>{item.title}</div>
+      <div
+        className={cn("leading-snug", focus && decision ? "text-xl tracking-tight" : decision ? "text-base font-medium" : "text-sm font-medium", done && "line-through")}
+        style={focus && decision ? { fontFamily: "var(--font-display)" } : undefined}
+      >
+        {item.title}
+      </div>
       {!done && (
         <>
           {item.body && <p className={cn("text-xs text-[var(--text-secondary)] leading-relaxed mt-1", !open && "line-clamp-2")}>{item.body}</p>}
