@@ -99,6 +99,7 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (value === null) return <span className="text-[var(--text-tertiary)]">null</span>;
   if (typeof value !== "object") return <span className="break-words text-[var(--text-secondary)]">{typeof value === "string" ? `"${value}"` : String(value)}</span>;
   const entries = Array.isArray(value) ? value.map((item, index) => [String(index), item] as const) : Object.entries(value);
+  if (entries.length === 0) return <span className="font-mono text-2xs text-[var(--text-tertiary)]">{Array.isArray(value) ? "[]" : "{}"}</span>;
   return (
     <div className="space-y-0.5 font-mono text-2xs">
       {entries.map(([key, child]) => {

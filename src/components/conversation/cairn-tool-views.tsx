@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { ToolPanel } from "@/components/shared/ToolCard";
 import type { ConversationToolCall } from "@/lib/conversation/message";
 import { cn } from "@/lib/utils";
+import { redactTranscriptValue } from "@/lib/redact-agent-transcript";
 
 /**
  * Purpose-built "what changed" bodies for Cairn's own tools. Each view reads the
@@ -24,10 +25,12 @@ function asRec(value: unknown): Rec | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Rec : undefined;
 }
 
+/** The result as an object; a top-level array (e.g. a filtered task list) is wrapped as `{ results }`. */
 function parse(output: string | undefined): Rec | undefined {
   if (!output) return undefined;
   try {
-    return asRec(JSON.parse(output));
+    const value = JSON.parse(output);
+    return Array.isArray(value) ? { results: value } : asRec(value);
   } catch {
     return undefined;
   }
@@ -53,15 +56,26 @@ export function ChangeRow({ field, from, to }: { field: string; from?: string; t
 
 const MAX_DIFF_LINES = 10;
 
-/** Removed (−) and added (+) lines, truncated with a "+N more lines" tail. */
+function linesOf(text: string | undefined): string[] {
+  return text === undefined || text === "" ? [] : text.split("\n");
+}
+
+/** Removed (−) and added (+) lines. Each non-empty side keeps at least one visible line; the rest is cut with a "+N more lines" tail. */
 export function DiffLines({ removed, added }: { removed?: string; added?: string }) {
-  const rows: Array<{ sign: "-" | "+"; text: string }> = [];
-  for (const line of (removed ?? "").split("\n")) if (removed !== undefined && removed !== "") rows.push({ sign: "-", text: line });
-  for (const line of (added ?? "").split("\n")) if (added !== undefined && added !== "") rows.push({ sign: "+", text: line });
-  const shown = rows.slice(0, MAX_DIFF_LINES);
+  const del = linesOf(removed);
+  const add = linesOf(added);
+  const reserveAdd = add.length > 0 ? 1 : 0;
+  const reserveDel = del.length > 0 ? 1 : 0;
+  const delShown = Math.min(del.length, Math.max(reserveDel, MAX_DIFF_LINES - reserveAdd));
+  const addShown = Math.min(add.length, Math.max(reserveAdd, MAX_DIFF_LINES - delShown));
+  const rows: Array<{ sign: "-" | "+"; text: string }> = [
+    ...del.slice(0, delShown).map((text) => ({ sign: "-" as const, text })),
+    ...add.slice(0, addShown).map((text) => ({ sign: "+" as const, text })),
+  ];
+  const hidden = del.length + add.length - rows.length;
   return (
     <div className="overflow-hidden rounded border border-[var(--border)] font-mono text-2xs leading-5">
-      {shown.map((row, i) => (
+      {rows.map((row, i) => (
         <div
           key={i}
           className={cn("flex gap-1.5 px-1.5", row.sign === "+"
@@ -69,10 +83,11 @@ export function DiffLines({ removed, added }: { removed?: string; added?: string
             : "bg-[color-mix(in_srgb,var(--danger)_9%,transparent)] text-[var(--text-secondary)]")}
         >
           <span aria-hidden className={cn("select-none", row.sign === "+" ? "text-[var(--success)]" : "text-[var(--danger)]")}>{row.sign}</span>
+          <span className="sr-only">{row.sign === "+" ? "Added: " : "Removed: "}</span>
           <span className="min-w-0 whitespace-pre-wrap break-words">{row.text || " "}</span>
         </div>
       ))}
-      {rows.length > shown.length && <div className="px-1.5 text-[var(--text-tertiary)]">+{rows.length - shown.length} more lines</div>}
+      {hidden > 0 && <div className="px-1.5 text-[var(--text-tertiary)]">+{hidden} more lines</div>}
     </div>
   );
 }
@@ -89,7 +104,9 @@ function Chips({ items }: { items: string[] }) {
 
 // ── Views ───────────────────────────────────────────────────────────────────
 
-type View = (tc: ConversationToolCall, args: Rec, out: Rec | undefined) => ReactNode | null;
+/** `pending`: the call has not run (approval card), so wording must not claim it happened. */
+interface ViewContext { pending: boolean }
+type View = (tc: ConversationToolCall, args: Rec, out: Rec | undefined, ctx: ViewContext) => ReactNode | null;
 
 const writingStyle: View = (_tc, args, out) => {
   const content = str(out?.content) ?? str(args.content);
@@ -136,33 +153,44 @@ function ChangeGroups({ changes }: { changes: Change[] }) {
 }
 
 const updateTasks: View = (_tc, args, out) => {
-  const changes = changesOf(out);
-  if (changes.length > 0) return <ToolPanel label="Changes"><ChangeGroups changes={changes} /></ToolPanel>;
-  // No before/after (older results): show what was asked for.
+  const recorded = Array.isArray(out?.changes) ? changesOf(out) : undefined;
+  if (recorded && recorded.length > 0) return <ToolPanel label="Changes"><ChangeGroups changes={recorded} /></ToolPanel>;
+  if (recorded) return <ToolPanel label="Changes"><p className="text-2xs text-[var(--text-tertiary)]">No changes: everything was already set.</p></ToolPanel>;
+  // No before/after (approval, or an older result): show what was asked for.
   const rows: Array<[string, string]> = [];
   for (const key of ["title", "priority", "dueDate", "assignee", "columnType"] as const) {
     const v = str(args[key]);
-    if (v) rows.push([key === "dueDate" ? "due" : key === "columnType" ? "column" : key, v.replace("_", " ")]);
+    if (!v) continue;
+    // Only enum values read better without underscores; titles and names are shown as written.
+    rows.push([key === "dueDate" ? "due" : key === "columnType" ? "column" : key, key === "columnType" ? v.replace("_", " ") : v]);
   }
   if (args.archived === true) rows.push(["archived", "yes"]);
   if (rows.length === 0) return null;
-  return <ToolPanel label="Changes"><div className="space-y-0.5">{rows.map(([f, to]) => <ChangeRow key={f} field={f} to={to} />)}</div></ToolPanel>;
+  return <ToolPanel label="Requested"><div className="space-y-0.5">{rows.map(([f, to]) => <ChangeRow key={f} field={f} to={to} />)}</div></ToolPanel>;
 };
 
 const updateNotes: View = (_tc, args, out) => {
-  const changes = changesOf(out);
-  const rows: Array<[string, string | undefined, string | undefined]> = changes.map((c) => [c.field, c.from, c.to]);
-  if (typeof args.folder === "string") rows.push(["folder", undefined, args.folder.trim() || "(project root)"]);
-  if (typeof args.isPinned === "boolean") rows.push(["pinned", undefined, args.isPinned ? "yes" : "no"]);
+  const recorded = changesOf(out);
+  const requested: Array<[string, string | undefined, string | undefined]> = [];
+  if (typeof args.folder === "string") requested.push(["folder", undefined, args.folder.trim() || "(project root)"]);
+  if (typeof args.isPinned === "boolean") requested.push(["pinned", undefined, args.isPinned ? "yes" : "no"]);
   const tags = Array.isArray(args.tagNames) ? args.tagNames.filter((t): t is string => typeof t === "string") : [];
-  if (tags.length) rows.push([args.tagMode === "remove" ? "removed tags" : "tags", undefined, tags.join(", ")]);
-  if (rows.length === 0) return null;
-  return <ToolPanel label="Changes"><div className="space-y-0.5">{rows.map(([f, from, to]) => <ChangeRow key={f} field={f} from={from} to={to} />)}</div></ToolPanel>;
+  if (tags.length) requested.push([args.tagMode === "remove" ? "removed tags" : "tags", undefined, tags.join(", ")]);
+  if (recorded.length === 0 && requested.length === 0) return null;
+  return (
+    <>
+      {recorded.length > 0 && <ToolPanel label="Changes"><ChangeGroups changes={recorded} /></ToolPanel>}
+      {requested.length > 0 && (
+        <ToolPanel label="Requested"><div className="space-y-0.5">{requested.map(([f, from, to]) => <ChangeRow key={f} field={f} from={from} to={to} />)}</div></ToolPanel>
+      )}
+    </>
+  );
 };
 
 const editNote: View = (_tc, args) => {
-  const added = str(args.newString);
-  const removed = str(args.oldString);
+  // Same test as the executor: any non-empty oldString (even whitespace) is a patch.
+  const removed = typeof args.oldString === "string" && args.oldString.length > 0 ? args.oldString : undefined;
+  const added = typeof args.newString === "string" && args.newString.length > 0 ? args.newString : undefined;
   if (!added && !removed) return null;
   return (
     <ToolPanel label={removed ? "Edit" : "Appended"}>
@@ -209,19 +237,25 @@ const ideaFlow: View = (_tc, args, out) => {
 };
 
 const progress: View = (_tc, args) => {
-  const message = str(args.message);
   const rows: Array<[string, string]> = [];
-  if (args.action === "claim") rows.push(["claimed by", str(args.agent) ?? "Agent"]);
-  if (message) rows.push(["note", message]);
-  const moveTo = str(args.moveTo);
-  if (moveTo) rows.push(["moved to", moveTo.replace("_", " ")]);
+  if (args.action === "claim") {
+    // A claim ignores message and moveTo, so they are not shown as if they happened.
+    rows.push(["claimed by", str(args.agent) ?? "Agent"]);
+  } else {
+    const message = str(args.message);
+    if (message) rows.push(["note", message]);
+    const moveTo = str(args.moveTo);
+    if (moveTo) rows.push(["moved to", moveTo.replace("_", " ")]);
+  }
   if (rows.length === 0) return null;
   return <ToolPanel label="Progress"><div className="space-y-0.5">{rows.map(([f, to]) => <ChangeRow key={f} field={f} to={to} />)}</div></ToolPanel>;
 };
 
-function hitsOf(out: Rec | undefined): Array<{ title: string; hint?: string }> {
-  const list = [out?.results, out?.tasks, out?.notes, out?.items].find(Array.isArray) as unknown[] | undefined;
-  if (!list) return [];
+function listOf(out: Rec | undefined): unknown[] | undefined {
+  return [out?.results, out?.tasks, out?.notes, out?.items].find(Array.isArray) as unknown[] | undefined;
+}
+
+function hitsOf(list: unknown[]): Array<{ title: string; hint?: string }> {
   return list.flatMap((item) => {
     const r = asRec(item);
     const title = r && (str(r.title) ?? str(r.name));
@@ -229,12 +263,14 @@ function hitsOf(out: Rec | undefined): Array<{ title: string; hint?: string }> {
   });
 }
 
-const search: View = (tc, args, out) => {
-  const hits = hitsOf(out);
+const search: View = (_tc, args, out) => {
+  const list = listOf(out);
+  if (!list) return null; // not a shape we recognise: use the generic panels
+  const hits = hitsOf(list);
   const query = str(args.query);
-  const label = `${hits.length} result${hits.length === 1 ? "" : "s"}${query ? ` for “${query}”` : ""}`;
-  if (hits.length === 0) return <ToolPanel label="Search"><p className="text-2xs text-[var(--text-tertiary)]">No results{query ? ` for “${query}”` : ""}.</p></ToolPanel>;
-  void tc;
+  if (list.length === 0) return <ToolPanel label="Search"><p className="text-2xs text-[var(--text-tertiary)]">No results{query ? ` for “${query}”` : ""}.</p></ToolPanel>;
+  if (hits.length === 0) return null;
+  const label = `${list.length} result${list.length === 1 ? "" : "s"}${query ? ` for “${query}”` : ""}`;
   return (
     <ToolPanel label={label}>
       <ul className="space-y-0.5">
@@ -245,17 +281,17 @@ const search: View = (tc, args, out) => {
           </li>
         ))}
       </ul>
-      {hits.length > 5 && <p className="mt-1 text-2xs text-[var(--text-tertiary)]">+{hits.length - 5} more</p>}
+      {list.length > 5 && <p className="mt-1 text-2xs text-[var(--text-tertiary)]">+{list.length - 5} more</p>}
     </ToolPanel>
   );
 };
 
-const remove: View = (_tc, args) => {
+const remove: View = (_tc, args, _out, ctx) => {
   const kind = str(args.type)?.replace("_", " ");
   if (!kind) return null;
   return (
-    <ToolPanel label="Removed" className="border-[color-mix(in_srgb,var(--danger)_35%,var(--border))]">
-      <p className="text-2xs text-[var(--text-secondary)]">A {kind} was deleted. <span className="text-[var(--text-tertiary)]">{str(args.id)}</span></p>
+    <ToolPanel label={ctx.pending ? "Will delete" : "Removed"} className="border-[color-mix(in_srgb,var(--danger)_35%,var(--border))]">
+      <p className="text-2xs text-[var(--text-secondary)]">{ctx.pending ? `This will delete the ${kind}.` : `A ${kind} was deleted.`} <span className="text-[var(--text-tertiary)]">{str(args.id)}</span></p>
     </ToolPanel>
   );
 };
@@ -275,12 +311,21 @@ const VIEWS: Record<string, View> = {
   delete: remove,
 };
 
-/** The "what changed" panel for a settled Cairn tool call, or null to use the generic panels. */
-export function cairnToolView(tc: ConversationToolCall): ReactNode | null {
+/**
+ * The "what changed" panel for a Cairn tool call, or null to use the generic panels.
+ * `pending` is for an approval card: nothing has run, so there is no result and the
+ * wording is future tense. A failed call still gets its view when it returned a
+ * structured result (e.g. the part of a bulk update that did apply).
+ */
+export function cairnToolView(tc: ConversationToolCall, opts: { pending?: boolean } = {}): ReactNode | null {
   const view = VIEWS[tc.name];
-  if (!view || !tc.ok) return null;
+  if (!view) return null;
+  const out = parse(tc.output ?? (tc.ok ? undefined : tc.error));
+  if (!tc.ok && !out) return null;
   try {
-    return view(tc, tc.args ?? {}, parse(tc.output));
+    // Same redaction as the Raw call panel, so a secret in an argument is masked here too.
+    const args = (redactTranscriptValue(tc.args ?? {}) as Rec | undefined) ?? {};
+    return view(tc, args, out, { pending: opts.pending === true });
   } catch {
     return null;
   }

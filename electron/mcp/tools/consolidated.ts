@@ -63,26 +63,41 @@ function cardRow(db: Database.Database, id: string) {
 /** One field that a call changed, shown in the transcript as `from → to`. */
 export interface ToolChange { id: string; title: string; field: string; from?: string; to?: string }
 
-type CardSnapshot = { title: string; columnName: string; priority: string; dueDate: string; assignee: string; archived: string };
+type CardSnapshot = {
+  title: string; columnId: string; columnName: string; priority: string; dueDate: string; assignee: string; archived: string;
+  /** Titles of the cards blocking this one (sorted), so a dependency change reads as names. */
+  blockedBy: string[];
+};
 
 function cardSnapshot(db: Database.Database, id: string): CardSnapshot | undefined {
   const row = db.prepare(
-    `SELECT c.title, COALESCE(b.name, '') AS columnName, c.priority, COALESCE(c.due_date, '') AS dueDate,
-            COALESCE(c.assignee, '') AS assignee, CASE WHEN c.archived_at IS NULL THEN '' ELSE 'archived' END AS archived
+    `SELECT c.title, c.column_id AS columnId, COALESCE(b.name, '') AS columnName, c.priority, COALESCE(c.due_date, '') AS dueDate,
+            COALESCE(c.assignee, '') AS assignee, CASE WHEN c.archived_at IS NULL THEN '' ELSE 'archived' END AS archived,
+            c.blocked_by_ids AS blockedByIds
      FROM task_cards c LEFT JOIN board_columns b ON b.id = c.column_id WHERE c.id = ? AND c.deleted_at IS NULL`,
-  ).get(id) as CardSnapshot | undefined;
-  return row;
+  ).get(id) as (Omit<CardSnapshot, "blockedBy"> & { blockedByIds: string }) | undefined;
+  if (!row) return undefined;
+  let ids: string[] = [];
+  try { ids = list(JSON.parse(row.blockedByIds)); } catch { /* malformed column: no blockers */ }
+  const title = db.prepare("SELECT title FROM task_cards WHERE id = ?");
+  const { blockedByIds: _raw, ...rest } = row;
+  return { ...rest, blockedBy: ids.map((b) => (title.get(b) as { title: string } | undefined)?.title ?? b).sort() };
 }
 
 const CARD_FIELD_LABELS: Array<[keyof CardSnapshot, string]> = [
-  ["title", "title"], ["columnName", "column"], ["priority", "priority"], ["dueDate", "due"], ["assignee", "assignee"], ["archived", "archived"],
+  ["title", "title"], ["priority", "priority"], ["dueDate", "due"], ["assignee", "assignee"], ["archived", "archived"],
 ];
 
 function cardChanges(id: string, before: CardSnapshot | undefined, after: CardSnapshot | undefined): ToolChange[] {
   if (!before || !after) return [];
   const out: ToolChange[] = [];
+  // Compare the column by id: two columns in a project may share a name.
+  if (before.columnId !== after.columnId) out.push({ id, title: after.title, field: "column", from: before.columnName || undefined, to: after.columnName || undefined });
   for (const [key, field] of CARD_FIELD_LABELS) {
-    if (before[key] !== after[key]) out.push({ id, title: after.title, field, from: before[key] || undefined, to: after[key] || undefined });
+    if (before[key] !== after[key]) out.push({ id, title: after.title, field, from: (before[key] as string) || undefined, to: (after[key] as string) || undefined });
+  }
+  if (before.blockedBy.join("\u0000") !== after.blockedBy.join("\u0000")) {
+    out.push({ id, title: after.title, field: "blocked by", from: before.blockedBy.join(", ") || undefined, to: after.blockedBy.join(", ") || undefined });
   }
   return out;
 }
@@ -269,8 +284,9 @@ export async function runConsolidatedTool(
       }
       const notes = ids.map((id) => noteRow(db, id)).filter(Boolean).map((n) => ({ id: n!.id, title: n!.title }));
       // A single note keeps the {id,title} top-level shape so chips can open it.
-      const renamed = oldTitle !== undefined && notes[0] && notes[0].title !== oldTitle
-        ? { changes: [{ id: notes[0].id, title: notes[0].title, field: "title", from: oldTitle, to: notes[0].title } satisfies ToolChange] }
+      // Renames report old and new title (an empty list when the title was already that); other fields are not measured.
+      const renamed = oldTitle !== undefined && notes[0]
+        ? { changes: notes[0].title !== oldTitle ? [{ id: notes[0].id, title: notes[0].title, field: "title", from: oldTitle, to: notes[0].title } satisfies ToolChange] : [] }
         : {};
       return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...renamed } : { updated: notes, ...renamed }, errors);
     }
@@ -325,7 +341,8 @@ export async function runConsolidatedTool(
       }
       const cards = ids.map((id) => cardRow(db, id)).filter(Boolean).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.columnId }));
       const changes = ids.flatMap((id) => cardChanges(id, beforeCards.get(id), cardSnapshot(db, id)));
-      const extra = changes.length > 0 ? { changes } : {};
+      // A measured call always reports its list (empty = nothing changed), so a no-op is not shown as a change.
+      const extra = ids.some((id) => beforeCards.get(id)) ? { changes } : {};
       return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...extra } : { updated: cards, ...extra }, errors);
     }
 

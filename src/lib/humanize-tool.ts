@@ -181,7 +181,7 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
       : { pre: "Read the knowledge graph" };
     case "get_today": return typeof args.date === "string" && args.date ? { pre: "Read the Today brief for", obj: args.date } : { pre: "Read the Today brief" };
     case "get_idea_flow": return { pre: "Read the idea flow" };
-    case "get_user_writing_style": return { pre: args.mode === "full" ? "Read the full writing style guide" : "Read the writing style" };
+    case "get_user_writing_style": return { pre: "Read the writing style" };
     case "update_user_writing_style": return typeof args.section === "string" && args.section.trim()
       ? { pre: "Added to writing style", obj: short(args.section) }
       : { pre: "Added to writing style" };

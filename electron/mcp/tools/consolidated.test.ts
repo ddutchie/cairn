@@ -111,15 +111,28 @@ describe("consolidated toolset", () => {
     expect(getCardById(db, "k1")!.assignee).toBe("Alex");
   });
 
-  it("update_tasks reports what changed (from → to) and omits unchanged fields", async () => {
-    const res = await run("update_tasks", { cardIds: ["k1", "k2"], columnType: "in_progress", priority: "high" });
-    expect(res.changes).toEqual(expect.arrayContaining([
+  it("update_tasks reports what changed (from → to), and only that", async () => {
+    // k1 already has priority medium; asking for medium again must not appear as a change.
+    const res = await run("update_tasks", { cardIds: ["k1", "k2"], columnType: "in_progress", priority: "medium" });
+    expect(res.changes).toEqual([
       { id: "k1", title: "Login bug", field: "column", from: "c-todo", to: "c-prog" },
-      { id: "k1", title: "Login bug", field: "priority", from: "medium", to: "high" },
+      { id: "k2", title: "Refresh tokens", field: "column", from: "c-todo", to: "c-prog" },
+    ]);
+    const mixed = await run("update_tasks", { cardIds: ["k1"], priority: "high", columnType: "in_progress" });
+    expect(mixed.changes).toEqual([{ id: "k1", title: "Login bug", field: "priority", from: "medium", to: "high" }]);
+    // A measured no-op reports an explicit empty list.
+    expect((await run("update_tasks", { cardIds: ["k1"], priority: "high" })).changes).toEqual([]);
+  });
+
+  it("update_tasks reports a move between same-named columns and a blocker change", async () => {
+    createColumn(db, { id: "c-twin", projectId: "p", workspaceId: "ws", name: "c-todo", type: "todo", order: 9 });
+    const moved = await run("update_tasks", { cardIds: ["k1"], columnId: "c-twin" });
+    expect(moved.changes).toEqual([{ id: "k1", title: "Login bug", field: "column", from: "c-todo", to: "c-todo" }]);
+    const blocked = await run("update_tasks", { cardIds: ["k2"], blockedBy: ["k1"], priority: "high" });
+    expect(blocked.changes).toEqual(expect.arrayContaining([
+      { id: "k2", title: "Refresh tokens", field: "priority", from: "medium", to: "high" },
+      { id: "k2", title: "Refresh tokens", field: "blocked by", from: undefined, to: "Login bug" },
     ]));
-    // A card that is already at the target priority reports no priority change.
-    const again = await run("update_tasks", { cardIds: ["k1"], priority: "high" });
-    expect(again.changes).toBeUndefined();
   });
 
   it("update_notes reports a rename", async () => {

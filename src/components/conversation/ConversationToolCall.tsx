@@ -61,9 +61,9 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
   // card uses, built from the arguments alone); connector calls and Cairn tools
   // without a view show their arguments as a key/value tree, not a JSON preview.
   const cairn = !connector && isCairnTool(toolCall.name);
-  const cairnPreview = cairn ? cairnToolView({ ...toolCall, ok: true, output: undefined }) : null;
+  const cairnPreview = cairn ? cairnToolView({ ...toolCall, ok: true, output: undefined }, { pending: true }) : null;
   const preview = connector || cairn ? "" : approvalPreview(toolCall.name, toolCall.args);
-  const connectorArgs = (connector || (cairn && !cairnPreview)) && toolCall.args && Object.keys(toolCall.args).length > 0
+  const connectorArgs = (connector || cairn) && toolCall.args && Object.keys(toolCall.args).length > 0
     ? JSON.stringify(redactTranscriptValue(toolCall.args), null, 2)
     : undefined;
   const scope = approvalScopeLabel(toolCall.name);
@@ -112,6 +112,13 @@ function ApprovalCard({ toolCall, sessionId, connectors }: ConversationToolCallP
         <span className="text-2xs font-semibold tracking-wide text-[var(--warning)]">{risk}</span>
       </div>
       {cairnPreview && <div data-testid="approval-cairn-view" className="max-h-56 overflow-auto">{cairnPreview}</div>}
+      {/* A Cairn tool's preview is a summary; the full (redacted) arguments stay one click away so nothing is approved unseen. */}
+      {cairnPreview && connectorArgs && (
+        <details data-testid="approval-cairn-args" className="mt-1">
+          <summary className="cursor-pointer select-none text-2xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">All arguments</summary>
+          <div className="max-h-48 overflow-auto"><ToolPayload label="Arguments" value={connectorArgs} /></div>
+        </details>
+      )}
       {(connector || (cairn && !cairnPreview)) && (connectorArgs
         ? <div className="max-h-48 overflow-auto"><ToolPayload label="Arguments" value={connectorArgs} /></div>
         : <p data-testid="approval-no-args" className="mt-1.5 text-2xs text-[var(--text-tertiary)]">No arguments.</p>)}
