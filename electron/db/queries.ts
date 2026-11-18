@@ -162,3 +162,7 @@ export * from "./embeddings-queries";
 
 export * from "./user-style-queries";
 export * from "./change-feed-queries";
+
+// ── People layer (docs/plans/people-layer.md) ─
+
+export * from "./people-queries";

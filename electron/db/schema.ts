@@ -13,6 +13,7 @@
  */
 
 import type Database from "better-sqlite3";
+import { PEOPLE_ADDED_COLUMNS, PEOPLE_SYNC_TABLES, PEOPLE_SYNC_TABLES_SQL } from "../../shared/sync/people-schema";
 
 /**
  * The tables replicated by Device Sync, as of migrations v25/v26. Hoisted to a
@@ -1740,6 +1741,68 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_session_emb_ws ON session_embeddings(workspace_id, model);
     `);
   },
+
+  // v66: People layer schema (docs/plans/people-layer.md, W1; sync protocol 5).
+  // Five synced tables (DDL shared with mobile in shared/sync/people-schema.ts)
+  // with the standard capture triggers, two synced columns on notes and
+  // task_cards, and two device-local tables: the read-time profile cache
+  // (Slack title/timezone/status, never copied into synced data) and the index
+  // of checklist lines rebuilt from note bodies. Nothing writes these until the
+  // `people` flag is on; shipping the tables first means every device knows
+  // them before the first row is synced.
+  (db) => {
+    db.exec(PEOPLE_SYNC_TABLES_SQL);
+    for (const { table, column, ddl } of PEOPLE_ADDED_COLUMNS) {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    }
+    const suppressGuard = `(SELECT COALESCE((SELECT value FROM sync_state WHERE key='suppress'),'0')) = '0'`;
+    for (const t of PEOPLE_SYNC_TABLES) {
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_sync_${t}_ins AFTER INSERT ON ${t}
+        WHEN ${suppressGuard}
+        BEGIN
+          INSERT INTO sync_pending (entity, entity_id, op) VALUES ('${t}', NEW.id, 'put');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_sync_${t}_upd AFTER UPDATE ON ${t}
+        WHEN ${suppressGuard}
+        BEGIN
+          INSERT INTO sync_pending (entity, entity_id, op)
+          VALUES ('${t}', NEW.id, CASE WHEN NEW.deleted_at IS NOT NULL THEN 'delete' ELSE 'put' END);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_sync_${t}_del AFTER DELETE ON ${t}
+        WHEN ${suppressGuard}
+        BEGIN
+          INSERT INTO sync_pending (entity, entity_id, op) VALUES ('${t}', OLD.id, 'delete');
+        END;
+      `);
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_notes_meeting ON notes(meeting_id);
+      CREATE INDEX IF NOT EXISTS idx_cards_owner ON task_cards(owner_person_id);
+
+      CREATE TABLE IF NOT EXISTS person_profile_cache (
+        person_id  TEXT NOT NULL PRIMARY KEY,
+        source     TEXT NOT NULL,
+        payload    TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        error      TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS note_action_items (
+        note_id         TEXT NOT NULL,
+        line_key        TEXT NOT NULL,
+        owner_text      TEXT,
+        owner_person_id TEXT,
+        text            TEXT NOT NULL,
+        done            INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (note_id, line_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_action_items_owner ON note_action_items(owner_person_id);
+    `);
+  },
 ];
 
 export function applySchema(db: Database.Database): void {
@@ -1811,6 +1874,8 @@ function ensureColumns(db: Database.Database): void {
   // tracking — additive, so a guard rather than a new migration is enough.
   ensure("llm_usage", "cache_read_tokens", "cache_read_tokens INTEGER NOT NULL DEFAULT 0");
   ensure("llm_usage", "cache_creation_tokens", "cache_creation_tokens INTEGER NOT NULL DEFAULT 0");
+  // v66 people layer — columns on existing synced tables.
+  for (const { table, column, ddl } of PEOPLE_ADDED_COLUMNS) ensure(table, column, ddl);
 }
 
 /** Test hook: apply the base schema and migrations up to `version` only, to build an older DB. */

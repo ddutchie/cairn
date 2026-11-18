@@ -24,6 +24,12 @@ export const SYNCABLE_TABLES = [
   "tags",
   "notes",
   "task_cards",
+  // People layer (protocol 5). DDL in ./people-schema.ts; no FKs.
+  "people",
+  "person_edges",
+  "meetings",
+  "meeting_attendees",
+  "note_mentions",
   "user_style",
   // Manifest only (hash + embed name); bytes travel as blobs, see ./attachments.ts.
   "attachments",
