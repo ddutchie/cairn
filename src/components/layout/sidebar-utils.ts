@@ -34,8 +34,32 @@ export function modKey(isMac = isMacPlatform()): string {
  * views shift down). Overview (⌘1) and Notes (⌘2) are fixed and not listed.
  * Shared by the page.tsx key handler and the sidebar labels so they can't drift.
  */
-export const NUMBERED_VIEWS = ["board", "calendar", "flow", "agent", "calendar-all", "graph", "insights", "automations", "usage"] as const;
+export const NUMBERED_VIEWS = ["board", "calendar", "flow", "agent", "calendar-all", "people", "graph", "insights", "automations", "usage"] as const;
 export type NumberedView = (typeof NUMBERED_VIEWS)[number];
+
+/**
+ * Views hidden on first run (see FIRST_RUN_HIDDEN_VIEWS in
+ * store/slices/ui-layout.ts, which applies them once per install). Here so
+ * the site exporter can compute the default sidebar without the store.
+ */
+export const FIRST_RUN_HIDDEN = ["people"] as const;
+
+/** Feature flags that gate whole views (People: `feature.people`). */
+export interface ViewFlags {
+  peopleEnabled: boolean;
+}
+
+/**
+ * The hidden-view set with flag-gated views added: a view whose flag is off
+ * counts as hidden everywhere (sidebar, shortcuts, settings lists), whatever
+ * the user's own preference says.
+ */
+export function gateHiddenViews(
+  hidden: { has(view: string): boolean },
+  flags: ViewFlags,
+): { has(view: string): boolean } {
+  return { has: (view: string) => hidden.has(view) || (view === "people" && !flags.peopleEnabled) };
+}
 
 /**
  * The numbered views that are currently visible, in shortcut order. The

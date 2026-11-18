@@ -27,6 +27,7 @@ import { registerToolsHandlers } from "./ipc/tools-handlers";
 import { registerToolBuilderHandlers } from "./ipc/tool-builder-handlers";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git-handlers";
+import { registerPeopleHandlers } from "./ipc/people-handlers";
 import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
 import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
@@ -205,6 +206,7 @@ app.whenReady().then(async () => {
   // Register IPC handlers before boot sequence (boot calls reindexNotes,
   // runAllPendingMigrations, etc. which need handler-level model resolution).
   registerIpcHandlers(ctx);
+  registerPeopleHandlers(ctx);
   registerAgentHandlers(ctx);
   registerSpellcheckHandlers();
   registerToolsHandlers(ctx);

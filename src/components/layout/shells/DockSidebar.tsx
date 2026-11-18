@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useCallback } from "react";
-import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive } from "lucide-react";
+import { FileText, Kanban, Workflow, Terminal, Hash, BarChart2, GitBranch, CalendarDays, Zap, Settings, Search, MessageSquare, Layers, Plus, FolderOpen, Activity, ChevronLeft, ChevronDown, ChevronRight, Check, Copy, Archive, Users } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
@@ -13,7 +13,7 @@ import { isView } from "@/lib/views";
 import { reportIpcError } from "@/lib/ipc/client";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectIcon, WorkspaceIcon } from "@/lib/workspace-icons";
-import { countOpenCardsByProject, modKey, buildViewShortcutMap } from "../sidebar-utils";
+import { countOpenCardsByProject, modKey, buildViewShortcutMap, gateHiddenViews } from "../sidebar-utils";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
 import { RunningChatPins, usePinnedChatThreads } from "./RunningChatPins";
 import { ProjectCreateForm } from "../sidebar/ProjectCreateForm";
@@ -48,6 +48,7 @@ export function DockSidebar() {
     toggleChat,
     cards,
     hiddenViews,
+    peopleEnabled,
     chatOpen,
     searchOpen,
     createProject,
@@ -73,6 +74,7 @@ export function DockSidebar() {
       toggleChat: s.toggleChat,
       cards: s.cards,
       hiddenViews: s.hiddenViews,
+      peopleEnabled: s.peopleEnabled,
       chatOpen: s.chatOpen,
       searchOpen: s.searchOpen,
       createProject: s.createProject,
@@ -97,7 +99,12 @@ export function DockSidebar() {
   const activeMetrics = useProjectMetrics(activeProjectId);
   const mod = useMemo(() => modKey(), []);
   // Same ordering as the page.tsx key handler — Overview ⌘1, Notes ⌘2, then ⌘3+.
-  const shortcutMap = useMemo(() => buildViewShortcutMap(hiddenViews as { has(view: string): boolean }), [hiddenViews]);
+  const shortcutMap = useMemo(
+    () => buildViewShortcutMap(gateHiddenViews(hiddenViews as { has(view: string): boolean }, { peopleEnabled })),
+    [hiddenViews, peopleEnabled],
+  );
+  // People sits behind the `feature.people` flag as well as the user's own switch.
+  const showPeople = peopleEnabled && !hiddenViews.has("people");
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -237,6 +244,7 @@ export function DockSidebar() {
             <IconButton label="Today" tooltip={todayHint} tooltipSide="right" onClick={() => setView("today")} className={cn("size-auto p-2", isView(activeView, "today") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}>{todayIcon(15)}</IconButton>
             <IconButton label="Automations" data-tutorial="automations-view" tooltipSide="right" onClick={() => setView("automations")} className={cn("size-auto p-2", isView(activeView, "automations") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Zap size={15} /></IconButton>
             {hiddenViews.has("calendar") && <IconButton label="Calendar" tooltipSide="right" onClick={() => setView("calendar-all")} className={cn("size-auto p-2", isView(activeView, "calendar-all") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><CalendarDays size={15} /></IconButton>}
+            {showPeople && <IconButton label="People" tooltip={`People (${shortcutMap.get("people") ?? ""})`} tooltipSide="right" onClick={() => setView("people")} className={cn("size-auto p-2", isView(activeView, "people") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Users size={15} /></IconButton>}
             {!hiddenViews.has("graph") && <IconButton label="Knowledge Graph" tooltipSide="right" onClick={() => setView("graph")} className={cn("size-auto p-2", isView(activeView, "graph") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={15} /></IconButton>}
             {!hiddenViews.has("insights") && <IconButton label="Insights" data-tutorial="insights-view" tooltipSide="right" onClick={() => setView("insights")} className={cn("size-auto p-2", isView(activeView, "insights") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={15} /></IconButton>}
             {!hiddenViews.has("usage") && <IconButton label="Usage" tooltipSide="right" onClick={() => setView("usage")} className={cn("size-auto p-2", isView(activeView, "usage") ? "text-[var(--accent)] bg-[var(--accent-dim)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={15} /></IconButton>}
@@ -498,6 +506,7 @@ export function DockSidebar() {
                     <CalendarDays size={13} /><span>Calendar</span><span className="ml-auto text-2xs text-[var(--text-tertiary)]">all</span>
                   </button>
                   )}
+                  {showPeople && <button onClick={() => setView("people")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "people") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Users size={13} /><span>People</span></button>}
                   {!hiddenViews.has("graph") && <button onClick={() => setView("graph")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "graph") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><GitBranch size={13} /><span>Knowledge Graph</span></button>}
                   {!hiddenViews.has("insights") && <button data-tutorial="insights-view" onClick={() => setView("insights")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "insights") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><BarChart2 size={13} /><span>Insights</span></button>}
                   {!hiddenViews.has("usage") && <button onClick={() => setView("usage")} className={cn("flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors", isView(activeView, "usage") ? "bg-[var(--surface-2)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-2)]")}><Activity size={13} /><span>Usage</span></button>}

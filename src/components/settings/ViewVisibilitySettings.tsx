@@ -5,11 +5,11 @@
  * Overview and Notes are always visible and shown as locked.
  */
 
-import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Terminal, MessageSquare, Lock } from "lucide-react";
+import { Kanban, CalendarDays, Workflow, GitBranch, BarChart2, Terminal, MessageSquare, Lock, Users } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { ToggleableView } from "@/store/slices/ui";
-import { SettingsGroup, Toggle } from "./shared";
+import { SettingsGroup, SettingsRow, Toggle } from "./shared";
 
 interface ViewOption {
   view: ToggleableView;
@@ -28,10 +28,29 @@ const VIEW_OPTIONS: ViewOption[] = [
   { view: "chat",     label: "AI Chat",          description: "In-app AI chat panel",            icon: <MessageSquare size={13} /> },
 ];
 
+/** Listed only while the People layer flag (`feature.people`) is on. */
+const PEOPLE_OPTION: ViewOption = {
+  view: "people", label: "People", description: "People you work with, their meetings and notes", icon: <Users size={13} />,
+};
+
+/**
+ * The People layer is unreleased: its switch shows in development builds, and
+ * anywhere once the flag is on (so it can be turned off again). Release users
+ * with the flag off see nothing.
+ */
+const SHOW_PEOPLE_PREVIEW = process.env.NODE_ENV === "development";
+
 export function ViewVisibilitySettings() {
-  const { hiddenViews, toggleViewVisibility } = useCairnStore(useShallow((s) => ({ hiddenViews: s.hiddenViews, toggleViewVisibility: s.toggleViewVisibility })));
+  const { hiddenViews, toggleViewVisibility, peopleEnabled, setPeopleEnabled } = useCairnStore(useShallow((s) => ({
+    hiddenViews: s.hiddenViews,
+    toggleViewVisibility: s.toggleViewVisibility,
+    peopleEnabled: s.peopleEnabled,
+    setPeopleEnabled: s.setPeopleEnabled,
+  })));
+  const options = peopleEnabled ? [...VIEW_OPTIONS, PEOPLE_OPTION] : VIEW_OPTIONS;
 
   return (
+    <>
     <SettingsGroup
       title="Visible views"
       description="Overview and Notes are always shown. Hidden views also drop out of the ⌘3–⌘9 shortcuts."
@@ -54,7 +73,7 @@ export function ViewVisibilitySettings() {
       ))}
 
       {/* Toggleable rows */}
-      {VIEW_OPTIONS.map(({ view, label, description, icon }) => {
+      {options.map(({ view, label, description, icon }) => {
         const visible = !hiddenViews.has(view);
         return (
           <div
@@ -73,5 +92,18 @@ export function ViewVisibilitySettings() {
         );
       })}
     </SettingsGroup>
+    {(SHOW_PEOPLE_PREVIEW || peopleEnabled) && (
+      <div className="mt-8">
+        <SettingsGroup
+          title="People (preview)"
+          description="Unreleased. Turns on the People layer for this workspace; the People view then appears above."
+        >
+          <SettingsRow label="People layer" description="People, meetings and relationships">
+            <Toggle checked={peopleEnabled} onChange={(on) => void setPeopleEnabled(on)} label="Toggle the People layer" />
+          </SettingsRow>
+        </SettingsGroup>
+      </div>
+    )}
+    </>
   );
 }

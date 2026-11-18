@@ -16,6 +16,12 @@
  */
 
 import type { NoteSnippet } from "../notes/search";
+import type {
+  Meeting, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, PersonEdge, PersonPatch, PersonRelation,
+} from "../types/people";
+import type {
+  AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
+} from "../types/people-view";
 import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../today/brief";
 import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
@@ -303,6 +309,37 @@ export interface IpcContract {
   "db:flow:edge:delete": { writes: true; args: [req: { id: string }]; result: void };
   /** OpenGraph title/description for a url node (fetched in main, no CORS). */
   "db:flow:url:fetch": { args: [req: { url: string }]; result: UrlMetadata };
+
+  // ── People layer (behind the `feature.people` flag) ─────────────────────
+  /** The `feature.people` flag (`app_kv`); off until launch. */
+  "people:flag:get": { args: []; result: boolean };
+  /** Switch the flag; returns the new value. Not a workspace-data write. */
+  "people:flag:set": { args: [req: { on: boolean }]; result: boolean };
+  "db:people:list": { args: [filter: PeopleListFilter]; result: Person[] };
+  /** The list with each person's last and next meeting. */
+  "db:people:summaries": { args: [filter: PeopleListFilter]; result: PersonSummary[] };
+  "db:people:get": { args: [req: { id: string }]; result: Person | null };
+  /** Person page read model: relations with names, timeline, persona note. Null when deleted. */
+  "db:people:page": { args: [req: { id: string }]; result: PersonPage | null };
+  "db:people:create": { writes: true; args: [input: PersonCreateInput]; result: Person };
+  "db:people:update": { writes: true; args: [req: { id: string; patch: PersonPatch }]; result: Person };
+  /** Tombstones the person, their edges, attendance and mentions; clears card owners. */
+  "db:people:delete": { writes: true; args: [req: { id: string }]; result: void };
+  "db:people:relations": {
+    args: [req: { personId: string; statuses?: PeopleStatus[]; includeEnded?: boolean }];
+    result: PersonRelation[];
+  };
+  /** Idempotent per (type, source, target); revives a removed edge. */
+  "db:people:edge:add": { writes: true; args: [input: PersonEdgeInput]; result: PersonEdge };
+  "db:people:edge:update": { writes: true; args: [req: { id: string; patch: PersonEdgePatch }]; result: PersonEdge };
+  "db:people:edge:remove": { writes: true; args: [req: { id: string }]; result: void };
+  /** Confirmed meetings the person attended, newest first. */
+  "db:people:meetings": { args: [req: { personId: string; limit?: number }]; result: Meeting[] };
+  "db:people:mentionNoteIds": { args: [req: { personId: string }]; result: string[] };
+  "db:people:ownedCardIds": { args: [req: { personId: string }]; result: string[] };
+  "db:people:attendees": { args: [req: { meetingId: string; statuses?: PeopleStatus[] }]; result: MeetingAttendee[] };
+  "db:people:attendee:add": { writes: true; args: [input: AttendeeInput]; result: MeetingAttendee };
+  "db:people:attendee:remove": { writes: true; args: [req: { meetingId: string; personId: string }]; result: void };
 
   // ── Heartbeat automations ────────────────────────────────────────────────
   "db:automation:list": { args: [req: { workspaceId: string }]; result: Automation[] };
@@ -966,6 +1003,25 @@ const CHANNELS: ChannelRecord = {
   "db:flow:edge:create": "write",
   "db:flow:edge:delete": "write",
   "db:flow:url:fetch": "read",
+  "people:flag:get": "read",
+  "people:flag:set": "read",
+  "db:people:list": "read",
+  "db:people:summaries": "read",
+  "db:people:get": "read",
+  "db:people:page": "read",
+  "db:people:create": "write",
+  "db:people:update": "write",
+  "db:people:delete": "write",
+  "db:people:relations": "read",
+  "db:people:edge:add": "write",
+  "db:people:edge:update": "write",
+  "db:people:edge:remove": "write",
+  "db:people:meetings": "read",
+  "db:people:mentionNoteIds": "read",
+  "db:people:ownedCardIds": "read",
+  "db:people:attendees": "read",
+  "db:people:attendee:add": "write",
+  "db:people:attendee:remove": "write",
   "db:automation:list": "read",
   "db:automation:get": "read",
   "db:automation:create": "write",

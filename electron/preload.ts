@@ -14,6 +14,7 @@ import { workspaceApi } from "./preload/workspace";
 import { notesApi } from "./preload/notes";
 import { boardApi } from "./preload/board";
 import { flowApi } from "./preload/flow";
+import { peopleApi } from "./preload/people";
 import { graphApi } from "./preload/graph";
 import { automationsApi } from "./preload/automations";
 import { chatApi } from "./preload/chat";
@@ -33,6 +34,7 @@ const api = {
   ...notesApi,
   ...boardApi,
   ...flowApi,
+  ...peopleApi,
   ...graphApi,
   ...automationsApi,
   ...chatApi,

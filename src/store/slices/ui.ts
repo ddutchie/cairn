@@ -65,6 +65,9 @@ export {
 export {
   type ToggleableView,
   HIDDEN_VIEWS_KEY,
+  FIRST_RUN_HIDDEN_VIEWS,
+  FIRST_RUN_HIDDEN_APPLIED_KEY,
+  applyFirstRunHiddenViews,
   SEEN_FEATURES_KEY,
   FAVORITE_MODELS_KEY,
   DEFAULT_CHAT_PANEL_WIDTH,
