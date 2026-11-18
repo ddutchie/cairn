@@ -169,7 +169,7 @@ Calendar's overdue banner (`OverdueTray`) keeps a faint danger tint with the sta
 | Automations | Aligned: toolbar title, item cards with a light lift. |
 | Settings | Aligned: display-face section title. |
 | Knowledge Graph, Insights | Toolbar unified with Usage and Automations through `ViewToolbar`; canvases untouched. |
-| Board | Working surface. Card priority is a dot before the title, not a left stripe. |
+| Board | Working surface. Card priority is four pips at the bottom right, filled by level (shape plus colour), not a left stripe. |
 | Calendar | Working surface. Overdue chips are neutral with a danger hairline. |
 | Notes, Flow, Agent | Working surfaces, checked and left as they are: they are editors, canvases and chat, with no stat tiles, stripes or fills that break the rules. |
 

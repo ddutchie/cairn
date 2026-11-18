@@ -56,6 +56,26 @@ function shortDate(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
+const PRIORITY_LEVEL: Record<string, number> = { low: 1, medium: 2, high: 3, urgent: 4 };
+
+/** Four pips filled by level, so the level shows in shape and not only colour. */
+function PriorityPips({ priority }: { priority: string }) {
+  const level = PRIORITY_LEVEL[priority] ?? 0;
+  if (level === 0) return null;
+  const label = `${priority.charAt(0).toUpperCase()}${priority.slice(1)} priority`;
+  return (
+    <span className="inline-flex items-center gap-[3px]" role="img" aria-label={label} title={label}>
+      {[1, 2, 3, 4].map((n) => (
+        <span
+          key={n}
+          className="w-[5px] h-[5px] rounded-full"
+          style={{ background: n <= level ? PRIORITY_CSS_COLORS[priority] : "var(--border)" }}
+        />
+      ))}
+    </span>
+  );
+}
+
 const CardContent = React.memo(function CardContent({ card, expanded, canExpand, descRef, onToggleExpand }: CardContentProps) {
   const getTagById = useCairnStore((s) => s.getTagById);
   const isDone = useCairnStore((s) => s.columns.find((c) => c.id === card.columnId)?.type === "done");
@@ -69,16 +89,9 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
   return (
     <>
       <div className="flex flex-col gap-2">
-        {/* Title, led by a priority dot (a dot, not a stripe: see docs/design-language.md) */}
-        <p className="flex items-baseline gap-2 text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
-          <span
-            className="w-1.5 h-1.5 rounded-full shrink-0 translate-y-[-1px]"
-            style={{ backgroundColor: PRIORITY_CSS_COLORS[card.priority] }}
-            title={`${card.priority} priority`}
-            role="img"
-            aria-label={`${card.priority} priority`}
-          />
-          <span>{card.title}</span>
+        {/* Title */}
+        <p className="text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
+          {card.title}
         </p>
 
         {/* Description — lightweight wikilink preview when collapsed, full
@@ -155,23 +168,24 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
           <CardAgentBadge cardId={card.id} />
         </div>
 
-        {/* Meta — assignee / linked notes */}
-        {(card.assignee || card.linkedNoteIds.length > 0) && (
-          <div className="flex items-center gap-2 pt-1.5 border-t border-[var(--border-subtle)] min-w-0">
-            {card.assignee && (
-              <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] min-w-0" title={card.assignee}>
-                <User size={10} className="flex-shrink-0" />
-                <span className="truncate">{card.assignee}</span>
-              </span>
-            )}
+        {/* Meta — assignee / linked notes / priority pips (bottom right) */}
+        <div className="flex items-center gap-2 pt-1.5 border-t border-[var(--border-subtle)] min-w-0">
+          {card.assignee && (
+            <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] min-w-0" title={card.assignee}>
+              <User size={10} className="flex-shrink-0" />
+              <span className="truncate">{card.assignee}</span>
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-2 flex-shrink-0">
             {card.linkedNoteIds.length > 0 && (
-              <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] ml-auto flex-shrink-0" title={`${card.linkedNoteIds.length} linked note${card.linkedNoteIds.length === 1 ? "" : "s"}`}>
+              <span className="flex items-center gap-1 text-xs text-[var(--text-tertiary)]" title={`${card.linkedNoteIds.length} linked note${card.linkedNoteIds.length === 1 ? "" : "s"}`}>
                 <FileText size={11} />
                 {card.linkedNoteIds.length}
               </span>
             )}
-          </div>
-        )}
+            <PriorityPips priority={card.priority} />
+          </span>
+        </div>
 
         {/* Tags — bottom, smaller */}
         {tags.length > 0 && (
