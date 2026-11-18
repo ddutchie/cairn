@@ -81,13 +81,25 @@ The What's New modal (`src/components/layout/NewFeatureModal.tsx`) is generated 
 
 **Condensing housekeeping**: one card per minor. When a new minor ships (e.g. `v2.6.0`), condense the previous minor's cards into a single `v2.5.x` entry — stable `id` `"v2.5.x"`, `version` `"v2.5.x"` (the generator accepts the `.x` suffix), a short "Cairn 2.5 — Highlights" title, and one `"Prefix: rest"` highlight per feature. Ancient majors can be merged into a single `v1.x` card covering the whole line. Condensed cards are never auto-shown (they aren't the newest minor); they only appear when the user browses What's New from Settings (forceOpen).
 
+### Marketing site sync (cairn-site, sibling checkout)
+
+The static site renders from generated sources — never hand-edit generated regions (markers `NAV`/`TABLE`/`ROWS`/`PAGENAV`/`HEAD`/`HEADER`/`VIEWS`):
+
+1. `node scripts/export-site-data.js > /tmp/site-data.json` — app tool inventory (`TOOL_SCHEMAS` + `toolCategory`) and view labels/shortcuts (computed from `NUMBERED_VIEWS` exactly like the app's shortcut handler).
+2. Diff it against the site's `docs/_tools.json` (kinds matter only for MCP-listed tools; chat-only descriptions are site-tuned copy) and `docs/_views.json`. New/removed tools or shortcut-order changes mean the site needs a copy update.
+3. On the site: update `_tools.json` / `_views.json` (+ `_nav.json` for new pages), run `node sync-site.mjs` (and `--check` in CI), regenerate screenshots with `npm run screenshots` here (the fixture seeds Today/usage/repo-tree data; output lands in `../cairn-site/assets/screenshots/`).
+4. Update the site's `SITE-SYNC.md` (version + touched pages + log row).
+
+Test-side rule: every bridge path the typed clients (`src/lib/ipc/*`) address must exist on BOTH page-script mocks (`tests/fixtures/ipc-mock.ts`, `tests/fixtures/screenshot-fixture.ts`) — enforced by `src/test-utils/ipc-mock-parity.test.ts`, which derives required paths from the client sources. When you add an IPC channel, extend the mocks in the same change.
+
 ## Views and navigation
 
 | View | Key | Component |
 |------|-----|-----------|
 | Overview | `⌘1` | `ProjectOverview` |
 | Notes | `⌘2` | `NotesView` |
-| Extra views | `⌘3`–`⌘9` | Sidebar order over visible views (`NUMBERED_VIEWS` in `layout/sidebar-utils.ts`; default: Board `KanbanBoard`, Calendar, Idea Flow `IdeaFlowView`, Agent, Knowledge Graph `KnowledgeGraphView` — Force + Radial only, Insights `InsightsView` — all analytics canvases, Automations, Usage). The sidebar's single Calendar entry reopens this-project or all-projects, whichever was used last; when the project calendar is hidden, the sidebar shows an all-projects Calendar button instead (it always opens `calendar-all`, whatever scope was last used) and `calendar-all` takes the number; and Usage (eighth by default) only reaches ⌘9 when an earlier view is hidden. Hide views in Settings → Sidebar & views to compress |
+| Today | Sidebar (above Automations) | `TodayView` (own entry `docs/today.html` on the site) |
+| Extra views | `⌘3`–`⌘9` | Sidebar order over visible views (`NUMBERED_VIEWS` in `layout/sidebar-utils.ts`; default: Board `KanbanBoard`, Calendar, Idea Flow `IdeaFlowView`, Agent, Knowledge Graph `KnowledgeGraphView` — Force + Radial only, Insights `InsightsView` — all analytics canvases, Automations, Usage). The sidebar's single Calendar entry reopens this-project or all-projects, whichever was used last; when the project calendar is hidden, the sidebar shows an all-projects Calendar button instead (it always opens `calendar-all`, whatever scope was last used) and `calendar-all` takes the number; and Usage (eighth by default) only reaches ⌘9 when an earlier view is hidden. The site's shortcuts table (`docs/_views.json`, generated from this order — see "Marketing site sync") must match. Hide views in Settings → Sidebar & views to compress |
 | Settings | — | `SettingsView` |
 
 `activeView` union: `"overview" | "notes" | "board" | "flow" | "graph" | "insights" | "chat" | "search" | "settings"` (plus `"calendar"`, `"calendar-all"`, `"automations"`, `"usage"` — see `ToggleableView`)

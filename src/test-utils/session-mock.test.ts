@@ -49,6 +49,8 @@ const EXPECTED_METHODS = [
   "listApprovalGrants",
   "deleteApprovalGrant",
   "clearApprovalGrants",
+  "forkSession",
+  "setPermissionPreset",
 ];
 
 function evaluateEmbeddedFactory(): Record<string, (...args: never[]) => unknown> {

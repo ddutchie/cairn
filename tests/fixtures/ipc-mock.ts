@@ -211,6 +211,13 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     hasData:               () => Promise.resolve(true),
     changes:               { get: () => Promise.resolve(null) },
     command:               { list: () => Promise.resolve([]), create: noop, update: noop, delete: noop },
+
+    // ── Extended coverage (parity with preload API; see ipc-mock-parity.test.ts) ──
+    git: { status: () => Promise.resolve({ branch: "main", ahead: "0", behind: "0", hasUpstream: false, defaultBranch: "main", staged: [], unstaged: [], untracked: [] }), branches: () => Promise.resolve({ current: "main", branches: [] }), checkout: noop, stage: noop, unstage: noop, commit: () => Promise.resolve({ ok: true }), push: noop, log: () => Promise.resolve([]), diff: () => Promise.resolve(""), diffBranch: () => Promise.resolve(""), diffFile: () => Promise.resolve(""), stash: noop, createPr: () => Promise.resolve(null), prStatus: () => Promise.resolve(null), discard: noop },
+    embeddings: { getSettings: () => Promise.resolve(null), saveSettings: noop, status: () => Promise.resolve(null), needsReindex: () => Promise.resolve(false), reindex: noop, stop: noop, search: () => Promise.resolve([]), projections: () => Promise.resolve([]), recomputeProjections: noop, models: { install: noop, list: () => Promise.resolve([]), remove: noop, setDefault: noop, onProgress: makeListener("embeddings.models.onProgress") } },
+    sync: { status: () => Promise.resolve({ state: "disabled", pending: 0, conflicts: 0, lastSyncAt: null, connected: false }), pendingBreakdown: () => Promise.resolve(null), onStatus: makeListener("sync.onStatus"), listConflicts: () => Promise.resolve([]), resolveConflict: noop, activity: () => Promise.resolve([]), listRestorable: () => Promise.resolve([]), restoreNote: noop, repairNoteFile: noop, getFolder: () => Promise.resolve(null), selectFolder: () => Promise.resolve(null), clearFolder: noop, now: () => Promise.resolve(Date.now()), peerProtocols: () => Promise.resolve([]) },
+    runtime: { status: () => Promise.resolve(null), stop: noop, onProgress: makeListener("runtime.onProgress"), embeddings: { ensureStarted: noop, install: noop, remove: noop, setDefault: noop, models: () => Promise.resolve([]), status: () => Promise.resolve(null), onProgress: makeListener("runtime.embeddings.onProgress") }, sandboxStatus: () => Promise.resolve(null), listCommands: () => Promise.resolve([]), executeCommand: noop, toolsInventory: () => Promise.resolve([]), systemPromptPreview: () => Promise.resolve(""), codingPromptPreview: () => Promise.resolve("") },
+    registry: { fetch: () => Promise.resolve([]), refresh: () => Promise.resolve([]), fetchProviders: () => Promise.resolve([]), fetchAutomations: () => Promise.resolve([]), fetchChatThemes: () => Promise.resolve([]), fetchPersonalities: () => Promise.resolve([]), refreshProviders: noop, refreshAutomations: noop, refreshChatThemes: noop, refreshPersonalities: noop },
     needsWorkspaceSetup:   () => Promise.resolve(needsSetup),
 
     // ── Workspace ─────────────────────────────────────────────
@@ -225,7 +232,9 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       list:   () => Promise.resolve(snap.projects),
       create: noop,
       update: noop,
+      updateSettings: noop,
       delete: noop,
+      merge:  noop,
     },
 
     // ── Notes ─────────────────────────────────────────────────
@@ -236,6 +245,11 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       delete:       noop,
       moveToFolder: noop,
       moveToProject: noop,
+      bodies:       (ids) => Promise.resolve(snap.notes.filter((n) => ids.indexOf(n.id) >= 0).map((n) => ({ id: n.id, content: n.content }))),
+      search:       () => Promise.resolve([]),
+      searchSnippets: () => Promise.resolve([]),
+      backlinks:    () => Promise.resolve([]),
+      clearChangeMark: noop,
     },
 
     // ── Board columns ─────────────────────────────────────────
@@ -255,6 +269,8 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       addBlocker:    noop,
       removeBlocker: noop,
       ready:         () => Promise.resolve(snap.cards),
+      moveToProject: noop,
+      archiveDone:   () => Promise.resolve([]),
     },
 
     // ── Idea Flow ─────────────────────────────────────────────
@@ -277,9 +293,18 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     chat: {
       threads:        () => Promise.resolve([]),
       messages:       () => Promise.resolve([]),
+      sessionMessages: () => Promise.resolve([]),
       upsertThread:   noop,
       addMessage:     noop,
       deleteThread:   noop,
+      clearThreadMessages: noop,
+      clearAllThreads: noop,
+      compactThread:  () => Promise.resolve(null),
+      summarizeTranscript: () => Promise.resolve(null),
+      popOut:         noop,
+      popoutReady:    noop,
+      popIn:          noop,
+      requestPopIn:   noop,
       stream:         () => {},
       abort:          () => {},
       onToken:        makeListener("chat.onToken"),
@@ -287,6 +312,10 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       onToolCall:     makeListener("chat.onToolCall"),
       onToolCallDone: makeListener("chat.onToolCallDone"),
       onUsage:        makeListener("chat.onUsage"),
+      onChatPoppedIn: makeListener("chat.onChatPoppedIn"),
+      onChatPoppedOutClosed: makeListener("chat.onChatPoppedOutClosed"),
+      onChatRequestPopIn: makeListener("chat.onChatRequestPopIn"),
+      onChatSessionUpdated: makeListener("chat.onChatSessionUpdated"),
     },
 
     // ── Knowledge graph ───────────────────────────────────────
@@ -296,9 +325,26 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       recompute: noop,
     },
 
+    // ── Usage (empty in smoke runs; screenshots seed real series) ──
+    usage: {
+      overview: () => Promise.resolve(null),
+      recent:   () => Promise.resolve([]),
+      threads:  () => Promise.resolve([]),
+      clear:    noop,
+      setPricing: noop,
+      setNoTemperatureModels: noop,
+      setEndpointProtocols: noop,
+    },
+
     // ── AI helpers ────────────────────────────────────────────
     ai: {
       generatePrd: noop,
+      generateCommitMessage: () => Promise.resolve(""),
+      generatePrDescription: () => Promise.resolve(""),
+      explainArchitecture: () => Promise.resolve(""),
+      fetchModels: () => Promise.resolve([]),
+      fetchKeyInfo: () => Promise.resolve(null),
+      probeProtocols: () => Promise.resolve([]),
     },
 
     // ── App helpers ───────────────────────────────────────────
@@ -307,6 +353,8 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     llmLeftovers:          () => Promise.resolve([]),
     clearLlmLeftovers:     noop,
     revealNote:            noop,
+    exportNotePdf:         noop,
+    exportMarkdown:        noop,
     openExternal:          () => {},
     uploadAsset:           () => Promise.resolve({ assetUrl: "" }),
     revealAssets:          noop,
@@ -339,6 +387,30 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     spellcheckAddWord:     noop,
     platform:              "darwin",
 
+    // ── Automations (empty in smoke runs) ───────────────────────
+    automation: {
+      list: () => Promise.resolve([]),
+      create: noop, update: noop, delete: noop,
+      runs: () => Promise.resolve([]), recentRuns: () => Promise.resolve([]),
+      runningCount: () => Promise.resolve(0), runNow: () => Promise.resolve({ runId: "run-mock" }),
+      preview: () => Promise.resolve({ nextRunAt: new Date(Date.now()+3600*1000).toISOString() }),
+      approve: noop, pendingApprovals: () => Promise.resolve({ approvals: [] }),
+      budget: { get: () => Promise.resolve({ budgetUsd: null, spentTodayUsd: 0 }), set: noop },
+      folder: () => Promise.resolve({ folder: "/mock/automations/mock" }),
+      syncFromManifest: noop, runLog: () => Promise.resolve({ log: {} }), files: () => Promise.resolve([]),
+      env: { get: () => Promise.resolve([]), set: () => Promise.resolve([]), delete: () => Promise.resolve([]) },
+      checkRequirements: () => Promise.resolve([]),
+      onRunEvent: makeListener("automation:run"),
+      today: {
+        get: () => Promise.resolve({ automationId: null, enabled: false, time: "07:00", weekdaysOnly: true, nextRunAt: null, running: false, activity: null, brief: null, marks: { done: [], edits: {} }, lastError: null, settings: { excludedProjects: [], excludedApps: [], webApps: [] }, projects: [], facts: [], apps: [] }),
+        enable: noop, disable: noop, settings: noop,
+        mark: () => Promise.resolve({ done: [], edits: {} }),
+        history: () => Promise.resolve([]), snapshot: () => Promise.resolve(null),
+        run: () => Promise.resolve({ skipped: true }), route: () => Promise.resolve({ target: null, tools: [] }),
+        export: () => Promise.resolve(null), onUpdated: makeListener("today:updated"),
+      },
+    },
+
     // ── Auto-updater ──────────────────────────────────────────
     updater: {
       onUpdateAvailable: makeListener("updater.onUpdateAvailable"),
@@ -350,6 +422,13 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     onDbChanged:               makeListener("onDbChanged"),
     onMcpUnreadCount:          makeListener("onMcpUnreadCount"),
     markMcpNotificationsRead:  noop,
+    notification: {
+      list:       () => Promise.resolve([]),
+      count:      () => Promise.resolve(0),
+      markRead:   noop,
+      markAllRead: noop,
+      clear:      noop,
+    },
 
     // ── AI write-lock events (note editor + db:changed override) ──
     onAiWriteStarted:          makeListener("onAiWriteStarted"),
@@ -358,6 +437,16 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
     // ── Agent ─────────────────────────────────────────────────
     agent: {
       getCodingAgents:  () => Promise.resolve([]),
+      revealPath:       noop,
+      searchFiles:      () => Promise.resolve([]),
+      codebaseOverview: () => Promise.resolve(null),
+      codebaseGraph:    () => Promise.resolve(null),
+      codebaseModuleGraph: () => Promise.resolve(null),
+      codebaseFileSymbols: () => Promise.resolve([]),
+      codebaseRelations: () => Promise.resolve([]),
+      codebaseReindex:  noop,
+      codebaseReindexFile: noop,
+      modelTerminals:   () => Promise.resolve([]),
       saveCodingAgent:  noop,
       deleteCodingAgent: noop,
       setDefaultAgent:  noop,
@@ -407,6 +496,18 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       onOauthCallback: makeListener("tools.onOauthCallback"),
       onAuthRequired: makeListener("tools.onAuthRequired"),
     },
+
+    // ── User writing style ──────────────────────────────────────
+    getUserStyle: () => Promise.resolve(null),
+    saveUserStyle: noop,
+    clearUserStyle: noop,
+    generateUserStyle: () => Promise.resolve(""),
+    generateUserStyleStream: noop,
+    abortUserStyleStream: noop,
+    onUserStyleToken: makeListener("userStyle.onUserStyleToken"),
+    onUserStyleToolCall: makeListener("userStyle.onUserStyleToolCall"),
+    onUserStyleToolCallDone: makeListener("userStyle.onUserStyleToolCallDone"),
+    onUserStyleDone: makeListener("userStyle.onUserStyleDone"),
 
     // ── Secrets (OS keychain) ─────────────────────────────────
     secrets: {

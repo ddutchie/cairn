@@ -57,5 +57,7 @@ export function buildSessionMock({ noop, makeListener }: SessionMockHelpers) {
     listApprovalGrants: () => Promise.resolve([]),
     deleteApprovalGrant: noop,
     clearApprovalGrants: noop,
+    forkSession: (..._args: unknown[]) => Promise.resolve({ sessionId: "mock-fork" }),
+    setPermissionPreset: noop,
   };
 }
