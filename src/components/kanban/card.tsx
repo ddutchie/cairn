@@ -68,16 +68,17 @@ const CardContent = React.memo(function CardContent({ card, expanded, canExpand,
 
   return (
     <>
-      {/* Priority indicator */}
-      <div
-        className="absolute top-0 left-0 w-1 h-full opacity-60"
-        style={{ backgroundColor: PRIORITY_CSS_COLORS[card.priority] }}
-      />
-
-      <div className="pl-2 flex flex-col gap-2">
-        {/* Title */}
-        <p className="text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
-          {card.title}
+      <div className="flex flex-col gap-2">
+        {/* Title, led by a priority dot (a dot, not a stripe: see docs/design-language.md) */}
+        <p className="flex items-baseline gap-2 text-sm font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] leading-snug transition-colors">
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0 translate-y-[-1px]"
+            style={{ backgroundColor: PRIORITY_CSS_COLORS[card.priority] }}
+            title={`${card.priority} priority`}
+            role="img"
+            aria-label={`${card.priority} priority`}
+          />
+          <span>{card.title}</span>
         </p>
 
         {/* Description — lightweight wikilink preview when collapsed, full

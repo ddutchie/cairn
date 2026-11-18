@@ -156,7 +156,7 @@ The language applies to **page-style views**: pages you read and decide from. **
 
 **Toolbar views** (Usage, Automations) open with a compact toolbar and a sans title, like Insights. Their content follows the page rules: display-face panel headings, one raised stat strip, item cards with a light lift.
 
-Calendar's overdue banner (`OverdueTray`) already follows the rules: a faint (6%) danger tint, the status named in words, status colour on the icon and text only. It needs no change.
+Calendar's overdue banner (`OverdueTray`) keeps a faint danger tint with the status in words; its chips are neutral with a danger hairline and the "was Nov 17" line in danger text, so the banner no longer reads as a wall of pink.
 
 ## Status
 
@@ -167,6 +167,8 @@ Calendar's overdue banner (`OverdueTray`) already follows the rules: a faint (6%
 | Usage | Aligned: one raised stat strip with status dots and display numerals, `SURFACE` panels with display-face headings. |
 | Automations | Aligned: toolbar title, item cards with a light lift. |
 | Settings | Aligned: display-face section title. |
-| Board, Notes, Calendar, Flow, Knowledge Graph, Insights, Agent | Working surfaces, out of scope (see Scope). |
+| Board | Working surface. Card priority is a dot before the title, not a left stripe. |
+| Calendar | Working surface. Overdue chips are neutral with a danger hairline. |
+| Notes, Flow, Knowledge Graph, Insights, Agent | Working surfaces, checked and left as they are: they are editors, canvases and chat, with no stat tiles, stripes or fills that break the rules. |
 
 When you align a view, update this table.

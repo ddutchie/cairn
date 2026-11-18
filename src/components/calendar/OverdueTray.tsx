@@ -35,7 +35,7 @@ export function OverdueTray({ cards, onOpenCard }: OverdueTrayProps) {
           <div key={card.id} className="w-44">
             <DraggableChip card={card} overdue onOpen={onOpenCard} />
             {card.dueDate && (
-              <span className="block px-1.5 text-2xs text-[var(--text-tertiary)] leading-tight">
+              <span className="block px-1.5 text-2xs text-[var(--danger)] leading-tight">
                 was {formatDate(card.dueDate)}
               </span>
             )}
