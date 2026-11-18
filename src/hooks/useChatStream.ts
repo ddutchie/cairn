@@ -121,7 +121,7 @@ export function useChatStream(
           if (failure) addMessage(turnThreadId, "system", failure, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined as never);
         };
         // Nothing was produced: only the notice, no empty assistant bubble.
-        if (failure && !snapshot.text.trim() && !snapshot.toolCalls.length && !snapshot.subagents.length) {
+        if (failure && !snapshot.text.trim() && !snapshot.thought?.trim() && !snapshot.toolCalls.length && !snapshot.subagents.length) {
           addFailureNotice();
           clearStagedActions(sessionId);
           onTurnFinishedRef.current?.(turnThreadId);

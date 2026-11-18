@@ -38,4 +38,16 @@ describe("useSessionConversation stop", () => {
     act(() => { result.current.stop(); });
     expect(onTurnEnd).toHaveBeenCalledTimes(1);
   });
+
+  it("also saves a stopped turn that only has reasoning so far", () => {
+    const onTurnEnd = vi.fn();
+    const { result } = renderHook(() => useSessionConversation({ sessionId: "chat-1", adapter: { onTurnEnd } }));
+    act(() => {
+      emit("turn/start");
+      emit("assistant/chunk", { chunk: { type: "reasoning-delta", text: "Thinking it through" } });
+    });
+    act(() => { result.current.stop(); });
+    expect(onTurnEnd).toHaveBeenCalledTimes(1);
+    expect(onTurnEnd.mock.calls[0][1].thought).toBe("Thinking it through");
+  });
 });

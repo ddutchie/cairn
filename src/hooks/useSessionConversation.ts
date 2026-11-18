@@ -439,7 +439,7 @@ export function useSessionConversation({ sessionId, acceptUnscopedEvents = false
     // (to an empty transient). Hand what the stopped turn produced to the adapter first, so its
     // tool calls and partial reply are saved instead of lost ("Send now" stops a running turn).
     const t = transientsRef.current.get(transientKey(id));
-    if (t && (t.tools.length > 0 || t.text.trim() || t.subagents.length > 0)) {
+    if (t && (t.tools.length > 0 || t.text.trim() || t.thought.trim() || t.subagents.length > 0)) {
       adapterRef.current.onTurnEnd?.("aborted", {
         toolCalls: t.tools.map((item) => item.status === "running" ? { ...item, status: "done" as const } : item),
         text: t.text, thought: t.thought, subagents: t.subagents, assistant: t.assistant, stats: t.stats,
