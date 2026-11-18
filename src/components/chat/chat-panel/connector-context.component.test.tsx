@@ -6,6 +6,8 @@ const state = {
   mcpServers: [
     { id: "workiq", name: "workiq", communityId: undefined },
     { id: "lin", name: "linear", communityId: "linear" },
+    // The installer stores the registry entry's display name, not its slug.
+    { id: "gh", name: "my github", communityId: "GitHub" },
   ],
   customServices: [],
 };
@@ -14,7 +16,7 @@ vi.mock("@/store", () => ({ useCairnStore: (sel: (s: typeof state) => unknown) =
 vi.mock("@/lib/ipc/registry", () => ({
   registryClient: {
     fetch: vi.fn(async () => ({
-      manifest: { services: [], mcpServers: [{ id: "linear", iconSvg: "<svg/>", brandColor: "#5E6AD2", definition: { name: "Linear" } }] },
+      manifest: { services: [], mcpServers: [{ id: "linear", iconSvg: "<svg/>", brandColor: "#5E6AD2", definition: { name: "Linear" } }, { id: "github-mcp", iconSvg: "<svg/>", brandColor: "#000", definition: { name: "GitHub" } }] },
     })),
   },
 }));
@@ -28,6 +30,7 @@ describe("useCommunityConnectorMap", () => {
     expect(result.current["mcp__workiq__"]).toMatchObject({ name: "workiq", kind: "mcp", label: undefined });
     await waitFor(() => expect(result.current["mcp__lin__"]?.label).toBe("Linear"));
     expect(result.current["mcp__workiq__"]).toMatchObject({ name: "workiq", kind: "mcp", iconSvg: undefined });
+    expect(result.current["mcp__gh__"]).toMatchObject({ label: "GitHub", iconSvg: "<svg/>" });
     expect(result.current["mcp__lin__"]).toMatchObject({ iconSvg: "<svg/>", brandColor: "#5E6AD2" });
   });
 });

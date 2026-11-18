@@ -128,7 +128,8 @@ export function useChatStream(
           return;
         }
         // The late turn/end of a stopped turn (already saved by stop) arrives empty: no blank bubble.
-        if (!snapshot.text.trim() && !snapshot.toolCalls.length && !snapshot.subagents.length) {
+        // Reasoning and usage count as content: a reasoning-only turn is still saved.
+        if (!snapshot.text.trim() && !snapshot.thought?.trim() && !snapshot.toolCalls.length && !snapshot.subagents.length && !snapshot.assistant?.usage) {
           clearStagedActions(sessionId);
           addFailureNotice();
           onTurnFinishedRef.current?.(turnThreadId);
