@@ -6,7 +6,7 @@ import { COLUMN_COLORS } from "@/lib/constants";
 import { revealNote } from "@/lib/events";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { BoardColumn, Note, TaskCard } from "@/types";
-import { PanelHeading } from "./primitives";
+import { InstrumentCard, PanelHeading, SURFACE } from "@/components/ui/panel";
 import type { FocusFilter } from "./focus";
 
 /** Task flow: open/done cards per column as bars, with the bottleneck ringed. */
@@ -20,7 +20,7 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
   bottleneck: { name: string; count: number } | null;
 }) {
   return (
-    <section>
+    <InstrumentCard>
       <PanelHeading
         title="Task flow"
         note={bottleneck ? `${bottleneck.name} is the bottleneck, ${bottleneck.count} of ${openCards.length} open` : `${openCards.length} open`}
@@ -82,7 +82,7 @@ export function TaskFlowPanel({ flowColumns, focus, filteredCards, allCards, ope
         <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.review }} /> Review</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: COLUMN_COLORS.done }} /> Done</span>
       </div>
-    </section>
+    </InstrumentCard>
   );
 }
 
@@ -94,9 +94,9 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
   wipStatus: string | null;
 }) {
   return (
-    <section>
+    <InstrumentCard>
       <PanelHeading title="Open by priority" />
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-x-4 gap-y-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-2.5">
         {(
           [
             { key: "urgent", label: "Urgent", color: "var(--danger)" },
@@ -106,20 +106,25 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
           ] as const
         ).map(({ key, label, color }) => {
           const n = counts[key as keyof typeof counts] ?? 0;
+          const tinted = n > 0 && key !== "low";
           return (
-            <div key={key} className="min-w-0">
-              <div className="font-display text-3xl leading-none tabular-nums" style={{ color: n > 0 ? "var(--text-primary)" : "var(--text-tertiary)" }}>
+            <div
+              key={key}
+              className="rounded-xl border p-3.5 min-w-0"
+              style={{
+                background: tinted ? `color-mix(in srgb, ${color} 10%, var(--surface))` : "var(--surface-2)",
+                borderColor: tinted ? `color-mix(in srgb, ${color} 55%, var(--border))` : "var(--border-subtle)",
+              }}
+            >
+              <div className="font-display text-3xl leading-none tabular-nums" style={{ color: n > 0 ? (key === "low" ? "var(--text-primary)" : color) : "var(--text-tertiary)" }}>
                 {n}
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] mt-1.5">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />
-                {label}
-              </div>
+              <div className="text-xs text-[var(--text-secondary)] mt-1.5">{label}</div>
             </div>
           );
         })}
       </div>
-      <div className="mt-5 pt-2.5 border-t border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-[var(--text-tertiary)]">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--text-tertiary)]">
         <span>{inProgressCount} in progress</span>
         <span className="text-[var(--text-secondary)]">
           {wipLimit ? (
@@ -134,7 +139,7 @@ export function PriorityPanel({ counts, inProgressCount, wipLimit, wipStatus }: 
           )}
         </span>
       </div>
-    </section>
+    </InstrumentCard>
   );
 }
 
@@ -157,7 +162,7 @@ export function NotesSummaryPanel({ notesCount, pinnedNotes, recentNotes }: {
     </li>
   );
   return (
-    <section>
+    <section className={SURFACE}>
       <PanelHeading
         title="Notes"
         note={`${notesCount} total${pinnedNotes.length > 0 ? `, ${pinnedNotes.length} pinned` : ""}`}

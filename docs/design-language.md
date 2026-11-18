@@ -9,9 +9,9 @@ Mechanical rules (colour tokens, the type scale, elevation, primitives, lint) li
 Cairn is a calm place to decide what to do next. The interface should read like a well-set page, not a dashboard.
 
 1. **One memorable thing per view.** Today's is the headline and the cairn stack. Overview's is the project name. Everything else stays quiet so that one thing lands.
-2. **Say a number once.** If a figure already appears in a heading, a legend or a progress bar, do not repeat it in a tile. Both reference pages lost a stat row for this reason.
+2. **Say a number once per view.** If a figure already appears in a heading, a legend or a progress bar, do not repeat it in a tile. Today lost its stat row for this reason; Overview keeps a strip but each tile says something the others do not.
 3. **Structure is information.** A rule, a border or a dot has to mean something (a section starts here, this is overdue). If it only decorates, remove it.
-4. **Open before boxed.** Sections sit on the page with a rule under the heading. Only individual items (a decision, a draft, a task) get a surface of their own. A box around a group of boxes is the thing to avoid.
+4. **Open lists, raised instruments.** Prose and lists of items (decisions, drafts, tasks) sit on the page under a heading with a rule. *Instruments* (a timeline, a progress ring, a flow chart, a radar) get a raised surface, because they are things you look at rather than read. A box around a group of boxes is the thing to avoid.
 
 ## Tokens
 
@@ -70,23 +70,37 @@ Rules:
 
 `CollapsibleSection` is the same heading with a chevron, for reference sections that can fold. Today's `LaneBox` is the same shape plus a small tone dot that matches the cairn layer it belongs to.
 
+### Surfaces: items, instruments, reference
+
+| Kind | Examples | Treatment |
+|---|---|---|
+| Open list | Today's lanes, Needs attention | Heading with a rule, items beneath. No box around the list. |
+| Item | A decision, a draft, a task | `rounded-lg`, `--border-subtle`, `--surface-2` (or tinted for status), `shadow-elev-1`. |
+| Instrument | Progress ring, task flow, priority, radar, the day timeline | `InstrumentCard` (`src/components/ui/panel.tsx`): `rounded-2xl`, `--surface`, `--border`, lifts and tilts toward the pointer. Wide instruments that hold interactive hover targets (the Today timeline) use `SURFACE` and do not tilt. |
+| Reference | Notes summary, shipped, at risk, runs, sessions, activity | `SURFACE`: `rounded-xl`, `--surface`, `--border`, `shadow-elev-1`, heading inside. |
+
 ### Item card
-A rounded-lg block: `border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3`. A meta line on top (kind, status in colour, where it lives), the title, then a quiet detail line. Hover moves the surface one step (`hover:bg-[var(--surface-3)]`). No lift, no tilt, no shadow. Clickable cards use `FOCUS_RING`.
+A rounded block: `border border-[var(--border-subtle)] bg-[var(--surface-2)] p-3 shadow-elev-1`. A meta line on top (kind, status in colour, where it lives), the title, then a quiet detail line. Hover moves the surface one step (`hover:bg-[var(--surface-3)]`). Items do not tilt. Clickable cards use `FOCUS_RING`.
+
+On a page about *status* (Overview's Needs attention), an item may carry a soft tint of its status colour (about 7%) and a small icon tile in that colour, plus the label in text. Keep the tint faint and always say the status in words.
 
 The one item that matters most gets a larger display-face title and an accent-tinted surface (Today's focus decision). Only one per view.
 
 ### Hero
-Headline, lede, then actions. Whatever sits beside it is one illustration or one card, not a row of stats. If a count matters, it belongs in the lede ("Two decisions need you…") or in a legend.
+Headline, lede, then actions. Whatever sits beside it is one illustration or one instrument, not a row of stats. If a count matters, it belongs in the lede ("Two decisions need you…") or in a legend. A display-face italic suffix after a title (Overview's "— backlog holds 13") is allowed when it states the single most useful fact about the page; use it once and never to repeat what the page already shows.
 
 ### Progress
-The number once in the display face, a sentence about what it is made of, a thin solid bar, the dates. No ring plus numeral plus percent.
+An instrument: the ring holds the percentage, the display numeral holds the count ("5 of 43"), a thin bar and the dates sit beneath. Each says something different. A soft accent wash and glow are welcome here and nowhere else.
+
+### At a glance strip
+One raised strip, four tiles divided by hairlines. Each tile: a status dot (not a stripe), a short label, a display-face numeral, one line of detail. No two tiles, and no tile and the hero, may show the same number.
 
 ### Folding
 Anything that restates information already visible (Today's block list under the day strip) folds behind a text button with `aria-expanded`, and stays one keyboard action away.
 
 ## Colour carries status
 
-Status colour (`--danger`, `--warning`, `--success`, `--info`) goes on **text or a small dot**, next to a word that says the same thing (Overdue, Due today). It never fills a card, tints a gradient or stripes a tile. Colour is never the only signal.
+Status colour (`--danger`, `--warning`, `--success`, `--info`) goes on **text, a small dot or an icon tile**, next to a word that says the same thing (Overdue, Due today). A whole item may take a faint tint (see Item card) but never a saturated fill, and a tile never gets a coloured stripe. Colour is never the only signal.
 
 The accent marks the primary action and the thing to look at first. It is not a decoration.
 
@@ -94,7 +108,7 @@ The accent marks the primary action and the thing to look at first. It is not a 
 
 - Motion answers an action: expanding, opening an earlier brief, marking done.
 - Nothing animates on load except one deliberate moment per view (the stack dropping in when a new brief arrives).
-- No hover lift, tilt or glow on cards. Respect `prefers-reduced-motion`.
+- Instruments may lift and tilt toward the pointer (`InstrumentCard`); items, lists and text never do. `prefers-reduced-motion` turns the tilt off.
 
 ## Copy
 
@@ -106,15 +120,15 @@ The accent marks the primary action and the thing to look at first. It is not a 
 
 ## Things we removed on purpose
 
-Do not bring these back without a reason that is specific to the view:
+Do not bring these back without a reason specific to the view:
 
-- Rows of identical stat tiles, especially with a coloured top stripe.
+- Rows of identical stat tiles with coloured top stripes, and any tile that repeats a number already on the page.
 - A ring, a numeral and a percent all showing the same value.
-- Gradient washes and radial glows on cards.
-- Cards inside a bordered box inside the page.
-- Hover tilt (`TiltCard` is deleted).
-- Tinted danger/warning fills on whole cards.
+- Gradient washes and glows on anything that is not an instrument.
+- A bordered box around a group of already-bordered items.
 - Icon chips beside every section title.
+- Hover tilt on lists, items or text.
+- Developer notes in the UI ("pills are labeled + color…").
 
 ## Where the code lives
 
@@ -123,12 +137,11 @@ Do not bring these back without a reason that is specific to the view:
 | Tokens, type scale, elevation | `src/app/globals.css` |
 | Buttons, `FOCUS_RING` | `src/components/ui/button.tsx` |
 | Other primitives | `src/components/ui/` |
-| `PanelHeading`, `CollapsibleSection` | `src/components/layout/project-overview/primitives.tsx` |
+| `PanelHeading`, `SURFACE`, `InstrumentCard`, `TiltCard` | `src/components/ui/panel.tsx`, `src/components/ui/tilt-card.tsx` |
+| `CollapsibleSection` (a `SURFACE` with a foldable body) | `src/components/layout/project-overview/primitives.tsx` |
 | Today view and its parts | `src/components/today/` |
 | Overview and its panels | `src/components/layout/project-overview/` |
 | Screenshot fixture (rich mock data, including a week of Today history) | `tests/fixtures/screenshot-fixture.ts` |
-
-`PanelHeading` currently lives in the Overview folder. When a third view adopts it, move it to `src/components/ui/` and export it from there.
 
 ## Checking your work
 
@@ -141,8 +154,8 @@ Do not bring these back without a reason that is specific to the view:
 
 | View | State |
 |---|---|
-| Today | Reference. |
-| Overview | Aligned. Remaining: the radar's six measure tiles and the Activity feed's per-row dates are still the old style. |
+| Today | Reference for prose pages: open lists, one raised instrument (the day), items with a light lift. |
+| Overview | Reference for instrument pages: raised instruments, at-a-glance strip, status-tinted attention items. Remaining: the radar's six measure tiles and the Activity feed's per-row dates are still the old style. |
 | Board, Notes, Calendar, Flow, Knowledge Graph, Insights, Agent, Automations, Usage, Settings | Not audited. Start with Automations and Usage: they are the closest in shape (lists, stats, status) and will show first whether the item card and section heading cover real cases. |
 
 When you align a view, update this table.

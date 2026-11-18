@@ -29,6 +29,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Toggle } from "@/components/ui/toggle";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Tooltip } from "@/components/ui/tooltip";
+import { PanelHeading, SURFACE } from "@/components/ui/panel";
 import { useContainerDims, useFontScale, useNow } from "@/lib/viz/hooks";
 import { TodayActPanel, type TodayActTarget } from "./today-act-panel";
 import { CairnStack, MiniStack, TODAY_SEEN_EVENT, markTodaySeen, todaySeenAt, type StackLane } from "./today-stack";
@@ -891,10 +892,7 @@ function ProjectsSection({ facts }: { facts: TodayProjectFacts[] }) {
   const open = (projectId: string) => { setActiveProject(projectId); setView("board"); };
   return (
     <section className="mt-9">
-      <div className="flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
-        <h3 className="font-display text-base">Your projects</h3>
-        <span className="text-2xs text-[var(--text-tertiary)]">From your boards, notes and automations, worked out by Cairn</span>
-      </div>
+      <PanelHeading title="Your projects" note="From your boards, notes and automations, worked out by Cairn" />
       <div className="grid gap-2.5 grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3">
         {facts.map((f) => {
           // Card lists stop at a few; the count is the full one.
@@ -986,16 +984,14 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
 
   return (
     <section id="today-lane-day" className="mt-8">
-      <div className="flex items-baseline gap-2.5 pb-2 mb-3 border-b border-[var(--border-subtle)]">
-        <h3 className="font-display text-base">Your day</h3>
-        <span className="text-2xs text-[var(--text-tertiary)]">07:00–19:00, hover a block for details</span>
-      </div>
       <div
         className={cn(
-          "rounded-lg transition-[outline]",
-          flash && "outline outline-2 outline-offset-8 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
+          SURFACE,
+          "rounded-2xl p-4 md:p-[18px] transition-[outline]",
+          flash && "outline outline-2 outline-offset-2 outline-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
         )}
       >
+        <PanelHeading title="Your day" note="07:00–19:00, hover a block for details" />
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
           <span className="text-base font-semibold">{formatMinutes(day.freeLeft)} free</span>
           <span className="text-xs text-[var(--text-tertiary)]">
@@ -1201,7 +1197,7 @@ function NeedCard({ item, focus, done, draftFor, onToggle, onAct, edited, onEdit
   return (
     <div
       className={cn(
-        "rounded-lg border p-2.5",
+        "rounded-lg border p-2.5 shadow-elev-1",
         focus && !done ? "border-[color-mix(in_srgb,var(--accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,var(--surface-2))]" : "border-[var(--border-subtle)] bg-[var(--surface-2)]",
         done && "opacity-45",
       )}
@@ -1406,7 +1402,7 @@ function DraftCard({ item, done, onDismiss, onAct, slot, edited, onEdit }: {
     crumb: `Prepared for you · ${kindLabel}`,
   };
   return (
-    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5">
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5 shadow-elev-1">
       <ItemMeta kind={edited ? `${kindLabel} · edited` : kindLabel} source={item.target ?? item.source} projectId={item.projectId} since={item.since}>
         <IconButton label="Discard draft" size="sm" onClick={onDismiss} className="-my-1 ml-auto shrink-0"><X size={12} /></IconButton>
       </ItemMeta>

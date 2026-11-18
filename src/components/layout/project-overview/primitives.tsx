@@ -4,28 +4,9 @@ import React from "react";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
+import { PanelHeading, SURFACE } from "@/components/ui/panel";
 
 // Shared UI primitives used across the Project Overview sections.
-
-/**
- * The heading every Overview block shares: display face, a hairline rule
- * beneath, an optional quiet note, and an optional action on the right. It is
- * the same heading the Today lanes use (see docs/design-language.md).
- */
-export function PanelHeading({ title, note, action, className }: {
-  title: React.ReactNode;
-  note?: React.ReactNode;
-  action?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn("flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]", className)}>
-      <h2 className="font-display text-base">{title}</h2>
-      {note && <span className="text-2xs text-[var(--text-tertiary)] min-w-0 truncate">{note}</span>}
-      {action && <div className="ml-auto shrink-0">{action}</div>}
-    </div>
-  );
-}
 
 function HeadingAction({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -63,7 +44,7 @@ export function CollapsibleSection({
 }) {
   const bodyId = React.useId();
   return (
-    <section>
+    <section className={SURFACE}>
       <div className="flex items-baseline gap-2 pb-2 mb-3 border-b border-[var(--border-subtle)]">
         <Tooltip content={collapsed ? `Expand ${title}` : `Collapse ${title}`}>
           <button

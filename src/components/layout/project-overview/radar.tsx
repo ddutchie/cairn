@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useFontScale } from "@/lib/viz/hooks";
-import { PanelHeading } from "./primitives";
+import { InstrumentCard, PanelHeading } from "@/components/ui/panel";
 
 type RadarAxis = { key: string; label: string; short: string; value: number; color: string };
 
@@ -40,7 +40,7 @@ export function ProjectHealthRadar({
   });
 
   return (
-    <section>
+    <InstrumentCard>
       <PanelHeading title="Project health" note="Six measures, each scored 0 to 1" />
 
       <div className="flex flex-col @3xl:flex-row gap-8 items-center @3xl:items-start">
@@ -106,7 +106,7 @@ export function ProjectHealthRadar({
           </p>
         </div>
       </div>
-    </section>
+    </InstrumentCard>
   );
 }
 
