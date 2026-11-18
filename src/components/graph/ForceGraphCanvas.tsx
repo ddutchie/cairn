@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
+import { GRAPH_NODE_TYPES } from "../../../shared/types/domain";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import * as d3 from "d3";
 import type { GraphNode, KnowledgeGraph } from "@/types";
@@ -173,13 +174,13 @@ function positionsOf(nodes: SimNode[]): Map<string, { x: number; y: number }> {
 }
 
 const radiusOf = (n: SimNode) => nodeRadius(n.nodeType);
-const NODE_TYPES = ["project", "note", "card", "tag"] as const;
+const NODE_TYPES = GRAPH_NODE_TYPES;
 /** Largest label font size (screen px, before font scale). */
 const LABEL_MAX_SCREEN_PX = Math.max(...NODE_TYPES.map((t) => labelScreenPx(t)));
 /** Conservative widest label (screen px, before font scale): longest allowed text × ~0.62em per char. */
 const LABEL_MAX_SCREEN_W = Math.max(...NODE_TYPES.map((t) => labelMaxLen(t, true) * labelScreenPx(t) * 0.62));
 /** Largest hit radius any node can have (biggest node radius + 6px slop). */
-const PICK_REACH = Math.max(nodeRadius("project"), nodeRadius("note"), nodeRadius("card"), nodeRadius("tag")) + 6;
+const PICK_REACH = Math.max(...NODE_TYPES.map((t) => nodeRadius(t))) + 6;
 
 /** Node count above which the canvas shades at reduced DPR (see draw). */
 const LARGE_DPR_NODES = 400;

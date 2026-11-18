@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { useLoadGraph } from "@/hooks/useLoadGraph";
-import { filterGraphNodes, filterGraphEdges, nodeTypeColor, EMPTY_GRAPH } from "@/store/slices/graph";
+import { filterGraphNodes, filterGraphEdges, graphNodeNoteId, nodeTypeColor, EMPTY_GRAPH } from "@/store/slices/graph";
+import { GRAPH_NODE_TYPES } from "../../../shared/types/domain";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { NodeTypeChip } from "./NodeTypeChip";
@@ -38,6 +39,14 @@ const EDGE_LEGEND: Array<{ label: string; color: string; dash: boolean }> = [
   { label: "Semantic", color: "var(--text-tertiary)", dash: true },
   { label: "Co-mention", color: "var(--border)", dash: true },
 ];
+
+/** People layer edges, added to the legend only when the graph has people or meetings. */
+const PEOPLE_EDGE_LEGEND: Array<{ label: string; color: string; dash: boolean }> = [
+  { label: "Attended", color: "var(--node-meeting)", dash: false },
+  { label: "Mentions", color: "var(--node-person)",  dash: true },
+];
+
+const PEOPLE_NODE_TYPES: readonly GraphNodeType[] = ["person", "meeting"];
 
 /** Layouts that render the node/edge graph (search, type toggles, legend apply). */
 const isNodeGraphLayout = (l: string) => l === "force" || l === "radial" || l === "3d";
@@ -266,10 +275,14 @@ export function KnowledgeGraphView() {
   const openGraphNode = useCallback((node: GraphNode) => {
     const targetProjectId = node.projectId ?? (node.type === "project" ? node.id : null);
     if (targetProjectId) setActiveProject(targetProjectId);
-    if (node.type === "note") revealNote(setView, node.id);
-    else if (node.type === "card") revealCard(setView, node.id);
+    if (node.type === "card") revealCard(setView, node.id);
     else if (node.type === "project") setView("overview");
-  }, [setActiveProject, setView]);
+    else {
+      // Notes, and a person's persona note or a meeting's notes.
+      const noteId = graphNodeNoteId(node, graphData.edges);
+      if (noteId) revealNote(setView, noteId);
+    }
+  }, [setActiveProject, setView, graphData.edges]);
 
   async function handleRecompute() {
     if (!activeWorkspaceId) return;
@@ -284,7 +297,15 @@ export function KnowledgeGraphView() {
     }
   }
 
-  const ALL_NODE_TYPES: GraphNodeType[] = ["project", "note", "card", "tag"];
+  // Person / meeting toggles appear once the People layer puts such nodes in
+  // the graph (it's off until launch), and stay while one is switched off so
+  // it can be switched back on.
+  const showPeopleTypes = useMemo(
+    () => graphData.nodes.some((n) => n.type === "person" || n.type === "meeting")
+      || PEOPLE_NODE_TYPES.some((t) => !graphFilters.nodeTypes.includes(t)),
+    [graphData.nodes, graphFilters.nodeTypes],
+  );
+  const ALL_NODE_TYPES = showPeopleTypes ? GRAPH_NODE_TYPES : GRAPH_NODE_TYPES.filter((t) => !PEOPLE_NODE_TYPES.includes(t));
 
   function toggleNodeType(t: GraphNodeType) {
     const current = graphFilters.nodeTypes;
@@ -627,7 +648,7 @@ export function KnowledgeGraphView() {
               {/* Edge type legend — force only (sunburst has no cross-edges) */}
               {graphLayout === "force" && (
                 <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-[var(--surface)]/90 border border-[var(--border)] backdrop-blur-sm">
-                  {EDGE_LEGEND.map(({ label, color, dash }) => (
+                  {(showPeopleTypes ? [...EDGE_LEGEND, ...PEOPLE_EDGE_LEGEND] : EDGE_LEGEND).map(({ label, color, dash }) => (
                     <div key={label} className="flex items-center gap-1.5">
                       {dash ? (
                         <svg width="16" height="4" className="flex-shrink-0">
@@ -652,7 +673,7 @@ export function KnowledgeGraphView() {
             <ContextMenuItem onSelect={() => setSelectedGraphNode(menuNode.id)}>
               <Info size={13} /> Show details
             </ContextMenuItem>
-            {menuNode.type !== "tag" && (
+            {menuNode.type !== "tag" && (menuNode.type === "card" || menuNode.type === "project" || graphNodeNoteId(menuNode, graphData.edges)) && (
               <ContextMenuItem onSelect={() => openGraphNode(menuNode)}>
                 <ExternalLink size={13} /> Open {menuNode.type}
               </ContextMenuItem>

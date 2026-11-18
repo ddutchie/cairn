@@ -15,6 +15,8 @@ export function tokenColor(token: ThemeToken, t: Theme): string {
     case "textSecondary": return t.textSecondary;
     case "textTertiary": return t.textTertiary;
     case "nodeProject": return t.nodeProject;
+    case "nodePerson": return t.nodePerson;
+    case "nodeMeeting": return t.nodeMeeting;
   }
 }
 

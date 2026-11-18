@@ -52,3 +52,23 @@ export function stubPersonId(workspaceId: string, key: string): string {
 export function noteMeetingId(workspaceId: string, noteId: string): string {
   return `nmt:${workspaceId}:${noteId}`;
 }
+
+/**
+ * `note_action_items.line_key`: a stable hash of one checklist line. The box
+ * state is left out ("- [x]" and "- [ ]" give the same key) so ticking an item
+ * keeps its key; editing the text makes a new one. Two 32-bit FNV-1a passes
+ * (different seeds) → 16 hex chars. Unique per note only (the table's key is
+ * `(note_id, line_key)`); callers suffix duplicates of one line.
+ */
+export function actionItemLineKey(rawLine: string): string {
+  const s = rawLine.trim().replace(/^([-*+]\s+)\[[ xX]\]/, "$1[ ]").replace(/\s+/g, " ");
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x01000193) ^ (b >>> 15);
+  }
+  const hex = (n: number) => (n >>> 0).toString(16).padStart(8, "0");
+  return hex(a) + hex(b);
+}

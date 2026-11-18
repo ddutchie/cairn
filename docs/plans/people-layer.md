@@ -82,6 +82,33 @@ migration, plus how it's built and released.
    descriptions on the new arguments, so prompts don't change with the flag.
    Not covered: a coding agent's `read`/`grep` on the .md file itself.
    Cost: about 880 tokens per request with the flag on.
+   W4 as built (`feat/people-w4-indexing`):
+   `electron/db/people-indexing.ts` (`indexNotePeople`) runs at the end of
+   `computeAutoRelationships`, for the same notes (every live note on a full
+   pass), and does nothing while the flag is off. Mentions: a `[[…]]` link to a
+   persona note's title (alias/heading/folder forms too, folded match) adds a
+   `wikilink` mention; wikilink mentions that left the body are removed, manual
+   ones never. Action items: only owned checklist lines are indexed,
+   `line_key` = `actionItemLineKey` (`shared/people/ids.ts`, box state left
+   out so ticking keeps the key, `#2` for duplicate lines), owner resolved only
+   on a single match, no stubs. Body lines: `captureNoteMeeting` with
+   `body_line`/`convention`; a body date moves only a meeting the note made
+   (never a calendar meeting); removing the lines removes their attendees, and
+   stubs only a half-typed line made ("Ch" → "Chris") are tombstoned again. Body
+   lines don't rewrite the frontmatter (the watcher would read them back as a
+   second source). Graph: `GraphNodeType`/`GraphEdgeType` live in
+   `shared/types/domain.ts` only (`shared/ui/graph.ts` re-exports), plus
+   `GRAPH_NODE_TYPES`; `getKnowledgeGraph` adds confirmed people, meetings and
+   `attended`, `mentions`, `meeting-note` (meeting → its notes, needed so a
+   meeting links to anything), `reports-to` (report → manager), `mentor`,
+   `partner`, `stakeholder` (`buddy_of` has no graph edge; ended edges are
+   labelled "former"). A project filter keeps only meetings of scoped notes and
+   people linked to shown nodes. The Knowledge Graph shows person/meeting
+   filter chips once such nodes appear (`--node-person`, `--node-meeting`), and
+   "Open" goes to the persona note / meeting note. Known gap: setting a
+   person's persona note or creating a person doesn't re-index other notes
+   until they're saved or a full recompute runs; W3/W5 can call
+   `indexNotePeople` after those writes.
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.

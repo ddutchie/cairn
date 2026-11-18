@@ -9,7 +9,10 @@
  *   - IdeaFlow: explicit directional edges
  *   - relationship_cache: auto-discovered (co-mention, keyword, assignee)
  *
- * Nodes: project | note | card | tag
+ *   - People layer (flag-gated): person / meeting nodes; attended, mentions,
+ *     meeting-note and person-to-person edges
+ *
+ * Nodes: project | note | card | tag | person | meeting
  * Edges carry { type, label, weight? }
  */
 
@@ -21,6 +24,8 @@ import { stripMarkdown } from "../host-shared/text-utils";
 import type { GraphEdge, GraphNode, KnowledgeGraph, NeighbourNode, NeighboursResult } from "../../shared/types/graph";
 import type { GraphQueryFilters } from "../../shared/types/graph";
 import type { GraphEdgeType as EdgeType, GraphNodeType } from "../../shared/types/domain";
+import type { PersonEdgeType } from "../../shared/types/people";
+import { isPeopleEnabled } from "./people-queries";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -362,7 +367,150 @@ export function getKnowledgeGraph(
     }
   }
 
+  // ── 7. People layer (flag-gated) ───────────────────────────────────────────
+  if (isPeopleEnabled(db)) {
+    addPeopleGraph(db, workspaceId, {
+      scoped: !!(projectIds && projectIds.length > 0),
+      noteIds: [...liveNoteIds],
+      wantsType,
+      wantsEdge,
+      nodeSet,
+      addNode,
+      addEdge: (e) => edges.push({ ...e, id: edgeId(e.type, e.source, e.target) }),
+    });
+  }
+
   return { nodes, edges };
+}
+
+// ── People layer ──────────────────────────────────────────────────────────────
+
+/** Stored person-edge type → graph edge type; `buddy_of` has no graph edge. */
+const PERSON_EDGE_GRAPH_TYPE: Partial<Record<PersonEdgeType, EdgeType>> = {
+  manager_of: "reports-to",
+  mentor_of: "mentor",
+  partner: "partner",
+  stakeholder_of: "stakeholder",
+};
+
+interface PeopleGraphCtx {
+  /** A project filter is active: only meetings of scoped notes, and people linked to what's shown. */
+  scoped: boolean;
+  noteIds: string[];
+  wantsType: (t: GraphNodeType) => boolean;
+  wantsEdge: (t: EdgeType) => boolean;
+  nodeSet: Set<string>;
+  addNode: (n: GraphNode) => void;
+  addEdge: (e: Omit<GraphEdge, "id">) => void;
+}
+
+/**
+ * Person and meeting nodes with their edges. Only confirmed people and
+ * attendance show (suggestions live in the People view's tray). Without a
+ * project filter every confirmed person and every meeting of the workspace is
+ * a node; with one, only meetings linked to a scoped note and the people
+ * connected to a node already in the graph.
+ */
+function addPeopleGraph(db: Database.Database, workspaceId: string, ctx: PeopleGraphCtx): void {
+  const { wantsType, wantsEdge, nodeSet, addNode, addEdge } = ctx;
+  const noteIdsJson = JSON.stringify(ctx.noteIds);
+
+  // Meetings: all of the workspace's, or (scoped) those of scoped notes.
+  const meetingNotes = db.prepare(`
+    SELECT id AS note_id, meeting_id FROM notes
+    WHERE meeting_id IS NOT NULL AND id IN (SELECT value FROM json_each(?))
+  `).all(noteIdsJson) as { note_id: string; meeting_id: string }[];
+  const meetings = (ctx.scoped
+    ? db.prepare(`
+        SELECT id, title, starts_at, source FROM meetings
+        WHERE deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))
+      `).all(JSON.stringify([...new Set(meetingNotes.map((m) => m.meeting_id))]))
+    : db.prepare("SELECT id, title, starts_at, source FROM meetings WHERE workspace_id = ? AND deleted_at IS NULL").all(workspaceId)
+  ) as Row[];
+  const meetingIds = new Set(meetings.map((m) => m.id as string));
+
+  const people = db.prepare(`
+    SELECT id, name, relationship, persona_note_id, is_me FROM people
+    WHERE workspace_id = ? AND deleted_at IS NULL AND status = 'confirmed'
+  `).all(workspaceId) as Row[];
+  const peopleById = new Map(people.map((p) => [p.id as string, p]));
+
+  const attendance = (db.prepare(`
+    SELECT a.meeting_id, a.person_id FROM meeting_attendees a
+    JOIN meetings m ON m.id = a.meeting_id AND m.workspace_id = ? AND m.deleted_at IS NULL
+    WHERE a.deleted_at IS NULL AND a.status = 'confirmed'
+  `).all(workspaceId) as { meeting_id: string; person_id: string }[])
+    .filter((a) => meetingIds.has(a.meeting_id) && peopleById.has(a.person_id));
+  const mentions = (db.prepare(`
+    SELECT note_id, person_id FROM note_mentions
+    WHERE deleted_at IS NULL AND note_id IN (SELECT value FROM json_each(?))
+  `).all(noteIdsJson) as { note_id: string; person_id: string }[])
+    .filter((m) => peopleById.has(m.person_id));
+  const personEdges = (db.prepare(`
+    SELECT source_id, target_id, type, label, ended_at FROM person_edges
+    WHERE workspace_id = ? AND deleted_at IS NULL AND status = 'confirmed'
+  `).all(workspaceId) as Row[])
+    .filter((e) => peopleById.has(e.source_id as string) && peopleById.has(e.target_id as string));
+
+  // Which people to show: everyone, or (scoped) those who attended a shown
+  // meeting, are mentioned in a shown note, or whose persona note is shown.
+  let shownPeople: Row[] = people;
+  if (ctx.scoped) {
+    const linked = new Set<string>([...attendance.map((a) => a.person_id), ...mentions.map((m) => m.person_id)]);
+    for (const p of people) if (p.persona_note_id && nodeSet.has(p.persona_note_id as string)) linked.add(p.id as string);
+    shownPeople = people.filter((p) => linked.has(p.id as string));
+  }
+
+  if (wantsType("meeting")) {
+    for (const m of meetings) {
+      addNode({
+        id: m.id as string,
+        type: "meeting",
+        title: m.title as string,
+        workspaceId,
+        meta: { startsAt: m.starts_at as string, meetingSource: m.source as string },
+      });
+    }
+  }
+  if (wantsType("person")) {
+    for (const p of shownPeople) {
+      addNode({
+        id: p.id as string,
+        type: "person",
+        title: p.name as string,
+        workspaceId,
+        meta: { personaNoteId: (p.persona_note_id as string | null) ?? undefined, isMe: p.is_me === 1 },
+      });
+    }
+  }
+
+  const both = (a: string, b: string) => nodeSet.has(a) && nodeSet.has(b);
+  if (wantsEdge("attended")) {
+    for (const a of attendance) {
+      if (both(a.person_id, a.meeting_id)) addEdge({ source: a.person_id, target: a.meeting_id, type: "attended", label: "attended" });
+    }
+  }
+  if (wantsEdge("meeting-note")) {
+    for (const m of meetingNotes) {
+      if (both(m.meeting_id, m.note_id)) addEdge({ source: m.meeting_id, target: m.note_id, type: "meeting-note", label: "notes" });
+    }
+  }
+  if (wantsEdge("mentions")) {
+    for (const m of mentions) {
+      if (both(m.note_id, m.person_id)) addEdge({ source: m.note_id, target: m.person_id, type: "mentions", label: "mentions" });
+    }
+  }
+  for (const e of personEdges) {
+    const type = PERSON_EDGE_GRAPH_TYPE[e.type as PersonEdgeType];
+    if (!type || !wantsEdge(type)) continue;
+    // Stored "manager_of" reads manager → report; the graph edge reads report → manager.
+    const [source, target] = type === "reports-to"
+      ? [e.target_id as string, e.source_id as string]
+      : [e.source_id as string, e.target_id as string];
+    if (!both(source, target)) continue;
+    const label = (e.label as string | null) ?? type.replace("-", " ");
+    addEdge({ source, target, type, label: e.ended_at ? `${label} (former)` : label });
+  }
 }
 
 // ── Neighbour traversal ───────────────────────────────────────────────────────
