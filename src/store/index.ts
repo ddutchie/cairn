@@ -28,7 +28,7 @@ import { appClient } from "@/lib/ipc/app";
 import { changesClient } from "@/lib/ipc/workspace";
 import { hasElectron } from "@/lib/ipc/client";
 import { initChangeFeedCursor, getChangeFeedCursor, setChangeFeedCursor, applyChangesetToArrays, emitChangeFeed, GRAPH_TABLES, type ChangeSet } from "./change-feed";
-import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
+import { DEFAULT_AI_CONFIG, DEFAULT_AGENT_CONFIG, AI_CONFIG_KEY, AGENT_CONFIG_KEY, ACTIVE_PROJECT_KEY, ACTIVE_CHAT_THREAD_KEY, CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, OVERVIEW_DETAIL_KEY, OVERVIEW_DETAILS, type OverviewDetail, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
 import { ipcResult } from "./ipc";
 import { MIN_NOTES_SIDEBAR_WIDTH, MAX_NOTES_SIDEBAR_WIDTH } from "./slices/ui";
 
@@ -471,6 +471,15 @@ function restorePersistedUiPrefs(set: PartialSetter): void {
   const savedOverviewSections = storage.get<Record<string, boolean>>(OVERVIEW_COLLAPSED_KEY);
   if (savedOverviewSections && typeof savedOverviewSections === "object") {
     set({ overviewCollapsedSections: savedOverviewSections });
+  }
+
+  const savedOverviewDetail = storage.get<Record<string, OverviewDetail>>(OVERVIEW_DETAIL_KEY);
+  if (savedOverviewDetail && typeof savedOverviewDetail === "object") {
+    set({
+      overviewDetail: Object.fromEntries(
+        Object.entries(savedOverviewDetail).filter(([, v]) => OVERVIEW_DETAILS.includes(v)),
+      ),
+    });
   }
 
   const savedBoardViews = storage.get<Record<string, BoardView[]>>(BOARD_VIEWS_KEY);

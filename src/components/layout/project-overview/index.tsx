@@ -16,7 +16,7 @@ import { useShallow } from "zustand/react/shallow";
 import { ProjectIcon } from "@/lib/workspace-icons";
 import { cn, formatDate, STATUS_COLORS, getDueDateStatus, parseIsoLocal, formatRelative, plural } from "@/lib/utils";
 import { findBottleneck } from "@/lib/board-bottleneck";
-import { PRIORITY_CSS_COLORS } from "@/lib/constants";
+import { PRIORITY_CSS_COLORS, DEFAULT_OVERVIEW_DETAIL, type OverviewDetail } from "@/lib/constants";
 import { CairnEvents, revealCard } from "@/lib/events";
 import { Badge } from "@/components/ui/badge";
 import { OverflowPill } from "@/components/ui/overflow-pill";
@@ -39,6 +39,8 @@ import { TiltCard } from "./tilt-card";
 import { TaskFlowPanel, PriorityPanel, NotesSummaryPanel } from "./overview-panels";
 import type { FocusFilter } from "./focus";
 import { HeaderToolIcons } from "./header-tool-icons";
+import { DetailSwitch, OverviewGlance, OverviewBrief } from "./detail-views";
+import { attentionItems } from "../../../../shared/overview/attention";
 import { Tooltip } from "@/components/ui/tooltip";
 
 
@@ -57,6 +59,8 @@ export function ProjectOverview() {
     fetchRecentProjectRuns,
     overviewCollapsedSections,
     toggleOverviewSection,
+    overviewDetail,
+    setOverviewDetail,
   } = useCairnStore(
     useShallow((s) => ({
       activeProjectId: s.activeProjectId,
@@ -72,6 +76,8 @@ export function ProjectOverview() {
       fetchRecentProjectRuns: s.fetchRecentProjectRuns,
       overviewCollapsedSections: s.overviewCollapsedSections,
       toggleOverviewSection: s.toggleOverviewSection,
+      overviewDetail: s.overviewDetail,
+      setOverviewDetail: s.setOverviewDetail,
     })),
   );
   const project = projects.find((p) => p.id === activeProjectId);
@@ -79,6 +85,13 @@ export function ProjectOverview() {
   const { handleNewSession: handleNewAgentSession } = useAgentSessionActions();
   const [sessionKind, setSessionKind] = useState<"chat" | "coding">("chat");
   const [focus, setFocus] = useState<FocusFilter>("all");
+  // How much the Overview shows, remembered per project.
+  const detail: OverviewDetail = (activeProjectId && overviewDetail[activeProjectId]) || DEFAULT_OVERVIEW_DETAIL;
+  const changeDetail = (next: OverviewDetail) => {
+    if (!activeProjectId) return;
+    setFocus("all"); // the Focus bar only exists in Full; don't leave a hidden filter on
+    setOverviewDetail(activeProjectId, next);
+  };
 
   useEffect(() => {
     if (!activeWorkspaceId || !activeProjectId) return;
@@ -149,6 +162,8 @@ export function ProjectOverview() {
   const needsAttention = overdueCount + todayCount;
 
   const bottleneck = useMemo(() => findBottleneck(columns, allCards), [columns, allCards]);
+  // Overdue, due today, blocked and stale as one list (Glance and Brief).
+  const attention = useMemo(() => attentionItems(allCards, columns), [allCards, columns]);
 
   // attention queue: overdue (by due asc) → today → upcoming (soonest future)
   const overdueCards = useMemo(() => dueCards.filter((c) => getDueDateStatus(c.dueDate) === "overdue"), [dueCards]);
@@ -281,7 +296,7 @@ export function ProjectOverview() {
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, []);
+  }, [detail]); // the bar only mounts in Full
 
   const doneColId = useMemo(() => columns.find((c) => c.type === "done")?.id, [columns]);
   // columns sorted already via hook; ensure done last for display
@@ -289,6 +304,12 @@ export function ProjectOverview() {
     const order = ["backlog", "todo", "in_progress", "review", "done"];
     return order.indexOf(a.type) - order.indexOf(b.type);
   });
+
+  const openSessions = () => {
+    if (activeChatThreadId) openSession(activeChatThreadId, "chat", "center");
+    else setSessionPresentation("center");
+    setView("chat");
+  };
 
   if (!project || !metrics) {
     return (
@@ -303,11 +324,14 @@ export function ProjectOverview() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative w-full min-w-0 overflow-x-hidden">
-      <div className="@container flex-1 overflow-y-auto overflow-x-hidden w-full min-w-0">
+      <div className="@container flex-1 overflow-y-auto overflow-x-hidden w-full min-w-0 [scrollbar-gutter:stable]">
         <div
           className="max-w-[1240px] mx-auto w-full px-4 pt-4 md:px-7 md:pt-7 pb-8"
           style={{ paddingBottom: bottomBarHeight ? bottomBarHeight + 32 : undefined }}
         >
+          {/* First row, so the switch stays in the same place at every level. */}
+          <DetailSwitch value={detail} onChange={changeDetail} />
+
           {/* ── masthead — card wraps below on narrow, both full-width when stacked ── */}
           <div className="flex flex-col @4xl:flex-row flex-wrap gap-5 items-start mb-4">
             <div className="flex gap-4 items-start min-w-0 flex-1 min-w-[280px] w-full @4xl:w-auto">
@@ -326,10 +350,10 @@ export function ProjectOverview() {
                 <h1 className="text-[1.75rem] md:text-[2rem] font-bold tracking-tight leading-[0.95] truncate">
                   {project.name}{" "}
                   <span className="font-normal italic" style={{ fontFamily: "var(--font-display)", color: "var(--accent)", letterSpacing: "-0.02em" }}>
-                    {bottleneck ? `— ${bottleneck.name.toLowerCase()} holds ${bottleneck.count}` : `— ${instrumentPct}% complete`}
+                    {detail === "glance" ? "" : bottleneck ? `— ${bottleneck.name.toLowerCase()} holds ${bottleneck.count}` : `— ${instrumentPct}% complete`}
                   </span>
                 </h1>
-                {(() => {
+                {detail !== "glance" && (() => {
                   if (project.description?.trim()) {
                     return (
                       <p className="text-sm text-[var(--text-secondary)] mt-2 max-w-[48ch] leading-[1.55] break-words">
@@ -346,7 +370,7 @@ export function ProjectOverview() {
                   })();
                   return <p className="text-sm text-[var(--text-secondary)] mt-2 max-w-[52ch] leading-[1.55] break-words">{ctxLine}</p>;
                 })()}
-                <div className="flex items-center gap-2 flex-wrap mt-3">
+                <div className={cn("flex items-center gap-2 flex-wrap mt-3", detail === "glance" && "hidden")}>
                   <span
                     className={cn(
                       "text-xs font-medium px-2 py-0.5 rounded-full border border-[var(--border)]",
@@ -369,7 +393,7 @@ export function ProjectOverview() {
                   )}
                 </div>
                 {/* at-a-glance: code folder + tool toggles — fills header emptiness, tools no longer need bottom panel */}
-                <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                <div className={cn("flex items-center gap-2 mt-2.5 flex-wrap", detail === "glance" && "hidden")}>
                   {project.codeDirectory ? (
                     <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]">
                       <FolderCode size={12} className="text-[var(--accent)]" />
@@ -393,7 +417,7 @@ export function ProjectOverview() {
             </div>
 
             {/* instrument — lift + tilt on hover */}
-            <TiltCard
+            {detail === "full" && <TiltCard
               className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 relative overflow-hidden w-full @4xl:w-[360px] flex-shrink-0"
               restShadow="0 6px 20px color-mix(in srgb, black 16%, transparent), inset 0 1px 0 color-mix(in srgb, white 4%, transparent)"
               activeShadow="0 14px 36px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 color-mix(in srgb, white 6%, transparent)"
@@ -484,9 +508,51 @@ export function ProjectOverview() {
                 <Button size="lg" onClick={() => setView("board")}>View board</Button>
                 <Button size="lg" variant="accent" onClick={() => setView("insights")}>Open insights</Button>
               </div>
-            </TiltCard>
+            </TiltCard>}
           </div>
 
+          {detail === "glance" && (
+            <OverviewGlance
+              pct={instrumentPct}
+              totalCount={instrumentTotal}
+              openCount={openCards.length}
+              overdueCount={overdueCount}
+              todayCount={todayCount}
+              bottleneck={bottleneck}
+              attention={attention}
+              columns={flowColumns}
+              shippedCount={metrics.shippedCards.length}
+              notesCount={notes.length}
+              radarAxes={radarAxes}
+              setView={setView}
+              onOpenSessions={openSessions}
+              onMore={() => changeDetail("brief")}
+            />
+          )}
+          {detail === "brief" && (
+            <OverviewBrief
+              pct={instrumentPct}
+              doneCount={instrumentDone}
+              totalCount={instrumentTotal}
+              openCount={openCards.length}
+              needsAttention={needsAttention}
+              notesCount={notes.length}
+              bottleneck={bottleneck}
+              attention={attention}
+              columns={flowColumns}
+              cards={allCards}
+              shippedCards={metrics.shippedCards}
+              inProgressCount={inProgressCount}
+              wipLimit={wipLimit}
+              radarAxes={radarAxes}
+              activeSessionId={activeSessionId}
+              setView={setView}
+              onOpenSessions={openSessions}
+              onMore={() => changeDetail("full")}
+            />
+          )}
+
+          {detail === "full" && (<>
           {/* sentinel for pin detection */}
           <div ref={sentinelRef} aria-hidden="true" className="h-px" />
           {/* ── focus bar (sticky) — actually filters content below ── */}
@@ -801,7 +867,7 @@ export function ProjectOverview() {
               icon={<Diamond size={12} />}
               collapsed={isCollapsed("sessions")}
               onToggle={() => toggleSection("sessions")}
-              action={{ label: "Open sessions", onClick: () => { if (activeChatThreadId) openSession(activeChatThreadId, "chat", "center"); else setSessionPresentation("center"); setView("chat"); } }}
+              action={{ label: "Open sessions", onClick: openSessions }}
               collapsedView={<span className="text-xs text-[var(--text-secondary)]">Resume where you left</span>}
             >
               <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-4 md:p-[16px]" style={{ boxShadow: "0 4px 14px color-mix(in srgb, black 18%, transparent)" }}>
@@ -821,6 +887,7 @@ export function ProjectOverview() {
             </CollapsibleSection>
           </div>
         </div>
+          </>)}
 
           {/* ── Empty state ───────────────────────────────────── */}
           {notes.length === 0 && allCards.length === 0 && (
