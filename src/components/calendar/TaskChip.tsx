@@ -42,7 +42,7 @@ export const TaskChip = forwardRef<HTMLButtonElement, TaskChipProps>(function Ta
         "border",
         dragging && "opacity-40",
         overdue
-          ? "bg-[color-mix(in_srgb,var(--danger)_14%,var(--surface))] text-[var(--danger)] border-[color-mix(in_srgb,var(--danger)_30%,transparent)] hover:border-[var(--danger)]"
+          ? "bg-[var(--surface)] text-[var(--text-primary)] border-[color-mix(in_srgb,var(--danger)_35%,transparent)] hover:border-[var(--danger)]"
           : "bg-[var(--surface-2)] text-[var(--text-primary)] border-[var(--border-subtle)] hover:bg-[var(--surface-3)] hover:border-[var(--border)]",
       )}
     >

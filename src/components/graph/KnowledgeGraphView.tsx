@@ -26,6 +26,7 @@ import { EmptyState as EmptyStateView } from "@/components/ui/empty-state";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
 import { neighbourhoodGraph, NEIGHBOURHOOD_HOPS, type NeighbourhoodHops } from "./neighbourhood";
 import { IconButton } from "@/components/ui/icon-button";
+import { ViewToolbar } from "@/components/ui/view-toolbar";
 
 // Edge-type legend. Mirrors the tokens in shared/ui/graph.ts `edgeStyle()`:
 // structural note links = success, wikilinks = accent, semantic = a neutral
@@ -298,7 +299,7 @@ export function KnowledgeGraphView() {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
+      <ViewToolbar>
         {/* Layout toggle */}
         <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden">
           {(
@@ -533,7 +534,7 @@ export function KnowledgeGraphView() {
             </button>
           </Tooltip>
         </span>
-      </div>
+      </ViewToolbar>
 
       {/* Canvas area + detail panel */}
       <div className="flex flex-1 min-h-0 overflow-hidden">

@@ -41,7 +41,7 @@ export function SettingsGroup({
   return (
     <div data-settings-label={title} className="scroll-mt-4 rounded-lg">
       <div className="mb-4">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h2>
+        <h2 className="font-display text-base font-normal text-[var(--text-primary)]">{title}</h2>
         {description && (
           <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{description}</p>
         )}

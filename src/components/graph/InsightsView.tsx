@@ -14,6 +14,7 @@ import { filterGraphNodes, EMPTY_GRAPH } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { ViewTabs, viewTabId } from "@/components/ui/view-tabs";
 import { IconButton } from "@/components/ui/icon-button";
+import { ViewToolbar } from "@/components/ui/view-toolbar";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
 import { TimelineCanvas }  from "@/components/graph/TimelineCanvas";
@@ -150,7 +151,7 @@ export function InsightsView() {
       </ViewTabs>
 
       {/* Controls for the current canvas */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
+      <ViewToolbar>
 
         {/* Project filter */}
         <ProjectScopePicker
@@ -216,7 +217,7 @@ export function InsightsView() {
           </>
         )}
 
-      </div>
+      </ViewToolbar>
 
       {/* Canvas + detail panel */}
       <div className="flex flex-1 min-h-0 overflow-hidden">

@@ -18,6 +18,8 @@ import { USAGE_SOURCE_LABELS, type UsageSource, type UsageTotals, type UsageRece
 import { modelLogoUrl, prewarmModelCatalog, getModelCatalogVersion, subscribeModelCatalog } from "@/lib/models-dev";
 import { providerLogoUrl, endpointLogoSlug } from "../../../shared/models/model-catalog";
 import { IconButton } from "@/components/ui/icon-button";
+import { ViewToolbar } from "@/components/ui/view-toolbar";
+import { SURFACE } from "@/components/ui/panel";
 
 const MODEL_PALETTE = [
   "var(--accent)",
@@ -133,16 +135,15 @@ function Segmented<T extends string | number>({ options, value, onChange }: {
   );
 }
 
-function StatCard({ label, value, valueClass, valueStyle, delta, deltaStyle }: { label: string; value: string; valueClass?: string; valueStyle?: React.CSSProperties; delta?: string; deltaStyle?: React.CSSProperties }) {
+function StatTile({ label, value, valueClass, valueStyle, delta, deltaStyle, dotColor }: { label: string; value: string; valueClass?: string; valueStyle?: React.CSSProperties; delta?: string; deltaStyle?: React.CSSProperties; dotColor?: string }) {
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
-      <div className="text-xs text-[var(--text-tertiary)]">{label}</div>
-      <div className={`font-mono text-xl font-semibold tabular-nums tracking-tight truncate ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
-      {delta ? (
-        <div className={cn("text-2xs", delta.startsWith("↑") ? "text-[var(--success)]" : delta.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta}</div>
-      ) : (
-        <div className="text-2xs text-[var(--text-tertiary)]">—</div>
-      )}
+    <div className="px-4 py-3 flex flex-col gap-1 min-w-0">
+      <div className="flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor ?? "var(--text-tertiary)" }} />
+        {label}
+      </div>
+      <div className={`font-display text-2xl leading-none tabular-nums truncate ${valueClass ?? "text-[var(--text-primary)]"}`} style={valueStyle}>{value}</div>
+      <div className={cn("text-2xs min-h-[1em]", delta?.startsWith("↑") ? "text-[var(--success)]" : delta?.startsWith("↓") ? "text-[var(--danger)]" : "text-[var(--text-tertiary)]")} style={deltaStyle}>{delta || "\u00a0"}</div>
     </div>
   );
 }
@@ -309,11 +310,10 @@ export function UsageView() {
 
   return (
     <div className="@container flex flex-col h-full w-full overflow-hidden bg-[var(--background)]">
-      {/* Toolbar — mirrors InsightsView / KnowledgeGraphView chrome */}
-      <div className="flex items-center gap-x-2 gap-y-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--surface)] flex-shrink-0 flex-wrap">
-        <div className="text-sm font-semibold text-[var(--text-primary)] mr-1">Usage</div>
-        <div className="hidden @lg:block text-xs text-[var(--text-tertiary)] mr-2">AI spend across chat, agents &amp; automations</div>
-        <div className="ml-auto flex items-center justify-end gap-2 flex-wrap min-w-0">
+      <ViewToolbar
+        title="Usage"
+        description="AI spend across chat, agents &amp; automations"
+        actions={<>
           <Segmented<UsageMetric>
             options={[
               { value: "tokens", label: "Tokens" },
@@ -390,26 +390,26 @@ export function UsageView() {
           >
             <RefreshSpin size={11} spinning={loading} />
           </IconButton>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Content — full-bleed scroll area */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-4 flex flex-col gap-4">
           {/* Stat cards */}
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3">
-            <StatCard label="Input tokens" value={totals ? fmtCompact(totals.promptTokens) : "—"} valueClass="text-[var(--accent)]" delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "promptTokens", rangeLabel) : undefined} />
-            <StatCard label="Output tokens" value={totals ? fmtCompact(totals.completionTokens) : "—"} />
-            <StatCard label="Cached input" value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueStyle={cacheColor ? { color: cacheColor } : undefined} delta={cacheColor ? `${Math.round(cachePct * 100)}% of input` : ""} deltaStyle={cacheColor ? { color: cacheColor } : undefined} />
-            <StatCard label="Total cost" value={totals ? formatUsd(totals.costUsd) : "—"} delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "costUsd", rangeLabel) : undefined} />
-            <StatCard label="Requests" value={totals ? fmtFull(totals.requests) : "—"} />
+          <div className={`${SURFACE} !p-0 grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] divide-x divide-[var(--border-subtle)]`}>
+            <StatTile label="Input tokens" dotColor="var(--accent)" value={totals ? fmtCompact(totals.promptTokens) : "—"} delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "promptTokens", rangeLabel) : undefined} />
+            <StatTile label="Output tokens" dotColor="var(--info)" value={totals ? fmtCompact(totals.completionTokens) : "—"} />
+            <StatTile label="Cached input" dotColor={cacheColor ?? undefined} value={totals ? fmtCompact(totals.cacheReadTokens) : "—"} valueStyle={cacheColor ? { color: cacheColor } : undefined} delta={cacheColor ? `${Math.round(cachePct * 100)}% of input` : ""} deltaStyle={cacheColor ? { color: cacheColor } : undefined} />
+            <StatTile label="Total cost" value={totals ? formatUsd(totals.costUsd) : "—"} delta={totals && overview?.previous ? deltaPct(totals, overview.previous, "costUsd", rangeLabel) : undefined} />
+            <StatTile label="Requests" value={totals ? fmtFull(totals.requests) : "—"} />
           </div>
 
           <div className="grid grid-cols-1 @4xl:grid-cols-[minmax(0,2.1fr)_minmax(0,1fr)] gap-4">
             {/* Chart */}
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+            <div className={`${SURFACE} !p-0 overflow-hidden`}>
               <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
-                <div className="text-xs font-semibold text-[var(--text-primary)]">
+                <div className="font-display text-base text-[var(--text-primary)]">
                   {metric === "tokens" ? "Token usage" : metric === "cost" ? "Cost" : "Requests"}
                 </div>
                 <div className="text-2xs text-[var(--text-tertiary)]">
@@ -438,9 +438,9 @@ export function UsageView() {
             </div>
 
             {/* By model */}
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+            <div className={`${SURFACE} !p-0 overflow-hidden`}>
               <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
-                <div className="text-xs font-semibold text-[var(--text-primary)]">By model</div>
+                <div className="font-display text-base text-[var(--text-primary)]">By model</div>
                 <div className="text-2xs text-[var(--text-tertiary)]">{rangeLabel}</div>
               </div>
               <div className="p-4 flex flex-col gap-3">
@@ -481,9 +481,9 @@ export function UsageView() {
           </div>
 
           {/* History table */}
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+          <div className={`${SURFACE} !p-0 overflow-hidden`}>
             <div className="flex items-center justify-between gap-x-3 gap-y-0.5 flex-wrap px-4 pt-3 pb-1">
-              <div className="text-xs font-semibold text-[var(--text-primary)]">Usage history</div>
+              <div className="font-display text-base text-[var(--text-primary)]">Usage history</div>
               <div className="text-2xs text-[var(--text-tertiary)]">{items.length === 0 ? "" : `latest ${items.length} threads & calls`}</div>
             </div>
             {items.length > 0 && includeEstimated && (
