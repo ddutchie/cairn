@@ -178,7 +178,7 @@ export function SettingsView() {
           className="@container max-w-3xl px-4 md:px-10 py-6 md:py-8 space-y-8 animate-fade-in"
         >
           <header>
-            <h1 id="settings-title" className="text-lg font-semibold text-[var(--text-primary)]">{current.label}</h1>
+            <h1 id="settings-title" className="font-display text-xl font-normal tracking-tight text-[var(--text-primary)]">{current.label}</h1>
             <p className="mt-1 text-xs text-[var(--text-tertiary)]">
               {page === "about" ? `Cairn ${APP_VERSION}` : current.description}
             </p>

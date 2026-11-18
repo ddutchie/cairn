@@ -150,12 +150,23 @@ Do not bring these back without a reason specific to the view:
 3. `npm run type-check:all`, then lint the files you touched.
 4. Tab through it: every control has a visible focus ring and a name.
 
+## Scope
+
+The language applies to **page-style views**: pages you read and decide from. **Working surfaces** (Board, Notes, Agent, Calendar, Idea Flow, Knowledge Graph, Insights) are dense tools whose canvases, editors and columns have their own layout needs. They share tokens, type scale, elevation and primitives, but do not need display-face page headlines, hero areas or instrument cards.
+
+**Toolbar views** (Usage, Automations) open with a compact toolbar and a sans title, like Insights. Their content follows the page rules: display-face panel headings, one raised stat strip, item cards with a light lift.
+
+Known exception: Calendar's overdue banner uses a status fill. It is a transient alert, not a resting tile, so it stays until the Calendar gets its own pass.
+
 ## Status
 
 | View | State |
 |---|---|
 | Today | Reference for prose pages: open lists, one raised instrument (the day), items with a light lift. |
 | Overview | Reference for instrument pages: raised instruments, at-a-glance strip, status-tinted attention items. |
-| Board, Notes, Calendar, Flow, Knowledge Graph, Insights, Agent, Automations, Usage, Settings | Not audited. Start with Automations and Usage: they are the closest in shape (lists, stats, status) and will show first whether the item card and section heading cover real cases. |
+| Usage | Aligned: one raised stat strip with status dots and display numerals, `SURFACE` panels with display-face headings. |
+| Automations | Aligned: toolbar title, item cards with a light lift. |
+| Settings | Aligned: display-face section title. |
+| Board, Notes, Calendar, Flow, Knowledge Graph, Insights, Agent | Working surfaces, out of scope (see Scope). |
 
 When you align a view, update this table.

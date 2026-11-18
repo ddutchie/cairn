@@ -351,7 +351,7 @@ export function AutomationsView() {
           return (
             <ContextMenu key={a.id}>
             <ContextMenuTrigger asChild>
-            <div className={cn("rounded-lg border bg-[var(--surface)] p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
+            <div className={cn("rounded-lg border bg-[var(--surface)] shadow-elev-1 p-4", isRunning ? "border-[var(--accent)]/40" : "border-[var(--border)]")}>
               <div className="flex items-start justify-between gap-3">
                 <Tooltip content="View automation state">
                   <button
