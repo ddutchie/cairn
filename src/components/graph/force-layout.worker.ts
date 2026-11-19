@@ -4,7 +4,7 @@
  * layout.
  */
 
-import { runForceLayout, type ForceLayout, type LayoutRequest, type LayoutResponse } from "./force-layout";
+import { runForceLayout, PRESETTLE_MS, type ForceLayout, type LayoutRequest, type LayoutResponse } from "./force-layout";
 
 // Typed locally: the renderer's tsconfig uses the DOM lib, and pulling in the
 // WebWorker lib alongside it produces conflicting global declarations.
@@ -27,6 +27,8 @@ scope.onmessage = (ev: MessageEvent<LayoutRequest>) => {
           scope.postMessage(out, [positions.buffer]);
         },
         () => scope.postMessage({ type: "end", gen } satisfies LayoutResponse),
+        // Off the main thread, so the whole settle can run before the first post.
+        { presettleMs: PRESETTLE_MS },
       );
       break;
     }

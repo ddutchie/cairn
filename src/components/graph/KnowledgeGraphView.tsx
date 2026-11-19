@@ -592,6 +592,9 @@ export function KnowledgeGraphView() {
               // leaving it remounts the full graph from its remembered layout.
               key={focusNode ? `focus:${focusNode.id}` : "all"}
               layoutKey={focusNode ? undefined : activeWorkspaceId ?? undefined}
+              // …but it starts from where its nodes sat in the full graph, so
+              // it re-heats gently instead of laying out from scratch.
+              seedLayoutKey={focusNode ? activeWorkspaceId ?? undefined : undefined}
               graph={searchedGraph}
               selectedNodeId={selectedGraphNodeId}
               onNodeClick={handleNodeClick}

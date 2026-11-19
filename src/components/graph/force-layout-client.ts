@@ -88,19 +88,33 @@ type Positions = Map<string, { x: number; y: number }>;
 /** Keep a handful of graphs (workspaces); older ones are dropped. */
 const MAX_REMEMBERED = 8;
 const remembered = new Map<string, Positions>();
+/** Fingerprint of the links the last remembered layout for a key settled with. */
+const rememberedTopology = new Map<string, string>();
 
 /** Merge `positions` into what's remembered for `key`. Merging (rather than
- *  replacing) keeps nodes that a search or filter hid when the view closed. */
-export function rememberLayout(key: string, positions: Positions): void {
+ *  replacing) keeps nodes that a search or filter hid when the view closed.
+ *  `topology` fingerprints the links those positions settled with, so a
+ *  revisit of the same graph can resume them as they are: a string records
+ *  it, null clears it (positions that never settled), undefined keeps it. */
+export function rememberLayout(key: string, positions: Positions, topology?: string | null): void {
   const merged = remembered.get(key) ?? new Map();
   for (const [id, p] of positions) merged.set(id, p);
   remembered.delete(key);
   remembered.set(key, merged);
+  if (topology != null) rememberedTopology.set(key, topology);
+  else if (topology === null) rememberedTopology.delete(key);
   while (remembered.size > MAX_REMEMBERED) {
-    remembered.delete(remembered.keys().next().value!);
+    const oldest = remembered.keys().next().value!;
+    remembered.delete(oldest);
+    rememberedTopology.delete(oldest);
   }
 }
 
 export function recallLayout(key: string): Positions | undefined {
   return remembered.get(key);
+}
+
+/** The topology fingerprint `key`'s remembered layout settled with, if known. */
+export function recallTopology(key: string): string | undefined {
+  return rememberedTopology.get(key);
 }

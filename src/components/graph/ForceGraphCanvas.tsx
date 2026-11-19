@@ -21,6 +21,7 @@ import {
   createForceLayoutClient,
   rememberLayout,
   recallLayout,
+  recallTopology,
   type ForceLayoutClient,
 } from "./force-layout-client";
 import { IconButton } from "@/components/ui/icon-button";
@@ -40,6 +41,9 @@ interface Props {
   /** Remembers this graph's layout in memory under this key (e.g. the
    *  workspace), so reopening the view resumes from the last positions. */
   layoutKey?: string;
+  /** Start from the positions remembered under this key without saving back
+   *  to it — a neighbourhood starts where its nodes sat in the full graph. */
+  seedLayoutKey?: string;
 }
 
 // ── colour helpers ──────────────────────────────────────────────────────────
@@ -187,8 +191,28 @@ const LARGE_DPR_NODES = 400;
 /** Reduced DPR cap for large graphs — roughly a quarter of the pixels per
  *  frame for imperceptible softness. Single place the cap is defined; both
  *  the draw routine and the sizing effect derive from it. */
-function dprFor(nodeCount: number): number {
+function dprFor(nodeCount: number, moving = false): number {
+  // While the view moves on a large graph, shade at 1x: fill cost scales with
+  // pixels, and the frame after the motion stops redraws at the resting DPR.
+  if (moving && nodeCount > LARGE_DPR_NODES) return 1;
   return Math.min(nodeCount > LARGE_DPR_NODES ? 1.25 : 2, window.devicePixelRatio || 1);
+}
+
+/** Ease from the drawn positions to a newly posted layout (ms). */
+const TWEEN_MS = 350;
+/** A new layout that moves no node further than this (screen px) snaps instead of easing. */
+const SNAP_PX = 3;
+
+/** Largest on-screen distance (px at zoom `k`) between drawn nodes and `positions`. */
+function maxMoveOnScreen(nodes: SimNode[], positions: Float32Array, k: number): number {
+  let max = 0;
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (n.x == null || n.y == null) continue;
+    const d = Math.hypot(positions[i * 2] - n.x, positions[i * 2 + 1] - n.y);
+    if (d > max) max = d;
+  }
+  return max * k;
 }
 
 const ZOOM_BTN_CLASS =
@@ -205,6 +229,7 @@ function ForceGraphCanvasImpl({
   semanticThreshold = 1,
   showHulls = true,
   layoutKey,
+  seedLayoutKey,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -221,6 +246,9 @@ function ForceGraphCanvasImpl({
   const didInitialFitRef = useRef(false);
   // Set once the user pans/zooms, so auto-fit stops fighting their navigation.
   const userInteractedRef = useRef(false);
+  // Pan/zoom gestures (and zoom transitions) in progress. While anything is
+  // moving, dashed edges are drawn solid (see draw).
+  const gesturesRef = useRef(0);
 
   // Mutable refs the render loop reads without re-instantiating the simulation
   const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
@@ -254,25 +282,32 @@ function ForceGraphCanvasImpl({
       drawRef.current();
     });
   }, []);
-  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
+  // Clear the handle too: a cancelled frame leaves it set (React StrictMode
+  // runs this cleanup in dev), and scheduleDraw would then ignore every request.
+  useEffect(() => () => { cancelAnimationFrame(frameRef.current); frameRef.current = 0; }, []);
   const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null);
 
   // ── fit-to-view (stable; reads live state from refs) ──
-  const zoomFit = useCallback((animate = true) => {
+  // `animate`: false = jump, true = the default 400ms transition, a number =
+  // that duration. `positions` fits a layout that hasn't been drawn yet
+  // (x0, y0, x1, y1, … in node order) instead of the current node positions.
+  const zoomFit = useCallback((animate: boolean | number = true, positions?: Float32Array) => {
     const canvas = canvasRef.current, zoom = zoomRef.current;
     if (!canvas || !zoom) return;
-    const nodes = nodesRef.current.filter((n) => n.x != null && n.y != null);
-    if (!nodes.length) return;
     const { width, height } = dimsRef.current;
     // Plain loop — spreading thousands of coords into Math.min/max is slow and
     // can overflow the call stack on very large graphs.
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of nodes) {
-      if (n.x! < minX) minX = n.x!;
-      if (n.x! > maxX) maxX = n.x!;
-      if (n.y! < minY) minY = n.y!;
-      if (n.y! > maxY) maxY = n.y!;
-    }
+    const include = (x: number | undefined, y: number | undefined) => {
+      if (x == null || y == null || Number.isNaN(x) || Number.isNaN(y)) return;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    };
+    if (positions) for (let i = 0; i < positions.length; i += 2) include(positions[i], positions[i + 1]);
+    else for (const n of nodesRef.current) include(n.x, n.y);
+    if (minX === Infinity) return;
     const gw = maxX - minX || 1, gh = maxY - minY || 1;
     const pad = 60;
     const k = Math.max(0.2, Math.min(4, Math.min(
@@ -284,8 +319,12 @@ function ForceGraphCanvasImpl({
       .translate(width / 2, height / 2)
       .scale(k)
       .translate(-cx, -cy);
+    // Already framed: skip, so a no-op fit doesn't run a 400ms transition of
+    // full redraws.
+    const cur = transformRef.current;
+    if (Math.abs(cur.k - tr.k) < 1e-3 * tr.k && Math.abs(cur.x - tr.x) < 0.5 && Math.abs(cur.y - tr.y) < 0.5) return;
     const sel = d3.select<HTMLCanvasElement, unknown>(canvas);
-    if (animate) sel.transition().duration(400).call(zoom.transform, tr);
+    if (animate) sel.transition().duration(animate === true ? 400 : animate).call(zoom.transform, tr);
     else sel.call(zoom.transform, tr);
   }, []);
 
@@ -336,16 +375,93 @@ function ForceGraphCanvasImpl({
   // layoutKey the current nodes were laid out under (for remembering them).
   const layoutKeyUsedRef = useRef<string | undefined>(undefined);
 
+  // Topology (nodes + links) of the running layout, and how far it got: only
+  // a settled layout is remembered as resumable for that topology; one that
+  // moved but never settled clears it; one that never moved (e.g. StrictMode's
+  // throwaway unmount) leaves it alone.
+  const topologyRef = useRef("");
+  const layoutStateRef = useRef<"seeded" | "moving" | "settled">("seeded");
   const rememberCurrent = useCallback(() => {
     const key = layoutKeyUsedRef.current;
-    if (key) rememberLayout(key, positionsOf(nodesRef.current));
+    if (!key) return;
+    const state = layoutStateRef.current;
+    rememberLayout(key, positionsOf(nodesRef.current), state === "settled" ? topologyRef.current : state === "moving" ? null : undefined);
   }, []);
+
+  // ── ease into a new layout ──
+  // The worker settles most layouts before posting (PRESETTLE_MS), so a
+  // re-laid-out graph arrives in one jump. Nodes that were already on screen
+  // ease from there to it; new nodes appear in place. Ticks that arrive
+  // mid-ease retarget it, and the layout's end waits for the ease to finish.
+  const tweenRef = useRef<{ gen: number; from: Float32Array; to: Float32Array; start: number; raf: number; endPending: boolean } | null>(null);
+  const lastTickGenRef = useRef(0);
+  const cancelTween = useCallback(() => {
+    if (tweenRef.current) cancelAnimationFrame(tweenRef.current.raf);
+    tweenRef.current = null;
+  }, []);
+  useEffect(() => cancelTween, [cancelTween]);
+
+  const finishLayout = useCallback(() => {
+    layoutStateRef.current = "settled";
+    canvasRef.current?.setAttribute("data-layout", "settled");
+    // Final animated fit once settled (a no-op when already framed).
+    if (!userInteractedRef.current) zoomFit(true);
+    didInitialFitRef.current = true;
+    rememberCurrent();
+  }, [zoomFit, rememberCurrent]);
+
+  const startTween = useCallback((gen: number, from: Float32Array, to: Float32Array) => {
+    const tw = { gen, from, to, start: performance.now(), raf: 0, endPending: false };
+    const tick = () => {
+      if (tweenRef.current !== tw) return;
+      const t = Math.min(1, (performance.now() - tw.start) / TWEEN_MS);
+      const e = d3.easeCubicOut(t);
+      const nodes = nodesRef.current;
+      for (let i = 0; i < nodes.length; i++) {
+        const fx = tw.from[i * 2], fy = tw.from[i * 2 + 1];
+        const tx = tw.to[i * 2], ty = tw.to[i * 2 + 1];
+        nodes[i].x = Number.isNaN(fx) ? tx : fx + (tx - fx) * e;
+        nodes[i].y = Number.isNaN(fy) ? ty : fy + (ty - fy) * e;
+      }
+      posVersionRef.current++;
+      drawRef.current();
+      if (t < 1) {
+        tw.raf = requestAnimationFrame(tick);
+        return;
+      }
+      tweenRef.current = null;
+      // Redraw at rest so dashed edges get their dashes back (see draw).
+      scheduleDraw();
+      if (tw.endPending) finishLayout();
+    };
+    tweenRef.current = tw;
+    tw.raf = requestAnimationFrame(tick);
+  }, [finishLayout, scheduleDraw]);
 
   useEffect(() => {
     const client = createForceLayoutClient({
       onTick: (gen, positions) => {
         if (gen !== genRef.current) return;
+        if (layoutStateRef.current === "seeded") layoutStateRef.current = "moving";
         const nodes = nodesRef.current;
+        const firstOfGen = lastTickGenRef.current !== gen;
+        lastTickGenRef.current = gen;
+        const tw = tweenRef.current;
+        if (tw && tw.gen === gen) { tw.to = positions; return; }
+        // Ease only when something visibly moves; a revisit re-heating a
+        // settled layout shifts nodes by a pixel or two, and easing that is
+        // a third of a second of invisible full redraws.
+        if (firstOfGen && maxMoveOnScreen(nodes, positions, transformRef.current.k) > SNAP_PX) {
+          const from = new Float32Array(nodes.length * 2);
+          for (let i = 0; i < nodes.length; i++) {
+            from[i * 2] = nodes[i].x ?? NaN;
+            from[i * 2 + 1] = nodes[i].y ?? NaN;
+          }
+          // Frame where the graph is going, over the same time as the ease.
+          if (!userInteractedRef.current && !didInitialFitRef.current) zoomFit(TWEEN_MS, positions);
+          startTween(gen, from, positions);
+          return;
+        }
         for (let i = 0; i < nodes.length; i++) {
           nodes[i].x = positions[i * 2];
           nodes[i].y = positions[i * 2 + 1];
@@ -365,19 +481,24 @@ function ForceGraphCanvasImpl({
       },
       onEnd: (gen) => {
         if (gen !== genRef.current) return;
-        // final animated fit once settled
-        if (!userInteractedRef.current) zoomFit(true);
-        didInitialFitRef.current = true;
-        rememberCurrent();
+        const tw = tweenRef.current;
+        if (tw && tw.gen === gen) tw.endPending = true;
+        else finishLayout();
       },
     });
     layoutRef.current = client;
     return () => {
+      // Mid-ease, remember where the layout is going rather than a halfway frame.
+      const tw = tweenRef.current;
+      if (tw) {
+        const nodes = nodesRef.current;
+        for (let i = 0; i < nodes.length; i++) { nodes[i].x = tw.to[i * 2]; nodes[i].y = tw.to[i * 2 + 1]; }
+      }
       rememberCurrent();
       client.dispose();
       layoutRef.current = null;
     };
-  }, [zoomFit, scheduleDraw, rememberCurrent]);
+  }, [zoomFit, scheduleDraw, rememberCurrent, finishLayout, startTween]);
 
   // ── rebuild the layout when topology changes ──
   useEffect(() => {
@@ -387,11 +508,25 @@ function ForceGraphCanvasImpl({
     const sameKey = layoutKeyUsedRef.current === layoutKey;
     if (!sameKey) rememberCurrent();
     const current = sameKey ? positionsOf(nodesRef.current) : new Map<string, { x: number; y: number }>();
-    const recalled = layoutKey ? recallLayout(layoutKey) : undefined;
+    const seedKey = layoutKey ?? seedLayoutKey;
+    const recalled = seedKey ? recallLayout(seedKey) : undefined;
+    // Revisiting the exact graph a remembered layout settled with (reopening
+    // the view, leaving a neighbourhood): resume it rather than re-heat it.
+    // Any edit changes the fingerprint, so edits still re-heat.
+    // Spacing is part of the fingerprint: a layout settled at another spacing
+    // is not the one to resume.
+    const spacingNow = propsRef.current.spacing;
+    const topology = `${nodeFingerprint}|${edgeFingerprint}|${spacingNow}`;
+    // Resume only from the remembered snapshot itself, never from positions of
+    // a different graph that is still easing on screen.
+    const resume = !!layoutKey && recallTopology(layoutKey) === topology
+      && !!recalled && graph.nodes.every((n) => recalled.has(n.id));
     layoutKeyUsedRef.current = layoutKey;
+    topologyRef.current = topology;
+    layoutStateRef.current = "seeded";
 
     const nodes: SimNode[] = graph.nodes.map((n) => {
-      const p = current.get(n.id) ?? recalled?.get(n.id);
+      const p = resume ? recalled?.get(n.id) : current.get(n.id) ?? recalled?.get(n.id);
       return {
         id: n.id,
         title: n.title ?? "",
@@ -410,27 +545,36 @@ function ForceGraphCanvasImpl({
       layoutLinks.push({ source: si, target: ti, edgeType: e.type });
     }
 
+    cancelTween();
     nodesRef.current = nodes;
     linksRef.current = links;
     hullCacheRef.current = null;
+    // Layout state for tests and benchmarks (tests/perf): "settling" until the
+    // layout's end message, then "settled".
+    canvasRef.current?.setAttribute("data-layout", "settling");
     posVersionRef.current++;
     scheduleDraw();
 
-    const spacingNow = propsRef.current.spacing;
     layoutSpacingRef.current = spacingNow;
     layoutRef.current?.init({
       gen: ++genRef.current,
       nodes: nodes.map((n) => ({ id: n.id, nodeType: n.nodeType, projectId: n.projectId, x: n.x, y: n.y })),
       links: layoutLinks,
       spacing: spacingNow,
+      resume,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeFingerprint, edgeFingerprint, layoutKey]);
+  }, [nodeFingerprint, edgeFingerprint, layoutKey, seedLayoutKey]);
 
   // ── react to spacing changes without rebuilding the layout ──
   useEffect(() => {
     if (spacing === layoutSpacingRef.current) return;
     layoutSpacingRef.current = spacing;
+    // The reheat un-settles the layout; it settles again (at this spacing) on
+    // the layout's end, so an early close doesn't save a half-moved layout.
+    topologyRef.current = topologyRef.current.replace(/\|[^|]*$/, `|${spacing}`);
+    layoutStateRef.current = "moving";
+    canvasRef.current?.setAttribute("data-layout", "settling");
     layoutRef.current?.setSpacing(spacing);
   }, [spacing]);
 
@@ -448,7 +592,9 @@ function ForceGraphCanvasImpl({
     const nodes = nodesRef.current;
     const links = linksRef.current;
     const { width, height } = dimsRef.current;
-    const dpr = dprFor(nodes.length);
+    // A gesture, a zoom transition, or a layout easing in (see the dashes below).
+    const moving = gesturesRef.current > 0 || tweenRef.current != null;
+    const dpr = dprFor(nodes.length, moving);
     const t = transformRef.current;
     const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
 
@@ -549,13 +695,26 @@ function ForceGraphCanvasImpl({
       sceneCacheRef.current = scene;
     }
 
+    // Dashed strokes are the costliest thing on the canvas: the rasteriser
+    // cuts every dashed edge into short segments on every frame, which made
+    // pan and zoom slow on graphs with ~1,000+ dashed edges. While the view is
+    // moving (a gesture, a zoom transition, or a layout easing in) they're
+    // drawn solid at half opacity, about the same ink, and get their dashes
+    // back on the frame after the motion stops.
     const dashPattern = [3 / t.k, 3 / t.k];
     for (const b of scene.edges) {
       ctx.strokeStyle = b.stroke;
       ctx.lineWidth = b.width / t.k;
-      ctx.setLineDash(b.dash ? dashPattern : []);
+      if (b.dash && moving) {
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.5;
+      } else {
+        ctx.setLineDash(b.dash ? dashPattern : []);
+        ctx.globalAlpha = 1;
+      }
       ctx.stroke(b.path);
     }
+    ctx.globalAlpha = 1;
     ctx.setLineDash([]);
     for (const f of scene.fills) {
       ctx.fillStyle = f.fill;
@@ -669,9 +828,15 @@ function ForceGraphCanvasImpl({
       .scaleExtent([0.2, 6])
       .on("zoom", (ev) => { transformRef.current = ev.transform; scheduleDraw(); })
       .on("start", (ev) => {
+        gesturesRef.current++;
         // A pointer/wheel-driven zoom means the user has taken control; stop
         // auto-fitting on subsequent simulation ticks.
         if (ev.sourceEvent) userInteractedRef.current = true;
+      })
+      .on("end", () => {
+        gesturesRef.current = Math.max(0, gesturesRef.current - 1);
+        // Redraw at rest so dashed edges get their dashes back.
+        if (gesturesRef.current === 0) scheduleDraw();
       });
     zoomRef.current = zoom;
     selection.call(zoom);
@@ -679,6 +844,9 @@ function ForceGraphCanvasImpl({
     const init = d3.zoomIdentity.translate(dims.width / 2, dims.height / 2).scale(0.85);
     selection.call(zoom.transform, init);
     transformRef.current = init;
+    // Seeded from a remembered layout (a revisit or a neighbourhood): frame it
+    // straight away rather than drawing it off-centre until the layout lands.
+    zoomFit(false);
     return () => { selection.on(".zoom", null); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

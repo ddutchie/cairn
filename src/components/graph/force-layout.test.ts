@@ -36,6 +36,23 @@ describe("runForceLayout", () => {
     expect(seeded.frames.length).toBeLessThan(fresh.frames.length);
   });
 
+  it("posts a presettled layout first when given a presettle budget", async () => {
+    const posts: Float32Array[] = [];
+    await new Promise<void>((resolve) => {
+      runForceLayout(ring(30, false), (p) => posts.push(p), () => resolve(), { presettleMs: 2000 });
+    });
+    // A 30-node ring settles well inside the budget: one post, then the end.
+    expect(posts.length).toBe(1);
+  });
+
+  it("resumes a seeded layout without re-heating it", async () => {
+    const init = { ...ring(30, true), resume: true };
+    const { frames } = await settle(init);
+    expect(frames.length).toBe(1);
+    const seeds = init.nodes.flatMap((n) => [n.x!, n.y!]);
+    expect(Array.from(frames[0])).toEqual(seeds.map((v) => Math.fround(v)));
+  });
+
   it("stops posting after stop()", async () => {
     let count = 0;
     const layout = runForceLayout(ring(10, false), () => count++, () => {});
