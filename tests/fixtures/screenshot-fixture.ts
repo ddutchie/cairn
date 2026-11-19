@@ -1182,6 +1182,8 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
       ownedCardIds:   () => Promise.resolve([]),
       attendees: () => Promise.resolve([]),
       attendee:  { add: noop, remove: noop },
+      profile:   { get: () => Promise.resolve({ fields: {}, stale: false }), refresh: () => Promise.resolve({ fields: {}, stale: false }) },
+      prep:      { get: () => Promise.resolve({ brief: null, running: false }), run: () => Promise.resolve({ skipped: "off" }), onUpdated: () => () => {} },
     },
     flow:      { get: () => Promise.resolve(flowData), node: { create: noop, update: noop, delete: noop, summarize: noop }, edge: { create: noop, delete: noop }, url: { fetch: () => Promise.resolve({ title: "", description: "" }) } },
     tag:       { list: () => Promise.resolve(snap.tags), create: noop, update: noop, delete: noop },

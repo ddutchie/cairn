@@ -22,6 +22,7 @@ import type {
 import type {
   AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
 } from "../types/people-view";
+import type { PersonProfile, PrepBrief } from "../people/oneonone";
 import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../today/brief";
 import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
@@ -340,6 +341,19 @@ export interface IpcContract {
   "db:people:attendees": { args: [req: { meetingId: string; statuses?: PeopleStatus[] }]; result: MeetingAttendee[] };
   "db:people:attendee:add": { writes: true; args: [input: AttendeeInput]; result: MeetingAttendee };
   "db:people:attendee:remove": { writes: true; args: [req: { meetingId: string; personId: string }]; result: void };
+
+  // ── 1:1 loop (W6) ───────────────────────────────────────────────────────
+  /** A person's Slack profile fields from the device cache. Never calls out. */
+  "people:profile:get": { args: [req: { personId: string }]; result: PersonProfile };
+  /** Re-read the profile from the Slack connector when the cache is older than 24h. Resolves with what the page should show. */
+  "people:profile:refresh": { args: [req: { personId: string }]; result: PersonProfile };
+  /** The newest prep brief for a person, and whether one is being prepared now. */
+  "people:prep:get": { args: [req: { workspaceId: string; personId: string }]; result: { brief: PrepBrief | null; running: boolean } };
+  /** Start a prep brief. `skipped` says why nothing started. */
+  "people:prep:run": {
+    args: [req: { workspaceId: string; personId: string; meetingId?: string }];
+    result: { runId: string } | { skipped: "busy" | "off" | "no-ai" | "unknown-person" };
+  };
 
   // ── Heartbeat automations ────────────────────────────────────────────────
   "db:automation:list": { args: [req: { workspaceId: string }]; result: Automation[] };
@@ -794,6 +808,8 @@ export interface IpcEvents {
   /** `saveError` is set when the brief couldn't be written to disk (cleared by the next save that works). */
   /** `brief` comes with gathering saves, so a view shows them without rebuilding its whole state. */
   "today:updated": { workspaceId: string; status: "gathering" | "ready"; saveError?: string; brief?: TodayBrief };
+  /** A prep run saved a brief for a person (placeholder, result or failure), so their page reloads it. */
+  "people:prep:updated": { workspaceId: string; personId: string; status: "gathering" | "ready" };
   /** Unread notification count changed (bell + badge). */
   "mcp:unread-count": number;
   /** An MCP server / service OAuth sign-in finished (loopback or deep link). */
@@ -1022,6 +1038,10 @@ const CHANNELS: ChannelRecord = {
   "db:people:attendees": "read",
   "db:people:attendee:add": "write",
   "db:people:attendee:remove": "write",
+  "people:profile:get": "read",
+  "people:profile:refresh": "read",
+  "people:prep:get": "read",
+  "people:prep:run": "read",
   "db:automation:list": "read",
   "db:automation:get": "read",
   "db:automation:create": "write",

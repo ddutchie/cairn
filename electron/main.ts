@@ -28,6 +28,7 @@ import { registerToolBuilderHandlers } from "./ipc/tool-builder-handlers";
 import { registerCommunityRegistryHandlers } from "./ipc/community-registry-handlers";
 import { registerGitHandlers } from "./ipc/git-handlers";
 import { registerPeopleHandlers } from "./ipc/people-handlers";
+import { tickMeetingPreps } from "./lib/people/prep-watch";
 import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
 import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
@@ -467,6 +468,10 @@ app.whenReady().then(async () => {
       run,
       automation,
     ),
+    // The People layer starts a prep brief ahead of a 1:1 on the calendar (no-op while the preview is off).
+    onTick: (_db, now) => {
+      tickMeetingPreps({ db: ctx.db, workspacePath: ctx.workspacePath, send: (channel, payload) => broadcastEvent(channel, payload) }, now);
+    },
     log: (msg) => console.log(msg),
   });
   heartbeatScheduler.start();

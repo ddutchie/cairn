@@ -20,6 +20,7 @@ import {
   automationSpendSince,
   type AutomationEnv,
 } from "../db/automation-queries";
+import { PREP_COMMUNITY_ID } from "../../shared/people/oneonone";
 import { runAutomationNow, resolveAutomationApproval, listPendingAutomationApprovals } from "../lib/heartbeat-runner";
 import { checkRequirements, getExternalToolDefs, listScopedConnectors } from "../lib/external-tools";
 import { channelFor, channelLabel, sendCandidates } from "../../shared/today/route";
@@ -38,7 +39,8 @@ import { SESSION_FILE } from "../agent/index";
 
 export function registerAutomationHandlers(ctx: DbContext): void {
   // ── Heartbeat automations ─────────────────────────
-  registerContractHandle("db:automation:list", (_e, { workspaceId }) => handle(() => listAutomations(ctx.db, workspaceId)));
+  // The People layer's prep row is built in and never scheduled: it stays out of the list.
+  registerContractHandle("db:automation:list", (_e, { workspaceId }) => handle(() => listAutomations(ctx.db, workspaceId).filter((a) => a.communityId !== PREP_COMMUNITY_ID)));
   registerContractHandle("db:automation:get", (_e, { id }) => handle(() => getAutomationById(ctx.db, id)));
   registerContractHandle("db:automation:create", (_e, input) => handle(() => {
     let nextRunAt = input.nextRunAt;

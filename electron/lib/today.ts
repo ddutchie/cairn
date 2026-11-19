@@ -25,7 +25,7 @@ import type Database from "better-sqlite3";
 import type { Automation } from "../../shared/types/automations";
 import {
   DEFAULT_TODAY_SETTINGS, EMPTY_TODAY_MARKS, TODAY_COMMUNITY_ID, localDate, parseTodayCron, todayCron,
-  type TodaySettings, type TodayState,
+  type TodayNudge, type TodaySettings, type TodayState,
 } from "../../shared/today/brief";
 import { isCairnReadTool, isExternalToolName } from "../../shared/agent/tool-names";
 import { READ_VERB, isWebOperation, isWriteOperation, looksLikeWebApp, operationWords, toolServer } from "../../shared/today/route";
@@ -39,6 +39,8 @@ import { computeNextRun, parseSchedule } from "./automation-schedule";
 import { listScopedConnectors } from "./external-tools";
 import { factsForPrompt, projectFacts } from "./today-facts";
 import { currentRunActivity } from "./run-activity";
+import { getCadenceNudges } from "../db/people-oneonone";
+import { isPeopleEnabled } from "../db/people-queries";
 import { isTodayBriefTool } from "./today-tools";
 
 // The saved files and the row lookup live in today-files.ts, so the MCP runtime can read them too.
@@ -185,6 +187,15 @@ For up to 4 items that need a written answer (a reply, review notes, a card brea
 - sources in today_finish: one entry for the calendar, then one for each app you searched, with "ok", "empty" or "error" and a short note.`;
 
 /**
+ * Added to the recipe while the People preview is on: Cairn links each event to the people on it, so
+ * meetings show up on their pages and 1:1 prep and cadence nudges know when they last met.
+ */
+export const TODAY_PEOPLE_RECIPE = `## People on the calendar
+- For each event, use the calendar's own event id as its id, so a refresh updates the meeting.
+- Add "attendees": the people on the invite, each with a name and/or an email as the calendar gives them, and self true for the user. Leave it out when the calendar doesn't list people. Don't guess attendees from the title.
+- Add "seriesId" for a recurring meeting: the calendar's id for the series, or the series title. Leave it out for a one-off.`;
+
+/**
  * Where a run's "since the last brief" starts: when the last run that finished properly started.
  * A failed or cut-off run still saves a brief, but it may not have reached every app, so its time
  * would hide what it missed. Null when no run has finished yet (the prompt then looks back 24–72 hours).
@@ -207,7 +218,7 @@ export function takeTodayRebuild(automationId: string): boolean { return pending
  * A rebuild ignores when the last brief ran and looks back the full window, so what earlier runs missed
  * is found again; the items already in the brief stay and are checked like any other.
  */
-export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt: string | null, now: Date = new Date(), rebuild = false): string {
+export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt: string | null, now: Date = new Date(), rebuild = false, people = false): string {
   const when = (d: Date) => `${d.toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
   const last = lastBriefAt ? new Date(lastBriefAt) : null;
   const fromLast = !rebuild && last !== null && !Number.isNaN(last.getTime());
@@ -218,7 +229,7 @@ export function todayPrompt(facts: ReturnType<typeof projectFacts>, lastBriefAt:
   const why = rebuild
     ? "The user asked for a rebuild: look back the full window, as if there were no earlier brief. Items already in the brief stay unless what you find shows they were handled."
     : fromLast ? "That's when the last brief ran: look for what changed since then." : "There's no earlier brief, so this looks back 24 hours (72 on a Monday).";
-  return `${TODAY_RECIPE}
+  return `${TODAY_RECIPE}${people ? `\n\n${TODAY_PEOPLE_RECIPE}` : ""}
 
 ## Now
 - Today: ${when(now)} local time (${timeZoneLabel(now)}). Today's date is ${localDate(now)}.
@@ -350,7 +361,7 @@ export function getTodayState(db: Database.Database, workspacePath: string, work
   if (!fresh) {
     return {
       automationId: null, enabled: false, time: "07:00", weekdaysOnly: true, nextRunAt: null, running: false, activity: null,
-      brief: null, marks: { ...EMPTY_TODAY_MARKS }, lastError: null, settings, projects, facts, apps,
+      brief: null, marks: { ...EMPTY_TODAY_MARKS }, lastError: null, settings, projects, facts, apps, nudges: [],
     };
   }
   const { time, weekdaysOnly } = parseTodayCron(fresh.scheduleExpr);
@@ -371,7 +382,25 @@ export function getTodayState(db: Database.Database, workspacePath: string, work
     marks: brief ? readTodayMarks(workspacePath, fresh, brief.date) : { ...EMPTY_TODAY_MARKS },
     lastError: last && (last.status === "error" || last.status === "skipped") ? last.error : null,
     settings, projects, facts, apps,
+    nudges: todayNudges(db, workspacePath, fresh, workspaceId),
   };
+}
+
+/**
+ * "No 1:1 with X in 3 weeks", while the People preview is on. Worked out when read, so they never
+ * carry over a day after the meeting happens; one the user marked done today stays hidden for the day.
+ */
+function todayNudges(db: Database.Database, workspacePath: string, automation: Automation, workspaceId: string): TodayNudge[] {
+  if (!isPeopleEnabled(db)) return [];
+  try {
+    const nudges = getCadenceNudges(db, workspaceId);
+    if (nudges.length === 0) return [];
+    const done = new Set(readTodayMarks(workspacePath, automation, localDate(new Date())).done);
+    return nudges.filter((n) => !done.has(n.id));
+  } catch (err) {
+    console.warn("[today] cadence nudges failed:", err);
+    return [];
+  }
 }
 
 /**

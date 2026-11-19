@@ -52,6 +52,12 @@ const ITEM_SCHEMA = {
     end: { type: "string", description: "event: end as local HH:MM." },
     location: { type: "string", description: "event: room or call." },
     note: { type: "string", description: "event: only for a clash or something to prepare." },
+    attendees: {
+      type: "array", maxItems: 50,
+      items: { type: "object", properties: { name: { type: "string" }, email: { type: "string" }, self: { type: "boolean", description: "true for the user themself" } } },
+      description: "event: who is on the invite, when the calendar says (name and/or email each). Leave it out when the calendar gave no list.",
+    },
+    seriesId: { type: "string", description: "event: the calendar's id for the recurring series this meeting repeats in, or the series title. Leave it out for one-off meetings." },
     source: { type: "string", description: "The app it came from, e.g. \"Slack\", \"Outlook\", \"Jira\", \"Board\"." },
     url: { type: "string", description: "Link to the original, when the tool result gave one." },
   },

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
+import { localDate } from "../../shared/today/brief";
 import {
   enableToday, findTodayAutomation, getTodayState, includedProjects, listTodayHistory, loadTodaySnapshot, pruneTodayFiles,
   readTodayMarks, readTodaySettings, saveTodayBrief, snapshotTodayBrief, requestTodayRebuild, takeTodayRebuild, todayAllowsTool, todayLookBackFrom, todayPrompt, todayReasoningEffort, todayToolFilter, updateTodayMarks, writeTodaySettings,
@@ -11,6 +12,9 @@ import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import { createAutomation, createAutomationRun, listAutomations, updateAutomationRun } from "../db/automation-queries";
 import { createCard, createColumn } from "../db/board-queries";
 import { TODAY_COMMUNITY_ID } from "../../shared/today/brief";
+import { addAttendee, createMeeting, createPerson, setPeopleEnabled } from "../db/people-queries";
+import { PREP_COMMUNITY_ID } from "../../shared/people/oneonone";
+import { ensurePrepAutomation } from "./people/prep";
 import { emptyBrief, finishBrief, upsertItems } from "../../shared/today/brief-edit";
 
 describe("todayAllowsTool", () => {
@@ -248,5 +252,56 @@ describe("projectFacts", () => {
     expect(f.stale.map((c) => [c.id, c.days])).toEqual([["k3", 11]]);
     expect(f.failingAutomations).toEqual([{ id: auto.id, name: "Nightly", failures: 1 }]);
     expect(factsForPrompt([f])).toContain(`"Late" (card k2, due 2026-11-10)`);
+  });
+});
+
+describe("Today and the People preview", () => {
+  const dir = () => fs.mkdtempSync(path.join(os.tmpdir(), "cairn-today-people-"));
+  function seed(on: boolean) {
+    const db = makeDb();
+    seedWorkspace(db);
+    seedProject(db, "ws1", "p1", "Alpha");
+    if (on) setPeopleEnabled(db, true);
+    enableToday(db, { workspaceId: "ws1", time: "07:00", weekdaysOnly: true });
+    const ana = createPerson(db, { workspaceId: "ws1", name: "Ana Ruiz", cadence: "weekly" });
+    const m = createMeeting(db, { workspaceId: "ws1", title: "1:1", startsAt: new Date(Date.now() - 25 * 86_400_000).toISOString() });
+    addAttendee(db, { meetingId: m.id, personId: ana.id });
+    return { db, ana };
+  }
+
+  it("lists cadence nudges only while the preview is on", () => {
+    const off = seed(false);
+    expect(getTodayState(off.db, dir(), "ws1").nudges).toEqual([]);
+    const on = seed(true);
+    const nudges = getTodayState(on.db, dir(), "ws1").nudges;
+    expect(nudges).toHaveLength(1);
+    expect(nudges[0]).toMatchObject({ personId: on.ana.id, title: "No 1:1 with Ana Ruiz in 4 weeks" });
+  });
+
+  it("hides a nudge the user marked done today", () => {
+    const { db, ana } = seed(true);
+    const d = dir();
+    updateTodayMarks(d, findTodayAutomation(db, "ws1")!, localDate(new Date()), { done: { [`nudge-${ana.id}`]: true } });
+    expect(getTodayState(db, d, "ws1").nudges).toEqual([]);
+  });
+
+  it("has no nudges before Today is set up", () => {
+    const db = makeDb();
+    seedWorkspace(db);
+    setPeopleEnabled(db, true);
+    expect(getTodayState(db, dir(), "ws1").nudges).toEqual([]);
+  });
+
+  it("adds the calendar-people instructions to the prompt only when asked", () => {
+    const facts = projectFacts(makeDb(), "ws1", []);
+    expect(todayPrompt(facts, null, new Date(), false, false)).not.toContain("People on the calendar");
+    expect(todayPrompt(facts, null, new Date(), false, true)).toContain("People on the calendar");
+  });
+
+  it("keeps the prep row out of Today's own row lookup and failing-automation facts", () => {
+    const { db } = seed(true);
+    const prep = ensurePrepAutomation(db, "ws1");
+    expect(prep.communityId).toBe(PREP_COMMUNITY_ID);
+    expect(findTodayAutomation(db, "ws1")?.communityId).toBe(TODAY_COMMUNITY_ID);
   });
 });

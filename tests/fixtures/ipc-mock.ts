@@ -298,6 +298,8 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       ownedCardIds:   () => Promise.resolve([]),
       attendees: () => Promise.resolve([]),
       attendee:  { add: noop, remove: noop },
+      profile:   { get: () => Promise.resolve({ fields: {}, stale: false }), refresh: () => Promise.resolve({ fields: {}, stale: false }) },
+      prep:      { get: () => Promise.resolve({ brief: null, running: false }), run: () => Promise.resolve({ skipped: "off" }), onUpdated: () => () => {} },
     },
 
     // ── Tags ──────────────────────────────────────────────────

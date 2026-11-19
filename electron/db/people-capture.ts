@@ -103,7 +103,7 @@ export function resolvePerson(db: Db, workspaceId: string, ref: PersonLookup): R
 }
 
 /** A label for a stub person: the name, or the part of the email before the @. */
-function stubName(ref: AttendeeRef): string | null {
+export function stubName(ref: AttendeeRef): string | null {
   if (ref.name?.trim()) return ref.name.trim();
   if (ref.email) return ref.email.split("@")[0];
   return null;
@@ -113,7 +113,7 @@ function stubName(ref: AttendeeRef): string | null {
  * The suggested stub for an unmatched name or email, with a deterministic id
  * (`stubPersonId`). A stub that was deleted (not dismissed) is revived.
  */
-function ensureStubPerson(db: Db, workspaceId: string, name: string, email: string | undefined, provenance: Provenance) {
+export function ensureStubPerson(db: Db, workspaceId: string, name: string, email: string | undefined, provenance: Provenance) {
   const id = stubPersonId(workspaceId, email ?? foldName(name));
   const row = db.prepare("SELECT deleted_at FROM people WHERE id = ?").get(id) as { deleted_at: string | null } | undefined;
   if (!row) {
@@ -178,13 +178,13 @@ export interface CaptureResult {
 }
 
 /** A tombstoned attendee row that this source's claim still lists: removed by someone else. */
-function removedBySomeoneElse(db: Db, meetingId: string, personId: string, source: AttendeeSource): boolean {
+export function removedBySomeoneElse(db: Db, meetingId: string, personId: string, source: AttendeeSource): boolean {
   const row = db.prepare("SELECT deleted_at, sources FROM meeting_attendees WHERE id = ?")
     .get(attendeeRowId(meetingId, personId)) as { deleted_at: string | null; sources: string } | undefined;
   return !!row?.deleted_at && parseClaims(row.sources)[source]?.on === true;
 }
 
-function toRefs(list: unknown[] | AttendeeRef[]): AttendeeRef[] {
+export function toRefs(list: unknown[] | AttendeeRef[]): AttendeeRef[] {
   // Already-parsed references pass through untouched: re-parsing their text would
   // strip a leading "@" that is part of a name. Strings are parsed here.
   const out: AttendeeRef[] = [];
