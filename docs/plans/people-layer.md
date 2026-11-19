@@ -60,8 +60,10 @@ migration, plus how it's built and released.
    `app:reset`, note and project delete (`onNoteDeleted`), cross-workspace
    `mergeProject` (`detachForeignPeopleLinks`), and conflict copies drop
    `meeting_id`/`owner_person_id` (`stripCopyLinks`). Per-source attendance:
-   `meeting_attendees.sources` (v67 desktop, v11 mobile, sync protocol 6,
-   union-merged) lists every source naming a person; `source` is the strongest.
+   `meeting_attendees.sources` (v67 desktop, v11 mobile, sync protocol 6) holds
+   one claim `{on, at}` per source (`shared/people/claims.ts`), merged source
+   by source so a removal survives sync; `source` is the strongest active one.
+   In SQL read a claim with `json_extract(a.sources, '$.<source>.on') = 1`.
    `removeAttendeeSource` drops a person only when the last source lets go;
    use `attendeeIdsFromSource` instead of querying `source = ?`. Body-line and checklist
    capture passes (writing `note_action_items`) land with W4 indexing, which

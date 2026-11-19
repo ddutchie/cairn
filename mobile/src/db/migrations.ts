@@ -215,9 +215,9 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
   (db) => {
     const cols = db.getAllSync<{ name: string }>("PRAGMA table_info(meeting_attendees)").map((c) => c.name);
     if (!cols.includes("sources")) {
-      db.execSync("ALTER TABLE meeting_attendees ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'");
+      db.execSync("ALTER TABLE meeting_attendees ADD COLUMN sources TEXT NOT NULL DEFAULT '{}'");
     }
-    db.execSync("UPDATE meeting_attendees SET sources = json_array(source) WHERE sources = '[]'");
+    db.execSync("UPDATE meeting_attendees SET sources = json_object(source, json_object('on', json('true'), 'at', updated_at)) WHERE sources = '{}' OR sources = '[]'");
   },
 ];
 

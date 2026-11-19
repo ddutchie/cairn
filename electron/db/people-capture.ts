@@ -14,10 +14,10 @@
  */
 
 import type Database from "better-sqlite3";
-import { foldName, formatMeetingDate, parseAttendeeList, splitAttendeeValues, type AttendeeRef } from "../../shared/people/parse";
+import { foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, splitAttendeeValues, type AttendeeRef } from "../../shared/people/parse";
 import type { AttendeeSource, PeopleStatus, Provenance } from "../../shared/types/people";
 import {
-  addAttendee, createMeeting, createPerson, getMeeting, getPerson, attendeeIdsFromSource, removeAttendeeSource, setNoteMeeting, updateMeeting,
+  addAttendee, createMeeting, createPerson, getMeeting, getPerson, updatePerson, attendeeIdsFromSource, removeAttendeeSource, setNoteMeeting, updateMeeting,
 } from "./people-queries";
 import { noteMeetingId, stubPersonId } from "../../shared/people/ids";
 
@@ -163,13 +163,28 @@ export interface CaptureResult {
 }
 
 function toRefs(list: unknown[] | AttendeeRef[]): AttendeeRef[] {
-  const raw = list.map((x) => (x && typeof x === "object" && !Array.isArray(x) ? refToString(x as AttendeeRef) : x));
-  return parseAttendeeList(raw);
+  // Already-parsed references pass through untouched: re-parsing their text would
+  // strip a leading "@" that is part of a name. Strings are parsed here.
+  const out: AttendeeRef[] = [];
+  const seen = new Set<string>();
+  for (const item of list) {
+    const ref = item && typeof item === "object" && !Array.isArray(item)
+      ? normalizeRef(item as AttendeeRef)
+      : parseAttendeeValue(item);
+    if (!ref) continue;
+    const key = ref.email ?? foldName(ref.name ?? "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+  }
+  return out;
 }
 
-function refToString(ref: AttendeeRef): string {
-  if (ref.name && ref.email) return `${ref.name} <${ref.email}>`;
-  return ref.email ?? ref.name ?? "";
+function normalizeRef(ref: AttendeeRef): AttendeeRef | null {
+  const name = ref.name?.trim();
+  const email = ref.email?.trim().toLowerCase();
+  if (!name && !email) return null;
+  return { ...(name ? { name } : {}), ...(email ? { email } : {}) };
 }
 
 /**
@@ -233,6 +248,7 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
       }
     }
 
+    rememberPersonaTitles(db, [...keep]);
     for (const person_id of attendeeIdsFromSource(db, meeting.id, input.source)) {
       if (keep.has(person_id)) continue;
       if (removeAttendeeSource(db, meeting.id, person_id, input.source)) result.removed.push(person_id);
@@ -305,6 +321,28 @@ export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unkn
     }
   }
   return { attendees, date: formatMeetingDate(row.starts_at), meetingId: row.meeting_id, unreferenced };
+}
+
+/**
+ * Keep each person's current persona-note title as an alias. A title is how
+ * files and other notes name them (`[[Ana Ruiz]]`), and a rename can arrive by
+ * sync (mobile edits titles directly) without passing through `onNoteRenamed`,
+ * so the title is remembered whenever Cairn reads or writes a reference to it.
+ * A later rename then leaves the old title resolving to the same person.
+ */
+export function rememberPersonaTitles(db: Db, personIds: readonly string[]): void {
+  const row = db.prepare(`
+    SELECT n.title FROM people p JOIN notes n ON n.id = p.persona_note_id AND n.deleted_at IS NULL
+    WHERE p.id = ? AND p.deleted_at IS NULL
+  `);
+  for (const id of new Set(personIds)) {
+    const title = (row.get(id) as { title: string } | undefined)?.title?.trim();
+    const person = title ? getPerson(db, id) : null;
+    if (!person || !title) continue;
+    if (![person.name, ...person.aliases].some((x) => x.toLowerCase() === title.toLowerCase())) {
+      updatePerson(db, id, { aliases: [...person.aliases, title] });
+    }
+  }
 }
 
 /**

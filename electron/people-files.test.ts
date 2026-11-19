@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -174,5 +174,55 @@ describe("FrontmatterRetryQueue", () => {
       if (ids.length) { q.report(ids, []); break; }
     }
     expect(q.size).toBe(0);
+  });
+});
+
+describe("round-three review fixes", () => {
+  it("a scalar frontmatter value naming @Ana keeps @Ana, not Ana", () => {
+    const file = noteWithFile("n1", { attendees: '"@Ana"' });
+    const at = createPerson(db, { workspaceId: "ws1", name: "@Ana" });
+    createPerson(db, { workspaceId: "ws1", name: "Ana" });
+    const r = capturePeopleFromFile(db, file, "n1")!;
+    expect(r.attendees).toEqual([at.id]);
+    expect(r.removed).toEqual([]);
+    expect(listAttendees(db, r.meetingId).map((a) => a.personId)).toEqual([at.id]);
+  });
+
+  it("a read failure while writing is reported as failed so it is retried", () => {
+    const file = noteWithFile("n1", { attendees: ["Ana"] });
+    const r = capturePeopleFromFile(db, file, "n1")!;
+    const ben = createPerson(db, { workspaceId: "ws1", name: "Ben" });
+    addAttendee(db, { meetingId: r.meetingId, personId: ben.id, source: "manual", provenance: "explicit" });
+    const real = fs.readFileSync;
+    let reads = 0;
+    const spy = vi.spyOn(fs, "readFileSync").mockImplementation(((...args: Parameters<typeof fs.readFileSync>) => {
+      // refresh reads the file once to compare, then writeMeetingFrontmatter reads it again: fail that one.
+      if (String(args[0]) === file && ++reads === 2) throw new Error("EBUSY");
+      return real(...args);
+    }) as typeof fs.readFileSync);
+    try {
+      const out = refreshMeetingFrontmatter(db, ws, ["n1"]);
+      expect(out.failed).toEqual(["n1"]);
+      expect(out.written).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"]).written).toEqual(["n1"]);
+  });
+
+  it("a persona rename that arrives by sync (no onNoteRenamed) still resolves the old title", () => {
+    const persona = createNote(db, { id: "p-ana", projectId: "proj1", workspaceId: "ws1", title: "Ana Old", content: "" });
+    const ana = createPerson(db, { workspaceId: "ws1", name: "Ana Ruiz", personaNoteId: persona.id });
+    const file = noteWithFile("n1", { attendees: ["[[Ana Old]]"] });
+    capturePeopleFromFile(db, file, "n1");
+    // Mobile renames the note directly; the sync engine applies the row without our hook.
+    db.prepare("UPDATE notes SET title = 'Ana New' WHERE id = 'p-ana'").run();
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"]).written).toEqual(["n1"]);
+    expect(fmOf(file).attendees).toEqual(["[[Ana New]]"]);
+    // An external editor re-saves the old link: it still means Ana, no stub.
+    fs.writeFileSync(file, matter.stringify("Notes\n", { ...fmOf(file), attendees: ["[[Ana Old]]"] }));
+    const back = capturePeopleFromFile(db, file, "n1")!;
+    expect(back.created).toEqual([]);
+    expect(back.attendees).toEqual([ana.id]);
   });
 });

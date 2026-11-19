@@ -19,8 +19,8 @@ import fs from "node:fs";
 import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import { findNoteFilePath } from "./host-shared/notes-io";
-import { isPeopleEnabled } from "./db/people-queries";
-import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, renderMeetingFrontmatter, type CaptureResult, type MeetingFrontmatter } from "./db/people-capture";
+import { isPeopleEnabled, listAttendees } from "./db/people-queries";
+import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, rememberPersonaTitles, renderMeetingFrontmatter, type CaptureResult, type MeetingFrontmatter } from "./db/people-capture";
 import { parseAttendeeList, parseMeetingDate } from "../shared/people/parse";
 
 /** The frontmatter keys this module reads and writes; `when` is accepted on read only. */
@@ -59,7 +59,7 @@ export function capturePeopleFromFile(db: Database.Database, filePath: string, n
   if (!props.hasAttendees) {
     const hadFromFile = db.prepare(`
       SELECT 1 FROM notes n JOIN meeting_attendees a ON a.meeting_id = n.meeting_id AND a.deleted_at IS NULL
-      WHERE n.id = ? AND EXISTS (SELECT 1 FROM json_each(a.sources) WHERE value = 'frontmatter') LIMIT 1
+      WHERE n.id = ? AND json_extract(a.sources, '$.frontmatter.on') = 1 LIMIT 1
     `).get(noteId);
     if (!hadFromFile) return null;
     return captureNoteMeeting(db, { noteId, attendees: [], source: "frontmatter", provenance: "explicit" });
@@ -79,15 +79,11 @@ export function capturePeopleFromFile(db: Database.Database, filePath: string, n
  * Rewrite one file's `attendees` / `date` in place, keeping every other key and
  * the body exactly as they are. `null` removes `attendees` (the note is no
  * longer a meeting) and keeps `date`, which may predate the meeting. Returns
- * true when bytes were written.
+ * true when bytes were written; throws when the file can't be read or written.
  */
 export function writeMeetingFrontmatter(filePath: string, fm: MeetingFrontmatter | null): boolean {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(filePath, "utf-8");
-  } catch {
-    return false;
-  }
+  // A read failure throws (the caller retries); `false` only ever means "already as wanted".
+  const raw = fs.readFileSync(filePath, "utf-8");
   const parsed = matter(raw);
   const data: Record<string, unknown> = { ...parsed.data };
   if (fm) {
@@ -140,6 +136,7 @@ export function refreshMeetingFrontmatter(
       const filePath = findNoteFilePath(workspacePath, note.project_name, note.id);
       const existing = filePath ? readMeetingProps(filePath) : null;
       if (!filePath || !existing) { result.failed.push(noteId); continue; }
+      rememberPersonaTitles(db, listAttendees(db, note.meetingId).map((a) => a.personId));
       const fm = renderMeetingFrontmatter(db, noteId, existing.attendees);
       if (!fm) continue;
       pinUnreferenced(db, fm);

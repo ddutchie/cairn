@@ -358,6 +358,37 @@ describe("sync engine — Phase 0 convergence spike", () => {
     expect(live.c).toBe(0);
   });
 
+  it("merges attendee source claims per source: a removal survives, concurrent adds both stay", () => {
+    const clkA = clockFrom(6_500_000);
+    const clkB = clockFrom(6_500_000);
+    const A = makeDevice("A", clkA.now);
+    const B = makeDevice("B", clkB.now);
+    seedBase(A.engine);
+    A.engine.put("people", { id: "pe1", workspace_id: "ws1", name: "Ana", created_at: "t", updated_at: "t" });
+    A.engine.put("meetings", { id: "m1", workspace_id: "ws1", title: "Sync", starts_at: "2026-11-11T00:00:00.000Z", source: "note", created_at: "t", updated_at: "t" });
+    const claims = (o: Record<string, [boolean, string]>) =>
+      JSON.stringify(Object.fromEntries(Object.entries(o).map(([k, [on, at]]) => [k, { on, at }])));
+    A.engine.put("meeting_attendees", { id: "att1", meeting_id: "m1", person_id: "pe1", status: "confirmed", source: "calendar", sources: claims({ frontmatter: [true, "2026-11-11T09:00:00.000Z"], calendar: [true, "2026-11-11T09:00:00.000Z"] }), provenance: "explicit", created_at: "t", updated_at: "t" });
+    syncFolder(dir, A.engine, B.engine);
+
+    // A drops the calendar claim; B concurrently adds a manual one.
+    clkA.advance(1);
+    A.engine.put("meeting_attendees", { id: "att1", sources: claims({ frontmatter: [true, "2026-11-11T09:00:00.000Z"], calendar: [false, "2026-11-11T10:00:00.000Z"] }) });
+    clkB.advance(2);
+    B.engine.put("meeting_attendees", { id: "att1", sources: claims({ frontmatter: [true, "2026-11-11T09:00:00.000Z"], calendar: [true, "2026-11-11T09:00:00.000Z"], manual: [true, "2026-11-11T10:30:00.000Z"] }) });
+    syncFolder(dir, A.engine, B.engine);
+    syncFolder(dir, A.engine, B.engine);
+
+    for (const d of [A, B]) {
+      const row = d.db.prepare("SELECT sources FROM meeting_attendees WHERE id='att1'").get() as { sources: string };
+      const c = JSON.parse(row.sources) as Record<string, { on: boolean }>;
+      expect(c.calendar.on).toBe(false);
+      expect(c.frontmatter.on).toBe(true);
+      expect(c.manual.on).toBe(true);
+    }
+    expect(liveState(A.db)).toEqual(liveState(B.db));
+  });
+
   it("merges JSON-array fields by set-union (concurrent tag additions both survive)", () => {
     const clkA = clockFrom(6_000_000);
     const clkB = clockFrom(6_000_000);

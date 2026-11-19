@@ -22,6 +22,7 @@ import {
   type PersonEdge, type PersonEdgeRole, type PersonEdgeType, type PersonPatch, type PersonRelation,
   type Provenance, type Relationship, type RelationshipType,
 } from "../../shared/types/people";
+import { activeSources, parseClaims, serializeClaims } from "../../shared/people/claims";
 import { attendeeRowId, calendarMeetingId, edgeRowId, mentionRowId } from "../../shared/people/ids";
 
 type Db = Database.Database;
@@ -171,12 +172,16 @@ function toAttendee(r: Row): MeetingAttendee {
   };
 }
 
-/** Every source listing this attendee; rows from before `sources` existed fall back to `source`. */
+/** Every source currently listing this attendee; rows from before `sources` existed fall back to `source`. */
 function sourcesOf(r: Row): AttendeeSource[] {
-  let list: unknown = [];
-  try { list = JSON.parse(r.sources ?? "[]"); } catch { /* treat as empty */ }
-  const out = Array.isArray(list) ? list.filter((x): x is AttendeeSource => typeof x === "string" && x in SOURCE_RANK) : [];
-  return out.length ? out : [r.source as AttendeeSource];
+  const active = activeSources(parseClaims(r.sources)).filter((x): x is AttendeeSource => x in SOURCE_RANK);
+  return active.length ? active : [r.source as AttendeeSource];
+}
+
+function claimsWith(r: Row | undefined, source: AttendeeSource, on: boolean, at: string): string {
+  const claims = r ? parseClaims(r.sources) : {};
+  claims[source] = { on, at };
+  return serializeClaims(claims);
 }
 
 function toMention(r: Row): NoteMention {
@@ -581,24 +586,25 @@ export function addAttendee(db: Db, input: AddAttendeeInput): MeetingAttendee {
     const current = sourcesOf(existing);
     const sources = current.includes(source) ? current : [...current, source];
     const top = strongest(sources);
+    const claims = current.includes(source) ? existing.sources : claimsWith(existing, source, true, now);
     const takeOver = SOURCE_RANK[source] > SOURCE_RANK[existing.source as AttendeeSource];
     const confirm = existing.status !== status && status === "confirmed";
     if (sources.length === current.length && !takeOver && !confirm) return toAttendee(existing);
     db.prepare("UPDATE meeting_attendees SET status = ?, source = ?, sources = ?, provenance = ?, updated_at = ? WHERE id = ?")
-      .run(confirm ? "confirmed" : existing.status, top, JSON.stringify(sources),
+      .run(confirm ? "confirmed" : existing.status, top, claims,
         takeOver ? (input.provenance ?? "explicit") : existing.provenance, now, id);
     return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
   }
   if (existing) {
     db.prepare(`
       UPDATE meeting_attendees SET deleted_at = NULL, status = ?, source = ?, sources = ?, provenance = ?, updated_at = ? WHERE id = ?
-    `).run(status, source, JSON.stringify([source]), input.provenance ?? "explicit", now, id);
+    `).run(status, source, claimsWith(undefined, source, true, now), input.provenance ?? "explicit", now, id);
     return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
   }
   db.prepare(`
     INSERT INTO meeting_attendees (id, meeting_id, person_id, status, source, sources, provenance, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, input.meetingId, input.personId, status, source, JSON.stringify([source]), input.provenance ?? "explicit", now, now);
+  `).run(id, input.meetingId, input.personId, status, source, claimsWith(undefined, source, true, now), input.provenance ?? "explicit", now, now);
   return toAttendee(db.prepare("SELECT * FROM meeting_attendees WHERE id = ?").get(id) as Row);
 }
 
@@ -620,8 +626,10 @@ export function removeAttendeeSource(db: Db, meetingId: string, personId: string
   if (!row) return false;
   const rest = sourcesOf(row).filter((x) => x !== source);
   if (rest.length === 0) { removeAttendee(db, meetingId, personId); return true; }
+  // Keep the dropped claim (off, dated) so the removal wins over an older claim on another device.
+  const now = ts();
   db.prepare("UPDATE meeting_attendees SET source = ?, sources = ?, updated_at = ? WHERE id = ?")
-    .run(strongest(rest), JSON.stringify(rest), ts(), row.id);
+    .run(strongest(rest), claimsWith(row, source, false, now), now, row.id);
   return false;
 }
 
