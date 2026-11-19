@@ -17,7 +17,8 @@ import {
   removeMention, setCardOwner, updatePerson,
 } from "../../db/people-queries";
 import { captureNoteMeeting, resolvePerson } from "../../db/people-capture";
-import { refreshMeetingFrontmatter } from "../../people-files";
+import { makeFrontmatterReader, refreshMeetingFrontmatter } from "../../people-files";
+import { buildInventory } from "../../db/people-migration";
 import { edgeRowId } from "../../../shared/people/ids";
 import { parseMeetingDate } from "../../../shared/people/parse";
 import {
@@ -94,6 +95,7 @@ export function people_tool(db: Db, workspacePath: string, args: Args): unknown 
       case "get": return getOne(db, workspaceId, args);
       case "timeline": return timeline(db, workspaceId, args);
       case "relationships": return relationships(db, workspaceId, args);
+      case "inventory": return inventory(db, workspacePath, workspaceId, args);
       case "upsert": return upsert(db, workspaceId, args);
       case "link": return link(db, workspacePath, workspaceId, args);
       default: return { error: `Unknown people action "${args.action}"` };
@@ -194,6 +196,31 @@ function relationships(db: Db, workspaceId: string, args: Args) {
   return {
     edges: rows.slice(0, limit).map((r) => Object.fromEntries(Object.entries(r).filter(([k, v]) => v !== null && !(k === "status" && v === "confirmed")))),
     total: rows.length,
+  };
+}
+
+/**
+ * Read-only migration manifest: the person and meeting notes the workspace has,
+ * what a migration would do with each, and what is ambiguous. Compact on
+ * purpose (names and ids, no reasons or note bodies). Nothing is written; the
+ * user applies a migration from the People view.
+ */
+function inventory(db: Db, workspacePath: string, workspaceId: string, args: Args) {
+  const inv = buildInventory(db, workspaceId, { readFrontmatter: makeFrontmatterReader(db, workspacePath, workspaceId) });
+  const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 25;
+  return {
+    counts: inv.counts,
+    personas: inv.personas.slice(0, limit).map((c) => ({
+      noteId: c.noteId, title: c.title, name: c.name, confidence: c.confidence, action: c.action,
+      ...(c.skipReason ? { skipReason: c.skipReason } : {}),
+      ...(c.existingPerson ? { existingPerson: c.existingPerson.name } : {}),
+      ...(c.suggestedAliases.length ? { suggestedAliases: c.suggestedAliases } : {}),
+    })),
+    meetings: inv.meetings.slice(0, limit).map((m) => ({
+      noteId: m.noteId, title: m.title, ...(m.date ? { date: m.date } : {}),
+      unresolved: m.attendees.filter((a) => a.resolution === "unknown" || a.resolution === "ambiguous").map((a) => a.text),
+    })),
+    ...(inv.ambiguousShortNames.length ? { ambiguousShortNames: inv.ambiguousShortNames.map((a) => a.text) } : {}),
   };
 }
 

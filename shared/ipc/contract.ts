@@ -22,6 +22,7 @@ import type {
 import type {
   AttendeeInput, PeopleListFilter, PeopleNetwork, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
 } from "../types/people-view";
+import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../types/people-migration";
 import type { TodayBrief, TodayHistoryEntry, TodayMarks, TodaySettings, TodayState } from "../today/brief";
 import type { TodayRoute } from "../today/route";
 import type { ChatPopoutPayload } from "../agent/chat-popout";
@@ -342,6 +343,17 @@ export interface IpcContract {
   "db:people:attendees": { args: [req: { meetingId: string; statuses?: PeopleStatus[] }]; result: MeetingAttendee[] };
   "db:people:attendee:add": { writes: true; args: [input: AttendeeInput]; result: MeetingAttendee };
   "db:people:attendee:remove": { writes: true; args: [req: { meetingId: string; personId: string }]; result: void };
+  /** Read-only scan of a workspace's person and meeting notes (works with the flag off). */
+  "db:people:migration:inventory": { args: [req: { workspaceId: string }]; result: MigrationInventory };
+  /**
+   * Apply what the user approved from the inventory, or with `dryRun` report what it would do and
+   * write nothing. Does nothing while the flag is off. Idempotent.
+   */
+  "db:people:migration:apply": {
+    writes: true;
+    args: [req: { workspaceId: string; approvals: MigrationApprovals; dryRun?: boolean }];
+    result: MigrationResult;
+  };
 
   // ── Heartbeat automations ────────────────────────────────────────────────
   "db:automation:list": { args: [req: { workspaceId: string }]; result: Automation[] };
@@ -1025,6 +1037,8 @@ const CHANNELS: ChannelRecord = {
   "db:people:attendees": "read",
   "db:people:attendee:add": "write",
   "db:people:attendee:remove": "write",
+  "db:people:migration:inventory": "read",
+  "db:people:migration:apply": "write",
   "db:automation:list": "read",
   "db:automation:get": "read",
   "db:automation:create": "write",

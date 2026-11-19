@@ -72,3 +72,13 @@ export function actionItemLineKey(rawLine: string): string {
   const hex = (n: number) => (n >>> 0).toString(16).padStart(8, "0");
   return hex(a) + hex(b);
 }
+
+/**
+ * The person made for a persona note by the migration: one per note per
+ * workspace, so two devices (or a re-run) that migrate the same note write the
+ * same row instead of two people. The workspace is part of the id for the same
+ * reason as `noteMeetingId`.
+ */
+export function migratedPersonId(workspaceId: string, noteId: string): string {
+  return `mig:${workspaceId}:${noteId}`;
+}

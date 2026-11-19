@@ -2,6 +2,7 @@
 
 import { invokeContract } from "./ipc";
 import type { PeopleStatus, PersonCreateInput, PersonPatch } from "../../shared/types/people";
+import type { MigrationApprovals } from "../../shared/types/people-migration";
 import type { AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch } from "../../shared/types/people-view";
 
 export const peopleApi = {
@@ -32,6 +33,11 @@ export const peopleApi = {
     attendee: {
       add:    (input: AttendeeInput) => invokeContract("db:people:attendee:add", input),
       remove: (meetingId: string, personId: string) => invokeContract("db:people:attendee:remove", { meetingId, personId }),
+    },
+    migration: {
+      inventory: (workspaceId: string) => invokeContract("db:people:migration:inventory", { workspaceId }),
+      apply:     (workspaceId: string, approvals: MigrationApprovals, dryRun?: boolean) =>
+        invokeContract("db:people:migration:apply", { workspaceId, approvals, dryRun }),
     },
   },
 } as const;
