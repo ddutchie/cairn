@@ -10,8 +10,8 @@
  * below): Open items both ways, and the attendee strip on meeting notes.
  */
 
-import React, { useRef, useState } from "react";
-import { CalendarDays, CheckCircle2, FileText, Kanban, Lock, Pencil, X, AtSign } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { CalendarDays, CheckCircle2, FileText, Kanban, Lock, Pencil, Sparkles, X, AtSign } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useCairnStore } from "@/store";
 import { Button, FOCUS_RING } from "@/components/ui/button";
@@ -25,15 +25,18 @@ import { PanelHeading } from "@/components/ui/panel";
 import { MicroLabel } from "@/components/ui/labels";
 import { EmptyState } from "@/components/ui/empty-state";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
+import { MarkdownEditor } from "@/components/notes/markdown-editor";
 import { revealCard, revealNote } from "@/lib/events";
 import { formatDate, formatRelative } from "../../../shared/format/date";
 import { cn } from "@/lib/utils";
-import { cleanRelationshipLabel } from "../../../shared/people/parse";
+import { cleanProfileField, cleanRelationshipLabel, type ProfileField } from "../../../shared/people/parse";
 import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type RelationshipType } from "../../../shared/types/people";
 import type { PersonPage as PersonPageModel, PersonTimelineItem } from "../../../shared/types/people-view";
 import {
   CADENCE_LABELS, EDGE_ROLE_OPTIONS, RELATIONSHIP_LABELS, describeRelation, splitList,
 } from "./people-model";
+import { peopleClient } from "@/lib/ipc/people";
+import type { AutofillProposal } from "../../../shared/people/autofill";
 import { NextMeeting, ProfileLine, usePersonProfile } from "./PersonOneOnOne";
 
 /** Open a note or card in its project. */
@@ -88,7 +91,7 @@ function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; 
           <Pencil size={12} /> {editing ? "Done" : "Edit"}
         </Button>
       </div>
-      <ProfileLine profile={profile} />
+      <ProfileLine profile={profile} person={person} />
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {person.relationship.map((r) => (
           <Chip key={`${r.type}|${r.label ?? ""}`}>
@@ -138,6 +141,28 @@ function DraftInput({ value, onSave, placeholder, ariaLabel }: {
       onBlur={() => { if (draft !== value) onSave(draft); }}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
     />
+  );
+}
+
+/** A role, team, place or time zone: one short line, saved on blur, with a message when it isn't valid. */
+function ProfileInput({ field, personId, value, placeholder }: { field: ProfileField; personId: string; value: string; placeholder: string }) {
+  const updatePerson = useCairnStore((s) => s.updatePerson);
+  const [error, setError] = useState<string | null>(null);
+  const label = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" }[field];
+  return (
+    <>
+      <BlurInput
+        ariaLabel={label}
+        placeholder={placeholder}
+        value={value}
+        onSave={(v) => {
+          const { value: clean, error: err } = cleanProfileField(field, v);
+          setError(err ?? null);
+          if (!err) void updatePerson(personId, { [field]: clean ?? null });
+        }}
+      />
+      {error && <p role="alert" className="mt-1 text-2xs text-[var(--danger)]">{error}</p>}
+    </>
   );
 }
 
@@ -194,6 +219,26 @@ function PersonSettings({ page }: { page: PersonPageModel }) {
       <PanelHeading title="Settings" note="Saved as you change them" />
       <Field label="Name">
         <BlurInput ariaLabel="Name" value={person.name} onSave={(v) => { if (v.trim()) void updatePerson(person.id, { name: v }); }} />
+      </Field>
+      <Field label="Role">
+        <ProfileInput field="title" personId={person.id} value={person.title ?? ""} placeholder="e.g. Senior Software Engineer" />
+      </Field>
+      <Field label="Team">
+        <ProfileInput field="team" personId={person.id} value={person.team ?? ""} placeholder="e.g. Sync" />
+      </Field>
+      <Field label="Location">
+        <ProfileInput field="location" personId={person.id} value={person.location ?? ""} placeholder="e.g. Berlin, Germany" />
+      </Field>
+      <Field label="Time zone">
+        <ProfileInput field="timezone" personId={person.id} value={person.timezone ?? ""} placeholder="e.g. Europe/Berlin" />
+      </Field>
+      <Field label="Slack id">
+        <BlurInput
+          ariaLabel="Slack id"
+          placeholder="U0123ABCD, to show their Slack profile"
+          value={person.slackId ?? ""}
+          onSave={(v) => void updatePerson(person.id, { slackId: v.trim() || null })}
+        />
       </Field>
       <Field label="Relationship">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Relationship to you">
@@ -395,8 +440,86 @@ function Timeline({ items }: { items: PersonTimelineItem[] }) {
 
 // ── Persona ─────────────────────────────────────────────────────────────────
 
+// ── Autofill from the persona note ───────────────────────────────────────────
+
+const FIELD_LABEL: Record<ProfileField, string> = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" };
+const SKIP_TEXT: Record<string, string> = {
+  off: "The People layer is off.",
+  "no-ai": "Connect an AI provider in Settings to use this.",
+  private: "This person is private to you, so their note isn't sent to an AI.",
+  "no-persona": "Link a persona note first.",
+  empty: "The persona note is empty.",
+  failed: "Couldn't read the note. Try again.",
+};
+
+/** Asks the model what the persona note says about role, team, location and time zone; the user ticks what to keep. */
+function PersonaAutofill({ personId }: { personId: string }) {
+  const updatePerson = useCairnStore((s) => s.updatePerson);
+  const [state, setState] = useState<
+    { kind: "idle" } | { kind: "busy" } | { kind: "none"; message: string } | { kind: "review"; proposals: AutofillProposal[] }
+  >({ kind: "idle" });
+  const [picked, setPicked] = useState<Set<ProfileField>>(new Set());
+
+  const run = async () => {
+    setState({ kind: "busy" });
+    try {
+      const res = await peopleClient.autofill(personId);
+      if ("skipped" in res) return setState({ kind: "none", message: SKIP_TEXT[res.skipped] ?? "Nothing to fill." });
+      if (res.proposals.length === 0) return setState({ kind: "none", message: "The note says nothing new about these fields." });
+      // Empty fields start ticked; replacing a value is the user's choice.
+      setPicked(new Set(res.proposals.filter((p) => !p.current).map((p) => p.field)));
+      setState({ kind: "review", proposals: res.proposals });
+    } catch {
+      setState({ kind: "none", message: SKIP_TEXT.failed });
+    }
+  };
+  const apply = async () => {
+    if (state.kind !== "review") return;
+    const patch: Record<string, string> = {};
+    for (const p of state.proposals) if (picked.has(p.field)) patch[p.field] = p.value;
+    if (Object.keys(patch).length) await updatePerson(personId, patch);
+    setState({ kind: "idle" });
+  };
+
+  return (
+    <div className="mb-3">
+      <Button variant="ghost" size="xs" onClick={run} disabled={state.kind === "busy"}>
+        <Sparkles size={11} /> {state.kind === "busy" ? "Reading…" : "Fill details from note"}
+      </Button>
+      {state.kind === "none" && <p role="status" className="mt-1.5 text-xs text-[var(--text-tertiary)]">{state.message}</p>}
+      {state.kind === "review" && (
+        <div aria-label="Proposed details" className="mt-2 rounded-md border border-[var(--border)] bg-[var(--surface-2)] p-3">
+          <ul className="space-y-2">
+            {state.proposals.map((p) => (
+              <li key={p.field}>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={picked.has(p.field)}
+                    onChange={(e) => setPicked((prev) => { const n = new Set(prev); if (e.target.checked) n.add(p.field); else n.delete(p.field); return n; })}
+                  />
+                  <span className="min-w-0">
+                    <span className="text-[var(--text-tertiary)]">{FIELD_LABEL[p.field]}: </span>
+                    <span className="text-[var(--text-primary)]">{p.value}</span>
+                    {p.current && <span className="text-xs text-[var(--text-tertiary)]"> (now {p.current})</span>}
+                    <span className="block truncate text-xs text-[var(--text-tertiary)]" title={p.quote}>“{p.quote}”</span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex gap-2">
+            <Button variant="accent" size="xs" onClick={apply} disabled={picked.size === 0}>Apply</Button>
+            <Button variant="ghost" size="xs" onClick={() => setState({ kind: "idle" })}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Persona({ page }: { page: PersonPageModel }) {
-  const reveal = useReveal();
   const updateNote = useCairnStore((s) => s.updateNote);
   const { persona } = page;
   const [draft, setDraft] = useState<string | null>(null);
@@ -404,15 +527,34 @@ function Persona({ page }: { page: PersonPageModel }) {
   // database, which the note write reaches a moment later).
   const [saved, setSaved] = useState<{ base: string; content: string } | null>(null);
   const content = persona ? (saved && saved.base === persona.content ? saved.content : persona.content) : "";
+  const draftRef = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const save = () => {
-    if (!persona || draft === null) return;
-    if (draft !== content) {
-      updateNote(persona.id, { content: draft });
-      setSaved({ base: persona.content, content: draft });
-    }
+  const save = (text: string) => {
+    if (!persona || text === content) return;
+    updateNote(persona.id, { content: text });
+    setSaved({ base: persona.content, content: text });
+  };
+  const edit = (text: string) => {
+    draftRef.current = text;
+    setDraft(text);
+    // Keep what's typed even if the page is left mid-edit.
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { if (draftRef.current !== null) save(draftRef.current); }, 1200);
+  };
+  const done = () => {
+    if (timer.current) clearTimeout(timer.current);
+    if (draft !== null) save(draft);
+    draftRef.current = null;
     setDraft(null);
   };
+  // Leaving the page (another person, another view) saves a pending edit.
+  const pending = useRef({ save, persona });
+  useEffect(() => { pending.current = { save, persona }; });
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+    if (draftRef.current !== null) pending.current.save(draftRef.current);
+  }, []);
 
   return (
     <section className="mb-9" aria-label="Persona">
@@ -420,35 +562,26 @@ function Persona({ page }: { page: PersonPageModel }) {
         title="Persona"
         note={persona ? persona.title : undefined}
         action={persona ? (
-          <div className="flex items-center gap-1">
-            {draft === null ? (
-              <Button variant="ghost" size="xs" onClick={() => setDraft(content)}>
-                <Pencil size={11} /> Edit
-              </Button>
-            ) : (
-              <Button variant="accent" size="xs" onClick={save}>Done</Button>
-            )}
-            <Button variant="ghost" size="xs" onClick={() => reveal.note(persona.projectId, persona.id)}>
-              <FileText size={11} /> Open in Notes
+          draft === null ? (
+            <Button variant="ghost" size="xs" onClick={() => setDraft(content)}>
+              <Pencil size={11} /> Edit
             </Button>
-          </div>
+          ) : (
+            <Button variant="accent" size="xs" onClick={done}>Done</Button>
+          )
         ) : undefined}
       />
+      {persona && draft === null && <PersonaAutofill personId={page.person.id} />}
       {persona ? (
         draft !== null ? (
-          <textarea
-            aria-label="Persona note"
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={save}
-            rows={12}
-            className={cn(
-              "w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)]",
-              "placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]",
-            )}
-            placeholder="What they care about, how they like to work, how to help them grow"
-          />
+          <div aria-label="Persona note" className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm">
+            <MarkdownEditor
+              initialValue={content}
+              onChange={edit}
+              livePreview
+              placeholder="What they care about, how they like to work, how to help them grow"
+            />
+          </div>
         ) : content.trim()
           ? <NoteMarkdownPreview content={content} inline wikilinks className="text-sm" />
           : <p className="text-xs text-[var(--text-tertiary)]">The persona note is empty.</p>

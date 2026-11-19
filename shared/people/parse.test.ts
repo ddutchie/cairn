@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  cleanRelationshipLabel, foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate, splitAttendeeValues,
+  cleanProfileField, cleanRelationshipLabel, foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate, splitAttendeeValues,
 } from "./parse";
 
 describe("foldName", () => {
@@ -148,5 +148,21 @@ describe("cleanRelationshipLabel", () => {
   });
   it("refuses a long label", () => {
     expect(cleanRelationshipLabel("x".repeat(41)).error).toMatch(/at most 40/);
+  });
+});
+
+describe("cleanProfileField", () => {
+  it("trims and collapses a value", () => {
+    expect(cleanProfileField("title", "  Senior   Engineer ")).toEqual({ value: "Senior Engineer" });
+  });
+  it("treats empty as no value", () => {
+    expect(cleanProfileField("team", " ")).toEqual({});
+  });
+  it("accepts an IANA time zone and refuses anything else", () => {
+    expect(cleanProfileField("timezone", "Europe/Berlin")).toEqual({ value: "Europe/Berlin" });
+    expect(cleanProfileField("timezone", "Berlin time").error).toMatch(/IANA/);
+  });
+  it("caps the length", () => {
+    expect(cleanProfileField("location", "x".repeat(81)).error).toMatch(/at most 80/);
   });
 });

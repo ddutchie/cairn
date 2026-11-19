@@ -20,6 +20,33 @@ export function cleanRelationshipLabel(raw: unknown): { label?: string; error?: 
   return { label };
 }
 
+export const PROFILE_FIELDS = ["title", "team", "location", "timezone"] as const;
+export type ProfileField = (typeof PROFILE_FIELDS)[number];
+export const MAX_PROFILE_FIELD = 80;
+
+/** Whether `tz` is an IANA time zone the runtime knows. Accepts anything where Intl can't check. */
+function knownTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz });
+    return true;
+  } catch (err) {
+    return !(err instanceof RangeError);
+  }
+}
+
+/**
+ * A profile field (role, team, place, time zone) as one short line. Empty is
+ * "no value"; a time zone must be an IANA name like Europe/Berlin.
+ */
+export function cleanProfileField(field: ProfileField, raw: unknown): { value?: string; error?: string } {
+  if (typeof raw !== "string") return {};
+  const value = raw.replace(/\s+/g, " ").trim();
+  if (!value) return {};
+  if (value.length > MAX_PROFILE_FIELD) return { error: `${field} is at most ${MAX_PROFILE_FIELD} characters.` };
+  if (field === "timezone" && !knownTimezone(value)) return { error: `"${value}" isn't a time zone. Use an IANA name like Europe/Berlin.` };
+  return { value };
+}
+
 /** A person reference as written somewhere: a name, an email, or both. */
 export interface AttendeeRef {
   name?: string;

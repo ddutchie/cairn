@@ -44,7 +44,10 @@ export function PersonRow({ person, selected, onSelect }: { person: PersonSummar
         selected ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text-primary)] hover:bg-[var(--surface-2)]",
       )}
     >
-      <span className="min-w-0 flex-1 truncate text-sm">{person.name}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm">{person.name}</span>
+        {person.title && <span className="block truncate text-2xs text-[var(--text-tertiary)]">{person.title}</span>}
+      </span>
       {person.agentPrivate && <Lock size={11} className="text-[var(--text-tertiary)] flex-shrink-0" aria-label="Private from agents" />}
       {/* Slot (W6/W4): live title, local time, next meeting, open items. */}
       <span className="text-2xs text-[var(--text-tertiary)] flex-shrink-0 tabular-nums">

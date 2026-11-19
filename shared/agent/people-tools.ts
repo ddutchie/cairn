@@ -24,6 +24,15 @@ export const PEOPLE_ARG_DESCRIPTIONS = {
   owner: "Person who owns this task (name, email or person id), or empty to clear",
 } as const;
 
+/** The profile fields `upsert` can set (same words on every surface). */
+export const PROFILE_FIELD_DESCRIPTIONS = {
+  title: "upsert: job title or role, e.g. 'Senior Software Engineer'. Fills a gap; never replaces what the user set unless provenance is explicit",
+  team: "upsert: team or org, e.g. 'Sync'",
+  location: "upsert: where they are, e.g. 'Berlin, Germany'",
+  timezone: "upsert: IANA time zone, e.g. 'Europe/Berlin'",
+  slackId: "upsert: their Slack member id (U0123ABCD), used to read their Slack profile",
+} as const;
+
 /** What `label` on a relationship means (same words on every surface). */
 export const RELATIONSHIP_LABEL_DESCRIPTION =
   "Optional short qualifier for this one type, e.g. 'executive sponsor' on a stakeholder. One phrase, never a list and never another type: give each relationship its own entry with its own type";

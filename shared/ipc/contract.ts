@@ -361,6 +361,11 @@ export interface IpcContract {
   "people:profile:get": { args: [req: { personId: string }]; result: PersonProfile };
   /** Re-read the profile from the Slack connector when the cache is older than 24h. Resolves with what the page should show. */
   "people:profile:refresh": { args: [req: { personId: string }]; result: PersonProfile };
+  /** Read a person's persona note and propose title, team, location and time zone, each with the words it came from. Writes nothing; the user applies what they accept. */
+  "people:autofill:propose": {
+    args: [req: { personId: string }];
+    result: { proposals: { field: "title" | "team" | "location" | "timezone"; value: string; quote: string; current?: string }[] } | { skipped: "off" | "no-ai" | "private" | "no-persona" | "empty" | "failed" };
+  };
   /** The newest prep brief for a person, and whether one is being prepared now. */
   "people:prep:get": { args: [req: { workspaceId: string; personId: string }]; result: { brief: PrepBrief | null; running: boolean } };
   /** Start a prep brief. `skipped` says why nothing started. Not `writes`: that flag is for db:* channels that change synced rows (it broadcasts db:changed); a prep writes a device-local file, like `today:run`. */
@@ -1055,6 +1060,7 @@ const CHANNELS: ChannelRecord = {
   "db:people:attendee:remove": "write",
   "people:profile:get": "read",
   "people:profile:refresh": "read",
+  "people:autofill:propose": "read",
   "people:prep:get": "read",
   "people:prep:run": "read",
   "db:people:migration:inventory": "read",

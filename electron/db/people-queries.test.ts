@@ -120,6 +120,16 @@ describe("people", () => {
     expect(getMe(db, "ws1")!.id).toBe(b.id);
   });
 
+  it("stores and clears the profile fields", () => {
+    const p = person("Ana", { title: " Senior Engineer ", team: "Sync", location: "Berlin", timezone: "Europe/Berlin" });
+    expect([p.title, p.team, p.location, p.timezone]).toEqual(["Senior Engineer", "Sync", "Berlin", "Europe/Berlin"]);
+    const u = updatePerson(db, p.id, { title: "Staff Engineer", team: null, location: "" });
+    expect(u.title).toBe("Staff Engineer");
+    expect(u.team).toBeUndefined();
+    expect(u.location).toBeUndefined();
+    expect(u.timezone).toBe("Europe/Berlin");
+  });
+
   it("updates and clears optional fields", () => {
     const p = person("Elisa", { cadence: "weekly", slackId: "U123" });
     const u = updatePerson(db, p.id, { cadence: null, slackId: null, agentPrivate: true, status: "suggested" });

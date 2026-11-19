@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS people (
   status          TEXT NOT NULL DEFAULT 'confirmed',
   provenance      TEXT NOT NULL DEFAULT 'explicit',
   stage           TEXT,
+  title           TEXT,
+  team            TEXT,
+  location        TEXT,
+  timezone        TEXT,
   is_me           INTEGER NOT NULL DEFAULT 0,
   agent_private   INTEGER NOT NULL DEFAULT 0,
   created_at      TEXT NOT NULL,
@@ -129,4 +133,11 @@ export const PEOPLE_ADDED_COLUMNS = [
   // the last source drops them. Added in v67, before any attendee row
   // existed outside development databases.
   { table: "meeting_attendees", column: "sources", ddl: "sources TEXT NOT NULL DEFAULT '{}'" },
+  // Profile fields the user (or an autofill they confirmed) fills in. Additive
+  // and optional, so no protocol bump: older peers ignore them and their puts
+  // leave them untouched.
+  { table: "people", column: "title", ddl: "title TEXT" },
+  { table: "people", column: "team", ddl: "team TEXT" },
+  { table: "people", column: "location", ddl: "location TEXT" },
+  { table: "people", column: "timezone", ddl: "timezone TEXT" },
 ] as const;
