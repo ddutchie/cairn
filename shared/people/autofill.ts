@@ -65,6 +65,8 @@ export function parseAutofill(reply: string, note: string, current: AutofillCurr
     if (!clean || error) continue;
     const q = typeof quote === "string" ? quote.replace(/\s+/g, " ").trim() : "";
     if (!q || !flat.includes(q.toLowerCase())) continue;
+    // A title, team or location must appear in its own quote. A time zone may be inferred from a named city, so only its quote is checked.
+    if (f !== "timezone" && !q.replace(/\s+/g, " ").toLowerCase().includes(clean.replace(/\s+/g, " ").toLowerCase())) continue;
     const cur = current[f]?.trim() || undefined;
     if (cur && cur.toLowerCase() === clean.toLowerCase()) continue;
     out.set(f, { field: f, value: clean, quote: q.slice(0, 200), ...(cur ? { current: cur } : {}) });

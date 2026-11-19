@@ -25,7 +25,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
   const resultText = toolCall.output ?? toolCall.error;
   const parsed = parseObject(resultText);
   // A people call names its person by an opaque id: read the name from the result when the call didn't carry one.
-  const summaryArgs = toolCall.name === "people" ? withPersonName(toolCall.args, parsed) : toolCall.args;
+  const summaryArgs = toolCall.name === "people" ? withOutcome(withPersonName(toolCall.args, parsed), parsed) : toolCall.args;
   const base = toolCall.viewTitle ? { pre: toolCall.viewTitle } : humanizeTool(toolCall.name, summaryArgs, cairnNameLookup);
   // A style rule that was already in the guide must not read as "Added".
   const hitCount = toolCall.ok && (toolCall.name === "search_notes" || toolCall.name === "search_tasks") ? resultCount(resultText) : undefined;
@@ -82,6 +82,14 @@ function withPersonName(args: Record<string, unknown> | undefined, parsed: Recor
   const at = (k: string) => (parsed[k] && typeof parsed[k] === "object" ? parsed[k] as Record<string, unknown> : undefined);
   const name = [parsed.name, at("person")?.name, at("attendee")?.name, at("mention")?.name, at("edge")?.source].find((v) => typeof v === "string" && v.trim());
   return name ? { ...args, name } : args;
+}
+
+/** What the call did, read from its result, for summaries that depend on it (created or updated; attendee kept). */
+function withOutcome(args: Record<string, unknown> | undefined, parsed: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!args || !parsed) return args;
+  if (args.action === "upsert" && typeof parsed.created === "boolean") return { ...args, outcome: parsed.created ? "created" : "updated" };
+  if (args.action === "link" && args.link === "attendee" && args.remove === true && parsed.removed === false) return { ...args, outcome: "kept" };
+  return args;
 }
 
 /** The one person a `people` result is about (get, upsert, timeline, a person's relationships), if any. */

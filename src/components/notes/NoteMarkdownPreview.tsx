@@ -48,11 +48,13 @@ interface NoteMarkdownPreviewProps {
 
 /** A `[[wikilink]]` chip: opens the matching note in Notes, or shows as unresolved. */
 function PreviewWikilink({ title }: { title: string }) {
-  const { notes, activeProjectId, setActiveProject, setView } = useCairnStore(useShallow((s) => ({
-    notes: s.notes, activeProjectId: s.activeProjectId, setActiveProject: s.setActiveProject, setView: s.setView,
+  const { notes, activeProjectId, activeWorkspaceId, setActiveProject, setView } = useCairnStore(useShallow((s) => ({
+    notes: s.notes, activeProjectId: s.activeProjectId, activeWorkspaceId: s.activeWorkspaceId, setActiveProject: s.setActiveProject, setView: s.setView,
   })));
   const wanted = title.toLowerCase();
-  const target = notes.find((n) => n.title.toLowerCase() === wanted);
+  // Prefer a note in this workspace; a link to a note elsewhere still resolves.
+  const matches = notes.filter((n) => n.title.toLowerCase() === wanted);
+  const target = matches.find((n) => n.workspaceId === activeWorkspaceId) ?? matches[0];
   return (
     <Tooltip content={target ? `Open: ${title}` : `Note not found: ${title}`}>
       <button

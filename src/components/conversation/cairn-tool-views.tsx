@@ -303,7 +303,8 @@ function recs(v: unknown): Rec[] {
   return Array.isArray(v) ? v.flatMap((x) => { const r = asRec(x); return r ? [r] : []; }) : [];
 }
 
-const REL_LABEL = (r: string) => r.replace(/_/g, " ");
+/** Underscores read as spaces in the type only; a custom label in parentheses keeps its own. */
+const REL_LABEL = (r: string) => r.replace(/^[a-z_]+/, (type) => type.replace(/_/g, " "));
 const EDGE_VERB: Record<string, string> = {
   manager_of: "manages", mentor_of: "mentors", buddy_of: "is buddy of", stakeholder_of: "is stakeholder of", partner: "partners with",
 };
@@ -441,7 +442,7 @@ const people: View = (_tc, args, out, ctx) => {
     const hit = attendee ?? mention;
     if (hit) {
       return (
-        <ToolPanel label={attendee ? (undo ? "Attendee removed" : "Attendee added") : (undo ? "Mention removed" : "Mention linked")}>
+        <ToolPanel label={attendee ? (undo ? (out?.removed === false ? "Still an attendee" : "Attendee removed") : "Attendee added") : (undo ? "Mention removed" : "Mention linked")}>
           <p className="text-2xs text-[var(--text-secondary)]"><span className="text-[var(--text-primary)]">{str(hit.name)}</span> {attendee ? "on this meeting note" : "in this note"} <span className="text-[var(--text-tertiary)]">{str(hit.noteId)}</span></p>
         </ToolPanel>
       );

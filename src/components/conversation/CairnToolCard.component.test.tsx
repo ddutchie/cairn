@@ -272,6 +272,20 @@ describe("People tool card", () => {
     expect(screen.getByText("suggested")).toBeTruthy();
   });
 
+  it("keeps underscores in a custom relationship label", () => {
+    renderOpen(call({
+      name: "people",
+      args: { action: "query" },
+      output: JSON.stringify({ total: 1, people: [{ id: "p1", name: "Ana Lopez", relationship: ["direct_report (Data_Platform)"] }] }),
+    }));
+    expect(screen.getByText("direct report (Data_Platform)")).toBeTruthy();
+  });
+
+  it("summarises a name-only save from the result and an unremoved attendee", () => {
+    renderCall(call({ name: "people", args: { action: "upsert", name: "Ana Lopez" }, output: JSON.stringify({ created: false, updated: true, person: { id: "p1", name: "Ana Lopez" } }) }));
+    expect(screen.getByTestId("cairn-tool-summary").textContent).toBe("Cairn · Updated Ana Lopez");
+  });
+
   it("shows a person's details and offers to open them", () => {
     renderOpen(call({
       name: "people",

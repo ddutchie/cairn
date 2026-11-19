@@ -74,7 +74,7 @@ describe("saveProfile", () => {
     saveProfile("ana", edit);
     expect(h.db.prepare("SELECT title, team, location, timezone, slack_id AS s FROM people WHERE id='ana'").get())
       .toEqual({ title: "Senior Engineer", team: "Sync", location: "Berlin", timezone: "Europe/Berlin", s: "U01ABC" });
-    saveProfile("ana", { ...edit, team: "  " });
-    expect(h.db.prepare("SELECT team FROM people WHERE id='ana'").get()).toEqual({ team: null });
+    saveProfile("ana", { team: "  " });
+    expect(h.db.prepare("SELECT title, team FROM people WHERE id='ana'").get()).toEqual({ title: "Senior Engineer", team: null });
   });
 });

@@ -23,6 +23,14 @@ describe("parseAutofill", () => {
     expect(parseAutofill(reply([{ field: "title", value: "CTO", quote: "Role: CTO" }]), NOTE)).toEqual([]);
   });
 
+  it("drops a value its quote doesn't support", () => {
+    expect(parseAutofill(reply([{ field: "title", value: "CTO", quote: "Role: Senior Software Engineer" }]), NOTE)).toEqual([]);
+  });
+
+  it("accepts a time zone inferred from a quoted city", () => {
+    expect(parseAutofill(reply([{ field: "timezone", value: "Europe/Berlin", quote: "Based in Berlin, Germany." }]), NOTE)).toHaveLength(1);
+  });
+
   it("drops unknown fields, empty values and a bad time zone", () => {
     expect(parseAutofill(reply([
       { field: "salary", value: "1", quote: "Role" },
