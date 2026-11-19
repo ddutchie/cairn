@@ -249,6 +249,14 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
 export interface MeetingFrontmatter {
   attendees: string[];
   date: string;
+  meetingId: string;
+  /**
+   * Confirmed attendees no written reference can identify (no persona title or
+   * email, and their name is shared). They are written by name, which reads
+   * back as a suggestion; the caller should pin them (`pinUnreferenced`) so
+   * the file no longer owns their attendance.
+   */
+  unreferenced: string[];
 }
 
 /**
@@ -276,8 +284,14 @@ export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unkn
   `).all(row.meeting_id) as { id: string; name: string; emails: string; persona_title: string | null }[];
 
   const candidates = loadCandidates(db, row.workspace_id);
-  const attendees = people.map((p) => attendeeReference(candidates, p));
+  const unreferenced: string[] = [];
+  const attendees = people.map((p) => {
+    const ref = attendeeReference(candidates, p);
+    if (!ref) unreferenced.push(p.id);
+    return ref ?? p.name;
+  });
   const attending = new Set(people.map((p) => p.id));
+  const noteTitleExists = db.prepare("SELECT 1 FROM notes WHERE workspace_id = ? AND deleted_at IS NULL AND lower(title) = lower(?) LIMIT 1");
 
   // A YAML list, or one string ("Chris" / "Ana, Ben") the way capture reads it.
   const existingValues = Array.isArray(existing) ? existing : typeof existing === "string" ? splitAttendeeValues(existing) : [];
@@ -290,22 +304,34 @@ export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unkn
       // Someone who resolves to one person is written from the DB (or was removed there); keep the rest verbatim.
       if (r.kind === "match" || r.kind === "dismissed") continue;
       if (r.kind === "ambiguous" && r.personIds.some((id) => attending.has(id))) continue;
+      // A wikilink to a note that no longer exists is stale (a renamed persona note's old title), not something to keep.
+      if (r.kind === "none" && ref?.name && /^\s*\[\[/.test(raw) && !noteTitleExists.get(row.workspace_id, ref.name)) continue;
       if (seen.has(raw.toLowerCase())) continue;
       seen.add(raw.toLowerCase());
       attendees.push(raw);
     }
   }
-  return { attendees, date: formatMeetingDate(row.starts_at) };
+  return { attendees, date: formatMeetingDate(row.starts_at), meetingId: row.meeting_id, unreferenced };
+}
+
+/**
+ * Make the given attendees "manual" so a file that can't name them faithfully
+ * (see `MeetingFrontmatter.unreferenced`) never removes them on the next read.
+ */
+export function pinUnreferenced(db: Db, fm: Pick<MeetingFrontmatter, "meetingId" | "unreferenced">): void {
+  for (const personId of fm.unreferenced) {
+    addAttendee(db, { meetingId: fm.meetingId, personId, source: "manual", provenance: "explicit" });
+  }
 }
 
 /**
  * How to write one attendee so that reading the file back finds the same
  * person: `[[persona note title]]` when that round-trips (a title with `#` or
  * `|` doesn't), else the name, else an email. A name two people share falls
- * back to the email; with none, the name is written and reads back as a
- * suggestion rather than the wrong person.
+ * back to the email. With none, there is no faithful reference (null) and
+ * the caller pins the attendee instead.
  */
-function attendeeReference(candidates: Candidate[], p: { id: string; name: string; emails: string; persona_title: string | null }): string {
+function attendeeReference(candidates: Candidate[], p: { id: string; name: string; emails: string; persona_title: string | null }): string | null {
   const options = [
     ...(p.persona_title ? [`[[${p.persona_title}]]`] : []),
     p.name,
@@ -316,7 +342,7 @@ function attendeeReference(candidates: Candidate[], p: { id: string; name: strin
     const r = ref ? resolveIn(candidates, ref) : null;
     if (r?.kind === "match" && r.personId === p.id) return value;
   }
-  return p.name;
+  return null;
 }
 
 /** Note ids whose meeting frontmatter may be stale after changes to these rows. */

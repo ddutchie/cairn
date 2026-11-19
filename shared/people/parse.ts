@@ -106,7 +106,9 @@ export function splitAttendeeValues(s: string): string[] {
 
 /** A calendar date that exists ("2026-02-30" doesn't). */
 function isRealDate(y: number, m: number, d: number): boolean {
-  const t = new Date(Date.UTC(y, m - 1, d));
+  // Date.UTC maps years 0-99 to 1900-1999; setUTCFullYear doesn't.
+  const t = new Date(0);
+  t.setUTCFullYear(y, m - 1, d);
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 }
 

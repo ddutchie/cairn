@@ -117,4 +117,10 @@ describe("review fixes", () => {
     expect(parseMeetingDate("2026-02-30 10:00")).toBeNull();
     expect(parseMeetingDate("2024-02-29")).toBe("2024-02-29T00:00:00.000Z");
   });
+
+  it("accepts real dates in years 0000-0099", () => {
+    expect(parseMeetingDate("0001-01-01")).toBe("0001-01-01T00:00:00.000Z");
+    expect(parseMeetingDate("0099-12-31")).toBe("0099-12-31T00:00:00.000Z");
+    expect(parseMeetingDate("0001-02-29")).toBeNull();
+  });
 });

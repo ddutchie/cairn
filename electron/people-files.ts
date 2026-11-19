@@ -20,7 +20,7 @@ import matter from "gray-matter";
 import type Database from "better-sqlite3";
 import { findNoteFilePath } from "./host-shared/notes-io";
 import { isPeopleEnabled } from "./db/people-queries";
-import { captureNoteMeeting, notesAffectedBy, renderMeetingFrontmatter, type CaptureResult, type MeetingFrontmatter } from "./db/people-capture";
+import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, renderMeetingFrontmatter, type CaptureResult, type MeetingFrontmatter } from "./db/people-capture";
 import { parseAttendeeList, parseMeetingDate } from "../shared/people/parse";
 
 /** The frontmatter keys this module reads and writes; `when` is accepted on read only. */
@@ -128,20 +128,22 @@ export function refreshMeetingFrontmatter(
   const result: RefreshResult = { written: [], failed: [] };
   if (!isPeopleEnabled(db) || noteIds.length === 0) return result;
   const lookup = db.prepare(`
-    SELECT n.id, p.name AS project_name FROM notes n
+    SELECT n.id, p.name AS project_name, n.meeting_id AS meetingId FROM notes n
     JOIN projects p ON p.id = n.project_id
-    WHERE n.id = ? AND n.deleted_at IS NULL
+    WHERE n.id = ? AND n.deleted_at IS NULL AND n.archived_at IS NULL
   `);
   for (const noteId of new Set(noteIds)) {
     try {
-      const note = lookup.get(noteId) as { id: string; project_name: string } | undefined;
-      if (!note) continue;
+      const note = lookup.get(noteId) as { id: string; project_name: string; meetingId: string | null } | undefined;
+      if (!note?.meetingId) continue;
+      // A meeting note whose file can't be found or read yet is retried, not forgotten.
       const filePath = findNoteFilePath(workspacePath, note.project_name, note.id);
-      if (!filePath) continue;
-      const existing = readMeetingProps(filePath);
-      const fm = renderMeetingFrontmatter(db, noteId, existing?.attendees);
+      const existing = filePath ? readMeetingProps(filePath) : null;
+      if (!filePath || !existing) { result.failed.push(noteId); continue; }
+      const fm = renderMeetingFrontmatter(db, noteId, existing.attendees);
       if (!fm) continue;
-      if (existing?.hasAttendees && sameList(existing.attendees, fm.attendees)
+      pinUnreferenced(db, fm);
+      if (existing.hasAttendees && sameList(existing.attendees, fm.attendees)
         && parseMeetingDate(existing.date) === parseMeetingDate(fm.date)) continue;
       beforeWrite?.(noteId);
       if (writeMeetingFrontmatter(filePath, fm)) result.written.push(noteId);

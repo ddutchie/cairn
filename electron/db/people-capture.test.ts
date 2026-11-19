@@ -5,7 +5,7 @@ import { createNote, deleteNote } from "./notes-queries";
 import {
   addAttendee, addMention, createMeeting, createPerson, getMe, getPerson, listAttendees, setNoteMeeting, updatePerson,
 } from "./people-queries";
-import { captureNoteMeeting, notesAffectedBy, renderMeetingFrontmatter, resolvePerson } from "./people-capture";
+import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, renderMeetingFrontmatter, resolvePerson } from "./people-capture";
 import { noteMeetingId, stubPersonId } from "../../shared/people/ids";
 import { deleteProject, mergeProject } from "./workspace-queries";
 
@@ -131,7 +131,7 @@ describe("renderMeetingFrontmatter", () => {
     person("Chris");
     captureNoteMeeting(db, { noteId: "n1", attendees: ["Ana Ruiz", "Ben Ito", "Chris"], date: "2026-11-10", source: "frontmatter", provenance: "explicit" });
     const fm = renderMeetingFrontmatter(db, "n1", ["Ana Ruiz", "Ben Ito", "Chris"]);
-    expect(fm).toEqual({ attendees: ["[[Ana Ruiz]]", "Ben Ito", "Chris"], date: "2026-11-10" });
+    expect(fm).toMatchObject({ attendees: ["[[Ana Ruiz]]", "Ben Ito", "Chris"], date: "2026-11-10", unreferenced: [] });
     expect(ana.id).toBeTruthy();
   });
 });
@@ -244,5 +244,32 @@ describe("review fixes", () => {
     person("Ana Ruiz", { personaNoteId: persona.id });
     captureNoteMeeting(db, { noteId: "n1", attendees: ["Ana Ruiz"], source: "frontmatter", provenance: "explicit" });
     expect(notesAffectedBy(db, { noteIds: ["p-ana"] }).sort()).toEqual(["n1", "p-ana"]);
+  });
+
+  it("an attendee no reference can identify is pinned, so a later read keeps them", () => {
+    note("n1");
+    const ana = person("Ana");
+    person("Ana");
+    captureNoteMeeting(db, { noteId: "n1", attendees: [], personIds: [ana.id], source: "frontmatter", provenance: "explicit" });
+    const fm = renderMeetingFrontmatter(db, "n1")!;
+    expect(fm.unreferenced).toEqual([ana.id]);
+    pinUnreferenced(db, fm);
+    // The file now says "Ana" (ambiguous); reading it back must keep the original attendee.
+    const back = captureNoteMeeting(db, { noteId: "n1", attendees: fm.attendees, source: "frontmatter", provenance: "explicit" });
+    expect(back.removed).toEqual([]);
+    expect(attending(fm.meetingId).find((a) => a.personId === ana.id)).toMatchObject({ status: "confirmed", source: "manual" });
+  });
+
+  it("a renamed persona note's old title isn't kept next to the new one", () => {
+    note("n1");
+    const persona = note("p-ana", "Ana Old");
+    const ana = person("Ana Ruiz", { personaNoteId: persona.id });
+    captureNoteMeeting(db, { noteId: "n1", attendees: ["[[Ana Old]]"], source: "frontmatter", provenance: "explicit" });
+    db.prepare("UPDATE notes SET title = 'Ana New' WHERE id = 'p-ana'").run();
+    const fm = renderMeetingFrontmatter(db, "n1", ["[[Ana Old]]"])!;
+    expect(fm.attendees).toEqual(["[[Ana New]]"]);
+    const back = captureNoteMeeting(db, { noteId: "n1", attendees: fm.attendees, source: "frontmatter", provenance: "explicit" });
+    expect(back.created).toEqual([]);
+    expect(back.attendees).toEqual([ana.id]);
   });
 });

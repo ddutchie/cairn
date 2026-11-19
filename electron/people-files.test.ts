@@ -132,4 +132,24 @@ describe("review fixes", () => {
     expect(fmOf(file).attendees).toEqual(["Ana", "Chris"]);
     expect(capturePeopleFromFile(db, file, "n1")?.removed).toEqual([]);
   });
+
+  it("reports a meeting note whose file is missing or unreadable so the caller retries it", () => {
+    const file = noteWithFile("n1", { attendees: ["Ana"] });
+    capturePeopleFromFile(db, file, "n1");
+    const moved = file + ".gone";
+    fs.renameSync(file, moved);
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"])).toEqual({ written: [], failed: ["n1"] });
+    fs.renameSync(moved, file);
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"]).failed).toEqual([]);
+  });
+
+  it("doesn't retry notes that aren't meetings or are archived", () => {
+    noteWithFile("n1");
+    expect(refreshMeetingFrontmatter(db, ws, ["n1"]).failed).toEqual([]);
+    const file = noteWithFile("n2", { attendees: ["Ana"] });
+    capturePeopleFromFile(db, file, "n2");
+    db.prepare("UPDATE notes SET archived_at = ? WHERE id = 'n2'").run(new Date().toISOString());
+    fs.rmSync(file);
+    expect(refreshMeetingFrontmatter(db, ws, ["n2"]).failed).toEqual([]);
+  });
 });

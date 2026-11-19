@@ -543,14 +543,22 @@ app.whenReady().then(async () => {
   desktopSync.setAttachmentWorkspaceProvider(() => ctx.workspacePath);
   // People layer: keep meeting notes' attendees/date frontmatter in line with
   // attendee rows that arrived from other devices (no-op while the flag is off).
-  // Notes whose write failed are retried on later ticks until they're current.
-  const pendingFrontmatter = new Set<string>();
+  // Notes whose write failed (or whose file wasn't there yet) are retried on
+  // later ticks, up to MAX_FRONTMATTER_RETRIES, so a note that can never be
+  // written doesn't keep the hook busy for good.
+  const MAX_FRONTMATTER_RETRIES = 20;
+  const pendingFrontmatter = new Map<string, number>();
   desktopSync.setAppliedRowsHook((applied: readonly { entity: string; entity_id: string }[]) => {
-    const noteIds = [...pendingFrontmatter, ...meetingNotesForSync(ctx.db, applied)];
+    const noteIds = [...pendingFrontmatter.keys(), ...meetingNotesForSync(ctx.db, applied)];
     if (noteIds.length === 0) return;
     const { failed } = refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, noteIds, suppressNextChange);
+    const next = new Map<string, number>();
+    for (const id of failed) {
+      const tries = (pendingFrontmatter.get(id) ?? 0) + 1;
+      if (tries < MAX_FRONTMATTER_RETRIES) next.set(id, tries);
+    }
     pendingFrontmatter.clear();
-    for (const id of failed) pendingFrontmatter.add(id);
+    for (const [id, tries] of next) pendingFrontmatter.set(id, tries);
   });
 
   // Clean up NESTED conflict-copy junk (`…_conflict_…_conflict_…`) left by the
