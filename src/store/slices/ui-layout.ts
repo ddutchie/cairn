@@ -119,8 +119,8 @@ export interface LayoutSlice extends AppUIState {
   setChatPoppedOut: (popped: boolean) => void;
 
   // Active preview item for chat-centric layout
-  activePreviewItem: { type: "note" | "task"; id: ID } | null;
-  setActivePreviewItem: (item: { type: "note" | "task"; id: ID } | null) => void;
+  activePreviewItem: { type: "note" | "task" | "person"; id: ID } | null;
+  setActivePreviewItem: (item: { type: "note" | "task" | "person"; id: ID } | null) => void;
   activeContextPanel: ContextPanel | null;
   setActiveContextPanel: (panel: ContextPanel | null) => void;
 

@@ -447,14 +447,14 @@ function Persona({ page }: { page: PersonPageModel }) {
 // ── Page ────────────────────────────────────────────────────────────────────
 
 /** Keyed by person id in PeopleView, so each person opens in read mode. */
-export function PersonPage({ page }: { page: PersonPageModel | null }) {
+export function PersonPage({ page, compact = false }: { page: PersonPageModel | null; compact?: boolean }) {
   const [editing, setEditing] = useState(false);
 
   if (!page) {
     return <EmptyState title="Loading" className="py-16" />;
   }
   return (
-    <div className="max-w-[820px] px-8 py-8">
+    <div className={compact ? "px-4 py-4" : "max-w-[820px] px-8 py-8"}>
       <PersonHeader page={page} editing={editing} onToggleEdit={() => setEditing((e) => !e)} />
       {editing && <PersonSettings page={page} />}
       <NextMeeting person={page.person} timeline={page.timeline} />

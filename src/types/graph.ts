@@ -22,7 +22,7 @@ export type SessionLoadState =
 
 /** Transient object preview shown beside a centered conversation. */
 export type ContextPanel =
-  | { type: "note" | "task"; id: string }
+  | { type: "note" | "task" | "person"; id: string }
   | { type: "file"; path: string }
   | { type: "diff"; path?: string };
 

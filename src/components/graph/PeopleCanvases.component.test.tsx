@@ -22,7 +22,7 @@ const person = (id: string, name: string, types: RelationshipType[], extra: Part
 });
 
 const seed = (people: PersonSummary[], peopleEnabled = true) =>
-  useCairnStore.setState({ activeWorkspaceId: "ws1", peopleEnabled, peopleLoaded: true, people, selectedPersonId: null, activeView: "insights" });
+  useCairnStore.setState({ activeWorkspaceId: "ws1", peopleEnabled, peopleLoaded: true, people, selectedPersonId: null, peoplePanelId: null, activeView: "insights" });
 
 beforeEach(() => seed([]));
 
@@ -49,15 +49,15 @@ describe("OrgChartCanvas", () => {
     expect(screen.getByRole("button", { name: /^Me Myself \(you\)/ })).toBeInTheDocument();
     expect(screen.getByText("Not in a reporting line (1)")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Dana Report/ }));
-    expect(useCairnStore.getState().selectedPersonId).toBe("rep");
-    expect(useCairnStore.getState().activeView).toBe("people");
+    expect(useCairnStore.getState().peoplePanelId).toBe("rep");
+    expect(useCairnStore.getState().activeView).toBe("insights");
   });
 
   it("opens a person from the keyboard", () => {
     seed([person("me", "Me Myself", [], { isMe: true }), person("rep", "Dana Report", ["direct_report"])]);
     render(<OrgChartCanvas />);
     fireEvent.keyDown(screen.getByRole("button", { name: /^Dana Report/ }), { key: "Enter" });
-    expect(useCairnStore.getState().selectedPersonId).toBe("rep");
+    expect(useCairnStore.getState().peoplePanelId).toBe("rep");
   });
 });
 
