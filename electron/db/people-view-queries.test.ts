@@ -4,7 +4,8 @@ import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import {
   addAttendee, addEdge, addMention, createMeeting, createPerson, deletePerson, setCardOwner, setNoteMeeting, updateEdge,
 } from "./people-queries";
-import { getPersonPage, getPersonTimeline, listPersonSummaries, listRelationViews } from "./people-view-queries";
+import { getPeopleNetwork, getPersonPage, getPersonTimeline, listPersonSummaries, listRelationViews } from "./people-view-queries";
+import { NETWORK_MAX_MEETING_SIZE } from "../../shared/types/people-view";
 import { createNote } from "./notes-queries";
 
 let db: Database.Database;
@@ -154,5 +155,36 @@ describe("getPersonPage", () => {
     expect(getPersonPage(db, "nope")).toBeNull();
     const p = person("No persona", { personaNoteId: "missing" });
     expect(getPersonPage(db, p.id)!.persona).toBeNull();
+  });
+});
+
+describe("getPeopleNetwork", () => {
+  it("returns confirmed edges between live people and counts shared meetings", () => {
+    const a = person("Ada");
+    const b = person("Bo");
+    const c = person("Cy");
+    const gone = person("Gone");
+    addEdge(db, { workspaceId: "ws1", sourceId: a.id, targetId: b.id, type: "manager_of" });
+    addEdge(db, { workspaceId: "ws1", sourceId: a.id, targetId: c.id, type: "mentor_of", status: "suggested" });
+    addEdge(db, { workspaceId: "ws1", sourceId: a.id, targetId: gone.id, type: "buddy_of" });
+    deletePerson(db, gone.id);
+    meeting("One", "2026-11-01T10:00:00.000Z", a.id, b.id, c.id);
+    meeting("Two", "2026-11-02T10:00:00.000Z", a.id, b.id);
+
+    const net = getPeopleNetwork(db, "ws1");
+    expect(net.edges.map((e) => e.type)).toEqual(["manager_of"]);
+    const pair = (x: string, y: string) => net.coAttendance.find((p) => p.a === [x, y].sort()[0] && p.b === [x, y].sort()[1]);
+    expect(pair(a.id, b.id)?.meetings).toBe(2);
+    expect(pair(a.id, c.id)?.meetings).toBe(1);
+    expect(net.coAttendance).toHaveLength(3);
+  });
+
+  it("skips suggested attendees and large meetings", () => {
+    const people = Array.from({ length: NETWORK_MAX_MEETING_SIZE + 1 }, (_, i) => person(`P${i}`));
+    meeting("All hands", "2026-11-01T10:00:00.000Z", ...people.map((p) => p.id));
+    const m = createMeeting(db, { workspaceId: "ws1", title: "Maybe", startsAt: "2026-11-03T10:00:00.000Z" });
+    addAttendee(db, { meetingId: m.id, personId: people[0].id });
+    addAttendee(db, { meetingId: m.id, personId: people[1].id, status: "suggested" });
+    expect(getPeopleNetwork(db, "ws1").coAttendance).toEqual([]);
   });
 });

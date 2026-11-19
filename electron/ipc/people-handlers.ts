@@ -27,6 +27,7 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   registerContractHandle("db:people:summaries", (_e, { workspaceId, ...opts }) =>
     handle(() => pv.listPersonSummaries(ctx.db, workspaceId, opts)),
   );
+  registerContractHandle("db:people:network", (_e, { workspaceId }) => handle(() => pv.getPeopleNetwork(ctx.db, workspaceId)));
   registerContractHandle("db:people:get", (_e, { id }) => handle(() => pq.getPerson(ctx.db, id)));
   registerContractHandle("db:people:page", (_e, { id }) => handle(() => pv.getPersonPage(ctx.db, id)));
   registerContractHandle("db:people:create", (_e, input) => handle(() => pq.createPerson(ctx.db, input)));
