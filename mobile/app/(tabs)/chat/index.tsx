@@ -43,6 +43,11 @@ import { ListeningOrb } from "@/components/animations/ListeningOrb";
 import { useListeningOrb } from "@/lib/dev-flags";
 import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
+import { MentionStrip } from "@/components/chat/MentionStrip";
+import { mentionContext } from "@/chat/mentions";
+import { matchPeople, trailingMention } from "@cairn/shared/people/mentions";
+import { loadPeople } from "@/db/people";
+import { usePeopleEnabled } from "@/people/flag";
 import { streamingPhase } from "@cairn/shared/conversation/work-phase";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
@@ -307,6 +312,20 @@ export default function ChatScreen() {
     }, [refreshConfigured]),
   );
 
+  // `@name` at the end of the draft offers matching people; picking one completes the name.
+  const peopleOn = usePeopleEnabled();
+  const mentionQuery = peopleOn ? trailingMention(input)?.query : undefined;
+  const mentioning = mentionQuery !== undefined;
+  const mentionable = useMemo(() => {
+    if (!mentioning) return [];
+    try { return loadPeople(); } catch { return []; }
+  }, [mentioning]);
+  const mentionMatches = useMemo(() => (mentionQuery === undefined ? [] : matchPeople(mentionable, mentionQuery)), [mentionable, mentionQuery]);
+  const pickMention = useCallback((p: { name: string }) => {
+    const m = trailingMention(input);
+    if (m) setInput(`${input.slice(0, m.start)}@${p.name} `);
+  }, [input]);
+
   const send = useCallback(async () => {
     const queuedSend = pendingSendRef.current;
     pendingSendRef.current = null;
@@ -343,7 +362,7 @@ export default function ChatScreen() {
       { id: nextMessageId(), role: "assistant", content: "", tools: [], streaming: true },
     ]);
 
-    conversation.current.push(userMessage(text, atts));
+    conversation.current.push(userMessage(text, atts, mentionContext(text)));
     // Persist the user turn locally (on-device only — chat never syncs).
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
@@ -891,6 +910,7 @@ export default function ChatScreen() {
           allowImages={allowImages}
           queuedCount={queued.length}
         />
+        <MentionStrip people={mentionMatches} composerHeight={composerHeight} closedLift={closedLift} onPick={pickMention} />
         <ScrollToBottomButton
           visible={showScrollButton && !hideComposer}
           composerHeight={composerHeight}

@@ -32,6 +32,7 @@ import { makeSessionProjection } from "../../shared/agent/session-projection";
 import { selectSessionProfile, type SessionProfileId } from "../../shared/agent/session-profile";
 import { errMsg } from "../host-shared/errors";
 import type { ApprovalMode } from "../../shared/agent/approval-mode";
+import { mentionContext } from "./engine/mentions";
 import { answerQuestion, cancelQuestions, compactEngineSession, listPendingQuestions, engineOwns, forgetEngineSession, removeLegacySessions, getEngineHost, getJobRegistry, listEngineSchedules, readEngineGoal, interruptEngineSubagent, listEngineSubagents, messageEngineSubagent, runEngineChat, runEnginePrompt } from "./engine-bridge";
 
 // ── Session registry ──────────────────────────────────────────────────────────
@@ -340,7 +341,9 @@ export function registerSessionRuntimeHandlers(
       ? approvedPlanContext(sessionRow?.planContent?.trim() ? { content: sessionRow.planContent } : { noteId: planContent?.trim() ? planNoteId ?? undefined : undefined })
       : undefined;
 
-    await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role, attachments: req.attachments, sessionMode: mode, standingContext: approvedPlan ? [approvedPlan] : undefined });
+    await runEnginePrompt({ ctx, sessionId, prompt, cwd, projectId, workspaceId, systemPrompt, llmConfig, role, attachments: req.attachments, sessionMode: mode, standingContext: approvedPlan ? [approvedPlan] : undefined,
+      // A restricted (file-tools-only) session has no People tools, so nothing is attached there.
+      context: role === "default" ? mentionContext(ctx, workspaceId, prompt) : undefined });
   });
 
 
