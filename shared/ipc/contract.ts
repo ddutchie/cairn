@@ -20,7 +20,7 @@ import type {
   Meeting, MeetingAttendee, PeopleStatus, Person, PersonCreateInput, PersonEdge, PersonPatch, PersonRelation,
 } from "../types/people";
 import type {
-  AttendeeInput, PeopleListFilter, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
+  AttendeeInput, PeopleListFilter, PeopleNetwork, PersonEdgeInput, PersonEdgePatch, PersonPage, PersonSummary,
 } from "../types/people-view";
 import type { PersonProfile, PrepBrief } from "../people/oneonone";
 import type { MigrationApprovals, MigrationInventory, MigrationResult } from "../types/people-migration";
@@ -323,6 +323,8 @@ export interface IpcContract {
   "db:people:get": { args: [req: { id: string }]; result: Person | null };
   /** Person page read model: relations with names, timeline, persona note. Null when deleted. */
   "db:people:page": { args: [req: { id: string }]; result: PersonPage | null };
+  /** Edges and meeting co-attendance for the Insights relationship canvas and org chart. */
+  "db:people:network": { args: [req: { workspaceId: string }]; result: PeopleNetwork };
   "db:people:create": { writes: true; args: [input: PersonCreateInput]; result: Person };
   "db:people:update": { writes: true; args: [req: { id: string; patch: PersonPatch }]; result: Person };
   /** Tombstones the person, their edges, attendance and mentions; clears card owners. */
@@ -1037,6 +1039,7 @@ const CHANNELS: ChannelRecord = {
   "db:people:summaries": "read",
   "db:people:get": "read",
   "db:people:page": "read",
+  "db:people:network": "read",
   "db:people:create": "write",
   "db:people:update": "write",
   "db:people:delete": "write",

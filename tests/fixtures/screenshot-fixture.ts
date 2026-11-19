@@ -1170,6 +1170,7 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
       flag:      { get: () => Promise.resolve(false), set: (on) => Promise.resolve(!!on) },
       list:      () => Promise.resolve([]),
       summaries: () => Promise.resolve([]),
+      network:   () => Promise.resolve({ edges: [], coAttendance: [] }),
       get:       () => Promise.resolve(null),
       page:      () => Promise.resolve(null),
       create:    noop,

@@ -105,7 +105,7 @@ function toPerson(r: Row): Person {
   };
 }
 
-function toEdge(r: Row): PersonEdge {
+export function toEdge(r: Row): PersonEdge {
   return {
     id: r.id,
     workspaceId: r.workspace_id,

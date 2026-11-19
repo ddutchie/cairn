@@ -14,6 +14,7 @@ export const peopleApi = {
     },
     list:       (filter: PeopleListFilter) => invokeContract("db:people:list", filter),
     summaries:  (filter: PeopleListFilter) => invokeContract("db:people:summaries", filter),
+    network:    (workspaceId: string) => invokeContract("db:people:network", { workspaceId }),
     get:        (id: string) => invokeContract("db:people:get", { id }),
     page:       (id: string) => invokeContract("db:people:page", { id }),
     create:     (input: PersonCreateInput) => invokeContract("db:people:create", input),
