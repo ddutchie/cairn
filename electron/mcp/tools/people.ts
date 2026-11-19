@@ -15,6 +15,7 @@ import {
   addAttendee, addEdge, addMention, createPerson, getPerson, getRelations, isPeopleEnabled, listOwnedCardIds,
   listPeople, listPersonMeetings, listPersonMentionNoteIds, listMeetingNoteIds, removeAttendee, removeEdge,
   removeMention, setCardOwner, updatePerson,
+  attendeeIdsFromSource,
 } from "../../db/people-queries";
 import { captureNoteMeeting, resolvePerson } from "../../db/people-capture";
 import { refreshMeetingFrontmatter } from "../../people-files";
@@ -333,8 +334,7 @@ export function set_note_attendees(db: Db, workspacePath: string, args: Args): u
       attendees = values.filter((v) => !personIds.includes(v));
     } else {
       // Date only: keep the declared attendees as they are.
-      personIds = (db.prepare("SELECT person_id FROM meeting_attendees WHERE meeting_id = ? AND source = 'declared' AND deleted_at IS NULL")
-        .all(note.meetingId) as { person_id: string }[]).map((r) => r.person_id);
+      personIds = note.meetingId ? attendeeIdsFromSource(db, note.meetingId, "declared") : [];
     }
     const r = captureNoteMeeting(db, { noteId, attendees, personIds, date, source: "declared", provenance: "explicit" });
     refreshMeetingFrontmatter(db, workspacePath, [noteId]);
