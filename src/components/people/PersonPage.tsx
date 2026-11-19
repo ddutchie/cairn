@@ -36,7 +36,7 @@ import {
   CADENCE_LABELS, EDGE_ROLE_OPTIONS, RELATIONSHIP_LABELS, describeRelation, splitList,
 } from "./people-model";
 import { peopleClient } from "@/lib/ipc/people";
-import type { AutofillProposal } from "../../../shared/people/autofill";
+import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
 import { NextMeeting, ProfileLine, usePersonProfile } from "./PersonOneOnOne";
 
 /** Open a note or card in its project. */
@@ -454,7 +454,6 @@ function Timeline({ items }: { items: PersonTimelineItem[] }) {
 
 // ── Autofill from the persona note ───────────────────────────────────────────
 
-const FIELD_LABEL: Record<ProfileField, string> = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" };
 const SKIP_TEXT: Record<string, string> = {
   off: "The People layer is off.",
   "no-ai": "Connect an AI provider in Settings to use this.",
@@ -488,15 +487,10 @@ function PersonaAutofill({ personId }: { personId: string }) {
   const apply = async () => {
     if (state.kind !== "review") return;
     // The person may have changed since the review (an edit, sync): leave those fields alone.
+    // If we can't tell, write nothing.
     const latest = await peopleClient.get(personId).catch(() => null);
-    const patch: Record<string, string> = {};
-    let changed = 0;
-    for (const p of state.proposals) {
-      if (!picked.has(p.field)) continue;
-      const now = latest?.[p.field]?.trim() || undefined;
-      if (latest && now !== (p.current ?? undefined)) { changed++; continue; }
-      patch[p.field] = p.value;
-    }
+    if (!latest) return setState({ kind: "none", message: "Couldn't check the person first. Try again." });
+    const { patch, changed } = applicableFields(state.proposals, (f) => picked.has(f), latest);
     if (Object.keys(patch).length) await updatePerson(personId, patch);
     setState(changed ? { kind: "none", message: `${changed === 1 ? "One field was" : `${changed} fields were`} changed meanwhile and left alone. Run it again to review.` } : { kind: "idle" });
   };
@@ -520,7 +514,7 @@ function PersonaAutofill({ personId }: { personId: string }) {
                     onChange={(e) => setPicked((prev) => { const n = new Set(prev); if (e.target.checked) n.add(p.field); else n.delete(p.field); return n; })}
                   />
                   <span className="min-w-0">
-                    <span className="text-[var(--text-tertiary)]">{FIELD_LABEL[p.field]}: </span>
+                    <span className="text-[var(--text-tertiary)]">{PROFILE_FIELD_LABEL[p.field]}: </span>
                     <span className="text-[var(--text-primary)]">{p.value}</span>
                     {p.current && <span className="text-xs text-[var(--text-tertiary)]"> (now {p.current})</span>}
                     <span className="block truncate text-xs text-[var(--text-tertiary)]" title={p.quote}>“{p.quote}”</span>

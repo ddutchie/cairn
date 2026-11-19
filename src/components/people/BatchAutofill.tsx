@@ -7,17 +7,16 @@
  * (empty fields ticked, replacements not) and nothing is written until Apply.
  */
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/labels";
 import { peopleClient } from "@/lib/ipc/people";
 import { reportIpcError } from "@/lib/ipc/client";
-import type { AutofillProposal } from "../../../shared/people/autofill";
+import { applicableFields, PROFILE_FIELD_LABEL, type AutofillProposal } from "../../../shared/people/autofill";
 import type { ProfileField } from "../../../shared/people/parse";
 
-export const FIELD_LABEL: Record<ProfileField, string> = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" };
 const SKIP_TEXT: Record<string, string> = {
   off: "People is off",
   "no-ai": "no AI connection",
@@ -42,6 +41,8 @@ export function BatchAutofill({ people }: { people: { personId: string; name: st
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const stop = useRef(false);
+  // Closing the panel ends the run: no more AI calls for people nobody will review.
+  useEffect(() => () => { stop.current = true; }, []);
 
   if (people.length === 0) return null;
 
@@ -75,13 +76,11 @@ export function BatchAutofill({ people }: { people: { personId: string; name: st
     try {
       for (const g of state.groups) {
         // The person may have changed since the review: leave those fields alone.
-        const latest = await peopleClient.get(g.personId).catch(() => null);
-        const patch: Record<string, string> = {};
-        for (const x of g.proposals) {
-          if (!picked.has(key(g.personId, x.field))) continue;
-          if (latest && (latest[x.field]?.trim() || undefined) !== (x.current ?? undefined)) { changed++; continue; }
-          patch[x.field] = x.value;
-        }
+        // A failed read throws: better to stop than to write unchecked.
+        const latest = await peopleClient.get(g.personId);
+        if (!latest) { changed += g.proposals.filter((x) => picked.has(key(g.personId, x.field))).length; continue; }
+        const { patch, changed: moved } = applicableFields(g.proposals, (f) => picked.has(key(g.personId, f)), latest);
+        changed += moved;
         if (Object.keys(patch).length === 0) continue;
         await peopleClient.update(g.personId, patch);
         count++;
@@ -130,7 +129,7 @@ export function BatchAutofill({ people }: { people: { personId: string; name: st
                           <label className="flex items-start gap-2 text-sm">
                             <input type="checkbox" className="mt-0.5 accent-[var(--accent)]" checked={picked.has(key(g.personId, x.field))} onChange={(e) => toggle(key(g.personId, x.field), e.target.checked)} />
                             <span className="min-w-0">
-                              <span className="text-[var(--text-tertiary)]">{FIELD_LABEL[x.field]}: </span>{x.value}
+                              <span className="text-[var(--text-tertiary)]">{PROFILE_FIELD_LABEL[x.field]}: </span>{x.value}
                               {x.current && <span className="text-xs text-[var(--text-tertiary)]"> (now {x.current})</span>}
                               <span className="block truncate text-xs text-[var(--text-tertiary)]" title={x.quote}>“{x.quote}”</span>
                             </span>

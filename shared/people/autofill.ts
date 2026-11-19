@@ -73,3 +73,30 @@ export function parseAutofill(reply: string, note: string, current: AutofillCurr
   }
   return PROFILE_FIELDS.flatMap((f) => out.get(f) ?? []);
 }
+
+/** Field names as the person's page and the migration panel show them. */
+export const PROFILE_FIELD_LABEL: Record<ProfileField, string> = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" };
+
+/**
+ * Decide what Apply may write, given the person as they are now. A proposal
+ * was made against `current` (undefined = empty): if the field has since moved
+ * the user's newer value stays (`changed`); if it already holds the proposed
+ * value there is nothing to do (`done`, e.g. a retry after a partial save).
+ */
+export function applicableFields(
+  proposals: AutofillProposal[],
+  picked: (field: ProfileField) => boolean,
+  latest: AutofillCurrent,
+): { patch: Partial<Record<ProfileField, string>>; changed: number; done: number } {
+  const patch: Partial<Record<ProfileField, string>> = {};
+  let changed = 0;
+  let done = 0;
+  for (const p of proposals) {
+    if (!picked(p.field)) continue;
+    const now = latest[p.field]?.trim() || undefined;
+    if (now && now.toLowerCase() === p.value.toLowerCase()) done++;
+    else if (now !== (p.current ?? undefined)) changed++;
+    else patch[p.field] = p.value;
+  }
+  return { patch, changed, done };
+}

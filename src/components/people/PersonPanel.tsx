@@ -8,7 +8,7 @@
  * deleted person in one never blanks the other.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useCairnStore } from "@/store";
 import { onChangeFeed } from "@/store/change-feed";
 import { peopleClient } from "@/lib/ipc/people";
@@ -22,17 +22,31 @@ export function PersonPanel({ personId }: { personId: string }) {
   // Edits go through the store, which reloads the list: that is our cue to reread this page.
   const people = useCairnStore((s) => s.people);
   const [state, setState] = useState<{ id: string; page: PersonPageModel | null } | null>(null);
+  // Only the newest read may land, and none after unmount or a switch to another person.
+  const latest = useRef(0);
+  const hasPage = useRef(false);
 
   const load = useCallback(() => {
-    let live = true;
-    peopleClient.page(personId).then((page) => { if (live) setState({ id: personId, page }); }).catch(() => {});
-    return () => { live = false; };
+    const n = ++latest.current;
+    peopleClient.page(personId).then((page) => {
+      if (n !== latest.current) return;
+      hasPage.current = true;
+      setState({ id: personId, page });
+    }).catch(() => {});
   }, [personId]);
 
   useEffect(() => { if (!peopleLoaded) void loadPeople(); }, [peopleLoaded, loadPeople]);
-  useEffect(() => load(), [load, people]);
-  // The People view isn't mounted here, so reread on changes (sync, an agent over MCP) ourselves.
-  useEffect(() => onChangeFeed(() => { load(); }), [load]);
+  useEffect(() => {
+    hasPage.current = false;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a counter, not a DOM ref: bumping it is the point, so reads still in flight are dropped
+    return () => { latest.current++; };
+  }, [load]);
+  // The list changing means something was saved (here, sync or an agent). Before the first page has landed
+  // the read in flight is already fresh, so don't read twice.
+  useEffect(() => { if (hasPage.current) load(); }, [people, load]);
+  // The People view isn't mounted here, so reload the list on changes ourselves; that also rereads the page.
+  useEffect(() => onChangeFeed(() => { void loadPeople(); }), [loadPeople]);
 
   const mine = state?.id === personId ? state : null;
   if (mine && !mine.page) return <EmptyState title="Person not found" className="py-16" />;

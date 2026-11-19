@@ -45,6 +45,34 @@ describe("BatchAutofill", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it("stops reading notes when closed mid-run", async () => {
+    let release: (v: unknown) => void = () => {};
+    autofill.mockImplementation(() => new Promise((res) => { release = res; }));
+    const { unmount } = render(<BatchAutofill people={people} />);
+    fireEvent.click(screen.getByRole("button", { name: /Fill details/ }));
+    await waitFor(() => expect(autofill).toHaveBeenCalledTimes(1));
+    unmount();
+    release({ proposals: [] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(autofill).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes nothing when the person can't be re-read, and a retry counts saved fields as done", async () => {
+    autofill.mockResolvedValue({ proposals: [{ field: "title", value: "Engineer", quote: "Engineer" }] });
+    get.mockRejectedValueOnce(new Error("ipc down"));
+    render(<BatchAutofill people={[people[0]]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Fill details/ }));
+    await screen.findByText("Ana");
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    expect(update).not.toHaveBeenCalled();
+    // Retry after the title was saved elsewhere to the proposed value: nothing to write, not "changed".
+    get.mockResolvedValue({ title: "Engineer" });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    expect(await screen.findByText(/Saved details for 0 people\.$/)).toBeTruthy();
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("renders nothing without people", () => {
     const { container } = render(<BatchAutofill people={[]} />);
     expect(container).toBeEmptyDOMElement();

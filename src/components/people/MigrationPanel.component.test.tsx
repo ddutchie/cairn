@@ -73,6 +73,15 @@ describe("MigrationPanel", () => {
     expect(await screen.findByRole("region", { name: "Applied" })).toBeTruthy();
   });
 
+  it("locks the ticks once applied, so the fill-details review under them can't be cleared", async () => {
+    render(<MigrationPanel onClose={() => {}} />, { wrapper: TooltipProvider });
+    await screen.findByText("Ana Ruiz");
+    fireEvent.click(screen.getByRole("button", { name: /Apply/ }));
+    await screen.findByRole("region", { name: "Applied" });
+    expect((screen.getByLabelText(/Ana Ruiz/) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText(/Sync/) as HTMLInputElement).disabled).toBe(true);
+  });
+
   it("unticking everything disables Apply", async () => {
     render(<MigrationPanel onClose={() => {}} />, { wrapper: TooltipProvider });
     await screen.findByText("Ana Ruiz");
