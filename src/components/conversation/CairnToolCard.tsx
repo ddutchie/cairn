@@ -1,6 +1,8 @@
 "use client";
 
-import { Mountain } from "lucide-react";
+import { Mountain, User } from "lucide-react";
+import { useCairnStore } from "@/store";
+import { IconButton } from "@/components/ui/icon-button";
 import { CairnRefChip, CairnRefOpenButton, type CairnRef } from "@/components/shared/cairn-ref-chip";
 import { ToolCard, ToolPanel, ToolPayload } from "@/components/shared/ToolCard";
 import { cairnNameLookup } from "@/lib/cairn-name-lookup";
@@ -22,7 +24,9 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
   // (the engine puts a failed call's whole result text in `error`).
   const resultText = toolCall.output ?? toolCall.error;
   const parsed = parseObject(resultText);
-  const base = toolCall.viewTitle ? { pre: toolCall.viewTitle } : humanizeTool(toolCall.name, toolCall.args, cairnNameLookup);
+  // A people call names its person by an opaque id: read the name from the result when the call didn't carry one.
+  const summaryArgs = toolCall.name === "people" ? withOutcome(withPersonName(toolCall.args, parsed), parsed) : toolCall.args;
+  const base = toolCall.viewTitle ? { pre: toolCall.viewTitle } : humanizeTool(toolCall.name, summaryArgs, cairnNameLookup);
   // A style rule that was already in the guide must not read as "Added".
   const hitCount = toolCall.ok && (toolCall.name === "search_notes" || toolCall.name === "search_tasks") ? resultCount(resultText) : undefined;
   const summary = toolCall.name === "update_user_writing_style" && toolCall.ok && parsed?.updated === false
@@ -35,6 +39,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
     : undefined;
   const output = prettyToolOutput(redactToolOutput(resultText));
   const view = cairnToolView(toolCall);
+  const personId = toolCall.name === "people" && toolCall.ok ? personIdOf(parsed) : undefined;
   const errorMessage = toolCall.ok ? undefined : typeof parsed?.error === "string" ? parsed.error : parsed ? undefined : toolCall.error;
   const raw = (args || output) && (
     <>
@@ -51,7 +56,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
       brand="Cairn"
       summary={summary}
       tooltip="Cairn workspace tool"
-      headerAction={cairnRef && toolCall.ok ? <CairnRefOpenButton cairnRef={cairnRef} /> : undefined}
+      headerAction={cairnRef && toolCall.ok ? <CairnRefOpenButton cairnRef={cairnRef} /> : personId ? <OpenPersonButton personId={personId} /> : undefined}
       caption={`Tool: ${prettifyToolLabel(toolCall.name)}`}
     >
       {cairnRef && <div className="mt-1"><CairnRefChip toolName={toolCall.name} cairnRef={cairnRef} ok={toolCall.ok} /></div>}
@@ -68,6 +73,39 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
         </>
       ) : raw}
     </ToolCard>
+  );
+}
+
+/** The call's arguments with `name` filled in from the result (person, edge source or attendee) when the call only had an id. */
+function withPersonName(args: Record<string, unknown> | undefined, parsed: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!args || (typeof args.name === "string" && args.name.trim()) || !parsed) return args;
+  const at = (k: string) => (parsed[k] && typeof parsed[k] === "object" ? parsed[k] as Record<string, unknown> : undefined);
+  const name = [parsed.name, at("person")?.name, at("attendee")?.name, at("mention")?.name, at("edge")?.source].find((v) => typeof v === "string" && v.trim());
+  return name ? { ...args, name } : args;
+}
+
+/** What the call did, read from its result, for summaries that depend on it (created or updated; attendee kept). */
+function withOutcome(args: Record<string, unknown> | undefined, parsed: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!args || !parsed) return args;
+  if (args.action === "upsert" && typeof parsed.created === "boolean") return { ...args, outcome: parsed.created ? "created" : "updated" };
+  if (args.action === "link" && args.link === "attendee" && args.remove === true && parsed.removed === false) return { ...args, outcome: "kept" };
+  return args;
+}
+
+/** The one person a `people` result is about (get, upsert, timeline, a person's relationships), if any. */
+function personIdOf(parsed: Record<string, unknown> | undefined): string | undefined {
+  if (!parsed) return undefined;
+  const nested = parsed.person && typeof parsed.person === "object" ? (parsed.person as Record<string, unknown>).id : undefined;
+  const id = typeof nested === "string" ? nested : typeof parsed.id === "string" && typeof parsed.name === "string" ? parsed.id : undefined;
+  return id || undefined;
+}
+
+function OpenPersonButton({ personId }: { personId: string }) {
+  const openPerson = useCairnStore((s) => s.openPerson);
+  return (
+    <IconButton size="sm" variant="outline" label="Open person" tooltip="Open this person" tooltipSide="top" onClick={() => openPerson(personId)} data-testid="people-open">
+      <User size={11} />
+    </IconButton>
   );
 }
 

@@ -19,6 +19,11 @@ import { Callout } from "./Callout";
 import { MathBlock } from "./MathBlock";
 import { makeLatexPlugins, InlineCode, buildNoteRemarkPlugins, buildNoteRehypePlugins, contentHasMath, contentHasHighlight } from "@/lib/markdown/pipeline";
 import { renderCellWithCheckboxes } from "./note-markdown-components";
+import { useShallow } from "zustand/react/shallow";
+import { useCairnStore } from "@/store";
+import { revealNote } from "@/lib/events";
+import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 // ── NoteMarkdownPreview ───────────────────────────────────────────────────────
 
@@ -34,6 +39,42 @@ interface NoteMarkdownPreviewProps {
    * way it does in read mode. Default false = the standalone preview pane.
    */
   inline?: boolean;
+  /**
+   * Render `[[Note]]` as links that open the note (title match, as in the note
+   * editor's read mode). Off by default: other callers preview plain .md files.
+   */
+  wikilinks?: boolean;
+}
+
+/** A `[[wikilink]]` chip: opens the matching note in Notes, or shows as unresolved. */
+function PreviewWikilink({ title }: { title: string }) {
+  const { notes, activeProjectId, activeWorkspaceId, setActiveProject, setView } = useCairnStore(useShallow((s) => ({
+    notes: s.notes, activeProjectId: s.activeProjectId, activeWorkspaceId: s.activeWorkspaceId, setActiveProject: s.setActiveProject, setView: s.setView,
+  })));
+  const wanted = title.toLowerCase();
+  // Prefer a note in this workspace; a link to a note elsewhere still resolves.
+  const matches = notes.filter((n) => n.title.toLowerCase() === wanted);
+  const target = matches.find((n) => n.workspaceId === activeWorkspaceId) ?? matches[0];
+  return (
+    <Tooltip content={target ? `Open: ${title}` : `Note not found: ${title}`}>
+      <button
+        type="button"
+        onClick={() => {
+          if (!target) return;
+          if (target.projectId !== activeProjectId) setActiveProject(target.projectId);
+          revealNote(setView, target.id);
+        }}
+        className={cn(
+          "inline-flex items-center px-1.5 py-0.5 rounded-md text-[0.82em] font-medium transition-colors align-baseline",
+          target
+            ? "text-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] cursor-pointer"
+            : "text-[var(--text-tertiary)] bg-[var(--surface-2)] cursor-default opacity-60",
+        )}
+      >
+        {target ? title : `${title} ↗`}
+      </button>
+    </Tooltip>
+  );
 }
 
 interface MarkdownImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> {
@@ -162,7 +203,7 @@ function MarkdownImage({ src, alt, title, filePath, projectRoot, ...props }: Mar
   );
 }
 
-function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, inline }: NoteMarkdownPreviewProps) {
+function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, inline, wikilinks }: NoteMarkdownPreviewProps) {
   // Content-aware plugins: omit the math stack (remark-math + rehype-katex + the
   // two custom LaTeX passes ≈ 12ms on a large note) when the source has no `$`.
   // Keyed on math/highlight *presence* (booleans), not raw content, so the
@@ -175,9 +216,9 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, in
     [mathPresence, highlightPresence],
   );
   const remarkPlugins = useMemo(
-    () => buildNoteRemarkPlugins(content),
+    () => buildNoteRemarkPlugins(content, { wikilinks }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mathPresence],
+    [mathPresence, wikilinks],
   );
   const rehypePlugins = useMemo(
     () => buildNoteRehypePlugins(content, { latex }),
@@ -234,6 +275,9 @@ function NoteMarkdownPreviewImpl({ content, className, filePath, projectRoot, in
           },
           mathblock({ children, ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
             return <MathBlock renderedChildren={children} latex={(props as Record<string, string>)["data-latex"] ?? ""} />;
+          },
+          wikilink({ ...props }: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+            return <PreviewWikilink title={(props as Record<string, string>)["data-title"] ?? ""} />;
           },
           blockquote({ children }: React.BlockquoteHTMLAttributes<HTMLElement> & ExtraProps) {
             return <blockquote className="border-l-2 border-[var(--border)] pl-4 text-[var(--text-secondary)] my-3">{children}</blockquote>;

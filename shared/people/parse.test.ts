@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate, splitAttendeeValues,
+  cleanProfileField, cleanRelationshipLabel, foldName, formatMeetingDate, parseAttendeeList, parseAttendeeValue, parseBodyMeetingLines, parseChecklist, parseMeetingDate, splitAttendeeValues,
 } from "./parse";
 
 describe("foldName", () => {
@@ -131,5 +131,47 @@ describe("review fixes", () => {
     expect(parseMeetingDate("0001-01-01")).toBe("0001-01-01T00:00:00.000Z");
     expect(parseMeetingDate("0099-12-31")).toBe("0099-12-31T00:00:00.000Z");
     expect(parseMeetingDate("0001-02-29")).toBeNull();
+  });
+});
+
+describe("cleanRelationshipLabel", () => {
+  it("keeps one short phrase, collapsing whitespace", () => {
+    expect(cleanRelationshipLabel("  executive   sponsor ")).toEqual({ label: "executive sponsor" });
+  });
+  it("treats empty as no label", () => {
+    expect(cleanRelationshipLabel("  ")).toEqual({});
+    expect(cleanRelationshipLabel(undefined)).toEqual({});
+  });
+  it("refuses a list, which belongs in separate entries", () => {
+    expect(cleanRelationshipLabel("manager, tech lead").error).toMatch(/one short phrase/);
+    expect(cleanRelationshipLabel("a; b").error).toBeTruthy();
+  });
+  it("refuses a long label", () => {
+    expect(cleanRelationshipLabel("x".repeat(41)).error).toMatch(/at most 40/);
+  });
+});
+
+describe("cleanProfileField", () => {
+  it("trims and collapses a value", () => {
+    expect(cleanProfileField("title", "  Senior   Engineer ")).toEqual({ value: "Senior Engineer" });
+  });
+  it("treats empty as no value", () => {
+    expect(cleanProfileField("team", " ")).toEqual({});
+  });
+  it("accepts an IANA time zone and refuses anything else", () => {
+    expect(cleanProfileField("timezone", "Europe/Berlin")).toEqual({ value: "Europe/Berlin" });
+    expect(cleanProfileField("timezone", "Berlin time").error).toMatch(/IANA/);
+  });
+  it("caps the length", () => {
+    expect(cleanProfileField("location", "x".repeat(81)).error).toMatch(/at most 80/);
+  });
+});
+
+describe("matchesPersonQuery: time zone", () => {
+  it("finds a person by time zone", async () => {
+    const { matchesPersonQuery } = await import("./model");
+    const p = { name: "Ana", aliases: [], emails: [], relationship: [], timezone: "Europe/Berlin" } as never;
+    expect(matchesPersonQuery(p, "europe/berlin")).toBe(true);
+    expect(matchesPersonQuery(p, "tokyo")).toBe(false);
   });
 });

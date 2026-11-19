@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 import { NoteMarkdownPreview } from "./NoteMarkdownPreview";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
  * Regression: GFM task-list checkboxes rendered by NoteMarkdownPreview must be
@@ -58,5 +59,40 @@ describe("NoteMarkdownPreview — task-list checkboxes", () => {
     // Inline zeroes the first/last child margins so the block (e.g. a table
     // wrapper's my-3) hugs the top of its host — no empty space above it.
     expect(inlineRoot.className).toContain("[&>*:first-child]:mt-0");
+  });
+});
+
+describe("NoteMarkdownPreview — wikilinks (opt-in)", () => {
+  afterEach(cleanup);
+
+  it("leaves [[links]] as text unless wikilinks is on", () => {
+    const { container } = render(<NoteMarkdownPreview content="See [[Ana Lopez]]" />);
+    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).toContain("[[Ana Lopez]]");
+  });
+
+  it("renders [[links]] as chips when wikilinks is on, with unresolved ones marked", () => {
+    const { container } = render(
+      <TooltipProvider><NoteMarkdownPreview content="See [[Nobody Here]]" wikilinks /></TooltipProvider>,
+    );
+    const chip = container.querySelector("button");
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toBe("Nobody Here ↗");
+    expect(container.textContent).not.toContain("[[");
+  });
+
+  it("opens the note in the active workspace when two workspaces share a title", async () => {
+    const { useCairnStore } = await import("@/store");
+    const setActiveProject = vi.fn();
+    useCairnStore.setState({
+      activeWorkspaceId: "w2", activeProjectId: "pA", setActiveProject,
+      notes: [
+        { id: "n1", title: "Ana Lopez", projectId: "p1", workspaceId: "w1" },
+        { id: "n2", title: "Ana Lopez", projectId: "p2", workspaceId: "w2" },
+      ],
+    } as never);
+    const { container } = render(<TooltipProvider><NoteMarkdownPreview content="See [[Ana Lopez]]" wikilinks /></TooltipProvider>);
+    container.querySelector("button")!.click();
+    expect(setActiveProject).toHaveBeenCalledWith("p2");
   });
 });

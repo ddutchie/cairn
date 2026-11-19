@@ -96,6 +96,10 @@ function toPerson(r: Row): Person {
     status: r.status as PeopleStatus,
     provenance: r.provenance as Provenance,
     stage: opt(r.stage),
+    title: opt(r.title),
+    team: opt(r.team),
+    location: opt(r.location),
+    timezone: opt(r.timezone),
     // Two devices can each mark a different person as "me" before they sync; only the canonical one counts.
     isMe: r.is_me === 1 && (r.canonical_me === undefined || r.canonical_me === r.id),
     agentPrivate: r.agent_private === 1,
@@ -236,8 +240,8 @@ export function createPerson(db: Db, input: PersonCreateInput): Person {
   db.transaction(() => {
     db.prepare(`
       INSERT INTO people (id, workspace_id, name, aliases, emails, slack_id, relationship, cadence, persona_note_id,
-        status, provenance, stage, is_me, agent_private, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, provenance, stage, title, team, location, timezone, is_me, agent_private, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, input.workspaceId, name,
       JSON.stringify(cleanStrings(input.aliases)),
@@ -248,6 +252,10 @@ export function createPerson(db: Db, input: PersonCreateInput): Person {
       input.personaNoteId ?? null,
       status, provenance,
       input.stage?.trim() || null,
+      input.title?.trim() || null,
+      input.team?.trim() || null,
+      input.location?.trim() || null,
+      input.timezone?.trim() || null,
       input.isMe ? 1 : 0,
       input.agentPrivate ? 1 : 0,
       now, now,
@@ -278,6 +286,9 @@ export function updatePerson(db: Db, id: string, patch: PersonPatch): Person {
   if (patch.status !== undefined) set("status", oneOf(PEOPLE_STATUSES, patch.status, "status"));
   if (patch.provenance !== undefined) set("provenance", oneOf(PROVENANCES, patch.provenance, "provenance"));
   if (patch.stage !== undefined) set("stage", patch.stage?.trim() || null);
+  for (const key of ["title", "team", "location", "timezone"] as const) {
+    if (patch[key] !== undefined) set(key, patch[key]?.trim() || null);
+  }
   if (patch.isMe !== undefined) set("is_me", patch.isMe ? 1 : 0);
   if (patch.agentPrivate !== undefined) set("agent_private", patch.agentPrivate ? 1 : 0);
   if (patch.archivedAt !== undefined) set("archived_at", patch.archivedAt);

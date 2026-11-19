@@ -160,6 +160,13 @@ export function saveRelationship(personId: string, relationship: Relationship[],
   return write((db) => pq.updatePerson(db, personId, { relationship, cadence }));
 }
 
+export type ProfileEdit = { title: string; team: string; location: string; timezone: string; slackId: string };
+
+/** Role, team, location, time zone and Slack id from the person page. Blank clears a field. */
+export function saveProfile(personId: string, edit: Partial<ProfileEdit>): Person {
+  return write((db) => pq.updatePerson(db, personId, edit));
+}
+
 // ── Attendee strip ───────────────────────────
 
 export interface StripAttendee {

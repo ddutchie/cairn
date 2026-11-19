@@ -16,7 +16,7 @@ import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
 import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
-import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_TOOL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_TOOL_DESCRIPTION, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
 import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
 import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "@cairn/shared/people/tool";
 import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
@@ -160,10 +160,15 @@ const PEOPLE_TOOL_DEF: ToolDef = {
     emails: { ...A, description: "upsert: email addresses (added to existing)" },
     relationships: {
       type: "array",
-      items: obj({ type: { type: "string", enum: [...RELATIONSHIP_TYPES] }, label: S }, ["type"]),
+      items: obj({ type: { type: "string", enum: [...RELATIONSHIP_TYPES] }, label: { ...S, description: RELATIONSHIP_LABEL_DESCRIPTION } }, ["type"]),
       description: "upsert: relationship(s) to the user (replaces the list)",
     },
     cadence: { type: "string", enum: [...CADENCES, ""], description: "upsert: 1:1 cadence, empty to clear" },
+    title: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.title },
+    team: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.team },
+    location: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.location },
+    timezone: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.timezone },
+    slackId: { ...S, description: PROFILE_FIELD_DESCRIPTIONS.slackId },
     personaNoteId: { ...S, description: "upsert: the note about this person" },
     link: { type: "string", enum: ["edge", "attendee", "mention"], description: "link: what to link" },
     edgeType: { type: "string", enum: [...PERSON_EDGE_TYPES], description: "link edge: personId <edgeType> otherPersonId" },

@@ -14,7 +14,7 @@
 import * as z from "zod";
 
 import { isCairnReadTool } from "../../shared/agent/tool-names";
-import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP } from "../../shared/agent/people-tools";
+import { PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOL_DESCRIPTION_DESKTOP, PROFILE_FIELD_DESCRIPTIONS, RELATIONSHIP_LABEL_DESCRIPTION } from "../../shared/agent/people-tools";
 
 // ── Shared field shapes ────────────────────────────────────────────────────────
 
@@ -238,9 +238,14 @@ export const TOOL_SCHEMAS = {
       emails:       z.array(z.string()).optional().describe("upsert: email addresses (added to existing)"),
       relationships: z.array(z.object({
         type:  z.enum(["direct_report", "manager", "peer", "stakeholder", "mentor", "buddy", "recruiter", "candidate", "other"]),
-        label: sStrOpt,
+        label: sStrOpt.describe(RELATIONSHIP_LABEL_DESCRIPTION),
       })).optional().describe("upsert: relationship(s) to the user (replaces the list)"),
       cadence:      z.enum(["weekly", "biweekly", "monthly", ""]).optional().describe("upsert: 1:1 cadence, empty to clear"),
+      title:        sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.title),
+      team:         sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.team),
+      location:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.location),
+      timezone:     sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.timezone),
+      slackId:      sStrOpt.describe(PROFILE_FIELD_DESCRIPTIONS.slackId),
       personaNoteId: sIdOpt.describe("upsert: the note about this person"),
       link:         z.enum(["edge", "attendee", "mention"]).optional().describe("link: what to link"),
       edgeType:     z.enum(["manager_of", "mentor_of", "buddy_of", "stakeholder_of", "partner"]).optional().describe("link edge: personId <edgeType> otherPersonId"),

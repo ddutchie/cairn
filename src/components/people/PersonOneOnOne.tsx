@@ -46,19 +46,23 @@ export function usePersonProfile(person: Pick<Person, "id" | "slackId">): Person
   return profile;
 }
 
-/** Title, local time, pronouns and status, with an "as of" marker when they may be old. Nothing when Slack gave none. */
-export function ProfileLine({ profile }: { profile: PersonProfile | null }) {
-  if (!profile) return null;
-  const { fields } = profile;
-  const time = localTimeIn(fields.timezone);
-  const parts = [fields.title, time ? `${time} local` : null, fields.pronouns].filter(Boolean);
+/**
+ * Role, team, place, local time, pronouns and status. What you entered on the
+ * person wins; Slack's title and time zone fill gaps, with an "as of" marker
+ * when they may be old. Nothing when neither has any.
+ */
+export function ProfileLine({ profile, person }: { profile: PersonProfile | null; person?: Pick<Person, "title" | "team" | "location" | "timezone"> }) {
+  const fields = profile?.fields ?? {};
+  const time = localTimeIn(person?.timezone ?? fields.timezone);
+  const own = [person?.title, person?.team, person?.location].filter(Boolean);
+  const parts = [person?.title ?? fields.title, person?.team, person?.location, time ? `${time} local` : null, fields.pronouns].filter(Boolean);
   const status = [fields.statusEmoji, fields.statusText].filter(Boolean).join(" ");
   if (parts.length === 0 && !status) return null;
   return (
-    <p className="mt-1.5 text-sm text-[var(--text-secondary)]" aria-label="From Slack">
+    <p className="mt-1.5 text-sm text-[var(--text-secondary)]" aria-label={own.length > 0 || person?.timezone ? "Profile" : "From Slack"}>
       {parts.join(" · ")}
       {status && <span className="text-[var(--text-tertiary)]">{parts.length ? " · " : ""}{status}</span>}
-      {profile.stale && profile.fetchedAt && (
+      {profile?.stale && profile.fetchedAt && (
         <span className="ml-2 text-xs text-[var(--text-tertiary)]" title={profile.error ?? undefined}>
           as of {formatRelative(profile.fetchedAt, { absoluteAfterDays: 30 })}
         </span>

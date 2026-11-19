@@ -44,6 +44,8 @@ export const peopleClient = {
   profile: (personId: string): Promise<PersonProfile> => people((p) => p.profile.get(personId)),
   /** Refresh from the Slack connector when the cache is older than 24h; resolves with what to show. */
   refreshProfile: (personId: string): Promise<PersonProfile> => people((p) => p.profile.refresh(personId)),
+  /** Propose profile fields from the persona note; writes nothing. */
+  autofill: (personId: string): Promise<IpcReturn<"people:autofill:propose">> => people((p) => p.autofill.propose(personId)),
   /** The newest prep brief, and whether one is being prepared. */
   prep: (workspaceId: string, personId: string): Promise<{ brief: PrepBrief | null; running: boolean }> =>
     people((p) => p.prep.get(workspaceId, personId)),

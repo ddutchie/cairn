@@ -53,6 +53,7 @@ export function matchesPersonQuery(person: PersonSummary, query: string): boolea
     person.name,
     ...person.aliases,
     ...person.emails,
+    person.title ?? "", person.team ?? "", person.location ?? "", person.timezone ?? "",
     ...person.relationship.map((r) => r.label ?? ""),
     ...person.relationship.map((r) => RELATIONSHIP_LABELS[r.type]),
   ].join(" ");

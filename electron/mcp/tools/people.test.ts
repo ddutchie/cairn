@@ -136,6 +136,16 @@ describe("people tool", () => {
     expect(t.meetings).toHaveLength(1);
     expect(t.meetings[0].notes).toEqual([{ id: "n1", title: "Weekly sync" }]);
   });
+
+  it("removing an attendee reports whether they left the meeting", async () => {
+    const ana = person("Ana Ruiz");
+    // Never declared by this call: nothing to withdraw, so they did not leave.
+    expect((await run("people", { action: "link", link: "attendee", personId: ana.id, noteId: "n1", remove: true })).removed).toBe(false);
+    await run("people", { action: "link", link: "attendee", personId: ana.id, noteId: "n1" });
+    const gone = await run("people", { action: "link", link: "attendee", personId: ana.id, noteId: "n1", remove: true });
+    expect(gone.removed).toBe(true);
+    expect(listAttendees(db, meetingOf("n1")!)).toEqual([]);
+  });
 });
 
 describe("People arguments on note and task tools", () => {
@@ -301,5 +311,36 @@ describe("review fixes (W3 self-review)", () => {
     expect(JSON.stringify(out)).not.toContain("SECRETBODY");
     expect(out.note).toBeUndefined();
     expect(out.other.title).toBe("Weekly sync");
+  });
+
+  describe("profile fields", () => {
+    it("sets role, team, place, time zone and Slack id on create", async () => {
+      const r = await run("people", { action: "upsert", name: "Ana Lopez", title: "Senior Engineer", team: "Sync", location: "Berlin", timezone: "Europe/Berlin", slackId: "U0123ABCD" });
+      expect(r.created).toBe(true);
+      const p = getPerson(db, r.person.id)!;
+      expect([p.title, p.team, p.location, p.timezone, p.slackId]).toEqual(["Senior Engineer", "Sync", "Berlin", "Europe/Berlin", "U0123ABCD"]);
+      const got = await run("people", { action: "get", personId: p.id });
+      expect(got.title).toBe("Senior Engineer");
+      expect(got.timezone).toBe("Europe/Berlin");
+    });
+
+    it("an inferred value fills a gap but never replaces what the user set", async () => {
+      const p = person("Ben", { title: "Manager" });
+      await run("people", { action: "upsert", personId: p.id, title: "Intern", location: "Oslo", provenance: "inferred" });
+      const after = getPerson(db, p.id)!;
+      expect(after.title).toBe("Manager");
+      expect(after.location).toBe("Oslo");
+    });
+
+    it("a stated value replaces the old one", async () => {
+      const p = person("Cy", { title: "Manager" });
+      await run("people", { action: "upsert", personId: p.id, title: "Director" });
+      expect(getPerson(db, p.id)!.title).toBe("Director");
+    });
+
+    it("rejects a time zone that isn't one", async () => {
+      const r = await run("people", { action: "upsert", name: "Di", timezone: "Berlin time" });
+      expect(r.error).toMatch(/IANA/);
+    });
   });
 });

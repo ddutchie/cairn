@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Check, Circle, Lock } from "lucide-react-native";
+import { ICON_EDIT, ICON_PEOPLE } from "@/components/toolbar-icons";
 import { ScreenChrome } from "@/components/screen-chrome";
 import { PressableScale } from "@/components/PressableScale";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
@@ -9,8 +10,9 @@ import { NotFound } from "@/components/NotFound";
 import { useRefreshOnFocus } from "@/sync/useSyncStatus";
 import { haptics } from "@/haptics";
 import { useTheme, type as typeScale, type Theme } from "@/theme";
-import { loadPersonPage, saveRelationship, setActionItemDone, type OpenItem, type OpenItems } from "@/db/people";
+import { loadPersonPage, saveProfile, type ProfileEdit, saveRelationship, setActionItemDone, type OpenItem, type OpenItems } from "@/db/people";
 import { usePeopleEnabled } from "@/people/flag";
+import { cleanProfileField, PROFILE_FIELDS, type ProfileField } from "@cairn/shared/people/parse";
 import { CADENCE_LABELS, RELATIONSHIP_LABELS, describeRelation } from "@cairn/shared/people/model";
 import { formatDate, formatRelative } from "@cairn/shared/format/date";
 import { CADENCES, RELATIONSHIP_TYPES, type Cadence, type Relationship, type RelationshipType } from "@cairn/shared/types/people";
@@ -34,6 +36,7 @@ export function PersonScreen() {
   const [page, setPage] = useState<Page | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [details, setDetails] = useState(false);
 
   const load = useCallback(() => {
     try {
@@ -62,10 +65,18 @@ export function PersonScreen() {
     <View style={s.root}>
       <ScreenChrome
         title={person.name}
-        right={[{ kind: "button", key: "edit", label: "Edit", onPress: () => setEditing(true) }]}
+        right={[
+          { kind: "button", key: "details", label: "Details", icon: ICON_PEOPLE, onPress: () => setDetails(true) },
+          { kind: "button", key: "edit", label: "Edit", icon: ICON_EDIT, onPress: () => setEditing(true) },
+        ]}
       />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={s.content}>
         <Text style={s.name}>{person.name}</Text>
+        {[person.title, person.team, person.location].filter(Boolean).length > 0 || person.timezone ? (
+          <Text style={s.profile} accessibilityLabel="Profile">
+            {[person.title, person.team, person.location, person.timezone].filter(Boolean).join(" · ")}
+          </Text>
+        ) : null}
         <View style={s.chips}>
           {person.relationship.map((r, i) => (
             <View key={`${r.type}-${i}`} style={s.chip}><Text style={s.chipText}>{r.label ?? RELATIONSHIP_LABELS[r.type]}</Text></View>
@@ -116,6 +127,16 @@ export function PersonScreen() {
         </Section>
       </ScrollView>
 
+      <DetailsSheet
+        visible={details}
+        person={person}
+        onClose={() => setDetails(false)}
+        onSave={(edit) => {
+          saveProfile(person.id, edit);
+          setDetails(false);
+          load();
+        }}
+      />
       <RelationshipSheet
         visible={editing}
         relationship={person.relationship}
@@ -254,6 +275,73 @@ function RelationshipSheet({ visible, relationship, cadence, onClose, onSave }: 
   );
 }
 
+const FIELD_LABEL: Record<ProfileField, string> = { title: "Role", team: "Team", location: "Location", timezone: "Time zone" };
+
+/** Role, team, location, time zone and Slack id. A time zone is checked before saving. */
+function DetailsSheet({ visible, person, onClose, onSave }: {
+  visible: boolean; person: PersonPage["person"]; onClose: () => void; onSave: (edit: Partial<ProfileEdit>) => void;
+}) {
+  const t = useTheme();
+  const s = useMemo(() => makeStyles(t), [t]);
+  const [vals, setVals] = useState<ProfileEdit>({ title: "", team: "", location: "", timezone: "", slackId: "" });
+  // What the sheet opened with: save sends only what the user changed, so a sync that landed meanwhile isn't overwritten.
+  const [opened, setOpened] = useState<ProfileEdit>({ title: "", team: "", location: "", timezone: "", slackId: "" });
+  const [error, setError] = useState<string | null>(null);
+  // Re-seed from the person each time the sheet opens.
+  const [wasVisible, setWasVisible] = useState(false);
+  if (visible && !wasVisible) {
+    setWasVisible(true);
+    const seed = { title: person.title ?? "", team: person.team ?? "", location: person.location ?? "", timezone: person.timezone ?? "", slackId: person.slackId ?? "" };
+    setVals(seed);
+    setOpened(seed);
+    setError(null);
+  } else if (!visible && wasVisible) {
+    setWasVisible(false);
+  }
+  const set = (key: keyof ProfileEdit) => (text: string) => {
+    setVals((v) => ({ ...v, [key]: text }));
+    setError(null);
+  };
+  const save = () => {
+    for (const f of PROFILE_FIELDS) {
+      const { error: err } = cleanProfileField(f, vals[f]);
+      if (err) return setError(err);
+    }
+    if (vals.slackId.trim() && !/^[A-Za-z0-9]{3,32}$/.test(vals.slackId.trim())) return setError("A Slack id looks like U01ABCDEF.");
+    const changed: Partial<ProfileEdit> = {};
+    for (const k of Object.keys(vals) as (keyof ProfileEdit)[]) if (vals[k].trim() !== opened[k].trim()) changed[k] = vals[k];
+    onSave(changed);
+  };
+  const input = (key: keyof ProfileEdit, label: string, placeholder: string) => (
+    <View key={key} style={{ marginTop: 14 }}>
+      <Text style={s.sectionTitle}>{label}</Text>
+      <TextInput
+        style={s.input}
+        value={vals[key]}
+        onChangeText={set(key)}
+        placeholder={placeholder}
+        placeholderTextColor={t.textTertiary}
+        autoCapitalize={key === "timezone" || key === "slackId" ? "none" : "sentences"}
+        autoCorrect={false}
+        accessibilityLabel={label}
+      />
+    </View>
+  );
+  return (
+    <BottomSheet visible={visible} onClose={onClose} maxHeight="80%">
+      <BottomSheetHeader title="Details" onCancel={onClose} onDone={save} />
+      <ScrollView contentContainerStyle={s.sheet} keyboardShouldPersistTaps="handled">
+        {input("title", FIELD_LABEL.title, "Senior software engineer")}
+        {input("team", FIELD_LABEL.team, "Sync")}
+        {input("location", FIELD_LABEL.location, "Berlin, Germany")}
+        {input("timezone", FIELD_LABEL.timezone, "Europe/Berlin")}
+        {input("slackId", "Slack id", "U01ABCDEF")}
+        {error ? <Text style={[s.empty, { color: t.danger, marginTop: 12 }]} accessibilityRole="alert">{error}</Text> : null}
+      </ScrollView>
+    </BottomSheet>
+  );
+}
+
 function makeStyles(t: Theme) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.background },
@@ -266,6 +354,11 @@ function makeStyles(t: Theme) {
     },
     chipOn: { borderColor: t.accent, backgroundColor: t.accentDim },
     chipText: { ...typeScale.caption, color: t.textSecondary, fontWeight: "600" },
+    profile: { ...typeScale.body, color: t.textSecondary, marginTop: 4 },
+    input: {
+      ...typeScale.body, color: t.textPrimary, marginTop: 6, paddingVertical: 10, paddingHorizontal: 12,
+      borderRadius: 10, backgroundColor: t.surface2, borderWidth: StyleSheet.hairlineWidth, borderColor: t.border,
+    },
     meta: { ...typeScale.caption, color: t.textTertiary, marginTop: 10 },
     section: { marginTop: 24, gap: 8 },
     sectionTitle: { ...typeScale.overline, color: t.textTertiary },

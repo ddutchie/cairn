@@ -8,7 +8,7 @@ const CURRENT = [
   "get_context", "get_item", "search_notes", "search_tasks", "ensure_note", "edit_note", "update_notes",
   "create_task", "update_tasks", "task_progress", "upsert_project", "delete", "get_idea_flow", "edit_idea_flow",
   "get_graph", "get_user_writing_style", "update_user_writing_style", "get_today", "codebase_reindex",
-  "codebase_query", "suggest_connections", "spawn_tasks_from_note",
+  "codebase_query", "suggest_connections", "spawn_tasks_from_note", "people",
 ];
 const LEGACY = [
   "create_note", "get_note", "patch_note", "append_to_note", "rename_note", "delete_note", "tag_note", "bulk_move_notes",

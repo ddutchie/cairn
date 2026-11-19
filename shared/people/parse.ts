@@ -4,6 +4,49 @@
  * runtime and mobile share one copy. Plan: docs/plans/people-layer.md.
  */
 
+export const MAX_RELATIONSHIP_LABEL = 40;
+
+/**
+ * A relationship label is one short phrase that qualifies its type ("executive
+ * sponsor" on a stakeholder), never a list and never another type. Returns the
+ * cleaned label (undefined when empty) or an error the writer can act on.
+ */
+export function cleanRelationshipLabel(raw: unknown): { label?: string; error?: string } {
+  if (typeof raw !== "string") return {};
+  const label = raw.replace(/\s+/g, " ").trim();
+  if (!label) return {};
+  if (/[,;\n]/.test(raw)) return { error: "A relationship label is one short phrase. For several relationships, pass one entry each, every one with its own type." };
+  if (label.length > MAX_RELATIONSHIP_LABEL) return { error: `A relationship label is at most ${MAX_RELATIONSHIP_LABEL} characters.` };
+  return { label };
+}
+
+export const PROFILE_FIELDS = ["title", "team", "location", "timezone"] as const;
+export type ProfileField = (typeof PROFILE_FIELDS)[number];
+export const MAX_PROFILE_FIELD = 80;
+
+/** Whether `tz` is an IANA time zone the runtime knows. Accepts anything where Intl can't check. */
+function knownTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz });
+    return true;
+  } catch (err) {
+    return !(err instanceof RangeError);
+  }
+}
+
+/**
+ * A profile field (role, team, place, time zone) as one short line. Empty is
+ * "no value"; a time zone must be an IANA name like Europe/Berlin.
+ */
+export function cleanProfileField(field: ProfileField, raw: unknown): { value?: string; error?: string } {
+  if (typeof raw !== "string") return {};
+  const value = raw.replace(/\s+/g, " ").trim();
+  if (!value) return {};
+  if (value.length > MAX_PROFILE_FIELD) return { error: `${field} is at most ${MAX_PROFILE_FIELD} characters.` };
+  if (field === "timezone" && !knownTimezone(value)) return { error: `"${value}" isn't a time zone. Use an IANA name like Europe/Berlin.` };
+  return { value };
+}
+
 /** A person reference as written somewhere: a name, an email, or both. */
 export interface AttendeeRef {
   name?: string;

@@ -296,7 +296,163 @@ const remove: View = (_tc, args, _out, ctx) => {
   );
 };
 
+// ── People ──────────────────────────────────────────────────────────────────
+
+/** The object items of an array value (anything else is dropped). */
+function recs(v: unknown): Rec[] {
+  return Array.isArray(v) ? v.flatMap((x) => { const r = asRec(x); return r ? [r] : []; }) : [];
+}
+
+/** Underscores read as spaces in the type only; a custom label in parentheses keeps its own. */
+const REL_LABEL = (r: string) => r.replace(/^[a-z_]+/, (type) => type.replace(/_/g, " "));
+const EDGE_VERB: Record<string, string> = {
+  manager_of: "manages", mentor_of: "mentors", buddy_of: "is buddy of", stakeholder_of: "is stakeholder of", partner: "partners with",
+};
+
+function PersonLine({ name, meta, tail }: { name: string; meta?: string; tail?: string }) {
+  return (
+    <li className="flex items-baseline justify-between gap-2 text-2xs">
+      <span className="min-w-0 truncate"><span className="font-medium text-[var(--text-primary)]">{name}</span>{meta && <span className="ml-1.5 text-[var(--text-tertiary)]">{meta}</span>}</span>
+      {tail && <span className="shrink-0 text-[var(--text-tertiary)]">{tail}</span>}
+    </li>
+  );
+}
+
+function more(n: number, shown: number) {
+  return n > shown ? <p className="mt-1 text-2xs text-[var(--text-tertiary)]">+{n - shown} more</p> : null;
+}
+
+const people: View = (_tc, args, out, ctx) => {
+  const action = str(args.action);
+  if (!out && !ctx.pending && action !== "upsert" && action !== "link") return null;
+  const err = str(out?.error);
+  if (err) return null; // the card's Error panel says it
+
+  if (action === "query") {
+    const list = Array.isArray(out?.people) ? recs(out.people) : undefined;
+    if (!list) return null;
+    if (list.length === 0) return <ToolPanel label="People"><p className="text-2xs text-[var(--text-tertiary)]">No one matched.</p></ToolPanel>;
+    const total = typeof out?.total === "number" ? out.total : list.length;
+    return (
+      <ToolPanel label={`${total} ${total === 1 ? "person" : "people"}`}>
+        <ul className="space-y-0.5">
+          {list.slice(0, 8).map((p, i) => {
+            const rel = Array.isArray(p.relationship) ? (p.relationship as unknown[]).map((r) => REL_LABEL(String(r))).join(", ") : undefined;
+            const status = str(p.status);
+            return <PersonLine key={`${str(p.id)}-${i}`} name={str(p.name) ?? "Unnamed"} meta={rel} tail={status === "suggested" ? "suggested" : str(p.cadence)} />;
+          })}
+        </ul>
+        {more(total, Math.min(list.length, 8))}
+      </ToolPanel>
+    );
+  }
+
+  if (action === "get" && out && str(out.name)) {
+    const rel = Array.isArray(out.relationship) ? (out.relationship as unknown[]).map((r) => REL_LABEL(String(r))) : [];
+    const relations = recs(out.relations);
+    const last = asRec(out.lastMeeting);
+    return (
+      <ToolPanel label="Person">
+        <p className="text-xs font-medium text-[var(--text-primary)]">{str(out.name)}{out.isMe === true && <span className="ml-1.5 text-2xs font-normal text-[var(--text-tertiary)]">you</span>}</p>
+        {rel.length > 0 && <div className="mt-1"><Chips items={rel} /></div>}
+        <div className="mt-1.5 space-y-0.5">
+          {str(out.cadence) && <ChangeRow field="1:1" to={str(out.cadence)} />}
+          {last && <ChangeRow field="last met" to={`${str(last.title) ?? "Meeting"}${str(last.startsAt) ? ` · ${String(last.startsAt).slice(0, 10)}` : ""}`} />}
+          {relations.slice(0, 4).map((r, i) => <ChangeRow key={i} field={REL_LABEL(str(r.role) ?? "related")} to={str(r.name) ?? "?"} />)}
+        </div>
+      </ToolPanel>
+    );
+  }
+
+  if (action === "timeline" && out) {
+    const group = (k: string) => recs(out[k]);
+    const meetings = group("meetings"), mentions = group("mentions"), tasks = group("tasks"), items = group("actionItems");
+    if (meetings.length + mentions.length + tasks.length + items.length === 0) return <ToolPanel label="Timeline"><p className="text-2xs text-[var(--text-tertiary)]">Nothing yet.</p></ToolPanel>;
+    return (
+      <ToolPanel label={`Timeline${str(asRec(out.person)?.name) ? ` · ${str(asRec(out.person)?.name)}` : ""}`}>
+        {meetings.length > 0 && (
+          <ul className="space-y-0.5">
+            {meetings.slice(0, 5).map((m, i) => <PersonLine key={i} name={str(m.title) ?? "Meeting"} tail={str(m.startsAt)?.slice(0, 10)} />)}
+          </ul>
+        )}
+        {more(meetings.length, 5)}
+        <p className="mt-1 text-2xs text-[var(--text-tertiary)]">
+          {[mentions.length && `${mentions.length} ${mentions.length === 1 ? "note mentions" : "notes mention"} them`, tasks.length && `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`, items.length && `${items.filter((i) => i.done !== true).length} open checklist ${items.filter((i) => i.done !== true).length === 1 ? "item" : "items"}`].filter(Boolean).join(" · ")}
+        </p>
+      </ToolPanel>
+    );
+  }
+
+  if (action === "relationships" && out) {
+    if (Array.isArray(out.edges)) {
+      const edges = recs(out.edges);
+      if (edges.length === 0) return <ToolPanel label="Relationships"><p className="text-2xs text-[var(--text-tertiary)]">None recorded.</p></ToolPanel>;
+      return (
+        <ToolPanel label={`${typeof out.total === "number" ? out.total : edges.length} relationships`}>
+          <ul className="space-y-0.5">
+            {edges.slice(0, 8).map((e, i) => (
+              <li key={i} className="min-w-0 truncate text-2xs text-[var(--text-secondary)]">
+                <span className="text-[var(--text-primary)]">{str(e.sourceName)}</span> {EDGE_VERB[str(e.type) ?? ""] ?? str(e.type)} <span className="text-[var(--text-primary)]">{str(e.targetName)}</span>
+              </li>
+            ))}
+          </ul>
+          {more(edges.length, 8)}
+        </ToolPanel>
+      );
+    }
+    const relations = recs(out.relations);
+    return (
+      <ToolPanel label={`Relationships${str(asRec(out.person)?.name) ? ` · ${str(asRec(out.person)?.name)}` : ""}`}>
+        {relations.length === 0
+          ? <p className="text-2xs text-[var(--text-tertiary)]">None recorded.</p>
+          : <div className="space-y-0.5">{relations.slice(0, 8).map((r, i) => <ChangeRow key={i} field={REL_LABEL(str(r.role) ?? "related")} to={str(r.name) ?? "?"} />)}</div>}
+      </ToolPanel>
+    );
+  }
+
+  if (action === "upsert") {
+    const person = asRec(out?.person);
+    const rows: Array<[string, string]> = [];
+    const add = (f: string, v: unknown) => { const s = str(v); if (s) rows.push([f, s]); };
+    add("name", args.name ?? person?.name);
+    if (Array.isArray(args.relationships) && args.relationships.length) {
+      rows.push(["relationship", recs(args.relationships).map((r) => `${REL_LABEL(str(r.type) ?? "")}${str(r.label) ? ` · ${str(r.label)}` : ""}`).join(", ")]);
+    }
+    add("1:1", args.cadence);
+    if (Array.isArray(args.aliases) && args.aliases.length) add("aliases", args.aliases.join(", "));
+    if (args.isMe === true) rows.push(["is me", "yes"]);
+    if (args.agentPrivate === true) rows.push(["private from agents", "yes"]);
+    if (rows.length === 0) return null;
+    const label = ctx.pending ? "Will save" : out?.created === true ? "Added to People" : out?.updated === false ? "No changes" : "Saved";
+    const suggested = person && str(person.status) === "suggested";
+    return <ToolPanel label={suggested ? `${label} · suggested` : label}><div className="space-y-0.5">{rows.map(([f, to]) => <ChangeRow key={f} field={f} to={to} />)}</div></ToolPanel>;
+  }
+
+  if (action === "link") {
+    const undo = args.remove === true;
+    const edge = asRec(out?.edge);
+    if (edge) {
+      return (
+        <ToolPanel label={ctx.pending ? "Will link" : undo ? "Unlinked" : "Linked"}>
+          <p className="text-2xs text-[var(--text-secondary)]"><span className="text-[var(--text-primary)]">{str(edge.source)}</span> {EDGE_VERB[str(edge.type) ?? ""] ?? str(edge.type)} <span className="text-[var(--text-primary)]">{str(edge.target)}</span>{str(edge.status) === "suggested" && <span className="ml-1.5 text-[var(--text-tertiary)]">suggested</span>}</p>
+        </ToolPanel>
+      );
+    }
+    const attendee = asRec(out?.attendee), mention = asRec(out?.mention);
+    const hit = attendee ?? mention;
+    if (hit) {
+      return (
+        <ToolPanel label={attendee ? (undo ? (out?.removed === false ? "Still an attendee" : "Attendee removed") : "Attendee added") : (undo ? "Mention removed" : "Mention linked")}>
+          <p className="text-2xs text-[var(--text-secondary)]"><span className="text-[var(--text-primary)]">{str(hit.name)}</span> {attendee ? "on this meeting note" : "in this note"} <span className="text-[var(--text-tertiary)]">{str(hit.noteId)}</span></p>
+        </ToolPanel>
+      );
+    }
+  }
+  return null;
+};
+
 const VIEWS: Record<string, View> = {
+  people,
   update_user_writing_style: writingStyle,
   update_tasks: updateTasks,
   update_notes: updateNotes,

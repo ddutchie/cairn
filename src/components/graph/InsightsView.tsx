@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useCallback, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import {
   Clock, Grid3x3, Table2, Activity, Workflow, Crosshair, BarChart2,
-  Search, Sparkles, Minus, Plus, Network, Users,
+  Search, Sparkles, Minus, Plus, Network, Users, X, ExternalLink,
 } from "lucide-react";
 import { RefreshSpin } from "@/components/ui/spinner";
 import { ProjectScopePicker } from "@/components/shared/ProjectScopePicker";
@@ -14,6 +14,7 @@ import { filterGraphNodes, EMPTY_GRAPH } from "@/store/slices/graph";
 import type { GraphNode, GraphNodeType } from "@/types";
 import { ViewTabs, viewTabId } from "@/components/ui/view-tabs";
 import { IconButton } from "@/components/ui/icon-button";
+import { Button } from "@/components/ui/button";
 import { ViewToolbar } from "@/components/ui/view-toolbar";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
@@ -28,6 +29,7 @@ import { SemanticMapCanvas } from "@/components/graph/SemanticMapCanvas";
 import { RelationshipCanvas } from "@/components/graph/RelationshipCanvas";
 import { OrgChartCanvas } from "@/components/graph/OrgChartCanvas";
 import { GraphDetailPanel } from "@/components/graph/GraphDetailPanel";
+import { PersonPanel } from "@/components/people/PersonPanel";
 import { NodeTypeChip } from "@/components/graph/NodeTypeChip";
 
 type InsightsLayout = "timeline" | "matrix" | "table" | "ridgeline" | "sankey" | "beeswarm" | "bullet" | "semantic-map"
@@ -66,6 +68,10 @@ export function InsightsView() {
     loadGraph,
     setGraphFilters,
     setSelectedGraphNode,
+    peoplePanelId,
+    setPeoplePanel,
+    setView,
+    selectPerson,
   } = useCairnStore(useShallow((s) => ({
     activeWorkspaceId:   s.activeWorkspaceId,
     // Another workspace's graph (mid-switch) is shown as empty → loading state.
@@ -80,6 +86,10 @@ export function InsightsView() {
     loadGraph:           s.loadGraph,
     setGraphFilters:     s.setGraphFilters,
     setSelectedGraphNode: s.setSelectedGraphNode,
+    peoplePanelId:       s.peoplePanelId,
+    setPeoplePanel:      s.setPeoplePanel,
+    setView:             s.setView,
+    selectPerson:        s.selectPerson,
   })));
 
   const [chosenLayout, setLayout] = useState<InsightsLayout>("ridgeline");
@@ -87,6 +97,9 @@ export function InsightsView() {
   // The flag turning off while a People canvas is open falls back to the default.
   const layout: InsightsLayout = layouts.some((l) => l.key === chosenLayout) ? chosenLayout : "ridgeline";
   const peopleLayout = layout === "relationships" || layout === "org-chart";
+  // The person panel belongs to the People canvases: close it when leaving them or this view.
+  useEffect(() => { if (!peopleLayout) setPeoplePanel(null); }, [peopleLayout, setPeoplePanel]);
+  useEffect(() => () => setPeoplePanel(null), [setPeoplePanel]);
   const [tableSearch,     setTableSearch]     = useState("");
   const [tableTypeFilter, setTableTypeFilter] = useState<GraphNodeType[]>([]);
 
@@ -294,6 +307,20 @@ export function InsightsView() {
 
         {selectedNode && (
           <GraphDetailPanel node={selectedNode} onClose={() => setSelectedGraphNode(null)} />
+        )}
+        {peopleEnabled && peopleLayout && peoplePanelId && (
+          <aside aria-label="Person" className="w-[26rem] max-w-[45%] flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border)] flex-shrink-0">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Person</span>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="xs" onClick={() => { const id = peoplePanelId; setPeoplePanel(null); setView("people"); selectPerson(id); }}>
+                  <ExternalLink size={11} /> Open in People
+                </Button>
+                <IconButton label="Close person" onClick={() => setPeoplePanel(null)}><X size={13} /></IconButton>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto"><PersonPanel key={peoplePanelId} personId={peoplePanelId} /></div>
+          </aside>
         )}
       </div>
     </div>

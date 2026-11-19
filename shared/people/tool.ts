@@ -19,7 +19,7 @@ import {
 import { captureNoteMeeting, loadCandidates, meetingLinkPending, resolvePerson } from "./capture";
 import { ownedItemsIn } from "./action-items";
 import { edgeRowId } from "./ids";
-import { parseMeetingDate } from "./parse";
+import { cleanProfileField, cleanRelationshipLabel, parseMeetingDate, PROFILE_FIELDS } from "./parse";
 import {
   PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES,
   type Person, type PeopleStatus, type PersonPatch, type Provenance, type Relationship,
@@ -59,6 +59,9 @@ function personSummary(p: Person) {
     ...(p.aliases.length ? { aliases: p.aliases } : {}),
     ...(p.relationship.length ? { relationship: p.relationship.map((r) => (r.label ? `${r.type} (${r.label})` : r.type)) } : {}),
     ...(p.status !== "confirmed" ? { status: p.status } : {}),
+    ...(p.title ? { title: p.title } : {}),
+    ...(p.team ? { team: p.team } : {}),
+    ...(p.location ? { location: p.location } : {}),
     ...(p.cadence ? { cadence: p.cadence } : {}),
     ...(p.isMe ? { isMe: true } : {}),
     ...(p.personaNoteId ? { personaNoteId: p.personaNoteId } : {}),
@@ -175,6 +178,7 @@ function getOne(db: Db, workspaceId: string, args: Args) {
     emails: p.emails,
     ...(p.slackId ? { slackId: p.slackId } : {}),
     ...(p.stage ? { stage: p.stage } : {}),
+    ...(p.timezone ? { timezone: p.timezone } : {}),
     relations: relationsOf(db, p.id),
     ...(last ? { lastMeeting: { id: last.id, title: last.title, startsAt: last.startsAt } } : {}),
   };
@@ -241,7 +245,9 @@ function relationshipList(x: unknown, provenance: Provenance): Relationship[] | 
   for (const r of x) {
     const type = oneOf(RELATIONSHIP_TYPES, r?.type);
     if (!type) throw new Error(`Unknown relationship "${r?.type}". Use one of: ${RELATIONSHIP_TYPES.join(", ")}`);
-    out.push({ type, ...(typeof r.label === "string" && r.label ? { label: r.label } : {}), provenance });
+    const { label, error } = cleanRelationshipLabel(r?.label);
+    if (error) throw new Error(error);
+    out.push({ type, ...(label ? { label } : {}), provenance });
   }
   return out;
 }
@@ -272,10 +278,21 @@ function upsert(db: Db, workspaceId: string, args: Args) {
     return { error: "Pass personId or name" };
   }
 
+  // Profile fields: what the user typed wins. A call that only infers a value fills a gap; it never replaces one.
+  const profile: Partial<Record<(typeof PROFILE_FIELDS)[number], string>> = {};
+  for (const field of PROFILE_FIELDS) {
+    if (args[field] === undefined) continue;
+    const { value, error } = cleanProfileField(field, args[field]);
+    if (error) return { error };
+    if (value && (!existing?.[field] || provenance === "explicit")) profile[field] = value;
+  }
+  const slackId = typeof args.slackId === "string" && args.slackId.trim() ? args.slackId.trim() : undefined;
+  if (slackId && !/^[A-Za-z0-9]{3,32}$/.test(slackId)) return { error: "slackId looks like U0123ABCD (a Slack member id)" };
+
   if (!existing) {
     const p = createPerson(db, {
       workspaceId, name: String(args.name).trim(), aliases, emails, relationship: rel, cadence: cadence ?? undefined,
-      personaNoteId: args.personaNoteId, status, provenance,
+      personaNoteId: args.personaNoteId, status, provenance, ...profile, ...(slackId ? { slackId } : {}),
     });
     return { created: true, person: personSummary(p) };
   }
@@ -287,6 +304,8 @@ function upsert(db: Db, workspaceId: string, args: Args) {
   if (rel) patch.relationship = rel;
   if (cadence !== undefined) patch.cadence = cadence;
   if (args.personaNoteId) patch.personaNoteId = args.personaNoteId;
+  Object.assign(patch, profile);
+  if (slackId && (!existing.slackId || provenance === "explicit")) patch.slackId = slackId;
   // An agent can confirm a suggestion, but never resurrects someone the user dismissed.
   if (oneOf(PEOPLE_STATUSES, args.status) && existing.status !== "dismissed") patch.status = args.status;
   if (Object.keys(patch).length === 0) return { updated: false, person: personSummary(existing) };
@@ -325,7 +344,10 @@ function link(db: Db, ctx: PeopleToolContext, workspaceId: string, args: Args) {
       if (!remove && meetingLinkPending(db, meetingId)) return { error: PENDING_MEETING };
       if (remove) {
         // Withdraws only the agent's own claim; a person the user confirmed (or the calendar lists) stays.
-        if (meetingId) removeAttendeeSource(db, meetingId, p.id, "declared");
+        // False when someone else still lists them (or this call never declared them): they stay at the meeting.
+        const gone = meetingId ? removeAttendeeSource(db, meetingId, p.id, "declared") : false;
+        ctx.meetingsChanged?.([noteId]);
+        return { removed: gone, attendee: { noteId, personId: p.id, name: p.name } };
       } else {
         if (!meetingId) meetingId = captureNoteMeeting(db, { noteId, attendees: [], source: "declared", provenance }).meetingId;
         addAttendee(db, { meetingId, personId: p.id, status, source: "declared", provenance });

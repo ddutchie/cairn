@@ -38,6 +38,14 @@ export interface PeopleSlice {
   loadPersonaNoteIds: () => Promise<void>;
   setShowPersonaNotes: (on: boolean) => void;
   selectPerson: (id: ID | null) => void;
+  /** Person shown in Insights' side panel (null = closed). */
+  peoplePanelId: ID | null;
+  setPeoplePanel: (id: ID | null) => void;
+  /**
+   * Open a person where the user is: the preview pane beside a full-width chat,
+   * else the People view.
+   */
+  openPerson: (id: ID) => void;
   loadPersonPage: (id: ID) => Promise<void>;
   /** Reload the list and the open page (after an external change). */
   refreshPeople: () => Promise<void>;
@@ -129,6 +137,22 @@ export const createPeopleSlice: StateCreator<CairnStore, [], [], PeopleSlice> = 
 
     setShowPersonaNotes(on) {
       set({ showPersonaNotes: on });
+    },
+
+    peoplePanelId: null,
+
+    setPeoplePanel(id) {
+      set({ peoplePanelId: id });
+    },
+
+    openPerson(id) {
+      const s = get();
+      if (s.sessionPresentation === "center") {
+        s.setActivePreviewItem({ type: "person", id });
+        return;
+      }
+      s.setView("people");
+      s.selectPerson(id);
     },
 
     selectPerson(id) {

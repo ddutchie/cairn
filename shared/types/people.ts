@@ -45,6 +45,11 @@ export type Person = {
   provenance: Provenance;
   /** Hiring stage, for candidates. */
   stage?: string;
+  /** Role, team, place and IANA time zone: what you know about them, in your words. */
+  title?: string;
+  team?: string;
+  location?: string;
+  timezone?: string;
   /** The user themself; one per workspace. */
   isMe: boolean;
   /** When true, the persona note is left out of every agent read. */
@@ -154,6 +159,10 @@ export interface PersonCreateInput {
   status?: PeopleStatus;
   provenance?: Provenance;
   stage?: string;
+  title?: string;
+  team?: string;
+  location?: string;
+  timezone?: string;
   isMe?: boolean;
   agentPrivate?: boolean;
 }
@@ -170,6 +179,10 @@ export type PersonPatch = Partial<{
   status: PeopleStatus;
   provenance: Provenance;
   stage: string | null;
+  title: string | null;
+  team: string | null;
+  location: string | null;
+  timezone: string | null;
   isMe: boolean;
   agentPrivate: boolean;
   archivedAt: string | null;

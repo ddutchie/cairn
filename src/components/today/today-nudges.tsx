@@ -18,9 +18,7 @@ import { localDate, type TodayNudge } from "../../../shared/today/brief";
 
 export function TodayNudges({ nudges, workspaceId }: { nudges: TodayNudge[]; workspaceId: string }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const setView = useCairnStore((s) => s.setView);
-  const selectPerson = useCairnStore((s) => s.selectPerson);
-  const open = (id: string) => { setView("people"); selectPerson(id); };
+  const open = useCairnStore((s) => s.openPerson);
   const shown = nudges.filter((n) => !hidden.has(n.id));
   if (shown.length === 0) return null;
   const done = (id: string) => {

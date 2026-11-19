@@ -12,6 +12,7 @@ import { handle, type DbContext } from "./result-helpers";
 import * as pq from "../db/people-queries";
 import * as pv from "../db/people-view-queries";
 import { getCachedProfile, refreshProfile } from "../lib/people/profile";
+import { proposeProfileFields } from "../lib/people/autofill";
 import { findPrepAutomation, isPrepRunning, loadLatestPrepBrief, settleBrief } from "../lib/people/prep";
 import { runPrepNow } from "../lib/heartbeat-runner";
 import { applyMigration, buildInventory } from "../db/people-migration";
@@ -63,6 +64,9 @@ export function registerPeopleHandlers(ctx: DbContext): void {
   );
   registerContractHandle("people:profile:refresh", (_e, { personId }) =>
     handle(() => (pq.isPeopleEnabled(ctx.db) ? refreshProfile(ctx.db, personId) : { fields: {}, stale: false })),
+  );
+  registerContractHandle("people:autofill:propose", (_e, { personId }) =>
+    handle(() => (pq.isPeopleEnabled(ctx.db) ? proposeProfileFields(ctx.db, personId) : { skipped: "off" as const })),
   );
   registerContractHandle("people:prep:get", (_e, { workspaceId, personId }) =>
     handle(() => {

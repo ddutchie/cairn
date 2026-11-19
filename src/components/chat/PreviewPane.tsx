@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { X, ExternalLink, FileText, Kanban, Code2, GitBranch } from "lucide-react";
+import { X, ExternalLink, FileText, Kanban, Code2, GitBranch, User } from "lucide-react";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { agentClient } from "../../lib/ipc/agent";
@@ -9,6 +9,7 @@ import { gitClient } from "@/lib/ipc/git";
 import { hasElectron } from "@/lib/ipc/client";
 import { NoteEditor } from "@/components/notes/note-editor";
 import { CardDetailPanel } from "@/components/kanban/card-detail-panel";
+import { PersonPanel } from "@/components/people/PersonPanel";
 import { revealNote, revealCard } from "@/lib/events";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -57,13 +58,14 @@ function DiffContextContent({ path }: { path?: string }) {
 }
 
 export function PreviewPane() {
-  const { activePreviewItem, activeContextPanel, setActivePreviewItem, setActiveContextPanel, setView, openEditorFile, notes, cards } = useCairnStore(useShallow((s) => ({
+  const { activePreviewItem, activeContextPanel, setActivePreviewItem, setActiveContextPanel, setView, openEditorFile, selectPerson, notes, cards } = useCairnStore(useShallow((s) => ({
     activePreviewItem: s.activePreviewItem,
     activeContextPanel: s.activeContextPanel,
     setActivePreviewItem: s.setActivePreviewItem,
     setActiveContextPanel: s.setActiveContextPanel,
     setView: s.setView,
     openEditorFile: s.openEditorFile,
+    selectPerson: s.selectPerson,
     notes: s.notes,
     cards: s.cards,
   })));
@@ -93,6 +95,9 @@ export function PreviewPane() {
       revealNote(setView, note.id);
     } else if (type === "task" && card) {
       revealCard(setView, card.id);
+    } else if (type === "person" && id) {
+      setView("people");
+      selectPerson(id);
     }
     setActivePreviewItem(null);
     setActiveContextPanel(null);
@@ -128,18 +133,20 @@ export function PreviewPane() {
             <FileText size={13} className="text-[var(--accent)]" />
           ) : type === "task" ? (
             <Kanban size={13} className="text-[var(--success)]" />
+          ) : type === "person" ? (
+            <User size={13} className="text-[var(--accent)]" />
           ) : type === "file" ? (
             <Code2 size={13} className="text-[var(--info)]" />
           ) : (
             <GitBranch size={13} className="text-[var(--warning)]" />
           )}
           <span className="text-xs font-medium text-[var(--text-secondary)]">
-            {type === "note" ? "Note preview" : type === "task" ? "Task preview" : type === "file" ? "File preview" : "Diff preview"}
+            {type === "note" ? "Note preview" : type === "task" ? "Task preview" : type === "person" ? "Person" : type === "file" ? "File preview" : "Diff preview"}
           </span>
         </div>
 
         <div className="flex items-center gap-1.5">
-          {(note || card) && (
+          {(note || card || type === "person") && (
             <>
               <Button
                 variant="ghost"
@@ -148,7 +155,7 @@ export function PreviewPane() {
                 className="flex items-center gap-1 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
               >
                 <ExternalLink size={11} />
-                Go to {type === "note" ? "Notes" : "Board"}
+                Go to {type === "note" ? "Notes" : type === "person" ? "People" : "Board"}
               </Button>
               <div className="w-px h-3 bg-[var(--border)] my-1" />
             </>
@@ -195,6 +202,9 @@ export function PreviewPane() {
           ) : (
             <EmptyState title="Task card not found or deleted" />
           )
+        )}
+        {type === "person" && id && (
+          <div className="flex-1 min-h-0 overflow-auto"><PersonPanel personId={id} /></div>
         )}
         {type === "file" && <FileContextContent key={`file:${panel.path}`} path={panel.path} />}
         {type === "diff" && <DiffContextContent key={`diff:${panel.path ?? "all"}`} path={panel.path} />}

@@ -56,11 +56,10 @@ export function usePeopleNetwork() {
 }
 const EMPTY_PEOPLE: never[] = [];
 
-/** Open a person's page in the People view. */
+/** Open a person in the Insights side panel. */
 export function useOpenPerson() {
-  const selectPerson = useCairnStore((s) => s.selectPerson);
-  const setView = useCairnStore((s) => s.setView);
-  return useCallback((id: string) => { selectPerson(id); setView("people"); }, [selectPerson, setView]);
+  const setPeoplePanel = useCairnStore((s) => s.setPeoplePanel);
+  return useCallback((id: string) => setPeoplePanel(id), [setPeoplePanel]);
 }
 
 interface KindChipProps {

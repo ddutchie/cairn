@@ -13,7 +13,7 @@ vi.mock("./expo-sync-db", () => ({ createExpoSyncDb: () => h.db }));
 vi.mock("@/sync/write-signal", () => ({ notifyLocalWrite: () => {} }));
 vi.mock("./queries", () => ({ updateNote: () => {} }));
 
-const { addNoteAttendee, setActionItemDone, loadOpenItems } = await import("./people");
+const { addNoteAttendee, setActionItemDone, loadOpenItems, saveProfile } = await import("./people");
 const NOW = "2026-11-18T10:00:00.000Z";
 const addNote = (id: string, content: string, extra = "") =>
   h.db.prepare(`INSERT INTO notes (id, project_id, workspace_id, title, content, created_at, updated_at${extra ? ", deleted_at" : ""}) VALUES (?, 'p1', 'ws1', 'Sync', ?, ?, ?${extra ? ", ?" : ""})`).run(...[id, content, NOW, NOW, ...(extra ? [extra] : [])]);
@@ -65,5 +65,16 @@ describe("open items", () => {
     expect(setActionItemDone("n1", items[0].lineKey, true, items[0].bodyDigest)).toBe(false);
     const fresh = loadOpenItems(ana).theyOwe;
     expect(setActionItemDone("n1", fresh[0].lineKey, true, fresh[0].bodyDigest)).toBe(true);
+  });
+});
+
+describe("saveProfile", () => {
+  const edit = { title: "Senior Engineer", team: "Sync", location: "Berlin", timezone: "Europe/Berlin", slackId: "U01ABC" };
+  it("stores the fields and clears a blank one", () => {
+    saveProfile("ana", edit);
+    expect(h.db.prepare("SELECT title, team, location, timezone, slack_id AS s FROM people WHERE id='ana'").get())
+      .toEqual({ title: "Senior Engineer", team: "Sync", location: "Berlin", timezone: "Europe/Berlin", s: "U01ABC" });
+    saveProfile("ana", { team: "  " });
+    expect(h.db.prepare("SELECT title, team FROM people WHERE id='ana'").get()).toEqual({ title: "Senior Engineer", team: null });
   });
 });

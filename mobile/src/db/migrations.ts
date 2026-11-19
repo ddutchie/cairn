@@ -219,6 +219,14 @@ const MIGRATIONS: ((db: SQLite.SQLiteDatabase) => void)[] = [
     }
     db.execSync("UPDATE meeting_attendees SET sources = json_object(source, json_object('on', json('true'), 'at', updated_at)) WHERE sources = '{}' OR sources = '[]'");
   },
+  // v12: people.title/team/location/timezone (profile fields, optional, no
+  // sync protocol bump). Fresh installs have them from the base schema.
+  (db) => {
+    const cols = db.getAllSync<{ name: string }>("PRAGMA table_info(people)").map((c) => c.name);
+    for (const column of ["title", "team", "location", "timezone"]) {
+      if (!cols.includes(column)) db.execSync(`ALTER TABLE people ADD COLUMN ${column} TEXT`);
+    }
+  },
 ];
 
 /** The schema version this build expects (base schema = 1, plus each migration). */

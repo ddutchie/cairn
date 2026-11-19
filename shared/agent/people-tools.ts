@@ -24,6 +24,19 @@ export const PEOPLE_ARG_DESCRIPTIONS = {
   owner: "Person who owns this task (name, email or person id), or empty to clear",
 } as const;
 
+/** The profile fields `upsert` can set (same words on every surface). */
+export const PROFILE_FIELD_DESCRIPTIONS = {
+  title: "upsert: job title or role, e.g. 'Senior Software Engineer'. Fills a gap; never replaces what the user set unless provenance is explicit",
+  team: "upsert: team or org, e.g. 'Sync'",
+  location: "upsert: where they are, e.g. 'Berlin, Germany'",
+  timezone: "upsert: IANA time zone, e.g. 'Europe/Berlin'",
+  slackId: "upsert: their Slack member id (U0123ABCD), used to read their Slack profile",
+} as const;
+
+/** What `label` on a relationship means (same words on every surface). */
+export const RELATIONSHIP_LABEL_DESCRIPTION =
+  "Optional short qualifier for this one type, e.g. 'executive sponsor' on a stakeholder. One phrase, never a list and never another type: give each relationship its own entry with its own type";
+
 /** The `people` tool's description for the model. */
 export const PEOPLE_TOOL_DESCRIPTION =
   "People the user works with, their meetings and relationships. Reads: 'query' (by name, relationship or status; empty lists everyone), 'get' (one person: details, relationships, persona note id), 'timeline' (their meetings, mentions and owned tasks, newest first), 'relationships' (who manages/mentors/partners whom). Writes: 'upsert' (create or update a person) and 'link' (an edge between two people, an attendee on a meeting note, or a mention). Anything you infer rather than read stated goes in as status 'suggested' for the user to confirm.";

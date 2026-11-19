@@ -39,6 +39,9 @@ export const peopleApi = {
       get:     (personId: string) => invokeContract("people:profile:get", { personId }),
       refresh: (personId: string) => invokeContract("people:profile:refresh", { personId }),
     },
+    autofill: {
+      propose: (personId: string) => invokeContract("people:autofill:propose", { personId }),
+    },
     prep: {
       get: (workspaceId: string, personId: string) => invokeContract("people:prep:get", { workspaceId, personId }),
       run: (workspaceId: string, personId: string, meetingId?: string) => invokeContract("people:prep:run", { workspaceId, personId, meetingId }),

@@ -32,7 +32,7 @@ export interface AppUIState {
   sidebarCollapsed: boolean;
   chatOpen: boolean;
   searchOpen: boolean;
-  activePreviewItem: { type: "note" | "task"; id: ID } | null;
+  activePreviewItem: { type: "note" | "task" | "person"; id: ID } | null;
   chatPanelResizing: boolean;
   lastContentView: "overview" | "notes" | "board" | "flow" | "calendar" | "calendar-all" | "graph" | "insights" | "automations" | "today" | "usage" | "people" | "settings" | "agent";
   seenFeatures: string[];
