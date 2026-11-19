@@ -86,6 +86,33 @@ export function humanizeSearchResult(noun: "notes" | "tasks", args: SearchArgs, 
   return { pre: count === 0 && !filter ? `No ${noun} found` : lead };
 }
 
+const EDGE_PHRASE: Record<string, string> = {
+  manager_of: "manages", mentor_of: "mentors", buddy_of: "is a buddy of", stakeholder_of: "is a stakeholder of", partner: "partners with",
+};
+
+/** The `people` tool's call as a sentence, by action. */
+function humanizePeople(args: ToolArgs): HumanizedTool {
+  const who = typeof args.name === "string" && args.name.trim() ? short(args.name) : typeof args.personId === "string" && args.personId.trim() ? short(args.personId) : "a person";
+  switch (args.action) {
+    case "query":
+      if (typeof args.name === "string" && args.name.trim()) return { pre: "Searched people for", obj: `“${short(args.name)}”` };
+      if (typeof args.relationship === "string" && args.relationship.trim()) return { pre: "Listed people", post: `(${args.relationship.replace(/_/g, " ")})` };
+      return { pre: "Listed people" };
+    case "get": return { pre: "Read", obj: who };
+    case "timeline": return { pre: "Read the timeline of", obj: who };
+    case "relationships": return args.personId || args.name ? { pre: "Read the relationships of", obj: who } : { pre: "Read the relationship map" };
+    case "upsert": return args.personId ? { pre: "Updated", obj: who } : { pre: "Added", obj: who, post: "to People" };
+    case "link": {
+      const undo = args.remove === true;
+      if (args.link === "edge") return { pre: undo ? "Unlinked" : "Linked", obj: who, post: typeof args.edgeType === "string" && EDGE_PHRASE[args.edgeType] ? `(${EDGE_PHRASE[args.edgeType]})` : undefined };
+      if (args.link === "attendee") return { pre: undo ? "Removed" : "Added", obj: who, post: undo ? "as an attendee" : "as an attendee of a meeting" };
+      if (args.link === "mention") return { pre: undo ? "Removed the mention of" : "Linked a note mentioning", obj: who };
+      return { pre: "Updated", obj: who };
+    }
+    default: return { pre: "Used People" };
+  }
+}
+
 export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNameLookup = {}): HumanizedTool {
   const named = (kind: keyof CairnNameLookup, id: unknown, fallback: string): string => {
     if (typeof id !== "string" || !id.trim()) return fallback;
@@ -208,6 +235,8 @@ export function humanizeTool(name: string, args: ToolArgs = {}, lookup: CairnNam
     case "get_graph": return typeof args.nodeId === "string" && args.nodeId
       ? { pre: args.semantic ? "Found notes related to" : "Explored connections of", obj: short(lookup.note?.(args.nodeId) ?? lookup.task?.(args.nodeId) ?? args.nodeId) }
       : { pre: "Read the knowledge graph" };
+    // ── People ──
+    case "people": return humanizePeople(args);
     case "get_today": return typeof args.date === "string" && args.date ? { pre: "Read the Today brief for", obj: args.date } : { pre: "Read the Today brief" };
     case "ask_questions": return { pre: "Asked", obj: count(args.questions, "question") };
     case "get_idea_flow": return { pre: "Read the idea flow" };

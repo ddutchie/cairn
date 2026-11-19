@@ -1,6 +1,8 @@
 "use client";
 
-import { Mountain } from "lucide-react";
+import { Mountain, User } from "lucide-react";
+import { useCairnStore } from "@/store";
+import { IconButton } from "@/components/ui/icon-button";
 import { CairnRefChip, CairnRefOpenButton, type CairnRef } from "@/components/shared/cairn-ref-chip";
 import { ToolCard, ToolPanel, ToolPayload } from "@/components/shared/ToolCard";
 import { cairnNameLookup } from "@/lib/cairn-name-lookup";
@@ -35,6 +37,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
     : undefined;
   const output = prettyToolOutput(redactToolOutput(resultText));
   const view = cairnToolView(toolCall);
+  const personId = toolCall.name === "people" && toolCall.ok ? personIdOf(parsed) : undefined;
   const errorMessage = toolCall.ok ? undefined : typeof parsed?.error === "string" ? parsed.error : parsed ? undefined : toolCall.error;
   const raw = (args || output) && (
     <>
@@ -51,7 +54,7 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
       brand="Cairn"
       summary={summary}
       tooltip="Cairn workspace tool"
-      headerAction={cairnRef && toolCall.ok ? <CairnRefOpenButton cairnRef={cairnRef} /> : undefined}
+      headerAction={cairnRef && toolCall.ok ? <CairnRefOpenButton cairnRef={cairnRef} /> : personId ? <OpenPersonButton personId={personId} /> : undefined}
       caption={`Tool: ${prettifyToolLabel(toolCall.name)}`}
     >
       {cairnRef && <div className="mt-1"><CairnRefChip toolName={toolCall.name} cairnRef={cairnRef} ok={toolCall.ok} /></div>}
@@ -68,6 +71,23 @@ export function CairnToolCard({ toolCall, cairnRef }: { toolCall: ConversationTo
         </>
       ) : raw}
     </ToolCard>
+  );
+}
+
+/** The one person a `people` result is about (get, upsert, timeline, a person's relationships), if any. */
+function personIdOf(parsed: Record<string, unknown> | undefined): string | undefined {
+  if (!parsed) return undefined;
+  const nested = parsed.person && typeof parsed.person === "object" ? (parsed.person as Record<string, unknown>).id : undefined;
+  const id = typeof nested === "string" ? nested : typeof parsed.id === "string" && typeof parsed.name === "string" ? parsed.id : undefined;
+  return id || undefined;
+}
+
+function OpenPersonButton({ personId }: { personId: string }) {
+  const openPerson = useCairnStore((s) => s.openPerson);
+  return (
+    <IconButton size="sm" variant="outline" label="Open person" tooltip="Open this person" tooltipSide="top" onClick={() => openPerson(personId)} data-testid="people-open">
+      <User size={11} />
+    </IconButton>
   );
 }
 

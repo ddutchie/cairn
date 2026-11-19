@@ -253,3 +253,43 @@ describe("search headers", () => {
   });
 });
 
+
+describe("People tool card", () => {
+  it("renders the people tool as a Cairn card with a readable summary", () => {
+    renderCall(call({ name: "people", args: { action: "get", name: "Ana Lopez" }, output: "{}" }));
+    expect(screen.getByTestId("cairn-tool-summary").textContent).toBe("Cairn · Read Ana Lopez");
+  });
+
+  it("lists people from a query with their relationships", () => {
+    renderOpen(call({
+      name: "people",
+      args: { action: "query", relationship: "direct_report" },
+      output: JSON.stringify({ total: 2, people: [{ id: "p1", name: "Ana Lopez", relationship: ["direct_report"], cadence: "weekly" }, { id: "p2", name: "Ben Okafor", relationship: ["direct_report"], status: "suggested" }] }),
+    }));
+    expect(screen.getByText("2 people")).toBeTruthy();
+    expect(screen.getByText("Ana Lopez")).toBeTruthy();
+    expect(screen.getAllByText("direct report").length).toBe(2);
+    expect(screen.getByText("suggested")).toBeTruthy();
+  });
+
+  it("shows a person's details and offers to open them", () => {
+    renderOpen(call({
+      name: "people",
+      args: { action: "get", personId: "p1" },
+      output: JSON.stringify({ id: "p1", name: "Ana Lopez", relationship: ["direct_report"], cadence: "weekly", relations: [{ role: "manager", name: "Alex Morgan" }] }),
+    }));
+    expect(screen.getByText("Ana Lopez")).toBeTruthy();
+    expect(screen.getByText("Alex Morgan")).toBeTruthy();
+    expect(screen.getByTestId("people-open")).toBeTruthy();
+  });
+
+  it("describes a link between two people in words", () => {
+    renderOpen(call({
+      name: "people",
+      args: { action: "link", link: "edge", personId: "p1", edgeType: "manager_of", otherPersonId: "p2" },
+      output: JSON.stringify({ linked: true, edge: { id: "e1", source: "Alex Morgan", type: "manager_of", target: "Ana Lopez", status: "confirmed" } }),
+    }));
+    expect(screen.getByText("Linked")).toBeTruthy();
+    expect(screen.getAllByText(/manages/).length).toBeGreaterThan(0);
+  });
+});
