@@ -45,7 +45,7 @@ import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/component
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
 import { MentionStrip } from "@/components/chat/MentionStrip";
 import { mentionContext } from "@/chat/mentions";
-import { matchPeople, trailingMention } from "@cairn/shared/people/mentions";
+import { chosenInText, matchPeople, trailingMention } from "@cairn/shared/people/mentions";
 import { loadPeople, peopleWorkspaceId } from "@/db/people";
 import { foldName } from "@cairn/shared/people/parse";
 import { usePeopleEnabled } from "@/people/flag";
@@ -161,12 +161,12 @@ export default function ChatScreen() {
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Attachments are stored alongside so staged
   // images/PDFs are never silently dropped. Session-scoped.
-  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Attachment[] }[]>([]);
+  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Attachment[]; picks?: ReadonlyMap<string, string> }[]>([]);
   const queuedRef = useRef<typeof queued>([]);
   useEffect(() => { queuedRef.current = queued; }, [queued]);
   // Content + attachments for the next queued send — read by `send` when the
   // queue drains.
-  const pendingSendRef = useRef<{ content: string; attachments?: Attachment[] } | null>(null);
+  const pendingSendRef = useRef<{ content: string; attachments?: Attachment[]; picks?: ReadonlyMap<string, string> } | null>(null);
   const [configured, setConfigured] = useState(true);
   // Context-window usage for the ring (Apple provider reports it per turn).
   // Seeded from the last persisted value so the ring survives closing/reopening
@@ -344,7 +344,9 @@ export default function ChatScreen() {
     // A turn is already running — queue this message instead of interrupting
     // it. The queue drains (FIFO) when the current reply finishes.
     if (busy) {
-      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts }]);
+      // The chips picked for this draft travel with it, so a later draft can't change who it means.
+      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts, picks: pickedMentions.current }]);
+      pickedMentions.current = new Map();
       setInput("");
       setAttachments([]);
       return;
@@ -371,7 +373,7 @@ export default function ChatScreen() {
       { id: nextMessageId(), role: "assistant", content: "", tools: [], streaming: true },
     ]);
 
-    conversation.current.push(userMessage(text, atts, mentionContext(text, pickedMentions.current)));
+    conversation.current.push(userMessage(text, atts, mentionContext(text, chosenInText(text, queuedSend ? queuedSend.picks ?? new Map() : pickedMentions.current))));
     if (!queuedSend) pickedMentions.current = new Map();
     // Persist the user turn locally (on-device only — chat never syncs).
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
@@ -532,7 +534,7 @@ export default function ChatScreen() {
     if (wasBusy && !busy && queuedRef.current.length > 0) {
       const [next, ...rest] = queuedRef.current;
       setQueued(rest);
-      pendingSendRef.current = { content: next.content, attachments: next.attachments };
+      pendingSendRef.current = { content: next.content, attachments: next.attachments, picks: next.picks };
       sendRef.current();
     }
   }, [busy]);

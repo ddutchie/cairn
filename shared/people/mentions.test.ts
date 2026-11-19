@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Person } from "../types/people";
-import { findMentions, matchPeople, trailingMention } from "./mentions";
+import { chosenInText, findMentions, matchPeople, trailingMention } from "./mentions";
 
 const person = (id: string, name: string, aliases: string[] = []): Person => ({ id, name, aliases } as Person);
 const ana = person("p1", "Ana Lopez", ["Ana"]);
@@ -69,5 +69,23 @@ describe("matchPeople", () => {
   });
   it("lists everyone for a bare @", () => {
     expect(matchPeople([ana, chris1], "")).toHaveLength(2);
+  });
+});
+
+describe("chosenInText", () => {
+  const picks = new Map([["alex kim", "p1"]]);
+  it("keeps a pick while its mention is in the text", () => {
+    expect([...chosenInText("ask @Alex Kim about it", picks)]).toEqual([["alex kim", "p1"]]);
+  });
+  it("drops a pick once the mention is deleted or edited", () => {
+    expect(chosenInText("ask about it", picks).size).toBe(0);
+    expect(chosenInText("ask @Alex Kimberly", picks).size).toBe(0);
+    expect(chosenInText("mail alex@kim.com", picks).size).toBe(0);
+  });
+  it("a dropped pick leaves a typed shared name ambiguous", () => {
+    const two = [person("p1", "Alex Kim"), person("p2", "Alex Kim")];
+    const text = "@Alex Kim again";
+    expect(findMentions(text, two, chosenInText("different text", picks)).ambiguous).toHaveLength(1);
+    expect(findMentions(text, two, chosenInText(text, picks)).matched.map((p) => p.id)).toEqual(["p1"]);
   });
 });

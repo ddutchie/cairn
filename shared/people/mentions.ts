@@ -117,3 +117,18 @@ export function matchPeople<T extends Pick<Person, "name" | "aliases">>(people: 
   return people.filter((p) => rank(p) < 2).sort((a, b) => rank(a) - rank(b)).slice(0, limit);
 }
 
+
+/**
+ * The picks that still stand in `text`: one whose `@Name` was deleted or edited
+ * is dropped, so a name typed by hand later asks which person instead of
+ * silently meaning the earlier pick.
+ */
+export function chosenInText(text: string, chosen: ReadonlyMap<string, string>): Map<string, string> {
+  const folded = foldName(text);
+  const kept = new Map<string, string>();
+  for (const [key, id] of chosen) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(^|[\\s([{,;:"'])@${escaped}(?![\\p{L}\\p{N}_])`, "u").test(folded)) kept.set(key, id);
+  }
+  return kept;
+}
