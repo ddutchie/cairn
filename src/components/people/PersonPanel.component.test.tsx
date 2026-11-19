@@ -1,21 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { useCairnStore } from "@/store";
+
+const pageOf = vi.fn();
+vi.mock("@/lib/ipc/people", () => ({ peopleClient: { page: (...a: unknown[]) => pageOf(...a) } }));
+vi.mock("./PersonPage", () => ({ PersonPage: ({ page }: { page: { person: { name: string } } | null }) => <div>{page ? `page:${page.person.name}` : "loading"}</div> }));
 import { PersonPanel } from "./PersonPanel";
 
-const selectPerson = vi.fn();
+const page = (name: string) => ({ person: { id: name, name } });
 beforeEach(() => {
-  selectPerson.mockReset();
-  // A deleted person: selecting clears the selection again, as the store does on a not-found page.
-  useCairnStore.setState({ selectedPersonId: null, personPage: null, peopleLoaded: true, selectPerson, loadPeople: vi.fn(), refreshPeople: vi.fn() } as never);
+  pageOf.mockReset().mockImplementation(async (id: string) => (id === "gone" ? null : page(id)));
+  useCairnStore.setState({ peopleLoaded: true, people: [], selectedPersonId: "keep", loadPeople: vi.fn() } as never);
 });
 
 describe("PersonPanel", () => {
-  it("selects a requested person once and settles on a not-found state", () => {
-    const { rerender } = render(<PersonPanel personId="gone" />);
-    rerender(<PersonPanel personId="gone" />);
-    rerender(<PersonPanel personId="gone" />);
-    expect(selectPerson).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Person not found")).toBeTruthy();
+  it("settles on not found for a deleted person without requesting again", async () => {
+    render(<PersonPanel personId="gone" />);
+    expect(await screen.findByText("Person not found")).toBeTruthy();
+    expect(pageOf).toHaveBeenCalledTimes(1);
+  });
+
+  it("two panels show different people, and one missing person doesn't blank the other", async () => {
+    render(<><PersonPanel personId="gone" /><PersonPanel personId="Ben" /></>);
+    expect(await screen.findByText("Person not found")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("page:Ben")).toBeTruthy());
+  });
+
+  it("leaves the People view's selection alone", async () => {
+    render(<PersonPanel personId="Ben" />);
+    await screen.findByText("page:Ben");
+    expect(useCairnStore.getState().selectedPersonId).toBe("keep");
   });
 });
