@@ -428,7 +428,7 @@ function Persona({ page }: { page: PersonPageModel }) {
             placeholder="What they care about, how they like to work, how to help them grow"
           />
         ) : content.trim()
-          ? <NoteMarkdownPreview content={content} inline className="text-sm" />
+          ? <NoteMarkdownPreview content={content} inline wikilinks className="text-sm" />
           : <p className="text-xs text-[var(--text-tertiary)]">The persona note is empty.</p>
       ) : (
         // Slot (W5 part 2): link or convert a note to this person's persona.
