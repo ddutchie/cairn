@@ -99,3 +99,12 @@ describe("delete and retype", () => {
     expect(findMentions("ask @Alex Kim", two, picks).ambiguous).toHaveLength(1);
   });
 });
+
+describe("picked then typed again", () => {
+  it("a second typed mention of the same name makes the pick ambiguous, even after the picked one is deleted", () => {
+    const two = [person("p1", "Alex Kim"), person("p2", "Alex Kim")];
+    let picks: Map<string, string> = new Map([["alex kim", "p1"]]);
+    for (const draft of ["@Alex Kim", "@Alex Kim and @Alex Kim", "and @Alex Kim"]) picks = chosenInText(draft, picks);
+    expect(findMentions("and @Alex Kim", two, picks).ambiguous).toHaveLength(1);
+  });
+});
