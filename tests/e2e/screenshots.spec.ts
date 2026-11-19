@@ -310,3 +310,85 @@ test.describe("screenshots", () => {
     });
   }
 });
+
+// ── People layer (flag on, seeded people) ───────────────────────────────────
+// A separate pass with its own mock so the shots above keep the flag-off fixture.
+// Outputs land in docs/ next to the other feature shots; the filenames are what
+// the site's People page will reference.
+const PEOPLE_SHOTS: Shot[] = [
+  // List + person page: relationships, timeline, the 1:1 loop with a saved prep brief.
+  { file: "docs/people.png", view: "people", setup: async (p) => {
+    await p.evaluate(() => {
+      const s = (window as unknown as { __cairnStoreRef?: { getState: () => { selectPerson: (id: string) => void } } }).__cairnStoreRef?.getState();
+      s?.selectPerson("per-ana");
+    });
+    await p.waitForSelector("text=Ana Lopez", { timeout: 5000 }).catch(() => {});
+    await p.waitForTimeout(600);
+  } },
+  { file: "docs/people-relationships.png", view: "insights", collapsed: true, setup: async (p) => {
+    await p.locator("#insights-canvas-tab-relationships").evaluate((el) => (el as HTMLElement).click());
+    await p.waitForTimeout(2500);
+    // A dozen people sit in a small cluster at 1x: zoom in on it, like a user would.
+    await p.evaluate(async () => {
+      const svg = document.querySelector('svg[aria-label^="Relationship map"]');
+      if (!svg) return;
+      for (let i = 0; i < 2; i++) {
+        svg.dispatchEvent(new WheelEvent("wheel", { deltaY: -240, clientX: 775, clientY: 490, bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 60));
+      }
+    });
+    await p.waitForTimeout(800);
+  } },
+  { file: "docs/people-org-chart.png", view: "insights", collapsed: true, setup: async (p) => {
+    await p.locator("#insights-canvas-tab-org-chart").evaluate((el) => (el as HTMLElement).click());
+    await p.waitForTimeout(1000);
+  } },
+  // `@` in chat: the picker lists people next to notes and tasks.
+  { file: "docs/chat-mention.png", view: "chat", setup: async (p) => {
+    const box = p.locator("textarea:not(.xterm-helper-textarea)").first();
+    await box.evaluate((el) => (el as HTMLTextAreaElement).focus());
+    await p.keyboard.type("Prep my 1:1 with @An", { delay: 20 });
+    await p.waitForTimeout(700);
+  } },
+];
+
+test.describe("people screenshots", () => {
+  test.setTimeout(120_000);
+
+  for (const theme of THEMES) {
+    test(`capture people ${theme} → ${SITE_DIR}${theme === "dark" ? "/dark" : ""}`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: theme });
+      const page = await context.newPage();
+      await page.addInitScript({ content: buildScreenshotMock({ people: true }) });
+      await page.addInitScript({
+        content: `Object.defineProperty(window,'__cairnStore',{get(){return window.__cairnStoreRef},set(v){window.__cairnStoreRef=v},configurable:true});`,
+      });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await page.waitForSelector("[data-testid='sidebar'], nav, aside", { timeout: 20_000 });
+      expect(await page.evaluate(() => !!(window as unknown as { electron?: unknown }).electron), "window.electron mock missing").toBe(true);
+      await page.waitForTimeout(500);
+      await setTheme(page, theme);
+      await prepareForScreenshots(page);
+      // People is hidden from the sidebar on first run: show it, as a user who turned the feature on would.
+      await page.evaluate(() => {
+        const s = (window as unknown as { __cairnStoreRef?: { getState: () => { setHiddenViews: (v: string[]) => void; hiddenViews: Set<string> } } }).__cairnStoreRef?.getState();
+        s?.setHiddenViews([...s.hiddenViews].filter((v) => v !== "people"));
+      });
+      await page.waitForTimeout(300);
+
+      for (const shot of PEOPLE_SHOTS) {
+        const outRoot = theme === "dark" ? path.join(SITE_DIR, "dark") : SITE_DIR;
+        const outPath = path.join(outRoot, shot.file);
+        fs.mkdirSync(path.dirname(outPath), { recursive: true });
+        await goToView(page, shot.view);
+        await setSidebarCollapsed(page, !!shot.collapsed);
+        if (shot.setup) await shot.setup(page);
+        await prepareForScreenshots(page);
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: outPath, fullPage: false });
+        console.log(`[screenshots:${theme}] ${shot.file} → ${outPath} (${Math.round(fs.statSync(outPath).size / 1024)} KB)`);
+      }
+      await context.close();
+    });
+  }
+});

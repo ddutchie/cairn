@@ -6,6 +6,7 @@
 // Build-time only: the session factory's SOURCE is embedded into the page
 // script (the page itself stays import-free). See src/test-utils/session-mock.
 import { buildSessionMock } from "../../src/test-utils/session-mock";
+import { buildPeopleFixture } from "./people-fixture";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -836,6 +837,8 @@ export function buildScreenshotMock(opts?: {
   needsWorkspaceSetup?: boolean;
   /** Replace the knowledge graph (e.g. the large graph in tests/perf). */
   graph?: { nodes: unknown[]; edges: unknown[] };
+  /** Turn the People layer on and seed people (screenshots of the People feature). Default off. */
+  people?: boolean;
 }): string {
   // Mock due dates must sit relative to the REAL current date: the calendar
   // renders the current month and "overdue" is computed against Date.now().
@@ -1115,6 +1118,8 @@ export function buildScreenshotMock(opts?: {
   const chatThreadsJson = JSON.stringify(chatThreads);
   const chatMessagesJson = JSON.stringify(chatMessages);
 
+  const peopleJson = JSON.stringify(opts?.people ? buildPeopleFixture() : null);
+
   const wsId = JSON.stringify(WS_ID);
   const projId = JSON.stringify(PROJ_A);
   const needsSetup = JSON.stringify(opts?.needsWorkspaceSetup ?? false);
@@ -1124,6 +1129,7 @@ export function buildScreenshotMock(opts?: {
   const snap = ${snapshot};
   const graphData = ${graph};
   const flowData = ${flow};
+  const peopleData = ${peopleJson};
   const wsId = ${wsId};
   const projId = ${projId};
   const needsSetup = ${needsSetup};
@@ -1169,14 +1175,14 @@ export function buildScreenshotMock(opts?: {
     note:      { list: () => Promise.resolve(snap.notes),      create: noop, update: noop, delete: noop, moveToFolder: noop, moveToProject: noop, bodies: (ids) => Promise.resolve(snap.notes.filter(n => ids.indexOf(n.id) >= 0).map(n => ({ id: n.id, content: n.content }))), search: () => Promise.resolve([]), searchSnippets: () => Promise.resolve([]), backlinks: () => Promise.resolve([]), clearChangeMark: noop },
     column:    { list: () => Promise.resolve(snap.columns),    create: noop, update: noop, delete: noop },
     card:      { list: () => Promise.resolve(snap.cards),      create: noop, update: noop, delete: noop, addBlocker: noop, removeBlocker: noop, ready: () => Promise.resolve(snap.cards), moveToProject: noop, archiveDone: () => Promise.resolve([]) },
-    // People layer: flag off, as for every user until launch.
+    // People layer: flag off, as for every user until launch (peopleData seeds it for the People screenshots).
     people: {
-      flag:      { get: () => Promise.resolve(false), set: (on) => Promise.resolve(!!on) },
-      list:      () => Promise.resolve([]),
-      summaries: () => Promise.resolve([]),
-      network:   () => Promise.resolve({ edges: [], coAttendance: [] }),
-      get:       () => Promise.resolve(null),
-      page:      () => Promise.resolve(null),
+      flag:      { get: () => Promise.resolve(!!peopleData), set: (on) => Promise.resolve(!!on) },
+      list:      (f) => Promise.resolve(!peopleData ? [] : (() => { const st = (f && f.statuses) || ["confirmed"]; return peopleData.people.concat(peopleData.suggestions).filter(p => st.indexOf(p.status) >= 0); })()),
+      summaries: (f) => Promise.resolve(!peopleData ? [] : (() => { const st = (f && f.statuses) || ["confirmed"]; return peopleData.people.concat(peopleData.suggestions).filter(p => st.indexOf(p.status) >= 0); })()),
+      network:   () => Promise.resolve(peopleData ? peopleData.network : { edges: [], coAttendance: [] }),
+      get:       (id) => Promise.resolve(peopleData ? (peopleData.pages[id] || {}).person || null : null),
+      page:      (id) => Promise.resolve(peopleData ? peopleData.pages[id] || null : null),
       create:    noop,
       update:    noop,
       delete:    noop,
@@ -1188,8 +1194,8 @@ export function buildScreenshotMock(opts?: {
       attendees: () => Promise.resolve([]),
       attendee:  { add: noop, remove: noop },
       autofill:  { propose: () => Promise.resolve({ skipped: "off" }) },
-      profile:   { get: () => Promise.resolve({ fields: {}, stale: false }), refresh: () => Promise.resolve({ fields: {}, stale: false }) },
-      prep:      { get: () => Promise.resolve({ brief: null, running: false }), run: () => Promise.resolve({ skipped: "off" }), onUpdated: () => () => {} },
+      profile:   { get: (id) => Promise.resolve((peopleData && peopleData.profiles[id]) || { fields: {}, stale: false }), refresh: (id) => Promise.resolve((peopleData && peopleData.profiles[id]) || { fields: {}, stale: false }) },
+      prep:      { get: (wid, id) => Promise.resolve(peopleData && peopleData.featuredId === id ? { brief: peopleData.brief, running: false } : { brief: null, running: false }), run: () => Promise.resolve({ skipped: "off" }), onUpdated: () => () => {} },
       migration: {
         inventory: () => Promise.resolve({
           workspaceId: "", personas: [], meetings: [], owners: [], ambiguousShortNames: [],
