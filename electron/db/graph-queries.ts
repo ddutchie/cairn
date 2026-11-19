@@ -432,6 +432,15 @@ function addPeopleGraph(db: Database.Database, workspaceId: string, ctx: PeopleG
             SELECT 1 FROM notes n WHERE n.meeting_id = m.id AND n.deleted_at IS NULL AND n.archived_at IS NULL))
       `).all(workspaceId)
   ) as Row[];
+  // A meeting a note made with nobody confirmed (only suggested attendees, or none) is unconfirmed: left out.
+  const confirmedMeetings = new Set((db.prepare(`
+    SELECT DISTINCT a.meeting_id FROM meeting_attendees a
+    JOIN people p ON p.id = a.person_id AND p.deleted_at IS NULL
+    WHERE a.deleted_at IS NULL AND a.status = 'confirmed'
+  `).all() as { meeting_id: string }[]).map((r) => r.meeting_id));
+  for (let i = meetings.length - 1; i >= 0; i--) {
+    if (meetings[i].source === "note" && !confirmedMeetings.has(meetings[i].id as string)) meetings.splice(i, 1);
+  }
   const meetingIds = new Set(meetings.map((m) => m.id as string));
 
   const people = db.prepare(`

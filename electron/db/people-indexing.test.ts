@@ -310,6 +310,21 @@ describe("ghost meetings", () => {
     expect(db.prepare("SELECT deleted_at FROM meetings WHERE id = ?").get(meetingId)).toEqual({ deleted_at: null });
   });
 
+  it("hides a note-made meeting with no confirmed attendee, but not calendar or confirmed ones", () => {
+    const ana = person("Ana Ruiz");
+    note("n1", "Sync");
+    save("n1", "**Attendees:** Ana Ruiz"); // only a suggestion
+    const meetingId = noteMeetingId("ws1", "n1");
+    const cal = createMeeting(db, { workspaceId: "ws1", title: "Cal", startsAt: "2026-11-12T10:00:00.000Z", source: "calendar" });
+    const ids = () => new Set(getKnowledgeGraph(db, "ws1").nodes.map((n) => n.id));
+    expect(ids().has(meetingId)).toBe(false);
+    expect(ids().has(cal.id)).toBe(true);
+    expect(getKnowledgeGraph(db, "ws1", { projectIds: ["proj1"] }).nodes.some((n) => n.id === meetingId)).toBe(false);
+    addAttendee(db, { meetingId, personId: ana.id, source: "manual" });
+    expect(ids().has(meetingId)).toBe(true);
+    expect(getKnowledgeGraph(db, "ws1", { projectIds: ["proj1"] }).nodes.some((n) => n.id === meetingId)).toBe(true);
+  });
+
   it("leaves a meeting out of the graph when its only note is archived", () => {
     const ana = person("Ana Ruiz");
     note("n1", "Sync");
