@@ -8,7 +8,7 @@ import { makeDb, seedProject, seedWorkspace } from "./test-support/db";
 import { createNote } from "./db/notes-queries";
 import { addAttendee, createPerson, listAttendees, setPeopleEnabled } from "./db/people-queries";
 import { findNoteFilePath, writeNoteFile } from "./host-shared/notes-io";
-import { capturePeopleFromFile, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
+import { FrontmatterRetryQueue, capturePeopleFromFile, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
 
 let db: Database.Database;
 let ws: string;
@@ -151,5 +151,28 @@ describe("review fixes", () => {
     db.prepare("UPDATE notes SET archived_at = ? WHERE id = 'n2'").run(new Date().toISOString());
     fs.rmSync(file);
     expect(refreshMeetingFrontmatter(db, ws, ["n2"]).failed).toEqual([]);
+  });
+});
+
+describe("FrontmatterRetryQueue", () => {
+  it("backs off but never drops a note that keeps failing, and recovers once it succeeds", () => {
+    const q = new FrontmatterRetryQueue();
+    let ids = q.next(["a"]);
+    q.report(ids, ["a"]);
+    let attempts = 1;
+    // Far past the old 20-try cap, with gaps growing to 64 ticks.
+    for (let i = 0; i < 2000; i++) {
+      ids = q.next([]);
+      if (ids.length) { attempts++; q.report(ids, ["a"]); }
+    }
+    expect(q.size).toBe(1);
+    expect(attempts).toBeGreaterThan(20);
+    expect(attempts).toBeLessThan(80);
+    // The file finally exists: the next due retry succeeds and clears the queue.
+    for (let i = 0; i < 70; i++) {
+      ids = q.next([]);
+      if (ids.length) { q.report(ids, []); break; }
+    }
+    expect(q.size).toBe(0);
   });
 });

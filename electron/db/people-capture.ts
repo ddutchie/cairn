@@ -287,7 +287,6 @@ export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unkn
     return ref ?? p.name;
   });
   const attending = new Set(people.map((p) => p.id));
-  const noteTitleExists = db.prepare("SELECT 1 FROM notes WHERE workspace_id = ? AND deleted_at IS NULL AND lower(title) = lower(?) LIMIT 1");
 
   // A YAML list, or one string ("Chris" / "Ana, Ben") the way capture reads it.
   const existingValues = Array.isArray(existing) ? existing : typeof existing === "string" ? splitAttendeeValues(existing) : [];
@@ -300,8 +299,6 @@ export function renderMeetingFrontmatter(db: Db, noteId: string, existing?: unkn
       // Someone who resolves to one person is written from the DB (or was removed there); keep the rest verbatim.
       if (r.kind === "match" || r.kind === "dismissed") continue;
       if (r.kind === "ambiguous" && r.personIds.some((id) => attending.has(id))) continue;
-      // A wikilink to a note that no longer exists is stale (a renamed persona note's old title), not something to keep.
-      if (r.kind === "none" && ref?.name && /^\s*\[\[/.test(raw) && !noteTitleExists.get(row.workspace_id, ref.name)) continue;
       if (seen.has(raw.toLowerCase())) continue;
       seen.add(raw.toLowerCase());
       attendees.push(raw);
@@ -331,6 +328,8 @@ function attendeeReference(candidates: Candidate[], p: { id: string; name: strin
   const options = [
     ...(p.persona_title ? [`[[${p.persona_title}]]`] : []),
     p.name,
+    // A leading "@" is read as a handle prefix; quotes keep it part of the name.
+    ...(p.name.trim().startsWith("@") ? [`"${p.name}"`] : []),
     ...safeArray(p.emails),
   ];
   for (const value of options) {

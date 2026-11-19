@@ -187,3 +187,34 @@ export function meetingNotesForSync(
   if (noteIds.length + meetingIds.length + personIds.length === 0) return [];
   return notesAffectedBy(db, { noteIds, meetingIds, personIds });
 }
+
+/**
+ * Notes whose frontmatter couldn't be written yet (file missing, unreadable).
+ * They are retried on later sync ticks with growing gaps (1, 2, 4 … up to 64
+ * ticks), never dropped, so a file that appears or becomes writable much later
+ * still gets its attendees. A note leaves the queue when a refresh succeeds or
+ * has nothing to do.
+ */
+export class FrontmatterRetryQueue {
+  private pending = new Map<string, { tries: number; dueTick: number }>();
+  private tick = 0;
+
+  /** Note ids to refresh this tick: the ones due for a retry plus `fresh`. */
+  next(fresh: readonly string[]): string[] {
+    this.tick++;
+    const due = [...this.pending].filter(([, v]) => v.dueTick <= this.tick).map(([id]) => id);
+    return [...new Set([...due, ...fresh])];
+  }
+
+  /** Record the outcome of refreshing `attempted`: failures back off, the rest leave the queue. */
+  report(attempted: readonly string[], failed: readonly string[]): void {
+    const failedSet = new Set(failed);
+    for (const id of attempted) {
+      if (!failedSet.has(id)) { this.pending.delete(id); continue; }
+      const tries = (this.pending.get(id)?.tries ?? 0) + 1;
+      this.pending.set(id, { tries, dueTick: this.tick + Math.min(2 ** (tries - 1), 64) });
+    }
+  }
+
+  get size(): number { return this.pending.size; }
+}

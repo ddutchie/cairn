@@ -726,6 +726,22 @@ export function listOwnedCardIds(db: Db, personId: string): string[] {
 // ── Note lifecycle ────────────────────────────
 
 /**
+ * A persona note was renamed: keep its old title as an alias of the person, so
+ * `[[Old title]]` in existing files and other notes still names them (and a
+ * later read of such a file never makes a stub for it). Aliases sync with the
+ * person, so a rename on any device covers every device.
+ */
+export function onNoteRenamed(db: Db, noteId: string, oldTitle: string, newTitle: string): void {
+  if (!isPeopleEnabled(db) || !oldTitle.trim() || oldTitle === newTitle) return;
+  for (const p of db.prepare("SELECT id FROM people WHERE persona_note_id = ? AND deleted_at IS NULL").all(noteId) as { id: string }[]) {
+    const person = getPerson(db, p.id);
+    if (!person) continue;
+    const known = [person.name, ...person.aliases].map((x) => x.toLowerCase());
+    if (!known.includes(oldTitle.toLowerCase())) updatePerson(db, p.id, { aliases: [...person.aliases, oldTitle] });
+  }
+}
+
+/**
  * Clean up after a note is deleted: people whose persona it was lose the link,
  * its mentions are tombstoned, and its checklist index rows go. The meeting it
  * belonged to stays (other notes or the calendar may still point at it).

@@ -10,7 +10,7 @@
  */
 
 import type Database from "better-sqlite3";
-import { onNoteDeleted } from "./people-queries";
+import { onNoteDeleted, onNoteRenamed } from "./people-queries";
 import { ts } from "./utils";
 import { toNote, j, type DbRow } from "../host-shared/db-mappers";
 import { normalizeNoteTitle, stripMarkdown } from "../host-shared/text-utils";
@@ -167,6 +167,9 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
   isPinned: boolean; archivedAt: string; type: "note" | "template"; folder: string;
 }>) {
   const now = ts();
+  const oldTitle = patch.title !== undefined
+    ? (db.prepare("SELECT title FROM notes WHERE id = ?").get(id) as { title: string } | undefined)?.title
+    : undefined;
   db.prepare(`
     UPDATE notes SET
       title           = COALESCE(?, title),
@@ -193,6 +196,7 @@ export function updateNote(db: Database.Database, id: string, patch: Partial<{
     patch.folder !== undefined ? patch.folder : null,
     now, id,
   );
+  if (oldTitle !== undefined && patch.title !== undefined) onNoteRenamed(db, id, oldTitle, patch.title);
   return toNote(db.prepare("SELECT * FROM notes WHERE id = ?").get(id) as DbRow);
 }
 

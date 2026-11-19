@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
-import { createNote, deleteNote } from "./notes-queries";
+import { createNote, deleteNote, updateNote } from "./notes-queries";
 import {
-  addAttendee, addMention, createMeeting, createPerson, getMe, getPerson, listAttendees, setNoteMeeting, updatePerson,
+  addAttendee, addMention, createMeeting, createPerson, getMe, getPerson, listAttendees, setNoteMeeting, setPeopleEnabled, updatePerson,
 } from "./people-queries";
 import { captureNoteMeeting, notesAffectedBy, pinUnreferenced, renderMeetingFrontmatter, resolvePerson } from "./people-capture";
 import { noteMeetingId, stubPersonId } from "../../shared/people/ids";
@@ -277,14 +277,50 @@ describe("review fixes", () => {
 
   it("a renamed persona note's old title isn't kept next to the new one", () => {
     note("n1");
+    setPeopleEnabled(db, true);
     const persona = note("p-ana", "Ana Old");
     const ana = person("Ana Ruiz", { personaNoteId: persona.id });
     captureNoteMeeting(db, { noteId: "n1", attendees: ["[[Ana Old]]"], source: "frontmatter", provenance: "explicit" });
-    db.prepare("UPDATE notes SET title = 'Ana New' WHERE id = 'p-ana'").run();
+    updateNote(db, "p-ana", { title: "Ana New" });
+    expect(getPerson(db, ana.id)!.aliases).toContain("Ana Old");
     const fm = renderMeetingFrontmatter(db, "n1", ["[[Ana Old]]"])!;
     expect(fm.attendees).toEqual(["[[Ana New]]"]);
-    const back = captureNoteMeeting(db, { noteId: "n1", attendees: fm.attendees, source: "frontmatter", provenance: "explicit" });
+    const back = captureNoteMeeting(db, { noteId: "n1", attendees: ["[[Ana Old]]"], source: "frontmatter", provenance: "explicit" });
     expect(back.created).toEqual([]);
     expect(back.attendees).toEqual([ana.id]);
+  });
+
+  it("a renamed title that another note also uses still reads back as the person", () => {
+    note("n1");
+    setPeopleEnabled(db, true);
+    const persona = note("p-ana", "Ana Old");
+    const ana = person("Ana Ruiz", { personaNoteId: persona.id });
+    captureNoteMeeting(db, { noteId: "n1", attendees: ["[[Ana Old]]"], source: "frontmatter", provenance: "explicit" });
+    updateNote(db, "p-ana", { title: "Ana New" });
+    note("other", "Ana Old");
+    const back = captureNoteMeeting(db, { noteId: "n1", attendees: ["[[Ana Old]]"], source: "frontmatter", provenance: "explicit" });
+    expect(back.created).toEqual([]);
+    expect(back.attendees).toEqual([ana.id]);
+  });
+
+  it("keeps an unresolved wikilink the user wrote, even with no note by that title", () => {
+    note("n1");
+    const ana = person("Ana");
+    captureNoteMeeting(db, { noteId: "n1", attendees: [], personIds: [ana.id], source: "frontmatter", provenance: "explicit" });
+    const fm = renderMeetingFrontmatter(db, "n1", ["[[Not Yet Written]]"])!;
+    expect(fm.attendees).toEqual(["Ana", "[[Not Yet Written]]"]);
+  });
+
+  it("an attendee named with a leading @ round-trips as themselves", () => {
+    note("n1");
+    const at = person("@Ana");
+    person("Ana");
+    const r = captureNoteMeeting(db, { noteId: "n1", attendees: [], personIds: [at.id], source: "frontmatter", provenance: "explicit" });
+    const fm = renderMeetingFrontmatter(db, "n1")!;
+    expect(fm.unreferenced).toEqual([]);
+    const back = captureNoteMeeting(db, { noteId: "n1", attendees: fm.attendees, source: "frontmatter", provenance: "explicit" });
+    expect(back.removed).toEqual([]);
+    expect(back.attendees).toEqual([at.id]);
+    expect(attending(r.meetingId)).toHaveLength(1);
   });
 });

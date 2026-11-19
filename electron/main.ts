@@ -31,7 +31,7 @@ import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
 import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
-import { meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
+import { FrontmatterRetryQueue, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
 import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions, changeFeedHead, recordOwnWrite, pruneChangeFeed, noteChangeBaseHead, discardNoteChangeBasesSince, pruneNoteChangeBases } from "./db/queries";
 import { recoverInterruptedRuns } from "./db/automation-queries";
@@ -544,21 +544,13 @@ app.whenReady().then(async () => {
   // People layer: keep meeting notes' attendees/date frontmatter in line with
   // attendee rows that arrived from other devices (no-op while the flag is off).
   // Notes whose write failed (or whose file wasn't there yet) are retried on
-  // later ticks, up to MAX_FRONTMATTER_RETRIES, so a note that can never be
-  // written doesn't keep the hook busy for good.
-  const MAX_FRONTMATTER_RETRIES = 20;
-  const pendingFrontmatter = new Map<string, number>();
+  // later ticks with growing gaps and never dropped (FrontmatterRetryQueue).
+  const frontmatterRetries = new FrontmatterRetryQueue();
   desktopSync.setAppliedRowsHook((applied: readonly { entity: string; entity_id: string }[]) => {
-    const noteIds = [...pendingFrontmatter.keys(), ...meetingNotesForSync(ctx.db, applied)];
+    const noteIds = frontmatterRetries.next(meetingNotesForSync(ctx.db, applied));
     if (noteIds.length === 0) return;
     const { failed } = refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, noteIds, suppressNextChange);
-    const next = new Map<string, number>();
-    for (const id of failed) {
-      const tries = (pendingFrontmatter.get(id) ?? 0) + 1;
-      if (tries < MAX_FRONTMATTER_RETRIES) next.set(id, tries);
-    }
-    pendingFrontmatter.clear();
-    for (const [id, tries] of next) pendingFrontmatter.set(id, tries);
+    frontmatterRetries.report(noteIds, failed);
   });
 
   // Clean up NESTED conflict-copy junk (`…_conflict_…_conflict_…`) left by the
