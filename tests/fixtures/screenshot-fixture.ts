@@ -832,7 +832,11 @@ export const SCREENSHOT_FLOW = {
  * Build the window.electron IPC mock string for the screenshot run.
  * Extends buildIpcMock with the richer SCREENSHOT_* fixtures.
  */
-export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): string {
+export function buildScreenshotMock(opts?: {
+  needsWorkspaceSetup?: boolean;
+  /** Replace the knowledge graph (e.g. the large graph in tests/perf). */
+  graph?: { nodes: unknown[]; edges: unknown[] };
+}): string {
   // Mock due dates must sit relative to the REAL current date: the calendar
   // renders the current month and "overdue" is computed against Date.now().
   // Fixed 2026-08 due dates would all read as overdue and leave the month grid
@@ -856,7 +860,7 @@ export function buildScreenshotMock(opts?: { needsWorkspaceSetup?: boolean }): s
     }
   }
   const snapshot = JSON.stringify(SCREENSHOT_SNAPSHOT);
-  const graph = JSON.stringify(SCREENSHOT_GRAPH);
+  const graph = JSON.stringify(opts?.graph ?? SCREENSHOT_GRAPH);
   const flow = JSON.stringify(SCREENSHOT_FLOW);
 
   // Mock usage — realistic 30-day series so UsageView (cost page) is populated
