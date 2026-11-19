@@ -32,7 +32,7 @@ type State =
   | { kind: "idle" }
   | { kind: "running"; done: number }
   | { kind: "review"; groups: Group[]; skipped: { name: string; reason: string }[]; cancelled: boolean }
-  | { kind: "applied"; count: number };
+  | { kind: "applied"; count: number; changed: number };
 
 const key = (personId: string, field: ProfileField) => `${personId}|${field}`;
 
@@ -71,16 +71,23 @@ export function BatchAutofill({ people }: { people: { personId: string; name: st
     if (state.kind !== "review" || busy) return;
     setBusy(true);
     let count = 0;
+    let changed = 0;
     try {
       for (const g of state.groups) {
+        // The person may have changed since the review: leave those fields alone.
+        const latest = await peopleClient.get(g.personId).catch(() => null);
         const patch: Record<string, string> = {};
-        for (const x of g.proposals) if (picked.has(key(g.personId, x.field))) patch[x.field] = x.value;
+        for (const x of g.proposals) {
+          if (!picked.has(key(g.personId, x.field))) continue;
+          if (latest && (latest[x.field]?.trim() || undefined) !== (x.current ?? undefined)) { changed++; continue; }
+          patch[x.field] = x.value;
+        }
         if (Object.keys(patch).length === 0) continue;
         await peopleClient.update(g.personId, patch);
         count++;
       }
       await refreshPeople();
-      setState({ kind: "applied", count });
+      setState({ kind: "applied", count, changed });
     } catch (err) {
       reportIpcError(err, "Couldn't save the details");
     } finally {
@@ -144,7 +151,7 @@ export function BatchAutofill({ people }: { people: { personId: string; name: st
           </div>
         </div>
       )}
-      {state.kind === "applied" && <p role="status" className="mt-1 text-sm">Saved details for {state.count} {state.count === 1 ? "person" : "people"}.</p>}
+      {state.kind === "applied" && <p role="status" className="mt-1 text-sm">Saved details for {state.count} {state.count === 1 ? "person" : "people"}.{state.changed > 0 && ` ${state.changed} ${state.changed === 1 ? "field was" : "fields were"} changed meanwhile and left alone.`}</p>}
     </section>
   );
 }
