@@ -32,6 +32,7 @@ import type Database from "better-sqlite3";
 import { stripMarkdown } from "../host-shared/text-utils";
 import { changeFeedHead } from "./change-feed-queries";
 import { parseWikilinks } from "../../shared/notes/wikilinks";
+import { indexNotePeople } from "./people-indexing";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -273,6 +274,13 @@ export function computeAutoRelationships(
 ): void {
   if (entityIds && entityIds.length > 0) computeIncremental(db, workspaceId, entityIds);
   else computeFull(db, workspaceId);
+  // People layer (flag-gated): mentions, action items and body meeting lines of
+  // the same notes. Its own failure must not cost the user their save.
+  try {
+    indexNotePeople(db, workspaceId, entityIds && entityIds.length > 0 ? entityIds : undefined);
+  } catch (err) {
+    console.error("[people] indexing failed:", err);
+  }
 }
 
 function liveCards(db: Database.Database, workspaceId: string): Row[] {

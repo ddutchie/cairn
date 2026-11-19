@@ -32,6 +32,7 @@ import { registerSessionRuntimeHandlers } from "./ipc/session-runtime-handlers";
 import { setDebugLogRoot, dlog } from "./lib/debug-log";
 import { readWorkspaceConfig, getDbPathForWorkspace } from "./workspace-config";
 import { startFileWatcher, suppressNextChange } from "./file-watcher";
+import { indexNotesPeople } from "./db/people-indexing";
 import { FrontmatterRetryQueue, meetingNotesForSync, refreshMeetingFrontmatter } from "./people-files";
 import { syncNotesFromDisk, writeNoteFile, deleteNoteFile, setPathRemover } from "./notes-files";
 import { markMcpNotificationsRead, getNoteByIdIncludingTombstoned, findNestedConflictCopies, reconcileInterruptedCodingSessions, changeFeedHead, recordOwnWrite, pruneChangeFeed, noteChangeBaseHead, discardNoteChangeBasesSince, pruneNoteChangeBases } from "./db/queries";
@@ -548,7 +549,11 @@ app.whenReady().then(async () => {
   // Notes whose write failed (or whose file wasn't there yet) are retried on
   // later ticks with growing gaps and never dropped (FrontmatterRetryQueue).
   const frontmatterRetries = new FrontmatterRetryQueue();
-  desktopSync.setAppliedRowsHook((applied: readonly { entity: string; entity_id: string }[]) => {
+  desktopSync.setAppliedRowsHook((applied: readonly { entity: string; entity_id: string; op?: string }[]) => {
+    // Notes pulled from other devices: index their mentions, owned checklist
+    // items and body meeting lines (database rows only, nothing is rewritten, so
+    // it can't echo back). No-op while the flag is off.
+    indexNotesPeople(ctx.db, applied.filter((a) => a.entity === "notes" && a.op !== "delete").map((a) => a.entity_id));
     const noteIds = frontmatterRetries.next(meetingNotesForSync(ctx.db, applied));
     if (noteIds.length === 0) return;
     const { failed } = refreshMeetingFrontmatter(ctx.db, ctx.workspacePath, noteIds, suppressNextChange);

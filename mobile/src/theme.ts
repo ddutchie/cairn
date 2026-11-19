@@ -36,6 +36,9 @@ export interface Theme {
   /** Knowledge-graph "Project" node colour — fixed (accent-independent) so it
    *  never collides with Card/success green when a green accent is chosen. */
   nodeProject: string;
+  /** People layer graph nodes (fixed, like nodeProject). */
+  nodePerson: string;
+  nodeMeeting: string;
   /** Modal/sheet backdrop dimming colour (already includes its own alpha). */
   scrim: string;
   /** Chat surface tokens (from the active chat theme). */
@@ -83,6 +86,8 @@ export const darkTheme: Theme = {
   danger: "#ef4444",
   info: "#60a5fa",
   nodeProject: "#a78bfa",
+  nodePerson: "#f472b6",
+  nodeMeeting: "#2dd4bf",
   scrim: "rgba(0,0,0,0.5)",
   chatBg: "#141414",
   chatStops: ["#141414"],
@@ -124,6 +129,8 @@ export const lightTheme: Theme = {
   danger: "#dc2626",
   info: "#2563eb",
   nodeProject: "#7c5cd6",
+  nodePerson: "#db2777",
+  nodeMeeting: "#0d9488",
   scrim: "rgba(0,0,0,0.4)",
   chatBg: "#ffffff",
   chatStops: ["#ffffff"],

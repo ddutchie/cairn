@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { X, FileText, Kanban, Layers, Hash, ExternalLink, Link2, Sparkles, ChevronDown, ChevronUp, Focus } from "lucide-react";
+import { X, FileText, Kanban, Layers, Hash, ExternalLink, Link2, Sparkles, ChevronDown, ChevronUp, Focus, User, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import type { GraphNode } from "@/types";
-import { nodeTypeColor } from "@/store/slices/graph";
-import { CairnEvents } from "@/lib/events";
+import { graphNodeNoteId, nodeTypeColor } from "@/store/slices/graph";
+import { CairnEvents, revealNote } from "@/lib/events";
 import { extractWikiLinks } from "@/components/notes/toc-utils";
 import { NoteMarkdownPreview } from "@/components/notes/NoteMarkdownPreview";
 import { useNoteBody } from "@/hooks/useNoteBody";
@@ -161,6 +161,12 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
         }
         break;
       case "tag":      setView("notes"); break;
+      case "person":
+      case "meeting": {
+        const noteId = graphNodeNoteId(node, graphData.edges);
+        if (noteId) revealNote(setView, noteId);
+        break;
+      }
     }
     onClose();
   }
@@ -170,6 +176,8 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
     note:    <FileText size={13} />,
     card:    <Kanban size={13} />,
     tag:     <Hash size={13} />,
+    person:  <User size={13} />,
+    meeting: <CalendarDays size={13} />,
   }[node.type];
 
   const typeLabel = {
@@ -177,7 +185,11 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
     note:    "Note",
     card:    "Task",
     tag:     "Tag",
+    person:  "Person",
+    meeting: "Meeting",
   }[node.type];
+  // People and meetings open a note (persona / meeting notes), so only when there is one.
+  const canOpen = node.type !== "tag" && (node.type !== "person" && node.type !== "meeting" || !!graphNodeNoteId(node, graphData.edges));
 
   const focusButton = onFocus && !focused && (
     <button
@@ -387,7 +399,7 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
       {node.type !== "tag" && (
         <div className="border-t border-[var(--border)] p-3 flex flex-col gap-2">
           {focusButton}
-          <button
+          {canOpen && <button
             onClick={navigateTo}
             className={cn(
               "flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-md text-xs font-medium transition-colors",
@@ -395,8 +407,8 @@ export function GraphDetailPanel({ node, onClose, onFocus, focused = false }: Pr
             )}
           >
             <ExternalLink size={12} />
-            Open in {typeLabel === "Task" ? "Board" : typeLabel}
-          </button>
+            {node.type === "person" ? "Open persona note" : node.type === "meeting" ? "Open meeting notes" : `Open in ${typeLabel === "Task" ? "Board" : typeLabel}`}
+          </button>}
         </div>
       )}
       {node.type === "tag" && (

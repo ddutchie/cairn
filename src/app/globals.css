@@ -50,6 +50,9 @@
   /* Knowledge-graph "Project" node colour. Fixed (accent-independent) so it
      never collides with Card/success green when the accent is a green preset. */
   --node-project: #a78bfa;
+  /* People layer graph nodes (fixed like --node-project). */
+  --node-person: #f472b6;
+  --node-meeting: #2dd4bf;
   /* Community connector logo "chip". FIXED (theme-independent) light backing so
      a dark monochrome brand mark stays legible on BOTH themes — like an app-store
      icon tile. Not overridden in the light block on purpose. --connector-chip-fg
@@ -96,6 +99,8 @@
   --danger-fg: #ffffff;
   --info: #2563eb;
   --node-project: #7c5cd6;
+  --node-person: #db2777;
+  --node-meeting: #0d9488;
 }
 
 /* models.dev provider logos are single-colour dark-ink SVGs — invert them on

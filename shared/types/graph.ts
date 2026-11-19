@@ -22,6 +22,14 @@ export interface GraphNode {
     /** Tag colour. */
     color?: string;
     isArchived?: boolean;
+    /** Meeting: when it starts (ISO). */
+    startsAt?: string;
+    /** Meeting: how it was recorded (calendar | note | manual). */
+    meetingSource?: string;
+    /** Person: their persona note, if any. */
+    personaNoteId?: string;
+    /** Person: the user themself. */
+    isMe?: boolean;
   };
 }
 

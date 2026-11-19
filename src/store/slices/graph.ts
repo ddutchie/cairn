@@ -12,6 +12,7 @@ import type {
   GraphNodeType,
 } from "@/types";
 import { nodeTypeToken } from "../../../shared/ui/graph";
+import { GRAPH_NODE_TYPES } from "../../../shared/types/domain";
 import { ipcAwait, ipcData } from "../ipc";
 import { tokenToCssVar } from "@/lib/viz/color";
 
@@ -91,11 +92,13 @@ export const EMPTY_GRAPH: KnowledgeGraph = { nodes: [], edges: [] };
 
 export const DEFAULT_GRAPH_FILTERS: GraphFilters = {
   projectIds: [],
-  nodeTypes: ["project", "note", "card", "tag"],
+  nodeTypes: [...GRAPH_NODE_TYPES],
   edgeTypes: [
     "note-note", "note-card", "tag-member", "project-member",
     "flow-ref", "flow-edge", "co-mention", "keyword", "assignee", "wikilink",
     "semantic",
+    // People layer: the main process only emits these while it's on.
+    "attended", "mentions", "meeting-note", "reports-to", "mentor", "partner", "stakeholder",
   ],
   includeAuto: true,
 };
@@ -233,7 +236,7 @@ export function filterGraphNodes(
         : n.projectId == null || filters.projectIds.includes(n.projectId)
     );
   }
-  if (filters.nodeTypes.length < 4) {
+  if (filters.nodeTypes.length < GRAPH_NODE_TYPES.length) {
     result = result.filter((n) => (filters.nodeTypes as string[]).includes(n.type));
   }
   return result;
@@ -251,6 +254,17 @@ export function filterGraphEdges(
       nodeIds.has(e.source) &&
       nodeIds.has(e.target)
   );
+}
+
+/**
+ * The note a graph node opens: itself for a note, a person's persona note, or
+ * a meeting's first note (its `meeting-note` edge). Null when there is none.
+ */
+export function graphNodeNoteId(node: GraphNode, edges: KnowledgeGraph["edges"]): string | null {
+  if (node.type === "note") return node.id;
+  if (node.type === "person") return node.meta?.personaNoteId ?? null;
+  if (node.type === "meeting") return edges.find((e) => e.type === "meeting-note" && e.source === node.id)?.target ?? null;
+  return null;
 }
 
 /** Node type → CSS variable colour token (camelCase token → kebab-case var). */

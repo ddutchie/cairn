@@ -10,18 +10,15 @@
  * CSS variables, mobile → `Theme[token]` values.
  */
 
-export type GraphNodeType = "project" | "note" | "card" | "tag";
+import type { GraphNodeType } from "../types/domain";
 
-export type GraphEdgeType =
-  | "note-note" | "note-card" | "tag-member" | "project-member"
-  | "flow-ref" | "flow-edge" | "co-mention" | "keyword" | "assignee"
-  | "wikilink" | "semantic";
+export type { GraphNodeType, GraphEdgeType } from "../types/domain";
 
 /** Semantic colour token — resolved per-platform to a real colour. */
 export type ThemeToken =
   | "accent" | "info" | "success" | "warning" | "border"
   | "background" | "textPrimary" | "textSecondary" | "textTertiary"
-  | "nodeProject";
+  | "nodeProject" | "nodePerson" | "nodeMeeting";
 
 // ── node styling ─────────────────────────────────────────────────────────────
 
@@ -37,12 +34,14 @@ export function nodeTypeToken(type: GraphNodeType): ThemeToken {
     case "note":    return "info";
     case "card":    return "success";
     case "tag":     return "warning";
+    case "person":  return "nodePerson";
+    case "meeting": return "nodeMeeting";
   }
 }
 
 /** Node radius by type. Mirrors desktop radiusOf(): project 9, tag 4.5, else 6. */
 export function nodeRadius(type: GraphNodeType): number {
-  return type === "project" ? 9 : type === "tag" ? 4.5 : 6;
+  return type === "project" ? 9 : type === "tag" || type === "meeting" ? 4.5 : type === "person" ? 7 : 6;
 }
 
 // ── edge styling ─────────────────────────────────────────────────────────────
@@ -67,6 +66,13 @@ export function edgeStyle(type: string): EdgeStyle {
     case "assignee":       return { token: "border",  opacity: 0.4,  dash: true  };
     case "wikilink":       return { token: "accent",  opacity: 0.75, dash: false };
     case "semantic":       return { token: "textTertiary", opacity: 0.6, dash: true };
+    case "attended":       return { token: "nodeMeeting", opacity: 0.55, dash: false };
+    case "meeting-note":   return { token: "nodeMeeting", opacity: 0.45, dash: true  };
+    case "mentions":       return { token: "nodePerson",  opacity: 0.45, dash: true  };
+    case "reports-to":     return { token: "nodePerson",  opacity: 0.8,  dash: false };
+    case "mentor":
+    case "partner":
+    case "stakeholder":    return { token: "nodePerson",  opacity: 0.6,  dash: false };
     default:               return { token: "border",  opacity: 0.4,  dash: false };
   }
 }

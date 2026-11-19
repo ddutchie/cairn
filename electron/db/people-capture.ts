@@ -19,7 +19,8 @@ import type { AttendeeSource, PeopleStatus, Provenance } from "../../shared/type
 import {
   addAttendee, createMeeting, createPerson, getMeeting, getPerson, updatePerson, attendeeIdsFromSource, removeAttendeeSource, setNoteMeeting, updateMeeting,
 } from "./people-queries";
-import { noteMeetingId, stubPersonId } from "../../shared/people/ids";
+import { attendeeRowId, noteMeetingId, stubPersonId } from "../../shared/people/ids";
+import { parseClaims } from "../../shared/people/claims";
 
 type Db = Database.Database;
 
@@ -35,7 +36,7 @@ export type Resolution =
   | { kind: "dismissed"; personId: string }
   | { kind: "none" };
 
-interface Candidate {
+export interface Candidate {
   id: string;
   status: PeopleStatus;
   slackId: string | null;
@@ -148,6 +149,18 @@ export interface CaptureInput {
   /** Which path is writing. Attendees previously added by this path and not listed now are removed. */
   source: AttendeeSource;
   provenance: Provenance;
+  /** Status for the people this call adds (default confirmed). Body lines use `suggested`: never applied silently. */
+  status?: PeopleStatus;
+  /**
+   * Don't re-add someone this source still lists but who was removed from the
+   * meeting by someone else (the user, another device): their attendee row is
+   * tombstoned while this source's claim on it is still on.
+   */
+  keepRemoved?: boolean;
+  /** Match existing people only: names nobody matches are left out instead of becoming stub people. */
+  noStubs?: boolean;
+  /** The workspace's candidates, when the caller already loaded them for this note (saves a scan per note). */
+  candidates?: Candidate[];
 }
 
 export interface CaptureResult {
@@ -160,6 +173,15 @@ export interface CaptureResult {
   created: string[];
   /** Person ids removed because this source no longer lists them. */
   removed: string[];
+  /** Person ids this source lists but that were left out (`keepRemoved`: someone else removed them). */
+  skipped: string[];
+}
+
+/** A tombstoned attendee row that this source's claim still lists: removed by someone else. */
+function removedBySomeoneElse(db: Db, meetingId: string, personId: string, source: AttendeeSource): boolean {
+  const row = db.prepare("SELECT deleted_at, sources FROM meeting_attendees WHERE id = ?")
+    .get(attendeeRowId(meetingId, personId)) as { deleted_at: string | null; sources: string } | undefined;
+  return !!row?.deleted_at && parseClaims(row.sources)[source]?.on === true;
 }
 
 function toRefs(list: unknown[] | AttendeeRef[]): AttendeeRef[] {
@@ -210,13 +232,21 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
       meeting = updateMeeting(db, meeting.id, { startsAt: input.date });
     }
 
-    const candidates = loadCandidates(db, note.workspace_id);
-    const result: CaptureResult = { meetingId: meeting.id, attendees: [], suggested: [], created: [], removed: [] };
+    const candidates = input.candidates ?? loadCandidates(db, note.workspace_id);
+    const result: CaptureResult = { meetingId: meeting.id, attendees: [], suggested: [], created: [], removed: [], skipped: [] };
     const keep = new Set<string>();
 
+    const status = input.status ?? "confirmed";
+    const meetingId = meeting.id;
+    const skip = (pid: string) => {
+      const skipped = !!input.keepRemoved && removedBySomeoneElse(db, meetingId, pid, input.source);
+      if (skipped) result.skipped.push(pid);
+      return skipped;
+    };
+
     for (const pid of input.personIds ?? []) {
-      if (keep.has(pid) || !candidates.some((c) => c.id === pid)) continue;
-      addAttendee(db, { meetingId: meeting.id, personId: pid, source: input.source, provenance: input.provenance });
+      if (keep.has(pid) || !candidates.some((c) => c.id === pid) || skip(pid)) continue;
+      addAttendee(db, { meetingId: meeting.id, personId: pid, status, source: input.source, provenance: input.provenance });
       keep.add(pid);
       result.attendees.push(pid);
     }
@@ -226,22 +256,26 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
       if (r.kind === "dismissed") continue;
       if (r.kind === "match") {
         if (keep.has(r.personId)) continue;
-        addAttendee(db, { meetingId: meeting.id, personId: r.personId, source: input.source, provenance: input.provenance });
+        if (skip(r.personId)) { keep.add(r.personId); continue; }
+        addAttendee(db, { meetingId: meeting.id, personId: r.personId, status, source: input.source, provenance: input.provenance });
         keep.add(r.personId);
         result.attendees.push(r.personId);
       } else if (r.kind === "ambiguous") {
         for (const pid of r.personIds) {
+          if (skip(pid)) { keep.add(pid); continue; }
           addAttendee(db, { meetingId: meeting.id, personId: pid, status: "suggested", source: input.source, provenance: "inferred" });
           keep.add(pid);
           result.suggested.push(pid);
         }
       } else {
         const name = stubName(ref);
-        if (!name) continue;
+        if (!name || input.noStubs) continue;
+        const stubId = stubPersonId(note.workspace_id, ref.email ?? foldName(name));
+        if (skip(stubId)) continue;
         const person = ensureStubPerson(db, note.workspace_id, name, ref.email, input.provenance);
         // The new stub is a candidate for the rest of this list ("Chris, chris@…").
         candidates.push({ id: person.id, status: "suggested", slackId: null, emails: person.emails, keys: new Set([foldName(name)]) });
-        addAttendee(db, { meetingId: meeting.id, personId: person.id, source: input.source, provenance: input.provenance });
+        addAttendee(db, { meetingId: meeting.id, personId: person.id, status, source: input.source, provenance: input.provenance });
         keep.add(person.id);
         result.created.push(person.id);
         result.attendees.push(person.id);

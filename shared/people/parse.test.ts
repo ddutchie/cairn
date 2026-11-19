@@ -73,6 +73,15 @@ describe("parseBodyMeetingLines", () => {
     expect(parseBodyMeetingLines("**Attendees**: A")?.attendees).toEqual([{ name: "A" }]);
   });
 
+  it("needs a bold label or a bullet, and skips placeholders and groups", () => {
+    expect(parseBodyMeetingLines("Participants: Users, Admins")).toBeNull();
+    expect(parseBodyMeetingLines("Attendees: Ana Ruiz")).toBeNull();
+    expect(parseBodyMeetingLines("**Attendees:** TBD")).toBeNull();
+    expect(parseBodyMeetingLines("- Attendees: none")).toBeNull();
+    expect(parseBodyMeetingLines("**Attendees:** Team, Users, Ana Ruiz, n/a")?.attendees).toEqual([{ name: "Ana Ruiz" }]);
+    expect(parseBodyMeetingLines("**Attendees:** all <all@x.io>")?.attendees).toEqual([{ name: "all", email: "all@x.io" }]);
+  });
+
   it("ignores prose and notes without an attendee line", () => {
     expect(parseBodyMeetingLines("When we met, Attendees were few.\nDate night")).toBeNull();
     expect(parseBodyMeetingLines("**When:** 2026-11-11")).toBeNull();

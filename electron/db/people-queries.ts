@@ -625,7 +625,13 @@ export function removeAttendeeSource(db: Db, meetingId: string, personId: string
   ).get(meetingId, personId) as Row | undefined;
   if (!row) return false;
   const rest = sourcesOf(row).filter((x) => x !== source);
-  if (rest.length === 0) { removeAttendee(db, meetingId, personId); return true; }
+  if (rest.length === 0) {
+    // Mark this source's claim off before the tombstone, so a later reader can tell
+    // "this source let go" (off) from "someone removed a person this source still lists" (on).
+    db.prepare("UPDATE meeting_attendees SET sources = ? WHERE id = ?").run(claimsWith(row, source, false, ts()), row.id);
+    removeAttendee(db, meetingId, personId);
+    return true;
+  }
   // Keep the dropped claim (off, dated) so the removal wins over an older claim on another device.
   const now = ts();
   db.prepare("UPDATE meeting_attendees SET source = ?, sources = ?, updated_at = ? WHERE id = ?")
@@ -756,6 +762,12 @@ export function onNoteRenamed(db: Db, noteId: string, oldTitle: string, newTitle
  */
 export function onNoteDeleted(db: Db, noteId: string): void {
   const now = ts();
+  // A meeting this note made (`nmt:`) goes with its last note; calendar and manual meetings stay.
+  const own = db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null } | undefined;
+  if (own?.meeting_id?.startsWith("nmt:")) {
+    const others = db.prepare("SELECT 1 FROM notes WHERE meeting_id = ? AND id != ? AND deleted_at IS NULL LIMIT 1").get(own.meeting_id, noteId);
+    if (!others) deleteMeeting(db, own.meeting_id);
+  }
   db.prepare("UPDATE people SET persona_note_id = NULL, updated_at = ? WHERE persona_note_id = ? AND deleted_at IS NULL").run(now, noteId);
   db.prepare("UPDATE note_mentions SET deleted_at = ?, updated_at = ? WHERE note_id = ? AND deleted_at IS NULL").run(now, now, noteId);
   db.prepare("DELETE FROM note_action_items WHERE note_id = ?").run(noteId);
