@@ -180,3 +180,14 @@ describe("startRefresh", () => {
     expect(third.needYou[0]).toMatchObject({ title: "Ship the beta today", since: b.date });
   });
 });
+
+describe("upsertItems and the invite", () => {
+  const ev = { lane: "event", id: "cal-1", title: "1:1", start: "10:00", seriesId: "s1", attendees: [{ name: "Ana" }] };
+  it("keeps attendees and series only when People is on", () => {
+    const on = emptyBrief(new Date(2026, 10, 18, 8)); upsertItems(on, [ev], new Date(2026, 10, 18, 8), true);
+    expect(on.events[0]).toMatchObject({ seriesId: "s1", attendees: [{ name: "Ana" }] });
+    const off = emptyBrief(new Date(2026, 10, 18, 8)); upsertItems(off, [ev], new Date(2026, 10, 18, 8), false);
+    expect(off.events[0]).not.toHaveProperty("attendees");
+    expect(off.events[0]).not.toHaveProperty("seriesId");
+  });
+});

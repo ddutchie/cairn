@@ -9,7 +9,7 @@ import { addAttendee, createMeeting, createPerson, setNoteMeeting, updatePerson 
 import { PREP_COMMUNITY_ID } from "../../../shared/people/oneonone";
 import {
   PREP_SYSTEM_PROMPT, buildPrepFacts, currentFocusSection, ensurePrepAutomation, findPrepAutomation, loadLatestPrepBrief, loadPrepBrief,
-  prepPrompt, prepTools, prunePrepFiles, savePrepBrief, startingBrief, takePrepRequest, setPrepRequest,
+  isPrepRunning, markPrepDone, markPrepRunning, personSegment, prepPrompt, prepTools, prunePrepFiles, savePrepBrief, settleBrief, startingBrief, takePrepRequest, setPrepRequest,
 } from "./prep";
 
 let db: Database.Database;
@@ -136,18 +136,38 @@ describe("prep files", () => {
   const automation = { id: "auto1" };
   const brief = (date: string, personId = "p1") => ({ ...startingBrief({ personId, name: "Ana" } as never, new Date(`${date}T10:00:00`)), date, status: "ready" as const, summary: `on ${date}` });
 
-  it("saves under out/prep/<person>/<date>.json and reads the newest back", () => {
+  it("saves under out/prep/<person folder>/<date>.json and reads the newest back", () => {
     savePrepBrief(root, automation, brief("2026-11-10"));
     savePrepBrief(root, automation, brief("2026-11-17"));
     expect(loadPrepBrief(root, automation, "p1", "2026-11-10")?.summary).toBe("on 2026-11-10");
     expect(loadLatestPrepBrief(root, automation, "p1")?.summary).toBe("on 2026-11-17");
     expect(loadLatestPrepBrief(root, automation, "p2")).toBeNull();
-    expect(fs.existsSync(path.join(root, ".automations", "auto1", "out", "prep", "p1", "2026-11-17.json"))).toBe(true);
+    expect(fs.existsSync(path.join(root, ".automations", "auto1", "out", "prep", personSegment("p1"), "2026-11-17.json"))).toBe(true);
   });
-  it("refuses a person id that could leave the folder", () => {
-    expect(() => savePrepBrief(root, automation, brief("2026-11-10", "../../etc"))).toThrow("Invalid person id");
-    expect(loadLatestPrepBrief(root, automation, "../x")).toBeNull();
-    expect(loadPrepBrief(root, automation, "..", "2026-11-10")).toBeNull();
+  it("saves and loads a stub person's brief (ids hold @ and accents), and never lets an id leave the folder", () => {
+    for (const id of ["stub:ws1:alice@example.com", "stub:ws1:josé garcía", "../../etc", "..", "a/b\\c"]) {
+      savePrepBrief(root, automation, brief("2026-11-17", id));
+      expect(loadPrepBrief(root, automation, id, "2026-11-17")?.personId).toBe(id);
+      expect(loadLatestPrepBrief(root, automation, id)?.date).toBe("2026-11-17");
+      expect(personSegment(id)).toMatch(/^[0-9a-f]{32}$/);
+    }
+    expect(personSegment("stub:ws1:alice@example.com")).not.toBe(personSegment("stub:ws1:alice@example.org"));
+    expect(fs.existsSync(path.join(root, "etc"))).toBe(false);
+    expect(() => personSegment("")).toThrow("Invalid person id");
+  });
+  it("shows only a run that is alive as preparing; a placeholder left by a crash reads as failed", () => {
+    const placeholder = startingBrief({ personId: "p1", name: "Ana" } as never, new Date("2026-11-17T10:00:00"));
+    expect(placeholder.status).toBe("gathering");
+    expect(settleBrief(placeholder)).toMatchObject({ status: "ready", error: expect.stringContaining("interrupted") });
+    markPrepRunning("run1", "p2");
+    expect(isPrepRunning("p1")).toBe(false);
+    expect(settleBrief(placeholder)?.status).toBe("ready");
+    markPrepRunning("run2", "p1");
+    expect(isPrepRunning("p1")).toBe(true);
+    expect(settleBrief(placeholder)?.status).toBe("gathering");
+    markPrepDone("run2"); markPrepDone("run1");
+    expect(isPrepRunning("p1")).toBe(false);
+    expect(settleBrief(null)).toBeNull();
   });
   it("prunes old days only", () => {
     savePrepBrief(root, automation, brief("2026-01-01"));

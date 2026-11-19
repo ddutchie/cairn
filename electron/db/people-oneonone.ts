@@ -15,19 +15,23 @@
 
 import type Database from "better-sqlite3";
 import { foldName, type AttendeeRef } from "../../shared/people/parse";
+import { hasRealEventId } from "../../shared/today/brief";
 import { nudgeDue, nudgeItemId, nudgeTitle, daysBetween } from "../../shared/people/oneonone";
 import type { TodayEvent, TodayNudge } from "../../shared/today/brief";
 import type { Meeting, Person } from "../../shared/types/people";
 import { stubPersonId } from "../../shared/people/ids";
 import { ensureStubPerson, loadCandidates, removedBySomeoneElse, resolveIn, stubName, toRefs, type Candidate } from "./people-capture";
 import {
-  addAttendee, attendeeIdsFromSource, listPeople, removeAttendeeSource, upsertMeetingByExternalId,
+  addAttendee, attendeeIdsFromSource, deleteMeeting, listPeople, removeAttendeeSource, upsertMeetingByExternalId,
 } from "./people-queries";
 
 type Db = Database.Database;
 
 /** A meeting with more invitees than this doesn't turn unknown invitees into stub people (a town hall would create a hundred). */
 export const SMALL_MEETING_ATTENDEES = 6;
+
+/** Automatic prep is for 1:1s and small groups: at most this many people besides the user. */
+export const AUTO_PREP_MAX_OTHERS = 2;
 
 /** A prep brief starts this long before a calendar meeting. */
 export const PREP_LEAD_MS = 2 * 3_600_000;
@@ -64,10 +68,13 @@ export interface CalendarSyncResult {
  * people share becomes two suggested attendees. Unknown invitees become stubs only
  * in small meetings.
  */
-export function syncCalendarMeetings(db: Db, workspaceId: string, date: string, events: readonly TodayEvent[]): CalendarSyncResult {
+export function syncCalendarMeetings(db: Db, workspaceId: string, date: string, events: readonly TodayEvent[], nowMs = Date.now()): CalendarSyncResult {
   const result: CalendarSyncResult = { meetings: 0, skipped: 0 };
   let candidates: Candidate[] | null = null;
+  // Only the calendar's own event id names a meeting: a fallback id (start + title) would duplicate it on a reschedule or retitle.
+  const real = events.filter(hasRealEventId);
   for (const event of events) {
+    if (!hasRealEventId(event)) { result.skipped++; continue; }
     const invitees = (event.attendees ?? []).filter((a) => !a.self);
     const startsAt = localInstant(date, event.start);
     if (invitees.length === 0 || !startsAt) { result.skipped++; continue; }
@@ -84,7 +91,35 @@ export function syncCalendarMeetings(db: Db, workspaceId: string, date: string, 
     })();
     if (meeting) result.meetings++; else result.skipped++;
   }
+  // An empty calendar read may be a failed one: cancellations are only believed when the brief lists some events.
+  if (real.length > 0) cancelMissing(db, workspaceId, date, new Set(real.map((e) => eventExternalId(date, e))), nowMs);
   return result;
+}
+
+/**
+ * A calendar meeting this sync made for `date` that a later brief no longer lists was cancelled or
+ * removed. A future one is tombstoned (its calendar attendance with it); one with notes keeps its row
+ * and only loses its calendar claims, so no 1:1 or prep is aimed at it. One already under way or past
+ * stays: nothing says it didn't happen.
+ */
+function cancelMissing(db: Db, workspaceId: string, date: string, listed: Set<string>, nowMs: number): void {
+  const suffix = `@${date}`;
+  const rows = db.prepare(`
+    SELECT id, external_id, starts_at,
+      (SELECT COUNT(*) FROM notes n WHERE n.meeting_id = meetings.id AND n.deleted_at IS NULL) AS notes
+    FROM meetings
+    WHERE workspace_id = ? AND source = 'calendar' AND deleted_at IS NULL AND external_id IS NOT NULL AND substr(external_id, -?) = ?
+  `).all(workspaceId, suffix.length, suffix) as Array<{ id: string; external_id: string; starts_at: string; notes: number }>;
+  for (const row of rows) {
+    if (listed.has(row.external_id)) continue;
+    const ms = Date.parse(row.starts_at);
+    if (Number.isNaN(ms) || ms <= nowMs) continue;
+    if (row.notes > 0) {
+      for (const personId of attendeeIdsFromSource(db, row.id, "calendar")) removeAttendeeSource(db, row.id, personId, "calendar");
+    } else {
+      deleteMeeting(db, row.id);
+    }
+  }
 }
 
 /** A series id, folded, so "Weekly 1:1" and "weekly 1:1 " are one series. */
@@ -214,7 +249,7 @@ export function duePrepTargets(db: Db, workspaceId: string, nowMs: number, leadM
   for (const { meeting, others } of meetingsWithAttendees(db, workspaceId, { fromMs: nowMs, toMs: nowMs + leadMs })) {
     const ms = Date.parse(meeting.starts_at);
     if (Number.isNaN(ms) || ms < nowMs || ms - nowMs > leadMs) continue;
-    if (!isCalendarMeeting(db, meeting.id)) continue;
+    if (others.length > AUTO_PREP_MAX_OTHERS || !isCalendarMeeting(db, meeting.id)) continue;
     for (const personId of others) {
       if (!withCadence.has(personId)) continue;
       const cur = best.get(personId);

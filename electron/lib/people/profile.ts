@@ -20,15 +20,24 @@ import { getProjects } from "../../db/workspace-queries";
 
 type Db = Database.Database;
 
-const SOURCE = "slack";
+/** The cache row's `source` names the Slack id its fields were read for, so a changed id (any path, any device) never shows the old person's fields. */
+const sourceFor = (slackId: string): string => `slack:${slackId}`;
 /** A failed refresh isn't retried for this long, so reopening a page doesn't hammer a broken connector. */
 const RETRY_AFTER_MS = 10 * 60_000;
 const CALL_TIMEOUT_MS = 15_000;
 
 interface CacheRow { source: string; payload: string; fetched_at: string; error: string | null }
 
+function slackIdOf(db: Db, personId: string): string | null {
+  return (db.prepare("SELECT slack_id FROM people WHERE id = ? AND deleted_at IS NULL").get(personId) as { slack_id: string | null } | undefined)?.slack_id ?? null;
+}
+
+/** The cached row, only when it was read for the person's current Slack id. */
 function readCache(db: Db, personId: string): CacheRow | undefined {
-  return db.prepare("SELECT source, payload, fetched_at, error FROM person_profile_cache WHERE person_id = ?").get(personId) as CacheRow | undefined;
+  const slackId = slackIdOf(db, personId);
+  if (!slackId) return undefined;
+  const row = db.prepare("SELECT source, payload, fetched_at, error FROM person_profile_cache WHERE person_id = ?").get(personId) as CacheRow | undefined;
+  return row && row.source === sourceFor(slackId) ? row : undefined;
 }
 
 function fieldsOf(payload: string): ProfileFields {
@@ -57,19 +66,19 @@ export function clearProfile(db: Db, personId: string): void {
   db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(personId);
 }
 
-function writeGood(db: Db, personId: string, fields: ProfileFields, at: string): void {
+function writeGood(db: Db, personId: string, slackId: string, fields: ProfileFields, at: string): void {
   db.prepare(`
     INSERT INTO person_profile_cache (person_id, source, payload, fetched_at, error) VALUES (?, ?, ?, ?, NULL)
     ON CONFLICT(person_id) DO UPDATE SET source = excluded.source, payload = excluded.payload, fetched_at = excluded.fetched_at, error = NULL
-  `).run(personId, SOURCE, JSON.stringify(fields), at);
+  `).run(personId, sourceFor(slackId), JSON.stringify(fields), at);
 }
 
-function writeFailure(db: Db, personId: string, error: string, at: string): void {
+function writeFailure(db: Db, personId: string, slackId: string, error: string, at: string): void {
   // The last good fields and their time stay; only the error is added.
   db.prepare(`
     INSERT INTO person_profile_cache (person_id, source, payload, fetched_at, error) VALUES (?, ?, '{}', ?, ?)
     ON CONFLICT(person_id) DO UPDATE SET error = excluded.error
-  `).run(personId, SOURCE, at, error.slice(0, 300));
+  `).run(personId, sourceFor(slackId), at, error.slice(0, 300));
 }
 
 /** The names a Slack user lookup tool goes by, best first. */
@@ -141,6 +150,8 @@ async function doRefresh(db: Db, personId: string, deps: ProfileDeps): Promise<P
   const person = getPerson(db, personId);
   const cached = () => getCachedProfile(db, personId, now());
   if (!person || !person.slackId) return cached();
+  // Fields read for another Slack id are not this person's: drop them before anything (a failure marker too) builds on them.
+  if (!readCache(db, personId)) clearProfile(db, personId);
   const row = readCache(db, personId);
   if (row && !row.error && profileIsFresh(row.fetched_at, now())) return cached();
   const last = attempts.get(personId);
@@ -162,12 +173,12 @@ async function doRefresh(db: Db, personId: string, deps: ProfileDeps): Promise<P
       if (/^Error:/i.test(reply.trim())) { failure = reply.trim().slice(0, 200); continue; }
       const fields = parseSlackProfile(reply);
       if (!fields) { failure = "Slack's reply had no profile fields."; continue; }
-      writeGood(db, personId, fields, new Date(now()).toISOString());
+      writeGood(db, personId, person.slackId, fields, new Date(now()).toISOString());
       return cached();
     }
-    writeFailure(db, personId, failure, new Date(now()).toISOString());
+    writeFailure(db, personId, person.slackId, failure, new Date(now()).toISOString());
   } catch (err) {
-    writeFailure(db, personId, err instanceof Error ? err.message : String(err), new Date(now()).toISOString());
+    writeFailure(db, personId, person.slackId, err instanceof Error ? err.message : String(err), new Date(now()).toISOString());
   }
   return cached();
 }

@@ -157,11 +157,17 @@ migration, plus how it's built and released.
    meeting with a person who has a cadence, once per person per day). Facts come
    from Cairn (last meeting + notes, open items both ways, persona "current
    focus" section) and exclude persona notes of private people; lines that read
-   as activity metrics are dropped on save. Briefs: `out/prep/<personId>/<date>.json`.
+   as activity metrics are dropped on save. Briefs: `out/prep/<hash of personId>/<date>.json` (a stub id holds `@`).
    Profile: `people:profile:get` (cache) and `:refresh` (24h TTL, 10 minute
    retry back-off, last good value kept and marked stale); the Slack lookup tool
-   is picked by name and schema from the user's Slack connector. Known gaps: a
-   cancelled calendar event isn't removed from Cairn once saved; the Slack tool
+   is picked by name and schema from the user's Slack connector. Review fixes:
+   automatic prep only for meetings with at most two other people, five a day;
+   a later brief that no longer lists a future calendar meeting tombstones it
+   (one with notes only loses its calendar attendees); events without the
+   calendar's own id make no meeting; every saved prep field passes the activity
+   filter; the Slack cache is keyed by Slack id; the brief tool schema carries
+   no attendees with the flag off. Known gaps: a meeting that is past its time
+   is assumed held; the Slack tool
    pick is a name heuristic that needs trying against real connectors.
 2. **Launch** (desktop 3.3.0 + mobile minor): everything below, flag on.
 

@@ -1,17 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type Database from "better-sqlite3";
-import { makeDb, seedWorkspace } from "../test-support/db";
+import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
 import {
-  addAttendee, createMeeting, createPerson, deleteMeeting, getMeeting, listAttendees, removeAttendee, updatePerson,
+  addAttendee, createMeeting, createPerson, deleteMeeting, getMeeting, listAttendees, removeAttendee, setNoteMeeting, updatePerson,
 } from "./people-queries";
 import {
   duePrepTargets, eventExternalId, getCadenceNudges, localInstant, oneOnOneDates, syncCalendarMeetings,
 } from "./people-oneonone";
+import { createNote } from "./notes-queries";
 import { calendarMeetingId } from "../../shared/people/ids";
-import type { TodayEvent } from "../../shared/today/brief";
+import { normalizeEvent, type TodayEvent } from "../../shared/today/brief";
 
 let db: Database.Database;
-beforeEach(() => { db = makeDb(); seedWorkspace(db); });
+beforeEach(() => { db = makeDb(); seedWorkspace(db); seedProject(db); });
 afterEach(() => db.close());
 
 const DAY = 86_400_000;
@@ -126,6 +127,58 @@ describe("syncCalendarMeetings", () => {
   });
 });
 
+describe("calendar cancellations and ids", () => {
+  const T = Date.parse("2026-11-18T06:00:00");
+  const withAna = (id: string, start = "10:00") => event({ id, start, attendees: [{ email: "ana@acme.io" }] });
+  it("tombstones a future meeting a later brief no longer lists, with its calendar attendance", () => {
+    person("Ana", { emails: ["ana@acme.io"] });
+    const a = withAna("evt-a"), b = withAna("evt-b", "14:00");
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [a, b], T);
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [b], T);
+    expect(getMeeting(db, mid(a))).toBeNull();
+    expect(getMeeting(db, mid(b))).not.toBeNull();
+    expect(listAttendees(db, mid(a))).toEqual([]);
+  });
+  it("keeps meetings under way or past, ones with notes, other days, and believes nothing from an empty brief", () => {
+    person("Ana", { emails: ["ana@acme.io"] });
+    const past = withAna("evt-p", "08:00"), other = withAna("evt-o", "15:00"), keep = withAna("evt-k", "16:00");
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [past, keep], T);
+    syncCalendarMeetings(db, "ws1", "2026-11-19", [other], T);
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [keep], Date.parse("2026-11-18T09:00:00"));
+    expect(getMeeting(db, mid(past))).not.toBeNull();
+    expect(getMeeting(db, mid(other, "2026-11-19"))).not.toBeNull();
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [], T);
+    expect(getMeeting(db, mid(keep))).not.toBeNull();
+  });
+  it("drops only the calendar claims of a cancelled meeting that has notes", () => {
+    person("Ana", { emails: ["ana@acme.io"] });
+    const a = withAna("evt-a"), b = withAna("evt-b", "14:00");
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [a, b], T);
+    createNote(db, { id: "n1", projectId: "proj1", workspaceId: "ws1", title: "Notes", content: "" });
+    setNoteMeeting(db, "n1", mid(a));
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [b], T);
+    expect(getMeeting(db, mid(a))).not.toBeNull();
+    expect(listAttendees(db, mid(a))).toEqual([]);
+    expect(oneOnOneDates(db, "ws1", T).size).toBe(1);
+  });
+  it("makes no meeting from an event without the calendar's own id (a reschedule would duplicate it)", () => {
+    person("Ana", { emails: ["ana@acme.io"] });
+    const noId = normalizeEvent({ title: "1:1 with Ana", start: "10:00", attendees: [{ email: "ana@acme.io" }] }, true)!;
+    expect(syncCalendarMeetings(db, "ws1", "2026-11-18", [noId], T)).toEqual({ meetings: 0, skipped: 1 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM meetings").get()).toEqual({ n: 0 });
+  });
+  it("a tombstoned 1:1 no longer suppresses the nudge or draws a prep", () => {
+    const ana = person("Ana", { emails: ["ana@acme.io"], cadence: "weekly" });
+    const old = createMeeting(db, { workspaceId: "ws1", title: "1:1", startsAt: new Date(T - 30 * DAY).toISOString(), source: "note" });
+    addAttendee(db, { meetingId: old.id, personId: ana.id });
+    const soon = withAna("evt-s", "06:30");
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [soon, withAna("evt-t", "20:00")], T);
+    expect(getCadenceNudges(db, "ws1", new Date(T))).toHaveLength(0);
+    syncCalendarMeetings(db, "ws1", "2026-11-18", [withAna("evt-t", "20:00")], T);
+    expect(duePrepTargets(db, "ws1", T)).toEqual([]);
+  });
+});
+
 describe("localInstant", () => {
   it("builds a local instant and rejects malformed input", () => {
     expect(new Date(localInstant("2026-11-18", "9:05")!).getMinutes()).toBe(5);
@@ -216,6 +269,16 @@ describe("duePrepTargets", () => {
     upcoming(30, "note", [ana.id]);
     upcoming(-30, "calendar", [ana.id]);
     upcoming(600, "calendar", [ana.id]);
+    expect(duePrepTargets(db, "ws1", now)).toEqual([]);
+  });
+
+  it("is for small meetings only: a 1:1 or one other person, not a big group", () => {
+    const ana = person("Ana", { cadence: "weekly" });
+    const others = [person("B"), person("C")];
+    upcoming(30, "calendar", [ana.id]);
+    expect(duePrepTargets(db, "ws1", now)).toHaveLength(1);
+    db.prepare("DELETE FROM meeting_attendees").run(); db.prepare("DELETE FROM meetings").run();
+    upcoming(30, "calendar", [ana.id, ...others.map((o) => o.id)]);
     expect(duePrepTargets(db, "ws1", now)).toEqual([]);
   });
 });

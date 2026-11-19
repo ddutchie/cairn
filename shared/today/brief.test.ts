@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  attendeeLabel, dayBlocks, extractJsonObject, normalizeAttendees, normalizeEvent, firstSentences, formatMinutes, linkedDraftIds, parseTodayBrief, parseTodayCron, todayCron,
+  attendeeLabel, dayBlocks, hasRealEventId, extractJsonObject, normalizeAttendees, normalizeEvent, firstSentences, formatMinutes, linkedDraftIds, parseTodayBrief, parseTodayCron, todayCron,
 } from "./brief";
 
 const NOW = new Date(2026, 10, 16, 7, 2);
@@ -160,16 +160,24 @@ describe("calendar attendees", () => {
     const e = normalizeEvent({
       title: "1:1 Ana / me", start: "10:00", seriesId: "series-9",
       attendees: [{ name: "Ana Ruiz", email: "ANA@acme.io" }, { email: "me@acme.io", self: true }, "Ben Okafor", "ben@acme.io", {}, 7],
-    });
+    }, true);
     expect(e?.seriesId).toBe("series-9");
     expect(e?.attendees).toEqual([
       { name: "Ana Ruiz", email: "ana@acme.io" }, { email: "me@acme.io", self: true }, { name: "Ben Okafor" }, { email: "ben@acme.io" },
     ]);
   });
   it("leaves both out when the calendar gave none", () => {
-    const e = normalizeEvent({ title: "Standup", start: "09:00", attendees: [] });
+    const e = normalizeEvent({ title: "Standup", start: "09:00", attendees: [] }, true);
     expect(e).not.toHaveProperty("attendees");
     expect(e).not.toHaveProperty("seriesId");
+  });
+  it("drops the invite and series when People is off", () => {
+    const e = normalizeEvent({ id: "e1", title: "1:1", start: "10:00", seriesId: "s", attendees: [{ name: "Ana" }] }, false);
+    expect(e).toEqual({ id: "e1", title: "1:1", start: "10:00" });
+  });
+  it("tells the calendar's own id from the start-and-title fallback", () => {
+    expect(hasRealEventId(normalizeEvent({ id: "abc123", title: "1:1", start: "10:00" }, true)!)).toBe(true);
+    expect(hasRealEventId(normalizeEvent({ title: "1:1", start: "10:00" }, true)!)).toBe(false);
   });
   it("caps a big invite", () => {
     expect(normalizeAttendees(Array.from({ length: 80 }, (_, i) => `Person ${i}`))).toHaveLength(50);

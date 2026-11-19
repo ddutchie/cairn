@@ -109,11 +109,30 @@ const SOURCE_STATUS = new Set(["ok", "empty", "error", "skipped"]);
  * time online, response times. The prep describes what someone worked on, so a
  * line that reports activity is dropped, whatever the model wrote.
  */
-const ACTIVITY_METRIC =
-  /\b\d+\s*(?:messages?|msgs?|posts?|replies|reactions?|threads?|commits?|prs?|hours?|hrs?|minutes?|mins?)\b|\b(?:online|last seen|idle|response times?|messages? per|posts? per|activity (?:level|score)|(?:was|is|been) active)\b/i;
+const COUNTED = "messages?|msgs?|posts?|replies|reactions?|threads?|comments?|commits?|prs?|pull requests?|reviews?|tickets?|issues?|emails?|calls?|meetings?|sessions?|hours?|hrs?|minutes?|mins?";
+const NUMBER_WORD = "(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a dozen|dozens of|hundreds of|dozens|several)";
+const ACTIVITY_METRIC = new RegExp([
+  // "12 messages", "12 new messages", "twelve messages", "3+ hours"
+  `\\b(?:\\d[\\d.,]*\\+?|${NUMBER_WORD})\\s*(?:k\\s+)?(?:(?:new|unread|more|extra|late|total)\\s+)?(?:${COUNTED})\\b`,
+  // rates and presence
+  `\\b(?:${COUNTED})\\s+(?:a|per|each|every)\\s+(?:day|week|hour|month)\\b`,
+  "\\b(?:online|offline|last seen|idle|response times?|reply times?|time to respond|activity (?:level|score|streak|rate)|streak)\\b",
+  // "active for 6 hours", "active since 9", "active until midnight", "active today", "active all day", "active late at night"
+  "\\bactive\\s+(?:for|since|until|till|from|during|between|today|yesterday|all day|all night|around the clock|late|early|at night|on weekends?|at \\d|\\d)",
+  "\\b(?:most|very|highly|extremely|always|constantly)\\s+active\\b",
+].join("|"), "i");
 
+/** True for a line that reports activity (counts, time online, response speed) rather than work. */
 export function isActivityMetric(text: string): boolean {
   return ACTIVITY_METRIC.test(text);
+}
+
+/** Free text with its activity sentences and lines removed; null when nothing is left. */
+export function stripActivity(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const kept = text.split(/\n/).map((line) => line.split(/(?<=[.!?])\s+/).filter((s) => !isActivityMetric(s)).join(" ").trim()).filter(Boolean);
+  const out = kept.join("\n").trim();
+  return out || undefined;
 }
 
 /** Normalise the model's `prep_save` input; the person and date come from Cairn, never the model. */
@@ -135,7 +154,7 @@ export function normalisePrepInput(
     .flatMap((x) => {
       const name = str(x.name, 60);
       const status = str(x.status, 10);
-      return name && status && SOURCE_STATUS.has(status) ? [{ name, status: status as PrepSource["status"], note: str(x.note, 200) }] : [];
+      return name && status && SOURCE_STATUS.has(status) ? [{ name, status: status as PrepSource["status"], note: stripActivity(str(x.note, 200)) }] : [];
     })
     .slice(0, 12);
   return {
@@ -143,10 +162,10 @@ export function normalisePrepInput(
     status: "ready",
     ...base,
     generatedAt: now.toISOString(),
-    summary: str(input.summary, 500) ?? "",
+    summary: stripActivity(str(input.summary, 500)) ?? "",
     recent,
     followUps: strs(input.followUps, 8).filter((t) => !isActivityMetric(t)),
-    questions: strs(input.questions, 6),
+    questions: strs(input.questions, 6).filter((t) => !isActivityMetric(t)),
     sources,
   };
 }

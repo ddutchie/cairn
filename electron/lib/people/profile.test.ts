@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { makeDb, seedWorkspace } from "../../test-support/db";
-import { createPerson } from "../../db/people-queries";
+import { createPerson, updatePerson } from "../../db/people-queries";
 import { PROFILE_TTL_MS } from "../../../shared/people/oneonone";
 import { clearProfile, getCachedProfile, pickLookupTool, refreshProfile, resetProfileThrottle, type ProfileDeps } from "./profile";
 
@@ -116,5 +116,31 @@ describe("refreshProfile", () => {
     expect(JSON.stringify(db.prepare("SELECT * FROM people").all())).not.toContain("Staff Engineer");
     clearProfile(db, p.id);
     expect(getCachedProfile(db, p.id)).toEqual({ fields: {}, stale: false });
+  });
+
+  it("ignores fields cached for another Slack id, whatever changed it", async () => {
+    const p = ana();
+    await refreshProfile(db, p.id, deps().d);
+    db.prepare("UPDATE people SET slack_id = 'U999' WHERE id = ?").run(p.id); // as a sync from another device would
+    expect(getCachedProfile(db, p.id, T0)).toEqual({ fields: {}, stale: false });
+    resetProfileThrottle();
+    const { d, call } = deps();
+    await refreshProfile(db, p.id, d);
+    expect(call).toHaveBeenCalledWith(db, "ws1", [], "mcp__slack__get_user_profile", { user_id: "U999" });
+  });
+  it("clears the cache when the person's Slack id is changed through updatePerson", async () => {
+    const p = ana();
+    await refreshProfile(db, p.id, deps().d);
+    updatePerson(db, p.id, { slackId: "U777" });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM person_profile_cache").get()).toEqual({ n: 0 });
+  });
+  it("doesn't carry another id's fields into a failed refresh", async () => {
+    const p = ana();
+    await refreshProfile(db, p.id, deps().d);
+    updatePerson(db, p.id, { slackId: "U555" });
+    resetProfileThrottle();
+    const bad = deps({ call: vi.fn(async () => { throw new Error("down"); }) });
+    const out = await refreshProfile(db, p.id, bad.d);
+    expect(out.fields).toEqual({});
   });
 });

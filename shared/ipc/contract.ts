@@ -351,6 +351,7 @@ export interface IpcContract {
   "people:prep:get": { args: [req: { workspaceId: string; personId: string }]; result: { brief: PrepBrief | null; running: boolean } };
   /** Start a prep brief. `skipped` says why nothing started. */
   "people:prep:run": {
+    writes: true;
     args: [req: { workspaceId: string; personId: string; meetingId?: string }];
     result: { runId: string } | { skipped: "busy" | "off" | "no-ai" | "unknown-person" };
   };
@@ -1041,7 +1042,7 @@ const CHANNELS: ChannelRecord = {
   "people:profile:get": "read",
   "people:profile:refresh": "read",
   "people:prep:get": "read",
-  "people:prep:run": "read",
+  "people:prep:run": "write",
   "db:automation:list": "read",
   "db:automation:get": "read",
   "db:automation:create": "write",

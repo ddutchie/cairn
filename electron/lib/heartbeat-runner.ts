@@ -86,16 +86,16 @@ import { noteRunActivity } from "./run-activity";
 import { localDate, TODAY_NOTE_CHARS } from "../../shared/today/brief";
 import { findTodayAutomation } from "./today-files";
 import { syncCalendarMeetings } from "../db/people-oneonone";
+import { stripActivity } from "../../shared/people/oneonone";
 import { getPerson, isPeopleEnabled } from "../db/people-queries";
 import {
   PREP_SYSTEM_PROMPT, PREP_TOOL_NAME, buildPrepFacts, ensurePrepAutomation, isPrepAutomation, prepPrompt, prepTools, prunePrepFiles,
-  savePrepBrief, setPrepRequest, startingBrief, takePrepRequest, type PrepRequest, type PrepSession,
+  markPrepDone, markPrepRunning, savePrepBrief, setPrepRequest, startingBrief, takePrepRequest, type PrepRequest, type PrepSession,
 } from "./people/prep";
 
 /** Link a finished brief's events to people. Never throws: the brief is saved either way. */
 function syncTodayCalendar(db: Database.Database, workspaceId: string, brief: { date: string; events: Parameters<typeof syncCalendarMeetings>[3] }): void {
   try {
-    if (!isPeopleEnabled(db) || brief.events.length === 0) return;
     syncCalendarMeetings(db, workspaceId, brief.date, brief.events);
   } catch (err) {
     console.warn("[heartbeat] calendar → meetings failed:", err);
@@ -295,11 +295,14 @@ export function runPrepNow(
   bumpAutomationRunCount(db, automation.id);
   const run = createAutomationRun(db, automation.id, "running");
   setPrepRequest(run.id, request);
+  markPrepRunning(run.id, request.personId);
   void (async () => {
     try {
       await runAutomation(ctx, run, automation);
     } catch (err) {
       failRun(ctx, run, errMsg(err));
+    } finally {
+      markPrepDone(run.id);
     }
   })().catch(() => {});
   return { runId: run.id };
@@ -476,8 +479,10 @@ export async function runAutomation(
     : undefined;
   // The brief this run starts from: the same day's (a refresh), or the last day's open items (carried over).
   const todayPrevious = today ? loadLatestTodayBrief(workspacePath, automation) : null;
+  // The People flag, read once: the brief tools, the prompt and the calendar sync all follow the same answer for the whole run.
+  const peopleOn = isPeopleEnabled(db);
   if (today) {
-    recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild, isPeopleEnabled(db));
+    recipe = todayPrompt(projectFacts(db, automation.workspaceId, todayProjects), rebuild ? null : todayLookBackFrom(db, automation.id, run.id), new Date(), rebuild, peopleOn);
   }
   const prepFacts = prep && prepRequest ? buildPrepFacts(db, prepRequest.personId, prepRequest) : null;
   if (prepFacts) recipe = prepPrompt(prepFacts);
@@ -683,7 +688,7 @@ export async function runAutomation(
     }
     if (todaySession) todaySession.saveError = saveError ?? undefined;
     // The calendar's events become meetings with attendees (People preview only). Once per finished brief, not per item.
-    if (brief.status === "ready") syncTodayCalendar(db, automation.workspaceId, brief);
+    if (brief.status === "ready" && peopleOn) syncTodayCalendar(db, automation.workspaceId, brief);
     // While gathering, the brief rides along, so views show it without rebuilding their whole state.
     try { ctx.send?.("today:updated", { workspaceId: automation.workspaceId, status: brief.status, ...(saveError ? { saveError } : {}), ...(brief.status === "gathering" ? { brief } : {}) }); } catch { /* best-effort */ }
     return saveError;
@@ -701,7 +706,7 @@ export async function runAutomation(
     } catch (err) { console.warn("[heartbeat] Today history upkeep failed:", err); }
     todaySession = { brief: startRefresh(todayPrevious, marks, now), finished: false };
     saveToday(todaySession.brief);
-    automationTools.push(...todayBriefTools(todaySession, saveToday));
+    automationTools.push(...todayBriefTools(todaySession, saveToday, peopleOn));
   }
 
   // Prep: the brief starts as "preparing" and `prep_save` fills it in. Each save tells the person page.
@@ -913,7 +918,9 @@ export async function runAutomation(
       cleanupRuns();
       return;
     }
-    if (lastMessage) savePrep({ ...prepSession.brief, note: lastMessage.slice(0, TODAY_NOTE_CHARS) });
+    // The closing note describes what was read; a line of activity counts in it is dropped like any other.
+    const note = stripActivity(lastMessage?.slice(0, TODAY_NOTE_CHARS));
+    if (note) savePrep({ ...prepSession.brief, note });
   }
 
   updateAutomationRun(db, run.id, {

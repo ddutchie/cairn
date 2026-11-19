@@ -10,6 +10,7 @@
  * out of the facts. Plan: docs/plans/people-layer.md ("1:1 loop").
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
@@ -58,12 +59,14 @@ export function ensurePrepAutomation(db: Database.Database, workspaceId: string)
 
 // ── Files ─────────────────────────────────────────────────────────────────
 
-const SAFE_ID = /^[A-Za-z0-9_:.-]{1,120}$/;
-
-/** A person id is a path segment here: only plain characters (ids are uuids, or `stub:<workspace>:<key>`). */
-function personSegment(personId: string): string {
-  if (!SAFE_ID.test(personId) || personId === "." || personId === "..") throw new Error("Invalid person id.");
-  return personId.replace(/:/g, "_");
+/**
+ * A person id as a folder name. Ids may hold anything (a stub person's id is built from an email or a
+ * name, `@` and accents included, and stays the id after they are confirmed), so the folder is a hash
+ * of the id: always safe, never a way out of the prep folder, the same every time.
+ */
+export function personSegment(personId: string): string {
+  if (typeof personId !== "string" || personId.length === 0 || personId.length > 500) throw new Error("Invalid person id.");
+  return crypto.createHash("sha256").update(personId).digest("hex").slice(0, 32);
 }
 
 export function prepDir(workspacePath: string, automation: Pick<Automation, "id">): string {
@@ -122,6 +125,23 @@ export function prunePrepFiles(workspacePath: string, automation: Pick<Automatio
     }
   }
   return removed;
+}
+
+// ── Who is being prepared ─────────────────────────────────────────────────
+
+// Run id → person, for as long as the run is alive: the page shows "Preparing" for that person only,
+// and a "gathering" placeholder with no live run behind it is a crashed run, not work in progress.
+const running = new Map<string, string>();
+export function markPrepRunning(runId: string, personId: string): void { running.set(runId, personId); }
+export function markPrepDone(runId: string): void { running.delete(runId); }
+export function isPrepRunning(personId: string): boolean { return [...running.values()].includes(personId); }
+
+/** A brief as the page should see it: a placeholder whose run is gone becomes a failed brief. */
+export function settleBrief(brief: PrepBrief | null): PrepBrief | null {
+  if (brief && brief.status === "gathering" && !isPrepRunning(brief.personId)) {
+    return { ...brief, status: "ready", error: "The run was interrupted. Prepare again." };
+  }
+  return brief;
 }
 
 // ── What a run is for ─────────────────────────────────────────────────────

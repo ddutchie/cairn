@@ -191,7 +191,7 @@ For up to 4 items that need a written answer (a reply, review notes, a card brea
  * meetings show up on their pages and 1:1 prep and cadence nudges know when they last met.
  */
 export const TODAY_PEOPLE_RECIPE = `## People on the calendar
-- For each event, use the calendar's own event id as its id, so a refresh updates the meeting.
+- For each event, use the calendar's own event id as its id, so a refresh updates the meeting. An event without the calendar's own id is shown but never linked to people.
 - Add "attendees": the people on the invite, each with a name and/or an email as the calendar gives them, and self true for the user. Leave it out when the calendar doesn't list people. Don't guess attendees from the title.
 - Add "seriesId" for a recurring meeting: the calendar's id for the series, or the series title. Leave it out for a one-off.`;
 

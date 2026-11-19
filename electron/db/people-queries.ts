@@ -309,6 +309,8 @@ export function updatePerson(db: Db, id: string, patch: PersonPatch): Person {
   db.transaction(() => {
     db.prepare(`UPDATE people SET ${sets.join(", ")} WHERE id = ?`).run(...params, id);
     if (patch.isMe) clearOtherMe(db, current.workspaceId, id, now);
+    // The Slack profile cache belongs to one Slack id.
+    if (patch.slackId !== undefined && (patch.slackId?.trim() || null) !== current.slackId) db.prepare("DELETE FROM person_profile_cache WHERE person_id = ?").run(id);
   })();
   return getPerson(db, id)!;
 }

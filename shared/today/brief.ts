@@ -210,17 +210,27 @@ export function normalizeFyi(x: Record<string, unknown>, fallbackId: string): To
 }
 
 /** A meeting. Null without a title and an "HH:MM" start. */
-export function normalizeEvent(x: Record<string, unknown>): TodayEvent | null {
+/** The id an event gets when the run gave none: its start and title. Letters and digits in any script, so "会議" and "面接" at the same time stay two events. */
+export function fallbackEventId(start: string, title: string): string {
+  return `${start}-${title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 40)}`;
+}
+
+/** True when the event carries the calendar's own id, which survives a reschedule or a retitle (the fallback id doesn't). */
+export function hasRealEventId(event: Pick<TodayEvent, "id" | "start" | "title">): boolean {
+  return event.id !== fallbackEventId(event.start, event.title);
+}
+
+/** `people`: keep the invite (attendees, series). Off, they are dropped, so a workspace without People has none of it in its briefs. */
+export function normalizeEvent(x: Record<string, unknown>, people: boolean): TodayEvent | null {
   const title = str(x.title);
   const start = str(x.start);
   if (!title || !start || !HHMM.test(start)) return null;
   const end = str(x.end);
-  const attendees = normalizeAttendees(x.attendees);
+  const attendees = people ? normalizeAttendees(x.attendees) : [];
   return {
-    // Letters and digits in any script, so "会議" and "面接" at the same time stay two events.
-    id: str(x.id) ?? `${start}-${title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 40)}`,
+    id: str(x.id) ?? fallbackEventId(start, title),
     title, start, end: end && HHMM.test(end) ? end : undefined, location: str(x.location), url: str(x.url), note: str(x.note),
-    ...(attendees.length ? { attendees } : {}), ...(str(x.seriesId) ? { seriesId: str(x.seriesId)!.slice(0, 200) } : {}),
+    ...(attendees.length ? { attendees } : {}), ...(people && str(x.seriesId) ? { seriesId: str(x.seriesId)!.slice(0, 200) } : {}),
   };
 }
 
@@ -296,7 +306,7 @@ export function parseTodayBrief(text: string, now: Date = new Date()): TodayBrie
   const needYou = arr(o.needYou).flatMap((x, i) => normalizeNeed(x, `need-${i + 1}`) ?? []);
   const prepared = arr(o.prepared).flatMap((x, i) => normalizePrepared(x, `draft-${i + 1}`) ?? []);
   const fyi = arr(o.fyi).flatMap((x, i) => normalizeFyi(x, `fyi-${i + 1}`) ?? []);
-  const events = arr(o.events).flatMap((x) => normalizeEvent(x) ?? []).sort(byEventStart);
+  const events = arr(o.events).flatMap((x) => normalizeEvent(x, true) ?? []).sort(byEventStart);
   const sources = arr(o.sources).flatMap((x) => normalizeSource(x) ?? []);
   pruneDraftLinks({ needYou, prepared });
   const focus = str(o.focusId);

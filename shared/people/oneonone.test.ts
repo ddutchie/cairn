@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  NUDGE_AFTER_DAYS, daysBetween, gapLabel, isActivityMetric, normalisePrepInput, nudgeDue, nudgeTitle, parsePrepBrief, parseSlackProfile,
+  NUDGE_AFTER_DAYS, daysBetween, gapLabel, isActivityMetric, normalisePrepInput, stripActivity, nudgeDue, nudgeTitle, parsePrepBrief, parseSlackProfile,
   profileIsFresh, PROFILE_TTL_MS,
 } from "./oneonone";
 
@@ -94,5 +94,36 @@ describe("Slack profile", () => {
     expect(profileIsFresh(new Date(now - PROFILE_TTL_MS - 1000).toISOString(), now)).toBe(false);
     expect(profileIsFresh(undefined, now)).toBe(false);
     expect(profileIsFresh("garbage", now)).toBe(false);
+  });
+});
+
+describe("activity filter on every saved field", () => {
+  it("catches activity phrased several ways, and keeps work that mentions being active", () => {
+    for (const t of ["Sent 12 new messages today", "twelve messages in #infra", "Was active until midnight", "Active for 6 hours", "Replies a day: lots, many messages a day", "messages per day: 40", "Often idle on Slack", "Very active in the channel"]) {
+      expect(isActivityMetric(t), t).toBe(true);
+    }
+    for (const t of ["Has been active on the migration", "Is active in the platform working group", "Raised the rollback plan"]) {
+      expect(isActivityMetric(t), t).toBe(false);
+    }
+  });
+  it("drops activity sentences from free text and keeps the rest", () => {
+    expect(stripActivity("Led the billing migration. Was online until midnight. Needs review help.")).toBe("Led the billing migration. Needs review help.");
+    expect(stripActivity("Sent 40 messages today")).toBeUndefined();
+    expect(stripActivity(undefined)).toBeUndefined();
+  });
+  it("applies to summary, questions, follow-ups, recent and source notes", () => {
+    const base = { personId: "p", personName: "Ana", date: "2026-11-18" };
+    const b = normalisePrepInput({
+      summary: "Ana shipped the importer. She sent 80 messages this week.",
+      questions: ["How is the migration going?", "Why only 3 hours online?"],
+      followUps: ["Send the doc", "Reply time is 4 minutes"],
+      recent: [{ text: "Posted 12 messages in #platform" }, { text: "Fixed the importer" }],
+      sources: [{ name: "Slack", status: "ok", note: "Was online all day" }, { name: "Jira", status: "ok", note: "2 tickets about the importer" }],
+    }, base, new Date("2026-11-18T10:00:00Z"));
+    expect(b.summary).toBe("Ana shipped the importer.");
+    expect(b.questions).toEqual(["How is the migration going?"]);
+    expect(b.followUps).toEqual(["Send the doc"]);
+    expect(b.recent.map((r) => r.text)).toEqual(["Fixed the importer"]);
+    expect(b.sources.map((s) => s.note)).toEqual([undefined, undefined]);
   });
 });
