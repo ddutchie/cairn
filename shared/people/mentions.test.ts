@@ -89,3 +89,13 @@ describe("chosenInText", () => {
     expect(findMentions(text, two, chosenInText(text, picks)).matched.map((p) => p.id)).toEqual(["p1"]);
   });
 });
+
+describe("delete and retype", () => {
+  it("a mention typed again after deleting the picked one is ambiguous", () => {
+    const two = [person("p1", "Alex Kim"), person("p2", "Alex Kim")];
+    let picks: Map<string, string> = new Map([["alex kim", "p1"]]);
+    // The draft is pruned on every edit: the mention is deleted, then typed again by hand.
+    for (const draft of ["ask @Alex Kim", "ask ", "ask @Alex Kim"]) picks = chosenInText(draft, picks);
+    expect(findMentions("ask @Alex Kim", two, picks).ambiguous).toHaveLength(1);
+  });
+});

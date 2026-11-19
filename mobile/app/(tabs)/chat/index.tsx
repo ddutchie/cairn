@@ -327,6 +327,10 @@ export default function ChatScreen() {
   // Who the user picked from the chips, by folded name: settles two people with the same name.
   const pickedMentions = useRef(new Map<string, string>());
   const mentionMatches = useMemo(() => (mentionQuery === undefined ? [] : matchPeople(mentionable, mentionQuery)), [mentionable, mentionQuery]);
+  // Every edit drops picks whose `@Name` is gone, so deleting a mention and typing it again asks again.
+  useEffect(() => {
+    if (pickedMentions.current.size > 0) pickedMentions.current = chosenInText(input, pickedMentions.current);
+  }, [input]);
   const pickMention = useCallback((p: { id: string; name: string }) => {
     const m = trailingMention(input);
     if (m) {
@@ -345,8 +349,9 @@ export default function ChatScreen() {
     // it. The queue drains (FIFO) when the current reply finishes.
     if (busy) {
       // The chips picked for this draft travel with it, so a later draft can't change who it means.
-      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts, picks: pickedMentions.current }]);
+      const picks = pickedMentions.current; // captured now: the updater below runs later
       pickedMentions.current = new Map();
+      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts, picks }]);
       setInput("");
       setAttachments([]);
       return;
