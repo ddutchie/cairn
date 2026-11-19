@@ -47,6 +47,8 @@ export interface HeartbeatSchedulerOptions {
   runner: (run: AutomationRun, automation: Automation) => Promise<void>;
   /** Tick interval in ms. Default 30_000 (matches openworker). */
   tickMs?: number;
+  /** Called on every tick after due automations are started (the People layer's prep watcher). Must not throw. */
+  onTick?: (db: Database.Database, nowMs: number) => void;
   /** Test seam / diagnostics. */
   log?: (msg: string) => void;
   /** Test seam — default Date.now. */
@@ -118,6 +120,11 @@ export class HeartbeatScheduler {
       } catch (err) {
         this.opts.log?.(`[heartbeat] fire error for "${automation.name}": ${String(err)}`);
       }
+    }
+    try {
+      this.opts.onTick?.(db, this.opts.now?.() ?? Date.now());
+    } catch (err) {
+      this.opts.log?.(`[heartbeat] tick hook error: ${String(err)}`);
     }
   }
 

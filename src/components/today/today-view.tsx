@@ -14,6 +14,7 @@
  * to a chat session that asks before it posts anything.
  */
 
+import { TodayNudges } from "./today-nudges";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, Download, ExternalLink, MessageSquare, NotebookText, Pencil, Play, RefreshCw, RotateCcw, Settings2, X } from "lucide-react";
 import { MarkdownContent } from "@/components/conversation/MarkdownContent";
@@ -37,7 +38,7 @@ import { TodayPastBanner, TodayRail } from "./today-rail";
 import { compareTodayBriefs, groupTodayHistory, type TodayComparison } from "../../../shared/today/history";
 import { TODAY_NEED_SHOWN } from "../../../shared/today/brief-edit";
 import {
-  EMPTY_TODAY_MARKS, dayBlocks, formatClock, formatMinutes, linkedDraftIds, localDate,
+  EMPTY_TODAY_MARKS, attendeeLabel, dayBlocks, formatClock, formatMinutes, linkedDraftIds, localDate,
   type TodayBrief, type TodayDay, type TodayHistoryEntry, type TodayRunActivity, type TodayFyi, type TodayMarks, type TodayNeedItem, type TodayPrepared, type TodayProjectFacts, type TodaySettings as TodaySettingsValue, type TodayState,
 } from "../../../shared/today/brief";
 
@@ -597,7 +598,8 @@ function BriefView({ state, workspaceId, liveTool, error, past, peek, stack, onR
 
       <div className="grid gap-x-8 gap-y-8 mt-9 items-start grid-cols-1 @4xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <LaneBox id="need" title="Need you" count={openNeed.length} tone="var(--stone-3)" flash={flash === "need" || flash === "focus"}>
-          {needYou.length === 0 && <Empty>Nothing is waiting on you.</Empty>}
+          {needYou.length === 0 && !(state.nudges?.length) && <Empty>Nothing is waiting on you.</Empty>}
+          {!readOnly && <TodayNudges nudges={state.nudges ?? []} workspaceId={workspaceId} />}
           {shownNeed.map((n) => (
             <NeedCard
               key={n.id}
@@ -1028,7 +1030,7 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
             const label = free ? (b.past ? "" : `Free ${formatMinutes(mins)}`) : b.event?.title ?? "";
             const fits = !!label && labelWidth(label, labelPx) + 14 <= (w / 100) * width - 2;
             const title = free ? (b.past ? "Free time (past)" : b.best ? "Free · best slot for focus" : "Free") : b.event?.title;
-            const sub = [`${formatClock(b.start)}–${formatClock(b.end)}`, formatMinutes(mins), b.event?.location, b.event?.note].filter(Boolean).join(" · ");
+            const sub = [`${formatClock(b.start)}–${formatClock(b.end)}`, formatMinutes(mins), b.event?.location, b.event?.note, b.event ? attendeeLabel(b.event) : undefined].filter(Boolean).join(" · ");
             return (
               <Tooltip
                 key={`${b.kind}-${b.start}-${b.event?.id ?? bi}`}
@@ -1090,7 +1092,8 @@ function DayStrip({ day, nowMin, focusTitle, flash }: { day: TodayDay; nowMin: n
                   {b.best ? <DayTag>Best slot{focusTitle ? ` · ${focusTitle}` : ""}</DayTag>
                     : b.event?.note ? <DayTag warn>⚠ {b.event.note}</DayTag>
                     : b.past ? <DayTag>done</DayTag>
-                    : b.event?.location ? <DayTag>{b.event.location}</DayTag> : null}
+                    : b.event?.location ? <DayTag>{b.event.location}</DayTag>
+                    : b.event && attendeeLabel(b.event) ? <DayTag>{attendeeLabel(b.event)}</DayTag> : null}
                 </span>
               </div>
             );

@@ -7,6 +7,7 @@
  * renderer (via IPC) — never constructs its own Database handle.
  */
 
+import { PREP_COMMUNITY_ID } from "../../shared/people/oneonone";
 import type Database from "better-sqlite3";
 import { newId, ts } from "./utils";
 import type {
@@ -285,13 +286,13 @@ export function listRecentAutomationRuns(
     ? `SELECT r.*, a.name AS automation_name, a.project_id AS automation_project_id
        FROM automation_runs r
        JOIN automations a ON r.automation_id = a.id
-       WHERE a.workspace_id = ? AND a.project_id = ?
+       WHERE a.workspace_id = ? AND a.project_id = ? AND COALESCE(a.community_id, '') != '${PREP_COMMUNITY_ID}'
        ORDER BY r.started_at DESC, r.created_at DESC, r.rowid DESC
        LIMIT ?`
     : `SELECT r.*, a.name AS automation_name, a.project_id AS automation_project_id
        FROM automation_runs r
        JOIN automations a ON r.automation_id = a.id
-       WHERE a.workspace_id = ?
+       WHERE a.workspace_id = ? AND COALESCE(a.community_id, '') != '${PREP_COMMUNITY_ID}'
        ORDER BY r.started_at DESC, r.created_at DESC, r.rowid DESC
        LIMIT ?`;
   const params = projectId ? [workspaceId, projectId, limit] : [workspaceId, limit];
