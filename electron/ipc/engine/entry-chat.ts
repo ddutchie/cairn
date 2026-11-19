@@ -13,6 +13,7 @@ import type { AgentLLMConfig } from "../../lib/session-runtime-types";
 import { makeSessionProjection } from "../../../shared/agent/session-projection";
 import { rejectBusy } from "../session-guards";
 import { routeFromConfig } from "../../agent/route";
+import { mentionContext } from "./mentions";
 
 /** A chat turn on the engine. Mirrors the checks `runChatPrompt` makes before it starts. */
 export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<void> {
@@ -43,7 +44,7 @@ export async function runEngineChat(ctx: DbContext, req: ChatRequest): Promise<v
       apiMode: req.config?.apiMode,
     } as AgentLLMConfig,
     chat: { req, policy },
-    context: req.context,
+    context: [req.context, mentionContext(ctx, req.workspaceId, req.message)].filter(Boolean).join("\n\n") || undefined,
   });
 }
 

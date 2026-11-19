@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useMemo } from "react";
-import { Send, Square, Sparkles, FileText, CheckSquare, FileCode, Image, X } from "lucide-react";
+import { Send, Square, Sparkles, FileText, CheckSquare, FileCode, Image, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { foldName } from "../../../shared/people/parse";
 import type { SlashCommand } from "@/lib/slash-commands";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CountBadge } from "@/components/ui/count-badge";
@@ -10,7 +11,7 @@ import { IconButton } from "@/components/ui/icon-button";
 
 export interface SuggestionItem {
   id: string;
-  type: "note" | "card" | "file";
+  type: "note" | "card" | "file" | "person";
   title: string;
   subtitle?: string;
 }
@@ -163,8 +164,9 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       }
       if (!suggestions) return [];
       const q = trigger.query.toLowerCase();
+      const fq = foldName(trigger.query);
       return suggestions.filter((item) =>
-        item.title.toLowerCase().includes(q)
+        item.type === "person" ? foldName(item.title).includes(fq) : item.title.toLowerCase().includes(q)
       );
     }, [suggestions, trigger, onSearchSuggestions, asyncSuggestions]);
 
@@ -208,7 +210,10 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       if (!trigger) return;
       const before = value.slice(0, trigger.index);
       const after = value.slice(resolvedRef.current?.selectionEnd ?? value.length);
-      const insertedText = item.type === "file" ? `\`${item.title}\`` : `[[${item.title}]]`;
+      // A person is written as plain `@Name `: the message reads naturally and Cairn attaches what it knows when it sends.
+      const insertedText = item.type === "file" ? `\`${item.title}\``
+        : item.type === "person" ? `@${item.title} `
+        : `[[${item.title}]]`;
       onChange(before + insertedText + after);
       suppressTriggerUntilRef.current = Date.now() + 250;
       setShowSuggestions(false);
@@ -362,7 +367,7 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
           <div className="absolute bottom-full left-0 right-0 mb-1.5 z-50 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-elev-2 overflow-hidden max-h-56 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
             <div className="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
               <span className="text-xs font-medium text-[var(--text-tertiary)]">
-                {trigger.type === "command" ? "Slash commands" : "Mention a note, task or file"}
+                {trigger.type === "command" ? "Slash commands" : "Mention a note, task, file or person"}
               </span>
               <span className="text-2xs text-[var(--text-tertiary)]">
                 ↑↓ to navigate · Enter to select
@@ -410,6 +415,8 @@ export const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                             <FileText size={12} className="text-[var(--info)] shrink-0" />
                           ) : item.type === "file" ? (
                             <FileCode size={12} className="text-[var(--warning,#f59e0b)] shrink-0" />
+                          ) : item.type === "person" ? (
+                            <User size={12} className="text-[var(--success)] shrink-0" />
                           ) : (
                             <CheckSquare size={12} className="text-[var(--accent)] shrink-0" />
                           )}

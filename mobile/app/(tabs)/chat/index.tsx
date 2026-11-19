@@ -43,6 +43,12 @@ import { ListeningOrb } from "@/components/animations/ListeningOrb";
 import { useListeningOrb } from "@/lib/dev-flags";
 import { ModelTitleMenu, modelToolbarMenu, useModelMenuState } from "@/components/chat/ModelMenu";
 import { ScrollToBottomButton } from "@/components/chat/ScrollToBottomButton";
+import { MentionStrip } from "@/components/chat/MentionStrip";
+import { mentionContext } from "@/chat/mentions";
+import { chosenInText, matchPeople, trailingMention } from "@cairn/shared/people/mentions";
+import { loadPeople, peopleWorkspaceId } from "@/db/people";
+import { foldName } from "@cairn/shared/people/parse";
+import { usePeopleEnabled } from "@/people/flag";
 import { streamingPhase } from "@cairn/shared/conversation/work-phase";
 import { createStreamingStore, StreamingStoreContext } from "@/chat/streaming-store";
 import { CairnMorphComposer } from "@/components/chat/CairnMorphComposer";
@@ -155,12 +161,12 @@ export default function ChatScreen() {
   // Messages the user queued while a turn was running — sent (FIFO) when the
   // current reply finishes. Attachments are stored alongside so staged
   // images/PDFs are never silently dropped. Session-scoped.
-  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Attachment[] }[]>([]);
+  const [queued, setQueued] = useState<{ id: string; content: string; attachments?: Attachment[]; picks?: ReadonlyMap<string, string> }[]>([]);
   const queuedRef = useRef<typeof queued>([]);
   useEffect(() => { queuedRef.current = queued; }, [queued]);
   // Content + attachments for the next queued send — read by `send` when the
   // queue drains.
-  const pendingSendRef = useRef<{ content: string; attachments?: Attachment[] } | null>(null);
+  const pendingSendRef = useRef<{ content: string; attachments?: Attachment[]; picks?: ReadonlyMap<string, string> } | null>(null);
   const [configured, setConfigured] = useState(true);
   // Context-window usage for the ring (Apple provider reports it per turn).
   // Seeded from the last persisted value so the ring survives closing/reopening
@@ -307,6 +313,32 @@ export default function ChatScreen() {
     }, [refreshConfigured]),
   );
 
+  // `@name` at the end of the draft offers matching people; picking one completes the name.
+  const peopleOn = usePeopleEnabled();
+  const mentionQuery = peopleOn ? trailingMention(input)?.query : undefined;
+  const mentioning = mentionQuery !== undefined;
+  // Reloaded when the active workspace changes, so a draft left open across a switch never offers the old workspace's people.
+  const mentionWorkspace = mentioning ? peopleWorkspaceId() : null;
+  const mentionable = useMemo(() => {
+    if (!mentioning) return [];
+    try { return loadPeople(); } catch { return []; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mentionWorkspace is the cache key
+  }, [mentioning, mentionWorkspace]);
+  // Who the user picked from the chips, by folded name: settles two people with the same name.
+  const pickedMentions = useRef(new Map<string, string>());
+  const mentionMatches = useMemo(() => (mentionQuery === undefined ? [] : matchPeople(mentionable, mentionQuery)), [mentionable, mentionQuery]);
+  // Every edit drops picks whose `@Name` is gone, so deleting a mention and typing it again asks again.
+  useEffect(() => {
+    if (pickedMentions.current.size > 0) pickedMentions.current = chosenInText(input, pickedMentions.current);
+  }, [input]);
+  const pickMention = useCallback((p: { id: string; name: string }) => {
+    const m = trailingMention(input);
+    if (m) {
+      pickedMentions.current.set(foldName(p.name), p.id);
+      setInput(`${input.slice(0, m.start)}@${p.name} `);
+    }
+  }, [input]);
+
   const send = useCallback(async () => {
     const queuedSend = pendingSendRef.current;
     pendingSendRef.current = null;
@@ -316,7 +348,10 @@ export default function ChatScreen() {
     // A turn is already running — queue this message instead of interrupting
     // it. The queue drains (FIFO) when the current reply finishes.
     if (busy) {
-      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts }]);
+      // The chips picked for this draft travel with it, so a later draft can't change who it means.
+      const picks = pickedMentions.current; // captured now: the updater below runs later
+      pickedMentions.current = new Map();
+      setQueued((prev) => [...prev, { id: msgId(), content: text, attachments: atts, picks }]);
       setInput("");
       setAttachments([]);
       return;
@@ -343,7 +378,8 @@ export default function ChatScreen() {
       { id: nextMessageId(), role: "assistant", content: "", tools: [], streaming: true },
     ]);
 
-    conversation.current.push(userMessage(text, atts));
+    conversation.current.push(userMessage(text, atts, mentionContext(text, chosenInText(text, queuedSend ? queuedSend.picks ?? new Map() : pickedMentions.current))));
+    if (!queuedSend) pickedMentions.current = new Map();
     // Persist the user turn locally (on-device only — chat never syncs).
     saveChatMessage({ role: "user", content: text, images: atts.map((a) => a.url) });
     let acc = "";
@@ -503,7 +539,7 @@ export default function ChatScreen() {
     if (wasBusy && !busy && queuedRef.current.length > 0) {
       const [next, ...rest] = queuedRef.current;
       setQueued(rest);
-      pendingSendRef.current = { content: next.content, attachments: next.attachments };
+      pendingSendRef.current = { content: next.content, attachments: next.attachments, picks: next.picks };
       sendRef.current();
     }
   }, [busy]);
@@ -891,6 +927,7 @@ export default function ChatScreen() {
           allowImages={allowImages}
           queuedCount={queued.length}
         />
+        <MentionStrip people={mentionMatches} composerHeight={composerHeight} closedLift={closedLift} leftInset={composerLeftInset} onPick={pickMention} />
         <ScrollToBottomButton
           visible={showScrollButton && !hideComposer}
           composerHeight={composerHeight}

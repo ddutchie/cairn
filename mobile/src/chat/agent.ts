@@ -116,9 +116,11 @@ export interface Attachment {
  * model receives them as multimodal input via /agent/chat. Text always leads so
  * a caption reads before its image.
  */
-export function userMessage(text: string, attachments?: Attachment[]): UIMessage {
+export function userMessage(text: string, attachments?: Attachment[], context?: string): UIMessage {
   const parts: UIPart[] = [];
   if (text) parts.push({ type: "text", text });
+  // Model-only: sent with the turn, never shown in the bubble or saved with the chat history.
+  if (context) parts.push({ type: "text", text: `<session_context>\n${context}\n</session_context>` });
   for (const a of attachments ?? []) {
     parts.push({ type: "file", mediaType: a.mediaType, url: a.url, name: a.name } as FilePart);
   }

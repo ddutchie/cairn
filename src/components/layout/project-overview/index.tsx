@@ -27,6 +27,7 @@ import { useProjectMetrics } from "./useProjectMetrics";
 import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import { modKey } from "@/components/layout/sidebar-utils";
 import type { SuggestionItem } from "@/components/chat/ChatInput";
+import { usePersonSuggestions } from "@/components/chat/usePersonSuggestions";
 import { ProjectSettingsButton } from "./project-settings";
 import { ReviewButton } from "./review-button";
 import { SessionBrowser } from "@/components/agent/SessionBrowser";
@@ -101,9 +102,10 @@ export function ProjectOverview() {
     return () => ro.disconnect();
   }, [chatOpen]);
 
+  const personSuggestions = usePersonSuggestions();
   const mentionSuggestions = useMemo<SuggestionItem[]>(() => {
     if (!metrics) return [];
-    const items: SuggestionItem[] = [];
+    const items: SuggestionItem[] = [...personSuggestions];
     for (const note of metrics.notes) {
       items.push({ id: note.id, type: "note", title: note.title, subtitle: "Note" });
     }
@@ -111,7 +113,7 @@ export function ProjectOverview() {
       items.push({ id: card.id, type: "card", title: card.title, subtitle: `Task · ${card.priority}` });
     }
     return items;
-  }, [metrics]);
+  }, [metrics, personSuggestions]);
 
   function handleSendChat(submitted?: string) {
     // The composer owns the live draft; `chatInput` only mirrors external sets.

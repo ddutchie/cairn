@@ -23,6 +23,7 @@ import type { ChatHistoryEntry } from "@/types";
 
 import { IconButton } from "@/components/ui/icon-button";
 import type { SuggestionItem } from "../ChatInput";
+import { usePersonSuggestions } from "../usePersonSuggestions";
 import { ChatQuickSettings } from "./ChatQuickSettings";
 import { SubagentCatalogAction } from "@/components/conversation/SubagentCatalogAction";
 import { SuggestedPrompts } from "./SuggestedPrompts";
@@ -240,11 +241,12 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
     [chatThreads, threadId]
   );
 
+  const personSuggestions = usePersonSuggestions();
   const mentionSuggestions = useMemo<SuggestionItem[]>(() => {
     const projectNotes = notes.filter((n) => n.workspaceId === activeWorkspaceId && (!activeProjectId || n.projectId === activeProjectId) && !n.archivedAt);
     const projectCards = cards.filter((c) => c.workspaceId === activeWorkspaceId && (!activeProjectId || c.projectId === activeProjectId) && !c.archivedAt);
     
-    const items: SuggestionItem[] = [];
+    const items: SuggestionItem[] = [...personSuggestions];
     for (const note of projectNotes) {
       items.push({ id: note.id, type: "note", title: note.title, subtitle: "Note" });
     }
@@ -252,7 +254,7 @@ export function ChatPanel({ prefill, onPrefillConsumed, popoutMode }: ChatPanelP
       items.push({ id: card.id, type: "card", title: card.title, subtitle: `Task - ${card.priority}` });
     }
     return items;
-  }, [notes, cards, activeWorkspaceId, activeProjectId]);
+  }, [notes, cards, activeWorkspaceId, activeProjectId, personSuggestions]);
 
   const handleClear = useCallback(async () => {
     if (!threadId) return;
