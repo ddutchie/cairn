@@ -60,6 +60,7 @@ const WRAPPER_NS: Record<string, string | null> = {
   column: "column",
   card: "card",
   flow: "flow",
+  people: "people",
   graph: "graph",
   chat: "chat",
   ai: "ai",

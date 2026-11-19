@@ -11,16 +11,46 @@ import type { ContextPanel, ID, AppUIState, SessionPresentation, SettingsSection
 import { storage } from "@/lib/storage";
 import { id as newId } from "@/lib/utils";
 import type { BoardFilter, BoardView } from "@/lib/board-filters";
+import { FIRST_RUN_HIDDEN } from "@/components/layout/sidebar-utils";
 import { CHAT_PANEL_WIDTH_KEY, NOTES_SIDEBAR_WIDTH_KEY, NOTES_COLLAPSED_FOLDERS_KEY, OVERVIEW_COLLAPSED_KEY, BOARD_VIEWS_KEY, DOCK_SIDEBAR_WORKSPACE_COLLAPSED_KEY, DOCK_SIDEBAR_CONVERSATIONS_COLLAPSED_KEY, ACTIVE_PROJECT_KEY, CALENDAR_SCOPE_KEY } from "@/lib/constants";
 
 // ── View visibility ───────────────────────────────────────────────────────────
 
 /** Views that can be hidden. Overview and Notes are always visible. */
-export type ToggleableView = "board" | "flow" | "calendar" | "calendar-all" | "agent" | "graph" | "insights" | "usage" | "chat";
+export type ToggleableView = "board" | "flow" | "calendar" | "calendar-all" | "agent" | "graph" | "insights" | "usage" | "people" | "chat";
 
 export type CalendarScope = "project" | "workspace";
 
 export const HIDDEN_VIEWS_KEY = "hiddenViews";
+
+/**
+ * Views that start hidden on every install, so adding one changes nobody's
+ * sidebar or ⌘3–⌘9 numbering. Each is hidden once, the first time this
+ * install sees it (recorded under FIRST_RUN_HIDDEN_APPLIED_KEY); after that it
+ * is an ordinary view the user can show or hide. Append, never remove.
+ */
+export const FIRST_RUN_HIDDEN_VIEWS: readonly ToggleableView[] = FIRST_RUN_HIDDEN;
+export const FIRST_RUN_HIDDEN_APPLIED_KEY = "firstRunHiddenViewsApplied";
+
+/**
+ * Hide every first-run view this install hasn't applied yet. Pure: returns the
+ * new hidden list and applied list, and whether either needs saving.
+ */
+export function applyFirstRunHiddenViews(
+  saved: readonly ToggleableView[] | null | undefined,
+  applied: readonly string[] | null | undefined,
+): { hidden: ToggleableView[]; applied: string[]; changed: boolean } {
+  const hidden = [...(saved ?? [])];
+  const done = [...(applied ?? [])];
+  let changed = false;
+  for (const view of FIRST_RUN_HIDDEN_VIEWS) {
+    if (done.includes(view)) continue;
+    if (!hidden.includes(view)) hidden.push(view);
+    done.push(view);
+    changed = true;
+  }
+  return { hidden, applied: done, changed };
+}
 export const SEEN_FEATURES_KEY = "seenFeatures";
 export const FAVORITE_MODELS_KEY = "favoriteModels";
 
@@ -204,7 +234,7 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   workspaceToolsCollapsed: false,
   conversationsCollapsed: false,
 
-  hiddenViews: new Set<ToggleableView>(),
+  hiddenViews: new Set<ToggleableView>(FIRST_RUN_HIDDEN_VIEWS),
   favoriteModels: new Set<string>(),
   chatPanelWidth: DEFAULT_CHAT_PANEL_WIDTH,
   notesSidebarWidth: DEFAULT_NOTES_SIDEBAR_WIDTH,
@@ -341,7 +371,10 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
       activePreviewItem: null,
       activeContextPanel: null,
   lastContentView: "overview",
+      // People data is per workspace: clear it so the old one can't show.
+      people: [], peopleSuggestions: [], peopleLoaded: false, selectedPersonId: null, personPage: null, personaNoteIds: [],
     });
+    if (get().peopleEnabled) void get().loadPersonaNoteIds();
     // Pull this workspace's chat threads/messages from SQLite (the durable
     // store) so switching workspaces surfaces their conversations.
     get().loadChatFromDb?.(wsId);
@@ -353,6 +386,8 @@ export const createLayoutSlice: StateCreator<CairnStore, [], [], LayoutSlice> = 
   },
 
   setView(view) {
+    // The People view is unreachable while its feature flag is off.
+    if (view === "people" && !get().peopleEnabled) return;
     // Every route into the calendar (sidebar, shortcut, the scope switch)
     // records its scope, so openCalendar reopens whichever was used last.
     if (view === "calendar" || view === "calendar-all") {

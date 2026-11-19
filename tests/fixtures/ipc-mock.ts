@@ -281,6 +281,25 @@ export function buildIpcMock(opts?: { needsWorkspaceSetup?: boolean }): string {
       url:  { fetch: () => Promise.resolve({ title: "", description: "" }) },
     },
 
+    // ── People layer (flag off) ───────────────────────────────
+    people: {
+      flag:      { get: () => Promise.resolve(false), set: (on) => Promise.resolve(!!on) },
+      list:      () => Promise.resolve([]),
+      summaries: () => Promise.resolve([]),
+      get:       () => Promise.resolve(null),
+      page:      () => Promise.resolve(null),
+      create:    noop,
+      update:    noop,
+      delete:    noop,
+      relations: () => Promise.resolve([]),
+      edge:      { add: noop, update: noop, remove: noop },
+      meetings:  () => Promise.resolve([]),
+      mentionNoteIds: () => Promise.resolve([]),
+      ownedCardIds:   () => Promise.resolve([]),
+      attendees: () => Promise.resolve([]),
+      attendee:  { add: noop, remove: noop },
+    },
+
     // ── Tags ──────────────────────────────────────────────────
     tag: {
       list:   () => Promise.resolve(snap.tags),

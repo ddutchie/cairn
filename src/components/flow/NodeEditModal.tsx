@@ -1,5 +1,6 @@
 "use client";
 
+import { useHiddenPersonaIds } from "@/lib/persona-notes";
 import { useState, useEffect, useRef } from "react";
 import { Search, FileText, CheckSquare, Layers, DownloadCloud } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
@@ -125,8 +126,9 @@ function NotePicker({ selectedId, onSelect }: { selectedId: string; onSelect: (i
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  const hiddenPersona = useHiddenPersonaIds();
   const projectNotes = notes.filter(
-    (n) => n.projectId === activeProjectId && !n.archivedAt && n.type === "note"
+    (n) => n.projectId === activeProjectId && !n.archivedAt && n.type === "note" && !hiddenPersona.has(n.id)
   );
 
   const filtered = query.trim()

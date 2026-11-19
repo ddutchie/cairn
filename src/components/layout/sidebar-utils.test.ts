@@ -15,11 +15,17 @@ import {
   countOpenCardsByProject,
   dueDateSeverity,
   dueDateDiffDays,
+  FIRST_RUN_HIDDEN,
+  gateHiddenViews,
+  visibleNumberedViews,
 } from "./sidebar-utils";
+
+/** What a fresh install hides (People), i.e. the default sidebar. */
+const defaultHidden = (...more: string[]) => new Set<string>([...FIRST_RUN_HIDDEN, ...more]);
 
 describe("buildViewShortcutMap", () => {
   it("labels Overview ⌘1 and Notes ⌘2, then the numbered views from ⌘3", () => {
-    const map = buildViewShortcutMap(new Set<string>(), true);
+    const map = buildViewShortcutMap(defaultHidden(), true);
     expect(map.get("overview")).toBe("⌘1");
     expect(map.get("notes")).toBe("⌘2");
     expect(map.get("board")).toBe("⌘3");
@@ -30,17 +36,42 @@ describe("buildViewShortcutMap", () => {
   });
 
   it("gives the all-projects calendar no number while the sidebar's Calendar covers it", () => {
-    const map = buildViewShortcutMap(new Set<string>(), true);
+    const map = buildViewShortcutMap(defaultHidden(), true);
     expect(map.has("calendar-all")).toBe(false);
     expect(map.get("graph")).toBe("⌘7");
   });
 
   it("shifts later views down when one is hidden, matching the key handler", () => {
-    const map = buildViewShortcutMap(new Set(["calendar"]), true);
+    const map = buildViewShortcutMap(defaultHidden("calendar"), true);
     expect(map.has("calendar")).toBe(false);
     expect(map.get("flow")).toBe("⌘4");
     // The all-projects calendar becomes the sidebar entry, so it takes a number.
     expect(map.get("calendar-all")).toBe("⌘6");
+  });
+});
+
+describe("People view numbering", () => {
+  const before = [...buildViewShortcutMap(defaultHidden(), true)];
+
+  it("leaves ⌘3–⌘9 unchanged while People is hidden, whatever the flag", () => {
+    for (const peopleEnabled of [false, true]) {
+      const map = buildViewShortcutMap(gateHiddenViews(defaultHidden(), { peopleEnabled }), true);
+      expect([...map]).toEqual(before);
+      expect(map.has("people")).toBe(false);
+    }
+  });
+
+  it("keeps People out while the flag is off, even if the user showed it", () => {
+    const shown = new Set<string>();
+    expect(visibleNumberedViews(gateHiddenViews(shown, { peopleEnabled: false }))).not.toContain("people");
+    expect([...buildViewShortcutMap(gateHiddenViews(shown, { peopleEnabled: false }), true)]).toEqual(before);
+  });
+
+  it("numbers People in sidebar order once the flag is on and the view is shown", () => {
+    const map = buildViewShortcutMap(gateHiddenViews(new Set<string>(), { peopleEnabled: true }), true);
+    expect(map.get("agent")).toBe("⌘6");
+    expect(map.get("people")).toBe("⌘7");
+    expect(map.get("graph")).toBe("⌘8");
   });
 });
 

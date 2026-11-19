@@ -7,6 +7,7 @@ import {
   ChevronDown, ChevronRight, Trash2, X,
 } from "lucide-react";
 import { requestNoteFind } from "@/lib/note-find";
+import { useHiddenPersonaIds, withoutPersonaNotes } from "@/lib/persona-notes";
 import { useCairnStore } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,7 @@ export function NotesView() {
     toggleNotesFullscreen,
     loadNoteBody,
     noteChangeMarks,
+    peopleEnabled, personaNoteIds, showPersonaNotes, setShowPersonaNotes, loadPersonaNoteIds,
   } = useCairnStore(useShallow((s) => ({
     activeProjectId:         s.activeProjectId,
     activeWorkspaceId:       s.activeWorkspaceId,
@@ -89,7 +91,17 @@ export function NotesView() {
     notesFullscreen:         s.notesFullscreen,
     toggleNotesFullscreen:   s.toggleNotesFullscreen,
     noteChangeMarks:         s.noteChangeMarks,
+    peopleEnabled:           s.peopleEnabled,
+    personaNoteIds:          s.personaNoteIds,
+    showPersonaNotes:        s.showPersonaNotes,
+    setShowPersonaNotes:     s.setShowPersonaNotes,
+    loadPersonaNoteIds:      s.loadPersonaNoteIds,
   })));
+  const hiddenPersona = useHiddenPersonaIds();
+  // Refresh the persona-note set on open (the store keeps it current after that).
+  useEffect(() => {
+    if (peopleEnabled) void loadPersonaNoteIds();
+  }, [peopleEnabled, activeWorkspaceId, loadPersonaNoteIds]);
   const aiEnabled = aiConfig.aiEnabled ?? true;
 
   const [activeNoteId, setActiveNoteId]         = useState<string | null>(null);
@@ -247,14 +259,14 @@ export function NotesView() {
   // content changes (e.g. while typing). The selector functions are stable
   // references and don't trigger re-renders on content updates.
   const notes         = useMemo(
-    () => activeProjectId ? getProjectNotes(activeProjectId) : [],
+    () => activeProjectId ? withoutPersonaNotes(getProjectNotes(activeProjectId), hiddenPersona) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeProjectId, allNotes],
+    [activeProjectId, allNotes, hiddenPersona],
   );
   const archivedNotes = useMemo(
-    () => activeProjectId ? getArchivedProjectNotes(activeProjectId) : [],
+    () => activeProjectId ? withoutPersonaNotes(getArchivedProjectNotes(activeProjectId), hiddenPersona) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeProjectId, allNotes],
+    [activeProjectId, allNotes, hiddenPersona],
   );
   const templates = useMemo(
     () => activeProjectId ? getProjectTemplates(activeProjectId) : [],
@@ -292,6 +304,7 @@ export function NotesView() {
   // fall back to the first note.
   const activeNote = notes.find((n) => n.id === activeNoteId)
     ?? templates.find((n) => n.id === activeNoteId)
+    ?? (activeNoteId && hiddenPersona.has(activeNoteId) ? allNotes.find((n) => n.id === activeNoteId && n.projectId === activeProjectId) : undefined)
     ?? notes[0]
     ?? null;
   // Only an editor-backed note can consume a find request (⌘F handler above).
@@ -317,9 +330,13 @@ export function NotesView() {
   // Merging the two previous competing effects eliminates the race where both
   // could fire in the same render cycle and produce two setState calls.
   const prevNoteIdsRef = useRef<string[]>(notes.map((n) => n.id));
+  const prevHiddenRef = useRef(hiddenPersona);
   useEffect(() => {
     const prevIds = prevNoteIdsRef.current;
-    if (notes.length > prevIds.length) {
+    // Showing/hiding persona notes grows or shrinks the list without anything being created.
+    const visibilityChanged = prevHiddenRef.current !== hiddenPersona;
+    prevHiddenRef.current = hiddenPersona;
+    if (notes.length > prevIds.length && !visibilityChanged) {
       // A new note was added — select the id that wasn't there before, rather
       // than assuming it sorted to index 0 (pinned notes can sort ahead of it).
       const prevSet = new Set(prevIds);
@@ -330,7 +347,7 @@ export function NotesView() {
       setActiveNoteId(notes[0].id);
     }
     prevNoteIdsRef.current = notes.map((n) => n.id);
-  }, [notes, activeNoteId]);
+  }, [notes, activeNoteId, hiddenPersona]);
 
   function handleCreateNote(inFolder = "") {
     if (!activeProjectId) return;
@@ -588,6 +605,26 @@ export function NotesView() {
               </IconButton>
             )}
           </div>
+          {peopleEnabled && personaNoteIds.length > 0 && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showPersonaNotes}
+              onClick={() => setShowPersonaNotes(!showPersonaNotes)}
+              className="mt-1.5 flex w-full items-center justify-between gap-2 rounded px-0.5 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              <span>Show people&apos;s notes</span>
+              <span
+                aria-hidden
+                className={cn(
+                  "h-3.5 w-6 rounded-full p-0.5 transition-colors",
+                  showPersonaNotes ? "bg-[var(--accent)]" : "bg-[var(--surface-3)]",
+                )}
+              >
+                <span className={cn("block size-2.5 rounded-full bg-[var(--background)] transition-transform", showPersonaNotes && "translate-x-2.5")} />
+              </span>
+            </button>
+          )}
           {projectTags.length > 0 && (
             <div className="mt-1.5">
               <div className="flex items-center justify-between mb-1 px-0.5">

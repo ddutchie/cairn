@@ -1,5 +1,5 @@
 import { TOOL_SCHEMAS, CHAT_ONLY_TOOLS, CHAT_EXCLUDED_TOOLS, toolCategory } from "../electron/lib/tool-schemas";
-import { NUMBERED_VIEWS, visibleNumberedViews, buildShortcutMap } from "../src/components/layout/sidebar-utils";
+import { NUMBERED_VIEWS, FIRST_RUN_HIDDEN, visibleNumberedViews, buildShortcutMap } from "../src/components/layout/sidebar-utils";
 
 // View labels mirror src/components/settings/ShortcutsSettings.tsx.
 const LABELS: Record<string, string> = {
@@ -13,6 +13,7 @@ const LABELS: Record<string, string> = {
   insights: "Insights",
   automations: "Automations",
   usage: "Usage",
+  people: "People",
   today: "Today",
 };
 
@@ -26,9 +27,10 @@ const tools = Object.entries(TOOL_SCHEMAS).map(([name, t]) => ({
   codingOnly: chatExcluded.has(name),
 }));
 
-// Default sidebar = nothing hidden (calendar visible, so calendar-all drops out,
-// exactly like the app boot state the screenshots use).
-const hidden = { has: (_: string) => false };
+// Default sidebar = only the first-run hidden views hidden (calendar visible, so
+// calendar-all drops out, exactly like the app boot state the screenshots use).
+const firstRunHidden = new Set<string>(FIRST_RUN_HIDDEN);
+const hidden = { has: (view: string) => firstRunHidden.has(view) };
 const ids = ["overview", "notes", ...visibleNumberedViews(hidden), "today"];
 const shortcuts = buildShortcutMap(
   visibleNumberedViews(hidden).map((view) => ({ view })),
