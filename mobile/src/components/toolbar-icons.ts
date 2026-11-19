@@ -27,6 +27,7 @@ import SettingsXml from "@expo/material-symbols/settings.xml";
 import PinXml from "@expo/material-symbols/keep.xml";
 import UnpinXml from "@expo/material-symbols/keep_off.xml";
 import TagXml from "@expo/material-symbols/sell.xml";
+import GroupXml from "@expo/material-symbols/group.xml";
 import ShareXml from "@expo/material-symbols/ios_share.xml";
 import PdfXml from "@expo/material-symbols/picture_as_pdf.xml";
 import CalendarXml from "@expo/material-symbols/calendar_month.xml";
@@ -94,6 +95,8 @@ export const ICON_PIN: ToolbarIcon = ios ? "pin" : PinXml;
 export const ICON_UNPIN: ToolbarIcon = ios ? "pin.slash" : UnpinXml;
 /** Tags / labels. */
 export const ICON_TAG: ToolbarIcon = ios ? "tag" : TagXml;
+/** People (the People layer: attendees, the People list). */
+export const ICON_PEOPLE: ToolbarIcon = ios ? "person.2" : GroupXml;
 /** Calendar / due dates. */
 export const ICON_CALENDAR: ToolbarIcon = ios ? "calendar" : CalendarXml;
 /** Jump to today (a symbol, so it can dock into the Duo's side rail). */

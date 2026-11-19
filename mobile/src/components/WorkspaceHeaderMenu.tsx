@@ -1,13 +1,14 @@
 import { useCallback, useState } from "react";
 import { Platform } from "react-native";
-import { Stack, useFocusEffect } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { getActiveSource } from "@/db";
 import { switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { Button, Host, Menu, RNHostView, Section } from "@expo/ui/swift-ui";
 import { SyncRingLogo } from "@/components/SyncRingLogo";
 import { useSyncBadge } from "@/components/SyncStatusBadge";
-import { ICON_CAIRN } from "@/components/toolbar-icons";
+import { ICON_CAIRN, ICON_PEOPLE } from "@/components/toolbar-icons";
+import { usePeopleEnabled } from "@/people/flag";
 
 /**
  * Header-LEFT workspace switcher, rendered as a native `Stack.Toolbar.Menu`.
@@ -77,6 +78,8 @@ export function WorkspaceMenuItems({
   /** Sync state + opener, folded into this menu (replaces the separate sync button). */
   sync?: Pick<ReturnType<typeof useSyncBadge>, "icon" | "tintColor" | "statusText" | "attention" | "onPress">;
 }) {
+  const router = useRouter();
+  const peopleOn = usePeopleEnabled();
   // Android has no SwiftUI: use the cross-platform native toolbar menu (a static
   // logo, tinted when sync needs attention).
   if (Platform.OS !== "ios") {
@@ -94,6 +97,13 @@ export function WorkspaceMenuItems({
             </Stack.Toolbar.MenuAction>
           ))}
         </Stack.Toolbar.Menu>
+        {peopleOn ? (
+          <Stack.Toolbar.Menu inline title="People">
+            <Stack.Toolbar.MenuAction icon={ICON_PEOPLE} onPress={() => router.push("/people")}>
+              People
+            </Stack.Toolbar.MenuAction>
+          </Stack.Toolbar.Menu>
+        ) : null}
         {sync ? (
           <Stack.Toolbar.Menu inline title="Sync">
             <Stack.Toolbar.MenuAction icon={sync.icon} onPress={sync.onPress}>
@@ -127,6 +137,11 @@ export function WorkspaceMenuItems({
               />
             ))}
           </Section>
+          {peopleOn ? (
+            <Section title="People">
+              <Button label="People" systemImage="person.2" onPress={() => router.push("/people")} />
+            </Section>
+          ) : null}
           {sync ? (
             <Section title="Sync">
               <Button

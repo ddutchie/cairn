@@ -16,6 +16,14 @@ import { getCachedMcpToolDefs, getInstalledMcpServer, toRuntimeConfig } from "./
 import * as mcpClient from "./mcp-client";
 import { parseToolName } from "@cairn/shared/chat/mcp-namespace";
 import { isOverdue, isDueWithin } from "@cairn/shared/notes/due";
+import { PEOPLE_ARG_DESCRIPTIONS, PEOPLE_TOOLS, PEOPLE_TOOL_ARGS, PEOPLE_TOOL_DESCRIPTION } from "@cairn/shared/agent/people-tools";
+import { isReadCall, refusesHiddenNoteWrite, scrubHidden } from "@cairn/shared/agent/people-privacy";
+import { peopleTool, setCardOwnerArg, setNoteAttendees, type PeopleToolContext } from "@cairn/shared/people/tool";
+import { agentHiddenNoteIds } from "@cairn/shared/people/queries";
+import { CADENCES, PEOPLE_STATUSES, PERSON_EDGE_TYPES, PROVENANCES, RELATIONSHIP_TYPES } from "@cairn/shared/types/people";
+import { peopleDb, peopleWorkspaceId } from "@/db/people";
+import { isPeopleEnabled } from "@/people/flag";
+import { notifyLocalWrite } from "@/sync/write-signal";
 
 export interface ToolDef {
   name: string;
@@ -92,7 +100,92 @@ async function semanticHits(kind: "notes" | "tasks", query: string, limit: numbe
   return hits.slice(0, limit).map((h) => ({ id: h.noteId, title: h.title, section: h.sectionTitle, score: h.score }));
 }
 
-export const TOOLS: ToolDef[] = [
+// ── People layer (hidden while `feature.people` is off) ──────────────────────
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** What the shared People handlers need from this device: the flag; mobile has no files to rewrite. */
+const peopleContext = (): PeopleToolContext => ({ enabled: isPeopleEnabled() });
+
+/** Apply `attendees` / `date` to notes a note tool just wrote. Returns the meeting summary (or undefined). */
+function applyNoteMeeting(noteIds: string[], a: Record<string, unknown>, errors: string[]): unknown {
+  if ((a.attendees === undefined && a.date === undefined) || !isPeopleEnabled()) return undefined;
+  let last: unknown;
+  for (const noteId of noteIds) {
+    last = setNoteAttendees(peopleDb(), peopleContext(), { noteId, attendees: a.attendees, date: a.date });
+    if (isErr(last)) errors.push(`attendees ${noteId}: ${last.error}`);
+  }
+  notifyLocalWrite();
+  return isErr(last) ? undefined : isRecord(last) ? last.meeting : undefined;
+}
+
+/** Apply `owner` to cards a task tool just wrote. Returns the owner (or undefined). */
+function applyCardOwner(cardIds: string[], a: Record<string, unknown>, errors: string[]): unknown {
+  if (a.owner === undefined || !isPeopleEnabled()) return undefined;
+  let last: unknown;
+  for (const cardId of cardIds) {
+    last = setCardOwnerArg(peopleDb(), peopleContext(), { cardId, owner: a.owner });
+    if (isErr(last)) errors.push(`owner ${cardId}: ${last.error}`);
+  }
+  notifyLocalWrite();
+  return isErr(last) ? undefined : isRecord(last) ? last.owner : undefined;
+}
+
+/** JSON-schema pieces for the People arguments (the words come from shared/agent/people-tools.ts). */
+const ATTENDEES_ARG = { ...A, description: PEOPLE_ARG_DESCRIPTIONS.attendees };
+const DATE_ARG = { ...S, description: PEOPLE_ARG_DESCRIPTIONS.date };
+const OWNER_ARG = { ...S, description: PEOPLE_ARG_DESCRIPTIONS.owner };
+
+const PEOPLE_TOOL_DEF: ToolDef = {
+  name: "people",
+  description: PEOPLE_TOOL_DESCRIPTION,
+  params: '{ "action": "query"|"get"|"timeline"|"relationships"|"upsert"|"link", "personId"?: string, "name"?: string, ... }',
+  jsonSchema: obj({
+    action: { type: "string", enum: ["query", "get", "timeline", "relationships", "upsert", "link"] },
+    personId: { ...S, description: "get/timeline/relationships/upsert: the person (or pass name)" },
+    name: { ...S, description: "query: name filter; get/upsert: the person's name" },
+    relationship: { ...S, description: "query: only people with this relationship to the user (e.g. direct_report, manager, peer, stakeholder, mentor)" },
+    status: { type: "string", enum: [...PEOPLE_STATUSES], description: "query: filter; upsert/link: status of what you write (default confirmed for stated facts)" },
+    provenance: { type: "string", enum: [...PROVENANCES], description: "upsert/link: explicit = stated in text, inferred = your judgment" },
+    aliases: { ...A, description: "upsert: other names (added to existing)" },
+    emails: { ...A, description: "upsert: email addresses (added to existing)" },
+    relationships: {
+      type: "array",
+      items: obj({ type: { type: "string", enum: [...RELATIONSHIP_TYPES] }, label: S }, ["type"]),
+      description: "upsert: relationship(s) to the user (replaces the list)",
+    },
+    cadence: { type: "string", enum: [...CADENCES, ""], description: "upsert: 1:1 cadence, empty to clear" },
+    personaNoteId: { ...S, description: "upsert: the note about this person" },
+    link: { type: "string", enum: ["edge", "attendee", "mention"], description: "link: what to link" },
+    edgeType: { type: "string", enum: [...PERSON_EDGE_TYPES], description: "link edge: personId <edgeType> otherPersonId" },
+    otherPersonId: { ...S, description: "link edge: the other person" },
+    noteId: { ...S, description: "link attendee/mention: the note" },
+    remove: { type: "boolean", description: "link: remove instead of add" },
+    limit: { type: "number" },
+  }, ["action"]),
+  run: (a) => {
+    // The caller's workspace decides; a person id from another workspace is then "not found".
+    let workspaceId = peopleWorkspaceId() ?? "";
+    if (typeof a.personId === "string" && a.personId) {
+      workspaceId = q.workspaceIdForPerson(a.personId) ?? workspaceId;
+    }
+    const result = peopleTool(peopleDb(), peopleContext(), { ...a, workspaceId });
+    if (!isReadCall("people", a)) notifyLocalWrite();
+    return result;
+  },
+};
+
+/** Drop the People arguments from a tool's schema and hint (flag off). */
+function withoutPeopleArgs(t: ToolDef): ToolDef {
+  const drop = PEOPLE_TOOL_ARGS[t.name];
+  if (!drop) return t;
+  const schema = t.jsonSchema as { properties?: Record<string, unknown> };
+  const properties = Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => !drop.includes(k)));
+  const params = drop.reduce((acc, k) => acc.replace(new RegExp(`,\\s*"${k}"\\?: [^,}]+`), ""), t.params);
+  return { ...t, params, jsonSchema: { ...t.jsonSchema, properties } };
+}
+
+const BASE_TOOLS: ToolDef[] = [
   {
     name: "get_context",
     description:
@@ -196,9 +289,14 @@ export const TOOLS: ToolDef[] = [
   {
     name: "ensure_note",
     description: "Create or update a note by title within a project. Returns the note id.",
-    params: '{ "projectId": string, "title": string, "content": string, "folder"?: string }',
-    jsonSchema: obj({ projectId: S, title: S, content: S, folder: S }, ["projectId", "title", "content"]),
-    run: (a) => ({ id: q.ensureNote(str(a.projectId), str(a.title), str(a.content), str(a.folder)) }),
+    params: '{ "projectId": string, "title": string, "content": string, "folder"?: string, "attendees"?: string[], "date"?: string }',
+    jsonSchema: obj({ projectId: S, title: S, content: S, folder: S, attendees: ATTENDEES_ARG, date: DATE_ARG }, ["projectId", "title", "content"]),
+    run: (a) => {
+      const id = q.ensureNote(str(a.projectId), str(a.title), str(a.content), str(a.folder));
+      const errors: string[] = [];
+      const meeting = applyNoteMeeting([id], a, errors);
+      return summarize({ id, ...(meeting !== undefined ? { meeting } : {}) }, errors);
+    },
   },
   {
     name: "edit_note",
@@ -216,10 +314,11 @@ export const TOOLS: ToolDef[] = [
     name: "update_notes",
     description:
       "Change one or more notes: rename (keeps [[wikilinks]] intact), move to a folder or another project, pin, tag, or link/unlink task cards.",
-    params: '{ "noteIds": string[], "title"?: string, "folder"?: string, "projectId"?: string, "isPinned"?: boolean, "tagNames"?: string[], "tagMode"?: "add"|"remove"|"set", "linkCardIds"?: string[], "unlinkCardIds"?: string[] }',
+    params: '{ "noteIds": string[], "title"?: string, "folder"?: string, "projectId"?: string, "isPinned"?: boolean, "tagNames"?: string[], "tagMode"?: "add"|"remove"|"set", "linkCardIds"?: string[], "unlinkCardIds"?: string[], "attendees"?: string[], "date"?: string }',
     jsonSchema: obj({
       noteIds: A, title: S, folder: S, projectId: S, isPinned: { type: "boolean" },
       tagNames: A, tagMode: TAG_MODE_SCHEMA, linkCardIds: A, unlinkCardIds: A,
+      attendees: ATTENDEES_ARG, date: DATE_ARG,
     }, ["noteIds"]),
     run: (a) => {
       const ids = strArray(a.noteIds);
@@ -243,19 +342,21 @@ export const TOOLS: ToolDef[] = [
         for (const cardId of strArray(a.linkCardIds)) step(`link ${id}→${cardId}`, () => q.linkNoteToTask(id, cardId));
         for (const cardId of strArray(a.unlinkCardIds)) step(`unlink ${id}→${cardId}`, () => q.unlinkNoteFromTask(id, cardId));
       }
+      const meeting = applyNoteMeeting(ids.filter((id) => q.getNote(id)), a, errors);
       const notes = ids.map((id) => q.getNote(id)).filter((n) => n !== null).map((n) => ({ id: n!.id, title: n!.title }));
-      return summarize(notes.length === 1 ? { ...notes[0], updated: true } : { updated: notes }, errors);
+      const met = meeting !== undefined ? { meeting } : {};
+      return summarize(notes.length === 1 ? { ...notes[0], updated: true, ...met } : { updated: notes, ...met }, errors);
     },
   },
   {
     name: "create_task",
     description: "Create a task card. Place it with columnType (default backlog) or an explicit columnId. priority = low|medium|high|urgent; dueDate as YYYY-MM-DD.",
-    params: '{ "projectId": string, "title": string, "description"?: string, "columnType"?: string, "columnId"?: string, "priority"?: string, "dueDate"?: string, "tagNames"?: string[], "linkNoteIds"?: string[] }',
+    params: '{ "projectId": string, "title": string, "description"?: string, "columnType"?: string, "columnId"?: string, "priority"?: string, "dueDate"?: string, "tagNames"?: string[], "linkNoteIds"?: string[], "owner"?: string }',
     jsonSchema: obj({
       projectId: S, title: S, description: S,
       columnType: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done"] },
       columnId: S, priority: { type: "string", enum: ["low", "medium", "high", "urgent"] }, dueDate: S,
-      tagNames: A, linkNoteIds: A,
+      tagNames: A, linkNoteIds: A, owner: OWNER_ARG,
     }, ["projectId", "title"]),
     run: (a) => {
       const projectId = str(a.projectId);
@@ -280,16 +381,17 @@ export const TOOLS: ToolDef[] = [
         const r = q.linkNoteToTask(noteId, id);
         if (isErr(r)) errors.push(`link ${noteId}: ${r.error}`);
       }
-      return summarize({ id, title: str(a.title), columnId }, errors);
+      const owner = applyCardOwner([id], a, errors);
+      return summarize({ id, title: str(a.title), columnId, ...(owner !== undefined ? { owner } : {}) }, errors);
     },
   },
   {
     name: "update_tasks",
     description:
       "Update one or more task cards; only provided fields change. Move with columnType or columnId. Also tags, note links (linkNoteIds/unlinkNoteIds), and archived:true to archive. Set dueDate to \"\" to clear it.",
-    params: '{ "cardIds": string[], "title"?: string, "description"?: string, "priority"?: string, "dueDate"?: string, "assignee"?: string, "columnType"?: string, "columnId"?: string, "archived"?: boolean, "tagNames"?: string[], "tagMode"?: "add"|"remove"|"set", "linkNoteIds"?: string[], "unlinkNoteIds"?: string[] }',
+    params: '{ "cardIds": string[], "title"?: string, "description"?: string, "priority"?: string, "dueDate"?: string, "assignee"?: string, "columnType"?: string, "columnId"?: string, "archived"?: boolean, "tagNames"?: string[], "tagMode"?: "add"|"remove"|"set", "linkNoteIds"?: string[], "unlinkNoteIds"?: string[], "owner"?: string }',
     jsonSchema: obj({
-      cardIds: A, title: S, description: S,
+      cardIds: A, title: S, description: S, owner: OWNER_ARG,
       priority: { type: "string", enum: ["low", "medium", "high", "urgent"] }, dueDate: S, assignee: S,
       columnType: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done"] }, columnId: S,
       archived: { type: "boolean" }, tagNames: A, tagMode: TAG_MODE_SCHEMA,
@@ -334,8 +436,10 @@ export const TOOLS: ToolDef[] = [
           if (isErr(r)) errors.push(`unlink ${noteId}→${id}: ${r.error}`);
         }
       }
+      const owner = applyCardOwner(ids.filter((id) => q.getCard(id)), a, errors);
       const cards = ids.map((id) => q.getCard(id)).filter((c) => c !== null).map((c) => ({ id: c!.id, title: c!.title, columnId: c!.column_id }));
-      return summarize(cards.length === 1 ? { ...cards[0], updated: true } : { updated: cards }, errors);
+      const own = owner !== undefined ? { owner } : {};
+      return summarize(cards.length === 1 ? { ...cards[0], updated: true, ...own } : { updated: cards, ...own }, errors);
     },
   },
   {
@@ -407,7 +511,43 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
+/** Every built-in tool, People ones included (the flag decides which of them a session gets). */
+export const TOOLS: ToolDef[] = [...BASE_TOOLS, PEOPLE_TOOL_DEF];
+
 export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
+
+/**
+ * The built-in tools for this device. With the People layer off, the `people`
+ * tool and the People arguments (`attendees`/`date`, `owner`) are left out, so
+ * the feature is invisible until launch. Every tool is wrapped in the privacy
+ * filter, flag or not: a person marked private from agents on the desktop
+ * syncs here, and their persona note must stay out of reads either way.
+ */
+export function builtinTools(people: boolean = isPeopleEnabled()): ToolDef[] {
+  return TOOLS.filter((t) => people || !PEOPLE_TOOLS.has(t.name)).map((t) => guardPrivate(people ? t : withoutPeopleArgs(t)));
+}
+
+/** Wrap a tool so private persona notes never reach (or get edited by) the model. */
+function guardPrivate(t: ToolDef): ToolDef {
+  return {
+    ...t,
+    run: async (args) => {
+      let hidden: ReadonlySet<string> = new Set();
+      try {
+        hidden = agentHiddenNoteIds(peopleDb());
+      } catch {
+        // An old install without the People tables has nothing to hide.
+      }
+      const reads = isReadCall(t.name, args);
+      if (!reads) {
+        const refused = refusesHiddenNoteWrite(hidden, t.name, args, (projectId, title) => q.findNoteByTitle(projectId, title)?.id);
+        if (refused) return refused;
+      }
+      const result = await t.run(args);
+      return reads ? scrubHidden(hidden, result, args) : result;
+    },
+  };
+}
 
 /**
  * Built-in tools that MUTATE the user's workspace (create/edit/delete/link/tag).
@@ -424,6 +564,7 @@ export const WRITE_TOOL_NAMES = new Set<string>([
   "update_tasks",
   "delete",
   "update_user_writing_style",
+  "people", // reads and writes (upsert/link); listed as a write so it sits with the tools that change data
 ]);
 
 /**
@@ -448,7 +589,7 @@ export const WRITE_TOOL_NAMES = new Set<string>([
 export function allTools(): ToolDef[] {
   const services = serviceToolDefs().filter((t) => isToolEnabled(t.name));
   const mcp = mcpToolDefs().filter((t) => isToolEnabled(t.name));
-  return [...TOOLS, ...services, ...mcp];
+  return [...builtinTools(), ...services, ...mcp];
 }
 
 /**

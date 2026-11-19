@@ -32,9 +32,10 @@
 
 import type Database from "better-sqlite3";
 import { parseWikilinks } from "../../shared/notes/wikilinks";
-import { foldName, parseAttendeeValue, parseBodyMeetingLines, parseChecklist } from "../../shared/people/parse";
+import { foldName, parseAttendeeValue, parseBodyMeetingLines } from "../../shared/people/parse";
+import { ownedItemsIn } from "../../shared/people/action-items";
 import { parseClaims, serializeClaims } from "../../shared/people/claims";
-import { actionItemLineKey, mentionRowId } from "../../shared/people/ids";
+import { mentionRowId } from "../../shared/people/ids";
 import { addMention, attendeeIdsFromSource, getMeeting, isPeopleEnabled } from "./people-queries";
 import { captureNoteMeeting, loadCandidates, resolveIn, type Candidate } from "./people-capture";
 
@@ -221,17 +222,9 @@ function indexActionItems(db: Db, noteId: string, body: string, candidates: Cand
   const insert = db.prepare(
     "INSERT INTO note_action_items (note_id, line_key, owner_text, owner_person_id, text, done) VALUES (?, ?, ?, ?, ?, ?)",
   );
-  const seen = new Map<string, number>();
-  for (const item of parseChecklist(body)) {
-    if (!item.owner) continue;
-    // Identical lines in one note get #2, #3… so each keeps its own row.
-    const base = actionItemLineKey(item.raw);
-    const n = (seen.get(base) ?? 0) + 1;
-    seen.set(base, n);
-    const key = n === 1 ? base : `${base}#${n}`;
-    const r = resolveIn(candidates, item.owner);
-    const ownerText = item.owner.name ?? item.owner.email ?? null;
-    insert.run(noteId, key, ownerText, r.kind === "match" ? r.personId : null, item.text, item.done ? 1 : 0);
+  // Keys, owners and duplicate-line suffixes come from the shared parser, the same one mobile ticks lines with.
+  for (const item of ownedItemsIn(body, candidates)) {
+    insert.run(noteId, item.lineKey, item.ownerText, item.ownerPersonId, item.text, item.done ? 1 : 0);
   }
 }
 

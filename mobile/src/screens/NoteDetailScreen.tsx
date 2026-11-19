@@ -23,8 +23,10 @@ import { ResultRow } from "@/components/ResultRow";
 import { NotFound } from "@/components/NotFound";
 import { BottomSheet, BottomSheetHeader } from "@/components/BottomSheet";
 import { GlassBar, glassActive } from "@/components/GlassBar";
-import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_DELETE, ICON_EXPORT, ICON_PDF } from "@/components/toolbar-icons";
+import { ICON_CHECK, ICON_CLOSE, ICON_EDIT, ICON_MORE, ICON_PIN, ICON_UNPIN, ICON_TAG, ICON_PEOPLE, ICON_DELETE, ICON_EXPORT, ICON_PDF } from "@/components/toolbar-icons";
 import { useNoteFormattingToolbar } from "@/notes/useNoteFormattingToolbar";
+import { AttendeeStrip } from "@/components/people/AttendeeStrip";
+import { usePeopleEnabled } from "@/people/flag";
 import { toast } from "@/components/Toast";
 import { getActiveSource } from "@/db";
 import { loadNoteDraft, saveNoteDraft, clearNoteDraft, draftDiffers } from "@/notes/note-draft";
@@ -156,6 +158,9 @@ export function NoteDetailScreen({
   // scroll view, and per-heading y-offsets reported by MarkdownView (relative to
   // its own container) plus that container's offset within the scroll content.
   const [tocOpen, setTocOpen] = useState(false);
+  // People layer: bumped by "Add attendees" in the note menu to open the strip's picker.
+  const peopleOn = usePeopleEnabled();
+  const [addAttendees, setAddAttendees] = useState(0);
   const scrollRef = useRef<ScrollViewInstance>(null);
   const headingY = useRef<Map<string, number>>(new Map());
   const mdOffsetY = useRef(0);
@@ -322,6 +327,7 @@ export function NoteDetailScreen({
                   actions: [
                     { label: isPinned ? "Unpin" : "Pin", icon: isPinned ? ICON_UNPIN : ICON_PIN, isOn: isPinned, onPress: toolbarPress(onPin) },
                     { label: "Edit tags", icon: ICON_TAG, onPress: toolbarPress(openTagPicker) },
+                    ...(peopleOn ? [{ label: "Add attendees", icon: ICON_PEOPLE, onPress: toolbarPress(() => setAddAttendees((n) => n + 1)) }] : []),
                     { label: "Export as Markdown", icon: ICON_EXPORT, onPress: toolbarPress(onExport) },
                     { label: "Export as PDF", icon: ICON_PDF, onPress: toolbarPress(onExportPdf) },
                     { label: "Delete", icon: ICON_DELETE, destructive: true, onPress: toolbarPress(onDelete) },
@@ -352,6 +358,7 @@ export function NoteDetailScreen({
           </View>
           {note.folder ? <Text style={styles.folder}>{note.folder}</Text> : null}
           <TagChipsRow note={note} />
+          {peopleOn ? <AttendeeStrip noteId={note.id} addRequest={addAttendees} /> : null}
           <View
             style={styles.md}
             onLayout={(e) => { mdOffsetY.current = e.nativeEvent.layout.y; }}

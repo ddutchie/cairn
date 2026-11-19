@@ -18,9 +18,8 @@
  */
 import type Database from "better-sqlite3";
 import { isPeopleEnabled } from "../../db/people-queries";
-import { isCairnReadTool } from "../../../shared/agent/tool-names";
-import { PEOPLE_READ_ACTIONS } from "../../../shared/agent/tool-risk";
 import { refusesHiddenWrite, scrubAgentPrivate } from "./people-privacy";
+import { isReadCall } from "../../../shared/agent/people-privacy";
 
 type Args = Record<string, any>;
 /** Run one internal (per-operation) handler by name. */
@@ -212,11 +211,6 @@ async function applyCardOwner(db: Database.Database, call: HandlerCall, cardIds:
 
 const PEOPLE_ARG_KEYS = ["attendees", "date", "owner"];
 const withoutPeopleArgs = (a: Args): Args => Object.fromEntries(Object.entries(a).filter(([k]) => !PEOPLE_ARG_KEYS.includes(k)));
-
-/** True for a call that only reads: its result is scrubbed of private persona notes. */
-function isReadCall(name: string, args: Args): boolean {
-  return name === "people" ? PEOPLE_READ_ACTIONS.has(String(args.action)) : isCairnReadTool(name);
-}
 
 // ── Dispatcher ─────────────────────────────────────────────────────────────
 

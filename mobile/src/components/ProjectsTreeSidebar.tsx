@@ -44,6 +44,7 @@ import { haptics } from "@/haptics";
 import { requestSync, switchSource } from "@/sync/controller";
 import { useSyncSources } from "@/sync/useSyncSources";
 import { useTheme } from "@/theme";
+import { usePeopleEnabled } from "@/people/flag";
 
 /**
  * The cairn stack at the top of the sidebar is built but switched off: on device it
@@ -85,6 +86,7 @@ export function ProjectsTreeSidebar({
 }) {
   const t = useTheme();
   const router = useRouter();
+  const peopleOn = usePeopleEnabled();
   const hideTrailingActions = useTightSideRail();
   // Tight rail: trailing buttons collapse into the system "..." overflow menu
   // (secondaryAction) — one pill above the 5-tab rail. Roomy layouts keep them
@@ -233,6 +235,19 @@ export function ProjectsTreeSidebar({
                 />
               ))}
             </Section>
+            {/* People layer: only while the flag is on. */}
+            {peopleOn ? (
+              <Section title="People">
+                <Button
+                  label="People"
+                  systemImage="person.2"
+                  onPress={() => {
+                    haptics.selection();
+                    router.push("/people");
+                  }}
+                />
+              </Section>
+            ) : null}
             {/* Sync lives here now (it used to be its own toolbar button). */}
             <Section title="Sync">
               <Button

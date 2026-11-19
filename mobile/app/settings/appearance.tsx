@@ -5,6 +5,7 @@ import { ModalSafeView } from "@/components/ModalSafeView";
 import { PressableScale } from "@/components/PressableScale";
 import { haptics } from "@/haptics";
 import { setFoldOverlay, setListeningOrb, useFoldOverlay, useListeningOrb } from "@/lib/dev-flags";
+import { setPeopleEnabled, usePeopleEnabled } from "@/people/flag";
 import {
   useTheme,
   useAccent,
@@ -33,6 +34,7 @@ export default function AppearanceSettingsScreen() {
   const accentId = useAccent();
   const fontId = useFont();
   const foldOverlay = useFoldOverlay();
+  const peopleOn = usePeopleEnabled();
   const listeningOrb = useListeningOrb();
   const styles = useMemo(() => makeStyles(t), [t]);
 
@@ -151,6 +153,23 @@ export default function AppearanceSettingsScreen() {
                 setListeningOrb(v);
               }}
               accessibilityLabel="Listening orb"
+            />
+          </View>
+          <View style={styles.row}>
+            <View style={styles.rowMain}>
+              <Text style={styles.rowTitle}>People</Text>
+              <Text style={styles.rowSub}>
+                The People layer: a People list, person pages, attendees on meeting notes and the
+                people tool in chat. Off until it launches; this device only. Dev builds only.
+              </Text>
+            </View>
+            <Switch
+              value={peopleOn}
+              onValueChange={(v) => {
+                haptics.selection();
+                setPeopleEnabled(v);
+              }}
+              accessibilityLabel="People"
             />
           </View>
         </View>

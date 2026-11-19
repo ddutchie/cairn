@@ -131,6 +131,25 @@ migration, plus how it's built and released.
    Deleting a note tombstones the meeting it made (`nmt:`) with its last note;
    the unscoped graph hides note-made meetings with no live, unarchived note.
    Archiving does not tombstone (unarchiving would lose confirmed attendees).
+   W8 as built (`feat/people-w8-mobile`): the DB-bound People code moved to
+   `shared/` so mobile runs the same claims, ids and tombstones as desktop:
+   `shared/people/queries.ts`, `capture.ts` (resolver in `resolve.ts`),
+   `view-queries.ts`, `tool.ts` (the `people` tool and the `attendees`/`date`/
+   `owner` handlers), `action-items.ts`, `model.ts`, over the portable `SyncDb`;
+   `electron/db/people-*.ts` and `electron/mcp/tools/people.ts` are thin
+   re-exports plus the desktop-only parts (the `app_kv` flag, delete cascades on
+   local tables, frontmatter refresh). `shared/agent/people-privacy.ts` and
+   `people-tools.ts` carry the privacy filter and the flag-gated tool/arg names.
+   Mobile has no `app_kv` (and the desktop flag doesn't sync), so the flag is a
+   device setting (`mobile/src/people/flag.ts`, meta DB): Settings → Appearance →
+   Developer in dev builds, or `EXPO_PUBLIC_CAIRN_PEOPLE=1`. Off: no screens,
+   menu rows, strip, tool or args (`builtinTools()`), but the privacy filter
+   always runs (a private persona note synced from desktop stays hidden).
+   Screens: People list (+ suggested tray), person page, attendee strip, entry
+   in the workspace menu. No action-item index on mobile: open items are read
+   from note bodies; ticking rewrites that box via `setItemDone` and saves the
+   note (desktop re-indexes on arrival). Attendee writes use claim source
+   `manual`; removing is a tombstone. Not verified on a simulator.
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.
