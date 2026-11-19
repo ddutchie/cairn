@@ -5,9 +5,9 @@
  * person's settings when editing, Timeline and Persona. Reads the page model
  * the store loads for the selected person (`personPage`).
  *
- * Deliberately left for later workstreams (slots marked below): live Slack
- * fields in the header (W6), Next meeting with Prep (W6), Open items both ways
- * (W4), and the attendee strip on meeting notes (W5 part 2).
+ * The 1:1 loop (W6) lives in `PersonOneOnOne.tsx`: live Slack fields under the
+ * name and Next meeting with Prep. Deliberately left for later (slot marked
+ * below): Open items both ways, and the attendee strip on meeting notes.
  */
 
 import React, { useRef, useState } from "react";
@@ -33,6 +33,7 @@ import type { PersonPage as PersonPageModel, PersonTimelineItem } from "../../..
 import {
   CADENCE_LABELS, EDGE_ROLE_OPTIONS, RELATIONSHIP_LABELS, describeRelation, splitList,
 } from "./people-model";
+import { NextMeeting, ProfileLine, usePersonProfile } from "./PersonOneOnOne";
 
 /** Open a note or card in its project. */
 function useReveal() {
@@ -63,6 +64,7 @@ function Chip({ children, className }: { children: React.ReactNode; className?: 
 
 function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; editing: boolean; onToggleEdit: () => void }) {
   const { person, relations } = page;
+  const profile = usePersonProfile(person);
   const facts = [
     person.cadence ? `${CADENCE_LABELS[person.cadence]} 1:1s` : null,
     page.lastMetAt ? `Last met ${formatRelative(page.lastMetAt, { absoluteAfterDays: 30 })}` : "No meetings yet",
@@ -81,12 +83,11 @@ function PersonHeader({ page, editing, onToggleEdit }: { page: PersonPageModel; 
             <p className="mt-1 text-xs text-[var(--text-tertiary)]">Also {person.aliases.join(", ")}</p>
           )}
         </div>
-        {/* Slot (W6): Prep button for the next meeting. */}
         <Button variant={editing ? "accent" : "outline"} size="sm" onClick={onToggleEdit} aria-pressed={editing}>
           <Pencil size={12} /> {editing ? "Done" : "Edit"}
         </Button>
       </div>
-      {/* Slot (W6): live Slack fields (title, local time) with an "as of" marker. */}
+      <ProfileLine profile={profile} />
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {person.relationship.map((r) => (
           <Chip key={`${r.type}|${r.label ?? ""}`}>
@@ -450,7 +451,8 @@ export function PersonPage({ page }: { page: PersonPageModel | null }) {
     <div className="max-w-[820px] px-8 py-8">
       <PersonHeader page={page} editing={editing} onToggleEdit={() => setEditing((e) => !e)} />
       {editing && <PersonSettings page={page} />}
-      {/* Slot (W6): Next meeting with the Prep button. Slot (W4): Open items, they owe / I owe. */}
+      <NextMeeting person={page.person} timeline={page.timeline} />
+      {/* Slot: Open items, they owe / I owe. */}
       <Timeline items={page.timeline} />
       <Persona page={page} />
     </div>
