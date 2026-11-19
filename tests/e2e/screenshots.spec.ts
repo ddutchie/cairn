@@ -369,6 +369,12 @@ test.describe("people screenshots", () => {
       await page.waitForTimeout(500);
       await setTheme(page, theme);
       await prepareForScreenshots(page);
+      // People is hidden from the sidebar on first run: show it, as a user who turned the feature on would.
+      await page.evaluate(() => {
+        const s = (window as unknown as { __cairnStoreRef?: { getState: () => { setHiddenViews: (v: string[]) => void; hiddenViews: Set<string> } } }).__cairnStoreRef?.getState();
+        s?.setHiddenViews([...s.hiddenViews].filter((v) => v !== "people"));
+      });
+      await page.waitForTimeout(300);
 
       for (const shot of PEOPLE_SHOTS) {
         const outRoot = theme === "dark" ? path.join(SITE_DIR, "dark") : SITE_DIR;
