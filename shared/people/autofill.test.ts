@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAutofillPrompt, parseAutofill, AUTOFILL_MAX_NOTE_CHARS } from "./autofill";
+import { applicableFields, buildAutofillPrompt, parseAutofill, AUTOFILL_MAX_NOTE_CHARS } from "./autofill";
 
 const NOTE = "# Ana\nRole: Senior Software Engineer on the Sync team.\nBased in Berlin, Germany.";
 const reply = (fields: unknown[]) => JSON.stringify({ fields });
@@ -56,5 +56,27 @@ describe("buildAutofillPrompt", () => {
   it("cuts a very long note", () => {
     const p = buildAutofillPrompt("Ana", "x".repeat(AUTOFILL_MAX_NOTE_CHARS + 50));
     expect(p).toContain("[cut]");
+  });
+});
+
+describe("applicableFields", () => {
+  const props = [
+    { field: "title" as const, value: "Engineer", quote: "q" },
+    { field: "team" as const, value: "Sync", quote: "q", current: "Old" },
+    { field: "location" as const, value: "Berlin", quote: "q" },
+  ];
+  const all = () => true;
+
+  it("writes fields that still match what the review saw", () => {
+    expect(applicableFields(props, all, { team: "Old" })).toEqual({ patch: { title: "Engineer", team: "Sync", location: "Berlin" }, changed: 0, done: 0 });
+  });
+
+  it("leaves fields that moved since the review, and counts those already saved as done", () => {
+    const r = applicableFields(props, all, { title: "Staff", team: "Sync", location: " " });
+    expect(r).toEqual({ patch: { location: "Berlin" }, changed: 1, done: 1 });
+  });
+
+  it("ignores unpicked fields", () => {
+    expect(applicableFields(props, (f) => f === "title", {}).patch).toEqual({ title: "Engineer" });
   });
 });

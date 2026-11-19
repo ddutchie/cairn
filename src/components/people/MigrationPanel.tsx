@@ -15,6 +15,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SectionLabel } from "@/components/ui/labels";
+import { BatchAutofill } from "./BatchAutofill";
 import { peopleClient } from "@/lib/ipc/people";
 import { reportIpcError } from "@/lib/ipc/client";
 import type { MigrationInventory, MigrationResult, PersonaCandidate } from "../../../shared/types/people-migration";
@@ -102,7 +103,10 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
     }
   }, [workspaceId, busy, approvals, refreshPeople]);
 
+  // Once applied the ticks are history; changing one would clear the result (and the fill-details review under it).
+  const locked = busy || result?.applied === true;
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, key: string, on: boolean) => {
+    if (result?.applied) return;
     const next = new Set(set);
     if (on) next.add(key); else next.delete(key);
     setter(next);
@@ -116,7 +120,7 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
         <Check
           id={`mig-p-${c.noteId}`}
           checked={people.has(c.noteId)}
-          disabled={skipped || busy}
+          disabled={skipped || locked}
           onChange={(v) => toggle(people, setPeople, c.noteId, v)}
           label={
             <span className="flex flex-wrap items-center gap-1.5">
@@ -129,7 +133,7 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
         />
         {!skipped && c.suggestedAliases.map((a) => (
           <div key={a} className="ml-6 mt-0.5">
-            <Check id={`mig-a-${c.noteId}-${a}`} disabled={busy} checked={aliases.has(`${c.noteId}|${a}`)} onChange={(v) => toggle(aliases, setAliases, `${c.noteId}|${a}`, v)}
+            <Check id={`mig-a-${c.noteId}-${a}`} disabled={locked} checked={aliases.has(`${c.noteId}|${a}`)} onChange={(v) => toggle(aliases, setAliases, `${c.noteId}|${a}`, v)}
               label={<span className="text-xs text-[var(--text-secondary)]">Also answer to “{a}” (so “{a}” in notes finds them)</span>} />
           </div>
         ))}
@@ -181,7 +185,7 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
                     const known = m.attendees.filter((a) => a.resolution === "person" || a.resolution === "candidate").length;
                     return (
                       <li key={m.noteId} className="py-1.5">
-                        <Check id={`mig-m-${m.noteId}`} disabled={busy} checked={meetings.has(m.noteId)} onChange={(v) => toggle(meetings, setMeetings, m.noteId, v)}
+                        <Check id={`mig-m-${m.noteId}`} disabled={locked} checked={meetings.has(m.noteId)} onChange={(v) => toggle(meetings, setMeetings, m.noteId, v)}
                           label={<span className="flex items-center gap-1.5"><span className="truncate">{m.title}</span>
                             <span className="text-2xs text-[var(--text-tertiary)]">{known} of {m.attendees.length} known</span></span>} />
                       </li>
@@ -197,6 +201,15 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
                 ? <p className="mt-1 text-sm">Turn on People first.</p>
                 : <ul className="mt-1 list-disc pl-4 text-sm">{summarise(result.result).map((l) => <li key={l}>{l}</li>)}</ul>}
             </section>
+          )}
+          {result?.applied && (
+            <BatchAutofill
+              people={result.result.personas.flatMap((r) => {
+                if (!r.personId || (r.outcome !== "created" && r.outcome !== "linked")) return [];
+                const name = personaRows.find((c) => c.noteId === r.noteId)?.name;
+                return name ? [{ personId: r.personId, name }] : [];
+              })}
+            />
           )}
         </div>
       )}
