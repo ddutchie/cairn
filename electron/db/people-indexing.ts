@@ -14,13 +14,16 @@
  *     unassigned and never create stub people.
  *   - Body meeting lines: `**Attendees:**` / `**When:**` → the note's meeting
  *     (`captureNoteMeeting`, source `body_line`, provenance `convention`).
- *     The people it lists are SUGGESTED attendees, never applied silently, so
- *     they stay out of meeting lists, the graph and the frontmatter until the
- *     user confirms them. Someone the user removed or dismissed is not added
- *     again while the line still lists them. Removing the lines removes the
- *     attendees they added, as removing the `attendees` frontmatter key does. Stub people that only a half-typed
- *     line created ("Ch" on the way to "Chris") are tombstoned again once the
- *     line moves on and nothing else refers to them.
+ *     Only people who already exist are matched: names nobody matches stay
+ *     plain text, because saves happen while typing and a stub per half-typed
+ *     name ("Ch", "Chri", "Chris") churned synced rows. A note with no
+ *     matching name doesn't become a meeting. The people it lists are
+ *     SUGGESTED attendees, never applied silently, so they stay out of meeting
+ *     lists, the graph and the frontmatter until the user confirms them.
+ *     Someone the user removed or dismissed is not added again while the line
+ *     still lists them. Removing the lines removes the attendees they added,
+ *     as removing the `attendees` frontmatter key does. A body "When:" never
+ *     overrides a date a frontmatter `attendees` list governs.
  *
  * The frontmatter is NOT rewritten from body lines: the body line is the
  * user's own record, and mirroring it into `attendees` would make the file
@@ -32,8 +35,8 @@ import { parseWikilinks } from "../../shared/notes/wikilinks";
 import { foldName, parseAttendeeValue, parseBodyMeetingLines, parseChecklist } from "../../shared/people/parse";
 import { parseClaims, serializeClaims } from "../../shared/people/claims";
 import { actionItemLineKey, mentionRowId } from "../../shared/people/ids";
-import { addMention, attendeeIdsFromSource, deletePerson, getMeeting, isPeopleEnabled } from "./people-queries";
-import { captureNoteMeeting, loadCandidates, resolveIn } from "./people-capture";
+import { addMention, attendeeIdsFromSource, getMeeting, isPeopleEnabled } from "./people-queries";
+import { captureNoteMeeting, loadCandidates, resolveIn, type Candidate } from "./people-capture";
 
 type Db = Database.Database;
 
@@ -58,9 +61,11 @@ export function indexNotePeople(db: Db, workspaceId: string, noteIds?: readonly 
   if (notes.length === 0) return;
 
   const personaPeople = personaIndex(db, workspaceId);
+  // Loaded once for the whole batch: neither pass below creates people.
+  const bodyCandidates = loadCandidates(db, workspaceId);
+  const candidates = bodyCandidates;
 
   db.transaction(() => {
-    const candidates = loadCandidates(db, workspaceId);
     for (const n of notes) {
       const body = n.content ?? "";
       // One bad note must not leave the rest of the batch unindexed.
@@ -77,7 +82,7 @@ export function indexNotePeople(db: Db, workspaceId: string, noteIds?: readonly 
   // opens one) and may create people, so it goes last.
   for (const n of notes) {
     try {
-      indexBodyMeeting(db, n.id, n.content ?? "");
+      indexBodyMeeting(db, n.id, n.content ?? "", bodyCandidates);
     } catch (err) {
       console.error(`[people] couldn't capture meeting lines of note ${n.id}:`, err);
     }
@@ -211,7 +216,7 @@ function indexMentions(db: Db, noteId: string, body: string, index: PersonaIndex
 
 // ── Action items ──────────────────────────────
 
-function indexActionItems(db: Db, noteId: string, body: string, candidates: ReturnType<typeof loadCandidates>): void {
+function indexActionItems(db: Db, noteId: string, body: string, candidates: Candidate[]): void {
   db.prepare("DELETE FROM note_action_items WHERE note_id = ?").run(noteId);
   const insert = db.prepare(
     "INSERT INTO note_action_items (note_id, line_key, owner_text, owner_person_id, text, done) VALUES (?, ?, ?, ?, ?, ?)",
@@ -232,27 +237,33 @@ function indexActionItems(db: Db, noteId: string, body: string, candidates: Retu
 
 // ── Body meeting lines ────────────────────────
 
-function indexBodyMeeting(db: Db, noteId: string, body: string): void {
+function indexBodyMeeting(db: Db, noteId: string, body: string, candidates: Candidate[]): void {
   const lines = parseBodyMeetingLines(body);
   const current = db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null } | undefined;
   const meetingId = current?.meeting_id ?? null;
   if (!lines) {
     if (!meetingId) return;
     if (attendeeIdsFromSource(db, meetingId, "body_line").length > 0) {
-      const r = captureNoteMeeting(db, { noteId, attendees: [], source: "body_line", provenance: "convention" });
-      pruneOrphanStubs(db, r.removed);
+      captureNoteMeeting(db, { noteId, attendees: [], source: "body_line", provenance: "convention", candidates });
     }
     releaseBodyClaims(db, meetingId, new Set());
     return;
   }
-  // A body date moves only a meeting this note made; a calendar meeting keeps its own time.
+  // Names nobody matches stay plain text (no stub people from half-typed or
+  // prose names); with nothing to match, a note that isn't a meeting yet
+  // doesn't become one.
+  const matchesSomeone = lines.attendees.some((a) => resolveIn(candidates, a).kind !== "none");
+  if (!meetingId && !matchesSomeone) return;
+
   const meeting = meetingId ? getMeeting(db, meetingId) : null;
-  const date = !meeting || meeting.source === "note" ? lines.date : null;
+  // One rule for the date: a frontmatter `date` (read with `attendees`) wins, so
+  // a body "When:" moves only a meeting this note made that no frontmatter claims.
+  const fromFrontmatter = !!meetingId && attendeeIdsFromSource(db, meetingId, "frontmatter").length > 0;
+  const date = (!meeting || meeting.source === "note") && !fromFrontmatter ? lines.date : null;
   const r = captureNoteMeeting(db, {
     noteId, attendees: lines.attendees, date, source: "body_line", provenance: "convention",
-    status: "suggested", keepRemoved: true,
+    status: "suggested", keepRemoved: true, noStubs: true, candidates,
   });
-  pruneOrphanStubs(db, r.removed);
   releaseBodyClaims(db, r.meetingId, new Set([...r.attendees, ...r.suggested, ...r.skipped]));
 }
 
@@ -273,24 +284,4 @@ function releaseBodyClaims(db: Db, meetingId: string, listed: ReadonlySet<string
     claims.body_line = { on: false, at: now };
     db.prepare("UPDATE meeting_attendees SET sources = ?, updated_at = ? WHERE id = ?").run(serializeClaims(claims), now, r.id);
   }
-}
-
-/**
- * Tombstone suggested stub people (`stubPersonId`) that nothing refers to any
- * more: no attendance, mention, edge, persona note, card or action item. Only
- * the people this pass just removed are checked, so a stub the user made or
- * that another path still uses is never touched. A tombstoned stub revives if
- * the same name comes back.
- */
-function pruneOrphanStubs(db: Db, personIds: readonly string[]): void {
-  const orphan = db.prepare(`
-    SELECT 1 FROM people p WHERE p.id = ? AND p.deleted_at IS NULL AND p.status = 'suggested' AND p.persona_note_id IS NULL
-      AND p.id LIKE 'stub:%'
-      AND NOT EXISTS (SELECT 1 FROM meeting_attendees WHERE person_id = p.id AND deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM note_mentions WHERE person_id = p.id AND deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM person_edges WHERE (source_id = p.id OR target_id = p.id) AND deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM task_cards WHERE owner_person_id = p.id AND deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM note_action_items WHERE owner_person_id = p.id)
-  `);
-  for (const id of personIds) if (orphan.get(id)) deletePerson(db, id);
 }

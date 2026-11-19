@@ -425,7 +425,12 @@ function addPeopleGraph(db: Database.Database, workspaceId: string, ctx: PeopleG
         SELECT id, title, starts_at, source FROM meetings
         WHERE deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))
       `).all(JSON.stringify([...new Set(meetingNotes.map((m) => m.meeting_id))]))
-    : db.prepare("SELECT id, title, starts_at, source FROM meetings WHERE workspace_id = ? AND deleted_at IS NULL").all(workspaceId)
+    // A meeting a note made is only shown while a live note carries it.
+    : db.prepare(`
+        SELECT id, title, starts_at, source FROM meetings m WHERE workspace_id = ? AND deleted_at IS NULL
+          AND (source != 'note' OR EXISTS (
+            SELECT 1 FROM notes n WHERE n.meeting_id = m.id AND n.deleted_at IS NULL AND n.archived_at IS NULL))
+      `).all(workspaceId)
   ) as Row[];
   const meetingIds = new Set(meetings.map((m) => m.id as string));
 

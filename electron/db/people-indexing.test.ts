@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { makeDb, seedProject, seedWorkspace } from "../test-support/db";
-import { createNote, updateNote } from "./notes-queries";
+import { createNote, deleteNote, updateNote } from "./notes-queries";
 import {
   addAttendee, addEdge, attendeeIdsFromSource, removeAttendee, removeMention, addMention, createMeeting, createPerson, getPerson, listAttendees, setNoteMeeting, setPeopleEnabled, updatePerson,
 } from "./people-queries";
 import { computeAutoRelationships } from "./auto-relationships";
 import { indexNotePeople, indexNotesPeople } from "./people-indexing";
-import { renderMeetingFrontmatter } from "./people-capture";
+import { captureNoteMeeting, renderMeetingFrontmatter } from "./people-capture";
 import { getKnowledgeGraph } from "./graph-queries";
-import { actionItemLineKey, noteMeetingId, stubPersonId } from "../../shared/people/ids";
+import { actionItemLineKey, noteMeetingId } from "../../shared/people/ids";
 
 let db: Database.Database;
 
@@ -129,27 +129,56 @@ describe("body meeting line pass", () => {
     note("n1", "Weekly sync");
     save("n1", "**Attendees:** Ana Ruiz, Dana Lee\n**When:** 2026-11-11\n\nNotes…");
     const meetingId = noteMeetingId("ws1", "n1");
-    const att = listAttendees(db, meetingId);
-    const dana = stubPersonId("ws1", "dana lee");
-    expect(att.map((a) => [a.personId, a.source, a.provenance]).sort()).toEqual(
-      [[ana.id, "body_line", "convention"], [dana, "body_line", "convention"]].sort(),
-    );
+    expect(listAttendees(db, meetingId).map((a) => [a.personId, a.source, a.provenance])).toEqual([[ana.id, "body_line", "convention"]]);
     const meeting = db.prepare("SELECT starts_at FROM meetings WHERE id = ?").get(meetingId) as { starts_at: string };
     expect(meeting.starts_at).toBe("2026-11-11T00:00:00.000Z");
 
     save("n1", "Notes…");
     expect(listAttendees(db, meetingId)).toEqual([]);
-    // The stub only that line created goes again; the real person stays.
-    expect(getPerson(db, dana)).toBeNull();
     expect(getPerson(db, ana.id)).not.toBeNull();
   });
 
-  it("drops the stubs a half-typed name made", () => {
+  it("creates no stub people for unknown or half-typed names, and no meeting when nothing matches", () => {
     note("n1", "Sync");
-    save("n1", "**Attendees:** Ch");
-    save("n1", "**Attendees:** Chris Doe");
-    expect(getPerson(db, stubPersonId("ws1", "ch"))).toBeNull();
-    expect(getPerson(db, stubPersonId("ws1", "chris doe"))?.status).toBe("suggested");
+    const writes = () => (db.prepare("SELECT (SELECT COUNT(*) FROM people) + (SELECT COUNT(*) FROM meetings) + (SELECT COUNT(*) FROM meeting_attendees) AS c").get() as { c: number }).c;
+    const version = () => (db.prepare("SELECT version FROM notes WHERE id = 'n1'").get() as { version: number }).version;
+    const before = { writes: writes(), version: version() };
+    for (const typed of ["C", "Ch", "Chri", "Chris"]) save("n1", `**Attendees:** ${typed}`);
+    expect(writes()).toBe(before.writes);
+    expect(version()).toBe(before.version + 4); // only the four content saves themselves
+    expect(db.prepare("SELECT meeting_id FROM notes WHERE id = 'n1'").get()).toEqual({ meeting_id: null });
+    // Once the person exists, the same line matches them.
+    const chris = person("Chris");
+    save("n1", "**Attendees:** Chris");
+    expect(attendeeIdsFromSource(db, noteMeetingId("ws1", "n1"), "body_line")).toEqual([chris.id]);
+  });
+
+  it("ignores placeholder and group names and unmarked prose labels", () => {
+    note("n1", "Sync");
+    person("Users");
+    save("n1", "Participants: Users");
+    save("n1", "**Attendees:** TBD, Users");
+    expect(db.prepare("SELECT meeting_id FROM notes WHERE id = 'n1'").get()).toEqual({ meeting_id: null });
+  });
+
+  it("applies a body date only when no frontmatter date governs, and leaves an unchanged meeting untouched", () => {
+    const ana = person("Ana Ruiz");
+    note("n1", "Sync");
+    const meetingId = noteMeetingId("ws1", "n1");
+    const row = () => db.prepare("SELECT starts_at, updated_at FROM meetings WHERE id = ?").get(meetingId) as { starts_at: string; updated_at: string };
+    save("n1", "**Attendees:** Ana Ruiz\n**When:** 2026-11-11");
+    expect(row().starts_at).toBe("2026-11-11T00:00:00.000Z");
+    const settled = row();
+    save("n1", "**Attendees:** Ana Ruiz\n**When:** 2026-11-11\nmore");
+    expect(row()).toEqual(settled);
+
+    // The file's frontmatter lists attendees (and a date): it wins over the body.
+    captureNoteMeeting(db, { noteId: "n1", attendees: ["Ana Ruiz"], date: "2026-12-01T00:00:00.000Z", source: "frontmatter", provenance: "explicit" });
+    expect(row().starts_at).toBe("2026-12-01T00:00:00.000Z");
+    const governed = row();
+    save("n1", "**Attendees:** Ana Ruiz\n**When:** 2026-11-11\nthird save");
+    expect(row()).toEqual(governed);
+    expect(ana).toBeTruthy();
   });
 
   it("leaves attendees from other sources and a calendar meeting's time alone", () => {
@@ -186,12 +215,12 @@ describe("body_line claims", () => {
 });
 
 describe("body-line attendees are suggestions", () => {
-  it("adds matched people and new stubs as suggested, keeps them out of the graph and frontmatter", () => {
+  it("adds matched people as suggested, keeps them out of the graph and frontmatter", () => {
     const ana = person("Ana Ruiz");
     note("n1", "Sync");
     save("n1", "**Attendees:** Ana Ruiz, Dana Lee");
     const meetingId = noteMeetingId("ws1", "n1");
-    expect(listAttendees(db, meetingId).map((a) => a.status)).toEqual(["suggested", "suggested"]);
+    expect(listAttendees(db, meetingId).map((a) => a.status)).toEqual(["suggested"]);
     expect(renderMeetingFrontmatter(db, "n1")?.attendees).toEqual([]);
     const g = getKnowledgeGraph(db, "ws1");
     expect(g.edges.some((e) => e.type === "attended")).toBe(false);
@@ -214,16 +243,6 @@ describe("body-line attendees are suggestions", () => {
     save("n1", "**Attendees:** Ben Ode");
     save("n1", "**Attendees:** Ana Ruiz, Ben Ode");
     expect(listAttendees(db, meetingId).map((a) => a.personId).sort()).toEqual([ana.id, ben.id].sort());
-  });
-
-  it("doesn't re-create a dismissed stub's attendance", () => {
-    note("n1", "Sync");
-    save("n1", "**Attendees:** Dana Lee");
-    const meetingId = noteMeetingId("ws1", "n1");
-    const dana = stubPersonId("ws1", "dana lee");
-    removeAttendee(db, meetingId, dana);
-    save("n1", "**Attendees:** Dana Lee\nagain");
-    expect(listAttendees(db, meetingId)).toEqual([]);
   });
 });
 
@@ -260,6 +279,46 @@ describe("mention edge cases", () => {
     expect(mentions("n1")).toEqual([]);
     save("n1", "[[Ben Ode]] back");
     expect(mentions("n1").map((m) => m.person_id)).toEqual([ben.id]);
+  });
+});
+
+describe("ghost meetings", () => {
+  it("tombstones a note-made meeting with its last note, but not a calendar meeting", () => {
+    const ana = person("Ana Ruiz");
+    note("n1", "Sync");
+    save("n1", "**Attendees:** Ana Ruiz");
+    const meetingId = noteMeetingId("ws1", "n1");
+    const cal = createMeeting(db, { workspaceId: "ws1", title: "Cal", startsAt: "2026-11-12T10:00:00.000Z", source: "calendar" });
+    note("n2", "Minutes");
+    setNoteMeeting(db, "n2", cal.id);
+    deleteNote(db, "n2");
+    expect(db.prepare("SELECT deleted_at FROM meetings WHERE id = ?").get(cal.id)).toEqual({ deleted_at: null });
+    deleteNote(db, "n1");
+    expect(db.prepare("SELECT deleted_at IS NOT NULL AS gone FROM meetings WHERE id = ?").get(meetingId)).toEqual({ gone: 1 });
+    expect(listAttendees(db, meetingId)).toEqual([]);
+    expect(ana).toBeTruthy();
+  });
+
+  it("keeps a note-made meeting while another live note points at it", () => {
+    person("Ana Ruiz");
+    note("n1", "Sync");
+    save("n1", "**Attendees:** Ana Ruiz");
+    const meetingId = noteMeetingId("ws1", "n1");
+    note("n2", "Prep");
+    setNoteMeeting(db, "n2", meetingId);
+    deleteNote(db, "n1");
+    expect(db.prepare("SELECT deleted_at FROM meetings WHERE id = ?").get(meetingId)).toEqual({ deleted_at: null });
+  });
+
+  it("leaves a meeting out of the graph when its only note is archived", () => {
+    const ana = person("Ana Ruiz");
+    note("n1", "Sync");
+    save("n1", "**Attendees:** Ana Ruiz");
+    const meetingId = noteMeetingId("ws1", "n1");
+    addAttendee(db, { meetingId, personId: ana.id, source: "manual" });
+    expect(getKnowledgeGraph(db, "ws1").nodes.some((n) => n.id === meetingId)).toBe(true);
+    updateNote(db, "n1", { archivedAt: new Date().toISOString() });
+    expect(getKnowledgeGraph(db, "ws1").nodes.some((n) => n.id === meetingId)).toBe(false);
   });
 });
 

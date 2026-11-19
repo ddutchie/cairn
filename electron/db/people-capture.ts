@@ -36,7 +36,7 @@ export type Resolution =
   | { kind: "dismissed"; personId: string }
   | { kind: "none" };
 
-interface Candidate {
+export interface Candidate {
   id: string;
   status: PeopleStatus;
   slackId: string | null;
@@ -157,6 +157,10 @@ export interface CaptureInput {
    * tombstoned while this source's claim on it is still on.
    */
   keepRemoved?: boolean;
+  /** Match existing people only: names nobody matches are left out instead of becoming stub people. */
+  noStubs?: boolean;
+  /** The workspace's candidates, when the caller already loaded them for this note (saves a scan per note). */
+  candidates?: Candidate[];
 }
 
 export interface CaptureResult {
@@ -228,7 +232,7 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
       meeting = updateMeeting(db, meeting.id, { startsAt: input.date });
     }
 
-    const candidates = loadCandidates(db, note.workspace_id);
+    const candidates = input.candidates ?? loadCandidates(db, note.workspace_id);
     const result: CaptureResult = { meetingId: meeting.id, attendees: [], suggested: [], created: [], removed: [], skipped: [] };
     const keep = new Set<string>();
 
@@ -265,7 +269,7 @@ export function captureNoteMeeting(db: Db, input: CaptureInput): CaptureResult {
         }
       } else {
         const name = stubName(ref);
-        if (!name) continue;
+        if (!name || input.noStubs) continue;
         const stubId = stubPersonId(note.workspace_id, ref.email ?? foldName(name));
         if (skip(stubId)) continue;
         const person = ensureStubPerson(db, note.workspace_id, name, ref.email, input.provenance);

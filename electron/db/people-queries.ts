@@ -762,6 +762,12 @@ export function onNoteRenamed(db: Db, noteId: string, oldTitle: string, newTitle
  */
 export function onNoteDeleted(db: Db, noteId: string): void {
   const now = ts();
+  // A meeting this note made (`nmt:`) goes with its last note; calendar and manual meetings stay.
+  const own = db.prepare("SELECT meeting_id FROM notes WHERE id = ?").get(noteId) as { meeting_id: string | null } | undefined;
+  if (own?.meeting_id?.startsWith("nmt:")) {
+    const others = db.prepare("SELECT 1 FROM notes WHERE meeting_id = ? AND id != ? AND deleted_at IS NULL LIMIT 1").get(own.meeting_id, noteId);
+    if (!others) deleteMeeting(db, own.meeting_id);
+  }
   db.prepare("UPDATE people SET persona_note_id = NULL, updated_at = ? WHERE persona_note_id = ? AND deleted_at IS NULL").run(now, noteId);
   db.prepare("UPDATE note_mentions SET deleted_at = ?, updated_at = ? WHERE note_id = ? AND deleted_at IS NULL").run(now, now, noteId);
   db.prepare("DELETE FROM note_action_items WHERE note_id = ?").run(noteId);

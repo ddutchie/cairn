@@ -121,6 +121,16 @@ migration, plus how it's built and released.
    links to neither, code fences and inline code are skipped, and a tombstoned
    mention is revived only if this pass released it (source `owner`, otherwise
    unused). Each note is indexed in its own try/catch.
+   Second review round: body lines never create stub people (a stub per
+   half-typed name churned synced rows); they match existing people only, and a
+   note with no match doesn't become a meeting (so the stub-pruning pass is
+   gone). The body-line form needs a bold label or a bullet and skips
+   placeholders and groups (`tbd`, `none`, `users`, …). Date rule: a frontmatter
+   `date` governs when the meeting has a frontmatter attendee claim; the body
+   "When:" applies only otherwise, and never rewrites an unchanged meeting.
+   Deleting a note tombstones the meeting it made (`nmt:`) with its last note;
+   the unscoped graph hides note-made meetings with no live, unarchived note.
+   Archiving does not tombstone (unarchiving would lose confirmed attendees).
    - **Sync follow-up (any time, not tied to data):** `exportOplog` stamps
      forwarded ops with this device's protocol version, so a v4 device seen
      only through a v5 relay is never flagged "behind". Stamp only own ops.

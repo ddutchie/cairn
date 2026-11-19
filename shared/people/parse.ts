@@ -136,6 +136,12 @@ export function formatMeetingDate(iso: string): string {
   return iso.endsWith("T00:00:00.000Z") ? iso.slice(0, 10) : iso;
 }
 
+/** Placeholders and groups that sit where a name would ("Attendees: TBD", "Participants: users"). */
+const NOT_NAMES = new Set([
+  "tbd", "tba", "tbc", "none", "n/a", "na", "nobody", "everyone", "everybody", "all", "team", "the team", "whole team",
+  "users", "user", "admins", "admin", "staff", "others", "other", "attendees", "participants", "guests", "?", "-", "–",
+]);
+
 /** Attendees and date found in a note body's metadata lines. */
 export interface BodyMeetingLines {
   attendees: AttendeeRef[];
@@ -154,12 +160,13 @@ export function parseBodyMeetingLines(markdown: string): BodyMeetingLines | null
   let date: string | null = null;
   for (const line of head) {
     // The label needs a colon ("**Attendees:**", "**Attendees**:", "Attendees:"), so prose like "When we met" never matches.
-    const m = /^\s*(?:[-*]\s+)?(?:\*\*|__)?(attendees|participants|when|date)(?:\s*:\s*(?:\*\*|__)|(?:\*\*|__)\s*:|\s*:)\s*(.+)$/i.exec(line);
-    if (!m) continue;
-    const label = m[1].toLowerCase();
-    const value = m[2].trim();
+    const m = /^\s*([-*]\s+)?(\*\*|__)?(attendees|participants|when|date)(?:\s*:\s*(?:\*\*|__)|(?:\*\*|__)\s*:|\s*:)\s*(.+)$/i.exec(line);
+    // A bold label or a list bullet is required: a bare "Participants: users, admins" is prose.
+    if (!m || (!m[1] && !m[2])) continue;
+    const label = m[3].toLowerCase();
+    const value = m[4].trim();
     if ((label === "attendees" || label === "participants") && attendees === null) {
-      attendees = parseAttendeeList(value);
+      attendees = parseAttendeeList(value).filter((a) => !a.name || a.email || !NOT_NAMES.has(foldName(a.name)));
     } else if ((label === "when" || label === "date") && date === null) {
       date = parseMeetingDate(value.replace(/[,(].*$/, "").trim()) ?? parseLooseDate(value);
     }
