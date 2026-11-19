@@ -196,12 +196,13 @@ describe("round-three review fixes", () => {
     const real = fs.readFileSync;
     let reads = 0;
     const spy = vi.spyOn(fs, "readFileSync").mockImplementation(((...args: Parameters<typeof fs.readFileSync>) => {
-      // refresh reads the file once to compare, then writeMeetingFrontmatter reads it again: fail that one.
-      if (String(args[0]) === file && ++reads === 2) throw new Error("EBUSY");
+      // Reads of the file: 1 findNoteFilePath, 2 readMeetingProps, 3 writeMeetingFrontmatter. Fail the third.
+      if (String(args[0]) === file && ++reads === 3) throw new Error("EBUSY");
       return real(...args);
     }) as typeof fs.readFileSync);
     try {
       const out = refreshMeetingFrontmatter(db, ws, ["n1"]);
+      expect(reads).toBeGreaterThanOrEqual(3); // the failing read was the write path's own
       expect(out.failed).toEqual(["n1"]);
       expect(out.written).toEqual([]);
     } finally {
