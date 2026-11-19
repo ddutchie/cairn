@@ -33,6 +33,8 @@ function colorForType(read: (varName: string) => string, type: string): string {
   return read(tokenToCssVar(sunburstTypeToken(type as HNode["type"])));
 }
 
+/** Wedge count above which drill animations draw at 1x (see draw). */
+const LARGE_WEDGES = 400;
 const INNER_R = 38;
 // When drilled into a branch the leaves fill a single wide ring; pushing the
 // inner edge out makes each wedge's inner arc wide enough to host a label.
@@ -95,7 +97,11 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContex
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hierarchyKey]);
 
+  // Wedge count decides whether drill animations shade at reduced DPR (see draw).
+  const wedgeCount = useMemo(() => root.descendants().length, [root]);
+
   // Mutable render state the draw loop reads without re-creating itself.
+  const animatingRef = useRef(false);
   const focusRef = useRef<PNode>(root);
   const currentRef = useRef<Map<PNode, Arc>>(new Map());
   const hoveredRef = useRef<PNode | null>(null);
@@ -158,8 +164,25 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContex
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // Fill cost scales with pixels, so a large sunburst shades at 1x while a
+    // drill animation runs; the final frame of the animation is drawn at the
+    // resting DPR.
+    const dpr = animatingRef.current && wedgeCount > LARGE_WEDGES
+      ? 1
+      : Math.min(2, window.devicePixelRatio || 1);
     const { cx, cy } = geomRef.current;
+    // Keep the backing store on the DPR this frame draws at. (The sizing effect
+    // below only runs on resize and sets the resting DPR.)
+    // (Skipped until the sizing effect has run once and set the CSS size.)
+    if (canvas.style.width !== "") {
+      const bw = Math.round(cx * 2 * dpr), bh = Math.round(cy * 2 * dpr);
+      if (canvas.width !== bw || canvas.height !== bh) {
+        canvas.width = bw;
+        canvas.height = bh;
+        canvas.style.width = cx * 2 + "px";
+        canvas.style.height = cy * 2 + "px";
+      }
+    }
     const focus = focusRef.current;
     const hovered = hoveredRef.current;
 
@@ -330,7 +353,7 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContex
       ctx.fillText("← back", 0, 12);
     }
     ctx.restore();
-  }, [root, targetArc, ringR, fs, relatedIds, selectedNodeId]);
+  }, [root, wedgeCount, targetArc, ringR, fs, relatedIds, selectedNodeId]);
   useEffect(() => { drawRef.current = draw; }, [draw]);
 
   // ── zoom-to-focus animation ──
@@ -358,6 +381,7 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContex
       }
     });
     cancelAnimationFrame(animRef.current);
+    animatingRef.current = true;
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / dur);
       const e = d3.easeCubicInOut(t);
@@ -373,6 +397,7 @@ function RadialTreeCanvasImpl({ graph, selectedNodeId, onNodeClick, onNodeContex
           y1: a.y1 + (b.y1 - a.y1) * e,
         });
       }
+      if (t >= 1) animatingRef.current = false;
       drawRef.current();
       if (t < 1) animRef.current = requestAnimationFrame(tick);
     };

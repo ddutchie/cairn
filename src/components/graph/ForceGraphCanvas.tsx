@@ -191,7 +191,10 @@ const LARGE_DPR_NODES = 400;
 /** Reduced DPR cap for large graphs — roughly a quarter of the pixels per
  *  frame for imperceptible softness. Single place the cap is defined; both
  *  the draw routine and the sizing effect derive from it. */
-function dprFor(nodeCount: number): number {
+function dprFor(nodeCount: number, moving = false): number {
+  // While the view moves on a large graph, shade at 1x: fill cost scales with
+  // pixels, and the frame after the motion stops redraws at the resting DPR.
+  if (moving && nodeCount > LARGE_DPR_NODES) return 1;
   return Math.min(nodeCount > LARGE_DPR_NODES ? 1.25 : 2, window.devicePixelRatio || 1);
 }
 
@@ -578,7 +581,9 @@ function ForceGraphCanvasImpl({
     const nodes = nodesRef.current;
     const links = linksRef.current;
     const { width, height } = dimsRef.current;
-    const dpr = dprFor(nodes.length);
+    // A gesture, a zoom transition, or a layout easing in (see the dashes below).
+    const moving = gesturesRef.current > 0 || tweenRef.current != null;
+    const dpr = dprFor(nodes.length, moving);
     const t = transformRef.current;
     const { selectedNodeId: sel, labelMode: lm, showHulls: hulls } = propsRef.current;
 
@@ -685,7 +690,6 @@ function ForceGraphCanvasImpl({
     // moving (a gesture, a zoom transition, or a layout easing in) they're
     // drawn solid at half opacity, about the same ink, and get their dashes
     // back on the frame after the motion stops.
-    const moving = gesturesRef.current > 0 || tweenRef.current != null;
     const dashPattern = [3 / t.k, 3 / t.k];
     for (const b of scene.edges) {
       ctx.strokeStyle = b.stroke;
