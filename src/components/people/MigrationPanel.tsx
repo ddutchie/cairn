@@ -15,6 +15,7 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SectionLabel } from "@/components/ui/labels";
+import { BatchAutofill } from "./BatchAutofill";
 import { peopleClient } from "@/lib/ipc/people";
 import { reportIpcError } from "@/lib/ipc/client";
 import type { MigrationInventory, MigrationResult, PersonaCandidate } from "../../../shared/types/people-migration";
@@ -197,6 +198,15 @@ export function MigrationPanel({ onClose }: { onClose: () => void }) {
                 ? <p className="mt-1 text-sm">Turn on People first.</p>
                 : <ul className="mt-1 list-disc pl-4 text-sm">{summarise(result.result).map((l) => <li key={l}>{l}</li>)}</ul>}
             </section>
+          )}
+          {result?.applied && (
+            <BatchAutofill
+              people={result.result.personas.flatMap((r) => {
+                if (!r.personId || (r.outcome !== "created" && r.outcome !== "linked")) return [];
+                const name = personaRows.find((c) => c.noteId === r.noteId)?.name;
+                return name ? [{ personId: r.personId, name }] : [];
+              })}
+            />
           )}
         </div>
       )}
