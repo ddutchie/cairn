@@ -112,7 +112,12 @@ function applyNoteMeeting(noteIds: string[], a: Record<string, unknown>, errors:
   if ((a.attendees === undefined && a.date === undefined) || !isPeopleEnabled()) return undefined;
   let last: unknown;
   for (const noteId of noteIds) {
-    last = setNoteAttendees(peopleDb(), peopleContext(), { noteId, attendees: a.attendees, date: a.date });
+    // The note is already written; a People failure is reported, never thrown past it.
+    try {
+      last = setNoteAttendees(peopleDb(), peopleContext(), { noteId, attendees: a.attendees, date: a.date });
+    } catch (e) {
+      last = { error: e instanceof Error ? e.message : String(e) };
+    }
     if (isErr(last)) errors.push(`attendees ${noteId}: ${last.error}`);
   }
   notifyLocalWrite();
@@ -124,7 +129,11 @@ function applyCardOwner(cardIds: string[], a: Record<string, unknown>, errors: s
   if (a.owner === undefined || !isPeopleEnabled()) return undefined;
   let last: unknown;
   for (const cardId of cardIds) {
-    last = setCardOwnerArg(peopleDb(), peopleContext(), { cardId, owner: a.owner });
+    try {
+      last = setCardOwnerArg(peopleDb(), peopleContext(), { cardId, owner: a.owner });
+    } catch (e) {
+      last = { error: e instanceof Error ? e.message : String(e) };
+    }
     if (isErr(last)) errors.push(`owner ${cardId}: ${last.error}`);
   }
   notifyLocalWrite();

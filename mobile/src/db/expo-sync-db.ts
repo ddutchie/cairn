@@ -59,17 +59,45 @@ export function createExpoSyncDb(db: SQLiteDatabase): SyncDb {
     };
   };
 
+  // expo-sqlite's withTransactionSync is a bare BEGIN/COMMIT with no savepoints, so a
+  // transaction() entered while another is open (shared code nests them, as
+  // better-sqlite3 allows) would fail with "cannot start a transaction within a
+  // transaction". Track depth: the outermost call uses the real transaction, inner
+  // calls a SAVEPOINT that rolls back alone if its function throws.
+  let depth = 0;
+  let savepointSeq = 0;
+
   return {
     prepare,
     transaction<T>(fn: () => T): () => T {
       // Return a callable wrapper (better-sqlite3 semantics): calling it runs
       // `fn` inside a synchronous transaction.
       return () => {
+        if (depth > 0) {
+          const name = `cairn_sp_${++savepointSeq}`;
+          db.execSync(`SAVEPOINT ${name}`);
+          depth++;
+          try {
+            const out = fn();
+            db.execSync(`RELEASE ${name}`);
+            return out;
+          } catch (e) {
+            db.execSync(`ROLLBACK TO ${name}`);
+            db.execSync(`RELEASE ${name}`);
+            throw e;
+          } finally {
+            depth--;
+          }
+        }
         let result: T;
-        db.withTransactionSync(() => {
-          result = fn();
-        });
-         
+        depth++;
+        try {
+          db.withTransactionSync(() => {
+            result = fn();
+          });
+        } finally {
+          depth--;
+        }
         return result!;
       };
     },

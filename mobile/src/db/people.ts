@@ -187,7 +187,12 @@ export function attendeeCandidates(noteId: string): Person[] {
 export function addNoteAttendee(noteId: string, personId: string): MeetingAttendee {
   return write((db) => {
     let meetingId = getDb().getFirstSync<{ meeting_id: string | null }>("SELECT meeting_id FROM notes WHERE id = ?", noteId)?.meeting_id ?? null;
-    if (!meetingId || !pq.getMeeting(db, meetingId)) {
+    if (meetingId && !pq.getMeeting(db, meetingId)) {
+      // The note points at a calendar meeting whose row hasn't synced yet; capturing now would
+      // replace that link with a new meeting. Retry after the next sync.
+      throw new Error("This note's meeting hasn't synced to this device yet. Sync, then try again.");
+    }
+    if (!meetingId) {
       // Nobody is listed yet, so nothing this call could remove.
       meetingId = captureNoteMeeting(db, { noteId, attendees: [], source: "manual", provenance: "explicit" }).meetingId;
     }

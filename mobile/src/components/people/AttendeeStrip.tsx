@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Alert } from "react-native";
 import { Check, X, Plus } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { PressableScale } from "@/components/PressableScale";
@@ -62,14 +62,18 @@ export function AttendeeStrip({ noteId, addRequest }: { noteId: string; addReque
 
   const act = (fn: () => void) => {
     haptics.selection();
-    fn();
+    try {
+      fn();
+    } catch (e) {
+      Alert.alert("Couldn't update attendees", e instanceof Error ? e.message : String(e));
+    }
     load();
     refreshCandidates();
   };
 
   const open = (a: StripAttendee) => router.push({ pathname: "/people/[id]", params: { id: a.personId } });
 
-  if (!strip.meetingId && !openPicker) return null;
+  if (!strip.meetingId && !pickerOpen) return null;
 
   return (
     <>

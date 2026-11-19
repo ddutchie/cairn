@@ -10,6 +10,7 @@ import BetterSqlite3 from "../../../vitest-sqlite-shim.cjs";
 import type Database from "better-sqlite3";
 import { MOBILE_SCHEMA_SQL, MOBILE_TRIGGERS_SQL } from "../db/schema";
 import { TOOL_SCHEMAS, toolSchemasFor } from "../../../electron/lib/tool-schemas";
+import { createExpoSyncDb } from "../db/expo-sync-db";
 import { PEOPLE_TOOL_ARGS } from "../../../shared/agent/people-tools";
 
 const q = vi.hoisted(() => ({
@@ -242,6 +243,49 @@ describe("People layer: the tools write through the shared code", () => {
     expect(r).toMatchObject({ id: "n1", meeting: { attendees: expect.arrayContaining(["Ana Ruiz"]) } });
     const meeting = db.prepare("SELECT m.starts_at AS at FROM notes n JOIN meetings m ON m.id = n.meeting_id WHERE n.id = 'n1'").get() as { at: string };
     expect(meeting.at.startsWith("2026-11-11")).toBe(true);
+  });
+
+  it("an unknown attendee name works on an expo-style database (BEGIN-only transactions, no nesting)", async () => {
+    // expo-sqlite's withTransactionSync is a bare BEGIN/COMMIT: nesting throws unless the adapter uses savepoints.
+    let inTx = false;
+    const expoLike = {
+      prepareSync: (sql: string) => {
+        const st = db.prepare(sql);
+        return {
+          executeSync: (params: unknown[]) => {
+            if (st.reader) {
+              const rows = st.all(...params);
+              return { changes: 0, lastInsertRowId: 0, getFirstSync: () => rows[0] ?? null, getAllSync: () => rows };
+            }
+            const r = st.run(...params);
+            return { changes: r.changes, lastInsertRowId: Number(r.lastInsertRowid), getFirstSync: () => null, getAllSync: () => [] };
+          },
+          finalizeSync: () => {},
+        };
+      },
+      execSync: (sql: string) => { db.exec(sql); },
+      withTransactionSync: (fn: () => void) => {
+        if (inTx) throw new Error("cannot start a transaction within a transaction");
+        inTx = true;
+        db.exec("BEGIN");
+        try { fn(); db.exec("COMMIT"); } catch (e) { db.exec("ROLLBACK"); throw e; } finally { inTx = false; }
+      },
+    };
+    people.db = createExpoSyncDb(expoLike as never);
+    q.ensureNote.mockReturnValue("n1");
+    const r = await call("ensure_note", { projectId: "p1", title: "Weekly sync", content: "x", attendees: ["Priya Nair"] });
+    expect(r.error).toBeUndefined();
+    expect(r).toMatchObject({ id: "n1", meeting: expect.anything() });
+    const stub = db.prepare("SELECT name FROM people WHERE name = 'Priya Nair' AND deleted_at IS NULL").get();
+    expect(stub).toBeTruthy();
+  });
+
+  it("a People failure after the note is written is reported, not thrown", async () => {
+    q.ensureNote.mockReturnValue("n1");
+    people.db = { prepare: () => { throw new Error("db locked"); }, transaction: () => () => { throw new Error("db locked"); } };
+    const r = await call("ensure_note", { projectId: "p1", title: "Weekly sync", content: "x", attendees: ["Ana Ruiz"] });
+    expect(r).toMatchObject({ id: "n1" });
+    expect(String(r.error)).toMatch(/attendees n1: db locked/);
   });
 
   it("update_tasks and create_task set the owner; an empty owner clears it", async () => {
